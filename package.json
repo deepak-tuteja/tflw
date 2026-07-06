@@ -1,0 +1,33 @@
+{
+  "name": "tflw-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "testFlow — a testing-only DSL (.tflw / tflw CLI). Monorepo root.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepak-tuteja/tflw.git"
+  },
+  "license": "MIT",
+  "author": "Deepak Tuteja <tuteja123@gmail.com>",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/lang",
+    "packages/runtime",
+    "packages/reporter",
+    "packages/cli",
+    "packages/vscode"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "audits a full profile without stopping at the first mismatch",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "audits a full profile without stopping at the first mismatch"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/profile"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": true,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "name"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "Widget",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "Widget"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": true,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "email"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "widget@example.com",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "widget@example.com"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": true,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "active"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "BoolLit",
+              "value": true
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

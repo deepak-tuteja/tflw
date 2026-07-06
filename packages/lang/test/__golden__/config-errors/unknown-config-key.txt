@@ -1,0 +1,7 @@
+error[TF020]: unknown config key `headr`
+ --> tflw.config:2:3
+  |
+2 |   headr "Accept" is "application/json"
+  |   ^^^^^
+  |
+  = help: did you mean `header`?

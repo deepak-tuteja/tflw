@@ -1,0 +1,7 @@
+error[TF015]: this `before file` has no steps
+ --> hook-missing-block.tflw:3:1
+  |
+3 | test "unaffected"
+  | ^^^^
+  |
+  = help: indent at least one step under the `before file` line

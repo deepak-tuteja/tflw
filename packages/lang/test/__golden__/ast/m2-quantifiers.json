@@ -1,0 +1,136 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "any and all over array bodies",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "any and all over array bodies"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": "any",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "items"
+              },
+              {
+                "kind": "prop",
+                "name": "name"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "Widget",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "Widget"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": "all",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "items"
+              },
+              {
+                "kind": "prop",
+                "name": "status"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "active",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "active"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": "any",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "tags"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "urgent",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "urgent"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

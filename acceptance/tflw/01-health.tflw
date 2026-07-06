@@ -1,0 +1,4 @@
+test "health check"
+  api GET /health
+  expect status equals 200
+  expect body.status equals "OK"

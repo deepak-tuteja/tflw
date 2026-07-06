@@ -1,0 +1,319 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "arithmetic value expressions",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "arithmetic value expressions"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "LetStmt",
+          "name": "price",
+          "value": {
+            "type": "NumberLit",
+            "value": 10,
+            "raw": "10"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "qty",
+          "value": {
+            "type": "NumberLit",
+            "value": 3,
+            "raw": "3"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "total",
+          "value": {
+            "type": "BinaryExpr",
+            "op": "*",
+            "left": {
+              "type": "Interp",
+              "ref": [
+                {
+                  "kind": "prop",
+                  "name": "price"
+                }
+              ]
+            },
+            "right": {
+              "type": "Interp",
+              "ref": [
+                {
+                  "kind": "prop",
+                  "name": "qty"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "diff",
+          "value": {
+            "type": "BinaryExpr",
+            "op": "-",
+            "left": {
+              "type": "NumberLit",
+              "value": 10,
+              "raw": "10"
+            },
+            "right": {
+              "type": "NumberLit",
+              "value": 3,
+              "raw": "3"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "ratio",
+          "value": {
+            "type": "BinaryExpr",
+            "op": "/",
+            "left": {
+              "type": "Interp",
+              "ref": [
+                {
+                  "kind": "prop",
+                  "name": "price"
+                }
+              ]
+            },
+            "right": {
+              "type": "Interp",
+              "ref": [
+                {
+                  "kind": "prop",
+                  "name": "qty"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "negative",
+          "value": {
+            "type": "BinaryExpr",
+            "op": "-",
+            "left": {
+              "type": "NumberLit",
+              "value": 0,
+              "raw": "0"
+            },
+            "right": {
+              "type": "NumberLit",
+              "value": 5,
+              "raw": "5"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "sum",
+          "value": {
+            "type": "BinaryExpr",
+            "op": "+",
+            "left": {
+              "type": "Interp",
+              "ref": [
+                {
+                  "kind": "prop",
+                  "name": "price"
+                }
+              ]
+            },
+            "right": {
+              "type": "BinaryExpr",
+              "op": "*",
+              "left": {
+                "type": "Interp",
+                "ref": [
+                  {
+                    "kind": "prop",
+                    "name": "qty"
+                  }
+                ]
+              },
+              "right": {
+                "type": "NumberLit",
+                "value": 2,
+                "raw": "2"
+              }
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "total",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "total"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "doubled",
+                  "value": {
+                    "type": "BinaryExpr",
+                    "op": "*",
+                    "left": {
+                      "type": "Interp",
+                      "ref": [
+                        {
+                          "kind": "prop",
+                          "name": "price"
+                        }
+                      ]
+                    },
+                    "right": {
+                      "type": "NumberLit",
+                      "value": 2,
+                      "raw": "2"
+                    }
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "items",
+                  "value": {
+                    "type": "ArrayLit",
+                    "elements": [
+                      {
+                        "type": "Interp",
+                        "ref": [
+                          {
+                            "kind": "prop",
+                            "name": "price"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "BinaryExpr",
+                        "op": "+",
+                        "left": {
+                          "type": "Interp",
+                          "ref": [
+                            {
+                              "kind": "prop",
+                              "name": "qty"
+                            }
+                          ]
+                        },
+                        "right": {
+                          "type": "NumberLit",
+                          "value": 1,
+                          "raw": "1"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "total"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "BinaryExpr",
+              "op": "*",
+              "left": {
+                "type": "Interp",
+                "ref": [
+                  {
+                    "kind": "prop",
+                    "name": "price"
+                  }
+                ]
+              },
+              "right": {
+                "type": "Interp",
+                "ref": [
+                  {
+                    "kind": "prop",
+                    "name": "qty"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

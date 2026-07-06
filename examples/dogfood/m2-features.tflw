@@ -1,0 +1,36 @@
+# M2 dogfood: exercises the API-breadth features added this milestone against the real
+# automationTestPOC sample api — actions/import, the JS escape hatch, generators, value
+# expressions (arithmetic), quantifiers, and `wait until api`, end to end in one flow.
+
+import "./shared/products.tflw"
+use "./helpers/audit.ts"
+
+test "admin manages a product end-to-end"
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  expect status equals 200
+  capture body.token as token
+
+  let productName = unique("Dogfood Widget")
+  let price = random decimal 10 to 99
+
+  let productId = create product(productName, price, token)
+
+  api PUT /products/{productId} body { price: {price} * 2 }
+    header "Authorization" is "Bearer {token}"
+  expect status equals 200
+  expect body.price equals {price} * 2
+
+  wait until api GET /products/{productId}
+    expect body.price equals {price} * 2
+
+  api GET /products
+  expect any body.products.name equals {productName}
+  expect all body.products.price is greater than 0
+
+  let note = audit note(productId, price)
+
+  api DELETE /products/{productId}
+    header "Authorization" is "Bearer {token}"
+    header "X-Audit-Note" is "{note}"
+  expect status equals 200
+  expect body.message equals "Product deleted successfully"

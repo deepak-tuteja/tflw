@@ -1,0 +1,21 @@
+ident "test"
+string "s"
+NEWLINE
+INDENT
+ident "api"
+ident "POST"
+path "/orders"
+ident "body"
+lbrace "{"
+ident "qty"
+colon ":"
+number "3"
+rbrace "}"
+NEWLINE
+ident "expect"
+ident "status"
+ident "equals"
+number "201"
+NEWLINE
+DEDENT
+EOF

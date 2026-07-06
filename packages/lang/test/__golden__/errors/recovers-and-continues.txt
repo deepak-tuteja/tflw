@@ -1,0 +1,15 @@
+error[TF011]: unknown step `expct`
+ --> recovers-and-continues.tflw:2:3
+  |
+2 |   expct status equals 200
+  |   ^^^^^ not a known step keyword
+  |
+  = help: did you mean `expect`?
+
+error[TF014]: unknown matcher `blergh`
+ --> recovers-and-continues.tflw:4:17
+  |
+4 |   expect status blergh 200
+  |                 ^^^^^^
+  |
+  = help: expected one of: equals, contains, matches, is …, has …

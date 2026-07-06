@@ -1,0 +1,13 @@
+error[TF015]: this `with each` table has a header but no data rows
+ --> data-table-row-mismatch.tflw:1:1
+  |
+1 | with each
+  | ^^^^^^^^^
+  |
+  = help: add at least one data row below the header, e.g. `| "value" |`
+
+error[TF010]: expected 2 cell(s) in this table row (matching the header), found 3
+ --> data-table-row-mismatch.tflw:3:3
+  |
+3 |   | "admin" | unique email | "extra" |
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

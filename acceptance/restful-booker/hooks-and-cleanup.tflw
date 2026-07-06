@@ -1,0 +1,17 @@
+# `before`/`after` (each) sharing scope with the test, against a real external API (SPEC §4.2).
+# The test's `as admin` session headers are available inside its before/after hooks too — they
+# share the same evaluation scope as the test body.
+
+before
+  api POST /booking body { firstname: unique("Setup"), lastname: "Guest", totalprice: 50, depositpaid: false, bookingdates: { checkin: "2026-02-01", checkout: "2026-02-03" } }
+  expect status equals 200
+  capture body.bookingid as id
+
+test "a booking created in `before` is visible to the test body" as admin
+  api GET /booking/{id}
+  expect status equals 200
+  expect body.lastname equals "Guest"
+
+after
+  api DELETE /booking/{id}
+  expect status equals 201

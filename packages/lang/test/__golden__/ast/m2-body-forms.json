@@ -1,0 +1,240 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "every request body form",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "every request body form"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "FileBody",
+            "path": {
+              "type": "StringLit",
+              "value": "./payloads/order.json",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "./payloads/order.json"
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/login"
+          },
+          "body": {
+            "type": "FormBody",
+            "fields": [
+              {
+                "type": "FormField",
+                "key": "user",
+                "value": {
+                  "type": "StringLit",
+                  "value": "admin",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "admin"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "FormField",
+                "key": "pass",
+                "value": {
+                  "type": "EnvRef",
+                  "name": "ADMIN_PW"
+                }
+              }
+            ]
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/uploads"
+          },
+          "body": {
+            "type": "UploadBody",
+            "filePath": {
+              "type": "StringLit",
+              "value": "./files/img.png",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "./files/img.png"
+                }
+              ]
+            },
+            "fieldName": {
+              "type": "StringLit",
+              "value": "avatar",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "avatar"
+                }
+              ]
+            },
+            "extra": [
+              {
+                "type": "FormField",
+                "key": "owner",
+                "value": {
+                  "type": "StringLit",
+                  "value": "bob",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "bob"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/webhooks"
+          },
+          "body": {
+            "type": "TextBody",
+            "value": {
+              "type": "StringLit",
+              "value": "plain payload",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "plain payload"
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 202,
+              "raw": "202"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

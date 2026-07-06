@@ -1,0 +1,231 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [
+    {
+      "type": "HookDecl",
+      "when": "before",
+      "scope": "file",
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/seed"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "token"
+              }
+            ]
+          },
+          "name": "fileToken"
+        }
+      ]
+    },
+    {
+      "type": "HookDecl",
+      "when": "before",
+      "scope": "each",
+      "body": [
+        {
+          "type": "LetStmt",
+          "name": "orderId",
+          "value": {
+            "type": "UniquePrefixExpr",
+            "prefix": {
+              "type": "StringLit",
+              "value": "order",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "order"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "HookDecl",
+      "when": "after",
+      "scope": "each",
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "DELETE",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "HookDecl",
+      "when": "after",
+      "scope": "file",
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/cleanup"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "creates and checks an order",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "creates and checks an order"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "id",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "orderId"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

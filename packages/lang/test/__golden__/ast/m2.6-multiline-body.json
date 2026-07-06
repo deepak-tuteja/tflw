@@ -1,0 +1,160 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "creates a booking",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "creates a booking"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/booking"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "firstname",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "Jim",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "Jim"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "lastname",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "Brown",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "Brown"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "bookingdates",
+                  "value": {
+                    "type": "ObjectLit",
+                    "fields": [
+                      {
+                        "type": "Field",
+                        "key": "checkin",
+                        "value": {
+                          "type": "StringLit",
+                          "value": "2026-01-01",
+                          "parts": [
+                            {
+                              "kind": "text",
+                              "value": "2026-01-01"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "type": "Field",
+                        "key": "checkout",
+                        "value": {
+                          "type": "StringLit",
+                          "value": "2026-01-05",
+                          "parts": [
+                            {
+                              "kind": "text",
+                              "value": "2026-01-05"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "tags",
+                  "value": {
+                    "type": "ArrayLit",
+                    "elements": [
+                      {
+                        "type": "StringLit",
+                        "value": "vip",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "value": "vip"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "StringLit",
+                        "value": "early-checkin",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "value": "early-checkin"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

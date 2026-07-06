@@ -1,0 +1,141 @@
+{
+  "type": "ConfigFile",
+  "defaults": {
+    "type": "DefaultsBlock",
+    "entries": [
+      {
+        "type": "HeaderDecl",
+        "name": {
+          "type": "StringLit",
+          "value": "Accept",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "Accept"
+            }
+          ]
+        },
+        "value": {
+          "type": "StringLit",
+          "value": "application/json",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "application/json"
+            }
+          ]
+        },
+        "service": null
+      },
+      {
+        "type": "TimeoutDecl",
+        "target": "step",
+        "ms": 10000
+      },
+      {
+        "type": "TimeoutDecl",
+        "target": "expect",
+        "ms": 5000
+      },
+      {
+        "type": "TimeoutDecl",
+        "target": "wait",
+        "ms": 30000
+      },
+      {
+        "type": "WorkersDecl",
+        "count": 4
+      },
+      {
+        "type": "ReportDecl",
+        "dir": "./report"
+      }
+    ]
+  },
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "local",
+      "isDefault": true,
+      "entries": [
+        {
+          "type": "WebDecl",
+          "url": {
+            "type": "StringLit",
+            "value": "http://localhost:5173",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "http://localhost:5173"
+              }
+            ]
+          }
+        },
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "http://localhost:3001",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "http://localhost:3001"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "EnvBlock",
+      "name": "staging",
+      "isDefault": false,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "https://stg.example.com/api",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://stg.example.com/api"
+              }
+            ]
+          }
+        },
+        {
+          "type": "ApiServiceDecl",
+          "service": "billing",
+          "url": {
+            "type": "StringLit",
+            "value": "https://billing-stg.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://billing-stg.example.com"
+              }
+            ]
+          }
+        },
+        {
+          "type": "TimeoutDecl",
+          "target": "wait",
+          "ms": 60000
+        }
+      ]
+    }
+  ],
+  "requires": [
+    {
+      "type": "RequireDecl",
+      "names": [
+        "ADMIN_EMAIL",
+        "ADMIN_PW"
+      ]
+    }
+  ],
+  "sessions": []
+}

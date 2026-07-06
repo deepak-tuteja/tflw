@@ -1,0 +1,8 @@
+# A quirky real-world negative path: restful-booker returns 200 (not 401/403) with a `reason`
+# field on bad credentials — exactly the kind of "API we don't control" surprise decision 41 wants
+# an external dogfood to surface.
+
+test "bad credentials return 200 with a reason, not an HTTP error"
+  api POST /auth body { username: "admin", password: "definitely-wrong" }
+  expect status equals 200
+  expect body.reason equals "Bad credentials"

@@ -1,0 +1,164 @@
+{
+  "type": "Program",
+  "imports": [
+    {
+      "type": "ImportDecl",
+      "path": {
+        "type": "StringLit",
+        "value": "./shared/orders.tflw",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "./shared/orders.tflw"
+          }
+        ]
+      }
+    }
+  ],
+  "uses": [
+    {
+      "type": "UseDecl",
+      "path": {
+        "type": "StringLit",
+        "value": "./helpers/sign.ts",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "./helpers/sign.ts"
+          }
+        ]
+      }
+    }
+  ],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "uses an imported action and a JS helper",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "uses an imported action and a JS helper"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "LetStmt",
+          "name": "orderId",
+          "value": {
+            "type": "CallExpr",
+            "name": "create order",
+            "args": [
+              {
+                "type": "StringLit",
+                "value": "Widget",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "Widget"
+                  }
+                ]
+              },
+              {
+                "type": "NumberLit",
+                "value": 3,
+                "raw": "3"
+              }
+            ]
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "sig",
+          "value": {
+            "type": "CallExpr",
+            "name": "sign payload",
+            "args": [
+              {
+                "type": "Interp",
+                "ref": [
+                  {
+                    "kind": "prop",
+                    "name": "orderId"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/webhooks"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "orderId",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "orderId"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "sig",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "sig"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

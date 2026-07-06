@@ -1,0 +1,3 @@
+test "creates a product" as admin retry 2
+  api POST /products body { name: unique("Retry Widget"), price: 3, category: "tools" }
+  expect status equals 201

@@ -1,0 +1,167 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "uses variables",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "uses variables"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "LetStmt",
+          "name": "name",
+          "value": {
+            "type": "StringLit",
+            "value": "Widget",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "Widget"
+              }
+            ]
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "qty",
+          "value": {
+            "type": "NumberLit",
+            "value": 5,
+            "raw": "5"
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "label",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "order for {name}",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "order for "
+                      },
+                      {
+                        "kind": "interp",
+                        "ref": [
+                          {
+                            "kind": "prop",
+                            "name": "name"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "quantity",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "qty"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "nested",
+                  "value": {
+                    "type": "ObjectLit",
+                    "fields": [
+                      {
+                        "type": "Field",
+                        "key": "a",
+                        "value": {
+                          "type": "NumberLit",
+                          "value": 1,
+                          "raw": "1"
+                        }
+                      },
+                      {
+                        "type": "Field",
+                        "key": "b",
+                        "value": {
+                          "type": "ArrayLit",
+                          "elements": [
+                            {
+                              "type": "NumberLit",
+                              "value": 1,
+                              "raw": "1"
+                            },
+                            {
+                              "type": "NumberLit",
+                              "value": 2,
+                              "raw": "2"
+                            },
+                            {
+                              "type": "NumberLit",
+                              "value": 3,
+                              "raw": "3"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+error[TF002]: string literal is missing a closing quote
+ --> unterminated-string.tflw:1:6
+  |
+1 | test "open string
+  |      ^^^^^^^^^^^^

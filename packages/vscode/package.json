@@ -1,0 +1,61 @@
+{
+  "name": "tflw-vscode",
+  "displayName": "tflw",
+  "description": "Syntax highlighting for testFlow .tflw test files and tflw.config. Highlight-only in v0.1 — squiggles/LSP land in M5 (decision 76).",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "deepak-tuteja",
+  "type": "module",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "tflw",
+    "testflow",
+    "testing",
+    "api-testing",
+    "dsl"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepak-tuteja/tflw.git"
+  },
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "vscode:prepublish": "node scripts/copy-license.mjs"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "tflw",
+        "aliases": [
+          "tflw",
+          "testFlow"
+        ],
+        "extensions": [
+          ".tflw"
+        ],
+        "filenames": [
+          "tflw.config"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tflw",
+        "scopeName": "source.tflw",
+        "path": "./syntaxes/tflw.tmLanguage.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
+  }
+}

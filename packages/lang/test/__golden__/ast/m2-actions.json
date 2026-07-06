@@ -1,0 +1,179 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [
+    {
+      "type": "ActionDecl",
+      "name": "create order",
+      "params": [
+        "name",
+        "qty"
+      ],
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "name",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "name"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "qty",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "qty"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "id"
+              }
+            ]
+          },
+          "name": "id"
+        },
+        {
+          "type": "GiveStmt",
+          "value": {
+            "type": "VarRef",
+            "name": "id"
+          }
+        }
+      ]
+    }
+  ],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "checkout composes an action",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "checkout composes an action"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "LetStmt",
+          "name": "orderId",
+          "value": {
+            "type": "CallExpr",
+            "name": "create order",
+            "args": [
+              {
+                "type": "StringLit",
+                "value": "Widget",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "Widget"
+                  }
+                ]
+              },
+              {
+                "type": "NumberLit",
+                "value": 3,
+                "raw": "3"
+              }
+            ]
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

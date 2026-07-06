@@ -1,0 +1,5 @@
+error[TF010]: expected `to`, found end of line
+ --> random-number-missing-to.tflw:2:28
+  |
+2 |   let bad = random number 1
+  |                            ^

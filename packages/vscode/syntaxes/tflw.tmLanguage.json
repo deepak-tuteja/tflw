@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "tflw",
+  "scopeName": "source.tflw",
+  "fileTypes": ["tflw"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#tags" },
+    { "include": "#strings" },
+    { "include": "#pipe-tables" },
+    { "include": "#http-request" },
+    { "include": "#env-call" },
+    { "include": "#keywords-statement" },
+    { "include": "#keywords-subject" },
+    { "include": "#keywords-matcher" },
+    { "include": "#keywords-generator" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.number-sign.tflw",
+      "match": "#.*$"
+    },
+    "tags": {
+      "name": "entity.name.tag.tflw",
+      "match": "@[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "strings": {
+      "name": "string.quoted.double.tflw",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.tflw", "match": "\\\\." },
+        { "name": "variable.interpolation.tflw", "match": "\\{[^}\"]*\\}" }
+      ]
+    },
+    "pipe-tables": {
+      "name": "punctuation.separator.pipe.tflw",
+      "match": "\\|"
+    },
+    "http-request": {
+      "comment": "`api [<service>] GET|POST|PUT|DELETE|PATCH /path`",
+      "match": "\\b(GET|POST|PUT|DELETE|PATCH)\\b(\\s+)(/\\S*)?",
+      "captures": {
+        "1": { "name": "keyword.control.http-method.tflw" },
+        "3": { "name": "string.unquoted.path.tflw" }
+      }
+    },
+    "env-call": {
+      "comment": "env(NAME) — a taint-tracked secret reference, distinct from the `env <name>` config block keyword",
+      "match": "\\benv(?=\\s*\\()",
+      "name": "support.function.env.tflw"
+    },
+    "keywords-statement": {
+      "match": "\\b(test|action|before|after|session|import|use|api|expect|check|let|capture|wait|until|give|require|env|default|defaults|workers|report|timeout|retry|with|each|from|as|without|redirects|upload|form|header|body)\\b",
+      "name": "keyword.control.tflw"
+    },
+    "keywords-subject": {
+      "match": "\\b(status|duration|text)\\b",
+      "name": "support.type.tflw"
+    },
+    "keywords-matcher": {
+      "match": "\\b(equals|contains|matches|has|is|not|count|value|greater|less|than|visible|hidden|enabled|disabled|checked|any|all)\\b",
+      "name": "keyword.operator.word.tflw"
+    },
+    "keywords-generator": {
+      "match": "\\b(unique|random|like|of|number|decimal|date|in|past|future|between|and|string|email|today|now|format)\\b",
+      "name": "support.function.generator.tflw"
+    },
+    "constants": {
+      "match": "\\b(true|false|null)\\b",
+      "name": "constant.language.tflw"
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?(ms|s|m|h)?\\b",
+      "name": "constant.numeric.tflw"
+    },
+    "operators": {
+      "match": "[+\\-*/=]",
+      "name": "keyword.operator.tflw"
+    }
+  }
+}

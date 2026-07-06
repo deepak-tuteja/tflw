@@ -1,0 +1,38 @@
+{
+  "name": "tflw",
+  "version": "0.1.0",
+  "description": "testFlow CLI — an external DSL (.tflw files) for API testing: config as tflw itself, sessions, capture-chaining, hooks/retry/tags, actions+JS escape hatch, teaching-quality diagnostics, and a self-contained report.html + junit.xml. v0.1 is API-only (M0-M2.6); the browser half lands in 0.2.0.",
+  "keywords": ["testing", "api-testing", "test-runner", "dsl", "http", "cli"],
+  "type": "module",
+  "bin": {
+    "tflw": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepak-tuteja/tflw.git"
+  },
+  "homepage": "https://github.com/deepak-tuteja/tflw#readme",
+  "bugs": {
+    "url": "https://github.com/deepak-tuteja/tflw/issues"
+  },
+  "license": "MIT",
+  "author": "Deepak Tuteja <tuteja123@gmail.com>",
+  "scripts": {
+    "build": "npm run bundle",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "dev": "node --import tsx src/cli.ts",
+    "bundle": "node scripts/bundle.mjs",
+    "prepack": "npm run build --prefix ../.. -w @tflw/lang -w @tflw/runtime -w @tflw/reporter && npm run build"
+  },
+  "devDependencies": {
+    "@tflw/lang": "*",
+    "@tflw/runtime": "*",
+    "@tflw/reporter": "*",
+    "esbuild": "^0.28.1"
+  }
+}

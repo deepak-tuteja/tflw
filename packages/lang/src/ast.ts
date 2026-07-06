@@ -1,0 +1,573 @@
+// AST for the testFlow M0 surface. See GRAMMAR.md § Syntactic. Every node carries a `span`
+// for diagnostics and (later) report step→source mapping. Nodes are plain data (serialisable
+// to JSON for golden AST snapshots) — the parser owns construction, the checker/runtime read.
+
+import type { Span } from './token.js';
+
+export interface Node {
+  readonly type: string;
+  readonly span: Span;
+}
+
+// ---- Program & tests -------------------------------------------------------
+
+export interface Program extends Node {
+  readonly type: 'Program';
+  /** `import "./shared/x.tflw"` — pulls in another file's `action`s (P#17, SPEC §8). */
+  readonly imports: readonly ImportDecl[];
+  /** `use "./helpers/x.ts"` — the JS/TS escape hatch (P#11, SPEC §11). */
+  readonly uses: readonly UseDecl[];
+  /** File-scoped `action` declarations (P#17); shared across files via `imports`. */
+  readonly actions: readonly ActionDecl[];
+  /** `before`/`after` (file + each) — setup/teardown around this file's tests (SPEC §4.2, P#10/19). */
+  readonly hooks: readonly HookDecl[];
+  readonly tests: readonly TestDecl[];
+}
+
+/** `before`/`before file`/`after`/`after file` — file-scoped, no name, same body shape as a test
+ * (SPEC §4.2). `each` hooks share a scope with the test they wrap (setup data / read it back for
+ * cleanup); `file` hooks run once, in their own scope, isolated from any test. */
+export interface HookDecl extends Node {
+  readonly type: 'HookDecl';
+  readonly when: 'before' | 'after';
+  readonly scope: 'file' | 'each';
+  readonly body: readonly Step[];
+}
+
+export interface ImportDecl extends Node {
+  readonly type: 'ImportDecl';
+  readonly path: StringLit;
+}
+
+export interface UseDecl extends Node {
+  readonly type: 'UseDecl';
+  readonly path: StringLit;
+}
+
+/** `action create order(name) ... give id` — the reuse unit (P#17). Body reuses ordinary `Step`s
+ * plus `GiveStmt`; multi-word names read like a sentence and are called `create order("Widget")`. */
+export interface ActionDecl extends Node {
+  readonly type: 'ActionDecl';
+  readonly name: string;
+  readonly params: readonly string[];
+  readonly body: readonly Step[];
+}
+
+export interface TestDecl extends Node {
+  readonly type: 'TestDecl';
+  readonly name: StringLit;
+  readonly tags: readonly string[];
+  /** `as <session>` opt-in, or null when anonymous. */
+  readonly session: string | null;
+  /** `retry N` — up to N re-runs on failure; a pass on any attempt is reported `flaky`, never
+   * silently green (SPEC §4.4, P#10). `0` (the default) means no retry. */
+  readonly retry: number;
+  /** `with each` — one reported case per row, or null for an ordinary single-case test
+   * (SPEC §4.3, P#10/24). */
+  readonly table: DataTable | null;
+  readonly body: readonly Step[];
+}
+
+export type DataTable = InlineDataTable | FileDataTable;
+
+/** `with each` inline table — header row + data rows; cells are full expressions incl.
+ * generators, evaluated fresh per row at case start (SPEC §4.3). */
+export interface InlineDataTable extends Node {
+  readonly type: 'InlineDataTable';
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly Value[])[];
+}
+
+/** `with each from "./x.csv"` / `.json` — same semantics, rows loaded from a file at run time,
+ * columns bound by header/key name. No compile-time column check: unlike the inline form, the
+ * columns aren't known until the file is read (SPEC §4.3). */
+export interface FileDataTable extends Node {
+  readonly type: 'FileDataTable';
+  readonly path: StringLit;
+}
+
+export type Step = ApiStep | ExpectStmt | LetStmt | CaptureStmt | WaitUntilApiStmt | GiveStmt | HeaderStmt;
+
+/** `give <expr>` — an action's return value; ends its step sequence (P#17). */
+export interface GiveStmt extends Node {
+  readonly type: 'GiveStmt';
+  readonly value: Value;
+}
+
+/** `header "Authorization" is "Bearer {token}"` — a bare header capture, only meaningful inside a
+ * `session` block (SPEC §3.3, P#42): the runtime records it and auto-applies it to the api steps
+ * of tests running `as <session>`. The parser only accepts this step inside a session body; it
+ * never appears in an ordinary test/action/hook. */
+export interface HeaderStmt extends Node {
+  readonly type: 'HeaderStmt';
+  readonly name: StringLit;
+  readonly value: Value;
+}
+
+// ---- API steps -------------------------------------------------------------
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+/** Shared shape of an api request line — used by `ApiStep` and `wait until api` (SPEC §5.5). */
+export interface ApiRequestSpec {
+  /** Named service (P#29), or null for the default `api`. */
+  readonly service: string | null;
+  readonly method: HttpMethod;
+  readonly path: PathExpr;
+  readonly body: ApiBody | null;
+  /** Per-step request headers from an indented `header "…" is …` sub-block (SPEC §5.1). */
+  readonly headers: readonly ApiHeader[];
+  /** `timeout <dur>` override for this request only, or null for the config default (SPEC §5.1). */
+  readonly timeoutMs: number | null;
+  /** false when `without redirects` is present — the 3xx itself becomes observable (SPEC §5.1). */
+  readonly followRedirects: boolean;
+}
+
+export interface ApiStep extends Node, ApiRequestSpec {
+  readonly type: 'ApiStep';
+}
+
+/** `wait until api …` — re-issues the request until its nested expects pass or wait times out (P#15). */
+export interface WaitUntilApiStmt extends Node {
+  readonly type: 'WaitUntilApiStmt';
+  readonly request: ApiRequestSpec;
+  readonly expects: readonly ExpectStmt[];
+}
+
+export interface ApiHeader extends Node {
+  readonly type: 'ApiHeader';
+  readonly name: StringLit;
+  readonly value: Value;
+}
+
+export interface PathExpr extends Node {
+  readonly type: 'PathExpr';
+  /** Raw path text incl. query string and `{interpolation}`; resolved at runtime. */
+  readonly raw: string;
+}
+
+// ---- Request bodies (SPEC §5.2 — four forms + raw text) --------------------
+
+export type ApiBody = InlineBody | FileBody | FormBody | TextBody | UploadBody;
+
+export interface InlineBody extends Node {
+  readonly type: 'InlineBody';
+  readonly object: ObjectLit;
+}
+
+/** `body from "./payloads/x.json"` — file is a template; `{vars}` interpolate at send time. */
+export interface FileBody extends Node {
+  readonly type: 'FileBody';
+  readonly path: StringLit;
+}
+
+/** `form k=v, …` — `application/x-www-form-urlencoded`. */
+export interface FormBody extends Node {
+  readonly type: 'FormBody';
+  readonly fields: readonly FormField[];
+}
+
+export interface FormField extends Node {
+  readonly type: 'FormField';
+  readonly key: string;
+  readonly value: Value;
+}
+
+/** `body text "…"` — raw payload, no JSON content-type. */
+export interface TextBody extends Node {
+  readonly type: 'TextBody';
+  readonly value: StringLit;
+}
+
+/** `upload "./f" as "field"` (+ optional `form k=v, …`) — multipart/form-data. */
+export interface UploadBody extends Node {
+  readonly type: 'UploadBody';
+  readonly filePath: StringLit;
+  readonly fieldName: StringLit;
+  readonly extra: readonly FormField[];
+}
+
+// ---- Assertions ------------------------------------------------------------
+
+export interface ExpectStmt extends Node {
+  readonly type: 'ExpectStmt';
+  /** `true` for `check` (soft — records and continues), `false` for `expect` (hard — fails fast). */
+  readonly soft: boolean;
+  /** `any`/`all` array quantifier over a body-array path (P#14, SPEC §6.3), or null for a plain expect. */
+  readonly quantifier: 'any' | 'all' | null;
+  readonly subject: Subject;
+  readonly matcher: Matcher;
+}
+
+export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject;
+
+export interface StatusSubject extends Node {
+  readonly type: 'StatusSubject';
+}
+
+export interface DurationSubject extends Node {
+  readonly type: 'DurationSubject';
+}
+
+export interface HeaderSubject extends Node {
+  readonly type: 'HeaderSubject';
+  readonly name: StringLit;
+}
+
+export interface BodySubject extends Node {
+  readonly type: 'BodySubject';
+  /** Empty path = the whole body; otherwise dot/index segments (`body.items[0].price`). */
+  readonly path: readonly PathSegment[];
+}
+
+/** `body text` — the raw response body as a string, for non-JSON (text/HTML/XML) responses
+ * (SPEC §5.3, decision 51). Distinct from `BodySubject`, which requires a JSON response. */
+export interface BodyTextSubject extends Node {
+  readonly type: 'BodyTextSubject';
+}
+
+export type PathSegment =
+  | { readonly kind: 'prop'; readonly name: string }
+  | { readonly kind: 'index'; readonly index: number };
+
+export type MatcherName =
+  | 'equals'
+  | 'contains'
+  | 'matches'
+  | 'greaterThan'
+  | 'lessThan'
+  | 'hasCount'
+  | 'hasValue'
+  | 'visible'
+  | 'hidden'
+  | 'enabled'
+  | 'disabled'
+  | 'checked';
+
+export interface Matcher extends Node {
+  readonly type: 'Matcher';
+  readonly name: MatcherName;
+  readonly negated: boolean;
+  /** Operand for value matchers (equals/contains/…); null for state matchers (visible/…). */
+  readonly value: Value | null;
+}
+
+// ---- Bindings --------------------------------------------------------------
+
+export interface LetStmt extends Node {
+  readonly type: 'LetStmt';
+  readonly name: string;
+  readonly value: Value;
+}
+
+export interface CaptureStmt extends Node {
+  readonly type: 'CaptureStmt';
+  readonly subject: Subject;
+  readonly name: string;
+}
+
+// ---- Values & literals -----------------------------------------------------
+
+export type Value =
+  | StringLit
+  | NumberLit
+  | DurationLit
+  | BoolLit
+  | NullLit
+  | VarRef
+  | Interp
+  | EnvRef
+  | ObjectLit
+  | ArrayLit
+  | BinaryExpr
+  | DateAtom
+  | DateOffsetLit
+  | FormatExpr
+  | GeneratorExpr
+  | CallExpr;
+
+/** A call to an `action` or a `use`d JS/TS helper function — `create order("Widget")` or
+ * `sign payload({body})` (P#11, P#17). `name` is the space-joined multi-word call name; which
+ * kind of callable it resolves to is a runtime concern (SPEC §8, §11). */
+export interface CallExpr extends Node {
+  readonly type: 'CallExpr';
+  readonly name: string;
+  readonly args: readonly Value[];
+}
+
+/** A number immediately followed by a time unit (`500ms`, `2s`, `1m`) — always stored as ms (SPEC §5.3). */
+export interface DurationLit extends Node {
+  readonly type: 'DurationLit';
+  readonly ms: number;
+}
+
+// ---- Value expressions: arithmetic + date math (P#25, SPEC §7.5) ----------
+
+export type BinaryOp = '+' | '-' | '*' | '/';
+
+/** Closed arithmetic grammar: `+ - * /` on numbers, or `+`/`-` between a `DateAtom` and a
+ * `DateOffsetLit` (`today + 3 days`). No parens, no other operators — the hard fence (P#25). */
+export interface BinaryExpr extends Node {
+  readonly type: 'BinaryExpr';
+  readonly op: BinaryOp;
+  readonly left: Value;
+  readonly right: Value;
+}
+
+/** `today` (local midnight) or `now` (current instant). */
+export interface DateAtom extends Node {
+  readonly type: 'DateAtom';
+  readonly which: 'today' | 'now';
+}
+
+export type DateOffsetUnit = 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks';
+
+/** A number followed by a spelled-out date unit (`3 days`) — only meaningful next to a `DateAtom`
+ * on one side of a `BinaryExpr` (`today + 3 days`); distinct from `DurationLit`'s tight `500ms`. */
+export interface DateOffsetLit extends Node {
+  readonly type: 'DateOffsetLit';
+  readonly amount: number;
+  readonly unit: DateOffsetUnit;
+}
+
+/** `format <value> as "<pattern>"` — renders a date value with a `yyyy`/`MM`/`dd`/`HH`/`mm`/`ss` pattern. */
+export interface FormatExpr extends Node {
+  readonly type: 'FormatExpr';
+  readonly value: Value;
+  readonly pattern: StringLit;
+}
+
+// ---- Generators: `unique`/`random` (P#19, P#21–23, SPEC §7.2–7.4) ----------
+
+export type GeneratorExpr =
+  | UniquePrefixExpr
+  | UniqueEmailExpr
+  | UniqueNumberExpr
+  | UniqueLikeExpr
+  | RandomNumberExpr
+  | RandomDecimalExpr
+  | RandomDateInPastExpr
+  | RandomDateInFutureExpr
+  | RandomDateBetweenExpr
+  | RandomOfExpr
+  | RandomStringExpr
+  | RandomLikeExpr;
+
+/** `unique("prefix")` — collision-safe identity data, run/worker-seeded (P#19, P#21). */
+export interface UniquePrefixExpr extends Node {
+  readonly type: 'UniquePrefixExpr';
+  readonly prefix: Value;
+}
+
+/** `unique email`. */
+export interface UniqueEmailExpr extends Node {
+  readonly type: 'UniqueEmailExpr';
+}
+
+/** `unique number`. */
+export interface UniqueNumberExpr extends Node {
+  readonly type: 'UniqueNumberExpr';
+}
+
+/** `unique like "ORD-######"` — `#` digit, `?` letter, guaranteed distinct per call (P#22). */
+export interface UniqueLikeExpr extends Node {
+  readonly type: 'UniqueLikeExpr';
+  readonly pattern: StringLit;
+}
+
+/** `random number A to B` — collisions allowed (P#21). */
+export interface RandomNumberExpr extends Node {
+  readonly type: 'RandomNumberExpr';
+  readonly from: Value;
+  readonly to: Value;
+}
+
+/** `random decimal A to B`. */
+export interface RandomDecimalExpr extends Node {
+  readonly type: 'RandomDecimalExpr';
+  readonly from: Value;
+  readonly to: Value;
+}
+
+/** `random date in past`. */
+export interface RandomDateInPastExpr extends Node {
+  readonly type: 'RandomDateInPastExpr';
+}
+
+/** `random date in future`. */
+export interface RandomDateInFutureExpr extends Node {
+  readonly type: 'RandomDateInFutureExpr';
+}
+
+/** `random date between A and B`. */
+export interface RandomDateBetweenExpr extends Node {
+  readonly type: 'RandomDateBetweenExpr';
+  readonly from: Value;
+  readonly to: Value;
+}
+
+/** `random of "red", "blue", "green"`. */
+export interface RandomOfExpr extends Node {
+  readonly type: 'RandomOfExpr';
+  readonly choices: readonly Value[];
+}
+
+/** `random string N` — alnum string of length N. */
+export interface RandomStringExpr extends Node {
+  readonly type: 'RandomStringExpr';
+  readonly length: Value;
+}
+
+/** `random like "SKU-####-??"` — `#` digit, `?` letter, collisions allowed (P#22). */
+export interface RandomLikeExpr extends Node {
+  readonly type: 'RandomLikeExpr';
+  readonly pattern: StringLit;
+}
+
+/** `env(NAME)` — reads a secret; its value is taint-tracked and redacted in reports (P#30). */
+export interface EnvRef extends Node {
+  readonly type: 'EnvRef';
+  readonly name: string;
+}
+
+export interface StringLit extends Node {
+  readonly type: 'StringLit';
+  /** Decoded string value (no quotes, escapes applied). */
+  readonly value: string;
+  /** Interpolation-aware breakdown: literal text and `{ref}` holes, in source order. */
+  readonly parts: readonly StringPart[];
+}
+
+export type StringPart =
+  | { readonly kind: 'text'; readonly value: string }
+  | { readonly kind: 'interp'; readonly ref: readonly PathSegment[] };
+
+export interface NumberLit extends Node {
+  readonly type: 'NumberLit';
+  readonly value: number;
+  readonly raw: string;
+}
+
+export interface BoolLit extends Node {
+  readonly type: 'BoolLit';
+  readonly value: boolean;
+}
+
+export interface NullLit extends Node {
+  readonly type: 'NullLit';
+}
+
+/** A bare identifier reference — a variable / capture binding used as a value. */
+export interface VarRef extends Node {
+  readonly type: 'VarRef';
+  readonly name: string;
+}
+
+/** A standalone `{ref}` interpolation used in value position (e.g. inside a body object). */
+export interface Interp extends Node {
+  readonly type: 'Interp';
+  readonly ref: readonly PathSegment[];
+}
+
+export interface ObjectLit extends Node {
+  readonly type: 'ObjectLit';
+  readonly fields: readonly Field[];
+}
+
+export interface Field extends Node {
+  readonly type: 'Field';
+  readonly key: string;
+  readonly value: FieldValue;
+}
+
+export type FieldValue = Value;
+
+export interface ArrayLit extends Node {
+  readonly type: 'ArrayLit';
+  readonly elements: readonly FieldValue[];
+}
+
+// ---- Config dialect (tflw.config, P#27–31) ---------------------------------
+
+export interface ConfigFile extends Node {
+  readonly type: 'ConfigFile';
+  readonly defaults: DefaultsBlock | null;
+  readonly envs: readonly EnvBlock[];
+  readonly requires: readonly RequireDecl[];
+  /** `session <name> ... ` blocks — the single auth concept (SPEC §3.3, P#20/31/42). */
+  readonly sessions: readonly SessionDecl[];
+}
+
+/** `session <name> ... steps ...` — runs once per run per worker; its `header` steps become the
+ * headers auto-applied to the api steps of tests running `as <name>` (SPEC §3.3, P#42). Body
+ * steps are ordinary parsed steps (api/let/capture/wait) plus `header`. */
+export interface SessionDecl extends Node {
+  readonly type: 'SessionDecl';
+  readonly name: string;
+  readonly body: readonly Step[];
+}
+
+export interface DefaultsBlock extends Node {
+  readonly type: 'DefaultsBlock';
+  readonly entries: readonly ConfigEntry[];
+}
+
+export interface EnvBlock extends Node {
+  readonly type: 'EnvBlock';
+  readonly name: string;
+  /** Marked `default` — the fallback active env when no --env / TFLW_ENV (P#28). */
+  readonly isDefault: boolean;
+  readonly entries: readonly ConfigEntry[];
+}
+
+export type ConfigEntry = HeaderDecl | TimeoutDecl | WorkersDecl | ReportDecl | WebDecl | ApiServiceDecl | InsecureDecl;
+
+export interface HeaderDecl extends Node {
+  readonly type: 'HeaderDecl';
+  readonly name: StringLit;
+  readonly value: Value;
+  /** `… for <service>` scoping, or null for all services (P#29). */
+  readonly service: string | null;
+}
+
+export type TimeoutTarget = 'step' | 'expect' | 'wait';
+
+export interface TimeoutDecl extends Node {
+  readonly type: 'TimeoutDecl';
+  readonly target: TimeoutTarget;
+  readonly ms: number;
+}
+
+export interface WorkersDecl extends Node {
+  readonly type: 'WorkersDecl';
+  readonly count: number;
+}
+
+export interface ReportDecl extends Node {
+  readonly type: 'ReportDecl';
+  readonly dir: string;
+}
+
+export interface WebDecl extends Node {
+  readonly type: 'WebDecl';
+  readonly url: StringLit;
+}
+
+/** `insecure true|false` — disables TLS certificate verification for the whole run when true
+ * (decision 78). Explicit and greppable in review; the runtime warns visibly wherever it applies. */
+export interface InsecureDecl extends Node {
+  readonly type: 'InsecureDecl';
+  readonly value: boolean;
+}
+
+export interface ApiServiceDecl extends Node {
+  readonly type: 'ApiServiceDecl';
+  /** Extra named service, or null for the default `api` base URL (P#29). */
+  readonly service: string | null;
+  readonly url: StringLit;
+}
+
+export interface RequireDecl extends Node {
+  readonly type: 'RequireDecl';
+  readonly names: readonly string[];
+}

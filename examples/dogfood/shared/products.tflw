@@ -1,0 +1,9 @@
+# Shared action (P#17): creates a product as the given admin token, gives back its id. Imported
+# by m2-features.tflw so the caller doesn't repeat the create-and-capture boilerplate.
+
+action create product(name, price, token)
+  api POST /products body { name: {name}, description: "dogfood-generated", price: {price}, category: "electronics" }
+    header "Authorization" is "Bearer {token}"
+  expect status equals 201
+  capture body.id as id
+  give id

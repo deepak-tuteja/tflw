@@ -1,0 +1,7 @@
+error[TF015]: this `test` has no steps
+ --> empty-test.tflw:2:1
+  |
+2 | 
+  | ^
+  |
+  = help: indent at least one step under the `test` line

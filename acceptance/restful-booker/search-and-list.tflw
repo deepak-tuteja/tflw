@@ -1,0 +1,8 @@
+# `any`/`all` quantifiers over a top-level array response (no auth needed for a read) — restful
+# booker's `GET /booking` responds with a bare `[{"bookingid": N}, ...]` array as the whole body.
+
+test "lists all bookings"
+  api GET /booking
+  expect status equals 200
+  expect any body.bookingid equals 1
+  expect all body.bookingid is greater than 0

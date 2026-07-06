@@ -1,0 +1,5 @@
+error[TF010]: expected `true` or `false` after `insecure`, found `yes`
+ --> tflw.config:2:12
+  |
+2 |   insecure yes
+  |            ^^^

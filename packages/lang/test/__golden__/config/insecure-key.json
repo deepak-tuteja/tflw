@@ -1,0 +1,41 @@
+{
+  "type": "ConfigFile",
+  "defaults": {
+    "type": "DefaultsBlock",
+    "entries": [
+      {
+        "type": "InsecureDecl",
+        "value": true
+      }
+    ]
+  },
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "staging",
+      "isDefault": false,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "https://staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://staging.example.com"
+              }
+            ]
+          }
+        },
+        {
+          "type": "InsecureDecl",
+          "value": false
+        }
+      ]
+    }
+  ],
+  "requires": [],
+  "sessions": []
+}

@@ -1,0 +1,125 @@
+{
+  "type": "ConfigFile",
+  "defaults": null,
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "local",
+      "isDefault": true,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "http://localhost:3001",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "http://localhost:3001"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "requires": [
+    {
+      "type": "RequireDecl",
+      "names": [
+        "ADMIN_EMAIL",
+        "ADMIN_PW"
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "type": "SessionDecl",
+      "name": "admin",
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/auth/login"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "user",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "ADMIN_EMAIL"
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "pass",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "ADMIN_PW"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "token"
+              }
+            ]
+          },
+          "name": "token"
+        },
+        {
+          "type": "HeaderStmt",
+          "name": {
+            "type": "StringLit",
+            "value": "Authorization",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "Authorization"
+              }
+            ]
+          },
+          "value": {
+            "type": "StringLit",
+            "value": "Bearer {token}",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "Bearer "
+              },
+              {
+                "kind": "interp",
+                "ref": [
+                  {
+                    "kind": "prop",
+                    "name": "token"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

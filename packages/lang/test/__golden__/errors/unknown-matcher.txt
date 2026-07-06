@@ -1,0 +1,7 @@
+error[TF014]: unknown matcher `eq`
+ --> unknown-matcher.tflw:3:17
+  |
+3 |   expect status eq 200
+  |                 ^^
+  |
+  = help: expected one of: equals, contains, matches, is …, has …

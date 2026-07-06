@@ -1,0 +1,5 @@
+error[TF010]: expected a path like `/orders`, found end of line
+ --> missing-path.tflw:2:10
+  |
+2 |   api GET
+  |          ^

@@ -1,0 +1,7 @@
+test "audits a created product" as admin
+  api POST /products body { name: "Audit Widget", price: 15, category: "electronics" }
+  expect status equals 201
+  check body.name equals "Audit Widget"
+  check body.price equals 15
+  check body.category equals "electronics"
+  check body.inStock equals true

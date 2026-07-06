@@ -1,0 +1,201 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "full verb set, timeout, and redirect control",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "full verb set, timeout, and redirect control"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "PUT",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "qty",
+                  "value": {
+                    "type": "NumberLit",
+                    "value": 4,
+                    "raw": "4"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": 2000,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "PATCH",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "qty",
+                  "value": {
+                    "type": "NumberLit",
+                    "value": 5,
+                    "raw": "5"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "DELETE",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 204,
+              "raw": "204"
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/old-path"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": false
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 301,
+              "raw": "301"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "DurationSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "lessThan",
+            "negated": false,
+            "value": {
+              "type": "DurationLit",
+              "ms": 500
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

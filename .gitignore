@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+report/
+packages/cli/LICENSE
+packages/vscode/LICENSE
+
+# Internal dev-tracking docs (decision log + build tracker) — not part of the public project
+PLAN.md
+PROGRESS.md

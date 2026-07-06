@@ -1,0 +1,293 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "unique and random generators",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "unique and random generators"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "LetStmt",
+          "name": "sku",
+          "value": {
+            "type": "UniqueLikeExpr",
+            "pattern": {
+              "type": "StringLit",
+              "value": "ORD-######",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "ORD-######"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "email",
+          "value": {
+            "type": "UniqueEmailExpr"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "seq",
+          "value": {
+            "type": "UniqueNumberExpr"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "id",
+          "value": {
+            "type": "UniquePrefixExpr",
+            "prefix": {
+              "type": "StringLit",
+              "value": "order",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "order"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "qty",
+          "value": {
+            "type": "RandomNumberExpr",
+            "from": {
+              "type": "NumberLit",
+              "value": 1,
+              "raw": "1"
+            },
+            "to": {
+              "type": "NumberLit",
+              "value": 100,
+              "raw": "100"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "price",
+          "value": {
+            "type": "RandomDecimalExpr",
+            "from": {
+              "type": "NumberLit",
+              "value": 1.5,
+              "raw": "1.5"
+            },
+            "to": {
+              "type": "NumberLit",
+              "value": 9.99,
+              "raw": "9.99"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "color",
+          "value": {
+            "type": "RandomOfExpr",
+            "choices": [
+              {
+                "type": "StringLit",
+                "value": "red",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "red"
+                  }
+                ]
+              },
+              {
+                "type": "StringLit",
+                "value": "blue",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "blue"
+                  }
+                ]
+              },
+              {
+                "type": "StringLit",
+                "value": "green",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "green"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "token",
+          "value": {
+            "type": "RandomStringExpr",
+            "length": {
+              "type": "NumberLit",
+              "value": 12,
+              "raw": "12"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "code",
+          "value": {
+            "type": "RandomLikeExpr",
+            "pattern": {
+              "type": "StringLit",
+              "value": "SKU-####-??",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "SKU-####-??"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "past",
+          "value": {
+            "type": "RandomDateInPastExpr"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "future",
+          "value": {
+            "type": "RandomDateInFutureExpr"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "between",
+          "value": {
+            "type": "RandomDateBetweenExpr",
+            "from": {
+              "type": "DateAtom",
+              "which": "today"
+            },
+            "to": {
+              "type": "BinaryExpr",
+              "op": "+",
+              "left": {
+                "type": "DateAtom",
+                "which": "today"
+              },
+              "right": {
+                "type": "DateOffsetLit",
+                "amount": 7,
+                "unit": "days"
+              }
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "sku",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "sku"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "email",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "email"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "qty",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "qty"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

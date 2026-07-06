@@ -1,0 +1,94 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "asserts on a non-JSON response",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "asserts on a non-JSON response"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/health.txt"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyTextSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "ok",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "ok"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyTextSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "contains",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "healthy",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "healthy"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodyTextSubject"
+          },
+          "name": "raw"
+        }
+      ]
+    }
+  ]
+}

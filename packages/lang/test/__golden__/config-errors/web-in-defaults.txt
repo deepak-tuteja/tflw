@@ -1,0 +1,7 @@
+error[TF025]: `web` is not allowed in defaults
+ --> tflw.config:2:3
+  |
+2 |   web "http://localhost:5173"
+  |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: move it to an `env` block

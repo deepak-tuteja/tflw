@@ -1,0 +1,8 @@
+with each
+  | category   |
+  | "tools"    |
+  | "hardware" |
+test "creates a {category} product" as admin
+  api POST /products body { name: unique("Widget"), price: 12.5, category: {category} }
+  expect status equals 201
+  expect body.category equals {category}

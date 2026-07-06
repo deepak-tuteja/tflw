@@ -1,0 +1,194 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "create an order",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "create an order"
+          }
+        ]
+      },
+      "tags": [
+        "smoke",
+        "orders"
+      ],
+      "session": "admin",
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "name",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "Widget",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "Widget"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "qty",
+                  "value": {
+                    "type": "NumberLit",
+                    "value": 3,
+                    "raw": "3"
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "active",
+                  "value": {
+                    "type": "BoolLit",
+                    "value": true
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "meta",
+                  "value": {
+                    "type": "NullLit"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "id"
+              }
+            ]
+          },
+          "name": "orderId"
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "name"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "Widget",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "Widget"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "items"
+              },
+              {
+                "kind": "index",
+                "index": 0
+              },
+              {
+                "kind": "prop",
+                "name": "price"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "lessThan",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 100,
+              "raw": "100"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

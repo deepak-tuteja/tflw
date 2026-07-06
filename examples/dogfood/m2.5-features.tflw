@@ -1,0 +1,34 @@
+# M2.5 dogfood: exercises the API-orchestration features added this milestone — `before`/`after`
+# hooks (file + each), `check` soft asserts, `retry`, and an inline data table — against the real
+# automationTestPOC sample api, alongside the M0-M2 features already covered by m2-features.tflw.
+
+before file
+  api GET /health
+  expect status equals 200
+
+before
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  expect status equals 200
+  capture body.token as token
+
+with each
+  | category   |
+  | "tools"    |
+  | "hardware" |
+test "creates a {category} product" retry 1
+  let productName = unique("Dogfood {category} Widget")
+  api POST /products body { name: {productName}, price: 12.5, category: {category} }
+    header "Authorization" is "Bearer {token}"
+  expect status equals 201
+  check body.category equals {category}
+  check body.name equals {productName}
+  capture body.id as productId
+
+after
+  api DELETE /products/{productId}
+    header "Authorization" is "Bearer {token}"
+  expect status equals 200
+
+after file
+  api GET /products
+  expect status equals 200

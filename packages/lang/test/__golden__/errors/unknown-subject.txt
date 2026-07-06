@@ -1,0 +1,7 @@
+error[TF013]: unknown subject `statuss`
+ --> unknown-subject.tflw:3:10
+  |
+3 |   expect statuss equals 200
+  |          ^^^^^^^
+  |
+  = help: did you mean `status`?

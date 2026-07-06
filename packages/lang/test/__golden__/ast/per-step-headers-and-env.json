@@ -1,0 +1,212 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "admin creates a product",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "admin creates a product"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/auth/login"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "email",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "ADMIN_EMAIL"
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "password",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "ADMIN_PW"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "token"
+              }
+            ]
+          },
+          "name": "token"
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/products"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "name",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "Widget",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "Widget"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "price",
+                  "value": {
+                    "type": "NumberLit",
+                    "value": 9.99,
+                    "raw": "9.99"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [
+            {
+              "type": "ApiHeader",
+              "name": {
+                "type": "StringLit",
+                "value": "Authorization",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "Authorization"
+                  }
+                ]
+              },
+              "value": {
+                "type": "StringLit",
+                "value": "Bearer {token}",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "Bearer "
+                  },
+                  {
+                    "kind": "interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "token"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "type": "ApiHeader",
+              "name": {
+                "type": "StringLit",
+                "value": "X-Trace",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "X-Trace"
+                  }
+                ]
+              },
+              "value": {
+                "type": "StringLit",
+                "value": "abc",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "abc"
+                  }
+                ]
+              }
+            }
+          ],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

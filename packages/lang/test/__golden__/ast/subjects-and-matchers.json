@@ -1,0 +1,211 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "assorted assertions",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "assorted assertions"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders?state=open"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "lessThan",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 400,
+              "raw": "400"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "DurationSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "lessThan",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 500,
+              "raw": "500"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "HeaderSubject",
+            "name": {
+              "type": "StringLit",
+              "value": "content-type",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "content-type"
+                }
+              ]
+            }
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "matches",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "json",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "json"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "items"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "hasCount",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 3,
+              "raw": "3"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "message"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "contains",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "ok",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "ok"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "error"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": true,
+            "value": {
+              "type": "StringLit",
+              "value": "boom",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "boom"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": []
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "hasCount",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 0,
+              "raw": "0"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

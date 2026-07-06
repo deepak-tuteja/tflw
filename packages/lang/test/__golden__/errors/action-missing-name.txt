@@ -1,0 +1,21 @@
+error[TF010]: expected an action name after `action`, found `(`
+ --> action-missing-name.tflw:1:8
+  |
+1 | action (x)
+  |        ^
+
+error[TF016]: expected a `test`, `action`, `import`, `use`, `before`, or `after`, found indentation
+ --> action-missing-name.tflw:2:3
+  |
+2 |   give x
+  |   ^
+  |
+  = help: only `test`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level
+
+error[TF016]: expected a `test`, `action`, `import`, `use`, `before`, or `after`, found a dedent
+ --> action-missing-name.tflw:3:1
+  |
+3 | 
+  | ^
+  |
+  = help: only `test`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level

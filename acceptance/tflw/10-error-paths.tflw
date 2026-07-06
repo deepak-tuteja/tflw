@@ -1,0 +1,8 @@
+test "validation and not-found errors" as admin
+  api POST /products body {}
+  expect status equals 400
+  expect body.error contains "required"
+
+  api GET /products/does-not-exist
+  expect status equals 404
+  expect body.error equals "Product not found"

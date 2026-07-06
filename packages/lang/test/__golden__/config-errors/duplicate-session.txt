@@ -1,0 +1,7 @@
+error[TF029]: duplicate session `admin`
+ --> tflw.config:7:1
+  |
+7 | session admin
+  | ^^^^^^^^^^^^^
+  |
+  = help: session names must be unique

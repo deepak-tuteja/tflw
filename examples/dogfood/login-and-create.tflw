@@ -1,0 +1,21 @@
+# End-to-end API flow against the sample api: log in as admin (credentials from env, redacted),
+# capture the JWT, then create a product with a Bearer header and assert on the response body.
+
+test "admin logs in and creates a product"
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  expect status equals 200
+  expect body.message equals "Login successful"
+  capture body.token as token
+
+  api POST /products body { name: "Widget", price: 9.99, category: "tools" }
+    header "Authorization" is "Bearer {token}"
+  expect status equals 201
+  expect body.name equals "Widget"
+  expect body.category equals "tools"
+  expect body.inStock equals true
+
+test "health check is fast"
+  api GET /health
+  expect status equals 200
+  expect body.status equals "OK"
+  expect duration is less than 2000

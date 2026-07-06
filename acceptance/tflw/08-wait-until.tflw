@@ -1,0 +1,8 @@
+test "update reflects on read" as admin
+  api POST /products body { name: unique("Poll Widget"), price: 1, category: "tools" }
+  expect status equals 201
+  capture body.id as id
+  api PUT /products/{id} body { name: "Polled Widget", price: 2, category: "tools" }
+  expect status equals 200
+  wait until api GET /products/{id}
+    expect body.price equals 2

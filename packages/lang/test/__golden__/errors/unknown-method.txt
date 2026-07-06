@@ -1,0 +1,7 @@
+error[TF012]: expected an HTTP method (GET, POST, PUT, DELETE, PATCH), found `FETCH`
+ --> unknown-method.tflw:2:7
+  |
+2 |   api FETCH /health
+  |       ^^^^^
+  |
+  = help: did you mean `PATCH`?

@@ -1,0 +1,8 @@
+test "logs in and creates a product"
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  expect status equals 200
+  capture body.token as token
+  api POST /products body { name: unique("Widget"), price: 9.99, category: "tools" }
+    header "Authorization" is "Bearer {token}"
+  expect status equals 201
+  expect body.category equals "tools"

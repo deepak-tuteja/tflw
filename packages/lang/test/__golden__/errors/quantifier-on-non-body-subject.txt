@@ -1,0 +1,7 @@
+error[TF010]: `any` only applies to a `body.<path>` subject
+ --> quantifier-on-non-body-subject.tflw:3:14
+  |
+3 |   expect any status equals 200
+  |              ^^^^^^
+  |
+  = help: drop the quantifier, or use a body path (SPEC §6.3)

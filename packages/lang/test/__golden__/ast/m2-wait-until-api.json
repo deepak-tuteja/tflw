@@ -1,0 +1,152 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "polls until the order ships",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "polls until the order ships"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "qty",
+                  "value": {
+                    "type": "NumberLit",
+                    "value": 1,
+                    "raw": "1"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "id"
+              }
+            ]
+          },
+          "name": "orderId"
+        },
+        {
+          "type": "WaitUntilApiStmt",
+          "request": {
+            "service": null,
+            "method": "GET",
+            "path": {
+              "type": "PathExpr",
+              "raw": "/orders/{orderId}"
+            },
+            "body": null,
+            "headers": [],
+            "timeoutMs": null,
+            "followRedirects": true
+          },
+          "expects": [
+            {
+              "type": "ExpectStmt",
+              "soft": false,
+              "quantifier": null,
+              "subject": {
+                "type": "BodySubject",
+                "path": [
+                  {
+                    "kind": "prop",
+                    "name": "status"
+                  }
+                ]
+              },
+              "matcher": {
+                "type": "Matcher",
+                "name": "equals",
+                "negated": false,
+                "value": {
+                  "type": "StringLit",
+                  "value": "shipped",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "shipped"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "ExpectStmt",
+              "soft": false,
+              "quantifier": null,
+              "subject": {
+                "type": "StatusSubject"
+              },
+              "matcher": {
+                "type": "Matcher",
+                "name": "equals",
+                "negated": false,
+                "value": {
+                  "type": "NumberLit",
+                  "value": 200,
+                  "raw": "200"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

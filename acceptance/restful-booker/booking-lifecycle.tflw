@@ -1,0 +1,34 @@
+# Capture-chaining + session auth against a real external API (P#7, P#20/31/42). The create body
+# is deliberately hand-formatted across several lines — this used to fail to parse (found
+# dogfooding this exact suite); the lexer now tracks bracket depth so a multi-line object literal
+# just works (SPEC §5.2).
+
+test "creates, reads, updates, and deletes a booking" as admin
+  api POST /booking body {
+    firstname: unique("Jim"),
+    lastname: "Brown",
+    totalprice: 111,
+    depositpaid: true,
+    bookingdates: {
+      checkin: "2026-01-01",
+      checkout: "2026-01-05"
+    },
+    additionalneeds: "Breakfast"
+  }
+  expect status equals 200
+  capture body.bookingid as id
+  expect body.booking.lastname equals "Brown"
+
+  api GET /booking/{id}
+  expect status equals 200
+  expect body.totalprice equals 111
+
+  api PUT /booking/{id} body { firstname: "James", lastname: "Brown", totalprice: 222, depositpaid: false, bookingdates: { checkin: "2026-01-01", checkout: "2026-01-05" } }
+  expect status equals 200
+  expect body.totalprice equals 222
+
+  api DELETE /booking/{id}
+  expect status equals 201
+
+  api GET /booking/{id}
+  expect status equals 404

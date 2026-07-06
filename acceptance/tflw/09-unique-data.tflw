@@ -1,0 +1,5 @@
+test "creates two distinctly-named products" as admin
+  api POST /products body { name: unique("Batch Widget"), price: 1, category: "tools" }
+  expect status equals 201
+  api POST /products body { name: unique("Batch Widget"), price: 1, category: "tools" }
+  expect status equals 201

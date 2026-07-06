@@ -1,0 +1,7 @@
+error[TF016]: expected a `test`, `action`, `import`, `use`, `before`, or `after`, found `expect`
+ --> top-level-junk.tflw:1:1
+  |
+1 | expect status equals 200
+  | ^^^^^^
+  |
+  = help: only `test`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level

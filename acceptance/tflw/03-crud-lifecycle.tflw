@@ -1,0 +1,18 @@
+test "product CRUD lifecycle" as admin
+  api POST /products body { name: unique("Crud Widget"), price: 5, category: "tools" }
+  expect status equals 201
+  capture body.id as id
+
+  api GET /products/{id}
+  expect status equals 200
+  expect body.price equals 5
+
+  api PUT /products/{id} body { name: "Updated Widget", price: 7.5, category: "tools" }
+  expect status equals 200
+  expect body.price equals 7.5
+
+  api DELETE /products/{id}
+  expect status equals 200
+
+  api GET /products/{id}
+  expect status equals 404

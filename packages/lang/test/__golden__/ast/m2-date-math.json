@@ -1,0 +1,155 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "date math and formatting",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "date math and formatting"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "LetStmt",
+          "name": "today2",
+          "value": {
+            "type": "DateAtom",
+            "which": "today"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "now2",
+          "value": {
+            "type": "DateAtom",
+            "which": "now"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "shipDate",
+          "value": {
+            "type": "FormatExpr",
+            "value": {
+              "type": "BinaryExpr",
+              "op": "+",
+              "left": {
+                "type": "DateAtom",
+                "which": "today"
+              },
+              "right": {
+                "type": "DateOffsetLit",
+                "amount": 3,
+                "unit": "days"
+              }
+            },
+            "pattern": {
+              "type": "StringLit",
+              "value": "yyyy-MM-dd",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "yyyy-MM-dd"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "deadline",
+          "value": {
+            "type": "FormatExpr",
+            "value": {
+              "type": "BinaryExpr",
+              "op": "-",
+              "left": {
+                "type": "DateAtom",
+                "which": "now"
+              },
+              "right": {
+                "type": "DateOffsetLit",
+                "amount": 2,
+                "unit": "hours"
+              }
+            },
+            "pattern": {
+              "type": "StringLit",
+              "value": "yyyy-MM-dd HH:mm",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "yyyy-MM-dd HH:mm"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "shipDate",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "shipDate"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+error[TF011]: unknown step `expct`
+ --> misspelled-step.tflw:2:3
+  |
+2 |   expct status equals 200
+  |   ^^^^^ not a known step keyword
+  |
+  = help: did you mean `expect`?

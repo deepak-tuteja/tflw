@@ -1,0 +1,135 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "nested object literal with a quoted string key",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "nested object literal with a quoted string key"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/widgets"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "user",
+                  "value": {
+                    "type": "ObjectLit",
+                    "fields": [
+                      {
+                        "type": "Field",
+                        "key": "name",
+                        "value": {
+                          "type": "StringLit",
+                          "value": "Widget",
+                          "parts": [
+                            {
+                              "kind": "text",
+                              "value": "Widget"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "type": "Field",
+                        "key": "qty",
+                        "value": {
+                          "type": "NumberLit",
+                          "value": 3,
+                          "raw": "3"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "tags",
+                  "value": {
+                    "type": "ArrayLit",
+                    "elements": [
+                      {
+                        "type": "ObjectLit",
+                        "fields": [
+                          {
+                            "type": "Field",
+                            "key": "id",
+                            "value": {
+                              "type": "NumberLit",
+                              "value": 1,
+                              "raw": "1"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "type": "ObjectLit",
+                        "fields": [
+                          {
+                            "type": "Field",
+                            "key": "id",
+                            "value": {
+                              "type": "NumberLit",
+                              "value": 2,
+                              "raw": "2"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

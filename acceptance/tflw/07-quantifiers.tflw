@@ -1,0 +1,5 @@
+test "lists products" as admin
+  api GET /products
+  expect status equals 200
+  expect any body.products.category equals "tools"
+  expect all body.products.price is greater than 0

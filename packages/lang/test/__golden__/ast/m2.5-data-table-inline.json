@@ -1,0 +1,141 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "invite {role}",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "invite "
+          },
+          {
+            "kind": "interp",
+            "ref": [
+              {
+                "kind": "prop",
+                "name": "role"
+              }
+            ]
+          }
+        ]
+      },
+      "tags": [
+        "smoke"
+      ],
+      "session": null,
+      "retry": 0,
+      "table": {
+        "type": "InlineDataTable",
+        "columns": [
+          "role",
+          "email"
+        ],
+        "rows": [
+          [
+            {
+              "type": "StringLit",
+              "value": "admin",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "admin"
+                }
+              ]
+            },
+            {
+              "type": "UniqueEmailExpr"
+            }
+          ],
+          [
+            {
+              "type": "StringLit",
+              "value": "guest",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "guest"
+                }
+              ]
+            },
+            {
+              "type": "UniqueEmailExpr"
+            }
+          ]
+        ]
+      },
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/invites"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "role",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "role"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "email",
+                  "value": {
+                    "type": "Interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "email"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 201,
+              "raw": "201"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+error[TF021]: `test` is not allowed in tflw.config
+ --> tflw.config:4:1
+  |
+4 | test "not allowed here"
+  | ^^^^
+  |
+  = help: the config dialect is declaration-only; put tests in `.tflw` files

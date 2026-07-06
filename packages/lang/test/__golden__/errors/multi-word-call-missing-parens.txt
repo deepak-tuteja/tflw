@@ -1,0 +1,7 @@
+error[TF010]: `create` looks like the start of a call but never reaches `(`
+ --> multi-word-call-missing-parens.tflw:2:13
+  |
+2 |   let bad = create order
+  |             ^^^^^^
+  |
+  = help: multi-word calls need parens, e.g. `create order(...)`
