@@ -814,3 +814,30 @@ test('--verbose --workers 2 buffers each file\'s step lines into one contiguous 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Track 3b (grill-me, 2026-07-07): `tflw docs [topic]`, a static SPEC.md-derived cheatsheet
+// bundled into dist/cli.js — no network, no cwd/tflw.config needed, so no fixture dir required.
+test('`tflw docs` with no topic lists every topic, one per line', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, 'docs']);
+  assert.match(stdout, /Topics:/);
+  assert.match(stdout, /^ {2}quantifiers$/m);
+  assert.match(stdout, /^ {2}subset$/m);
+  assert.match(stdout, /^ {2}config$/m);
+});
+
+test('`tflw docs quantifiers` prints non-empty, recognizable SPEC.md content', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, 'docs', 'quantifiers']);
+  assert.match(stdout, /Array quantifiers/);
+  assert.match(stdout, /expect any /);
+  assert.match(stdout, /expect all /);
+});
+
+test('`tflw docs` on an unknown topic is a usage error (exit 2) with a did-you-mean hint for a near miss', async () => {
+  await assert.rejects(
+    execFileAsync('node', [cliEntry, 'docs', 'quantifier']),
+    (e: unknown) => {
+      const { code, stderr } = e as { code?: number; stderr?: string };
+      return code === 2 && /unknown docs topic `quantifier`/.test(stderr ?? '') && /Did you mean `quantifiers`\?/.test(stderr ?? '');
+    },
+  );
+});

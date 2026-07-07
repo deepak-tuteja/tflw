@@ -24,9 +24,13 @@
   "scripts": {
     "build": "npm run bundle",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretypecheck": "npm run docs:gen",
     "test": "node --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "pretest": "npm run docs:gen",
     "dev": "node --import tsx src/cli.ts",
-    "bundle": "node scripts/bundle.mjs",
+    "predev": "npm run docs:gen",
+    "docs:gen": "node scripts/gen-docs.mjs",
+    "bundle": "npm run docs:gen && node scripts/bundle.mjs",
     "prepack": "npm run build --prefix ../.. -w @tflw/lang -w @tflw/runtime -w @tflw/reporter && npm run build"
   },
   "devDependencies": {

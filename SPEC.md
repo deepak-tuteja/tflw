@@ -697,6 +697,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | `tflw run [files] [--env E] [--tag T] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave |
 | `tflw check [files] [--env E] [--no-color]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output only; `--format json` waits for a real consumer (LSP, M5) |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
+| `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
 
 **🔮 Planned:**
 

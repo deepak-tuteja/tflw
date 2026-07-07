@@ -6,6 +6,10 @@ report/
 packages/cli/LICENSE
 packages/vscode/LICENSE
 
+# Regenerated from SPEC.md by packages/cli/scripts/gen-docs.mjs (pretest/predev/bundle) — never
+# hand-edited, so it isn't a source of truth worth committing.
+packages/cli/src/docs-data.generated.ts
+
 # Internal dev-tracking docs (decision log + build tracker) — not part of the public project
 PLAN.md
 PROGRESS.md
