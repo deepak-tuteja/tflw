@@ -171,6 +171,102 @@ test('`equals` on an object is key-order-insensitive, but still checks key membe
   await server.close();
 });
 
+test('`matches subset {...}` passes when every expected key/value is present, ignoring extra keys', async () => {
+  const server = await startFixtureServer({
+    '/orders/missing': (_req, res) => json(res, 404, { type: 'about:blank', title: 'Not Found', status: 404, instance: '/orders/missing' }),
+  });
+
+  const source = `test "structural shape check"
+  api GET /orders/missing
+  expect status equals 404
+  expect body matches subset { type: "about:blank", title: "Not Found", status: 404 }
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});
+
+test('`matches subset {...}` fails on a missing key or a mismatched value, with a clear message', async () => {
+  const server = await startFixtureServer({
+    '/orders/missing': (_req, res) => json(res, 404, { type: 'about:blank', title: 'Not Found', status: 404 }),
+  });
+
+  const missingKey = `test "missing key"
+  api GET /orders/missing
+  expect body matches subset { detail: "no such order" }
+`;
+  const { program: p1 } = parseSource(missingKey);
+  const { report: r1 } = await runProgram(p1, testConfig(server.baseUrl), { source: missingKey });
+  assert.equal(r1.ok, false);
+  assert.match(r1.tests[0]!.error ?? '', /to match subset/);
+
+  const wrongValue = `test "wrong value"
+  api GET /orders/missing
+  expect body matches subset { title: "Something Else" }
+`;
+  const { program: p2 } = parseSource(wrongValue);
+  const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: wrongValue });
+  assert.equal(r2.ok, false);
+
+  await server.close();
+});
+
+test('`matches subset {...}` recurses into nested object values but requires exact array equality', async () => {
+  const server = await startFixtureServer({
+    '/orders/1': (_req, res) =>
+      json(res, 200, { id: 1, customer: { name: 'Ada', vip: true, notes: 'irrelevant' }, tags: ['red', 'blue'] }),
+  });
+
+  const nestedPass = `test "nested subset passes"
+  api GET /orders/1
+  expect body matches subset { customer: { name: "Ada", vip: true } }
+`;
+  const { program: p1 } = parseSource(nestedPass);
+  const { report: r1 } = await runProgram(p1, testConfig(server.baseUrl), { source: nestedPass });
+  assert.equal(r1.ok, true, JSON.stringify(r1.tests[0], null, 2));
+
+  const arrayMustBeExact = `test "partial array does not satisfy subset"
+  api GET /orders/1
+  expect body matches subset { tags: ["red"] }
+`;
+  const { program: p2 } = parseSource(arrayMustBeExact);
+  const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: arrayMustBeExact });
+  assert.equal(r2.ok, false, 'a partial array should not satisfy subset — arrays need full equality');
+
+  await server.close();
+});
+
+test('`matches subset {...}` on a non-object subject is a clear runtime error, not a silent pass', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, { message: 'ok' }) });
+
+  const source = `test "subset against a string subject"
+  api GET /orders
+  expect body.message matches subset { x: 1 }
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /`matches subset` expects an object subject, got a string/);
+
+  await server.close();
+});
+
+test('`not matches subset {...}` negates cleanly', async () => {
+  const server = await startFixtureServer({ '/orders/1': (_req, res) => json(res, 200, { status: 'open' }) });
+
+  const source = `test "not subset"
+  api GET /orders/1
+  expect body not matches subset { status: "closed" }
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});
+
 test('`not` negates any matcher', async () => {
   const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, { status: 'open' }) });
 

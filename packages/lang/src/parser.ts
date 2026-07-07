@@ -1071,6 +1071,11 @@ class Parser {
       }
       case 'matches': {
         this.advance();
+        if (this.isKw(this.peek(), 'subset')) {
+          this.advance();
+          const object = this.parseObject();
+          return object ? mk('matchesSubset', object) : null;
+        }
         const v = this.expectString('a regex string, e.g. `matches "json"`');
         return v ? mk('matches', v) : null;
       }

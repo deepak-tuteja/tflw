@@ -62,7 +62,7 @@
       "name": "support.type.tflw"
     },
     "keywords-matcher": {
-      "match": "\\b(equals|contains|matches|has|is|not|count|value|greater|less|than|visible|hidden|enabled|disabled|checked|any|all)\\b",
+      "match": "\\b(equals|contains|matches|subset|has|is|not|count|value|greater|less|than|visible|hidden|enabled|disabled|checked|any|all)\\b",
       "name": "keyword.operator.word.tflw"
     },
     "keywords-generator": {

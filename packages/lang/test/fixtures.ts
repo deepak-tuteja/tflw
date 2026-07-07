@@ -41,6 +41,15 @@ test "create an order" as admin
 `,
   },
   {
+    name: 'subset-matcher',
+    source: `test "structural error-shape check"
+  api GET /orders/does-not-exist
+  expect status equals 404
+  expect body matches subset { type: "about:blank", title: "Not Found", status: 404 }
+  expect body not matches subset { title: "Something Else" }
+`,
+  },
+  {
     name: 'let-and-interpolation',
     source: `test "uses variables"
   let name = "Widget"

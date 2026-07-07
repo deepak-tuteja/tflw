@@ -1,0 +1,148 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "structural error-shape check",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "structural error-shape check"
+          }
+        ]
+      },
+      "tags": [],
+      "session": null,
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/does-not-exist"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 404,
+              "raw": "404"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": []
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "matchesSubset",
+            "negated": false,
+            "value": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "type",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "about:blank",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "about:blank"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "title",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "Not Found",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "Not Found"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "status",
+                  "value": {
+                    "type": "NumberLit",
+                    "value": 404,
+                    "raw": "404"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodySubject",
+            "path": []
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "matchesSubset",
+            "negated": true,
+            "value": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "title",
+                  "value": {
+                    "type": "StringLit",
+                    "value": "Something Else",
+                    "parts": [
+                      {
+                        "kind": "text",
+                        "value": "Something Else"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

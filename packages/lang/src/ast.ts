@@ -234,6 +234,7 @@ export type MatcherName =
   | 'equals'
   | 'contains'
   | 'matches'
+  | 'matchesSubset'
   | 'greaterThan'
   | 'lessThan'
   | 'hasCount'

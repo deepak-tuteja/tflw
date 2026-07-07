@@ -45,6 +45,10 @@ function rawMatch(actual: unknown, matcher: Matcher, ctx: EvalCtx): RawMatch {
       }
       return { ok, phrase: 'to match', expected: repr(expected) };
     }
+    case 'matchesSubset': {
+      const expected = evalValue(matcher.value!, ctx);
+      return { ok: subsetMatch(actual, expected), phrase: 'to match subset', expected: repr(expected) };
+    }
     case 'greaterThan': {
       const expected = num(evalValue(matcher.value!, ctx), 'is greater than');
       return { ok: num(actual, 'is greater than') > expected, phrase: 'to be greater than', expected: String(expected) };
@@ -81,6 +85,27 @@ function deepEqual(a: unknown, b: unknown): boolean {
     return aKeys.every((k) => Object.prototype.hasOwnProperty.call(bRec, k) && deepEqual(aRec[k], bRec[k]));
   }
   return false;
+}
+
+/** `matches subset {...}` (P#14): every key in `expected` must be present in `actual` with an
+ * equal value; extra keys on `actual` are ignored. Recurses into nested object *values* so a
+ * subset literal can itself be partial at any depth; array values still need a full `deepEqual`
+ * (arrays are sequences, not sets — same order-sensitivity `equals` already has, P#13's closed
+ * feature set deliberately doesn't add a separate "array subset" mode). */
+function subsetMatch(actual: unknown, expected: unknown): boolean {
+  if (!isPlainObject(expected)) throw new RuntimeError(`\`matches subset\` expects an object literal operand, got ${describe(expected)}`);
+  if (!isPlainObject(actual)) throw new RuntimeError(`\`matches subset\` expects an object subject, got ${describe(actual)}`);
+  return Object.keys(expected).every((key) => {
+    if (!Object.prototype.hasOwnProperty.call(actual, key)) return false;
+    const actualVal = actual[key];
+    const expectedVal = expected[key];
+    if (isPlainObject(expectedVal)) return isPlainObject(actualVal) && subsetMatch(actualVal, expectedVal);
+    return deepEqual(actualVal, expectedVal);
+  });
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function contains(actual: unknown, expected: unknown): boolean {

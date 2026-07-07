@@ -453,6 +453,7 @@ below is ✅ shipped.
 | `equals` | any value | `expect status equals 201` |
 | `contains` | strings, arrays | `expect body.msg contains "created"` |
 | `matches "<regex>"` | strings | `expect header "content-type" matches "json"` |
+| `matches subset {...}` | objects | `expect body matches subset { type: "about:blank", status: 422 }` |
 | `is greater than` / `is less than` | numbers, `duration` | `expect body.total is less than 100` |
 | `has count N` | arrays, UI lists | `expect body.items has count 3` |
 | `has value` | UI fields | `expect field "Email" has value "a@b.c"` |
@@ -467,8 +468,27 @@ expect any body.items.name equals "Widget"
 expect all body.items.status equals "active"
 ```
 
-No partial-object literal matching — multi-field checks are multiple lines (better per-line
-failure reporting).
+### 6.3.1 Partial-object matching — `matches subset {...}` (P#14)
+
+`equals` is a full deep-equal (every key, both directions); `matches subset {...}` checks the
+other direction only — every key/value in the literal must be present on the actual object, extra
+keys on the actual object are ignored:
+
+```
+expect body matches subset { type: "about:blank", title: "Unprocessable Entity", status: 422 }
+```
+
+- Recurses into nested **object** values (a nested field can itself be a partial literal); a
+  nested **array** value still needs full equality — arrays are sequences, not sets, same
+  order-sensitivity `equals` already has (P#13's closed feature set deliberately has no separate
+  "array subset" mode).
+- Composes with `any`/`all` (§6.3) like any other matcher — `expect any body.items matches subset
+  {...}` runs the subset check once per element.
+- `not matches subset {...}` negates the whole result (`not` still wraps any matcher, §6.2).
+- The operand is an ordinary object literal (§7's `{...}` grammar — same one `body {...}` uses),
+  so field values can be `{ref}` interpolations, generators, etc., not just literals.
+- No new subject or grammar production beyond that literal — the matcher is the only new surface,
+  keeping `expect`'s single form (§6.1) intact.
 
 ### 6.4 Hard vs soft (P#16)
 
@@ -745,7 +765,7 @@ mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.
 ## 16. Out of v1 (parking lot) 🔮
 
 Mobile/unit/perf testing, DB assertions, OpenAPI/contract (P#3); LSP, recorder, dashboards
-(P#6, v2 list); partial-object JSON matching (P#14); faker realism (P#22); `dataset` construct
+(P#6, v2 list); faker realism (P#22); `dataset` construct
 (P#24); binary/GraphQL/XML bodies (P#32); response downloads (P#33 — cookie subjects, P#33's other
 half, shipped: §3.3's automatic cookie jar); `dependsOn` stays rejected (P#10); standalone binary,
 Docker image, official GitHub Action,

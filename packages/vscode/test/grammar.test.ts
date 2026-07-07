@@ -81,6 +81,7 @@ test('tokenizes a representative .tflw snippet with the expected scopes', () => 
     '  expect status equals 200',
     '  capture body.token as token',
     '  header "Authorization" is "Bearer {token}"',
+    '  expect body matches subset { title: "Not Found" }',
   ]);
 
   assert.ok(lines[0]!.some((t) => hasScope(t, 'comment.line.number-sign.tflw')), 'a `#` line should be a comment');
@@ -96,6 +97,7 @@ test('tokenizes a representative .tflw snippet with the expected scopes', () => 
   assert.ok(hasScope(findToken(lines, 'capture'), 'keyword.control.tflw'));
   assert.ok(hasScope(findToken(lines, 'is'), 'keyword.operator.word.tflw'), '`is` is a matcher keyword');
   assert.ok(lines[6]!.some((t) => t.text === '{token}' && hasScope(t, 'variable.interpolation.tflw')), 'a `{ref}` interpolation inside a string should be highlighted distinctly');
+  assert.ok(hasScope(findToken(lines, 'subset'), 'keyword.operator.word.tflw'), '`subset` is a matcher keyword (matches subset {...})');
 });
 
 test('tokenizes tflw.config keywords (env/defaults/require/session) and env(NAME) calls', () => {

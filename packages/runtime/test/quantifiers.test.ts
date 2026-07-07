@@ -72,6 +72,23 @@ test('`any` fails with a clear message when no element matches', async () => {
   await server.close();
 });
 
+test('`any`/`all` compose with `matches subset {...}` — the matcher just runs once per element like any other', async () => {
+  const server = await startFixtureServer({
+    '/orders': (_req, res) => json(res, 200, { items: [{ name: 'Widget', status: 'active', price: 10 }, { name: 'Gadget', status: 'active', extra: true }] }),
+  });
+
+  const source = `test "quantified subset"
+  api GET /orders
+  expect all body.items matches subset { status: "active" }
+  expect any body.items matches subset { name: "Widget", price: 10 }
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});
+
 test('`any` treats an element missing the remaining path as a non-match instead of crashing the assertion (P#46)', async () => {
   const server = await startFixtureServer({
     '/orders': (_req, res) => json(res, 200, { items: [{ tags: null }, { tags: { name: 'Widget' } }] }),
