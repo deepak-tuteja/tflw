@@ -30,6 +30,7 @@ import { evalMatcher, repr, type MatchOutcome } from './matcher.js';
 import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
+import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
@@ -281,6 +282,11 @@ interface TestCtx {
 interface SessionOutcome {
   /** Headers this session's `header` steps captured, already evaluated + stringified. */
   readonly headers: Readonly<Record<string, string>>;
+  /** Cookies accumulated from every response this session's own steps saw (SPEC §3.3, P#33) — a
+   * *clone* is handed to each test opting in via `as <session>`, never this live instance
+   * (`runTestAttempt` clones it), so a test's own subsequent cookie updates can never leak back
+   * into this shared, run-lifetime-cached jar. */
+  readonly cookieJar: CookieJar;
   readonly ok: boolean;
   readonly error?: string;
   readonly steps: readonly StepResult[];
@@ -344,10 +350,11 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
   const headerSink: Record<string, string> = {};
   const scope = new Map<string, unknown>();
   const sessionRng = mulberry32(subSeed(tc.runSeed, hashString(decl.name)));
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionRng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, headerSink };
+  const cookieJar = new CookieJar();
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionRng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, headerSink, cookieJar };
   const emptyRegistry: CallRegistry = { actions: new Map(), helpers: new Map() };
   const exec = await execSteps(decl.body, config, ctx, tc, `session ${decl.name}`, emptyRegistry);
-  return { headers: headerSink, ok: exec.ok, ...(exec.error ? { error: exec.error } : {}), steps: exec.steps };
+  return { headers: headerSink, cookieJar, ok: exec.ok, ...(exec.error ? { error: exec.error } : {}), steps: exec.steps };
 }
 
 /** Run `before file`/`after file` hooks (own scope, isolated from any test), in declaration
@@ -364,7 +371,7 @@ async function runFileHooks(
 ): Promise<boolean> {
   if (hooks.length === 0) return true;
   const scope = new Map<string, unknown>();
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {} };
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, cookieJar: new CookieJar() };
   const start = performance.now();
   emit({ type: 'test:start', name: label });
   for (const hook of hooks) {
@@ -434,7 +441,7 @@ async function runTestAttempt(
   isSessionOwner: boolean | undefined,
 ): Promise<TestResult> {
   const scope = new Map<string, unknown>();
-  const nameCtx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {} };
+  const nameCtx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, cookieJar: new CookieJar() };
   const testStart = performance.now();
   const steps: StepResult[] = [];
 
@@ -451,6 +458,7 @@ async function runTestAttempt(
   if (isFirstAttempt) tc.emit({ type: 'test:start', name });
 
   let sessionHeaders: Readonly<Record<string, string>> = {};
+  let cookieJar = new CookieJar();
   if (test.session !== null) {
     const decl = config.sessions.get(test.session);
     if (!decl) {
@@ -464,8 +472,11 @@ async function runTestAttempt(
       return { name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
     }
     sessionHeaders = outcome.headers;
+    // Clone, not the live shared instance (SPEC §3.3) — this test's own subsequent cookie updates
+    // must never leak back into the session cache or a concurrently-running sibling test.
+    cookieJar = outcome.cookieJar.clone();
   }
-  const evalCtx: EvalCtx = { ...nameCtx, sessionHeaders };
+  const evalCtx: EvalCtx = { ...nameCtx, sessionHeaders, cookieJar };
 
   for (const hook of beforeEach) {
     const exec = await execSteps(hook.body, config, evalCtx, tc, name, registry);
@@ -636,6 +647,10 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       runClock: callerCtx.runClock,
       uniqueSeq: callerCtx.uniqueSeq,
       sessionHeaders: callerCtx.sessionHeaders,
+      // Shares the caller's live jar (by reference, not cloned) — an action's own api steps read
+      // and update the same cookies its caller sees on the next step, the same way it shares the
+      // caller's `rng`/`redactor`/etc.
+      cookieJar: callerCtx.cookieJar,
     };
     const exec = await execSteps(action.body, config, actionCtx, tc, `${call.name}(...)`, registry);
     // A hard failure inside the action (a failing `expect`, or a thrown error) still aborts the
@@ -679,6 +694,10 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
     if (h.service === null || h.service === spec.service) setHeader(headers, h.name, stringify(evalValue(h.value, ctx)));
   }
   for (const [k, v] of Object.entries(ctx.sessionHeaders)) setHeader(headers, k, v);
+  // Cookie jar (SPEC §3.3, P#33): applied before any per-step header, so an explicit `header
+  // "Cookie" is …` on this step still wins (setHeader replaces, it never sits alongside).
+  const jarCookie = ctx.cookieJar.serialize();
+  if (jarCookie) setHeader(headers, 'Cookie', jarCookie);
   for (const h of spec.headers) setHeader(headers, h.name.value, stringify(evalValue(h.value, ctx)));
 
   let sendBody: BodyInit | undefined;
@@ -693,6 +712,10 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   const request: RequestTrace = { method: spec.method, url, headers, ...(traceBody !== undefined ? { body: traceBody } : {}) };
   const timeoutMs = spec.timeoutMs ?? config.timeouts.step;
   const response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects });
+  // Every `Set-Cookie` this response carried is folded into the jar here, unconditionally — the
+  // next request in this same scope (session block, or this test's own subsequent steps) sees it
+  // automatically, with no `capture`/`header` replay needed (SPEC §3.3, P#33).
+  ctx.cookieJar.applySetCookie(response.headers['set-cookie']);
 
   return {
     trace: { request, response },

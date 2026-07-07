@@ -5,6 +5,7 @@
 import { parseStringParts, type BinaryOp, type DateOffsetUnit, type PathSegment, type StringPart, type Value } from '@tflw/lang';
 import type { Redactor } from './redact.js';
 import { subSeed, mulberry32 } from './seed.js';
+import type { CookieJar } from './cookieJar.js';
 
 export class RuntimeError extends Error {
   constructor(message: string) {
@@ -36,6 +37,13 @@ export interface EvalCtx {
   /** Present only while executing a `session` block's own steps: a `HeaderStmt` writes into this
    * instead of the (nonexistent) response/report subject it would otherwise need (P#42). */
   readonly headerSink?: Record<string, string>;
+  /** Cookies accumulated from every response seen so far in this scope (a `session` block's own
+   * run, or one test's own attempt — including any `before`/`after` hooks and action calls sharing
+   * that same attempt) — automatically attached to subsequent requests as a `Cookie` header,
+   * automatically updated from every response's `Set-Cookie` (SPEC §3.3, P#33). A test opting into
+   * `as <session>` starts with a *clone* of that session's own jar (§3.3) so its mutations never
+   * leak back into the shared session cache or a concurrently-running sibling test. */
+  readonly cookieJar: CookieJar;
 }
 
 export function evalValue(value: Value, ctx: EvalCtx): unknown {

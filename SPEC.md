@@ -157,6 +157,37 @@ session admin
   call \`create widget(...)\` — no action (\`import\`) or JS helper (\`use\`) defines it`, even if
   the same call works fine in a test in the same file. Keep session bodies to plain `api` steps.
 
+**Cookie jar (P#33)**: every scope that runs `api`/`wait until api` steps — a `session` block's own
+run, and each test's own attempt (including its `before`/`after` hooks and any action calls) — has
+its own cookie jar, entirely automatic, no new syntax:
+
+```
+session shopper
+  api POST /auth/login body { email: env(USER_EMAIL), password: env(USER_PW) }
+  expect status equals 200
+  # any Set-Cookie this response carried is now tracked — no capture/header needed
+```
+
+- Every `Set-Cookie` a response carries is folded into the jar (by name, last-value-wins);
+  `Max-Age`/`Expires` are honored (`Max-Age` wins when a line has both, RFC 6265 §5.3), and
+  `Max-Age <= 0` deletes the cookie immediately, same as a real logout.
+- The jar auto-attaches a bare `name=value; name2=value2` `Cookie` header to every subsequent
+  request in the same scope — no `capture`/`header` replay needed, and no risk of the newline-
+  joined multi-`Set-Cookie` capture (§5.4) landing in a `Cookie` header value, which real HTTP
+  clients reject outright.
+- A test opting into `as <session>` starts with a **clone** of that session's own jar, not the live
+  instance — the test's own subsequent cookie updates never leak back into the session cache
+  (shared for the run's lifetime) or into a concurrently-running sibling test under `--workers
+  N>1`. An action call shares its caller's live jar (same as `rng`/`redactor`).
+- An explicit per-step `header "Cookie" is …` still overrides the jar entirely (the escape hatch
+  is never removed) — precedence is config headers → session headers → jar → per-step headers,
+  each later source replacing rather than appending.
+- Deliberately narrower than a real browser's jar: no `Domain`/`Path` scoping (a jar already
+  belongs to one session/test talking to one logical app, not arbitrary origins) and no
+  `Secure`/`HttpOnly`/`SameSite` enforcement (those constrain a *browser* deciding whether to
+  attach a cookie to a browser-initiated request; a test client deliberately replays whatever the
+  server just told it to remember) — a closed, smaller feature set on purpose (P#13).
+
 "Which attempt's report shows the session's steps" is resolved **once per test**, not once per
 retry attempt (PLAN decision 68) — so a `retry`-ing test running `as <session>` that fails on
 attempt 1 and passes on attempt 2 still carries the session's steps only in the surviving (last)
@@ -378,7 +409,11 @@ Binds response values to variables usable in later API **and** browser steps.
 
 A response with multiple same-named headers (most commonly several `Set-Cookie`s) preserves every
 value rather than collapsing to whichever the Fetch API iterates last — `capture header
-"set-cookie" as token` sees all of them, newline-joined (PLAN decision 61).
+"set-cookie" as token` sees all of them, newline-joined (PLAN decision 61). This raw capture stays
+useful for *asserting* on `Set-Cookie`'s own attributes (`expect header "set-cookie" matches
+"HttpOnly"`); it is not how cookies get replayed on a later request anymore — the cookie jar
+(§3.3, P#33) does that automatically, and a newline-joined multi-cookie capture reused directly as
+a `Cookie` header is exactly the header-injection failure the jar exists to avoid.
 
 ### 5.5 Retry semantics & `wait until api` (P#15)
 
@@ -711,8 +746,9 @@ mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.
 
 Mobile/unit/perf testing, DB assertions, OpenAPI/contract (P#3); LSP, recorder, dashboards
 (P#6, v2 list); partial-object JSON matching (P#14); faker realism (P#22); `dataset` construct
-(P#24); binary/GraphQL/XML bodies (P#32); cookie subjects, response downloads (P#33);
-`dependsOn` stays rejected (P#10); standalone binary, Docker image, official GitHub Action,
+(P#24); binary/GraphQL/XML bodies (P#32); response downloads (P#33 — cookie subjects, P#33's other
+half, shipped: §3.3's automatic cookie jar); `dependsOn` stays rejected (P#10); standalone binary,
+Docker image, official GitHub Action,
 docs site, separately published `@tflw/lang` (P#36–39); `tflw fmt` canonical formatter (P#83 —
 offside-rule grammar already constrains layout; revisit at M5/M6 with the source-rewriting
 machinery); `tflw check --format json` machine-readable diagnostics (P#75 — waits for a real
