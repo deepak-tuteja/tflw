@@ -721,6 +721,14 @@ step wait for M3/M4.
   browser step; req/res panels per API step; failures as source line + expected/actual +
   before/after artifacts; per-`check` pass/fail rows; generated values inline; run seed in the
   header; taint-redacted secrets throughout.
+- A collapsible sidebar tree groups every test by its source file, with one clickable link per
+  test and one detail panel per test in `<main>` toggled via a shared `active` class — a small
+  inline `<script>` (decision 92) wires up click-to-switch, a text filter, and an All/Failed/Passed
+  status toggle. Still a single self-contained file (no external requests, opens via `file://`
+  the same as before) — just no longer JS-free. A file group with any failing test starts expanded
+  with the first failing test's panel shown; an all-passing run defaults to the first file's first
+  test. `@media print` forces every panel visible and hides the sidebar, so printing/PDF export is
+  unaffected.
 - CI: summary to stdout, `junit.xml` (seed in properties), meaningful exit codes.
 
 `junit.xml`'s escaping strips XML-invalid C0 control characters (keeping tab/LF/CR, which XML 1.0

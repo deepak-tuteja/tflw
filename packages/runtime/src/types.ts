@@ -93,6 +93,12 @@ export interface TestResult {
   readonly ok: boolean;
   readonly durationMs: number;
   readonly steps: readonly StepResult[];
+  /** The `.tflw` file this test came from, relative to the run's cwd — stamped by the CLI once all
+   * of a file's tests are back from `runProgram` (report.html groups by this, per-test tabs,
+   * TFLW-GAPS.md-adjacent UX ask). Optional so every existing fixture/report built directly
+   * against `TestResult` (unit tests across `runtime`/`reporter`) keeps compiling unchanged; a
+   * report with no `file` groups every test under one untitled group. */
+  readonly file?: string;
   /** The fatal error that ended the test early, if any. */
   readonly error?: string;
   /** `true` when this test failed at least once before passing on a `retry` attempt — reported

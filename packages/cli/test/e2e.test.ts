@@ -397,7 +397,7 @@ test('a session\'s generated values and step-splice target are stable under --wo
         const [token] = [...html.matchAll(tokenPattern)].map((m) => m[1]!);
         if (!token) throw new Error(`no generated token found in report:\n${html}`);
 
-        const sections = [...html.matchAll(/<section class="test[^"]*">[\s\S]*?<\/section>/g)].map((m) => m[0]);
+        const sections = [...html.matchAll(/<section class="test[^"]*"[^>]*>[\s\S]*?<\/section>/g)].map((m) => m[0]);
         const ownerSections = sections.filter((s) => /token = &quot;TOK-\d{4}&quot; \(random\)/.test(s));
         assert.equal(ownerSections.length, 1, `expected exactly one test to show the session's own \`let\` step, got ${ownerSections.length}`);
         const nameMatch = /<h2>.*?<\/span>([^<]+?)(?:\s*<span class="flaky">)? <span class="tms">/.exec(ownerSections[0]!);

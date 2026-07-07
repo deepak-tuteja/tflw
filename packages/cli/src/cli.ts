@@ -350,13 +350,18 @@ async function runCommand(argv: string[]): Promise<number> {
         ...(fileEmit ? { emit: fileEmit } : {}),
       });
       buffered?.flush();
-      return report;
+      // Stamp each test with the relative file it came from (report.html's per-file grouping,
+      // decision 92) — done here, once, after the fact, rather than threading a new `RunOptions`
+      // field through the whole interpreter, since `file` is a display concern only.
+      const fileLabel = relative(cwd, file);
+      return { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) };
     } catch (e) {
       buffered?.flush();
       // A runtime throw in this file (e.g. a bad `import`/`use` path) must never sink the whole
       // run silently — other files' reports still get merged and written (P#46: "always write the
       // report for tests that ran").
       const message = e instanceof Error ? e.message : String(e);
+      const fileLabel = relative(cwd, file);
       const crashed: RunReport = {
         ok: false,
         env: resolved.envName,
@@ -365,7 +370,7 @@ async function runCommand(argv: string[]): Promise<number> {
         total: 1,
         passed: 0,
         failed: 1,
-        tests: [{ name: `${relative(cwd, file)} (crashed)`, ok: false, durationMs: 0, steps: [], error: redactor.redact(message) }],
+        tests: [{ name: `${fileLabel} (crashed)`, ok: false, durationMs: 0, steps: [], error: redactor.redact(message), file: fileLabel }],
         seed,
         now,
         insecure: resolved.insecure,

@@ -31,9 +31,9 @@ test('renderReportHtml renders a non-retried test identically whether or not the
   // bare substring, so this test isn't fooled by the ever-present stylesheet.
   assert.doesNotMatch(html, /<details class="attempt"/);
   assert.doesNotMatch(html, /<span class="attempt-badge/);
-  const mainSection = html.match(/<section class="test ok">[\s\S]*?<\/section>/)?.[0];
+  const mainSection = html.match(/<section class="test ok"[\s\S]*?<\/section>/)?.[0];
   const expected = [
-    '<section class="test ok">',
+    '<section class="test ok" id="t0" data-file="(no file)">',
     '  <h2><span class="dot ok"></span>health check <span class="tms">12 ms</span></h2>',
     '  ',
     '  ',
@@ -121,4 +121,97 @@ test('renderReportHtml escapes an attempt\'s error the same way a top-level test
   const html = renderReportHtml(report);
   assert.match(html, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt; &amp; stuff/);
   assert.doesNotMatch(html, /<script>alert/);
+});
+
+// Track 1 (grill-me, 2026-07-07): report.html groups tests by source file into a collapsible
+// sidebar tree, with one <section> per test toggled via a shared `active` class.
+test('renderReportHtml groups tests into one <details class="filegroup"> per file, in first-appearance order, with per-file test links', () => {
+  const report: RunReport = {
+    ...baseReport,
+    total: 3,
+    passed: 2,
+    failed: 1,
+    tests: [
+      { name: 'first in b', ok: true, durationMs: 1, steps: [], file: 'b.tflw' },
+      { name: 'first in a', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
+      { name: 'second in b', ok: false, durationMs: 1, steps: [], file: 'b.tflw' },
+    ],
+  };
+  const html = renderReportHtml(report);
+  const groupOrder = [...html.matchAll(/data-file="([^"]+)"/g)].map((m) => m[1]);
+  // 'b.tflw' appears first (its first test is first in the report), 'a.tflw' second — file-group
+  // order follows first-appearance, not alphabetical; each <section> also carries its own
+  // data-file, so every match after the first 2 groups belongs to a <section>, not a new group.
+  assert.equal(groupOrder[0], 'b.tflw');
+  assert.equal(groupOrder[1], 'a.tflw');
+
+  const bGroup = html.match(/<details class="filegroup[^>]*data-file="b\.tflw">[\s\S]*?<\/details>/)?.[0];
+  assert.ok(bGroup, 'expected a filegroup for b.tflw');
+  assert.match(bGroup!, /first in b/);
+  assert.match(bGroup!, /second in b/);
+  assert.doesNotMatch(bGroup!, /first in a/, "a.tflw's test must not leak into b.tflw's group");
+});
+
+test('a file group with a failing test is open and marked "fail"; an all-passing group stays collapsed and marked "ok"', () => {
+  const report: RunReport = {
+    ...baseReport,
+    total: 2,
+    passed: 1,
+    failed: 1,
+    tests: [
+      { name: 'passes', ok: true, durationMs: 1, steps: [], file: 'clean.tflw' },
+      { name: 'fails', ok: false, durationMs: 1, steps: [], file: 'dirty.tflw' },
+    ],
+  };
+  const html = renderReportHtml(report);
+  const clean = html.match(/<details class="filegroup[^"]*"[^>]*data-file="clean\.tflw">/)?.[0];
+  const dirty = html.match(/<details class="filegroup[^"]*"[^>]*data-file="dirty\.tflw">/)?.[0];
+  assert.match(clean!, /class="filegroup ok"/);
+  assert.doesNotMatch(clean!, /\bopen\b/);
+  assert.match(dirty!, /class="filegroup fail"/);
+  assert.match(dirty!, /\bopen\b/);
+});
+
+test('the first failing test\'s section is active by default; an all-passing report defaults to the first test', () => {
+  const withFailure: RunReport = {
+    ...baseReport,
+    total: 2,
+    passed: 1,
+    failed: 1,
+    tests: [
+      { name: 'passes', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
+      { name: 'fails', ok: false, durationMs: 1, steps: [], file: 'b.tflw' },
+    ],
+  };
+  const html1 = renderReportHtml(withFailure);
+  assert.match(html1, /<section class="test fail active" id="t1" data-file="b\.tflw">/);
+  assert.doesNotMatch(html1, /<section class="test ok active"/);
+
+  const allGreen: RunReport = {
+    ...baseReport,
+    total: 2,
+    passed: 2,
+    failed: 0,
+    tests: [
+      { name: 'first', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
+      { name: 'second', ok: true, durationMs: 1, steps: [], file: 'b.tflw' },
+    ],
+  };
+  const html2 = renderReportHtml(allGreen);
+  assert.match(html2, /<section class="test ok active" id="t0" data-file="a\.tflw">/);
+});
+
+test('a TestResult with no `file` groups under "(no file)" — old fixtures without the field keep rendering', () => {
+  const html = renderReportHtml(baseReport);
+  assert.match(html, /data-file="\(no file\)"/);
+});
+
+test('the sidebar carries a filter input, a status-filter toggle, and one <script> that wires them up — the report is no longer JS-free but stays a single file', () => {
+  const html = renderReportHtml(baseReport);
+  assert.match(html, /<input type="search" id="tf-filter"/);
+  assert.match(html, /data-status="all"/);
+  assert.match(html, /data-status="fail"/);
+  assert.match(html, /data-status="ok"/);
+  assert.match(html, /<script>[\s\S]*applyFilter[\s\S]*<\/script>/);
+  assert.doesNotMatch(html, /<script src=/, 'must stay self-contained — no external script reference');
 });
