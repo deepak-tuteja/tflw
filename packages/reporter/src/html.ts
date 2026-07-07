@@ -2,7 +2,7 @@
 // mirrors the source, req/res panels per API step, failures shown as source line + message.
 // Secrets are already redacted in the report data (interpreter, P#30) — this file only escapes.
 
-import type { RequestTrace, ResponseTrace, RunReport, StepResult, TestResult } from '@tflw/runtime';
+import type { AttemptResult, RequestTrace, ResponseTrace, RunReport, StepResult, TestResult } from '@tflw/runtime';
 
 export function renderReportHtml(report: RunReport): string {
   const title = `testFlow report — ${report.passed}/${report.total} passed`;
@@ -38,13 +38,28 @@ ${report.tests.map(renderTest).join('\n')}
 }
 
 function renderTest(test: TestResult): string {
+  const priorAttempts = test.attempts ? test.attempts.slice(0, -1) : [];
   return `<section class="test ${test.ok ? 'ok' : 'fail'}">
   <h2><span class="dot ${test.ok ? 'ok' : 'fail'}"></span>${esc(test.name)}${test.flaky ? ' <span class="flaky">flaky</span>' : ''} <span class="tms">${test.durationMs} ms</span></h2>
   ${test.error ? `<p class="error">${esc(test.error)}</p>` : ''}
+  ${priorAttempts.map(renderAttempt).join('\n')}
+  ${test.attempts ? `<p class="attempt-final-label"><span class="attempt-badge ok">attempt ${test.attempts.length} of ${test.attempts.length} — passed</span></p>` : ''}
   <ol class="steps">
 ${test.steps.map(renderStep).join('\n')}
   </ol>
 </section>`;
+}
+
+/** A failed prior `retry` attempt, rendered as a collapsed native `<details>` block above the
+ * final (kept) attempt's already-visible steps — no JavaScript, so the report stays self-contained
+ * (PLAN decision 86, closing SPEC §4.4's known evidence gap). */
+function renderAttempt(attempt: AttemptResult): string {
+  return `<details class="attempt">
+    <summary><span class="attempt-badge fail">attempt ${attempt.attempt} — failed</span>${attempt.error ? ` <span class="attempt-error">${esc(attempt.error)}</span>` : ''}</summary>
+    <ol class="steps">
+${attempt.steps.map(renderStep).join('\n')}
+    </ol>
+  </details>`;
 }
 
 function renderStep(step: StepResult): string {
@@ -108,6 +123,16 @@ main{padding:16px 24px;max-width:1000px}
 h2{font-size:15px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
 .dot{width:9px;height:9px;border-radius:50%;display:inline-block}.dot.ok{background:var(--ok)}.dot.fail{background:var(--fail)}
 .flaky{color:var(--warn);border:1px solid var(--warn);border-radius:10px;padding:0 8px;font-size:11px;font-weight:700;text-transform:uppercase}
+details.attempt{margin:6px 0;border:1px solid var(--line);border-left:3px solid var(--fail);border-radius:6px;background:var(--card)}
+details.attempt summary{cursor:pointer;padding:6px 10px;list-style:none;display:flex;gap:8px;align-items:center}
+details.attempt summary::-webkit-details-marker{display:none}
+details.attempt[open] summary{border-bottom:1px solid var(--line)}
+.attempt-badge{padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase}
+.attempt-badge.fail{background:var(--fail);color:#fff}
+.attempt-badge.ok{background:var(--ok);color:#fff}
+.attempt-error{color:var(--mut);font-size:12px}
+.attempt-final-label{margin:6px 0 4px}
+details.attempt ol.steps{padding:4px 12px 4px 12px}
 .tms,.sms{color:var(--mut);font-weight:400;font-size:12px;margin-left:auto}
 .error{color:var(--fail);margin:4px 0 10px;white-space:pre-wrap}
 ol.steps{list-style:none;margin:0;padding:0}

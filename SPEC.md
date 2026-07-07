@@ -159,8 +159,9 @@ session admin
 
 "Which attempt's report shows the session's steps" is resolved **once per test**, not once per
 retry attempt (PLAN decision 68) — so a `retry`-ing test running `as <session>` that fails on
-attempt 1 and passes on attempt 2 still carries the session's steps in the surviving (last)
-attempt's report, even though `report.html` only keeps that one attempt (§4.4).
+attempt 1 and passes on attempt 2 still carries the session's steps only in the surviving (last)
+attempt's report; earlier failed attempts remain visible in `report.html` too (PLAN decision 86),
+just without the session's own steps in them (§4.4).
 
 ### 3.4 Secrets (P#30)
 
@@ -257,6 +258,14 @@ after file
 House style for data: tests create their own data (`unique`, §7.2) and delete it in `after`
 hooks via shared actions. No runtime auto-cleanup (P#19).
 
+**Scope isolation:** `before`/`after` (each-scope) share one scope with the test they wrap — a
+`let` bound in `before` is visible in the test body and in `after`. `before file`/`after file` run
+in their **own, separate scope**, isolated from every test in the file — a `let` bound in `before
+file` can never be read by a test, or by an each-scope `before`/`after`. Use a `session` block
+(§3.3) or a shared `action` (§8) to hand data from file-level setup to individual tests; `before
+file` is for side effects (seeding shared fixtures, warm-up calls), not for values a test needs to
+read.
+
 ### 4.3 Data tables — `with each` (P#10, P#24)
 
 ```
@@ -288,10 +297,12 @@ so `random` values are identical on every attempt — but `unique(...)`/`unique 
 their run-wide counter keeps advancing across attempts by design, so a retry can never collide
 with data the failed attempt already created (§7.2, §7.4).
 
-🔮 **Known gap:** `report.html` currently keeps only the *last* attempt's steps — a flaky pass
-shows the badge but not the earlier failing attempt(s) as evidence. Fixing this needs the report
-schema to group steps per attempt rather than assuming one flat list per test; tracked as a
-post-publish improvement, not a publish blocker (PLAN.md decision 46).
+`report.html` shows every attempt's steps for a `retry`-ed test, not just the last: each failed
+prior attempt renders as a collapsed section (labeled `attempt 1 — failed`, `attempt 2 — failed`,
+…) above the final attempt's already-visible steps, so a `flaky` badge always has its evidence
+trail one click away (PLAN.md decision 86, closing decision 46's deferred gap). `junit.xml` stays
+summary-only by design — its `<testcase>` carries a `flaky` `<system-out>` note with the attempt
+count, not step-level detail; that detail lives in report.html.
 
 ## 5. API steps (P#3, P#7, P#29, P#32, P#33) ✅
 
@@ -451,6 +462,15 @@ returns, `env(…)`.
 `unique("prefix")`, `unique email`, `unique number`, `unique like "ORD-######"`.
 Guaranteed distinct across tests/workers within a run (run/worker-seeded). Use for anything with
 a uniqueness constraint.
+
+**Under `retry` (§4.4):** `unique(...)`'s run-wide counter keeps advancing on every retry attempt
+of the *same* test — by design, so a retried attempt never collides with data the failed attempt
+already created. That means a retried attempt **cannot** use `unique(...)` to reproduce a value an
+earlier attempt already used — it will always get a new one. Anything a retry needs to reuse
+identically across its own attempts (an idempotency key, a namespace already created by the first
+attempt) must come from `random` (§7.3), whose per-test seed replays identically on every attempt
+of that test — never `unique`, or a "successful" retry will silently operate against different
+data than the attempt it's supposedly recovering.
 
 ### 7.3 `random` — value-shaped data, collisions allowed (P#21–22)
 

@@ -24,8 +24,13 @@ function renderTestCase(test: TestResult): string {
   const time = (test.durationMs / 1000).toFixed(3);
   const attrs = `name="${esc(test.name)}" time="${time}"`;
   if (test.ok) {
-    const flaky = test.flaky ? `\n    <system-out>flaky: passed after a retry</system-out>\n  ` : '';
-    return test.flaky ? `  <testcase ${attrs}>${flaky}</testcase>` : `  <testcase ${attrs}/>`;
+    if (!test.flaky) return `  <testcase ${attrs}/>`;
+    const priorCount = test.attempts ? test.attempts.length - 1 : undefined;
+    const message =
+      priorCount !== undefined
+        ? `flaky: passed on attempt ${test.attempts!.length} of ${test.attempts!.length} (${priorCount} prior attempt${priorCount === 1 ? '' : 's'} failed)`
+        : 'flaky: passed after a retry';
+    return `  <testcase ${attrs}>\n    <system-out>${esc(message)}</system-out>\n  </testcase>`;
   }
   const message = esc(test.error ?? 'test failed');
   return `  <testcase ${attrs}>\n    <failure message="${message}">${message}</failure>\n  </testcase>`;

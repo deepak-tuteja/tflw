@@ -76,3 +76,34 @@ test('renderJunitXml on an all-passing report has zero failures and no <failure>
   assert.doesNotMatch(xml, /<failure/);
   assert.doesNotMatch(xml, /<system-out>/);
 });
+
+// PLAN decision 86: once `attempts` data is available, the flaky <system-out> line names the
+// attempt count instead of the old generic string — but a report built before this change (or any
+// hand-built one without `attempts`) must still produce the old fixed text, unchanged.
+test('renderJunitXml includes the attempt count in <system-out> when `attempts` is present, and falls back to the old fixed string when it isn\'t', () => {
+  const withAttempts: RunReport = {
+    ...report,
+    tests: [
+      {
+        name: 'eventually works',
+        ok: true,
+        durationMs: 45,
+        steps: [],
+        flaky: true,
+        attempts: [
+          { attempt: 1, ok: false, durationMs: 10, steps: [], error: 'got 500' },
+          { attempt: 2, ok: false, durationMs: 10, steps: [], error: 'got 500' },
+          { attempt: 3, ok: true, durationMs: 10, steps: [] },
+        ],
+      },
+    ],
+  };
+  assert.match(
+    renderJunitXml(withAttempts),
+    /<system-out>flaky: passed on attempt 3 of 3 \(2 prior attempts failed\)<\/system-out>/,
+  );
+
+  // Existing shape (no `attempts` field at all) must be completely unaffected.
+  const withoutAttempts: RunReport = { ...report, tests: [{ name: 'eventually works', ok: true, durationMs: 45, steps: [], flaky: true }] };
+  assert.match(renderJunitXml(withoutAttempts), /<system-out>flaky: passed after a retry<\/system-out>/);
+});

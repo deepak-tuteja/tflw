@@ -114,3 +114,73 @@ test('`unique` values advance (never replay) across retry attempts, unlike `rand
 
   await server.close();
 });
+
+// PLAN decision 86: a flaky pass's earlier failing evidence used to be silently discarded — only
+// the final (kept) attempt's steps ever reached the report. `TestResult.attempts` now carries
+// every attempt actually run, so report.html can show the full recovery trail.
+test("a flaky pass's report carries every attempt's steps, not just the final one", async () => {
+  let calls = 0;
+  const server = await startFixtureServer({
+    '/flaky': (_req, res) => {
+      calls++;
+      if (calls < 3) res.writeHead(500).end();
+      else json(res, 200, { ok: true });
+    },
+  });
+
+  const source = `test "eventually works" retry 2
+  api GET /flaky
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  const attempts = report.tests[0]!.attempts;
+  assert.equal(attempts?.length, 3);
+  assert.equal(attempts![0]!.ok, false);
+  assert.equal(attempts![1]!.ok, false);
+  assert.equal(attempts![2]!.ok, true);
+  assert.equal(attempts![0]!.attempt, 1);
+  assert.equal(attempts![2]!.attempt, 3);
+  assert.ok(attempts![0]!.steps.some((s) => s.detail?.includes('500')), 'attempt 1 steps should show the 500 that failed it');
+  assert.ok(attempts![1]!.steps.some((s) => s.detail?.includes('500')), 'attempt 2 steps should show the 500 that failed it');
+  assert.deepEqual(attempts![2]!.steps, report.tests[0]!.steps, 'the final attempt mirrors the top-level steps field');
+  assert.ok(attempts![0]!.error !== undefined);
+  assert.ok(attempts![1]!.error !== undefined);
+  assert.equal(attempts![2]!.error, undefined);
+
+  await server.close();
+});
+
+test('a test that passes on the first attempt has no `attempts` field at all', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+
+  const source = `test "clean pass" retry 3
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.tests[0]!.attempts, undefined);
+
+  await server.close();
+});
+
+test('a test that exhausts its retries still records every failed attempt', async () => {
+  const server = await startFixtureServer({ '/always-down': (_req, res) => res.writeHead(500).end() });
+
+  const source = `test "never recovers" retry 2
+  api GET /always-down
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  const attempts = report.tests[0]!.attempts;
+  assert.equal(attempts?.length, 3);
+  assert.ok(attempts!.every((a) => a.ok === false));
+  assert.deepEqual(attempts![2]!.steps, report.tests[0]!.steps, 'the top-level steps field still mirrors the last attempt, even though it failed');
+
+  await server.close();
+});

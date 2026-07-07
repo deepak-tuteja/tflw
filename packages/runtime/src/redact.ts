@@ -4,7 +4,7 @@
 // header-blocklists) means a secret in a login body or a URL is caught wherever it flows, so
 // report.html and CLI output are ticket-attachable by construction.
 
-import type { RequestTrace, ResponseTrace, RunReport, StepResult, TestResult } from './types.js';
+import type { AttemptResult, RequestTrace, ResponseTrace, RunReport, StepResult, TestResult } from './types.js';
 
 /** A secret shorter than this is too likely to collide with unrelated report content (a port
  * number, a small numeric ID) — substring-redacting it would silently corrupt those unrelated
@@ -76,6 +76,20 @@ function redactTestResult(t: TestResult, redactor: Redactor): TestResult {
     name: redactor.redact(t.name),
     ...(t.error !== undefined ? { error: redactor.redact(t.error) } : {}),
     steps: t.steps.map((s) => redactStepResult(s, redactor)),
+    ...(t.attempts ? { attempts: t.attempts.map((a) => redactAttemptResult(a, redactor)) } : {}),
+  };
+}
+
+/** Every attempt's steps must be redacted too, not just the kept/final one — otherwise a secret
+ * that only appeared in a previously-discarded failing attempt would now ship unmasked once that
+ * attempt becomes visible in the report (PLAN decision 86). The final attempt's `StepResult`
+ * objects are shared with `t.steps` (same array reference); redacting them twice is a documented
+ * no-op (see this file's header comment), not a bug. */
+function redactAttemptResult(a: AttemptResult, redactor: Redactor): AttemptResult {
+  return {
+    ...a,
+    ...(a.error !== undefined ? { error: redactor.redact(a.error) } : {}),
+    steps: a.steps.map((s) => redactStepResult(s, redactor)),
   };
 }
 

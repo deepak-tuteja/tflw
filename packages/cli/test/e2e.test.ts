@@ -101,6 +101,46 @@ test('the built dist/cli.js exits non-zero on a failing test, and still writes t
   });
 });
 
+// PLAN decision 86: report.html now shows every `retry` attempt's evidence, not just the final
+// pass — full pipeline check (real interpreter → redact → write to disk), not just the in-memory
+// RunReport already covered by packages/runtime/test/retry.test.ts.
+test('`retry N` produces a report.html with the earlier failing attempt(s) visible as collapsed evidence, not just the final passed attempt', async () => {
+  let calls = 0;
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/flaky') {
+      calls++;
+      if (calls < 3) res.writeHead(500, { 'content-type': 'application/json' }).end('{"error":"boom"}');
+      else res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    } else {
+      res.writeHead(404).end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-retry-evidence-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    await writeFile(join(dir, 'flaky.tflw'), `test "eventually works" retry 2\n  api GET /flaky\n  expect status equals 200\n`, 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(stdout, /1\/1 passed/);
+
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    assert.equal([...html.matchAll(/<details class="attempt">/g)].length, 2, 'the 2 failed prior attempts should each get a collapsed block');
+    assert.match(html, /attempt 1 — failed/);
+    assert.match(html, /attempt 2 — failed/);
+    assert.match(html, /got 500/, "the first attempt's failing status must survive the full interpreter → redact → write pipeline");
+    assert.match(html, /class="flaky"/);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`tflw --version`/`-v` print the real package version, injected at bundle time (decision 74b)', async () => {
   const { readFile: readPkg } = await import('node:fs/promises');
   const pkg = JSON.parse(await readPkg(join(repoRoot, 'packages', 'cli', 'package.json'), 'utf8')) as { version: string };

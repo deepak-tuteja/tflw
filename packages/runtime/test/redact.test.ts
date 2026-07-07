@@ -130,3 +130,33 @@ test('a short secret is never registered end-to-end, so an unrelated response fi
 
   await server.close();
 });
+
+// PLAN decision 86: a secret that only ever appeared in a failing retry attempt used to be
+// invisible in the report anyway (the attempt itself was discarded) — now that `TestResult.attempts`
+// preserves it, the redaction pass must reach into every attempt, not just the final kept one.
+test('a secret that only appears in a discarded-until-now failing retry attempt is still redacted', async () => {
+  let calls = 0;
+  const server = await startFixtureServer({
+    '/flaky-echo': (_req, res) => {
+      calls++;
+      if (calls === 1) res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ note: 'pw is p@ssw0rd-xyz' }));
+      else json(res, 200, { ok: true });
+    },
+  });
+
+  const source = `test "first attempt leaks the secret in a 500 body" retry 1
+  api GET /flaky-echo
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const environ = { ...process.env, ADMIN_PW: 'p@ssw0rd-xyz' };
+  const config = { ...testConfig(server.baseUrl), requiredEnv: ['ADMIN_PW'] };
+  const { report } = await runProgram(program, config, { source, environ });
+
+  assert.equal(report.tests[0]!.attempts?.length, 2, 'sanity: attempt 1 failed, attempt 2 passed');
+  const serialized = JSON.stringify(report.tests[0]);
+  assert.doesNotMatch(serialized, /p@ssw0rd-xyz/, 'the secret must not leak from the discarded-until-now failing attempt');
+  assert.match(JSON.stringify(report.tests[0]!.attempts![0]), /•••\(ADMIN_PW\)/, 'the masked placeholder should appear inside attempt 1 specifically');
+
+  await server.close();
+});

@@ -78,6 +78,16 @@ export interface StepResult {
   readonly response?: ResponseTrace;
 }
 
+/** One `retry` attempt's outcome — captured so a flaky pass's earlier failing evidence survives
+ * into the report instead of being discarded (SPEC §4.4, PLAN decision 86). `attempt` is 1-based. */
+export interface AttemptResult {
+  readonly attempt: number;
+  readonly ok: boolean;
+  readonly durationMs: number;
+  readonly steps: readonly StepResult[];
+  readonly error?: string;
+}
+
 export interface TestResult {
   readonly name: string;
   readonly ok: boolean;
@@ -88,6 +98,10 @@ export interface TestResult {
   /** `true` when this test failed at least once before passing on a `retry` attempt — reported
    * as passed but flagged, never silently green (SPEC §4.4, P#10). */
   readonly flaky?: boolean;
+  /** Every attempt actually run, in order, only present when more than one attempt ran. A
+   * single-attempt test has no `attempts` field at all — same shape as before this field existed.
+   * When present, `attempts[attempts.length - 1].steps === steps` (SPEC §4.4, PLAN decision 86). */
+  readonly attempts?: readonly AttemptResult[];
 }
 
 export interface RunReport {

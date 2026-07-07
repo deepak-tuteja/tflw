@@ -33,7 +33,7 @@ import { Redactor, redactReport } from './redact.js';
 import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
-import type { EventSink, RequestTrace, ResolvedConfig, ResponseTrace, RunReport, StepResult, TestResult } from './types.js';
+import type { AttemptResult, EventSink, RequestTrace, ResolvedConfig, ResponseTrace, RunReport, StepResult, TestResult } from './types.js';
 
 /** A JS/TS helper export, called `(ctx, ...args)` — "test context in, values out" (P#11). */
 type HelperFn = (ctx: { readonly env: NodeJS.ProcessEnv }, ...args: unknown[]) => unknown;
@@ -402,17 +402,24 @@ async function runTest(
   const resolvedSessionOwner = isSessionOwner !== undefined || test.session === null ? isSessionOwner : tc.sessionCache.claimShown(test.session);
   const maxAttempts = 1 + Math.max(0, test.retry);
   const runStart = performance.now();
+  const attemptResults: AttemptResult[] = [];
   let attempts = 0;
   let result: TestResult;
   for (;;) {
     attempts++;
     const attemptTc: TestCtx = { ...tc, rng: mulberry32(testSeed) };
     result = await runTestAttempt(test, config, attemptTc, registry, beforeEach, afterEach, cells, attempts === 1, resolvedSessionOwner);
+    attemptResults.push({ attempt: attempts, ok: result.ok, durationMs: result.durationMs, steps: result.steps, ...(result.error !== undefined ? { error: result.error } : {}) });
     if (result.ok || attempts >= maxAttempts) break;
   }
   const durationMs = Math.round(performance.now() - runStart);
   const flaky = result.ok && attempts > 1;
-  return { ...result, durationMs, ...(flaky ? { flaky: true } : {}) };
+  return {
+    ...result,
+    durationMs,
+    ...(flaky ? { flaky: true } : {}),
+    ...(attemptResults.length > 1 ? { attempts: attemptResults } : {}),
+  };
 }
 
 async function runTestAttempt(
