@@ -267,6 +267,78 @@ test('`not matches subset {...}` negates cleanly', async () => {
   await server.close();
 });
 
+test('`matches subset {...}` failure shows only the mismatched/missing keys, not the whole object (gap #8)', async () => {
+  const server = await startFixtureServer({
+    '/orders/1': (_req, res) =>
+      json(res, 200, {
+        id: 1,
+        status: 'pending',
+        customer: { name: 'Ada', vip: true },
+        // A big filler field, standing in for a real large response body — it must NOT appear
+        // in the failure message at all once the diff is subset-aware.
+        items: Array.from({ length: 60 }, (_, idx) => ({ id: `item-${idx}`, quantity: idx })),
+      }),
+  });
+
+  const missingAndWrong = `test "subset mismatch on a large body"
+  api GET /orders/1
+  expect body matches subset { status: "shipped", customer: { name: "Ada", vip: false }, detail: "nope" }
+`;
+  const { program } = parseSource(missingAndWrong);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source: missingAndWrong });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  // The three real mismatches show up, correlated to their own (possibly nested) key path...
+  assert.match(error, /"status":"pending"/);
+  assert.match(error, /"customer\.vip":true/);
+  assert.match(error, /"detail":"<missing>"/);
+  // ...but none of the 60-element filler array (proof the whole object was never dumped).
+  assert.doesNotMatch(error, /item-0/);
+  assert.match(error, /only the 3 mismatched key\(s\) shown, out of 4 total on the response/);
+
+  await server.close();
+});
+
+test('a large `equals`/`contains` failure is truncated with a clear marker, not dumped whole (gap #8)', async () => {
+  const bigTag = 'x'.repeat(3000);
+  const server = await startFixtureServer({
+    '/orders': (_req, res) => json(res, 200, { tag: bigTag }),
+  });
+
+  const source = `test "big body truncates"
+  api GET /orders
+  expect body.tag equals "something-else"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.ok(error.length < bigTag.length, 'the failure message must be materially shorter than the untruncated value');
+  assert.match(error, /truncated, showing \d+ of \d+ chars/);
+
+  await server.close();
+});
+
+test('a negated `matches subset {...}` that unexpectedly matches shows the whole (truncated) actual, not a mismatch diff', async () => {
+  const server = await startFixtureServer({ '/orders/1': (_req, res) => json(res, 200, { status: 'open', note: 'fine' }) });
+
+  const source = `test "not subset, but it matched anyway"
+  api GET /orders/1
+  expect body not matches subset { status: "open" }
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  // No "<missing>"/mismatch framing here — the raw subset check genuinely passed, so the fallback
+  // is the ordinary whole-actual-object message every other matcher already uses.
+  assert.match(error, /"status":"open"/);
+  assert.match(error, /"note":"fine"/);
+  assert.doesNotMatch(error, /mismatched key/);
+
+  await server.close();
+});
+
 test('`not` negates any matcher', async () => {
   const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, { status: 'open' }) });
 

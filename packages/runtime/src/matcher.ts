@@ -10,12 +10,25 @@ export interface MatchOutcome {
   readonly message: string;
 }
 
+/** Bounds every failure message's "expected"/"got" text (TFLW-GAPS.md gap #8): a bare untruncated
+ * `JSON.stringify` on a large response body used to dump the whole thing — one 11,248-char line
+ * for a 61-item order — into the CLI and report.html alike. A sane fixed default (no new config
+ * surface, matching P#13's closed-feature-set philosophy) keeps every failure message readable;
+ * the full response body remains inspectable via the step's own request/response capture in
+ * report.html regardless of this cap. */
+const MAX_DIFF_CHARS = 2000;
+
+function truncate(s: string, max: number = MAX_DIFF_CHARS): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max)}… (truncated, showing ${max} of ${s.length} chars — see report.html for the full response body)`;
+}
+
 export function evalMatcher(subjectLabel: string, actual: unknown, matcher: Matcher, ctx: EvalCtx): MatchOutcome {
   const raw = rawMatch(actual, matcher, ctx);
   const ok = matcher.negated ? !raw.ok : raw.ok;
   const not = matcher.negated ? 'not ' : '';
-  const expectation = `${subjectLabel} ${not}${raw.phrase}${raw.expected ? ' ' + raw.expected : ''}`;
-  const message = ok ? expectation : `expected ${expectation}, but got ${repr(actual)}`;
+  const expectation = `${subjectLabel} ${not}${raw.phrase}${raw.expected ? ' ' + truncate(raw.expected) : ''}`;
+  const message = ok ? expectation : `expected ${expectation}, but got ${truncate(raw.gotOverride ?? repr(actual))}`;
   return { ok, message };
 }
 
@@ -23,6 +36,12 @@ interface RawMatch {
   readonly ok: boolean;
   readonly phrase: string;
   readonly expected: string;
+  /** Set only for a genuine (non-negated) `matches subset` mismatch: replaces the whole-actual
+   * dump with just the mismatched/missing keys, since the matcher already knows which literal
+   * keys it checked (gap #8's "subset-aware diff"). Left unset everywhere else, including a
+   * negated subset match that unexpectedly succeeded — there the whole actual object (truncated
+   * like any other matcher) is the right thing to show. */
+  readonly gotOverride?: string;
 }
 
 function rawMatch(actual: unknown, matcher: Matcher, ctx: EvalCtx): RawMatch {
@@ -47,7 +66,13 @@ function rawMatch(actual: unknown, matcher: Matcher, ctx: EvalCtx): RawMatch {
     }
     case 'matchesSubset': {
       const expected = evalValue(matcher.value!, ctx);
-      return { ok: subsetMatch(actual, expected), phrase: 'to match subset', expected: repr(expected) };
+      const ok = subsetMatch(actual, expected);
+      // Reached only when both are confirmed plain objects — subsetMatch() itself throws
+      // otherwise, before `ok` could be assigned.
+      const gotOverride = ok
+        ? undefined
+        : describeSubsetMismatches(actual as Record<string, unknown>, expected as Record<string, unknown>);
+      return { ok, phrase: 'to match subset', expected: repr(expected), gotOverride };
     }
     case 'greaterThan': {
       const expected = num(evalValue(matcher.value!, ctx), 'is greater than');
@@ -106,6 +131,36 @@ function subsetMatch(actual: unknown, expected: unknown): boolean {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Walks the same shape `subsetMatch` just walked, but collects only the keys that actually
+ * differ (missing, or present with a different value) instead of returning a boolean — gap #8's
+ * "only prints the mismatched keys" half. Dotted paths flatten nested mismatches (`customer.name`)
+ * so a deep subset literal still reads as one flat, scannable list. */
+function subsetMismatches(actual: Record<string, unknown>, expected: Record<string, unknown>, prefix = ''): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(expected)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (!Object.prototype.hasOwnProperty.call(actual, key)) {
+      out[path] = '<missing>';
+      continue;
+    }
+    const actualVal = actual[key];
+    const expectedVal = expected[key];
+    if (isPlainObject(expectedVal)) {
+      if (!isPlainObject(actualVal)) out[path] = actualVal;
+      else Object.assign(out, subsetMismatches(actualVal, expectedVal, path));
+    } else if (!deepEqual(actualVal, expectedVal)) {
+      out[path] = actualVal;
+    }
+  }
+  return out;
+}
+
+function describeSubsetMismatches(actual: Record<string, unknown>, expected: Record<string, unknown>): string {
+  const mismatches = subsetMismatches(actual, expected);
+  const totalKeys = Object.keys(actual).length;
+  return `${repr(mismatches)} (only the ${Object.keys(mismatches).length} mismatched key(s) shown, out of ${totalKeys} total on the response)`;
 }
 
 function contains(actual: unknown, expected: unknown): boolean {

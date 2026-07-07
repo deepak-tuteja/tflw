@@ -505,6 +505,25 @@ expect body matches subset { type: "about:blank", title: "Unprocessable Entity",
 
 UI expects auto-retry to the expect timeout. API expects evaluate once (§5.5).
 
+### 6.6 Failure-message size (P#14, TFLW-GAPS.md gap #8)
+
+Every failure message's "expected"/"got" text is capped at 2000 characters, with a trailing marker
+(`… (truncated, showing 2000 of N chars — see report.html for the full response body)`) when the
+untruncated value would have been longer. This is a fixed default, not new config surface (P#13) —
+before it, a large response body's `expected`/`got` text was a bare, uncapped `JSON.stringify`, so
+a single failing assertion against (for example) a 61-item order produced one 11,248-character
+line in both the CLI and `report.html`. The full response body is unaffected by this cap — it
+remains available via the step's own request/response capture (§13) regardless of what the
+assertion message shows.
+
+`matches subset {...}` gets an additional, more targeted improvement on top of the cap: a failed
+subset match reports only the keys that are actually missing or mismatched (dotted paths flatten
+nested mismatches, e.g. `customer.vip`), not the whole actual object — the matcher already knows
+which literal keys it checked, so a large response with one wrong field now reads as one short
+line instead of the entire body. This applies only to a genuine (non-negated) mismatch; a `not
+matches subset {...}` that unexpectedly succeeded still shows the ordinary whole-actual message
+(there's no "mismatch" to itemize when the raw check actually passed).
+
 ## 7. Variables, data & expressions (P#19, P#21–25) ✅
 
 ### 7.1 `let`
