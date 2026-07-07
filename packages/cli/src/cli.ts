@@ -38,6 +38,7 @@ import {
   type RunReport,
   type TestResult,
   type EventSink,
+  type RunEvent,
 } from '@tflw/runtime';
 import { writeReport, writeJunitXml, renderCliSummary } from '@tflw/reporter';
 import { buildEnviron } from './env.js';
@@ -97,6 +98,9 @@ interface RunArgs {
   /** Raw `--workers` text, validated in `runCommand` (P#47). */
   readonly workersRaw?: string | undefined;
   readonly noColor: boolean;
+  /** `--verbose`: prints one line per step, not just per test (no `-v` short form — `-v` is already
+   * `--version` at the top-level `main()` dispatch). */
+  readonly verbose: boolean;
 }
 
 function parseRunArgs(argv: string[]): RunArgs {
@@ -107,6 +111,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let tag: string | undefined;
   let workersRaw: string | undefined;
   let noColor = false;
+  let verbose = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = argv[++i];
@@ -120,9 +125,10 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--workers') workersRaw = argv[++i];
     else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
     else if (a === '--no-color') noColor = true;
+    else if (a === '--verbose') verbose = true;
     else files.push(a);
   }
-  return { files, env, seedRaw, nowRaw, tag, workersRaw, noColor };
+  return { files, env, seedRaw, nowRaw, tag, workersRaw, noColor, verbose };
 }
 
 /** Parsed + checker-clean state shared by `tflw run` and `tflw check` (decision 75) — everything
@@ -268,7 +274,6 @@ async function runCommand(argv: string[]): Promise<number> {
   //    globally distinct.
   const redactor = new Redactor();
   const sessionCache = new SessionCache();
-  const emit = color ? liveEmit() : undefined;
   const seed = resolveRunSeed(seedArg);
   const now = resolveRunClock(nowArg).toISOString();
   const uniqueSeq = makeUniqueSeq();
@@ -313,7 +318,23 @@ async function runCommand(argv: string[]): Promise<number> {
   }
 
   const workers = workersArg ?? resolved.workers;
+
+  // Live console output (P#4/#5's event stream, consumed here — never the report's data source,
+  // decision 86): the shared ticker always runs now — a failing test's diff is surfaced live
+  // unconditionally (not gated on an interactive TTY or `--verbose`), while a passing test's tick
+  // line stays gated on `color`/`--verbose` so a plain CI/piped run stays exactly as terse as
+  // before on green suites (see `formatEvent`). `--verbose` additionally needs per-step lines,
+  // which under `--workers > 1` would interleave illegibly across concurrent files with no way to
+  // tell them apart (no file id on any `RunEvent`, and `runWithConcurrency` is a real in-process
+  // concurrent pool, not just sequential-looking async) — so in that combination each file gets
+  // its own buffered sink instead, flushed as one contiguous block once that file finishes, and
+  // the shared live sink is skipped entirely.
+  const useBufferedVerbose = args.verbose && workers > 1;
+  const sharedEmit = useBufferedVerbose ? undefined : liveEmit(color, args.verbose);
+
   const reports = await runWithConcurrency(runnable, workers, async ({ file, source, program }, i) => {
+    const buffered = useBufferedVerbose ? bufferedEmit(color, args.verbose) : undefined;
+    const fileEmit = buffered?.sink ?? sharedEmit;
     try {
       const { report } = await runProgram(program, resolved, {
         source,
@@ -326,10 +347,12 @@ async function runCommand(argv: string[]): Promise<number> {
         uniqueSeq,
         testIndexOffset: offsets[i]!,
         sessionSpliceOwners,
-        ...(emit ? { emit } : {}),
+        ...(fileEmit ? { emit: fileEmit } : {}),
       });
+      buffered?.flush();
       return report;
     } catch (e) {
+      buffered?.flush();
       // A runtime throw in this file (e.g. a bad `import`/`use` path) must never sink the whole
       // run silently — other files' reports still get merged and written (P#46: "always write the
       // report for tests that ran").
@@ -443,13 +466,80 @@ function mergeReports(reports: readonly RunReport[], envName: string, seed: numb
   };
 }
 
-/** A minimal live ticker so a long run isn't silent; the full report prints at the end. */
-function liveEmit(): EventSink {
-  return (ev) => {
-    if (ev.type === 'test:end') {
-      const mark = ev.result.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
-      process.stdout.write(`${mark} ${ev.result.name}\n`);
+function tick(color: boolean, ok: boolean): string {
+  if (!color) return ok ? '✓' : '✗';
+  return ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
+}
+
+/** Maps one `RunEvent` to the text block it produces on the console, or `undefined` if this event
+ * prints nothing — shared by the live ticker and the buffered-per-file collector below so both
+ * stay in lockstep (the console consumes the same event stream the report is built from, per
+ * decision 86, but never becomes the report's own data source).
+ *
+ * `test:end`, failing: always prints — `✗ name` plus each failing step's already-capped/
+ * subset-aware `detail` (gap #8's `truncate()`/`subsetMismatches()`, baked into `StepResult.detail`
+ * by the time it gets here) indented underneath, live, with no flag and no TTY requirement, so a
+ * failure is diagnosable without opening report.html even in a piped/CI run.
+ *
+ * `test:end`, passing: only a cosmetic `✓ name` tick, gated on `color` (today's existing
+ * interactive-only ticker) or `--verbose` — a plain CI/piped green run stays exactly as terse as
+ * before this change.
+ *
+ * Verbose (`--verbose`): additionally prints a header line per test (`test:start`) and one
+ * indented line per step, pass or fail (`step:end`), using the step's existing `detail`/
+ * `durationMs` — no new computation. */
+function formatEvent(ev: RunEvent, color: boolean, verbose: boolean): string | undefined {
+  if (verbose && ev.type === 'test:start') return ev.name;
+  if (verbose && ev.type === 'step:end') {
+    const label = ev.step.detail ?? ev.step.kind;
+    return `  ${tick(color, ev.step.ok)} ${label} (${ev.step.durationMs}ms)`;
+  }
+  if (ev.type === 'test:end') {
+    const durSuffix = verbose ? ` (${ev.result.durationMs}ms)` : '';
+    if (!ev.result.ok) {
+      // Always surfaced, live, regardless of `--verbose`/TTY color — a failing test's diff
+      // shouldn't require an interactive terminal or opening report.html to see (the CLI
+      // ergonomics ask this track exists for).
+      const lines = [`${tick(color, false)} ${ev.result.name}${durSuffix}`];
+      for (const step of ev.result.steps) {
+        if (!step.ok && step.detail) lines.push(`    ${step.detail}`);
+      }
+      return lines.join('\n');
     }
+    // A passing test's tick line is cosmetic — keep it gated on `color` (today's existing
+    // interactive-only ticker) or `--verbose`, so a plain CI/piped green run stays exactly as
+    // terse as before.
+    if (verbose || color) return `${tick(color, true)} ${ev.result.name}${durSuffix}`;
+    return undefined;
+  }
+  return undefined;
+}
+
+/** The default live ticker: writes straight to stdout as events arrive. Safe to share across every
+ * concurrently-running file when `--verbose` is off (only `test:end` prints, and today's existing
+ * cross-file interleaving of those lines is pre-existing, unchanged behavior) — but never used for
+ * verbose output under `--workers > 1`, see `bufferedEmit` below. */
+function liveEmit(color: boolean, verbose: boolean): EventSink {
+  return (ev) => {
+    const line = formatEvent(ev, color, verbose);
+    if (line !== undefined) process.stdout.write(line + '\n');
+  };
+}
+
+/** One buffered sink per concurrently-running file: collects its formatted lines instead of
+ * writing them, so `flush()` (called once that file's `runProgram` resolves) prints them as a
+ * single contiguous block — concurrent files' verbose step logs can never interleave line-by-line. */
+function bufferedEmit(color: boolean, verbose: boolean): { sink: EventSink; flush: () => void } {
+  const lines: string[] = [];
+  const sink: EventSink = (ev) => {
+    const line = formatEvent(ev, color, verbose);
+    if (line !== undefined) lines.push(line);
+  };
+  return {
+    sink,
+    flush: () => {
+      if (lines.length > 0) process.stdout.write(lines.join('\n') + '\n');
+    },
   };
 }
 
@@ -581,10 +671,11 @@ function printUsage(): void {
       'tflw — a testing-only DSL for API tests (.tflw files), reports first.',
       '',
       'usage:',
-      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>] [--workers <n>] [--no-color]',
+      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>] [--workers <n>] [--no-color] [--verbose]',
       '                                                      run .tflw tests (default: all under cwd)',
       '                                                      --now replays the exact run-clock instant',
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
+      '                                                      --verbose prints one line per step, not just per test',
       '  tflw check [files...] [--env <name>] [--no-color]  validate only — no execution, no secrets needed',
       '  tflw init                                          scaffold tflw.config + example.tflw',
       '  tflw --version, -v                                 print the installed version',

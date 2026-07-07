@@ -694,7 +694,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T] [--seed S] [--now ISO] [--workers N] [--no-color]` | run; exit code for CI |
+| `tflw run [files] [--env E] [--tag T] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave |
 | `tflw check [files] [--env E] [--no-color]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output only; `--format json` waits for a real consumer (LSP, M5) |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 

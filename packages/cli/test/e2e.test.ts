@@ -690,3 +690,127 @@ test('`tflw init` appends only the missing line(s) to an existing `.gitignore`, 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Track 3a (UX grill-me, 2026-07-07): a failing test's diff must be visible live, without an
+// interactive TTY and without `--verbose` — `--no-color` used to mean *zero* per-test output until
+// the final CLI summary; now a failure always surfaces its diff line-by-line as it happens.
+test('a failing test surfaces its diff live under the ✗ line even with --no-color and no --verbose (Track 3a)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-live-diff-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'health.tflw'),
+        `test "health check"\n  api GET /health\n  expect status equals 999\n`,
+        'utf8',
+      );
+
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }),
+        (e: unknown) => {
+          const { code, stdout } = e as { code?: number; stdout?: string };
+          const lines = (stdout ?? '').split('\n');
+          const failLine = lines.findIndex((l) => l.includes('✗ health check'));
+          return (
+            code === 1 &&
+            failLine !== -1 &&
+            /expected status to equal 999, but got 200/.test(lines[failLine + 1] ?? '')
+          );
+        },
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('a passing test prints no live tick at all with --no-color and no --verbose (unchanged default terseness, Track 3a)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-quiet-pass-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+      // The final CLI summary (`renderCliSummary`) always lists every test once, regardless of the
+      // live ticker — so the real invariant is "exactly one mention", not "zero": a live tick would
+      // add a *second* occurrence above the summary, which is what must NOT happen here.
+      assert.equal(stdout.split('health check').length - 1, 1, `expected exactly one mention of the test name, got:\n${stdout}`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Track 4 (grill-me, 2026-07-07): --verbose prints one line per step, using the same detail/
+// duration data report.html is built from — no new computation.
+test('--verbose prints one indented line per step under a test-name header (Track 4)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-verbose-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'health.tflw'),
+        `test "health check"\n  api GET /health\n  expect status equals 200\n  let done = true\n`,
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color'], { cwd: dir });
+      const lines = stdout.split('\n');
+      const headerIdx = lines.indexOf('health check');
+      assert.notEqual(headerIdx, -1, 'expected a bare test-name header line in verbose mode');
+      assert.match(lines[headerIdx + 1] ?? '', /✓ GET .*\/health → 200 \(\d+ms\)/);
+      assert.match(lines[headerIdx + 2] ?? '', /✓ status to equal 200 \(\d+ms\)/);
+      assert.match(lines[headerIdx + 3] ?? '', /✓ done = true \(\d+ms\)/);
+      assert.match(lines[headerIdx + 4] ?? '', /✓ health check \(\d+ms\)/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--verbose --workers 2 buffers each file\'s step lines into one contiguous block, never interleaved (Track 4)', async () => {
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/slow') {
+      setTimeout(() => res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}'), 250);
+    } else if (req.url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    } else {
+      res.writeHead(404).end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-verbose-workers-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    // "slow" takes ~500ms of real wall-clock (two 250ms requests) while "fast" finishes almost
+    // instantly — if buffering weren't applied, fast's lines would land in the middle of slow's.
+    await writeFile(
+      join(dir, 'a-slow.tflw'),
+      `test "slow file order"\n  api GET /slow\n  expect status equals 200\n  api GET /slow\n  expect status equals 200\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'b-fast.tflw'),
+      `test "fast file order"\n  api GET /health\n  expect status equals 200\n  api GET /health\n  expect status equals 200\n`,
+      'utf8',
+    );
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--workers', '2', '--no-color'], { cwd: dir });
+    const lines = stdout.split('\n');
+    const slowIdx = lines.reduce<number[]>((acc, l, i) => (l.includes('/slow') ? [...acc, i] : acc), []);
+    const fastIdx = lines.reduce<number[]>((acc, l, i) => (l.includes('/health') ? [...acc, i] : acc), []);
+    assert.equal(slowIdx.length, 2);
+    assert.equal(fastIdx.length, 2);
+    const noInterleave = Math.max(...slowIdx) < Math.min(...fastIdx) || Math.max(...fastIdx) < Math.min(...slowIdx);
+    assert.ok(noInterleave, `expected the two files' verbose blocks not to interleave, got lines:\n${stdout}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
