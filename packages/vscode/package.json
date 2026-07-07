@@ -1,11 +1,22 @@
 {
   "name": "tflw-vscode",
   "displayName": "tflw",
-  "description": "Syntax highlighting for testFlow .tflw test files and tflw.config. Highlight-only in v0.1 — squiggles/LSP land in M5 (decision 76).",
+  "description": "Syntax highlighting, inline diagnostics, and run CodeLenses for testFlow .tflw test files and tflw.config (decision 94 supersedes decision 76's highlight-only deferral).",
   "version": "0.1.0",
   "private": true,
   "publisher": "deepak-tuteja",
   "type": "module",
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onLanguage:tflw"
+  ],
+  "files": [
+    "dist",
+    "syntaxes",
+    "snippets",
+    "language-configuration.json",
+    "LICENSE"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -25,9 +36,11 @@
   },
   "license": "MIT",
   "scripts": {
+    "build": "node scripts/bundle.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
-    "vscode:prepublish": "node scripts/copy-license.mjs"
+    "vscode:prepublish": "npm run build && node scripts/copy-license.mjs",
+    "package": "vsce package --no-dependencies"
   },
   "contributes": {
     "languages": [
@@ -52,9 +65,29 @@
         "scopeName": "source.tflw",
         "path": "./syntaxes/tflw.tmLanguage.json"
       }
+    ],
+    "snippets": [
+      {
+        "language": "tflw",
+        "path": "./snippets/tflw.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "tflw.runFile",
+        "title": "tflw: Run all tests in this file"
+      },
+      {
+        "command": "tflw.runTest",
+        "title": "tflw: Run this test"
+      }
     ]
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   }

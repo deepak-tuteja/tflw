@@ -841,3 +841,95 @@ test('`tflw docs` on an unknown topic is a usage error (exit 2) with a did-you-m
     },
   );
 });
+
+// Track 2 (grill-me, 2026-07-07): `tflw check --format json` and `tflw run --only` — new CLI
+// surface the VS Code extension's diagnostics/CodeLens-run features need.
+test('`tflw check --format json` prints the target file\'s Diagnostic[] as JSON, exit 2 on a real error', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-check-json-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    await writeFile(join(dir, 'broken.tflw'), `test "broken"\n  expct status equals 200\n`, 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', '--format', 'json', 'broken.tflw'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout } = e as { code?: number; stdout?: string };
+        if (code !== 2) return false;
+        const diagnostics = JSON.parse((stdout ?? '').trim());
+        return (
+          Array.isArray(diagnostics) &&
+          diagnostics.length === 1 &&
+          diagnostics[0].code === 'TF011' &&
+          diagnostics[0].hint === 'did you mean `expect`?' &&
+          typeof diagnostics[0].span?.start?.line === 'number'
+        );
+      },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw check --format json` prints an empty array and exits 0 on a clean file', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-check-json-clean-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    await writeFile(join(dir, 'clean.tflw'), `test "ok"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--format', 'json', 'clean.tflw'], { cwd: dir });
+    assert.deepEqual(JSON.parse(stdout.trim()), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw check --format=xml` (an unsupported format) is a usage error, not silently ignored', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-check-badformat-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', '--format=xml'], { cwd: dir }),
+      (e: unknown) => (e as { code?: number }).code === 2,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw run --only "<name>"` runs exactly that one test, across whichever file declares it', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-only-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'multi.tflw'),
+        `test "first test"\n  api GET /health\n  expect status equals 200\n\ntest "second test"\n  api GET /health\n  expect status equals 200\n`,
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--only', 'second test', '--no-color'], { cwd: dir });
+      assert.match(stdout, /1\/1 passed/);
+      assert.match(stdout, /second test/);
+      assert.doesNotMatch(stdout, /first test/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw run --only` matching no test anywhere is a usage error, not a silent 0-test green run (P#46)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-only-zero-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "the only test"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, 'run', '--only', 'nope', '--no-color'], { cwd: dir }),
+        (e: unknown) => (e as { code?: number }).code === 2,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

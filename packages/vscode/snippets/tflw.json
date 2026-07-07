@@ -1,0 +1,58 @@
+{
+  "Test": {
+    "prefix": "test",
+    "body": [
+      "test \"${1:test name}\"",
+      "  api ${2|GET,POST,PUT,PATCH,DELETE|} ${3:/path}",
+      "  expect status equals ${4:200}",
+      "$0"
+    ],
+    "description": "A basic API test (SPEC §4.1)"
+  },
+  "Expect": {
+    "prefix": "expect",
+    "body": "expect ${1:status} ${2|equals,contains,matches,matches subset,has count|} ${3:value}",
+    "description": "An assertion (SPEC §6)"
+  },
+  "Session": {
+    "prefix": "session",
+    "body": [
+      "session ${1:name}",
+      "  api POST ${2:/auth/login} body { ${3:user}: env(${4:USER_ENV}), ${5:pass}: env(${6:PASS_ENV}) }",
+      "  capture body.token as token",
+      "  header \"Authorization\" is \"Bearer {token}\""
+    ],
+    "description": "A session block, in tflw.config — the single auth concept (SPEC §3.3)"
+  },
+  "Before hook": {
+    "prefix": "before",
+    "body": ["before", "  $0"],
+    "description": "Runs before each test in the file (SPEC §4.2)"
+  },
+  "Before file hook": {
+    "prefix": "before file",
+    "body": ["before file", "  $0"],
+    "description": "Runs once per file, in its own isolated scope (SPEC §4.2)"
+  },
+  "After hook": {
+    "prefix": "after",
+    "body": ["after", "  $0"],
+    "description": "Runs after each test — cleanup lives here (SPEC §4.2)"
+  },
+  "After file hook": {
+    "prefix": "after file",
+    "body": ["after file", "  $0"],
+    "description": "Runs once per file, in its own isolated scope (SPEC §4.2)"
+  },
+  "With each table": {
+    "prefix": "with each",
+    "body": [
+      "with each",
+      "  | ${1:column1} | ${2:column2} |",
+      "  | ${3:value1}  | ${4:value2}  |",
+      "test \"${5:test name} {${1:column1}}\"",
+      "  $0"
+    ],
+    "description": "A data table — one reported case per row (SPEC §4.3)"
+  }
+}

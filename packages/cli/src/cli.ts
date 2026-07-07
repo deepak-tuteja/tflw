@@ -21,6 +21,7 @@ import {
   checkUnknownVariables,
   suggest,
   type Program,
+  type Diagnostic,
 } from '@tflw/lang';
 import {
   runProgram,
@@ -99,6 +100,12 @@ interface RunArgs {
    * decision 52). */
   readonly nowRaw?: string | undefined;
   readonly tag?: string | undefined;
+  /** `--only "<exact test name>"` (decision 94) — runs a single test by its exact declared name,
+   * for the VS Code extension's per-test "Run test" CodeLens (`--tag` alone can't target one test,
+   * since tags aren't required/unique). Combines with `--tag` (both must match, AND not OR) rather
+   * than being mutually exclusive, since that's the least surprising behavior if a future caller
+   * ever passes both — no extra validation needed for a combination that's simply more selective. */
+  readonly only?: string | undefined;
   /** Raw `--workers` text, validated in `runCommand` (P#47). */
   readonly workersRaw?: string | undefined;
   readonly noColor: boolean;
@@ -113,6 +120,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let seedRaw: string | undefined;
   let nowRaw: string | undefined;
   let tag: string | undefined;
+  let only: string | undefined;
   let workersRaw: string | undefined;
   let noColor = false;
   let verbose = false;
@@ -126,13 +134,15 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--now=')) nowRaw = a.slice('--now='.length);
     else if (a === '--tag') tag = argv[++i];
     else if (a.startsWith('--tag=')) tag = a.slice('--tag='.length);
+    else if (a === '--only') only = argv[++i];
+    else if (a.startsWith('--only=')) only = a.slice('--only='.length);
     else if (a === '--workers') workersRaw = argv[++i];
     else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
     else if (a === '--no-color') noColor = true;
     else if (a === '--verbose') verbose = true;
     else files.push(a);
   }
-  return { files, env, seedRaw, nowRaw, tag, workersRaw, noColor, verbose };
+  return { files, env, seedRaw, nowRaw, tag, only, workersRaw, noColor, verbose };
 }
 
 /** Parsed + checker-clean state shared by `tflw run` and `tflw check` (decision 75) — everything
@@ -148,8 +158,21 @@ interface ValidatedProject {
  * error anywhere is a usage error and printed diagnostics, never a partial run. Returns the exit
  * code on failure (already printed), or the validated project on success. Shared by `runCommand`
  * (which then also gates on secrets and actually executes) and `checkCommand` (which stops here —
- * lint-only, no execution, so it never needs real secrets or a live API, decision 75). */
-async function loadAndValidate(cwd: string, filesArg: string[], envFlag: string | undefined, color: boolean): Promise<ValidatedProject | number> {
+ * lint-only, no execution, so it never needs real secrets or a live API, decision 75).
+ *
+ * `onFileDiagnostics`, when given, redirects a *per-file* diagnostic batch (the common case — a
+ * syntax/checker error in the `.tflw` file itself, not `tflw.config`) to the callback instead of
+ * `renderDiagnostics`+stderr — used only by `tflw check --format json` (decision 94) to recover
+ * the structured `Diagnostic[]` for the one file it's checking. Config-level failures (a broken
+ * `tflw.config`, an unknown session service) still print text and return an exit code the same as
+ * always — out of scope for a per-file editor check, since they aren't this file's problem. */
+async function loadAndValidate(
+  cwd: string,
+  filesArg: string[],
+  envFlag: string | undefined,
+  color: boolean,
+  onFileDiagnostics?: (file: string, source: string, diagnostics: readonly Diagnostic[]) => void,
+): Promise<ValidatedProject | number> {
   // 1. Load + parse tflw.config (declaration-only dialect).
   const configPath = join(cwd, 'tflw.config');
   let configText: string;
@@ -214,7 +237,8 @@ async function loadAndValidate(cwd: string, filesArg: string[], envFlag: string 
     const variableDiags = checkUnknownVariables(parsed.program);
     const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags];
     if (diagnostics.length > 0) {
-      process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
+      if (onFileDiagnostics) onFileDiagnostics(file, source, diagnostics);
+      else process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
       hadErrors = true;
       continue;
     }
@@ -282,17 +306,27 @@ async function runCommand(argv: string[]): Promise<number> {
   const now = resolveRunClock(nowArg).toISOString();
   const uniqueSeq = makeUniqueSeq();
 
-  // Apply `--tag` filtering once, up front — a file with no matching test is dropped entirely; if
-  // *no* file anywhere carries the tag, that's a hard usage error, not a silent green CI (P#46).
+  // Apply `--tag`/`--only` filtering once, up front — a file with no matching test is dropped
+  // entirely; if *no* file anywhere has a match, that's a hard usage error, not a silent green CI
+  // (P#46). Both filters apply together (AND, not OR) when both are given.
   const runnable = parsedFiles
     .map(({ file, source, program: fileProgram }) => ({
       file,
       source,
-      program: args.tag ? { ...fileProgram, tests: fileProgram.tests.filter((t) => t.tags.includes(args.tag!)) } : fileProgram,
+      program: {
+        ...fileProgram,
+        tests: fileProgram.tests
+          .filter((t) => !args.tag || t.tags.includes(args.tag))
+          .filter((t) => !args.only || t.name.value === args.only),
+      },
     }))
-    .filter((f) => !args.tag || f.program.tests.length > 0);
+    .filter((f) => (!args.tag && !args.only) || f.program.tests.length > 0);
   if (args.tag && runnable.length === 0) {
     err(`no test anywhere carries the tag \`${args.tag}\`.`);
+    return EXIT_USAGE;
+  }
+  if (args.only && runnable.length === 0) {
+    err(`no test anywhere is named \`${args.only}\`.`);
     return EXIT_USAGE;
   }
 
@@ -403,20 +437,25 @@ interface CheckArgs {
   readonly files: string[];
   readonly env?: string | undefined;
   readonly noColor: boolean;
+  /** `--format json` (decision 94) — only `json` is recognized; anything else is a usage error. */
+  readonly format?: string | undefined;
 }
 
 function parseCheckArgs(argv: string[]): CheckArgs {
   const files: string[] = [];
   let env: string | undefined;
   let noColor = false;
+  let format: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = argv[++i];
     else if (a.startsWith('--env=')) env = a.slice('--env='.length);
     else if (a === '--no-color') noColor = true;
+    else if (a === '--format') format = argv[++i];
+    else if (a.startsWith('--format=')) format = a.slice('--format='.length);
     else files.push(a);
   }
-  return { files, env, noColor };
+  return { files, env, noColor, format };
 }
 
 /** Validate-only: the exact same parse+checker pipeline `tflw run` runs before it executes
@@ -424,9 +463,27 @@ function parseCheckArgs(argv: string[]): CheckArgs {
  * pre-commit: lint a suite without touching a live API. */
 async function checkCommand(argv: string[]): Promise<number> {
   const args = parseCheckArgs(argv);
-  const color = args.noColor ? false : process.stdout.isTTY === true;
   const cwd = process.cwd();
 
+  if (args.format !== undefined && args.format !== 'json') {
+    err(`unknown --format \`${args.format}\` — only \`json\` is supported.`);
+    return EXIT_USAGE;
+  }
+
+  if (args.format === 'json') {
+    // Structured output for the VS Code extension (decision 94): redirect the target file's own
+    // diagnostics into `collected` instead of stderr text. Config-level failures (broken
+    // tflw.config, unknown session service) still print text to stderr and return exit 2 as
+    // always — out of scope for a per-file editor check.
+    const collected: Diagnostic[] = [];
+    const loaded = await loadAndValidate(cwd, args.files, args.env, false, (_file, _source, diagnostics) => {
+      collected.push(...diagnostics);
+    });
+    process.stdout.write(JSON.stringify(collected) + '\n');
+    return typeof loaded === 'number' ? loaded : EXIT_OK;
+  }
+
+  const color = args.noColor ? false : process.stdout.isTTY === true;
   const loaded = await loadAndValidate(cwd, args.files, args.env, color);
   if (typeof loaded === 'number') return loaded;
 
@@ -709,12 +766,15 @@ function printUsage(): void {
       'tflw — a testing-only DSL for API tests (.tflw files), reports first.',
       '',
       'usage:',
-      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>] [--workers <n>] [--no-color] [--verbose]',
+      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>] [--only <name>] [--workers <n>] [--no-color] [--verbose]',
       '                                                      run .tflw tests (default: all under cwd)',
       '                                                      --now replays the exact run-clock instant',
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
       '                                                      --verbose prints one line per step, not just per test',
-      '  tflw check [files...] [--env <name>] [--no-color]  validate only — no execution, no secrets needed',
+      '                                                      --only runs a single test by its exact declared name',
+      '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
+      '                                                      validate only — no execution, no secrets needed;',
+      '                                                      --format json is for editor integrations (VS Code)',
       '  tflw init                                          scaffold tflw.config + example.tflw',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
       '  tflw --version, -v                                 print the installed version',

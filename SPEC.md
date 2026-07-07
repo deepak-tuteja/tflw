@@ -694,8 +694,8 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave |
-| `tflw check [files] [--env E] [--no-color]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output only; `--format json` waits for a real consumer (LSP, M5) |
+| `tflw run [files] [--env E] [--tag T] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--only` runs a single test by its exact declared name (composes with `--tag` as AND) — decision 94, for the VS Code extension's per-test CodeLens |
+| `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
 
@@ -738,8 +738,8 @@ echo one (e.g. from a garbled/binary response) still produces well-formed XML (P
 
 ## 14. Architecture (P#1, P#12) 🔧
 
-✅ `lang`/`runtime` (fetch binding)/`reporter`/`cli`, bundled via esbuild for publish. 🔮 The
-Playwright binding in `runtime` is M3; `vscode/` is M5.
+✅ `lang`/`runtime` (fetch binding)/`reporter`/`cli`/`vscode`, bundled via esbuild for publish.
+🔮 The Playwright binding in `runtime` is M3.
 
 ```
 packages/
@@ -747,8 +747,9 @@ packages/
   runtime/   interpreter, fetch binding (M1) + Playwright binding (M3), event stream,
              taint tracking, seed derivation
   reporter/  events → report.html + junit.xml, redaction rendering
-  cli/       tflw run / watch / pick / refactor
-  vscode/    highlighting + squiggles (wraps lang/)
+  cli/       tflw run / check / init / docs / watch / pick / refactor
+  vscode/    highlighting + child-process diagnostics + run CodeLens (decision 94) — a thin
+             extension-host client of the CLI's `--format json`, not a wrap of lang/ (no LSP)
 tests/       dogfood .tflw suite (against automationTestPOC)
 ```
 
@@ -768,9 +769,11 @@ mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.
   README/LICENSE in the tarball, `--version`, `check`, CHANGELOG, positioning); the browser half
   publishes as `0.2.0`; `1.0.0` follows the browser-era M7 verdict (P#50). Repo is public with
   **contributions closed initially** — issues welcome, PRs not accepted yet, stated plainly in
-  the README (P#80). Platform bar at 0.1: tested on Linux/macOS, Windows via WSL (P#79). A
-  highlight-only VS Code extension (TextMate grammar, no checker integration) ships alongside
-  0.1 on its own Marketplace cadence (P#76); squiggles/LSP stay M5.
+  the README (P#80). Platform bar at 0.1: tested on Linux/macOS, Windows via WSL (P#79). A VS Code
+  extension ships alongside 0.1 on its own Marketplace cadence (P#76): TextMate grammar, snippets,
+  child-process diagnostics (`tflw check --format json`), and a run CodeLens — not a real LSP
+  (decision 94 supersedes P#76's original "squiggles/LSP stay M5" deferral, since this pattern
+  didn't need to wait for a real LSP consumer to exist).
 - **Install:** per-project `npm i -D tflw`, run via `npx tflw`; `tflw init` scaffolds.
   **Node ≥ 22** (P#43). `.ts` escape-hatch helpers load via native type stripping — no tsx/
   esbuild runtime dependency; published tflw has essentially zero runtime deps (P#43).

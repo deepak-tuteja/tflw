@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+*.vsix
 .env
 report/
 packages/cli/LICENSE
