@@ -430,6 +430,18 @@ Each individual poll's own request timeout is clamped to whatever's left of the 
 just the (usually much longer) per-request `timeout step` — so a slow/hanging endpoint can't make
 the whole `wait until api` block silently exceed its configured budget (PLAN decision 67).
 
+`wait until api` may carry its own `header "…" is <value>` lines, exactly like an `api` step's
+header sub-block (§5.1) — the same `header`/`expect` block, headers first by convention but not
+enforced by the grammar. Every poll re-sends them, so a poll that needs a specific auth token,
+per-file namespace, or idempotency key attached is expressible without a workaround (PLAN decision
+95, closes gap #4):
+
+```
+wait until api GET /jobs/{jobId}
+  header "Authorization" is "Bearer {token}"
+  expect body.status equals "done"
+```
+
 ## 6. Assertions (P#13–16) ✅
 
 ### 6.1 The one form

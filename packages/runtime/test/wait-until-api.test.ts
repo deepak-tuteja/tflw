@@ -49,6 +49,33 @@ test('times out and fails the test when the condition never holds', async () => 
   await server.close();
 });
 
+test('carries its own `header` lines on every poll (gap #4)', async () => {
+  let calls = 0;
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => {
+      calls++;
+      json(res, 200, { status: calls >= 3 ? 'shipped' : 'pending' });
+    },
+  });
+
+  const source = `test "polls with an auth header"
+  let token = "secret-123"
+  wait until api GET /poll
+    header "Authorization" is "Bearer {token}"
+    expect body.status equals "shipped"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.ok(calls >= 3);
+  const received = server.received.get('/poll')!;
+  assert.equal(received.length, calls);
+  for (const req of received) assert.equal(req.headers['authorization'], 'Bearer secret-123');
+
+  await server.close();
+});
+
 test('a hanging single poll fails close to the wait deadline, not the full request timeout (decision 67)', async () => {
   const server = await startFixtureServer({
     '/poll': (_req, res) => {

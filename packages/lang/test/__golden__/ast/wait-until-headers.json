@@ -1,0 +1,124 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "polls an endpoint that needs a per-step auth header",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "polls an endpoint that needs a per-step auth header"
+          }
+        ]
+      },
+      "tags": [],
+      "session": "admin",
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "WaitUntilApiStmt",
+          "request": {
+            "service": null,
+            "method": "GET",
+            "path": {
+              "type": "PathExpr",
+              "raw": "/jobs/{jobId}"
+            },
+            "body": null,
+            "headers": [
+              {
+                "type": "ApiHeader",
+                "name": {
+                  "type": "StringLit",
+                  "value": "Authorization",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "Authorization"
+                    }
+                  ]
+                },
+                "value": {
+                  "type": "StringLit",
+                  "value": "Bearer {token}",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "Bearer "
+                    },
+                    {
+                      "kind": "interp",
+                      "ref": [
+                        {
+                          "kind": "prop",
+                          "name": "token"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "ApiHeader",
+                "name": {
+                  "type": "StringLit",
+                  "value": "X-Test-NS",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "X-Test-NS"
+                    }
+                  ]
+                },
+                "value": {
+                  "type": "EnvRef",
+                  "name": "TEST_NS"
+                }
+              }
+            ],
+            "timeoutMs": null,
+            "followRedirects": true
+          },
+          "expects": [
+            {
+              "type": "ExpectStmt",
+              "soft": false,
+              "quantifier": null,
+              "subject": {
+                "type": "BodySubject",
+                "path": [
+                  {
+                    "kind": "prop",
+                    "name": "status"
+                  }
+                ]
+              },
+              "matcher": {
+                "type": "Matcher",
+                "name": "equals",
+                "negated": false,
+                "value": {
+                  "type": "StringLit",
+                  "value": "done",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "done"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

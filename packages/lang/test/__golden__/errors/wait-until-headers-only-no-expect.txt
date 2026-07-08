@@ -1,0 +1,7 @@
+error[TF015]: this `wait until` has no `expect` lines
+ --> wait-until-headers-only-no-expect.tflw:4:1
+  |
+4 | 
+  | ^
+  |
+  = help: indent at least one `expect` under the request line

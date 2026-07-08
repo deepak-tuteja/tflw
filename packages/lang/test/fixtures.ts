@@ -125,6 +125,15 @@ test "create an order" as admin
 `,
   },
   {
+    name: 'wait-until-headers',
+    source: `test "polls an endpoint that needs a per-step auth header" as admin
+  wait until api GET /jobs/{jobId}
+    header "Authorization" is "Bearer {token}"
+    header "X-Test-NS" is env(TEST_NS)
+    expect body.status equals "done"
+`,
+  },
+  {
     name: 'm2-arithmetic',
     source: `test "arithmetic value expressions"
   let price = 10
@@ -455,6 +464,13 @@ export const INVALID: readonly Fixture[] = [
     source: `test "any only applies to body"
   api GET /health
   expect any status equals 200
+`,
+  },
+  {
+    name: 'wait-until-headers-only-no-expect',
+    source: `test "headers but no condition to wait for"
+  wait until api GET /jobs/{jobId}
+    header "Authorization" is "Bearer {token}"
 `,
   },
   {

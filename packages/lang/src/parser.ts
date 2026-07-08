@@ -883,16 +883,8 @@ class Parser {
       }
       const before = this.pos;
       if (this.isKw(this.peek(), 'header')) {
-        const start = this.peek().span.start;
-        this.advance(); // `header`
-        const name = this.expectString('a header name string, e.g. `header "Authorization"`');
-        if (name && this.expectKw('is')) {
-          const value = this.parseValue();
-          if (value) {
-            this.endLine();
-            headers.push({ type: 'ApiHeader', name, value, span: this.spanFrom(start) });
-          } else this.synchronize();
-        } else this.synchronize();
+        const header = this.parseHeaderLine();
+        if (header) headers.push(header);
       } else {
         this.error(Codes.UNEXPECTED_TOKEN, `only \`header\` lines may follow an api step, found ${describeToken(this.peek())}`, this.peek().span);
         this.synchronize();
@@ -901,6 +893,26 @@ class Parser {
     }
     if (this.check('dedent')) this.advance();
     return headers;
+  }
+
+  /** One `header "…" is <value>` line — shared by an api step's header sub-block (`parseApiHeaders`)
+   * and `wait until api`'s own header lines (`parseWaitUntilBody`, SPEC §5.5). Caller has already
+   * confirmed the `header` keyword is next. */
+  private parseHeaderLine(): ApiHeader | null {
+    const start = this.peek().span.start;
+    this.advance(); // `header`
+    const name = this.expectString('a header name string, e.g. `header "Authorization"`');
+    if (!name || !this.expectKw('is')) {
+      this.synchronize();
+      return null;
+    }
+    const value = this.parseValue();
+    if (!value) {
+      this.synchronize();
+      return null;
+    }
+    this.endLine();
+    return { type: 'ApiHeader', name, value, span: this.spanFrom(start) };
   }
 
   // -- wait until api ---------------------------------------------------------
@@ -915,16 +927,24 @@ class Parser {
     const request = this.parseApiRequestLine();
     if (!request) return null;
     this.endLine();
-    const expects = this.parseExpectOnlyBlock();
-    return { type: 'WaitUntilApiStmt', request, expects, span: this.spanFrom(start) };
+    const { headers, expects } = this.parseWaitUntilBody();
+    return {
+      type: 'WaitUntilApiStmt',
+      request: headers.length ? { ...request, headers } : request,
+      expects,
+      span: this.spanFrom(start),
+    };
   }
 
-  /** An indented block containing only `expect` lines (the body of `wait until api`). */
-  private parseExpectOnlyBlock(): ExpectStmt[] {
+  /** The indented block under `wait until api …`: optional `header "…" is …` lines (SPEC §5.5,
+   * gap #4 — mirrors an `api` step's own header sub-block so a poll can carry per-step auth,
+   * namespace, or idempotency-key headers) followed by the required `expect` lines. */
+  private parseWaitUntilBody(): { headers: ApiHeader[]; expects: ExpectStmt[] } {
+    const headers: ApiHeader[] = [];
     const expects: ExpectStmt[] = [];
     if (!this.check('indent')) {
       this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');
-      return expects;
+      return { headers, expects };
     }
     this.advance(); // indent
     while (!this.check('dedent') && !this.atEof()) {
@@ -933,18 +953,24 @@ class Parser {
         continue;
       }
       const before = this.pos;
-      if (this.isKw(this.peek(), 'expect')) {
+      if (this.isKw(this.peek(), 'header')) {
+        const header = this.parseHeaderLine();
+        if (header) headers.push(header);
+      } else if (this.isKw(this.peek(), 'expect')) {
         const stmt = this.parseExpect(false);
         if (stmt) expects.push(stmt as ExpectStmt);
         else this.synchronize();
       } else {
-        this.error(Codes.UNEXPECTED_TOKEN, `only \`expect\` lines may follow \`wait until api\`, found ${describeToken(this.peek())}`, this.peek().span);
+        this.error(Codes.UNEXPECTED_TOKEN, `only \`header\` or \`expect\` lines may follow \`wait until api\`, found ${describeToken(this.peek())}`, this.peek().span);
         this.synchronize();
       }
       if (this.pos === before) this.advance();
     }
     if (this.check('dedent')) this.advance();
-    return expects;
+    if (expects.length === 0) {
+      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');
+    }
+    return { headers, expects };
   }
 
   private parseEnvRef(): EnvRef | null {
