@@ -43,7 +43,7 @@ TAG         '@' IDENT
 ```
 Program     := (NEWLINE | TestDecl)*
 
-TestDecl    := TAG* 'test' STRING ('as' IDENT)? NEWLINE Block
+TestDecl    := TAG* 'test' STRING ('as' IDENT (',' IDENT)*)? NEWLINE Block
 Block       := INDENT Step+ DEDENT
 Step        := ApiStep | ExpectStmt | LetStmt | CaptureStmt
 

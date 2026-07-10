@@ -28,6 +28,14 @@ test "create an order" as admin
 `,
   },
   {
+    name: 'multi-session',
+    source: `@smoke
+test "an order visible to both admin and the shopper" as admin, shopper
+  api GET /orders
+  expect status equals 200
+`,
+  },
+  {
     name: 'subjects-and-matchers',
     source: `test "assorted assertions"
   api GET /orders?state=open
@@ -405,6 +413,12 @@ export const INVALID: readonly Fixture[] = [
     name: 'misspelled-step',
     source: `test "typo in a step"
   expct status equals 200
+`,
+  },
+  {
+    name: 'trailing-comma-session-list',
+    source: `test "dangling comma in as list" as admin,
+  api GET /health
 `,
   },
   {

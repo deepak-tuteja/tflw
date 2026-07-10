@@ -9,26 +9,31 @@
       "type": "TestDecl",
       "name": {
         "type": "StringLit",
-        "value": "hits the billing service",
+        "value": "an order visible to both admin and the shopper",
         "parts": [
           {
             "kind": "text",
-            "value": "hits the billing service"
+            "value": "an order visible to both admin and the shopper"
           }
         ]
       },
-      "tags": [],
-      "sessions": [],
+      "tags": [
+        "smoke"
+      ],
+      "sessions": [
+        "admin",
+        "shopper"
+      ],
       "retry": 0,
       "table": null,
       "body": [
         {
           "type": "ApiStep",
-          "service": "billing",
+          "service": null,
           "method": "GET",
           "path": {
             "type": "PathExpr",
-            "raw": "/invoices/{invoiceId}"
+            "raw": "/orders"
           },
           "body": null,
           "headers": [],

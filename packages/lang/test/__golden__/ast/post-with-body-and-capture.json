@@ -21,7 +21,9 @@
         "smoke",
         "orders"
       ],
-      "session": "admin",
+      "sessions": [
+        "admin"
+      ],
       "retry": 0,
       "table": null,
       "body": [

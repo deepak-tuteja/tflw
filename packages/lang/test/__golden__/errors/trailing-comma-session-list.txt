@@ -1,0 +1,7 @@
+error[TF010]: expected a session name, found end of line
+ --> trailing-comma-session-list.tflw:1:43
+  |
+1 | test "dangling comma in as list" as admin,
+  |                                           ^
+  |
+  = help: expected a name

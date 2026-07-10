@@ -21,6 +21,28 @@ function configWithSession(baseUrl: string, sessionBody = `  api POST /auth/logi
   return resolveConfig(parsed.config, envBlock);
 }
 
+// Two independent, unrelated sessions (M14/M15's `as admin, userA` — a test can opt into several
+// at once): `admin` is a bearer session (same as `configWithSession`'s default); `shopper` is a
+// cookie session, so a test opting into both proves headers and cookies from *different* sessions
+// both land on the same outgoing request.
+function configWithTwoSessions(baseUrl: string): ResolvedConfig {
+  const configSource = `env test default
+  api "${baseUrl}"
+
+session admin
+  api POST /auth/login body { user: "a", pass: "b" }
+  capture body.token as token
+  header "Authorization" is "Bearer {token}"
+
+session shopper
+  api POST /shopper/login
+`;
+  const parsed = parseConfigSource(configSource);
+  assert.deepEqual(parsed.diagnostics, [], JSON.stringify(parsed.diagnostics));
+  const envBlock = selectEnv(parsed.config, {});
+  return resolveConfig(parsed.config, envBlock);
+}
+
 test('a session header is auto-applied to the api steps of a test running `as <session>`', async () => {
   const server = await startFixtureServer({
     '/auth/login': (_req, res) => json(res, 200, { token: 'tok-123' }),
@@ -210,9 +232,145 @@ test('a test referencing an unknown session fails clearly at runtime (defensive 
   const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, {}) });
   const config = configWithSession(server.baseUrl);
 
-  // Bypass the checker by hand-building a TestDecl whose `session` isn't declared in config.
+  // Bypass the checker by hand-building a TestDecl whose session isn't declared in config.
   const { program } = parseSource(`test "ok"\n  api GET /orders\n  expect status equals 200\n`);
-  const bad = { ...program, tests: [{ ...program.tests[0]!, session: 'ghost' }] };
+  const bad = { ...program, tests: [{ ...program.tests[0]!, sessions: ['ghost'] }] };
+  const { report } = await runProgram(bad, config, { source: '' });
+
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /unknown session "ghost"/);
+
+  await server.close();
+});
+
+// M15/gap #7: `test "..." as admin, userA` — several independent, unrelated sessions opted into
+// at once. Merge rule: later-listed session wins any header/cookie-name conflict against an
+// earlier one (same "later source replaces" rule the whole precedence chain already follows).
+
+test('a test opting into two independent sessions gets both sessions\' headers and cookies on the same request', async () => {
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => json(res, 200, { token: 'tok-123' }),
+    '/shopper/login': (_req, res) => {
+      res.setHeader('Set-Cookie', 'shopper_id=abc123');
+      json(res, 200, {});
+    },
+    '/orders': (req, res) =>
+      json(res, 200, { auth: req.headers['authorization'] ?? null, cookie: req.headers['cookie'] ?? null }),
+  });
+  const config = configWithTwoSessions(server.baseUrl);
+
+  const source = `test "reads orders as both admin and shopper" as admin, shopper
+  api GET /orders
+  expect status equals 200
+  expect body.auth equals "Bearer tok-123"
+  expect body.cookie equals "shopper_id=abc123"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(server.received.get('/auth/login')!.length, 1);
+  assert.equal(server.received.get('/shopper/login')!.length, 1);
+
+  await server.close();
+});
+
+test('a later-listed session wins a header-name conflict against an earlier one', async () => {
+  const server = await startFixtureServer({
+    '/first/login': (_req, res) => json(res, 200, {}),
+    '/second/login': (_req, res) => json(res, 200, {}),
+    '/whoami': (req, res) => json(res, 200, { actor: req.headers['x-actor'] ?? null }),
+  });
+  const configSource = `env test default
+  api "${server.baseUrl}"
+
+session first
+  api POST /first/login
+  header "X-Actor" is "first"
+
+session second
+  api POST /second/login
+  header "X-Actor" is "second"
+`;
+  const parsed = parseConfigSource(configSource);
+  assert.deepEqual(parsed.diagnostics, []);
+  const config = resolveConfig(parsed.config, selectEnv(parsed.config, {}));
+
+  const source = `test "second wins, listed last" as first, second
+  api GET /whoami
+  expect status equals 200
+  expect body.actor equals "second"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+
+  // Reversed opt-in order flips the winner too — confirms this is genuinely "later in the `as`
+  // list", not e.g. "whichever session declares last in tflw.config".
+  const reversedSource = `test "first wins when listed last instead" as second, first
+  api GET /whoami
+  expect status equals 200
+  expect body.actor equals "first"
+`;
+  const { program: reversedProgram } = parseSource(reversedSource);
+  const { report: reversedReport } = await runProgram(reversedProgram, config, { source: reversedSource });
+  assert.equal(reversedReport.ok, true, JSON.stringify(reversedReport.tests, null, 2));
+
+  await server.close();
+});
+
+test('each session in a multi-session opt-in is still only shown once across the whole run, independently per name', async () => {
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => json(res, 200, { token: 'tok-123' }),
+    '/shopper/login': (_req, res) => {
+      res.setHeader('Set-Cookie', 'shopper_id=abc123');
+      json(res, 200, {});
+    },
+    '/orders': (req, res) => json(res, 200, { auth: req.headers['authorization'] ?? null }),
+    '/profile': (req, res) => json(res, 200, { auth: req.headers['authorization'] ?? null }),
+  });
+  const config = configWithTwoSessions(server.baseUrl);
+
+  // "first" opts into only `admin`; "second" opts into both — `admin` must still only ever log in
+  // once across the two tests (cached), and `shopper` (never used by "first") logs in exactly
+  // once too, its steps spliced only into whichever test actually owns that name.
+  const source = `test "first" as admin
+  api GET /orders
+  expect status equals 200
+
+test "second" as admin, shopper
+  api GET /profile
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(server.received.get('/auth/login')!.length, 1, 'admin must log in exactly once, shared across both tests');
+  assert.equal(server.received.get('/shopper/login')!.length, 1, 'shopper must log in exactly once');
+
+  const firstKinds = report.tests[0]!.steps.map((s) => s.kind);
+  assert.deepEqual(firstKinds, ['api', 'capture', 'header', 'api', 'expect'], '"first" owns admin\'s splice (it opted in first)');
+
+  const secondKinds = report.tests[1]!.steps.map((s) => s.kind);
+  assert.deepEqual(secondKinds, ['api', 'api', 'expect'], '"second" does not re-show admin\'s steps, but does own shopper\'s splice (a bare `api` step, no capture/header)');
+
+  await server.close();
+});
+
+test('an unknown session among several opted into fails clearly, even when the others are valid', async () => {
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => json(res, 200, { token: 'tok-123' }),
+    '/orders': (_req, res) => json(res, 200, {}),
+  });
+  const config = configWithSession(server.baseUrl);
+
+  // Bypass the checker (same pattern as the single-session "unknown session" test above) — the
+  // checker normally catches this at parse time; this proves the runtime's own defense is
+  // per-name, not "first bad name in the list aborts silently."
+  const { program } = parseSource(`test "ok"\n  api GET /orders\n  expect status equals 200\n`);
+  const bad = { ...program, tests: [{ ...program.tests[0]!, sessions: ['admin', 'ghost'] }] };
   const { report } = await runProgram(bad, config, { source: '' });
 
   assert.equal(report.ok, false);

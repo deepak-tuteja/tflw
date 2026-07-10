@@ -139,8 +139,13 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
       const globalIndex = testIndexOffset + i;
       const testSeed = subSeed(runSeed, globalIndex);
       const tc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache };
-      const isSessionOwner = kase.test.session !== null && opts.sessionSpliceOwners ? opts.sessionSpliceOwners.get(kase.test.session) === globalIndex : undefined;
-      const result = await runTest(kase.test, config, tc, registry, beforeEach, afterEach, testSeed, kase.cells, isSessionOwner);
+      // Per session *name*, not per test — a test opting into several sessions at once can own
+      // the splice for one of them and not another, if some earlier test already claimed a name
+      // it also opts into.
+      const sessionOwnership: ReadonlyMap<string, boolean> | undefined = opts.sessionSpliceOwners
+        ? new Map(kase.test.sessions.map((name) => [name, opts.sessionSpliceOwners!.get(name) === globalIndex] as const))
+        : undefined;
+      const result = await runTest(kase.test, config, tc, registry, beforeEach, afterEach, testSeed, kase.cells, sessionOwnership);
       results.push(result);
       emit({ type: 'test:end', result });
     }
@@ -195,17 +200,19 @@ export async function countTestCases(program: Program, baseDir: string): Promise
 }
 
 /**
- * For every expanded case in this file that opts into a `session` (`as <name>`), its local index
- * (0-based, within *this* program's cases only) and the session name it opts into. The CLI
- * combines this with each file's precomputed test-index offset to compute a *global* index per
- * case, then — across every file — picks the smallest global index per session name as that
- * session's deterministic splice-owner (decision 53), before any file actually runs.
+ * For every expanded case in this file that opts into a `session` (`as <name>[, <name>...]`), one
+ * entry per session name it opts into (a case opting into several independent sessions at once
+ * contributes one entry per name, same local index each time) — its local index (0-based, within
+ * *this* program's cases only) and the session name. The CLI combines this with each file's
+ * precomputed test-index offset to compute a *global* index per case, then — across every file —
+ * picks the smallest global index per session name as that session's deterministic splice-owner
+ * (decision 53), before any file actually runs.
  */
 export async function findSessionUsages(program: Program, baseDir: string): Promise<readonly { readonly session: string; readonly localIndex: number }[]> {
   const cases = await expandTestCases(program, baseDir);
   const usages: { session: string; localIndex: number }[] = [];
   cases.forEach((kase, localIndex) => {
-    if (kase.test.session !== null) usages.push({ session: kase.test.session, localIndex });
+    for (const session of kase.test.sessions) usages.push({ session, localIndex });
   });
   return usages;
 }
@@ -400,13 +407,17 @@ async function runTest(
   afterEach: readonly HookDecl[],
   testSeed: number,
   cells: readonly RowCell[] | null,
-  isSessionOwner: boolean | undefined,
+  sessionOwnership: ReadonlyMap<string, boolean> | undefined,
 ): Promise<TestResult> {
   // Resolve session ownership once for the whole test, not once per retry attempt (decision 68) —
   // otherwise a fresh `claimShown` call on every attempt hands the one-time "shown" slot to
   // whichever attempt happens to call `ensure()` first, which is never guaranteed to be the last
-  // (kept) attempt once retries are in play.
-  const resolvedSessionOwner = isSessionOwner !== undefined || test.session === null ? isSessionOwner : tc.sessionCache.claimShown(test.session);
+  // (kept) attempt once retries are in play. Resolved per session *name*: a precomputed answer
+  // (from the CLI's up-front, sorted-file-order pass) is used verbatim; anything not precomputed
+  // (a single-`runProgram`-call caller, e.g. a test helper) falls back to `claimShown` per name.
+  const resolvedSessionOwnership = new Map<string, boolean>(
+    test.sessions.map((name) => [name, sessionOwnership?.get(name) ?? tc.sessionCache.claimShown(name)] as const),
+  );
   const maxAttempts = 1 + Math.max(0, test.retry);
   const runStart = performance.now();
   const attemptResults: AttemptResult[] = [];
@@ -415,7 +426,7 @@ async function runTest(
   for (;;) {
     attempts++;
     const attemptTc: TestCtx = { ...tc, rng: mulberry32(testSeed) };
-    result = await runTestAttempt(test, config, attemptTc, registry, beforeEach, afterEach, cells, attempts === 1, resolvedSessionOwner);
+    result = await runTestAttempt(test, config, attemptTc, registry, beforeEach, afterEach, cells, attempts === 1, resolvedSessionOwnership);
     attemptResults.push({ attempt: attempts, ok: result.ok, durationMs: result.durationMs, steps: result.steps, ...(result.error !== undefined ? { error: result.error } : {}) });
     if (result.ok || attempts >= maxAttempts) break;
   }
@@ -438,7 +449,7 @@ async function runTestAttempt(
   afterEach: readonly HookDecl[],
   cells: readonly RowCell[] | null,
   isFirstAttempt: boolean,
-  isSessionOwner: boolean | undefined,
+  sessionOwnership: ReadonlyMap<string, boolean> | undefined,
 ): Promise<TestResult> {
   const scope = new Map<string, unknown>();
   const nameCtx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, cookieJar: new CookieJar() };
@@ -457,24 +468,31 @@ async function runTestAttempt(
   }
   if (isFirstAttempt) tc.emit({ type: 'test:start', name });
 
-  let sessionHeaders: Readonly<Record<string, string>> = {};
-  let cookieJar = new CookieJar();
-  if (test.session !== null) {
-    const decl = config.sessions.get(test.session);
+  // Several independent, unrelated sessions can be opted into at once (`as admin, userA`) — each
+  // one's headers/cookies fold into this test's starting state in declared order, later-listed
+  // session winning any header/cookie-name conflict against an earlier one (same "later source
+  // replaces" rule the whole precedence chain already follows, SPEC §3.3). In practice this rarely
+  // collides at all: different sessions are usually different auth transports (a bearer
+  // `Authorization` header vs. a cookie), so "independent, unrelated" holds for the common case;
+  // the rule is defined regardless, for whenever it doesn't.
+  const sessionHeaders: Record<string, string> = {};
+  const cookieJar = new CookieJar();
+  for (const sessionName of test.sessions) {
+    const decl = config.sessions.get(sessionName);
     if (!decl) {
-      const error = tc.redactor.redact(`unknown session "${test.session}" — is it declared in tflw.config?`);
+      const error = tc.redactor.redact(`unknown session "${sessionName}" — is it declared in tflw.config?`);
       return { name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
     }
-    const outcome = await tc.sessionCache.ensure(test.session, decl, config, tc, isSessionOwner ?? false);
+    const outcome = await tc.sessionCache.ensure(sessionName, decl, config, tc, sessionOwnership?.get(sessionName) ?? false);
     steps.push(...outcome.steps);
     if (!outcome.ok) {
-      const error = `session "${test.session}" failed to establish: ${outcome.error ?? 'a step failed'}`;
+      const error = `session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`;
       return { name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
     }
-    sessionHeaders = outcome.headers;
+    Object.assign(sessionHeaders, outcome.headers);
     // Clone, not the live shared instance (SPEC §3.3) — this test's own subsequent cookie updates
     // must never leak back into the session cache or a concurrently-running sibling test.
-    cookieJar = outcome.cookieJar.clone();
+    cookieJar.mergeFrom(outcome.cookieJar.clone());
   }
   const evalCtx: EvalCtx = { ...nameCtx, sessionHeaders, cookieJar };
 

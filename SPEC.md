@@ -145,10 +145,20 @@ session admin
 - A test opting in with `test "…" as admin` (§4.1) starts with: the session's declared headers
   applied to its api steps, and the session's browser storage state applied to its fresh context.
 - There is no separate "auth preset" concept.
+- A test may opt into **more than one independent, unrelated session at once**:
+  `test "..." as admin, userA` (decision 96, closing TFLW-GAPS.md gap #7). Each session's headers
+  and cookie jar fold into the test's starting state in the order listed — a **later-listed
+  session wins any header/cookie-name conflict against an earlier one**, the same "later source
+  replaces" rule the cookie-jar precedence chain below already follows. In practice this rarely
+  collides at all: independent sessions are usually different auth transports (a bearer
+  `Authorization` header vs. a session cookie) with no shared header/cookie names to begin with —
+  the ordering rule exists for whenever it doesn't, not because collisions are expected.
 - A session's own `random`-family generators are seeded from the session's name (not from
-  whichever test happens to trigger it), and which test's report shows the session's steps is
-  decided up front, in sorted-file/declaration order — both stay identical regardless of
-  `--workers N>1` concurrency (fixed in M2.65, decision 53).
+  whichever test happens to trigger it), and which test's report shows a given session's steps is
+  decided up front **per session name**, in sorted-file/declaration order — a test can own one
+  opted-in session's step-splice without owning another's, if some other test already claimed that
+  other name first. Both stay identical regardless of `--workers N>1` concurrency (fixed in M2.65,
+  decision 53; extended to multi-session opt-ins in decision 96).
 - Only a **successful** establishment is cached: a session that fails (a transient auth blip) is
   not memoized, so a later attempt — a `retry` on the same test, or a later test opting in — may
   re-establish it (fixed in M2.65, decision 54).
@@ -178,21 +188,25 @@ session shopper
 - A test opting into `as <session>` starts with a **clone** of that session's own jar, not the live
   instance — the test's own subsequent cookie updates never leak back into the session cache
   (shared for the run's lifetime) or into a concurrently-running sibling test under `--workers
-  N>1`. An action call shares its caller's live jar (same as `rng`/`redactor`).
+  N>1`. Opting into **several** sessions (`as admin, userA`) clones and merges every one of their
+  jars into the test's one starting jar, in listed order — same later-wins-per-name rule as the
+  header merge above. An action call shares its caller's live jar (same as `rng`/`redactor`).
 - An explicit per-step `header "Cookie" is …` still overrides the jar entirely (the escape hatch
-  is never removed) — precedence is config headers → session headers → jar → per-step headers,
-  each later source replacing rather than appending.
+  is never removed) — precedence is config headers → session headers (already merged across every
+  opted-in session, if more than one) → jar (already merged the same way) → per-step headers, each
+  later source replacing rather than appending.
 - Deliberately narrower than a real browser's jar: no `Domain`/`Path` scoping (a jar already
   belongs to one session/test talking to one logical app, not arbitrary origins) and no
   `Secure`/`HttpOnly`/`SameSite` enforcement (those constrain a *browser* deciding whether to
   attach a cookie to a browser-initiated request; a test client deliberately replays whatever the
   server just told it to remember) — a closed, smaller feature set on purpose (P#13).
 
-"Which attempt's report shows the session's steps" is resolved **once per test**, not once per
-retry attempt (PLAN decision 68) — so a `retry`-ing test running `as <session>` that fails on
-attempt 1 and passes on attempt 2 still carries the session's steps only in the surviving (last)
-attempt's report; earlier failed attempts remain visible in `report.html` too (PLAN decision 86),
-just without the session's own steps in them (§4.4).
+"Which attempt's report shows the session's steps" is resolved **once per test, per session
+name**, not once per retry attempt (PLAN decision 68) — so a `retry`-ing test running `as
+<session>` (or several) that fails on attempt 1 and passes on attempt 2 still carries each owned
+session's steps only in the surviving (last) attempt's report; earlier failed attempts remain
+visible in `report.html` too (PLAN decision 86), just without the session's own steps in them
+(§4.4).
 
 ### 3.4 Secrets (P#30)
 
@@ -271,10 +285,15 @@ mechanism.
 @smoke @orders
 test "pay for an order" as admin
   ...steps...
+
+test "an admin acting on a shopper's behalf" as admin, userA
+  ...steps...
 ```
 
 - `@tags` filter via `tflw run --tag smoke` (P#10).
-- `as <session>` opts into a cached session (§3.3). Omitted → anonymous fresh state.
+- `as <session>` opts into a cached session (§3.3); `as <session>, <session>...` opts into several
+  independent, unrelated sessions at once — a comma-separated list, same shape as `require env A,
+  B, C` (§3.4). Omitted → anonymous fresh state.
 - Isolation: every test gets a fresh browser context; no state leaks between tests (P#20).
 
 ### 4.2 Hooks (P#10, P#19)
@@ -848,7 +867,7 @@ require reading the source.
 | `TF025` | Checker (config): a key used in the wrong block. | `web "…"` inside `defaults` (belongs in an `env` block) |
 | `TF026` | Checker: an `api <service>`/`wait until api <service>` name not declared in the active env — checked in test/action/hook bodies **and** inside `session` blocks (decision 66). | `api billng POST /auth/login` → `did you mean `billing`?` |
 | `TF027` | Checker: a `{col}` reference not among an inline `with each` table's declared columns. | referencing `{prcie}` when the table's header column is `price` |
-| `TF028` | Checker: a `test … as <session>` name not declared by any `session` block. | `test "…" as ghost` with no `session ghost` declared |
+| `TF028` | Checker: a `test … as <session>[, <session>...]` name not declared by any `session` block — one diagnostic per unknown name. | `test "…" as ghost` with no `session ghost` declared |
 | `TF029` | Checker (config): a duplicate `session` name. | two `session admin` blocks in one `tflw.config` |
 | `TF030` | Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that's *definitely* unreachable, never one that merely might be. | `capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId` |
 

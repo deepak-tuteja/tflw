@@ -582,11 +582,18 @@ class Parser {
     if (!this.expectKw('test')) return null;
     const name = this.expectString('a test name string, e.g. `test "logs in"`');
     if (!name) return null;
-    let session: string | null = null;
+    // `as admin, userA` — independent, unrelated sessions a test can opt into together (P#42
+    // extended); same comma-loop shape as `require env A, B, C` (parseRequire).
+    const sessions: string[] = [];
     if (this.isKw(this.peek(), 'as')) {
       this.advance();
-      const s = this.expect('ident', 'a session name after `as`');
-      if (s) session = s.value;
+      const first = this.expect('ident', 'a session name after `as`');
+      if (first) sessions.push(first.value);
+      while (this.check('comma')) {
+        this.advance();
+        const s = this.expect('ident', 'a session name');
+        if (s) sessions.push(s.value);
+      }
     }
     let retry = 0;
     if (this.isKw(this.peek(), 'retry')) {
@@ -596,7 +603,7 @@ class Parser {
     }
     this.endLine();
     const body = this.parseBlock();
-    return { type: 'TestDecl', name, tags, session, retry, table, body, span: this.spanFrom(start) };
+    return { type: 'TestDecl', name, tags, sessions, retry, table, body, span: this.spanFrom(start) };
   }
 
   private tagsContinue(): boolean {

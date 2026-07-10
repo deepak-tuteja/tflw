@@ -108,4 +108,13 @@ export class CookieJar {
     for (const [name, entry] of this.cookies) copy.cookies.set(name, entry);
     return copy;
   }
+
+  /** Folds another jar's cookies into this one, by name — last-call-wins per name, the same
+   * "later source replaces" rule the whole header/cookie precedence chain already follows
+   * (SPEC §3.3). Used to combine several independent, unrelated sessions' jars into one starting
+   * jar for a test opting into more than one (`test "..." as admin, userA`) — each session's own
+   * jar is a genuine `clone()` first, so merging never mutates a cached session's live instance. */
+  mergeFrom(other: CookieJar): void {
+    for (const [name, entry] of other.cookies) this.cookies.set(name, entry);
+  }
 }

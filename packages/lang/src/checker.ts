@@ -89,22 +89,27 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
 }
 
 /**
- * Validate `test "…" as <session>` references against the sessions declared in `tflw.config`
- * (SPEC §3.3, P#42). Called by the CLI once the config is parsed — like `checkServices`, this
- * check is cross-file (config vs. test file) so it can't live inside `validateConfig`.
+ * Validate `test "…" as <session>[, <session>...]` references against the sessions declared in
+ * `tflw.config` (SPEC §3.3, P#42). Called by the CLI once the config is parsed — like
+ * `checkServices`, this check is cross-file (config vs. test file) so it can't live inside
+ * `validateConfig`. One diagnostic per unknown name, not one aggregated diagnostic per test — so
+ * `test "..." as admin, gohst` (one typo among several valid names) still points precisely at the
+ * bad one instead of a single-message-lists-everything wall of text.
  */
 export function checkSessions(program: Program, knownSessions: readonly string[]): Diagnostic[] {
   const diags: Diagnostic[] = [];
   for (const test of program.tests) {
-    if (test.session === null || knownSessions.includes(test.session)) continue;
-    const hint = suggest(test.session, knownSessions);
-    diags.push({
-      code: Codes.UNKNOWN_SESSION,
-      severity: 'error',
-      message: `unknown session "${test.session}"`,
-      span: test.span,
-      hint: hint ? `did you mean \`${hint}\`?` : knownSessions.length ? `known sessions: ${knownSessions.join(', ')}` : 'tflw.config declares no `session` blocks',
-    });
+    for (const session of test.sessions) {
+      if (knownSessions.includes(session)) continue;
+      const hint = suggest(session, knownSessions);
+      diags.push({
+        code: Codes.UNKNOWN_SESSION,
+        severity: 'error',
+        message: `unknown session "${session}"`,
+        span: test.span,
+        hint: hint ? `did you mean \`${hint}\`?` : knownSessions.length ? `known sessions: ${knownSessions.join(', ')}` : 'tflw.config declares no `session` blocks',
+      });
+    }
   }
   return diags;
 }

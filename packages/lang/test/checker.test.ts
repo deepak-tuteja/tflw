@@ -124,6 +124,29 @@ test('checkSessions: lists known sessions when no close match exists', () => {
   assert.match(diags[0]!.hint ?? '', /known sessions: admin, guest/);
 });
 
+test('checkSessions: accepts a test opting into several known sessions at once', () => {
+  const { program } = parseSource(`test "ok" as admin, userA\n  api GET /health\n`);
+  const diags = checkSessions(program, ['admin', 'userA']);
+  assert.deepEqual(diags, []);
+});
+
+test('checkSessions: flags only the unknown name(s) among several opted into, one diagnostic per bad name', () => {
+  const { program } = parseSource(`test "bad" as admin, gohst\n  api GET /health\n`);
+  const diags = checkSessions(program, ['admin', 'ghost']);
+  assert.equal(diags.length, 1, 'the valid `admin` name must not also be flagged');
+  assert.equal(diags[0]!.code, 'TF028');
+  assert.match(diags[0]!.message, /unknown session "gohst"/);
+  assert.match(diags[0]!.hint ?? '', /did you mean `ghost`\?/);
+});
+
+test('checkSessions: flags every unknown name when a test opts into several bad ones', () => {
+  const { program } = parseSource(`test "bad" as zzz, yyy\n  api GET /health\n`);
+  const diags = checkSessions(program, ['admin']);
+  assert.equal(diags.length, 2);
+  assert.match(diags[0]!.message, /unknown session "zzz"/);
+  assert.match(diags[1]!.message, /unknown session "yyy"/);
+});
+
 test('validateConfig: flags a duplicate `session` name', () => {
   const { diagnostics } = parseConfigSource(`env local default\n  api "http://localhost:3001"\n\nsession admin\n  api GET /health\n\nsession admin\n  api GET /health\n`);
   const sessionDiags = diagnostics.filter((d) => d.code === 'TF029');

@@ -57,8 +57,11 @@ export interface TestDecl extends Node {
   readonly type: 'TestDecl';
   readonly name: StringLit;
   readonly tags: readonly string[];
-  /** `as <session>` opt-in, or null when anonymous. */
-  readonly session: string | null;
+  /** `as <session>` opt-in(s) — `as admin, userA` opts into several independent, unrelated
+   * sessions at once (SPEC §3.3); empty when anonymous. Order is significant: later-listed
+   * sessions win header/cookie conflicts against earlier ones (same "later source replaces"
+   * rule the whole precedence chain already follows). */
+  readonly sessions: readonly string[];
   /** `retry N` — up to N re-runs on failure; a pass on any attempt is reported `flaky`, never
    * silently green (SPEC §4.4, P#10). `0` (the default) means no retry. */
   readonly retry: number;

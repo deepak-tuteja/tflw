@@ -415,6 +415,64 @@ test('a session\'s generated values and step-splice target are stable under --wo
   assert.equal(parallel.ownerTest, sequential.ownerTest, 'the same test must own the session\'s step-splice regardless of --workers concurrency');
 });
 
+test('per-session splice-owner determinism (decision 53) extends to a test opting into several sessions at once (gap #7)', async () => {
+  // Three files, two sessions, overlapping opt-ins: `a` opts into only `auth1`; `b` opts into
+  // *both*; `c` opts into only `auth2`. Splice-owner is resolved per session *name*, independent
+  // of which other names a test also opts into — smallest global index wins for each name
+  // separately, so `auth1`'s owner should be `a` (indices 0 and 1 opt in; 0 wins) and `auth2`'s
+  // owner should be `b` (indices 1 and 2 opt in; 1 wins), regardless of `--workers` concurrency.
+  async function runOnce(workers: number): Promise<{ auth1Owner: string; auth2Owner: string }> {
+    return withFixtureServer(async (baseUrl) => {
+      const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-multi-session-workers-'));
+      try {
+        await writeFile(
+          join(dir, 'tflw.config'),
+          [
+            `env local default`,
+            `  api "${baseUrl}"`,
+            ``,
+            `session auth1`,
+            `  let token1 = random like "ONE-####"`,
+            `  header "X-Auth1" is "{token1}"`,
+            ``,
+            `session auth2`,
+            `  let token2 = random like "TWO-####"`,
+            `  header "X-Auth2" is "{token2}"`,
+            ``,
+          ].join('\n'),
+          'utf8',
+        );
+        await writeFile(join(dir, 'a.tflw'), `test "a" as auth1\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+        await writeFile(join(dir, 'b.tflw'), `test "b" as auth1, auth2\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+        await writeFile(join(dir, 'c.tflw'), `test "c" as auth2\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+        await execFileAsync('node', [cliEntry, 'run', '--seed', '42', '--workers', String(workers), '--no-color'], { cwd: dir });
+        const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+
+        const sections = [...html.matchAll(/<section class="test[^"]*"[^>]*>[\s\S]*?<\/section>/g)].map((m) => m[0]);
+        const nameOf = (section: string): string => {
+          const m = /<h2>.*?<\/span>([^<]+?)(?:\s*<span class="flaky">)? <span class="tms">/.exec(section);
+          if (!m) throw new Error(`could not extract test name from section:\n${section}`);
+          return m[1]!;
+        };
+        const auth1Owners = sections.filter((s) => /token1 = &quot;ONE-\d{4}&quot; \(random\)/.test(s));
+        const auth2Owners = sections.filter((s) => /token2 = &quot;TWO-\d{4}&quot; \(random\)/.test(s));
+        assert.equal(auth1Owners.length, 1, `expected exactly one test to show auth1's own \`let\` step, got ${auth1Owners.length}`);
+        assert.equal(auth2Owners.length, 1, `expected exactly one test to show auth2's own \`let\` step, got ${auth2Owners.length}`);
+        return { auth1Owner: nameOf(auth1Owners[0]!), auth2Owner: nameOf(auth2Owners[0]!) };
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  const sequential = await runOnce(1);
+  const parallel = await runOnce(3);
+  assert.equal(sequential.auth1Owner, 'a', 'auth1\'s smallest-global-index opt-in is test a');
+  assert.equal(sequential.auth2Owner, 'b', 'auth2\'s smallest-global-index opt-in is test b, not c');
+  assert.equal(parallel.auth1Owner, sequential.auth1Owner, 'auth1\'s owner must not depend on --workers concurrency');
+  assert.equal(parallel.auth2Owner, sequential.auth2Owner, 'auth2\'s owner must not depend on --workers concurrency');
+});
+
 test('a typo\'d `{var}` is a checker error at parse time, exit 2, with a did-you-mean hint (decision 57)', async () => {
   // Before decision 57, a typo'd variable reference surfaced only as a runtime error the moment
   // the request actually fired — this proves it's now a compile-time squiggle instead, matching

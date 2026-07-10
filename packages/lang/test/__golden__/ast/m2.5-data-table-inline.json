@@ -29,7 +29,7 @@
       "tags": [
         "smoke"
       ],
-      "session": null,
+      "sessions": [],
       "retry": 0,
       "table": {
         "type": "InlineDataTable",
