@@ -598,6 +598,119 @@ test('--tag filters to only the tagged tests across a file', async () => {
   });
 });
 
+test('--tag a,b runs a test carrying any of the listed tags (OR composition, decision 97)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tag-or-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'health.tflw'),
+        [
+          '@smoke',
+          'test "smoke test"',
+          '  api GET /health',
+          '  expect status equals 200',
+          '',
+          '@critical',
+          'test "critical test"',
+          '  api GET /health',
+          '  expect status equals 200',
+          '',
+          'test "neither"',
+          '  api GET /health',
+          '  expect status equals 200',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--tag', 'smoke,critical', '--no-color'], { cwd: dir });
+
+      assert.match(stdout, /smoke test/);
+      assert.match(stdout, /critical test/);
+      assert.doesNotMatch(stdout, /"neither"/);
+      assert.match(stdout, /2\/2 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--tag list tolerates whitespace around commas (" a, b ")', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tag-or-ws-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'health.tflw'),
+        ['@smoke', 'test "smoke test"', '  api GET /health', '  expect status equals 200', ''].join('\n'),
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--tag', ' smoke , critical ', '--no-color'], { cwd: dir });
+
+      assert.match(stdout, /1\/1 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--tag OR-list still combines with --only as AND', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tag-only-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'health.tflw'),
+        [
+          '@smoke',
+          'test "first"',
+          '  api GET /health',
+          '  expect status equals 200',
+          '',
+          '@smoke',
+          'test "second"',
+          '  api GET /health',
+          '  expect status equals 200',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync(
+        'node',
+        [cliEntry, 'run', '--tag', 'smoke,critical', '--only', 'second', '--no-color'],
+        { cwd: dir },
+      );
+
+      assert.doesNotMatch(stdout, /"first"/);
+      assert.match(stdout, /second/);
+      assert.match(stdout, /1\/1 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--tag matching zero tests anywhere reports every listed tag in the error (OR-list)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tag-or-zero-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "untagged"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, 'run', '--tag', 'nope,alsonope', '--no-color'], { cwd: dir }),
+        (e: unknown) => (e as { code?: number; stderr?: string }).code === 2 && /nope/.test((e as { stderr?: string }).stderr ?? '') && /alsonope/.test((e as { stderr?: string }).stderr ?? ''),
+      );
+      await assert.rejects(access(join(dir, 'report', 'report.html')));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('`tflw check` passes clean files with no execution and no HTTP traffic (decision 75)', async () => {
   let hits = 0;
   const server: Server = createServer((_req, res) => {

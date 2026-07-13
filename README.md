@@ -101,8 +101,9 @@ test "creates a {category} product" as admin retry 1
   already created.
 - `with each` runs one reported case per row — inline (`| col | ...`) or file-backed
   (`with each from "./data.csv"` / `.json`).
-- `--tag <name>` on `tflw run` filters to tests carrying `@name`; `--workers <n>` runs files
-  concurrently (default 1); `--seed <n>` reproduces a run's exact generated values.
+- `--tag <name>[,<name>...]` on `tflw run` filters to tests carrying any of the listed `@name`s
+  (comma-separated OR; combines with `--only` as AND); `--workers <n>` runs files concurrently
+  (default 1); `--seed <n>` reproduces a run's exact generated values.
 
 Secrets (`env(NAME)`) are redacted from every report automatically.
 
@@ -267,7 +268,7 @@ npx tflw run --env staging --workers 4 --seed 42 --now 2026-01-01T00:00:00.000Z 
 | Flag | Effect |
 |---|---|
 | `--env <name>` | selects a named `env` block from `tflw.config` instead of the `default` one — e.g. run the same suite against `staging` |
-| `--tag <name>` | only runs tests carrying `@name` |
+| `--tag <name>[,<name>...]` | only runs tests carrying any of the listed `@name`s (comma-separated OR; combines with `--only` as AND) |
 | `--workers <n>` | runs files concurrently across `n` workers (default 1) |
 | `--seed <n>` | fixes every `random`-family value for the run, so a failure is reproducible byte-for-byte |
 | `--now <iso>` | pins the run's notion of "now" to an exact instant (combine with `--seed` to reproduce a run's exact absolute generated values) |

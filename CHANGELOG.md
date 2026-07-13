@@ -24,7 +24,8 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   `random of`/`random like "…"` (value-shaped) generators; a run seed with `--seed`/`--now` replay.
 - `session <name>` blocks: run once per run, auto-apply captured headers to every test running
   `as <name>` — no repeated login boilerplate.
-- Orchestration: `@tags` + `--tag`, `retry N` with `flaky` marking, inline (`with each`) and
+- Orchestration: `@tags` + `--tag a,b,c` (comma-separated OR — a test runs if it carries any
+  listed tag; combines with `--only` as AND), `retry N` with `flaky` marking, inline (`with each`) and
   file-backed (`.csv`/`.json`) data tables, `--workers N` (in-process, per-file, default 1,
   deterministic under `--seed` at any concurrency).
 - Teaching-quality diagnostics: source line + caret + "did you mean", stable `TF0xx` codes, a

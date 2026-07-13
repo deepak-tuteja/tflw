@@ -99,7 +99,10 @@ interface RunArgs {
   /** Raw `--now` text, validated in `runCommand` (an unparseable date/time is a usage error,
    * decision 52). */
   readonly nowRaw?: string | undefined;
-  readonly tag?: string | undefined;
+  /** `--tag a,b,c` (decision 97, closes TFLW-GAPS.md gap #14): comma-separated, OR semantics — a
+   * test runs if it carries *any* listed tag. No exclusion syntax (`--tag !x`), scoped out. Still
+   * combines with `--only` as AND (unchanged). */
+  readonly tags?: string[] | undefined;
   /** `--only "<exact test name>"` (decision 94) — runs a single test by its exact declared name,
    * for the VS Code extension's per-test "Run test" CodeLens (`--tag` alone can't target one test,
    * since tags aren't required/unique). Combines with `--tag` (both must match, AND not OR) rather
@@ -119,7 +122,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let env: string | undefined;
   let seedRaw: string | undefined;
   let nowRaw: string | undefined;
-  let tag: string | undefined;
+  let tagRaw: string | undefined;
   let only: string | undefined;
   let workersRaw: string | undefined;
   let noColor = false;
@@ -132,8 +135,8 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
     else if (a === '--now') nowRaw = argv[++i];
     else if (a.startsWith('--now=')) nowRaw = a.slice('--now='.length);
-    else if (a === '--tag') tag = argv[++i];
-    else if (a.startsWith('--tag=')) tag = a.slice('--tag='.length);
+    else if (a === '--tag') tagRaw = argv[++i];
+    else if (a.startsWith('--tag=')) tagRaw = a.slice('--tag='.length);
     else if (a === '--only') only = argv[++i];
     else if (a.startsWith('--only=')) only = a.slice('--only='.length);
     else if (a === '--workers') workersRaw = argv[++i];
@@ -142,7 +145,12 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--verbose') verbose = true;
     else files.push(a);
   }
-  return { files, env, seedRaw, nowRaw, tag, only, workersRaw, noColor, verbose };
+  const tagList = tagRaw
+    ?.split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  const tags = tagList && tagList.length > 0 ? tagList : undefined;
+  return { files, env, seedRaw, nowRaw, tags, only, workersRaw, noColor, verbose };
 }
 
 /** Parsed + checker-clean state shared by `tflw run` and `tflw check` (decision 75) — everything
@@ -308,7 +316,8 @@ async function runCommand(argv: string[]): Promise<number> {
 
   // Apply `--tag`/`--only` filtering once, up front — a file with no matching test is dropped
   // entirely; if *no* file anywhere has a match, that's a hard usage error, not a silent green CI
-  // (P#46). Both filters apply together (AND, not OR) when both are given.
+  // (P#46). `--tag` itself is OR across its comma-separated list (decision 97: a test runs if it
+  // carries *any* listed tag); that OR-list then combines with `--only` as AND, same as before.
   const runnable = parsedFiles
     .map(({ file, source, program: fileProgram }) => ({
       file,
@@ -316,13 +325,14 @@ async function runCommand(argv: string[]): Promise<number> {
       program: {
         ...fileProgram,
         tests: fileProgram.tests
-          .filter((t) => !args.tag || t.tags.includes(args.tag))
+          .filter((t) => !args.tags || args.tags.some((tag) => t.tags.includes(tag)))
           .filter((t) => !args.only || t.name.value === args.only),
       },
     }))
-    .filter((f) => (!args.tag && !args.only) || f.program.tests.length > 0);
-  if (args.tag && runnable.length === 0) {
-    err(`no test anywhere carries the tag \`${args.tag}\`.`);
+    .filter((f) => (!args.tags && !args.only) || f.program.tests.length > 0);
+  if (args.tags && runnable.length === 0) {
+    const tagList = args.tags.map((t) => `\`${t}\``).join(', ');
+    err(`no test anywhere carries ${args.tags.length > 1 ? 'any of the tags' : 'the tag'} ${tagList}.`);
     return EXIT_USAGE;
   }
   if (args.only && runnable.length === 0) {
@@ -766,12 +776,13 @@ function printUsage(): void {
       'tflw — a testing-only DSL for API tests (.tflw files), reports first.',
       '',
       'usage:',
-      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>] [--only <name>] [--workers <n>] [--no-color] [--verbose]',
+      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--workers <n>] [--no-color] [--verbose]',
       '                                                      run .tflw tests (default: all under cwd)',
       '                                                      --now replays the exact run-clock instant',
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
       '                                                      --verbose prints one line per step, not just per test',
       '                                                      --only runs a single test by its exact declared name',
+      '                                                      --tag a,b runs a test carrying any of the listed tags (OR)',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',

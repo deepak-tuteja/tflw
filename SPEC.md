@@ -290,7 +290,9 @@ test "an admin acting on a shopper's behalf" as admin, userA
   ...steps...
 ```
 
-- `@tags` filter via `tflw run --tag smoke` (P#10).
+- `@tags` filter via `tflw run --tag smoke` (P#10), or `tflw run --tag smoke,critical` for
+  comma-separated OR across several tags — a test runs if it carries *any* listed tag (decision
+  97). No exclusion syntax (`--tag !x`).
 - `as <session>` opts into a cached session (§3.3); `as <session>, <session>...` opts into several
   independent, unrelated sessions at once — a comma-separated list, same shape as `require env A,
   B, C` (§3.4). Omitted → anonymous fresh state.
@@ -725,7 +727,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--only` runs a single test by its exact declared name (composes with `--tag` as AND) — decision 94, for the VS Code extension's per-test CodeLens |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |

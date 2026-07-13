@@ -77,8 +77,9 @@ test "creates a {category} product" as admin retry 1
   passed-but-flagged-`flaky`, never silently green.
 - `with each` runs one reported case per row — inline (`| col | ...`) or file-backed
   (`with each from "./data.csv"` / `.json`).
-- `--tag <name>` on `tflw run` filters to tests carrying `@name`; `--workers <n>` runs files
-  concurrently (default 1); `--seed <n>` reproduces a run's exact generated values.
+- `--tag <name>[,<name>...]` on `tflw run` filters to tests carrying any of the listed `@name`s
+  (comma-separated OR; combines with `--only` as AND); `--workers <n>` runs files concurrently
+  (default 1); `--seed <n>` reproduces a run's exact generated values.
 
 Secrets (`env(NAME)`) are redacted from every report automatically.
 
@@ -161,7 +162,7 @@ Full worked examples (hooks, generators, CSV, CLI flag reference) are in the roo
 ## CLI
 
 ```
-tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>] [--workers <n>] [--no-color]
+tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--workers <n>] [--no-color]
 tflw check [files...] [--env <name>] [--no-color]
 tflw init
 tflw --version, -v
