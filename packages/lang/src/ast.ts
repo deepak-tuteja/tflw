@@ -288,6 +288,7 @@ export type Value =
   | DateOffsetLit
   | FormatExpr
   | GeneratorExpr
+  | TransformExpr
   | CallExpr;
 
 /** A call to an `action` or a `use`d JS/TS helper function — `create order("Widget")` or
@@ -341,6 +342,15 @@ export interface FormatExpr extends Node {
   readonly pattern: StringLit;
 }
 
+/** `base64 encode(...)`/`decode(...)`, `hex encode(...)`/`decode(...)`, `url encode(...)`/
+ * `decode(...)` — pure value transforms, not fresh-value generators (SPEC §7.6, decision 98). */
+export interface TransformExpr extends Node {
+  readonly type: 'TransformExpr';
+  readonly kind: 'base64' | 'hex' | 'url';
+  readonly direction: 'encode' | 'decode';
+  readonly value: Value;
+}
+
 // ---- Generators: `unique`/`random` (P#19, P#21–23, SPEC §7.2–7.4) ----------
 
 export type GeneratorExpr =
@@ -348,6 +358,7 @@ export type GeneratorExpr =
   | UniqueEmailExpr
   | UniqueNumberExpr
   | UniqueLikeExpr
+  | UniqueUuidExpr
   | RandomNumberExpr
   | RandomDecimalExpr
   | RandomDateInPastExpr
@@ -355,7 +366,9 @@ export type GeneratorExpr =
   | RandomDateBetweenExpr
   | RandomOfExpr
   | RandomStringExpr
-  | RandomLikeExpr;
+  | RandomLikeExpr
+  | RandomUuidExpr
+  | RandomPasswordExpr;
 
 /** `unique("prefix")` — collision-safe identity data, run/worker-seeded (P#19, P#21). */
 export interface UniquePrefixExpr extends Node {
@@ -377,6 +390,12 @@ export interface UniqueNumberExpr extends Node {
 export interface UniqueLikeExpr extends Node {
   readonly type: 'UniqueLikeExpr';
   readonly pattern: StringLit;
+}
+
+/** `unique uuid` — v4-shaped, with the run-wide counter embedded so distinctness is a true
+ * guarantee (decision 98), not just low collision probability. */
+export interface UniqueUuidExpr extends Node {
+  readonly type: 'UniqueUuidExpr';
 }
 
 /** `random number A to B` — collisions allowed (P#21). */
@@ -426,6 +445,19 @@ export interface RandomStringExpr extends Node {
 export interface RandomLikeExpr extends Node {
   readonly type: 'RandomLikeExpr';
   readonly pattern: StringLit;
+}
+
+/** `random uuid` — plain v4 UUID, collisions allowed (decision 98). */
+export interface RandomUuidExpr extends Node {
+  readonly type: 'RandomUuidExpr';
+}
+
+/** `random password` (default length 12) or `random password 16` — always at least one
+ * upper/lower/digit/symbol regardless of length (decision 98); no `unique` counterpart since
+ * passwords carry no real-world uniqueness constraint. */
+export interface RandomPasswordExpr extends Node {
+  readonly type: 'RandomPasswordExpr';
+  readonly length?: Value;
 }
 
 /** `env(NAME)` — reads a secret; its value is taint-tracked and redacted in reports (P#30). */

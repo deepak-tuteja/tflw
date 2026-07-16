@@ -20,8 +20,10 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   `body text`/`duration`, with `any`/`all` quantifiers and a `not` negation.
 - `capture` + chaining (create → use → verify across steps), `let`, and value expressions
   (arithmetic, string interpolation, `today`/`now` date math).
-- `unique(...)`/`unique email`/`unique like "…"` (collision-safe) and `random number`/`random date`/
-  `random of`/`random like "…"` (value-shaped) generators; a run seed with `--seed`/`--now` replay.
+- `unique(...)`/`unique email`/`unique like "…"`/`unique uuid` (collision-safe) and `random number`/
+  `random date`/`random of`/`random like "…"`/`random uuid`/`random password [N]` (value-shaped)
+  generators; a run seed with `--seed`/`--now` replay. `base64`/`hex`/`url` `encode(...)`/
+  `decode(...)` value transforms.
 - `session <name>` blocks: run once per run, auto-apply captured headers to every test running
   `as <name>` — no repeated login boilerplate.
 - Orchestration: `@tags` + `--tag a,b,c` (comma-separated OR — a test runs if it carries any

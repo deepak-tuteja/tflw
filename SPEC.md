@@ -566,9 +566,15 @@ returns, `env(…)`.
 
 ### 7.2 `unique` — collision-safe identity data (P#19, P#21)
 
-`unique("prefix")`, `unique email`, `unique number`, `unique like "ORD-######"`.
+`unique("prefix")`, `unique email`, `unique number`, `unique like "ORD-######"`, `unique uuid`.
 Guaranteed distinct across tests/workers within a run (run/worker-seeded). Use for anything with
 a uniqueness constraint.
+
+`unique uuid` is v4-shaped, but its trailing 8 hex digits are the run-wide counter itself (the
+same guarantee mechanism `unique("prefix")` gets from literal string concatenation), so
+distinctness is a true guarantee, not v4's usual low collision probability. There is deliberately
+no `unique password` — passwords carry no real-world uniqueness constraint the way email/order-id
+do (decision 98); see `random password` (§7.3).
 
 **Under `retry` (§4.4):** `unique(...)`'s run-wide counter keeps advancing on every retry attempt
 of the *same* test — by design, so a retried attempt never collides with data the failed attempt
@@ -587,9 +593,15 @@ random date in past             # also: in future, between A and B
 random of "red", "blue", "green"
 random string 12                # alnum
 random like "SKU-####-??"       # = digit, ? = letter
+random uuid                     # v4, collisions allowed
+random password                 # default length 12
+random password 16              # custom length (min 4)
 ```
 
 No built-in faker realism (names/addresses) — use `random of` with your own list, or JS (P#22).
+`random password` is not an exception to this — it satisfies a validation policy (at least one
+upper/lower/digit/symbol), not a fake human identity, same category as `unique like`'s pattern
+fill (decision 98).
 
 ### 7.4 Reproducibility (P#23)
 
@@ -628,6 +640,32 @@ preceding ident to actually sit in HTTP-method grammatical position (right after
 with a named service in between), not just read like a method word (PLAN decision 60). `random
 number`/`random decimal` reject a reversed range (`to < from`) as a runtime error rather than
 silently producing an out-of-range value (PLAN decision 70).
+
+### 7.6 Transforms: `base64`/`hex`/`url` (decision 98)
+
+Pure value transforms — unlike §7.2/§7.3's generators, these consume an existing value rather
+than manufacture a fresh one, same category as `format <value> as "<pattern>"` (§7.5):
+
+```
+base64 encode({value})    base64 decode({value})
+hex encode({value})       hex decode({value})
+url encode({value})       url decode({value})    # encodeURIComponent/decodeURIComponent
+```
+
+Motivating case (gap #9): HTTP Basic auth needs a base64-encoded `user:pass` credential in an
+`Authorization` header, expressible declaratively for the first time:
+
+```
+let creds = base64 encode("{email}:{password}")
+api GET /orders
+  header "Authorization" is "Basic {creds}"
+```
+
+A `decode` direction on malformed input (invalid base64/hex characters, invalid percent-encoding)
+is a runtime error, not a silently-wrong value — `Buffer`'s own base64/hex decoding is lenient by
+default (drops bad characters instead of throwing), so `decode` validates the input's shape first.
+Transform values are shown inline like everything else, but **not** tagged `(random)`/`(unique)`
+in the report (§7.4) — same as `format`, they're not generators.
 
 ## 8. Actions, imports, element aliases (P#2, P#17–18) 🔧
 

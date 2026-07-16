@@ -376,11 +376,18 @@ function checkValue(value: Value, bound: Set<string>, diags: Diagnostic[]): void
     case 'RandomLikeExpr':
       checkStringLit(value.pattern, bound, diags);
       break;
+    case 'RandomPasswordExpr':
+      if (value.length) checkValue(value.length, bound, diags);
+      break;
+    case 'TransformExpr':
+      checkValue(value.value, bound, diags);
+      break;
     case 'CallExpr':
       for (const arg of value.args) checkValue(arg, bound, diags);
       break;
     // NumberLit, DurationLit, BoolLit, NullLit, EnvRef, DateAtom, DateOffsetLit,
-    // UniqueEmailExpr, UniqueNumberExpr, RandomDateInPastExpr, RandomDateInFutureExpr: no refs.
+    // UniqueEmailExpr, UniqueNumberExpr, UniqueUuidExpr, RandomDateInPastExpr,
+    // RandomDateInFutureExpr, RandomUuidExpr: no refs.
   }
 }
 

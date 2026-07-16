@@ -174,6 +174,7 @@ test "an order visible to both admin and the shopper" as admin, shopper
   let email = unique email
   let seq = unique number
   let id = unique("order")
+  let uid = unique uuid
   let qty = random number 1 to 100
   let price = random decimal 1.5 to 9.99
   let color = random of "red", "blue", "green"
@@ -182,6 +183,15 @@ test "an order visible to both admin and the shopper" as admin, shopper
   let past = random date in past
   let future = random date in future
   let between = random date between today and today + 7 days
+  let rid = random uuid
+  let pw = random password
+  let pw16 = random password 16
+  let creds = base64 encode("{email}:{pw}")
+  let decoded = base64 decode(creds)
+  let hexed = hex encode(sku)
+  let unhexed = hex decode(hexed)
+  let urled = url encode(email)
+  let unurled = url decode(urled)
   api POST /orders body { sku: {sku}, email: {email}, qty: {qty} }
   expect status equals 201
 `,
@@ -491,6 +501,18 @@ export const INVALID: readonly Fixture[] = [
     name: 'random-number-missing-to',
     source: `test "random number needs a range"
   let bad = random number 1
+`,
+  },
+  {
+    name: 'transform-missing-direction',
+    source: `test "base64 needs encode or decode"
+  let bad = base64("hi")
+`,
+  },
+  {
+    name: 'unique-password-unsupported',
+    source: `test "no unique variant for password"
+  let bad = unique password
 `,
   },
   {

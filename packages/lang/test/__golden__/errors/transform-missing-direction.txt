@@ -1,0 +1,5 @@
+error[TF010]: expected `encode` or `decode` after `base64`, found `(`
+ --> transform-missing-direction.tflw:2:19
+  |
+2 |   let bad = base64("hi")
+  |                   ^

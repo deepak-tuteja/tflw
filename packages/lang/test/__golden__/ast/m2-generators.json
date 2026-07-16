@@ -72,6 +72,13 @@
         },
         {
           "type": "LetStmt",
+          "name": "uid",
+          "value": {
+            "type": "UniqueUuidExpr"
+          }
+        },
+        {
+          "type": "LetStmt",
           "name": "qty",
           "value": {
             "type": "RandomNumberExpr",
@@ -207,6 +214,134 @@
                 "amount": 7,
                 "unit": "days"
               }
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "rid",
+          "value": {
+            "type": "RandomUuidExpr"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "pw",
+          "value": {
+            "type": "RandomPasswordExpr"
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "pw16",
+          "value": {
+            "type": "RandomPasswordExpr",
+            "length": {
+              "type": "NumberLit",
+              "value": 16,
+              "raw": "16"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "creds",
+          "value": {
+            "type": "TransformExpr",
+            "kind": "base64",
+            "direction": "encode",
+            "value": {
+              "type": "StringLit",
+              "value": "{email}:{pw}",
+              "parts": [
+                {
+                  "kind": "interp",
+                  "ref": [
+                    {
+                      "kind": "prop",
+                      "name": "email"
+                    }
+                  ]
+                },
+                {
+                  "kind": "text",
+                  "value": ":"
+                },
+                {
+                  "kind": "interp",
+                  "ref": [
+                    {
+                      "kind": "prop",
+                      "name": "pw"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "decoded",
+          "value": {
+            "type": "TransformExpr",
+            "kind": "base64",
+            "direction": "decode",
+            "value": {
+              "type": "VarRef",
+              "name": "creds"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "hexed",
+          "value": {
+            "type": "TransformExpr",
+            "kind": "hex",
+            "direction": "encode",
+            "value": {
+              "type": "VarRef",
+              "name": "sku"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "unhexed",
+          "value": {
+            "type": "TransformExpr",
+            "kind": "hex",
+            "direction": "decode",
+            "value": {
+              "type": "VarRef",
+              "name": "hexed"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "urled",
+          "value": {
+            "type": "TransformExpr",
+            "kind": "url",
+            "direction": "encode",
+            "value": {
+              "type": "VarRef",
+              "name": "email"
+            }
+          }
+        },
+        {
+          "type": "LetStmt",
+          "name": "unurled",
+          "value": {
+            "type": "TransformExpr",
+            "kind": "url",
+            "direction": "decode",
+            "value": {
+              "type": "VarRef",
+              "name": "urled"
             }
           }
         },

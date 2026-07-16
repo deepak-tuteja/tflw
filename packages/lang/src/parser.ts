@@ -59,7 +59,9 @@ import type {
   RandomLikeExpr,
   RandomNumberExpr,
   RandomOfExpr,
+  RandomPasswordExpr,
   RandomStringExpr,
+  RandomUuidExpr,
   ReportDecl,
   RequireDecl,
   SessionDecl,
@@ -71,10 +73,12 @@ import type {
   TextBody,
   TimeoutDecl,
   TimeoutTarget,
+  TransformExpr,
   UniqueEmailExpr,
   UniqueLikeExpr,
   UniqueNumberExpr,
   UniquePrefixExpr,
+  UniqueUuidExpr,
   UploadBody,
   UseDecl,
   Value,
@@ -1283,6 +1287,7 @@ class Parser {
         if (tok.value === 'unique') return this.parseUniqueExpr();
         if (tok.value === 'random') return this.parseRandomExpr();
         if (tok.value === 'format') return this.parseFormatExpr();
+        if (tok.value === 'base64' || tok.value === 'hex' || tok.value === 'url') return this.parseTransformExpr(tok.value);
         if (tok.value === 'today' || tok.value === 'now') {
           this.advance();
           const atom: DateAtom = { type: 'DateAtom', which: tok.value, span: tok.span };
@@ -1377,8 +1382,13 @@ class Parser {
       const expr: UniqueLikeExpr = { type: 'UniqueLikeExpr', pattern, span: this.spanFrom(start) };
       return expr;
     }
+    if (this.isKw(this.peek(), 'uuid')) {
+      this.advance();
+      const expr: UniqueUuidExpr = { type: 'UniqueUuidExpr', span: this.spanFrom(start) };
+      return expr;
+    }
     const tok = this.peek();
-    this.error(Codes.UNEXPECTED_TOKEN, `expected \`(…)\`, \`email\`, \`number\`, or \`like\` after \`unique\`, found ${describeToken(tok)}`, tok.span);
+    this.error(Codes.UNEXPECTED_TOKEN, `expected \`(…)\`, \`email\`, \`number\`, \`like\`, or \`uuid\` after \`unique\`, found ${describeToken(tok)}`, tok.span);
     return null;
   }
 
@@ -1467,12 +1477,60 @@ class Parser {
       const expr: RandomLikeExpr = { type: 'RandomLikeExpr', pattern, span: this.spanFrom(start) };
       return expr;
     }
+    if (this.isKw(tok, 'uuid')) {
+      this.advance();
+      const expr: RandomUuidExpr = { type: 'RandomUuidExpr', span: this.spanFrom(start) };
+      return expr;
+    }
+    if (this.isKw(tok, 'password')) {
+      this.advance();
+      // Length is optional (default 12 at eval time) — only consume a following value if one is
+      // actually there, so `random password` alone (followed by NEWLINE/`}`/`,`/an operator/…)
+      // doesn't misparse the next unrelated token as a length (decision 98).
+      let length: Value | undefined;
+      if (this.looksLikeValueStart(this.peek())) {
+        const lengthVal = this.parseValue();
+        if (!lengthVal) return null;
+        length = lengthVal;
+      }
+      const expr: RandomPasswordExpr = { type: 'RandomPasswordExpr', length, span: this.spanFrom(start) };
+      return expr;
+    }
     this.error(
       Codes.UNEXPECTED_TOKEN,
-      `expected \`number\`, \`decimal\`, \`date\`, \`of\`, \`string\`, or \`like\` after \`random\`, found ${describeToken(tok)}`,
+      `expected \`number\`, \`decimal\`, \`date\`, \`of\`, \`string\`, \`like\`, \`uuid\`, or \`password\` after \`random\`, found ${describeToken(tok)}`,
       tok.span,
     );
     return null;
+  }
+
+  /** Whether `tok` could plausibly start a `Value` production — used only where a trailing value
+   * is optional (`random password [N]`, decision 98) and we must decide, without committing,
+   * whether the next token belongs to this expression or to whatever follows it. */
+  private looksLikeValueStart(tok: Token): boolean {
+    return tok.type === 'string' || tok.type === 'number' || tok.type === 'lbrace' || tok.type === 'minus' || tok.type === 'ident';
+  }
+
+  // -- transforms: base64 / hex / url encode/decode (decision 98) ------------
+
+  private parseTransformExpr(kind: 'base64' | 'hex' | 'url'): Value | null {
+    const start = this.peek().span.start;
+    this.advance(); // `base64` / `hex` / `url`
+    const dirTok = this.peek();
+    let direction: 'encode' | 'decode';
+    if (this.isKw(dirTok, 'encode')) direction = 'encode';
+    else if (this.isKw(dirTok, 'decode')) direction = 'decode';
+    else {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`encode\` or \`decode\` after \`${kind}\`, found ${describeToken(dirTok)}`, dirTok.span);
+      return null;
+    }
+    this.advance();
+    if (!this.expect('lparen', `\`(\` after \`${kind} ${direction}\``)) return null;
+    const value = this.parseValue();
+    if (!value) return null;
+    if (!this.expect('rparen', `\`)\` to close \`${kind} ${direction}(…)\``)) return null;
+    const expr: TransformExpr = { type: 'TransformExpr', kind, direction, value, span: this.spanFrom(start) };
+    return expr;
   }
 
   private parseFormatExpr(): Value | null {

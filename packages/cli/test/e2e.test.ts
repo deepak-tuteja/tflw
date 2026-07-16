@@ -1104,3 +1104,78 @@ test('`tflw run --only` matching no test anywhere is a usage error, not a silent
     }
   });
 });
+
+// decision 98: uuid/password generators + base64/hex/url transforms — dogfoods the exact
+// motivating use case from gap #9 (a declarative Basic-auth header) against a real HTTP Basic
+// auth check, not just a round-trip in isolation.
+test('uuid/password generators + base64/hex/url transforms work end to end, including a real Basic-auth header', async () => {
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/whoami') {
+      const auth = req.headers.authorization ?? '';
+      const b64 = auth.replace(/^Basic /, '');
+      const [user, pass] = Buffer.from(b64, 'base64').toString('utf8').split(':');
+      if (!user || !pass) {
+        res.writeHead(401).end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ user, passLen: pass.length }));
+      return;
+    }
+    if (req.url === '/echo' && req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        res.writeHead(201, { 'content-type': 'application/json' }).end(Buffer.concat(chunks).toString('utf8'));
+      });
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-generators-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    await writeFile(
+      join(dir, 'generators.tflw'),
+      [
+        'test "uuid/password generators + base64/hex/url transforms"',
+        '  let id = unique uuid',
+        '  let rid = random uuid',
+        '  let pw = random password 16',
+        '  let creds = base64 encode("alice@example.test:{pw}")',
+        '  let roundtrip = base64 decode(creds)',
+        '  let hexed = hex encode("abc")',
+        '  let unhexed = hex decode(hexed)',
+        '  let urled = url encode("a b")',
+        '  let unurled = url decode(urled)',
+        '  api POST /echo body { id: {id}, rid: {rid}, hexed: {hexed}, unhexed: {unhexed}, urled: {urled}, unurled: {unurled}, roundtrip: {roundtrip} }',
+        '  expect status equals 201',
+        '  expect body.hexed equals "616263"',
+        '  expect body.unhexed equals "abc"',
+        '  expect body.urled equals "a%20b"',
+        '  expect body.unurled equals "a b"',
+        '  expect body.roundtrip equals "alice@example.test:{pw}"',
+        '  expect body.id matches "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"',
+        '  expect body.rid matches "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"',
+        '  api GET /whoami',
+        '    header "Authorization" is "Basic {creds}"',
+        '  expect status equals 200',
+        '  expect body.user equals "alice@example.test"',
+        '  expect body.passLen equals 16',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(stdout, /1\/1 passed/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
