@@ -63,6 +63,7 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     insecure,
     requiredEnv: [],
     sessions: new Map(),
+    mtls: null,
   };
 }
 

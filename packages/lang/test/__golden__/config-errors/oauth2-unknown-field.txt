@@ -1,0 +1,5 @@
+error[TF010]: expected `token url`, `client id`, `client secret`, or `scope` in an oauth2 session, found `grant_type`
+ --> tflw.config:8:3
+  |
+8 |   grant_type "client_credentials"
+  |   ^^^^^^^^^^

@@ -536,11 +536,29 @@ export interface ConfigFile extends Node {
 
 /** `session <name> ... steps ...` — runs once per run per worker; its `header` steps become the
  * headers auto-applied to the api steps of tests running `as <name>` (SPEC §3.3, P#42). Body
- * steps are ordinary parsed steps (api/let/capture/wait) plus `header`. */
+ * steps are ordinary parsed steps (api/let/capture/wait) plus `header`. A session declared
+ * `oauth2` (decision 3c, enterprise arc) uses `oauth2` sugar instead of a hand-written body — the
+ * two are mutually exclusive: `oauth2` set means `body` is always `[]`. */
 export interface SessionDecl extends Node {
   readonly type: 'SessionDecl';
   readonly name: string;
+  readonly oauth2: Oauth2SessionConfig | null;
   readonly body: readonly Step[];
+}
+
+/** `session <name> oauth2 / token url … / client id … / client secret … / scope …` — OAuth2
+ * client-credentials sugar (SPEC §3.3, decision 3c, enterprise arc). The runtime POSTs the
+ * client-credentials grant to `tokenUrl`, turns `access_token` into the session's `Authorization:
+ * Bearer` header, and `expires_in` (when the server sends one) into the session's refresh TTL —
+ * the same outcome a hand-written session produces via `capture`/`header`, without writing it by
+ * hand. `clientId`/`clientSecret`/`scope` are full `Value`s (not bare strings) so `env(...)` works
+ * the same way it does everywhere else in the config dialect. */
+export interface Oauth2SessionConfig extends Node {
+  readonly type: 'Oauth2SessionConfig';
+  readonly tokenUrl: Value;
+  readonly clientId: Value;
+  readonly clientSecret: Value;
+  readonly scope: Value | null;
 }
 
 export interface DefaultsBlock extends Node {
@@ -556,7 +574,7 @@ export interface EnvBlock extends Node {
   readonly entries: readonly ConfigEntry[];
 }
 
-export type ConfigEntry = HeaderDecl | TimeoutDecl | WorkersDecl | ReportDecl | WebDecl | ApiServiceDecl | InsecureDecl;
+export type ConfigEntry = HeaderDecl | TimeoutDecl | WorkersDecl | ReportDecl | WebDecl | ApiServiceDecl | InsecureDecl | CertDecl | KeyDecl;
 
 export interface HeaderDecl extends Node {
   readonly type: 'HeaderDecl';
@@ -594,6 +612,20 @@ export interface WebDecl extends Node {
 export interface InsecureDecl extends Node {
   readonly type: 'InsecureDecl';
   readonly value: boolean;
+}
+
+/** `cert "<path>"` — per-env mTLS client certificate (SPEC §3.5, decision 3b, enterprise arc).
+ * Always paired with `key`; the runtime rejects one without the other once defaults+env are
+ * merged (resolve.ts), since a split-across-blocks pairing can't be caught at parse time. */
+export interface CertDecl extends Node {
+  readonly type: 'CertDecl';
+  readonly path: StringLit;
+}
+
+/** `key "<path>"` — the private key paired with `cert` (SPEC §3.5, decision 3b). */
+export interface KeyDecl extends Node {
+  readonly type: 'KeyDecl';
+  readonly path: StringLit;
 }
 
 export interface ApiServiceDecl extends Node {

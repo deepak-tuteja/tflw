@@ -72,7 +72,7 @@ test "async helper"
 // `node --import tsx --test`, and tsx's own loader hook (registered process-wide by `--import
 // tsx`) intercepts the helper's dynamic `import()` too, transforming the enum away before Node's
 // native strip-only mode ever sees it. That case is instead covered by
-// packages/cli/test/e2e.test.ts, which spawns a clean `node dist/cli.js` subprocess with no tsx
+// packages/cli/test/e2e.test.ts, which spawns a clean `node dist/cli.cjs` subprocess with no tsx
 // loader — the same environment a real installed `tflw` runs in.
 
 test('a `use`d module with no matching export is a clear runtime error', async () => {

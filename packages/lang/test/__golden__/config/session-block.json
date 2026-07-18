@@ -37,6 +37,7 @@
     {
       "type": "SessionDecl",
       "name": "admin",
+      "oauth2": null,
       "body": [
         {
           "type": "ApiStep",

@@ -1,0 +1,55 @@
+{
+  "type": "ConfigFile",
+  "defaults": null,
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "staging",
+      "isDefault": false,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "https://staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://staging.example.com"
+              }
+            ]
+          }
+        },
+        {
+          "type": "CertDecl",
+          "path": {
+            "type": "StringLit",
+            "value": "./certs/client.pem",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "./certs/client.pem"
+              }
+            ]
+          }
+        },
+        {
+          "type": "KeyDecl",
+          "path": {
+            "type": "StringLit",
+            "value": "./certs/client.key",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "./certs/client.key"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "requires": [],
+  "sessions": []
+}

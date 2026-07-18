@@ -16,6 +16,7 @@ import type {
   ExpectStmt,
   HookDecl,
   LetStmt,
+  Oauth2SessionConfig,
   PathSegment,
   Program,
   SessionDecl,
@@ -297,6 +298,10 @@ interface SessionOutcome {
   readonly ok: boolean;
   readonly error?: string;
   readonly steps: readonly StepResult[];
+  /** Epoch ms after which this outcome is stale and must be re-established (decision 3a/3c,
+   * enterprise arc) — set from an `oauth2` session's `expires_in`, undefined for a hand-written
+   * session (which has no built-in expiry concept; it still gets *reactive* refresh-on-401). */
+  readonly expiresAt?: number;
 }
 
 /**
@@ -323,6 +328,17 @@ export class SessionCache {
    */
   async ensure(name: string, decl: SessionDecl, config: ResolvedConfig, tc: TestCtx, isOwner: boolean): Promise<SessionOutcome> {
     let p = this.promises.get(name);
+    if (p) {
+      // A TTL'd outcome (from an `oauth2` session's `expires_in`, decision 3c) past its expiry is
+      // treated exactly like a cache miss — re-run it, same as decision 54's failed-establishment
+      // eviction below. Guarded by identity so a concurrent caller's fresher promise is never
+      // clobbered by this one discovering staleness after the fact.
+      const cached = await p;
+      if (cached.ok && cached.expiresAt !== undefined && Date.now() >= cached.expiresAt && this.promises.get(name) === p) {
+        this.promises.delete(name);
+        p = undefined;
+      }
+    }
     if (!p) {
       p = runSession(decl, config, tc);
       this.promises.set(name, p);
@@ -335,6 +351,16 @@ export class SessionCache {
     // that another caller may have already installed while this one was in flight.
     if (!outcome.ok && this.promises.get(name) === p) this.promises.delete(name);
     return isOwner ? outcome : { ...outcome, steps: [] };
+  }
+
+  /** Force the next `ensure()` call for this session name to re-run `runSession`, regardless of
+   * TTL (decision 3a, enterprise arc) — used when an api step gets a 401 while using this
+   * session's cached headers, so a revoked/expired-early credential doesn't silently keep failing
+   * for the rest of the run. Guarded by identity isn't needed here (unlike the two internal evict
+   * sites above): invalidating a session that's already been superseded by a fresher promise is a
+   * safe no-op, not a lost update, since we always evict by name, never overwrite by identity. */
+  invalidate(name: string): void {
+    this.promises.delete(name);
   }
 
   /** First-caller-wins claim of "shown" status for a session name, resolved once per test (not
@@ -354,14 +380,124 @@ export class SessionCache {
  * race (decision 53); `unique(...)`'s run-wide counter stays as-is — it was never seed-reproducible
  * by design (§7.4). */
 async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx): Promise<SessionOutcome> {
+  if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, tc);
   const headerSink: Record<string, string> = {};
   const scope = new Map<string, unknown>();
   const sessionRng = mulberry32(subSeed(tc.runSeed, hashString(decl.name)));
   const cookieJar = new CookieJar();
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionRng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, headerSink, cookieJar };
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionRng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, cookieJar };
   const emptyRegistry: CallRegistry = { actions: new Map(), helpers: new Map() };
   const exec = await execSteps(decl.body, config, ctx, tc, `session ${decl.name}`, emptyRegistry);
   return { headers: headerSink, cookieJar, ok: exec.ok, ...(exec.error ? { error: exec.error } : {}), steps: exec.steps };
+}
+
+/** `session <name> oauth2 ...` — POSTs the client-credentials grant to `tokenUrl` and turns the
+ * response into the same shape a hand-written session produces: an `Authorization: Bearer`
+ * header, plus (when the server sends `expires_in`) a TTL for the cache (SPEC §3.3, decision 3c,
+ * enterprise arc). Reuses `sendRequest`/`mkStep`/`redactRequest`/`redactResponse` so the token
+ * request shows up in the report exactly like an ordinary `api` step would, secret-redacted the
+ * same way — no separate, invisible auth path (P#5's reporting-first ethos). */
+async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, config: ResolvedConfig, tc: TestCtx): Promise<SessionOutcome> {
+  const scope = new Map<string, unknown>();
+  const sessionRng = mulberry32(subSeed(tc.runSeed, hashString(name)));
+  const cookieJar = new CookieJar();
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionRng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar };
+  const start = performance.now();
+  const src = (tc.lines[oauth2.span.start.line - 1] ?? '').trim();
+
+  const fail = (error: string, request?: RequestTrace, response?: ResponseTrace): SessionOutcome => ({
+    headers: {},
+    cookieJar,
+    ok: false,
+    error,
+    steps: [mkStep('api', src, oauth2.span, false, start, error, request, response)],
+  });
+
+  const tokenUrl = String(evalValue(oauth2.tokenUrl, ctx));
+  const clientId = String(evalValue(oauth2.clientId, ctx));
+  const clientSecret = String(evalValue(oauth2.clientSecret, ctx));
+  const scopeValue = oauth2.scope ? String(evalValue(oauth2.scope, ctx)) : undefined;
+  const params = new URLSearchParams();
+  params.set('grant_type', 'client_credentials');
+  params.set('client_id', clientId);
+  params.set('client_secret', clientSecret);
+  if (scopeValue !== undefined) params.set('scope', scopeValue);
+  const body = params.toString();
+  const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+  const request: RequestTrace = { method: 'POST', url: tokenUrl, headers, body };
+
+  let response: ResponseTrace;
+  try {
+    response = await sendRequest({ method: 'POST', url: tokenUrl, headers, body, timeoutMs: config.timeouts.step, followRedirects: true });
+  } catch (err) {
+    const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
+    return fail(tc.redactor.redact(message), redactRequest(request, tc.redactor));
+  }
+  const redactedRequest = redactRequest(request, tc.redactor);
+  const redactedResponse = redactResponse(response, tc.redactor);
+  if (response.status < 200 || response.status >= 300) {
+    return fail(`oauth2 token request failed: ${response.status} ${response.statusText}`, redactedRequest, redactedResponse);
+  }
+  const json = response.json as Record<string, unknown> | undefined;
+  const accessToken = json && typeof json.access_token === 'string' ? json.access_token : undefined;
+  if (!accessToken) {
+    return fail('oauth2 token response has no string `access_token` field', redactedRequest, redactedResponse);
+  }
+  const expiresIn = json && typeof json.expires_in === 'number' ? json.expires_in : undefined;
+  // Refresh a little before the token actually expires (2s, or half the TTL for a very
+  // short-lived one) so a request that starts just under the wire doesn't land mid-flight on an
+  // already-expired token.
+  const expiresAt = expiresIn !== undefined ? Date.now() + Math.max(0, expiresIn * 1000 - Math.min(2000, expiresIn * 500)) : undefined;
+  const detail = `oauth2 token request → ${response.status} (${response.durationMs}ms)`;
+  return {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cookieJar,
+    ok: true,
+    steps: [mkStep('api', src, oauth2.span, true, start, detail, redactedRequest, redactedResponse)],
+    ...(expiresAt !== undefined ? { expiresAt } : {}),
+  };
+}
+
+interface SessionRefreshResult {
+  readonly ok: boolean;
+  readonly steps: readonly StepResult[];
+}
+
+/** Invalidate + re-establish every named session, in declared order, folding fresh
+ * headers/cookies into `ctx` in place (SPEC §3.3, decision 3a, enterprise arc). Safe to mutate:
+ * `ctx.sessionHeaders`/`ctx.cookieJar` are fresh objects built once per test attempt
+ * (`runTestAttempt`), never the session cache's own — mutating them here can't leak into a
+ * concurrently-running sibling test or the shared cache. Stops at the first session that fails to
+ * re-establish, returning `ok: false` so the caller doesn't retry the api step against headers
+ * that are still stale or absent; either way, a synthetic step records what happened so a 401
+ * retry is visible evidence in the report, never a silent, invisible extra round-trip (P#5/P#16). */
+async function refreshSessions(
+  ctx: EvalCtx,
+  names: readonly string[],
+  config: ResolvedConfig,
+  tc: TestCtx,
+  src: string,
+  span: Span,
+): Promise<SessionRefreshResult> {
+  const steps: StepResult[] = [];
+  for (const name of names) {
+    const start = performance.now();
+    const decl = config.sessions.get(name);
+    if (!decl) {
+      steps.push(mkStep('header', src, span, false, start, `401 response → can't re-establish unknown session "${name}"`));
+      return { ok: false, steps };
+    }
+    tc.sessionCache.invalidate(name);
+    const outcome = await tc.sessionCache.ensure(name, decl, config, tc, false);
+    if (!outcome.ok) {
+      steps.push(mkStep('header', src, span, false, start, `401 response → re-establishing session "${name}" failed: ${outcome.error ?? 'a step failed'}`));
+      return { ok: false, steps };
+    }
+    Object.assign(ctx.sessionHeaders as Record<string, string>, outcome.headers);
+    ctx.cookieJar.mergeFrom(outcome.cookieJar.clone());
+    steps.push(mkStep('header', src, span, true, start, `401 response → session "${name}" re-established, retrying`));
+  }
+  return { ok: true, steps };
 }
 
 /** Run `before file`/`after file` hooks (own scope, isolated from any test), in declaration
@@ -378,7 +514,7 @@ async function runFileHooks(
 ): Promise<boolean> {
   if (hooks.length === 0) return true;
   const scope = new Map<string, unknown>();
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, cookieJar: new CookieJar() };
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
   const start = performance.now();
   emit({ type: 'test:start', name: label });
   for (const hook of hooks) {
@@ -452,7 +588,7 @@ async function runTestAttempt(
   sessionOwnership: ReadonlyMap<string, boolean> | undefined,
 ): Promise<TestResult> {
   const scope = new Map<string, unknown>();
-  const nameCtx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, cookieJar: new CookieJar() };
+  const nameCtx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
   const testStart = performance.now();
   const steps: StepResult[] = [];
 
@@ -494,7 +630,7 @@ async function runTestAttempt(
     // must never leak back into the session cache or a concurrently-running sibling test.
     cookieJar.mergeFrom(outcome.cookieJar.clone());
   }
-  const evalCtx: EvalCtx = { ...nameCtx, sessionHeaders, cookieJar };
+  const evalCtx: EvalCtx = { ...nameCtx, sessionHeaders, sessionNames: test.sessions, cookieJar };
 
   for (const hook of beforeEach) {
     const exec = await execSteps(hook.body, config, evalCtx, tc, name, registry);
@@ -554,7 +690,19 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       let callSoftError: string | undefined;
       switch (step.type) {
         case 'ApiStep': {
-          const { trace, redacted } = await execApi(step, config, ctx, tc.redactor, tc.baseDir);
+          let { trace, redacted } = await execApi(step, config, ctx, tc.redactor, tc.baseDir);
+          // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
+          // just `oauth2`) gets this: a revoked/expired-early credential shouldn't fail every
+          // remaining step of a test that's otherwise unrelated to auth. Retried at most once per
+          // step, so a server that genuinely, persistently 401s still fails fast instead of
+          // looping. `ctx.sessionNames` is `[]` for an anonymous test, so this is a no-op there.
+          if (trace.response.status === 401 && ctx.sessionNames.length > 0) {
+            const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
+            results.push(...refresh.steps);
+            if (refresh.ok) {
+              ({ trace, redacted } = await execApi(step, config, ctx, tc.redactor, tc.baseDir));
+            }
+          }
           lastResponse = trace.response;
           result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)`, redacted.request, redacted.response);
           break;
@@ -665,6 +813,7 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       runClock: callerCtx.runClock,
       uniqueSeq: callerCtx.uniqueSeq,
       sessionHeaders: callerCtx.sessionHeaders,
+      sessionNames: callerCtx.sessionNames,
       // Shares the caller's live jar (by reference, not cloned) — an action's own api steps read
       // and update the same cookies its caller sees on the next step, the same way it shares the
       // caller's `rng`/`redactor`/etc.
@@ -702,6 +851,32 @@ interface ApiExec {
   readonly redacted: { request: RequestTrace; response: ResponseTrace };
 }
 
+/** `cert`/`key` file *contents*, keyed by resolved path pair — read once per run, not once per
+ * request (decision 3b, enterprise arc): `execApi` runs per api step, and every step in a run
+ * sharing one `mtls` config would otherwise re-read the same two small files from disk every time. */
+const mtlsCredCache = new Map<string, Promise<{ cert: string; key: string }>>();
+
+async function loadMtlsCreds(config: ResolvedConfig, baseDir: string): Promise<{ cert: string; key: string } | undefined> {
+  if (!config.mtls) return undefined;
+  const { certPath, keyPath } = config.mtls;
+  const certAbs = resolvePath(baseDir, certPath);
+  const keyAbs = resolvePath(baseDir, keyPath);
+  const cacheKey = `${certAbs} ${keyAbs}`;
+  let p = mtlsCredCache.get(cacheKey);
+  if (!p) {
+    p = (async () => {
+      try {
+        const [cert, key] = await Promise.all([readFile(certAbs, 'utf8'), readFile(keyAbs, 'utf8')]);
+        return { cert, key };
+      } catch (err) {
+        throw new RuntimeError(`could not read mTLS \`cert\`/\`key\` (resolved ${certAbs} / ${keyAbs}): ${(err as Error).message}`);
+      }
+    })();
+    mtlsCredCache.set(cacheKey, p);
+  }
+  return p;
+}
+
 async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string): Promise<ApiExec> {
   const baseUrl = resolveBaseUrl(spec.service, config);
   const path = interpolatePath(spec.path.raw, ctx, true);
@@ -729,7 +904,8 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
 
   const request: RequestTrace = { method: spec.method, url, headers, ...(traceBody !== undefined ? { body: traceBody } : {}) };
   const timeoutMs = spec.timeoutMs ?? config.timeouts.step;
-  const response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects });
+  const mtls = await loadMtlsCreds(config, baseDir);
+  const response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
   // Every `Set-Cookie` this response carried is folded into the jar here, unconditionally — the
   // next request in this same scope (session block, or this test's own subsequent steps) sees it
   // automatically, with no `capture`/`header` replay needed (SPEC §3.3, P#33).

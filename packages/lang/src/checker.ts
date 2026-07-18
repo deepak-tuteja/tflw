@@ -448,5 +448,9 @@ function keyName(entry: ConfigEntry): string {
       return 'timeout';
     case 'InsecureDecl':
       return 'insecure';
+    case 'CertDecl':
+      return 'cert';
+    case 'KeyDecl':
+      return 'key';
   }
 }

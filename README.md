@@ -325,17 +325,17 @@ npm test            # run all package test suites
 ```
 
 `npm run build` (root, or `-w tflw`) always produces the same self-contained, esbuild-bundled
-`packages/cli/dist/cli.js` that `npm publish` would ship — see PLAN.md decision 43 (the bundle) and
+`packages/cli/dist/cli.cjs` that `npm publish` would ship — see PLAN.md decision 43 (the bundle) and
 decision 84 (why `build` and the publish artifact are the same thing, not two).
 
 ## Using tflw from a checkout (no npm registry needed)
 
 The public repo may exist before `tflw` is published to npm, or you may just want to run the tool
-straight from a clone without waiting on a release. After the build above, `packages/cli/dist/cli.js`
+straight from a clone without waiting on a release. After the build above, `packages/cli/dist/cli.cjs`
 is the exact runnable artifact — invoke it directly from anywhere, no `npm i -D tflw` required:
 
 ```sh
-node /path/to/testFlow/packages/cli/dist/cli.js run    # or `init`
+node /path/to/testFlow/packages/cli/dist/cli.cjs run    # or `init`
 ```
 
 To get it as a real `tflw` command inside another project on this machine (still no registry

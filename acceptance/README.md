@@ -10,7 +10,7 @@ Run both sides yourself:
 
 ```sh
 # tflw side
-cd acceptance/tflw && node ../../packages/cli/dist/cli.js run --no-color
+cd acceptance/tflw && node ../../packages/cli/dist/cli.cjs run --no-color
 
 # raw side
 cd acceptance/raw && node --env-file=.env --test *.test.mjs
@@ -104,7 +104,7 @@ did) shape around tflw's own feature set. Lives in `acceptance/restful-booker/` 
 secret). Run it:
 
 ```sh
-cd acceptance/restful-booker && node ../../packages/cli/dist/cli.js run --no-color
+cd acceptance/restful-booker && node ../../packages/cli/dist/cli.cjs run --no-color
 ```
 
 **4/4 PASS** against the live API when this was last run (`booking-lifecycle`,

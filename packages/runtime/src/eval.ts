@@ -34,6 +34,12 @@ export interface EvalCtx {
    * at session-run time), auto-applied to this test's api steps — `{}` when anonymous (SPEC §3.3,
    * P#42). */
   readonly sessionHeaders: Readonly<Record<string, string>>;
+  /** Names of the `as <session>[, ...]` sessions this test opted into, `[]` outside a test (a
+   * session's own run, a file hook) or for an anonymous test (SPEC §3.3, decision 3a, enterprise
+   * arc). Lets an `ApiStep` that gets a 401 know which session(s) to invalidate + re-establish
+   * before retrying once — the general auto-refresh-on-401 mechanism every session gets "for
+   * free", not just `oauth2` ones. */
+  readonly sessionNames: readonly string[];
   /** Present only while executing a `session` block's own steps: a `HeaderStmt` writes into this
    * instead of the (nonexistent) response/report subject it would otherwise need (P#42). */
   readonly headerSink?: Record<string, string>;

@@ -40,6 +40,10 @@ export interface ResolvedConfig {
   readonly requiredEnv: readonly string[];
   /** `session <name> ... ` blocks declared in `tflw.config`, by name (SPEC §3.3, P#42). */
   readonly sessions: ReadonlyMap<string, SessionDecl>;
+  /** `cert`/`key` — per-env mTLS client certificate paths, resolved relative to the config file's
+   * directory at request time (SPEC §3.5, decision 3b, enterprise arc). `null` when neither is
+   * set; `resolveConfig` rejects one without the other. */
+  readonly mtls: { readonly certPath: string; readonly keyPath: string } | null;
 }
 
 export const DEFAULT_TIMEOUTS: ResolvedTimeouts = { step: 30_000, expect: 5_000, wait: 30_000 };

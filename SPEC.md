@@ -208,6 +208,49 @@ session's steps only in the surviving (last) attempt's report; earlier failed at
 visible in `report.html` too (PLAN decision 86), just without the session's own steps in them
 (§4.4).
 
+**Refresh on 401 + TTL expiry (PLAN decision 99a).** A session is no longer cached forever once
+established — two independent mechanisms cover the two ways a real credential goes stale:
+
+- **Reactive: any opted-in session refreshes automatically on a `401`.** If a test's request comes
+  back `401` and the test opted into one or more sessions (`as admin` or `as admin, userA`), the
+  runtime re-establishes each opted-in session in declared order (a fresh `runSession()` call,
+  invalidating the old cache entry first) and retries the original request **exactly once** —
+  bounded, so a permanently-bad credential fails clearly rather than looping. The re-establish
+  itself shows up in `report.html` as its own evidence steps, so a passing retry never looks like
+  it silently self-healed. An anonymous test (no `as <session>`) or a `401` with nothing left to
+  refresh just fails normally, same as before this decision.
+- **Proactive: a session with a known expiry re-establishes ahead of time.** A session that knows
+  its own TTL (currently: `oauth2` sessions, via `expires_in`) is treated as expired — and
+  re-established on next use — once the run clock passes that deadline, without waiting for an
+  actual `401` to prove it. A hand-written `session` block with no TTL concept keeps its original
+  cache-forever-on-success behavior unchanged.
+
+**`oauth2` session sugar (PLAN decision 99c), built on refresh.** An alternative to a hand-written
+`session` body, for the common client-credentials shape:
+
+```
+session billing oauth2
+  token url env(BILLING_TOKEN_URL)
+  client id env(BILLING_CLIENT_ID)
+  client secret env(BILLING_CLIENT_SECRET)
+  scope "billing.read billing.write"
+```
+
+- `token url`/`client id`/`client secret` are required; `scope` is optional.
+- Runtime posts a standard form-urlencoded client-credentials grant
+  (`grant_type=client_credentials&client_id=…&client_secret=…&scope=…`) to `token url`, expects
+  `access_token` in the JSON response (fails clearly if absent), and applies it as `Authorization:
+  Bearer <access_token>` — same header-application semantics as a hand-written session from here on.
+- If the response includes `expires_in` (seconds), the session's TTL is set from it — with a
+  built-in safety margin (the smaller of 2 seconds or half of `expires_in` is shaved off the end)
+  so a request landing right at the boundary refreshes proactively instead of racing a live `401`.
+  No `expires_in` in the response means no TTL — the token is cached like any other session value
+  until something (a `401`) invalidates it.
+- `client secret`'s value is redacted in report evidence exactly like any other `env(...)`-sourced
+  secret (§3.4) — no separate redaction wiring needed.
+- Mutually exclusive with a hand-written body: a `session` block is either `oauth2` or a sequence
+  of steps, never both.
+
 ### 3.4 Secrets (P#30)
 
 ```
@@ -276,6 +319,31 @@ mechanism.
   a self-signed/expired/altname-mismatched cert names `insecure true` and `NODE_EXTRA_CA_CERTS` as
   the two fixes; `ENOTFOUND` names a DNS lookup failure; `ECONNREFUSED` asks whether the service is
   actually listening at that host:port. Everything else still surfaces the raw message, unmodified.
+
+### 3.6 Client certificates — mTLS (PLAN decision 99b) ✅
+
+Some enterprise APIs authenticate the *client* via a TLS certificate rather than (or in addition
+to) a bearer token. Per-`env` (or `defaults`) `cert`/`key` config keys:
+
+```
+env staging
+  api "https://staging.example.com"
+  cert "./certs/client.pem"
+  key "./certs/client.key"
+```
+
+- Both keys are required together — `cert` without a matching `key` (or vice versa) is a config
+  error, checked once `defaults` and the active `env` are merged (they may legally be split across
+  the two blocks: a shared `cert` in `defaults`, a `key` only in one `env`).
+- Every request against that env presents the client certificate during the TLS handshake. This is
+  the one request path that doesn't use Node's plain global `fetch` under the hood — it needs a
+  bundled `undici` dispatcher instead (§15), since Node's `fetch` has no per-request client-cert
+  hook. Every other request in a `.tflw` suite, mTLS-configured env or not, is unaffected.
+- Cert/key file contents are read once per run (cached by resolved path), not re-read per request.
+- `insecure true` (above) and `NODE_EXTRA_CA_CERTS` both still apply on an mTLS-configured env,
+  read fresh on every connection rather than cached at the first one — deliberately more defensive
+  here than Node's own default behavior for these two env vars, which are otherwise read only once
+  per process.
 
 ## 4. Tests & structure ✅
 
@@ -847,7 +915,13 @@ mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.
   didn't need to wait for a real LSP consumer to exist).
 - **Install:** per-project `npm i -D tflw`, run via `npx tflw`; `tflw init` scaffolds.
   **Node ≥ 22** (P#43). `.ts` escape-hatch helpers load via native type stripping — no tsx/
-  esbuild runtime dependency; published tflw has essentially zero runtime deps (P#43).
+  esbuild runtime dependency. Published tflw now bundles one real runtime dependency,
+  **`undici`** (P#99b, mTLS client-cert dispatch — the one request path Node's plain global
+  `fetch` can't serve) — build-time-only in `package.json` terms, since esbuild inlines it into
+  `dist/cli.cjs` and a consumer's own `npm install` never pulls in a package named `undici`. The
+  bundle format itself is CJS (`dist/cli.cjs`, not ESM `dist/cli.js`) because undici's CJS
+  internals can't be hoisted into static ESM imports (P#99). A second bundled dependency, `ajv`
+  (contract/schema validation), is planned for arc cluster 3 but not yet built.
 - **Packages:** one `tflw` on npm — cli + lang + runtime + reporter **bundled via esbuild at
   prepack**; internal workspace packages stay private (P#37, mechanism P#43). `playwright` is an
   **optional peer**, dynamic-imported at the first browser step; `tflw install-browsers` does

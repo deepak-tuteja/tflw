@@ -2,7 +2,7 @@
 // of them would catch "the built dist/ artifact is broken but the source isn't" (a tsc config
 // gap, a missing dist file in package.json's `files`, an ESM resolution issue that only shows up
 // post-build). This is the one minimal smoke test that runs the actual distributable: build the
-// workspace, then spawn `node dist/cli.js run` as a real subprocess against a real HTTP server.
+// workspace, then spawn `node dist/cli.cjs run` as a real subprocess against a real HTTP server.
 // Found via /grill-me, 2026-07-05.
 
 import { before, test } from 'node:test';
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
-const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.js');
+const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.cjs');
 const execFileAsync = promisify(execFile);
 
 before(() => {
@@ -44,7 +44,7 @@ async function withFixtureServer<T>(fn: (baseUrl: string) => Promise<T>): Promis
   }
 }
 
-test('the built dist/cli.js runs a real test file against a real server and writes report.html', async () => {
+test('the built dist/cli.cjs runs a real test file against a real server and writes report.html', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-'));
     try {
@@ -75,7 +75,7 @@ test('the built dist/cli.js runs a real test file against a real server and writ
   });
 });
 
-test('the built dist/cli.js exits non-zero on a failing test, and still writes the report', async () => {
+test('the built dist/cli.cjs exits non-zero on a failing test, and still writes the report', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-fail-'));
     try {
@@ -987,7 +987,7 @@ test('--verbose --workers 2 buffers each file\'s step lines into one contiguous 
 });
 
 // Track 3b (grill-me, 2026-07-07): `tflw docs [topic]`, a static SPEC.md-derived cheatsheet
-// bundled into dist/cli.js — no network, no cwd/tflw.config needed, so no fixture dir required.
+// bundled into dist/cli.cjs — no network, no cwd/tflw.config needed, so no fixture dir required.
 test('`tflw docs` with no topic lists every topic, one per line', async () => {
   const { stdout } = await execFileAsync('node', [cliEntry, 'docs']);
   assert.match(stdout, /Topics:/);

@@ -69,7 +69,10 @@ test "creates a {category} product" as admin retry 1
 ```
 
 - `session <name>` (in `tflw.config`) runs once per run; a test opts in with `as <name>` and gets
-  its captured headers auto-applied — no repeated login boilerplate.
+  its captured headers auto-applied — no repeated login boilerplate. It also auto-refreshes on a
+  `401` and honors its own TTL if it has one; `session <name> oauth2` is sugar for a
+  client-credentials grant. Per-env `cert`/`key` config keys add mTLS client certs. See SPEC.md
+  §3.3/§3.6 for the full grammar.
 - `before`/`after` (file or per-test) for setup/teardown; per-test hooks share scope with the test.
 - `expect` is a hard assertion (stops the test); `check` is soft (records and continues, fails the
   test at the end).

@@ -1,0 +1,74 @@
+{
+  "type": "ConfigFile",
+  "defaults": null,
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "local",
+      "isDefault": true,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "http://localhost:3001",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "http://localhost:3001"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "requires": [
+    {
+      "type": "RequireDecl",
+      "names": [
+        "CLIENT_ID",
+        "CLIENT_SECRET"
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "type": "SessionDecl",
+      "name": "admin",
+      "oauth2": {
+        "type": "Oauth2SessionConfig",
+        "tokenUrl": {
+          "type": "StringLit",
+          "value": "http://localhost:3001/oauth/token",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "http://localhost:3001/oauth/token"
+            }
+          ]
+        },
+        "clientId": {
+          "type": "EnvRef",
+          "name": "CLIENT_ID"
+        },
+        "clientSecret": {
+          "type": "EnvRef",
+          "name": "CLIENT_SECRET"
+        },
+        "scope": {
+          "type": "StringLit",
+          "value": "read write",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "read write"
+            }
+          ]
+        }
+      },
+      "body": []
+    }
+  ]
+}

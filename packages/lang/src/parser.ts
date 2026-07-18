@@ -18,6 +18,7 @@ import type {
   BodyTextSubject,
   CallExpr,
   CaptureStmt,
+  CertDecl,
   ConfigEntry,
   ConfigFile,
   DataTable,
@@ -44,10 +45,12 @@ import type {
   InlineBody,
   InsecureDecl,
   Interp,
+  KeyDecl,
   LetStmt,
   Matcher,
   MatcherName,
   NumberLit,
+  Oauth2SessionConfig,
   ObjectLit,
   PathExpr,
   PathSegment,
@@ -102,7 +105,7 @@ const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
-const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure'] as const;
+const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key'] as const;
 const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
 const DURATION_UNITS = ['ms', 's', 'm'] as const;
 const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
@@ -247,6 +250,7 @@ class Parser {
     const sessions: SessionDecl[] = [];
     this.skipNewlines();
     while (!this.atEof()) {
+      const before = this.pos;
       const tok = this.peek();
       if (this.isKw(tok, 'defaults')) {
         const d = this.parseDefaultsBlock();
@@ -279,6 +283,14 @@ class Parser {
         this.synchronize();
         this.skipBlock();
       }
+      // Same guarantee as `parse()`'s top-level loop (see its comment): `synchronize()`
+      // deliberately won't cross a `dedent` it's already sitting on (nested blocks consume their
+      // own), so recovery from a malformed entry — e.g. a `require env` list with a dangling
+      // trailing comma, whose orphaned continuation line leaves a stray `dedent` here once
+      // `synchronize()`/`skipBlock()` run out of things to consume — could otherwise spin forever,
+      // re-erroring on the same token every iteration until the diagnostics array exhausts the
+      // heap. This loop had no such guard; every other recovery loop in this file does.
+      if (this.pos === before) this.advance();
       this.skipNewlines();
     }
     const config: ConfigFile = { type: 'ConfigFile', defaults, envs, requires, sessions, span: this.spanFrom(startPos) };
@@ -292,9 +304,101 @@ class Parser {
     this.advance(); // `session`
     const name = this.expect('ident', 'a session name, e.g. `session admin`');
     if (!name) return null;
+    if (this.isKw(this.peek(), 'oauth2')) {
+      this.advance(); // `oauth2`
+      this.endLine();
+      const oauth2 = this.parseOauth2SessionConfig(start);
+      if (!oauth2) return null;
+      return { type: 'SessionDecl', name: name.value, oauth2, body: [], span: this.spanFrom(start) };
+    }
     this.endLine();
     const body = this.parseSessionBlock();
-    return { type: 'SessionDecl', name: name.value, body, span: this.spanFrom(start) };
+    return { type: 'SessionDecl', name: name.value, oauth2: null, body, span: this.spanFrom(start) };
+  }
+
+  /** `session <name> oauth2` body — a fixed sugar shape, not ordinary steps (SPEC §3.3, decision
+   * 3c): `token url`, `client id`, `client secret` are required; `scope` is optional. Each is a
+   * full `Value` (so `env(...)`/interpolation work, matching every other config value). */
+  private parseOauth2SessionConfig(start: Position): Oauth2SessionConfig | null {
+    if (!this.check('indent')) {
+      this.error(
+        Codes.EMPTY_BLOCK,
+        'this `session … oauth2` has no config',
+        this.peek().span,
+        'indent `token url`, `client id`, and `client secret` under the `session … oauth2` line',
+      );
+      return null;
+    }
+    this.advance(); // indent
+    let tokenUrl: Value | null = null;
+    let clientId: Value | null = null;
+    let clientSecret: Value | null = null;
+    let scope: Value | null = null;
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const tok = this.peek();
+      if (this.isKw(tok, 'token')) {
+        this.advance();
+        if (this.expectKw('url')) {
+          const v = this.parseValue();
+          if (v) {
+            tokenUrl = v;
+            this.endLine();
+          } else this.synchronize();
+        } else this.synchronize();
+      } else if (this.isKw(tok, 'client')) {
+        this.advance();
+        const kindTok = this.peek();
+        if (this.isKw(kindTok, 'id')) {
+          this.advance();
+          const v = this.parseValue();
+          if (v) {
+            clientId = v;
+            this.endLine();
+          } else this.synchronize();
+        } else if (this.isKw(kindTok, 'secret')) {
+          this.advance();
+          const v = this.parseValue();
+          if (v) {
+            clientSecret = v;
+            this.endLine();
+          } else this.synchronize();
+        } else {
+          this.error(Codes.UNEXPECTED_TOKEN, `expected \`id\` or \`secret\` after \`client\`, found ${describeToken(kindTok)}`, kindTok.span);
+          this.synchronize();
+        }
+      } else if (this.isKw(tok, 'scope')) {
+        this.advance();
+        const v = this.parseValue();
+        if (v) {
+          scope = v;
+          this.endLine();
+        } else this.synchronize();
+      } else {
+        this.error(
+          Codes.UNEXPECTED_TOKEN,
+          `expected \`token url\`, \`client id\`, \`client secret\`, or \`scope\` in an oauth2 session, found ${describeToken(tok)}`,
+          tok.span,
+        );
+        this.synchronize();
+      }
+      if (this.pos === before) this.advance(); // guarantee progress
+    }
+    if (this.check('dedent')) this.advance();
+    if (!tokenUrl || !clientId || !clientSecret) {
+      this.error(
+        Codes.CONFIG_UNEXPECTED,
+        'an oauth2 session needs `token url`, `client id`, and `client secret`',
+        this.spanFrom(start),
+        'e.g.\n  session admin oauth2\n    token url "https://api.example.com/oauth/token"\n    client id env(CLIENT_ID)\n    client secret env(CLIENT_SECRET)',
+      );
+      return null;
+    }
+    return { type: 'Oauth2SessionConfig', tokenUrl, clientId, clientSecret, scope, span: this.spanFrom(start) };
   }
 
   /** Like `parseBlock`, but also accepts a bare `header "…" is …` line (only valid inside a
@@ -400,6 +504,10 @@ class Parser {
         return this.wrap(this.parseApiServiceDecl());
       case 'insecure':
         return this.wrap(this.parseInsecureDecl());
+      case 'cert':
+        return this.wrap(this.parseCertDecl());
+      case 'key':
+        return this.wrap(this.parseKeyDecl());
       default: {
         const hint = suggest(tok.value, CONFIG_KEYS);
         this.error(
@@ -504,6 +612,24 @@ class Parser {
     this.advance();
     this.endLine();
     return { type: 'InsecureDecl', value: tok.value === 'true', span: this.spanFrom(start) };
+  }
+
+  private parseCertDecl(): CertDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `cert`
+    const path = this.expectString('a client certificate file path, e.g. `cert "./certs/client.pem"`');
+    if (!path) return null;
+    this.endLine();
+    return { type: 'CertDecl', path, span: this.spanFrom(start) };
+  }
+
+  private parseKeyDecl(): KeyDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `key`
+    const path = this.expectString('a client private key file path, e.g. `key "./certs/client.key"`');
+    if (!path) return null;
+    this.endLine();
+    return { type: 'KeyDecl', path, span: this.spanFrom(start) };
   }
 
   private parseReportDecl(): ReportDecl | null {

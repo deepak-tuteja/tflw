@@ -1,6 +1,6 @@
 // Packaging verification (PLAN.md decision 43, M2.7): `tflw` is published as one self-contained,
 // esbuild-bundled package — `@tflw/*` workspace deps must never appear in the published
-// `dependencies` (they're inlined into dist/cli.js), and a consumer's `npm install` must never
+// `dependencies` (they're inlined into dist/cli.cjs), and a consumer's `npm install` must never
 // pull them in. This is the automated form of the "npm pack + install in a scratch dir" check
 // decision 43 calls for.
 
@@ -23,7 +23,7 @@ let tarballPath: string;
 
 before(async () => {
   // `npm pack` runs `prepack` for us: rm -rf dist, rebuild @tflw/lang+runtime+reporter, then
-  // esbuild-bundle src/cli.ts into one dist/cli.js.
+  // esbuild-bundle src/cli.ts into one dist/cli.cjs.
   scratchDir = await mkdtemp(join(tmpdir(), 'tflw-pack-'));
   execFileSync('npm', ['pack', '--pack-destination', scratchDir], { cwd: cliRoot, stdio: 'pipe' });
   const entries = await readdir(scratchDir);
@@ -32,14 +32,14 @@ before(async () => {
   tarballPath = join(scratchDir, tgz);
 });
 
-test('the published tarball contains dist/cli.js + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
+test('the published tarball contains dist/cli.cjs + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
   const { stdout } = await execFileAsync('tar', ['-tzf', tarballPath]);
   const files = stdout
     .trim()
     .split('\n')
     .map((f) => f.replace(/^package\//, ''))
     .sort();
-  assert.deepEqual(files, ['LICENSE', 'README.md', 'dist/cli.js', 'package.json']);
+  assert.deepEqual(files, ['LICENSE', 'README.md', 'dist/cli.cjs', 'package.json']);
 
   const { stdout: pkgText } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/package.json']);
   const pkg = JSON.parse(pkgText) as { dependencies?: Record<string, string>; private?: boolean };

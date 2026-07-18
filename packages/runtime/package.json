@@ -22,6 +22,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@tflw/lang": "*"
+    "@tflw/lang": "*",
+    "undici": "^8.7.0"
   }
 }

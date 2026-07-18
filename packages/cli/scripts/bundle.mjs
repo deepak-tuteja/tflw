@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bundles src/cli.ts into one self-contained dist/cli.js (decision 43), injecting the real
+// Bundles src/cli.ts into one self-contained dist/cli.cjs (decision 43), injecting the real
 // package.json version as `__TFLW_VERSION__` (decision 74b) so `tflw --version` needs no runtime
 // package.json read in the published artifact. A plain JS script (not a shell one-liner) so the
 // dist removal is portable across OSes (decision 79) and the version doesn't need shell quoting.
@@ -22,8 +22,16 @@ await build({
   entryPoints: ['src/cli.ts'],
   bundle: true,
   platform: 'node',
-  format: 'esm',
+  // `.cjs` (not `.js`+ESM) since decision 13 (enterprise arc) bundles `undici` in: undici's CJS
+  // source has `require()` calls inside function bodies (lazy/conditional), which esbuild can't
+  // hoist into static ESM `import`s — bundled into ESM output, those become a shim that throws
+  // "Dynamic require of ... is not supported" at runtime. CJS output has no such restriction
+  // (`require` is native, synchronous, and already how esbuild resolves same-bundle references).
+  // The package itself stays `"type": "module"` for its own dev source; `.cjs` makes Node treat
+  // just this one file as CommonJS regardless, which is the standard way out of this esbuild
+  // limitation.
+  format: 'cjs',
   target: 'node22',
-  outfile: 'dist/cli.js',
+  outfile: 'dist/cli.cjs',
   define: { __TFLW_VERSION__: JSON.stringify(pkg.version) },
 });

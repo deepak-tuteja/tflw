@@ -359,6 +359,114 @@ test "second" as admin, shopper
   await server.close();
 });
 
+// Decision 3a (enterprise arc): a 401 while using a cached session's headers auto re-establishes
+// that session and retries the failing request once — not just `oauth2` sessions get this, every
+// hand-written `session` does too, since the trigger is the response status, not the session kind.
+
+test('a 401 while using a cached session auto re-establishes the session and retries the request once', async () => {
+  let loginCount = 0;
+  let validToken = '';
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => {
+      loginCount++;
+      validToken = `tok-${loginCount}`;
+      json(res, 200, { token: validToken });
+    },
+    '/orders': (req, res) => {
+      if (req.headers['authorization'] === `Bearer ${validToken}`) json(res, 200, { auth: req.headers['authorization'] });
+      else res.writeHead(401).end();
+    },
+  });
+  const config = configWithSession(server.baseUrl);
+  const sessionCache = new SessionCache();
+
+  const sourceA = `test "first" as admin\n  api GET /orders\n  expect status equals 200\n`;
+  const { program: programA } = parseSource(sourceA);
+  const { report: reportA } = await runProgram(programA, config, { source: sourceA, sessionCache });
+  assert.equal(reportA.ok, true, JSON.stringify(reportA.tests, null, 2));
+  assert.equal(loginCount, 1);
+
+  // Simulate the token being revoked/rotated server-side between runs (e.g. an admin session
+  // expiring out from under the client) — the cache still holds the now-stale `Bearer tok-1`.
+  validToken = 'rotated-away';
+
+  const sourceB = `test "second" as admin\n  api GET /orders\n  expect status equals 200\n  expect body.auth equals "Bearer tok-2"\n`;
+  const { program: programB } = parseSource(sourceB);
+  const { report: reportB } = await runProgram(programB, config, { source: sourceB, sessionCache });
+
+  assert.equal(reportB.ok, true, JSON.stringify(reportB.tests, null, 2));
+  assert.equal(loginCount, 2, 'the 401 must have triggered exactly one re-login');
+  assert.equal(server.received.get('/orders')!.length, 3, 'test A: 1 request; test B: 1 failing (401) + 1 retried (200)');
+
+  await server.close();
+});
+
+test('when re-establishing the session after a 401 itself fails, the original 401 stands and the test fails clearly', async () => {
+  let loginCount = 0;
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => {
+      loginCount++;
+      if (loginCount === 1) {
+        json(res, 200, { token: 'tok-1' });
+        return;
+      }
+      res.writeHead(500).end();
+    },
+    // Always 401s — simulates a credential that's been revoked for a reason re-auth can't fix.
+    '/orders': (_req, res) => res.writeHead(401).end(),
+  });
+  const config = configWithSession(server.baseUrl);
+
+  const source = `test "always 401" as admin\n  api GET /orders\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false);
+  assert.equal(loginCount, 2, 'establish once, one re-establish attempt on the 401 — never left uninvestigated');
+  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  assert.ok(kinds.includes('header'), 'a synthetic step records the failed re-establish attempt as evidence');
+  assert.equal(server.received.get('/orders')!.length, 1, 'the re-establish itself failed, so the api step is never retried');
+
+  await server.close();
+});
+
+test('a 401 that persists even after successfully re-establishing the session is retried only once, then fails', async () => {
+  let loginCount = 0;
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => {
+      loginCount++;
+      json(res, 200, { token: `tok-${loginCount}` });
+    },
+    // Always 401s regardless of the token — e.g. the account itself lost access, re-auth can't help.
+    '/orders': (_req, res) => res.writeHead(401).end(),
+  });
+  const config = configWithSession(server.baseUrl);
+
+  const source = `test "always 401" as admin\n  api GET /orders\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false);
+  assert.equal(loginCount, 2, 'establish once, retry-refresh once — never an unbounded retry loop');
+  assert.equal(server.received.get('/orders')!.length, 2, 'the original request plus exactly one retry, never more');
+
+  await server.close();
+});
+
+test('an anonymous test never triggers a session refresh on its own 401 (it has no session to refresh)', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => res.writeHead(401).end() });
+  const config = configWithSession(server.baseUrl);
+
+  const source = `test "anonymous, 401"\n  api GET /orders\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false);
+  assert.equal(server.received.get('/orders')!.length, 1, 'no session to refresh, so no retry — one request, one clean failure');
+
+  await server.close();
+});
+
 test('an unknown session among several opted into fails clearly, even when the others are valid', async () => {
   const server = await startFixtureServer({
     '/auth/login': (_req, res) => json(res, 200, { token: 'tok-123' }),

@@ -5,7 +5,7 @@
   "keywords": ["testing", "api-testing", "test-runner", "dsl", "http", "cli"],
   "type": "module",
   "bin": {
-    "tflw": "./dist/cli.js"
+    "tflw": "./dist/cli.cjs"
   },
   "engines": {
     "node": ">=22"

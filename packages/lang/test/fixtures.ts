@@ -365,6 +365,28 @@ env staging
   insecure false
 `,
   },
+  {
+    name: 'session-oauth2',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+  token url "http://localhost:3001/oauth/token"
+  client id env(CLIENT_ID)
+  client secret env(CLIENT_SECRET)
+  scope "read write"
+
+require env CLIENT_ID, CLIENT_SECRET
+`,
+  },
+  {
+    name: 'cert-key-pair',
+    source: `env staging
+  api "https://staging.example.com"
+  cert "./certs/client.pem"
+  key "./certs/client.key"
+`,
+  },
 ];
 
 export const CONFIG_INVALID: readonly Fixture[] = [
@@ -414,6 +436,47 @@ session admin
     name: 'insecure-bad-value',
     source: `defaults
   insecure yes
+`,
+  },
+  {
+    name: 'oauth2-missing-client-secret',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+  token url "http://localhost:3001/oauth/token"
+  client id env(CLIENT_ID)
+`,
+  },
+  {
+    name: 'oauth2-unknown-field',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+  token url "http://localhost:3001/oauth/token"
+  client id env(CLIENT_ID)
+  client secret env(CLIENT_SECRET)
+  grant_type "client_credentials"
+`,
+  },
+  {
+    // Regression for a real hang/OOM bug (found 2026-07-18 dogfooding testFlow-tests M22):
+    // `require env`'s comma list has no line-continuation support, so a trailing comma before the
+    // newline left the parser's top-level `parseConfig()` loop stuck on the continuation line's
+    // orphaned `dedent` forever — `synchronize()` won't cross a `dedent` it's already sitting on,
+    // and this loop (alone among the file's recovery loops) had no fallback `advance()`. This
+    // fixture must terminate with diagnostics, not hang; the second `env` block below proves
+    // recovery actually resumes normal parsing afterward, not just that the loop exits.
+    name: 'require-env-trailing-comma-continuation',
+    source: `env local default
+  api "http://localhost:3001"
+
+require env ADMIN_EMAIL, ADMIN_PW,
+  USER_A_EMAIL, USER_A_PW
+
+env staging
+  api "https://staging.example.com"
 `,
   },
 ];

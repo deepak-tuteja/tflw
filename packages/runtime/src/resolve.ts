@@ -51,6 +51,8 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   let reportDir = './report';
   let workers = 1;
   let insecure = false;
+  let certPath: string | null = null;
+  let keyPath: string | null = null;
 
   const applyEntries = (entries: EnvBlock['entries']): void => {
     for (const entry of entries) {
@@ -77,12 +79,28 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
         case 'InsecureDecl':
           insecure = entry.value;
           break;
+        case 'CertDecl':
+          certPath = entry.path.value;
+          break;
+        case 'KeyDecl':
+          keyPath = entry.path.value;
+          break;
       }
     }
   };
 
   if (config.defaults) applyEntries(config.defaults.entries);
   applyEntries(env.entries); // env overrides defaults (same-key-wins)
+
+  // A `cert` without a `key` (or vice versa) can't be caught at parse time — `defaults` and `env`
+  // are two separate blocks, so e.g. `cert` in `defaults` + `key` only in one `env` looks fine to
+  // the checker but is only visible here, once both are merged (decision 3b, enterprise arc).
+  if ((certPath === null) !== (keyPath === null)) {
+    throw new ConfigError(
+      `env "${env.name}": \`cert\` and \`key\` must be set together (mTLS needs both) — found ${certPath === null ? '`key` without `cert`' : '`cert` without `key`'}`,
+    );
+  }
+  const mtls = certPath !== null && keyPath !== null ? { certPath, keyPath } : null;
 
   const requiredEnv = config.requires.flatMap((r) => r.names);
   const sessions = new Map(config.sessions.map((s) => [s.name, s] as const));
@@ -99,6 +117,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     insecure,
     requiredEnv,
     sessions,
+    mtls,
   };
 }
 
