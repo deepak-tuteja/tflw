@@ -11,6 +11,10 @@ packages/vscode/LICENSE
 # hand-edited, so it isn't a source of truth worth committing.
 packages/cli/src/docs-data.generated.ts
 
+# VitePress build output/cache (packages/docs-site) — dist/ above already covers .vitepress/dist,
+# this adds the separate cache directory.
+.vitepress/cache
+
 # Internal dev-tracking docs (decision log + build tracker) — not part of the public project
 PLAN.md
 PROGRESS.md

@@ -20,6 +20,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
-    "test:update": "UPDATE_GOLDEN=1 node --import tsx --test \"test/**/*.test.ts\""
+    "pretest": "npm run docs:gen",
+    "test:update": "UPDATE_GOLDEN=1 node --import tsx --test \"test/**/*.test.ts\"",
+    "docs:gen": "node --import tsx scripts/gen-spec-tables.mjs"
   }
 }

@@ -55,6 +55,11 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   dependencies, `undici` (mTLS client-cert request path) and `ajv` (contract/schema validation) —
   both build-time only, never installed by a consumer; every other request still uses Node's plain
   global `fetch`.
+- Documentation site (VitePress, `packages/docs-site`, deployed to GitHub Pages): a hand-adapted
+  Guide, a generated Reference (matchers/generators/CLI flags, from a new canonical
+  `packages/lang/src/spec-data.ts` manifest that also regenerates SPEC.md's own matcher/generator
+  tables), the Grammar reference, and an in-browser parse+check playground. `GRAMMAR.md` was
+  refreshed to cover the full grammar through this release (it had been a frozen M0-only snapshot).
 
 ### Fixed
 

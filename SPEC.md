@@ -611,6 +611,7 @@ through the JS escape hatch (§11).
 — there are no UI subjects to apply them to until the browser half (M3) exists. Everything else
 below is ✅ shipped.
 
+<!-- GENERATED:matchers:start -->
 | Matcher | Applies to | Example |
 |---|---|---|
 | `equals` | any value | `expect status equals 201` |
@@ -622,6 +623,10 @@ below is ✅ shipped.
 | `has count N` | arrays, UI lists | `expect body.items has count 3` |
 | `has value` | UI fields | `expect field "Email" has value "a@b.c"` |
 | `is visible/hidden/enabled/disabled/checked` | UI locators | `expect button "Pay" is enabled` |
+<!-- GENERATED:matchers:end -->
+
+Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
+(`scripts/gen-spec-tables.mjs`) — do not hand-edit the rows above; edit the manifest instead.
 
 `not` negates any matcher. For UI, `not visible` retries until absent (P#15).
 
@@ -762,6 +767,28 @@ No built-in faker realism (names/addresses) — use `random of` with your own li
 `random password` is not an exception to this — it satisfies a validation policy (at least one
 upper/lower/digit/symbol), not a fake human identity, same category as `unique like`'s pattern
 fill (decision 98).
+
+### 7.3.1 Generators quick reference (PLAN decision 103, enterprise arc cluster 4)
+
+<!-- GENERATED:generators:start -->
+| Family | Generator | Notes | Example |
+|---|---|---|---|
+| unique | `unique("prefix")` | collision-safe across tests/workers/retries | `unique("Widget")` |
+| unique | `unique email` | collision-safe across tests/workers/retries | `unique email` |
+| unique | `unique number` | collision-safe across tests/workers/retries | `unique number` |
+| unique | `unique like "ORD-######"` | `#` = digit; pattern fill, collision-safe | `unique like "ORD-######"` |
+| unique | `unique uuid` | v4-shaped; trailing digits are the run-wide counter, so distinctness is guaranteed, not probabilistic | `unique uuid` |
+| random | `random number A to B` / `random decimal A to B` | seed-reproducible; rejects a reversed range as a runtime error | `random number 1 to 100` |
+| random | `random date in past` / `in future` / `between A and B` | seed- and run-clock-reproducible (`--seed`/`--now`) | `random date in past` |
+| random | `random of "a", "b", ...` | seed-reproducible pick from an inline list | `random of "red", "blue", "green"` |
+| random | `random string N` | seed-reproducible alnum string of length N | `random string 12` |
+| random | `random like "SKU-####-??"` | `#` = digit, `?` = letter; seed-reproducible pattern fill | `random like "SKU-####-??"` |
+| random | `random uuid` | v4, collisions allowed (not collision-guaranteed like `unique uuid`) | `random uuid` |
+| random | `random password [N]` | default length 12, min 4; satisfies a validation policy, not fake-identity realism | `random password 16` |
+<!-- GENERATED:generators:end -->
+
+Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
+(`scripts/gen-spec-tables.mjs`) — do not hand-edit the rows above; edit the manifest instead.
 
 ### 7.4 Reproducibility (P#23)
 

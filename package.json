@@ -18,7 +18,8 @@
     "packages/runtime",
     "packages/reporter",
     "packages/cli",
-    "packages/vscode"
+    "packages/vscode",
+    "packages/docs-site"
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",

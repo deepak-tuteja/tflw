@@ -11,6 +11,7 @@ import type { Diagnostic } from './diagnostic.js';
 export * from './token.js';
 export * from './ast.js';
 export * from './diagnostic.js';
+export * from './spec-data.js';
 export { lex, type LexResult } from './lexer.js';
 export { parse as parseTokens, parseConfig as parseConfigTokens, parseStringParts, type ParseResult, type ConfigResult } from './parser.js';
 export { validateConfig, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables } from './checker.js';

@@ -1,0 +1,18 @@
+{
+  "name": "@tflw/docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "tflw documentation site (VitePress) — deployed to GitHub Pages. PLAN decision 103, enterprise arc cluster 4.",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev .",
+    "build": "vitepress build .",
+    "preview": "vitepress preview ."
+  },
+  "dependencies": {
+    "@tflw/lang": "*"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}
