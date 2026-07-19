@@ -9,39 +9,18 @@
       "type": "TestDecl",
       "name": {
         "type": "StringLit",
-        "value": "invite {role}",
+        "value": "rate-limited create honors Retry-After",
         "parts": [
           {
             "kind": "text",
-            "value": "invite "
-          },
-          {
-            "kind": "interp",
-            "ref": [
-              {
-                "kind": "prop",
-                "name": "role"
-              }
-            ]
+            "value": "rate-limited create honors Retry-After"
           }
         ]
       },
       "tags": [],
       "sessions": [],
       "retry": 0,
-      "table": {
-        "type": "FileDataTable",
-        "path": {
-          "type": "StringLit",
-          "value": "./data/invites.csv",
-          "parts": [
-            {
-              "kind": "text",
-              "value": "./data/invites.csv"
-            }
-          ]
-        }
-      },
+      "table": null,
       "body": [
         {
           "type": "ApiStep",
@@ -49,7 +28,7 @@
           "method": "POST",
           "path": {
             "type": "PathExpr",
-            "raw": "/invites"
+            "raw": "/retry-demo"
           },
           "body": {
             "type": "InlineBody",
@@ -58,26 +37,14 @@
               "fields": [
                 {
                   "type": "Field",
-                  "key": "role",
+                  "key": "key",
                   "value": {
-                    "type": "Interp",
-                    "ref": [
+                    "type": "StringLit",
+                    "value": "abc",
+                    "parts": [
                       {
-                        "kind": "prop",
-                        "name": "role"
-                      }
-                    ]
-                  }
-                },
-                {
-                  "type": "Field",
-                  "key": "email",
-                  "value": {
-                    "type": "Interp",
-                    "ref": [
-                      {
-                        "kind": "prop",
-                        "name": "email"
+                        "kind": "text",
+                        "value": "abc"
                       }
                     ]
                   }
@@ -85,10 +52,46 @@
               ]
             }
           },
-          "headers": [],
+          "headers": [
+            {
+              "type": "ApiHeader",
+              "name": {
+                "type": "StringLit",
+                "value": "Authorization",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "Authorization"
+                  }
+                ]
+              },
+              "value": {
+                "type": "StringLit",
+                "value": "Bearer {token}",
+                "parts": [
+                  {
+                    "kind": "text",
+                    "value": "Bearer "
+                  },
+                  {
+                    "kind": "interp",
+                    "ref": [
+                      {
+                        "kind": "prop",
+                        "name": "token"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
           "timeoutMs": null,
           "followRedirects": true,
-          "retryAfter": null
+          "retryAfter": {
+            "type": "RetryAfterClause",
+            "max": 3
+          }
         },
         {
           "type": "ExpectStmt",
@@ -103,8 +106,8 @@
             "negated": false,
             "value": {
               "type": "NumberLit",
-              "value": 201,
-              "raw": "201"
+              "value": 200,
+              "raw": "200"
             }
           }
         }

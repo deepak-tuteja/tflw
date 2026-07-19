@@ -18,7 +18,7 @@ export interface MatchOutcome {
  * report.html regardless of this cap. */
 const MAX_DIFF_CHARS = 2000;
 
-function truncate(s: string, max: number = MAX_DIFF_CHARS): string {
+export function truncate(s: string, max: number = MAX_DIFF_CHARS): string {
   if (s.length <= max) return s;
   return `${s.slice(0, max)}… (truncated, showing ${max} of ${s.length} chars — see report.html for the full response body)`;
 }

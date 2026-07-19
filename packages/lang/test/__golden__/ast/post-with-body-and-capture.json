@@ -83,7 +83,8 @@
           },
           "headers": [],
           "timeoutMs": null,
-          "followRedirects": true
+          "followRedirects": true,
+          "retryAfter": null
         },
         {
           "type": "ExpectStmt",
@@ -127,7 +128,8 @@
           "body": null,
           "headers": [],
           "timeoutMs": null,
-          "followRedirects": true
+          "followRedirects": true,
+          "retryAfter": null
         },
         {
           "type": "ExpectStmt",

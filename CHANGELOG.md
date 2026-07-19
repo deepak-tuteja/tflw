@@ -44,10 +44,17 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   much of the request/response trace lands in the report (never affects what `expect`/`capture`
   can see); `redact body.email, body.*.address` masks matching JSON fields with `[redacted]` in
   the report, a declarative mechanism distinct from the existing `env(...)` secret redaction.
+- Contract validation: `expect body matches schema "Name" from "source"` runs real ajv JSON-Schema
+  validation against a schema in an API's own generated OpenAPI document (`components.schemas`),
+  including cross-`$ref` resolution — the assertion itself fetches and caches the document.
+- `retry honoring "Retry-After" up to N` — a per-step `api` clause that re-issues just that one
+  request when its response carries a `Retry-After` header (seconds or HTTP-date), sleeping the
+  indicated duration before each re-attempt; distinct from `retry N`, which retries a whole test.
 - `tflw run` and `tflw init` (scaffolds `tflw.config` + `example.tflw`); `tflw --version`/`-v`.
-- Packaged as a single self-contained `dist/cli.cjs` (esbuild bundle). Bundles one real runtime
-  dependency, `undici` (build-time only — never installed by a consumer), used solely for the mTLS
-  client-cert request path; every other request still uses Node's plain global `fetch`.
+- Packaged as a single self-contained `dist/cli.cjs` (esbuild bundle). Bundles two real runtime
+  dependencies, `undici` (mTLS client-cert request path) and `ajv` (contract/schema validation) —
+  both build-time only, never installed by a consumer; every other request still uses Node's plain
+  global `fetch`.
 
 ### Fixed
 

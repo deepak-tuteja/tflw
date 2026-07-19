@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@tflw/lang": "*",
+    "ajv": "^8.17.1",
     "undici": "^8.7.0"
   }
 }

@@ -115,7 +115,8 @@
           },
           "headers": [],
           "timeoutMs": null,
-          "followRedirects": true
+          "followRedirects": true,
+          "retryAfter": null
         },
         {
           "type": "ExpectStmt",

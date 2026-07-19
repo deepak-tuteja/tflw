@@ -9,11 +9,11 @@
       "type": "TestDecl",
       "name": {
         "type": "StringLit",
-        "value": "any and all over array bodies",
+        "value": "product response matches its documented schema",
         "parts": [
           {
             "kind": "text",
-            "value": "any and all over array bodies"
+            "value": "product response matches its documented schema"
           }
         ]
       },
@@ -28,7 +28,7 @@
           "method": "GET",
           "path": {
             "type": "PathExpr",
-            "raw": "/orders"
+            "raw": "/products/{productId}"
           },
           "body": null,
           "headers": [],
@@ -39,31 +39,33 @@
         {
           "type": "ExpectStmt",
           "soft": false,
-          "quantifier": "any",
+          "quantifier": null,
           "subject": {
             "type": "BodySubject",
-            "path": [
-              {
-                "kind": "prop",
-                "name": "items"
-              },
-              {
-                "kind": "prop",
-                "name": "name"
-              }
-            ]
+            "path": []
           },
           "matcher": {
             "type": "Matcher",
-            "name": "equals",
+            "name": "matchesSchema",
             "negated": false,
-            "value": {
+            "value": null,
+            "schemaName": {
               "type": "StringLit",
-              "value": "Widget",
+              "value": "ProductResponseDto",
               "parts": [
                 {
                   "kind": "text",
-                  "value": "Widget"
+                  "value": "ProductResponseDto"
+                }
+              ]
+            },
+            "schemaSource": {
+              "type": "StringLit",
+              "value": "/openapi.json",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "/openapi.json"
                 }
               ]
             }
@@ -72,60 +74,33 @@
         {
           "type": "ExpectStmt",
           "soft": false,
-          "quantifier": "all",
+          "quantifier": null,
           "subject": {
             "type": "BodySubject",
-            "path": [
-              {
-                "kind": "prop",
-                "name": "items"
-              },
-              {
-                "kind": "prop",
-                "name": "status"
-              }
-            ]
+            "path": []
           },
           "matcher": {
             "type": "Matcher",
-            "name": "equals",
-            "negated": false,
-            "value": {
+            "name": "matchesSchema",
+            "negated": true,
+            "value": null,
+            "schemaName": {
               "type": "StringLit",
-              "value": "active",
+              "value": "OrderResponseDto",
               "parts": [
                 {
                   "kind": "text",
-                  "value": "active"
+                  "value": "OrderResponseDto"
                 }
               ]
-            }
-          }
-        },
-        {
-          "type": "ExpectStmt",
-          "soft": false,
-          "quantifier": "any",
-          "subject": {
-            "type": "BodySubject",
-            "path": [
-              {
-                "kind": "prop",
-                "name": "tags"
-              }
-            ]
-          },
-          "matcher": {
-            "type": "Matcher",
-            "name": "equals",
-            "negated": false,
-            "value": {
+            },
+            "schemaSource": {
               "type": "StringLit",
-              "value": "urgent",
+              "value": "/openapi.json",
               "parts": [
                 {
                   "kind": "text",
-                  "value": "urgent"
+                  "value": "/openapi.json"
                 }
               ]
             }

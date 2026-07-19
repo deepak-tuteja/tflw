@@ -490,6 +490,21 @@ Grammar: `api [<service>] <METHOD> <path>[?query] [<body-form>] [timeout <dur>] 
   `header "X-Trace" is "{traceId}"` lines directly under the api step.
 - `timeout <dur>` overrides the config request timeout for this step only.
 - Redirects are followed by default; `without redirects` leaves the 3xx observable (§6.2).
+- `retry honoring "Retry-After" up to N` (PLAN decision 102b, enterprise arc cluster 3, closes
+  TFLW-GAPS.md gap #5): a line under the api step, alongside `header`. Re-issues *this one
+  request* — not the whole test, unlike `retry N` on `test` (§4.4) — whenever its response
+  carries a `Retry-After` header, sleeping the indicated duration before each re-attempt, up to
+  `N` extra attempts. Both header formats are honored: whole seconds (RFC 9110) and an HTTP-date.
+  A response with no `Retry-After` header, or one that fails to parse as either format, is never
+  retried — guessing a wait time is worse than not retrying at all. A retried step's report line
+  says so directly: `..., retried 1x honoring Retry-After (waited 2000ms total)`. Not available on
+  `wait until api`, which already has its own poll-until-expect-passes retry mechanism.
+  ```
+  api POST /orders/{orderId}/reviews body { rating: 5 }
+    header "Authorization" is "Bearer {userToken}"
+    retry honoring "Retry-After" up to 3
+  expect status equals 201
+  ```
 
 Interpolated `{var}` path segments are percent-encoded (`encodeURIComponent`) before being
 concatenated into the URL, so a captured/generated value containing `&`, `#`, `?`, a space, or
@@ -602,12 +617,42 @@ below is ✅ shipped.
 | `contains` | strings, arrays | `expect body.msg contains "created"` |
 | `matches "<regex>"` | strings | `expect header "content-type" matches "json"` |
 | `matches subset {...}` | objects | `expect body matches subset { type: "about:blank", status: 422 }` |
+| `matches schema "Name" from "src"` | objects | `expect body matches schema "ProductResponseDto" from "/openapi.json"` |
 | `is greater than` / `is less than` | numbers, `duration` | `expect body.total is less than 100` |
 | `has count N` | arrays, UI lists | `expect body.items has count 3` |
 | `has value` | UI fields | `expect field "Email" has value "a@b.c"` |
 | `is visible/hidden/enabled/disabled/checked` | UI locators | `expect button "Pay" is enabled` |
 
 `not` negates any matcher. For UI, `not visible` retries until absent (P#15).
+
+### 6.2.1 Contract validation — `matches schema "Name" from "src"` (PLAN decision 102a,
+enterprise arc cluster 3, closes TFLW-GAPS.md gap #6)
+
+Validates the subject against a named schema in an externally-fetched OpenAPI document, using a
+real bundled **ajv** (JSON-Schema) validator — including `$ref` resolution across
+`components.schemas`, so a documented DTO referencing another one validates correctly, not just
+flat schemas:
+
+```
+api GET /products/{productId}
+expect body matches schema "ProductResponseDto" from "/openapi.json"
+```
+
+- `"Name"` is the key under the fetched document's `components.schemas`; `"src"` is an absolute
+  URL, or a path resolved against the **default** `api` service's base URL (a non-default
+  service's document needs an absolute URL — a deliberate minimal-scope limitation).
+- The document is fetched once and cached for the rest of the run (keyed by resolved URL) — every
+  further `matches schema` assertion against the same source reuses it, including across
+  `--workers N`. `allow hosts` (§3.7) gates this fetch the same as any `api` step's request.
+  OpenAPI 3.0's `nullable: true` is understood (folded into a JSON-Schema `type` union before
+  validating), since plain JSON-Schema doesn't have that keyword.
+- The one matcher this codebase evaluates outside the ordinarily-pure, synchronous matcher
+  set (P#13) — fetching an external document is I/O the other matchers never need. `any`/`all`
+  quantifiers can't be combined with it (§6.3) — validating an array element-by-element against a
+  whole-document contract fetch is out of scope; the checker/runtime rejects the combination
+  loudly rather than silently doing something surprising.
+- `not matches schema ...` asserts the subject does **not** conform — useful for a deliberately-
+  drifted-endpoint regression check.
 
 ### 6.3 Array quantifiers (P#14)
 
@@ -980,13 +1025,16 @@ mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.
   didn't need to wait for a real LSP consumer to exist).
 - **Install:** per-project `npm i -D tflw`, run via `npx tflw`; `tflw init` scaffolds.
   **Node ≥ 22** (P#43). `.ts` escape-hatch helpers load via native type stripping — no tsx/
-  esbuild runtime dependency. Published tflw now bundles one real runtime dependency,
+  esbuild runtime dependency. Published tflw now bundles two real runtime dependencies:
   **`undici`** (P#99b, mTLS client-cert dispatch — the one request path Node's plain global
-  `fetch` can't serve) — build-time-only in `package.json` terms, since esbuild inlines it into
-  `dist/cli.cjs` and a consumer's own `npm install` never pulls in a package named `undici`. The
-  bundle format itself is CJS (`dist/cli.cjs`, not ESM `dist/cli.js`) because undici's CJS
-  internals can't be hoisted into static ESM imports (P#99). A second bundled dependency, `ajv`
-  (contract/schema validation), is planned for arc cluster 3 but not yet built.
+  `fetch` can't serve) and **`ajv`** (decision 102a, enterprise arc cluster 3, real JSON-Schema
+  validation for `matches schema ... from ...`, §6.2.1) — both build-time-only in `package.json`
+  terms, since esbuild inlines them into `dist/cli.cjs` and a consumer's own `npm install` never
+  pulls in packages named `undici`/`ajv`. `ajv` needed zero extra esbuild config to get bundled —
+  it's a transitive dependency of `@tflw/runtime` now, and the existing `bundle: true` build
+  already picks up every dependency, the same way it already did for `undici`. The bundle format
+  itself is CJS (`dist/cli.cjs`, not ESM `dist/cli.js`) because undici's CJS internals can't be
+  hoisted into static ESM imports (P#99).
 - **Packages:** one `tflw` on npm — cli + lang + runtime + reporter **bundled via esbuild at
   prepack**; internal workspace packages stay private (P#37, mechanism P#43). `playwright` is an
   **optional peer**, dynamic-imported at the first browser step; `tflw install-browsers` does

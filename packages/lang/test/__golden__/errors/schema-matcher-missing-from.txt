@@ -1,0 +1,5 @@
+error[TF010]: expected `from`, found end of line
+ --> schema-matcher-missing-from.tflw:3:38
+  |
+3 |   expect body matches schema "Widget"
+  |                                      ^

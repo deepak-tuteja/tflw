@@ -1,0 +1,7 @@
+error[TF010]: `retry honoring` doesn't support "X-RateLimit-Reset"
+ --> retry-honoring-unknown-header.tflw:3:20
+  |
+3 |     retry honoring "X-RateLimit-Reset" up to 3
+  |                    ^^^^^^^^^^^^^^^^^^^
+  |
+  = help: expected one of: Retry-After

@@ -73,6 +73,7 @@ import type {
   RedactPattern,
   ReportDecl,
   RequireDecl,
+  RetryAfterClause,
   SessionDecl,
   Step,
   StringLit,
@@ -113,6 +114,7 @@ const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as c
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact'] as const;
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
+const RETRY_AFTER_HEADERS = ['Retry-After'] as const;
 const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
 const DURATION_UNITS = ['ms', 's', 'm'] as const;
 const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
@@ -961,8 +963,8 @@ class Parser {
     const spec = this.parseApiRequestLine();
     if (!spec) return null;
     this.endLine();
-    const headers = this.parseApiHeaders();
-    return { type: 'ApiStep', ...spec, headers: [...spec.headers, ...headers], span: this.spanFrom(start) };
+    const { headers, retryAfter } = this.parseApiHeaders();
+    return { type: 'ApiStep', ...spec, headers: [...spec.headers, ...headers], retryAfter, span: this.spanFrom(start) };
   }
 
   /** The shared `[<service>] METHOD PATH [body-form] [timeout <dur>] [without redirects]` line,
@@ -1016,7 +1018,7 @@ class Parser {
       followRedirects = false;
     }
 
-    return { service, method: method!, path, body, headers: [], timeoutMs, followRedirects };
+    return { service, method: method!, path, body, headers: [], timeoutMs, followRedirects, retryAfter: null };
   }
 
   private parseApiBody(): ApiBody | null {
@@ -1088,10 +1090,13 @@ class Parser {
     return fields;
   }
 
-  /** An optional indented block of `header "…" is <value>` lines beneath an api step (SPEC §5.1). */
-  private parseApiHeaders(): ApiHeader[] {
+  /** An optional indented block beneath an api step: `header "…" is <value>` lines (SPEC §5.1)
+   * and/or one `retry honoring "Retry-After" up to N` line (SPEC §5.1, PLAN decision 102b,
+   * enterprise arc cluster 3). */
+  private parseApiHeaders(): { headers: ApiHeader[]; retryAfter: RetryAfterClause | null } {
     const headers: ApiHeader[] = [];
-    if (!this.check('indent')) return headers;
+    let retryAfter: RetryAfterClause | null = null;
+    if (!this.check('indent')) return { headers, retryAfter };
     this.advance(); // indent
     while (!this.check('dedent') && !this.atEof()) {
       if (this.check('newline')) {
@@ -1102,14 +1107,61 @@ class Parser {
       if (this.isKw(this.peek(), 'header')) {
         const header = this.parseHeaderLine();
         if (header) headers.push(header);
+      } else if (this.isKw(this.peek(), 'retry')) {
+        const clause = this.parseRetryAfterClause();
+        if (clause) retryAfter = clause;
       } else {
-        this.error(Codes.UNEXPECTED_TOKEN, `only \`header\` lines may follow an api step, found ${describeToken(this.peek())}`, this.peek().span);
+        this.error(Codes.UNEXPECTED_TOKEN, `only \`header\` or \`retry honoring\` lines may follow an api step, found ${describeToken(this.peek())}`, this.peek().span);
         this.synchronize();
       }
       if (this.pos === before) this.advance();
     }
     if (this.check('dedent')) this.advance();
-    return headers;
+    return { headers, retryAfter };
+  }
+
+  /** `retry honoring "Retry-After" up to N` — a per-`api`-step retry clause (SPEC §5.1, PLAN
+   * decision 102b, enterprise arc cluster 3, closes TFLW-GAPS.md gap #5). Caller has already
+   * confirmed the `retry` keyword is next. The header-name string is validated against a known
+   * list (today just `"Retry-After"`) the same way `evidence <level>` validates its string. */
+  private parseRetryAfterClause(): RetryAfterClause | null {
+    const start = this.peek().span.start;
+    this.advance(); // `retry`
+    if (!this.expectKw('honoring')) {
+      this.synchronize();
+      return null;
+    }
+    const headerName = this.expectString('the header name to honor, e.g. `retry honoring "Retry-After" up to 3`');
+    if (!headerName) {
+      this.synchronize();
+      return null;
+    }
+    if (!(RETRY_AFTER_HEADERS as readonly string[]).includes(headerName.value)) {
+      const hint = suggest(headerName.value, RETRY_AFTER_HEADERS);
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `\`retry honoring\` doesn't support "${headerName.value}"`,
+        headerName.span,
+        hint ? `did you mean \`${hint}\`?` : `expected one of: ${RETRY_AFTER_HEADERS.join(', ')}`,
+      );
+      this.synchronize();
+      return null;
+    }
+    if (!this.expectKw('up')) {
+      this.synchronize();
+      return null;
+    }
+    if (!this.expectKw('to')) {
+      this.synchronize();
+      return null;
+    }
+    const num = this.expect('number', 'a max retry count, e.g. `up to 3`');
+    if (!num) {
+      this.synchronize();
+      return null;
+    }
+    this.endLine();
+    return { type: 'RetryAfterClause', max: Number(num.value), span: this.spanFrom(start) };
   }
 
   /** One `header "…" is <value>` line — shared by an api step's header sub-block (`parseApiHeaders`)
@@ -1318,6 +1370,15 @@ class Parser {
           this.advance();
           const object = this.parseObject();
           return object ? mk('matchesSubset', object) : null;
+        }
+        if (this.isKw(this.peek(), 'schema')) {
+          this.advance();
+          const schemaName = this.expectString('a schema name string, e.g. `matches schema "ProductResponseDto"`');
+          if (!schemaName) return null;
+          if (!this.expectKw('from')) return null;
+          const schemaSource = this.expectString('a URL or path to the OpenAPI document, e.g. `from "/openapi.json"`');
+          if (!schemaSource) return null;
+          return { type: 'Matcher', name: 'matchesSchema', negated, value: null, schemaName, schemaSource, span: this.spanFrom(start) };
         }
         const v = this.expectString('a regex string, e.g. `matches "json"`');
         return v ? mk('matches', v) : null;

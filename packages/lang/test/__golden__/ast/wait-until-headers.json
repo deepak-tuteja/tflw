@@ -86,7 +86,8 @@
               }
             ],
             "timeoutMs": null,
-            "followRedirects": true
+            "followRedirects": true,
+            "retryAfter": null
           },
           "expects": [
             {

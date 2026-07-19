@@ -32,6 +32,7 @@ import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
 import { redactFields } from './fieldRedact.js';
+import { evaluateSchemaMatch } from './contract.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
@@ -692,7 +693,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       let callSoftError: string | undefined;
       switch (step.type) {
         case 'ApiStep': {
-          let { trace, redacted } = await execApi(step, config, ctx, tc.redactor, tc.baseDir);
+          let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir);
           // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
           // just `oauth2`) gets this: a revoked/expired-early credential shouldn't fail every
           // remaining step of a test that's otherwise unrelated to auth. Retried at most once per
@@ -702,15 +703,20 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
             results.push(...refresh.steps);
             if (refresh.ok) {
-              ({ trace, redacted } = await execApi(step, config, ctx, tc.redactor, tc.baseDir));
+              ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir));
             }
           }
           lastResponse = trace.response;
-          result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)`, redacted.request, redacted.response);
+          // Report visibility for retries is a standing principle here (P#5/P#16, the same one
+          // `test … retry N`'s `flaky` badge already follows) — a `retry honoring` step that
+          // actually retried says so right in its own report line, not just silently in the
+          // final status.
+          const retrySuffix = retryAfterAttempts > 0 ? `, retried ${retryAfterAttempts}x honoring Retry-After (waited ${retryAfterWaitedMs}ms total)` : '';
+          result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}`, redacted.request, redacted.response);
           break;
         }
         case 'ExpectStmt': {
-          result = execExpect(step, lastResponse, ctx, src, stepStart);
+          result = await execExpect(step, lastResponse, ctx, src, stepStart, config);
           break;
         }
         case 'LetStmt': {
@@ -851,6 +857,11 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
 interface ApiExec {
   readonly trace: { request: RequestTrace; response: ResponseTrace };
   readonly redacted: { request: RequestTrace; response: ResponseTrace };
+  /** `retry honoring "Retry-After" up to N` (SPEC §5.1, PLAN decision 102b, enterprise arc
+   * cluster 3) — how many extra attempts this one request actually took and how long it slept in
+   * total honoring the header; both `0` when `spec.retryAfter` is null or never triggered. */
+  readonly retryAfterAttempts: number;
+  readonly retryAfterWaitedMs: number;
 }
 
 /** `cert`/`key` file *contents*, keyed by resolved path pair — read once per run, not once per
@@ -908,16 +919,51 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   const request: RequestTrace = { method: spec.method, url, headers, ...(traceBody !== undefined ? { body: traceBody } : {}) };
   const timeoutMs = spec.timeoutMs ?? config.timeouts.step;
   const mtls = await loadMtlsCreds(config, baseDir);
-  const response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
-  // Every `Set-Cookie` this response carried is folded into the jar here, unconditionally — the
-  // next request in this same scope (session block, or this test's own subsequent steps) sees it
-  // automatically, with no `capture`/`header` replay needed (SPEC §3.3, P#33).
+  let response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
+
+  // `retry honoring "Retry-After" up to N` (SPEC §5.1, PLAN decision 102b, enterprise arc
+  // cluster 3, closes TFLW-GAPS.md gap #5) — re-issues *this one request*, not the whole test
+  // (unlike `test … retry N`). Stops the moment the response no longer carries a (parseable)
+  // `Retry-After` header, same as today's unchanged single-attempt behavior when the clause is
+  // absent entirely.
+  let retryAfterAttempts = 0;
+  let retryAfterWaitedMs = 0;
+  if (spec.retryAfter) {
+    while (retryAfterAttempts < spec.retryAfter.max) {
+      const headerValue = response.headers['retry-after'];
+      if (headerValue === undefined) break;
+      const waitMs = parseRetryAfterMs(headerValue);
+      if (waitMs === null) break;
+      await sleep(waitMs);
+      retryAfterWaitedMs += waitMs;
+      retryAfterAttempts++;
+      response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
+    }
+  }
+
+  // Every `Set-Cookie` the *final* response carried is folded into the jar here, unconditionally —
+  // the next request in this same scope (session block, or this test's own subsequent steps) sees
+  // it automatically, with no `capture`/`header` replay needed (SPEC §3.3, P#33).
   ctx.cookieJar.applySetCookie(response.headers['set-cookie']);
 
   return {
     trace: { request, response },
     redacted: { request: redactRequest(request, redactor, config), response: redactResponse(response, redactor, config) },
+    retryAfterAttempts,
+    retryAfterWaitedMs,
   };
+}
+
+/** Parses a `Retry-After` header value into a wait duration in ms: all-digits is seconds
+ * (per RFC 9110 — whole seconds only), anything else is tried as an HTTP-date. Returns `null`
+ * for anything unparseable, meaning "don't retry" — guessing a wait time is worse than not
+ * retrying at all. */
+function parseRetryAfterMs(value: string): number | null {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  const asDate = Date.parse(trimmed);
+  if (!Number.isNaN(asDate)) return Math.max(0, asDate - Date.now());
+  return null;
 }
 
 interface PreparedBody {
@@ -978,8 +1024,8 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
   }
 }
 
-function execExpect(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number): StepResult {
-  const outcome = evaluateExpect(step, response, ctx);
+async function execExpect(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
+  const outcome = await evaluateExpect(step, response, ctx, config);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }
 
@@ -1036,7 +1082,7 @@ async function execWaitUntilApi(
     const requestTimeout = Math.max(1, Math.min(step.request.timeoutMs ?? config.timeouts.step, remainingMs));
     const request = { ...step.request, timeoutMs: requestTimeout };
     const { trace, redacted } = await execApi(request, config, ctx, redactor, baseDir);
-    const outcomes = step.expects.map((e) => evaluateExpect(e, trace.response, ctx));
+    const outcomes = await Promise.all(step.expects.map((e) => evaluateExpect(e, trace.response, ctx, config)));
     const allOk = outcomes.every((o) => o.ok);
     const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
     if (allOk) {
@@ -1065,9 +1111,15 @@ function sleep(ms: number): Promise<void> {
 
 // ---- expect evaluation (shared by `expect` and `wait until api`) ----------
 
-function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx): MatchOutcome {
+async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx, config: ResolvedConfig): Promise<MatchOutcome> {
   if (step.quantifier) return evaluateQuantified(step, response, ctx);
   const { value, label } = resolveSubject(step.subject, response);
+  // `matches schema` (SPEC, PLAN decision 102a, enterprise arc cluster 3) fetches an external
+  // OpenAPI document, so it's the one matcher `evalMatcher` (pure, synchronous by design, P#13)
+  // can't evaluate itself — dispatched here instead, bypassing it entirely.
+  if (step.matcher.name === 'matchesSchema') {
+    return evaluateSchemaMatch(label, value, step.matcher.schemaName!.value, step.matcher.schemaSource!.value, config, step.matcher.negated);
+  }
   return evalMatcher(label, value, step.matcher, ctx);
 }
 
@@ -1077,6 +1129,9 @@ function evaluateQuantified(step: ExpectStmt, response: ResponseTrace | null, ct
   if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion');
   if (response.json === undefined) throw new RuntimeError('`any`/`all` need a JSON response body (use `body text` for non-JSON)');
   if (step.subject.type !== 'BodySubject') throw new RuntimeError('`any`/`all` only apply to a `body.<path>` subject');
+  if (step.matcher.name === 'matchesSchema') {
+    throw new RuntimeError('`any`/`all` cannot be combined with `matches schema` — validate the whole array element by element isn\'t supported for contract matching');
+  }
   const path = step.subject.path;
 
   let current: unknown = response.json;
@@ -1146,7 +1201,7 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
 /** `allow hosts` (SPEC §3.7, PLAN decision 101a, enterprise arc cluster 2) — rejected before any
  * network I/O so a misconfigured test can never actually reach an unlisted host, not even once. A
  * `null` `allowHosts` means the key was never declared: no enforcement, backward compatible. */
-function checkHostAllowed(url: string, config: ResolvedConfig): void {
+export function checkHostAllowed(url: string, config: ResolvedConfig): void {
   if (!config.allowHosts || config.allowHosts.length === 0) return;
   const hostname = new URL(url).hostname;
   if (!config.allowHosts.some((pattern) => hostMatchesAllowPattern(hostname, pattern))) {
@@ -1164,7 +1219,7 @@ function hostMatchesAllowPattern(hostname: string, pattern: string): boolean {
   return hostname === pattern;
 }
 
-function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {
+export function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {
   if (service === null) {
     if (!config.apiBaseUrl) throw new RuntimeError(`env "${config.envName}" declares no default \`api\` base URL`);
     return config.apiBaseUrl;
@@ -1252,7 +1307,7 @@ function stepKind(step: Step): StepResult['kind'] {
   }
 }
 
-function ensureLeadingSlash(path: string): string {
+export function ensureLeadingSlash(path: string): string {
   return path.startsWith('/') ? path : '/' + path;
 }
 

@@ -317,6 +317,25 @@ test "nested object literal with a quoted string key"
   expect status equals 201
 `,
   },
+  {
+    name: 'contract-schema-matcher',
+    source: `# PLAN decision 102a, enterprise arc cluster 3, closes TFLW-GAPS.md gap #6
+test "product response matches its documented schema"
+  api GET /products/{productId}
+  expect body matches schema "ProductResponseDto" from "/openapi.json"
+  expect body not matches schema "OrderResponseDto" from "/openapi.json"
+`,
+  },
+  {
+    name: 'retry-honoring-retry-after',
+    source: `# PLAN decision 102b, enterprise arc cluster 3, closes TFLW-GAPS.md gap #5
+test "rate-limited create honors Retry-After"
+  api POST /retry-demo body { key: "abc" }
+    header "Authorization" is "Bearer {token}"
+    retry honoring "Retry-After" up to 3
+  expect status equals 200
+`,
+  },
 ];
 
 // Config-dialect fixtures (tflw.config). Valid ones parse + check clean; invalid ones each
@@ -652,6 +671,27 @@ test "unaffected"
   | "admin" | unique email | "extra" |
 test "invite {role}"
   api GET /health
+`,
+  },
+  {
+    name: 'schema-matcher-missing-from',
+    source: `test "forgot the source"
+  api GET /health
+  expect body matches schema "Widget"
+`,
+  },
+  {
+    name: 'retry-honoring-unknown-header',
+    source: `test "only Retry-After is supported"
+  api GET /health
+    retry honoring "X-RateLimit-Reset" up to 3
+`,
+  },
+  {
+    name: 'retry-honoring-missing-up-to',
+    source: `test "forgot up to"
+  api GET /health
+    retry honoring "Retry-After" 3
 `,
   },
 ];

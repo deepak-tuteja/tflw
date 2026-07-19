@@ -1,0 +1,5 @@
+error[TF010]: expected `up`, found `3`
+ --> retry-honoring-missing-up-to.tflw:3:34
+  |
+3 |     retry honoring "Retry-After" 3
+  |                                  ^

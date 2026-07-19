@@ -124,10 +124,25 @@ export interface ApiRequestSpec {
   readonly timeoutMs: number | null;
   /** false when `without redirects` is present — the 3xx itself becomes observable (SPEC §5.1). */
   readonly followRedirects: boolean;
+  /** `retry honoring "Retry-After" up to N` sub-block clause (SPEC §5.1, PLAN decision 102,
+   * enterprise arc cluster 3), or null for today's unchanged single-attempt behavior. Only ever
+   * set on a plain `api` step — `wait until api` already has its own poll-until-expect-passes
+   * retry mechanism and never parses this clause (`parseWaitUntilBody` doesn't call
+   * `parseApiHeaders`), so it stays null there. */
+  readonly retryAfter: RetryAfterClause | null;
 }
 
 export interface ApiStep extends Node, ApiRequestSpec {
   readonly type: 'ApiStep';
+}
+
+/** `retry honoring "Retry-After" up to N` — re-issues *just this one request* (not the whole
+ * test, unlike `test … retry N`) when its response carries a `Retry-After` header, sleeping the
+ * indicated duration before each re-attempt, up to `max` extra attempts (SPEC §5.1, PLAN
+ * decision 102b, enterprise arc cluster 3, closes TFLW-GAPS.md gap #5). */
+export interface RetryAfterClause extends Node {
+  readonly type: 'RetryAfterClause';
+  readonly max: number;
 }
 
 /** `wait until api …` — re-issues the request until its nested expects pass or wait times out (P#15). */
@@ -238,6 +253,7 @@ export type MatcherName =
   | 'contains'
   | 'matches'
   | 'matchesSubset'
+  | 'matchesSchema'
   | 'greaterThan'
   | 'lessThan'
   | 'hasCount'
@@ -252,8 +268,15 @@ export interface Matcher extends Node {
   readonly type: 'Matcher';
   readonly name: MatcherName;
   readonly negated: boolean;
-  /** Operand for value matchers (equals/contains/…); null for state matchers (visible/…). */
+  /** Operand for value matchers (equals/contains/…); null for state matchers (visible/…) and for
+   * `matchesSchema` (which uses `schemaName`/`schemaSource` instead). */
   readonly value: Value | null;
+  /** `matches schema "Name" from "source"` (SPEC, PLAN decision 102a, enterprise arc cluster 3,
+   * closes TFLW-GAPS.md gap #6) — set only when `name === 'matchesSchema'`. `schemaName` is the
+   * `components.schemas` key to validate against; `schemaSource` is the OpenAPI document's URL
+   * (absolute) or path (resolved against the default service's base URL). */
+  readonly schemaName?: StringLit;
+  readonly schemaSource?: StringLit;
 }
 
 // ---- Bindings --------------------------------------------------------------
