@@ -7,6 +7,9 @@ import { defineConfig } from 'vitepress';
 export default defineConfig({
   title: 'tflw',
   description: 'A testing-only DSL for API tests — reports first, syntax second.',
+  // Deployed to https://deepak-tuteja.github.io/tflw/ (a project subpath, not the domain root),
+  // so asset/link URLs must be prefixed with /tflw/ or the built CSS/JS 404 on GitHub Pages.
+  base: '/tflw/',
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['**/README.md'],
