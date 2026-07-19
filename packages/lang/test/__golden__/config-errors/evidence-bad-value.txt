@@ -1,0 +1,7 @@
+error[TF010]: unknown evidence level "verbose"
+ --> tflw.config:2:12
+  |
+2 |   evidence "verbose"
+  |            ^^^^^^^^^
+  |
+  = help: expected one of: full, headers-only, none

@@ -1,0 +1,5 @@
+error[TF010]: expected a field path after `body`, e.g. `redact body.email`
+ --> tflw.config:3:14
+  |
+3 |   redact body
+  |              ^

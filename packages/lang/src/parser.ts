@@ -8,6 +8,7 @@ import { describeToken, describeTokenType } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import type {
   ActionDecl,
+  AllowHostsDecl,
   ApiBody,
   ApiHeader,
   ApiRequestSpec,
@@ -29,6 +30,8 @@ import type {
   DurationLit,
   EnvBlock,
   EnvRef,
+  EvidenceDecl,
+  EvidenceLevel,
   ExpectStmt,
   Field,
   FieldValue,
@@ -65,6 +68,9 @@ import type {
   RandomPasswordExpr,
   RandomStringExpr,
   RandomUuidExpr,
+  RedactDecl,
+  RedactPathSegment,
+  RedactPattern,
   ReportDecl,
   RequireDecl,
   SessionDecl,
@@ -105,7 +111,8 @@ const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
-const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key'] as const;
+const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact'] as const;
+const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
 const DURATION_UNITS = ['ms', 's', 'm'] as const;
 const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
@@ -508,6 +515,12 @@ class Parser {
         return this.wrap(this.parseCertDecl());
       case 'key':
         return this.wrap(this.parseKeyDecl());
+      case 'allow':
+        return this.wrap(this.parseAllowHostsDecl());
+      case 'evidence':
+        return this.wrap(this.parseEvidenceDecl());
+      case 'redact':
+        return this.wrap(this.parseRedactDecl());
       default: {
         const hint = suggest(tok.value, CONFIG_KEYS);
         this.error(
@@ -630,6 +643,73 @@ class Parser {
     if (!path) return null;
     this.endLine();
     return { type: 'KeyDecl', path, span: this.spanFrom(start) };
+  }
+
+  private parseAllowHostsDecl(): AllowHostsDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `allow`
+    if (!this.expectKw('hosts')) return null;
+    const hosts: StringLit[] = [];
+    for (;;) {
+      const host = this.expectString('a host string, e.g. `allow hosts "api.example.com"`');
+      if (!host) return null;
+      hosts.push(host);
+      if (this.check('comma')) {
+        this.advance();
+        continue;
+      }
+      break;
+    }
+    this.endLine();
+    return { type: 'AllowHostsDecl', hosts, span: this.spanFrom(start) };
+  }
+
+  private parseEvidenceDecl(): EvidenceDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `evidence`
+    const tok = this.expectString('an evidence level string: `evidence "full"`, `evidence "headers-only"`, or `evidence "none"`');
+    if (!tok) return null;
+    if (!(EVIDENCE_LEVELS as readonly string[]).includes(tok.value)) {
+      const hint = suggest(tok.value, EVIDENCE_LEVELS);
+      this.error(Codes.UNEXPECTED_TOKEN, `unknown evidence level "${tok.value}"`, tok.span, hint ? `did you mean \`${hint}\`?` : `expected one of: ${EVIDENCE_LEVELS.join(', ')}`);
+      return null;
+    }
+    this.endLine();
+    return { type: 'EvidenceDecl', level: tok.value as EvidenceLevel, span: this.spanFrom(start) };
+  }
+
+  private parseRedactDecl(): RedactDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `redact`
+    const patterns: RedactPattern[] = [];
+    for (;;) {
+      if (!this.expectKw('body')) return null;
+      const segments: RedactPathSegment[] = [];
+      while (this.check('dot')) {
+        this.advance();
+        if (this.check('star')) {
+          this.advance();
+          segments.push({ kind: 'wildcard' });
+        } else {
+          const name = this.expect('ident', 'a property name or `*` after `.`');
+          if (!name) return null;
+          segments.push({ kind: 'prop', name: name.value });
+        }
+      }
+      if (segments.length === 0) {
+        const tok = this.peek();
+        this.error(Codes.UNEXPECTED_TOKEN, `expected a field path after \`body\`, e.g. \`redact body.email\``, tok.span);
+        return null;
+      }
+      patterns.push({ root: 'body', segments });
+      if (this.check('comma')) {
+        this.advance();
+        continue;
+      }
+      break;
+    }
+    this.endLine();
+    return { type: 'RedactDecl', patterns, span: this.spanFrom(start) };
   }
 
   private parseReportDecl(): ReportDecl | null {

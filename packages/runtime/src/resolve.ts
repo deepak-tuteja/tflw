@@ -1,7 +1,7 @@
 // Resolve a parsed tflw.config into the concrete settings the interpreter runs against:
 // active-env selection (P#28), defaults+env merge, per-service base URLs (P#29).
 
-import type { ConfigFile, EnvBlock } from '@tflw/lang';
+import type { ConfigFile, EnvBlock, EvidenceLevel, RedactPattern } from '@tflw/lang';
 import { DEFAULT_TIMEOUTS, type ResolvedConfig, type ResolvedHeader, type ResolvedTimeouts } from './types.js';
 
 export class ConfigError extends Error {
@@ -53,6 +53,9 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   let insecure = false;
   let certPath: string | null = null;
   let keyPath: string | null = null;
+  let allowHosts: string[] | null = null;
+  let evidenceLevel: EvidenceLevel = 'full';
+  const redactPatterns: RedactPattern[] = [];
 
   const applyEntries = (entries: EnvBlock['entries']): void => {
     for (const entry of entries) {
@@ -84,6 +87,16 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
           break;
         case 'KeyDecl':
           keyPath = entry.path.value;
+          break;
+        case 'AllowHostsDecl':
+          // Accumulates (like `header`), not override — a baseline in `defaults` plus more per env.
+          allowHosts = [...(allowHosts ?? []), ...entry.hosts.map((h) => h.value)];
+          break;
+        case 'EvidenceDecl':
+          evidenceLevel = entry.level;
+          break;
+        case 'RedactDecl':
+          redactPatterns.push(...entry.patterns);
           break;
       }
     }
@@ -118,6 +131,9 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     requiredEnv,
     sessions,
     mtls,
+    allowHosts,
+    evidenceLevel,
+    redactPatterns,
   };
 }
 

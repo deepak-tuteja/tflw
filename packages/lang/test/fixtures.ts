@@ -387,6 +387,33 @@ require env CLIENT_ID, CLIENT_SECRET
   key "./certs/client.key"
 `,
   },
+  {
+    name: 'allow-hosts',
+    source: `defaults
+  allow hosts "api.example.com", "*.staging.example.com"
+
+env staging
+  api "https://staging.example.com"
+  allow hosts "billing-staging.example.com"
+`,
+  },
+  {
+    name: 'evidence-level',
+    source: `defaults
+  evidence "full"
+
+env staging
+  api "https://staging.example.com"
+  evidence "headers-only"
+`,
+  },
+  {
+    name: 'redact-fields',
+    source: `env staging
+  api "https://staging.example.com"
+  redact body.email, body.*.address
+`,
+  },
 ];
 
 export const CONFIG_INVALID: readonly Fixture[] = [
@@ -477,6 +504,25 @@ require env ADMIN_EMAIL, ADMIN_PW,
 
 env staging
   api "https://staging.example.com"
+`,
+  },
+  {
+    name: 'allow-hosts-missing-hosts-keyword',
+    source: `defaults
+  allow "api.example.com"
+`,
+  },
+  {
+    name: 'evidence-bad-value',
+    source: `defaults
+  evidence "verbose"
+`,
+  },
+  {
+    name: 'redact-missing-path',
+    source: `env staging
+  api "https://staging.example.com"
+  redact body
 `,
   },
 ];

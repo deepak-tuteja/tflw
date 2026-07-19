@@ -1,0 +1,73 @@
+{
+  "type": "ConfigFile",
+  "defaults": {
+    "type": "DefaultsBlock",
+    "entries": [
+      {
+        "type": "AllowHostsDecl",
+        "hosts": [
+          {
+            "type": "StringLit",
+            "value": "api.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "api.example.com"
+              }
+            ]
+          },
+          {
+            "type": "StringLit",
+            "value": "*.staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "*.staging.example.com"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "staging",
+      "isDefault": false,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "https://staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://staging.example.com"
+              }
+            ]
+          }
+        },
+        {
+          "type": "AllowHostsDecl",
+          "hosts": [
+            {
+              "type": "StringLit",
+              "value": "billing-staging.example.com",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "billing-staging.example.com"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "requires": [],
+  "sessions": []
+}

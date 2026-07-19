@@ -64,6 +64,9 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     requiredEnv: [],
     sessions: new Map(),
     mtls: null,
+    allowHosts: null,
+    evidenceLevel: 'full',
+    redactPatterns: [],
   };
 }
 

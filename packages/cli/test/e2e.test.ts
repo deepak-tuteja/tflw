@@ -845,6 +845,81 @@ test('without `insecure true`, the same self-signed cert fails `tflw run` with a
   });
 });
 
+// PLAN decision 101b (enterprise arc cluster 2, Safety/redaction): `--forbid-insecure` is a CI
+// policy gate — fail before any test runs, not partway through, if `insecure true` is active for
+// the env actually running.
+test('`--forbid-insecure` refuses to run when `insecure true` is active, before any test runs', async () => {
+  await withSelfSignedHttpsServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-forbid-insecure-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n  insecure true\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, 'run', '--forbid-insecure', '--no-color'], { cwd: dir }),
+        (e: unknown) => {
+          const { code, stderr } = e as { code?: number; stderr?: string };
+          return code === 2 && /forbid-insecure/.test(stderr ?? '') && /insecure true/.test(stderr ?? '');
+        },
+      );
+      await assert.rejects(access(join(dir, 'report', 'report.html')), 'nothing should have run at all');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`--forbid-insecure` has no effect when `insecure` is not active', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-forbid-insecure-noop-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--forbid-insecure', '--no-color'], { cwd: dir });
+      assert.match(stdout, /1\/1 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// PLAN decision 101c: `evidence`/`--evidence` trims the report-only trace; `--evidence` overrides
+// `tflw.config`'s `evidence` key for one run. Full pipeline check (real interpreter → redact →
+// write to disk), not just the in-memory RunReport already covered by
+// packages/runtime/test/evidence-level.test.ts.
+test('`--evidence headers-only` drops response bodies from report.html but the test still passes', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-evidence-headers-only-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--evidence', 'headers-only', '--no-color'], { cwd: dir });
+      assert.match(stdout, /1\/1 passed/);
+
+      const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+      assert.doesNotMatch(html, /"ok":true/, 'the fixture server\'s JSON body must not appear in the report');
+      assert.match(html, /omitted by evidence level/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`--evidence` with an unsupported value is a usage error, not silently ignored', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-evidence-badvalue-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', '--evidence', 'verbose', '--no-color'], { cwd: dir }),
+      (e: unknown) => (e as { code?: number }).code === 2,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`tflw init` appends only the missing line(s) to an existing `.gitignore`, never duplicating (decision 82)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-init-gitignore-'));
   try {

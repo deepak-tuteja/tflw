@@ -279,6 +279,30 @@ different `require env` vars (or a secret and a coincidentally-equal generated v
 same string, the redactor tracks every name registered for it and renders all of them —
 `•••(NAME1|NAME2)` — rather than silently keeping only whichever registered first (PLAN decision 72).
 
+**Declarative field redaction — `redact` (PLAN decision 101d, enterprise arc cluster 2).** The
+secret redaction above is *value-based*: it only ever masks something that actually entered via
+`env(...)`. `redact` is a separate, *path-based* mechanism for masking a JSON field regardless of
+where its value came from — a response's `email`/`address`/`ssn` field is PII whether or not it's
+ever read through `env(...)`:
+
+```
+env staging
+  api "https://staging.example.com"
+  redact body.email, body.*.address
+```
+
+- Each pattern starts with `body` (the request or response JSON body) followed by `.prop` segments
+  and/or a `.* ` wildcard segment (matches every key of an object, or every element of an array —
+  both are plain JS values from `JSON.parse`'s point of view, so one wildcard form covers both).
+  Accumulates across `defaults` + `env`, like `allow hosts` (§3.7) — not override semantics.
+- Applied only to the **report-only** trace — the same `redactRequest`/`redactResponse` boundary
+  every step already routes through, right after the secret redactor above and right before the
+  evidence-level trim (§13). `expect`/`capture` always see the real, unmasked value; only what
+  lands in `report.html`/`junit.xml` is affected.
+- Best-effort: a non-JSON body, or a pattern that matches nothing in a particular body, passes
+  through unchanged (no attempt to force JSON parsing, no crash). A matched leaf is replaced with
+  the literal string `[redacted]`.
+
 ### 3.5 Corporate networks (proxies, private CAs, self-signed certs) ✅
 
 Corporate QA — the audience this tool courts — routinely runs against a staging API sitting behind
@@ -344,6 +368,29 @@ env staging
   read fresh on every connection rather than cached at the first one — deliberately more defensive
   here than Node's own default behavior for these two env vars, which are otherwise read only once
   per process.
+
+### 3.7 Host allowlist — `allow hosts` (PLAN decision 101a, enterprise arc cluster 2) ✅
+
+An "anti-pointed-at-prod" guardrail: refuse to send a request to any host not explicitly listed.
+
+```
+defaults
+  allow hosts "api.example.com", "*.staging.example.com"
+
+env staging
+  api "https://staging.example.com"
+  allow hosts "billing-staging.example.com"
+```
+
+- Accumulates across `defaults` + `env` (like `header` — not override semantics like `insecure`):
+  a baseline list in `defaults`, extended per env. Never declaring `allow hosts` anywhere means no
+  enforcement at all — unrestricted, the unchanged default.
+- A pattern starting with `*.` matches that suffix or the bare domain (`*.example.com` matches
+  both `api.example.com` and `example.com`); anything else must match the hostname exactly.
+- Enforced *before* any network I/O — a violating request throws immediately, no connection ever
+  attempted, not just a request that then fails. Covers every real network call a run makes,
+  including the `oauth2` session sugar's (§3.3) client-credentials token request, not just
+  ordinary `api` steps.
 
 ## 4. Tests & structure ✅
 
@@ -833,7 +880,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
@@ -874,6 +921,24 @@ step wait for M3/M4.
 `junit.xml`'s escaping strips XML-invalid C0 control characters (keeping tab/LF/CR, which XML 1.0
 permits) in addition to entity-escaping `& < > "` — a test name or error message that happens to
 echo one (e.g. from a garbled/binary response) still produces well-formed XML (PLAN decision 73).
+
+**Evidence levels — `evidence full\|headers-only\|none` (PLAN decision 101c, enterprise arc
+cluster 2).** A `tflw.config` key (`evidence "headers-only"` — a string literal, since the lexer
+has no hyphen in identifiers) controlling how much of each step's request/response trace lands in
+`report.html`; `--evidence LEVEL` (§12) overrides it for one run. Override semantics like
+`insecure` (env wins over `defaults`); default `full`, today's unchanged behavior.
+
+- `full` — everything, as always: method/url/status/headers/body.
+- `headers-only` — drops the request/response body, replaced with a `[omitted by evidence level]`
+  marker (distinguishable in the report from a genuinely empty, e.g. 204, body). Headers still
+  shown.
+- `none` — drops headers too. Only method/url/status/statusText/duration remain.
+
+Trimming happens where the **report-only** trace is built, entirely separate from the trace
+`expect`/`capture` read during the run itself — an assertion against a response body still works
+identically under `evidence none`; only what a human (or CI artifact) later sees is reduced. Order
+of operations on that report-only trace: secret redaction (this section, taint-based) → `redact`
+declarative field redaction (§3.4) → evidence-level trim (coarsest cut, applied last).
 
 ## 14. Architecture (P#1, P#12) 🔧
 

@@ -38,6 +38,12 @@ First public draft. API-only — the browser half lands in `0.2.0`.
 - Reporting: a self-contained, theme-aware `report.html` (step timeline, full request/response
   detail, screenshots-ready layout for `0.2.0`) plus `junit.xml` for CI; secrets (`env(NAME)`) are
   redacted from every report, trace, and CLI line automatically.
+- Safety/redaction: `allow hosts "…"` config allowlist — a request to a host outside the list is
+  refused before any network I/O; `--forbid-insecure` fails a run up front if `insecure true` is
+  active; `evidence full|headers-only|none` config key + `--evidence` CLI override control how
+  much of the request/response trace lands in the report (never affects what `expect`/`capture`
+  can see); `redact body.email, body.*.address` masks matching JSON fields with `[redacted]` in
+  the report, a declarative mechanism distinct from the existing `env(...)` secret redaction.
 - `tflw run` and `tflw init` (scaffolds `tflw.config` + `example.tflw`); `tflw --version`/`-v`.
 - Packaged as a single self-contained `dist/cli.cjs` (esbuild bundle). Bundles one real runtime
   dependency, `undici` (build-time only — never installed by a consumer), used solely for the mTLS

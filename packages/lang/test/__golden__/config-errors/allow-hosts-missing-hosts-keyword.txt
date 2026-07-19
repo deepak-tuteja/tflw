@@ -1,0 +1,5 @@
+error[TF010]: expected `hosts`, found string "api.example.com"
+ --> tflw.config:2:9
+  |
+2 |   allow "api.example.com"
+  |         ^^^^^^^^^^^^^^^^^

@@ -22,6 +22,7 @@ import {
   suggest,
   type Program,
   type Diagnostic,
+  type EvidenceLevel,
 } from '@tflw/lang';
 import {
   runProgram,
@@ -41,6 +42,7 @@ import {
   type TestResult,
   type EventSink,
   type RunEvent,
+  type ResolvedConfig,
 } from '@tflw/runtime';
 import { writeReport, writeJunitXml, renderCliSummary } from '@tflw/reporter';
 import { buildEnviron } from './env.js';
@@ -115,7 +117,16 @@ interface RunArgs {
   /** `--verbose`: prints one line per step, not just per test (no `-v` short form — `-v` is already
    * `--version` at the top-level `main()` dispatch). */
   readonly verbose: boolean;
+  /** `--forbid-insecure` (PLAN decision 101b, enterprise arc cluster 2): fail before any test runs
+   * if the active env has `insecure true` in effect — a CI policy gate against accidentally
+   * shipping a TLS-verification bypass. No config representation, `run` only. */
+  readonly forbidInsecure: boolean;
+  /** Raw `--evidence` text, validated in `runCommand` against `EVIDENCE_LEVELS` (decision 101c) —
+   * overrides `tflw.config`'s `evidence` key for this run only. */
+  readonly evidenceRaw?: string | undefined;
 }
+
+const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 
 function parseRunArgs(argv: string[]): RunArgs {
   const files: string[] = [];
@@ -127,6 +138,8 @@ function parseRunArgs(argv: string[]): RunArgs {
   let workersRaw: string | undefined;
   let noColor = false;
   let verbose = false;
+  let forbidInsecure = false;
+  let evidenceRaw: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = argv[++i];
@@ -143,6 +156,9 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
     else if (a === '--no-color') noColor = true;
     else if (a === '--verbose') verbose = true;
+    else if (a === '--forbid-insecure') forbidInsecure = true;
+    else if (a === '--evidence') evidenceRaw = argv[++i];
+    else if (a.startsWith('--evidence=')) evidenceRaw = a.slice('--evidence='.length);
     else files.push(a);
   }
   const tagList = tagRaw
@@ -150,7 +166,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     .map((t) => t.trim())
     .filter((t) => t.length > 0);
   const tags = tagList && tagList.length > 0 ? tagList : undefined;
-  return { files, env, seedRaw, nowRaw, tags, only, workersRaw, noColor, verbose };
+  return { files, env, seedRaw, nowRaw, tags, only, workersRaw, noColor, verbose, forbidInsecure, evidenceRaw };
 }
 
 /** Parsed + checker-clean state shared by `tflw run` and `tflw check` (decision 75) — everything
@@ -287,10 +303,29 @@ async function runCommand(argv: string[]): Promise<number> {
     }
     nowArg = args.nowRaw;
   }
+  let evidenceArg: EvidenceLevel | undefined;
+  if (args.evidenceRaw !== undefined) {
+    if (!(EVIDENCE_LEVELS as readonly string[]).includes(args.evidenceRaw)) {
+      err(`--evidence expects one of ${EVIDENCE_LEVELS.join(', ')}, got "${args.evidenceRaw}"`);
+      return EXIT_USAGE;
+    }
+    evidenceArg = args.evidenceRaw as EvidenceLevel;
+  }
 
   const loaded = await loadAndValidate(cwd, args.files, args.env, color);
   if (typeof loaded === 'number') return loaded;
-  const { resolved, parsedFiles, environ } = loaded;
+  const { parsedFiles, environ } = loaded;
+  // `--evidence` overrides `tflw.config`'s `evidence` key for this run only (decision 101c);
+  // `resolved` shadows `loaded.resolved` from here down so every downstream use (the `runProgram`
+  // calls, the report write) sees the effective level with no separate threading needed.
+  const resolved: ResolvedConfig = evidenceArg !== undefined ? { ...loaded.resolved, evidenceLevel: evidenceArg } : loaded.resolved;
+
+  // `--forbid-insecure` (decision 101b): a CI policy gate — fail before any test runs, not partway
+  // through, if `insecure true` is active for the env actually running.
+  if (args.forbidInsecure && resolved.insecure) {
+    err(`--forbid-insecure was set and env "${resolved.envName}" has \`insecure true\` active — refusing to run.`);
+    return EXIT_USAGE;
+  }
 
   // Gate on secrets required to actually run (`check` never reaches this — no execution, no need
   // for real credentials).

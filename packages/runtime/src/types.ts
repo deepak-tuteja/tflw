@@ -1,7 +1,7 @@
 // Shared runtime types: the resolved config the interpreter runs against, the event stream it
 // emits (SPEC §13 — the reporter is a pure consumer of these), and the aggregated run report.
 
-import type { SessionDecl, Value } from '@tflw/lang';
+import type { EvidenceLevel, RedactPattern, SessionDecl, Value } from '@tflw/lang';
 
 // ---- Resolved config -------------------------------------------------------
 
@@ -44,6 +44,18 @@ export interface ResolvedConfig {
    * directory at request time (SPEC §3.5, decision 3b, enterprise arc). `null` when neither is
    * set; `resolveConfig` rejects one without the other. */
   readonly mtls: { readonly certPath: string; readonly keyPath: string } | null;
+  /** `allow hosts "…"` — a request whose URL hostname matches none of these is refused before any
+   * network I/O (SPEC §3.7, PLAN decision 101a, enterprise arc cluster 2). `null` = never
+   * declared, no enforcement (backward compatible). Accumulates across `defaults` + `env`, unlike
+   * the override-semantics fields above. */
+  readonly allowHosts: readonly string[] | null;
+  /** `evidence full|headers-only|none` — how much of the request/response trace lands in the
+   * report-only trace (SPEC §13, PLAN decision 101c). Override semantics (env wins), default
+   * `'full'` (today's unchanged behavior). `--evidence` overrides this again for one run. */
+  readonly evidenceLevel: EvidenceLevel;
+  /** `redact body.email, body.*.address` — JSON field paths masked with `[redacted]` in the
+   * report-only trace (SPEC §3.4, PLAN decision 101d). Accumulates across `defaults` + `env`. */
+  readonly redactPatterns: readonly RedactPattern[];
 }
 
 export const DEFAULT_TIMEOUTS: ResolvedTimeouts = { step: 30_000, expect: 5_000, wait: 30_000 };

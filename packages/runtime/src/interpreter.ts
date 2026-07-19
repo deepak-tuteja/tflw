@@ -31,6 +31,7 @@ import { evalMatcher, repr, type MatchOutcome } from './matcher.js';
 import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
+import { redactFields } from './fieldRedact.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
@@ -428,13 +429,14 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
 
   let response: ResponseTrace;
   try {
+    checkHostAllowed(tokenUrl, config);
     response = await sendRequest({ method: 'POST', url: tokenUrl, headers, body, timeoutMs: config.timeouts.step, followRedirects: true });
   } catch (err) {
     const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
-    return fail(tc.redactor.redact(message), redactRequest(request, tc.redactor));
+    return fail(tc.redactor.redact(message), redactRequest(request, tc.redactor, config));
   }
-  const redactedRequest = redactRequest(request, tc.redactor);
-  const redactedResponse = redactResponse(response, tc.redactor);
+  const redactedRequest = redactRequest(request, tc.redactor, config);
+  const redactedResponse = redactResponse(response, tc.redactor, config);
   if (response.status < 200 || response.status >= 300) {
     return fail(`oauth2 token request failed: ${response.status} ${response.statusText}`, redactedRequest, redactedResponse);
   }
@@ -881,6 +883,7 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   const baseUrl = resolveBaseUrl(spec.service, config);
   const path = interpolatePath(spec.path.raw, ctx, true);
   const url = baseUrl + ensureLeadingSlash(path);
+  checkHostAllowed(url, config);
 
   const headers: Record<string, string> = {};
   for (const h of config.headers) {
@@ -913,7 +916,7 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
 
   return {
     trace: { request, response },
-    redacted: { request: redactRequest(request, redactor), response: redactResponse(response, redactor) },
+    redacted: { request: redactRequest(request, redactor, config), response: redactResponse(response, redactor, config) },
   };
 }
 
@@ -1140,6 +1143,27 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
 
 // ---- request/response building & redaction ---------------------------------
 
+/** `allow hosts` (SPEC §3.7, PLAN decision 101a, enterprise arc cluster 2) — rejected before any
+ * network I/O so a misconfigured test can never actually reach an unlisted host, not even once. A
+ * `null` `allowHosts` means the key was never declared: no enforcement, backward compatible. */
+function checkHostAllowed(url: string, config: ResolvedConfig): void {
+  if (!config.allowHosts || config.allowHosts.length === 0) return;
+  const hostname = new URL(url).hostname;
+  if (!config.allowHosts.some((pattern) => hostMatchesAllowPattern(hostname, pattern))) {
+    throw new RuntimeError(`host "${hostname}" is not in \`allow hosts\` (${config.allowHosts.join(', ')}) — refusing to send this request`);
+  }
+}
+
+/** A pattern starting with `*.` matches that suffix (any subdomain) or the bare domain itself;
+ * anything else must match the hostname exactly. */
+function hostMatchesAllowPattern(hostname: string, pattern: string): boolean {
+  if (pattern.startsWith('*.')) {
+    const base = pattern.slice(2);
+    return hostname === base || hostname.endsWith(`.${base}`);
+  }
+  return hostname === pattern;
+}
+
 function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {
   if (service === null) {
     if (!config.apiBaseUrl) throw new RuntimeError(`env "${config.envName}" declares no default \`api\` base URL`);
@@ -1153,16 +1177,36 @@ function resolveBaseUrl(service: string | null, config: ResolvedConfig): string 
   return url;
 }
 
-function redactRequest(req: RequestTrace, r: Redactor): RequestTrace {
+/** Placeholder for a body dropped entirely by `evidence headers-only`/`none` (SPEC §13, PLAN
+ * decision 101c) — distinguishable in the report from a genuinely empty (e.g. 204) body. */
+const EVIDENCE_OMITTED_BODY = '[omitted by evidence level]';
+
+/** Builds the **report-only** copy of a request trace: secret redaction (existing, decision
+ * P#30) → declarative field redaction (decision 101d) → evidence-level trim (decision 101c), in
+ * that order. The raw `trace` returned alongside this by `execApi` is what `expect`/`capture`
+ * actually read — this copy never feeds back into the run. */
+function redactRequest(req: RequestTrace, r: Redactor, config: ResolvedConfig): RequestTrace {
+  const url = r.redact(req.url);
+  if (config.evidenceLevel === 'none') return { method: req.method, url, headers: {} };
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.headers)) headers[k] = r.redact(v);
-  return { method: req.method, url: r.redact(req.url), headers, ...(req.body !== undefined ? { body: r.redact(req.body) } : {}) };
+  if (config.evidenceLevel === 'headers-only') return { method: req.method, url, headers };
+  const body = req.body !== undefined ? redactFields(r.redact(req.body), config.redactPatterns) : undefined;
+  return { method: req.method, url, headers, ...(body !== undefined ? { body } : {}) };
 }
 
-function redactResponse(res: ResponseTrace, r: Redactor): ResponseTrace {
+function redactResponse(res: ResponseTrace, r: Redactor, config: ResolvedConfig): ResponseTrace {
+  const statusText = r.redact(res.statusText);
+  if (config.evidenceLevel === 'none') {
+    return { status: res.status, statusText, headers: {}, bodyText: EVIDENCE_OMITTED_BODY, durationMs: res.durationMs };
+  }
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(res.headers)) headers[k] = r.redact(v);
-  return { status: res.status, statusText: res.statusText, headers, bodyText: r.redact(res.bodyText), durationMs: res.durationMs };
+  if (config.evidenceLevel === 'headers-only') {
+    return { status: res.status, statusText, headers, bodyText: EVIDENCE_OMITTED_BODY, durationMs: res.durationMs };
+  }
+  const bodyText = redactFields(r.redact(res.bodyText), config.redactPatterns);
+  return { status: res.status, statusText, headers, bodyText, durationMs: res.durationMs };
 }
 
 // ---- helpers ---------------------------------------------------------------

@@ -574,7 +574,19 @@ export interface EnvBlock extends Node {
   readonly entries: readonly ConfigEntry[];
 }
 
-export type ConfigEntry = HeaderDecl | TimeoutDecl | WorkersDecl | ReportDecl | WebDecl | ApiServiceDecl | InsecureDecl | CertDecl | KeyDecl;
+export type ConfigEntry =
+  | HeaderDecl
+  | TimeoutDecl
+  | WorkersDecl
+  | ReportDecl
+  | WebDecl
+  | ApiServiceDecl
+  | InsecureDecl
+  | CertDecl
+  | KeyDecl
+  | AllowHostsDecl
+  | EvidenceDecl
+  | RedactDecl;
 
 export interface HeaderDecl extends Node {
   readonly type: 'HeaderDecl';
@@ -626,6 +638,48 @@ export interface CertDecl extends Node {
 export interface KeyDecl extends Node {
   readonly type: 'KeyDecl';
   readonly path: StringLit;
+}
+
+/** `allow hosts "host", "host2"` — a request whose URL's hostname matches none of these is
+ * refused before any network I/O (SPEC §3.7, PLAN decision 101a, enterprise arc cluster 2). A
+ * pattern starting with `*.` matches that suffix or the bare domain; anything else must match
+ * exactly. Accumulates across `defaults` + `env` (same push semantics as `HeaderDecl`, not the
+ * override semantics `insecure`/`workers` use) — declare a baseline allowlist in `defaults` and
+ * extend it per env. */
+export interface AllowHostsDecl extends Node {
+  readonly type: 'AllowHostsDecl';
+  readonly hosts: readonly StringLit[];
+}
+
+export type EvidenceLevel = 'full' | 'headers-only' | 'none';
+
+/** `evidence full|headers-only|none` — how much of the request/response trace lands in the
+ * report (SPEC §13, PLAN decision 101c). Overrides like `insecure` (env wins over defaults), and
+ * `--evidence` overrides this at the CLI for one run. Trims the report-only trace; never affects
+ * what `expect`/`capture` can see. */
+export interface EvidenceDecl extends Node {
+  readonly type: 'EvidenceDecl';
+  readonly level: EvidenceLevel;
+}
+
+/** A single `redact` target: `body` followed by one or more `.prop`/`.* ` segments. Deliberately
+ * a separate, minimal path type from `PathSegment` (used by `expect`/`capture`) — those never
+ * need wildcards and shouldn't silently gain them just because `redact` does. */
+export type RedactPathSegment = { readonly kind: 'prop'; readonly name: string } | { readonly kind: 'wildcard' };
+
+export interface RedactPattern {
+  readonly root: 'body';
+  readonly segments: readonly RedactPathSegment[];
+}
+
+/** `redact body.email, body.*.address` — masks matching JSON fields with `[redacted]` in the
+ * report-only trace before it's written (SPEC §3.4, PLAN decision 101d, enterprise arc cluster
+ * 2). Accumulates across `defaults` + `env`, same as `AllowHostsDecl`. Distinct mechanism from
+ * the existing taint-based secret redaction (`env(...)` values, `redact.ts`) — this one is
+ * path-based and doesn't require the value to have come from an env var. */
+export interface RedactDecl extends Node {
+  readonly type: 'RedactDecl';
+  readonly patterns: readonly RedactPattern[];
 }
 
 export interface ApiServiceDecl extends Node {

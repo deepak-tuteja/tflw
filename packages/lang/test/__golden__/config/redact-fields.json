@@ -1,0 +1,55 @@
+{
+  "type": "ConfigFile",
+  "defaults": null,
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "staging",
+      "isDefault": false,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "https://staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://staging.example.com"
+              }
+            ]
+          }
+        },
+        {
+          "type": "RedactDecl",
+          "patterns": [
+            {
+              "root": "body",
+              "segments": [
+                {
+                  "kind": "prop",
+                  "name": "email"
+                }
+              ]
+            },
+            {
+              "root": "body",
+              "segments": [
+                {
+                  "kind": "wildcard"
+                },
+                {
+                  "kind": "prop",
+                  "name": "address"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "requires": [],
+  "sessions": []
+}

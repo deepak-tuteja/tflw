@@ -452,5 +452,11 @@ function keyName(entry: ConfigEntry): string {
       return 'cert';
     case 'KeyDecl':
       return 'key';
+    case 'AllowHostsDecl':
+      return 'allow hosts';
+    case 'EvidenceDecl':
+      return 'evidence';
+    case 'RedactDecl':
+      return 'redact';
   }
 }
