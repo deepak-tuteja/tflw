@@ -25,6 +25,16 @@ before(() => {
   execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe' });
 });
 
+/** GitHub Actions itself sets `GITHUB_ACTIONS=true` in every workflow run's own environment —
+ * child processes spawned without an explicit `env` override inherit it from this test process,
+ * so any test that assumes GH Actions log grouping (decision 111/M17) is *off* must explicitly
+ * strip it, not just omit an override (omitting one means "inherit", which is on in CI). */
+function envWithout(...keys: string[]): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const k of keys) delete env[k];
+  return env;
+}
+
 async function withFixtureServer<T>(fn: (baseUrl: string) => Promise<T>): Promise<T> {
   const server: Server = createServer((req, res) => {
     if (req.url === '/health') {
@@ -1004,7 +1014,11 @@ test('--verbose prints one indented line per step under a test-name header (Trac
       // --no-timestamps: this test is about verbose's step structure, not the separate
       // decision-111/M17 timestamp-prefix feature (its own dedicated test below) — keeps the
       // header line an exact `health check` match instead of coupling to timestamp formatting.
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], { cwd: dir });
+      // GITHUB_ACTIONS stripped: CI itself sets it, which would wrap the header in ::group::.
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], {
+        cwd: dir,
+        env: envWithout('GITHUB_ACTIONS'),
+      });
       const lines = stdout.split('\n');
       const headerIdx = lines.indexOf('health check');
       assert.notEqual(headerIdx, -1, 'expected a bare test-name header line in verbose mode');
@@ -1458,7 +1472,12 @@ test('console output gets an HH:MM:SS.mmm timestamp prefix by default (decision 
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color'], { cwd: dir });
+      // GITHUB_ACTIONS stripped: CI itself sets it, which would wrap the header in ::group:: and
+      // break this test's bare-header assertion — unrelated to what this test actually checks.
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color'], {
+        cwd: dir,
+        env: envWithout('GITHUB_ACTIONS'),
+      });
       assert.match(stdout, /^\d{2}:\d{2}:\d{2}\.\d{3} health check$/m);
       // Pre-existing quirk, unrelated to this decision: a verbose step line's `detail` already
       // bakes in its own duration text, and formatEvent appends a second `(Nms)` after it — not
@@ -1477,7 +1496,12 @@ test('--no-timestamps opts out, restoring the plain (pre-decision-111) output sh
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], { cwd: dir });
+      // GITHUB_ACTIONS stripped: CI itself sets it, which would wrap the header in ::group:: and
+      // break this test's bare-header assertion — unrelated to what this test actually checks.
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], {
+        cwd: dir,
+        env: envWithout('GITHUB_ACTIONS'),
+      });
       // Anchored to line-start: the summary's own `now 2026-...T20:15:49.955Z` field legitimately
       // contains an HH:MM:SS.mmm-shaped substring midline — only a *leading* one would mean the
       // opt-out failed.
@@ -1509,7 +1533,12 @@ test('GitHub Actions log grouping wraps a test\'s output in ::group::/::endgroup
       });
       assert.doesNotMatch(notVerbose.stdout, /::group::/, 'normal mode is already one line per test — nothing worth folding');
 
-      const notOnActions = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], { cwd: dir });
+      // envWithout, not just omitting an override: CI itself sets GITHUB_ACTIONS=true on this very
+      // test process, which execFileAsync would otherwise inherit by default.
+      const notOnActions = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], {
+        cwd: dir,
+        env: envWithout('GITHUB_ACTIONS'),
+      });
       assert.doesNotMatch(notOnActions.stdout, /::group::/, 'no GITHUB_ACTIONS env var set — no grouping');
     } finally {
       await rm(dir, { recursive: true, force: true });
