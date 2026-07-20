@@ -75,4 +75,6 @@ test "pay for an order" as admin
 (comma-separated OR; combines with `--only` as AND).
 
 Secrets (`env(NAME)`) are redacted from every report automatically — see
-[CI, reporting & safety](/guide/ci-and-reporting).
+[CI, reporting & safety](/guide/ci-and-reporting). For what a run actually prints, `--verbose`,
+isolating a failing test, and reading `report.html`, see
+[Running & debugging tests](/guide/debugging).

@@ -4,6 +4,15 @@ Install & quickstart takes under 5 minutes, no browser install required (`v0.1.0
 the browser half lands in `0.2.0`). Writing tests in VS Code? See [Editor support](/editor) for
 diagnostics, autocomplete, rename, and more, live as you type.
 
+## Prerequisites
+
+- **Node ≥ 22** — check with `node -v`. tflw ships zero runtime dependencies but does need a
+  recent Node for its `fetch`/TLS behavior.
+- **An API to point it at** — tflw sends real HTTP requests; there's no mocking layer. Have the
+  service you're testing running and reachable (locally, or a staging URL) before you run a test.
+  `tflw init` below defaults to `http://localhost:3001` — you'll repoint it at your own service in
+  a second.
+
 ```sh
 npm i -D tflw
 ```
@@ -16,9 +25,20 @@ npx tflw run    # runs it — green in seconds
 ```
 
 `tflw init` scaffolds a health-check test against `http://localhost:3001` — point `tflw.config`'s
-`api` line at your own service and edit `example.tflw` from there. A run writes
-`report/report.html` (open it in a browser — full request/response detail, redacted secrets) and
-`report/junit.xml` (for CI).
+`api` line at your own service and edit `example.tflw` from there. A passing run looks like this:
+
+```
+  ✓ health check (16 ms)
+
+PASS 1/1 passed · env local · seed 1486355565 · now 2026-07-20T19:09:07.104Z · 17 ms
+
+report: report/report.html
+```
+
+— one line per test, a summary tally, and the report path. It writes `report/report.html` (open it
+in a browser — full request/response detail, redacted secrets) and `report/junit.xml` (for CI). If
+a test fails instead, see [Running & debugging tests](/guide/debugging) for how to read the
+failure, isolate it, and reproduce it exactly.
 
 ## Your first test
 

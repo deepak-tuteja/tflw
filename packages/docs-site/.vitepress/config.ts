@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress';
 
-// Decision 16.3 (PLAN_ENTERPRISE.md): Home · Getting Started · Guide (9 sub-topics) · Reference ·
+// Decision 16.3 (PLAN_ENTERPRISE.md): Home · Getting Started · Guide (10 sub-topics) · Reference ·
 // Grammar · Changelog. `appearance` is intentionally left unset — VitePress's default (`true`)
 // already shows a light/dark toggle that respects the reader's OS preference (decision 16.12);
 // overriding it would be the wrong direction.
@@ -42,6 +42,7 @@ export default defineConfig({
             { text: '7. Data-driven tests & hooks', link: '/guide/data-and-hooks' },
             { text: '8. Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
             { text: '9. CI, reporting & safety', link: '/guide/ci-and-reporting' },
+            { text: '10. Running & debugging tests', link: '/guide/debugging' },
           ],
         },
       ],
