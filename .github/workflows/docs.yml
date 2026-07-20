@@ -30,7 +30,10 @@ jobs:
 
       # The playground/editor pages import @tflw/lang and @tflw/lsp-server/pure directly (workspace
       # dependencies, decisions 16.3/107) — both need to be built before the site does.
+      # @tflw/lsp-server itself depends on @tflw/runtime (configResolution/documentStore), so that
+      # must be built first too, even though docs-site never imports it directly.
       - run: npm run build -w @tflw/lang
+      - run: npm run build -w @tflw/runtime
       - run: npm run build -w @tflw/lsp-server
 
       - run: npm run build -w @tflw/docs-site
