@@ -282,6 +282,70 @@ the browser half (M3)** as tflw's next work.
         dev-safe default (`${JWT_ACCESS_SECRET:-dev-access-secret-change-me}` etc.) — this stack
         is fully ephemeral and self-contained per run, nothing production-adjacent to protect.
 
+20. **Docs site polish: diagnostic codes reference + home page "Why tflw"** *(2026-07-20
+    `/grill-me` session — inserted as cluster 9, a follow-up to the docs-site cluster (decision
+    16), triggered by a proactive readability/guidance audit of the live site, not a specific
+    complaint)*.
+    1. **Diagnostic codes are the one Reference page that's missing.** Confirmed by reading the
+       site: Matchers/Generators/CLI flags all have Reference pages generated from
+       `packages/lang/src/spec-data.ts` (decision 16.4); diagnostic codes (TF0xx) do not, despite
+       SPEC.md §17 already carrying the full code → meaning → example table and `tflw docs`
+       already surfacing it as prose. This is exactly what "guidance" means when a user hits an
+       error, and the source data already exists — near-zero-cost to close.
+    2. **Diagnostic codes are also *not* single-sourced today, unlike matchers/generators** —
+       confirmed a real drift risk, not just a missing page: `packages/lang/src/diagnostic.ts`'s
+       `Codes` object carries its own terse one-line comment per code (dev-facing, unexported,
+       not reader-facing); SPEC.md §17's "Meaning"/"Example" columns are separately hand-written
+       prose with no code link back to `diagnostic.ts`. Two independently-editable texts for the
+       same concept.
+    3. **Fix: extend `spec-data.ts` with a `DIAGNOSTICS: readonly DiagnosticEntry[]` manifest**
+       (`{ code, meaning, example }`, same shape as SPEC §17's table) — the single source of
+       truth going forward, mirroring `MatcherEntry`/`GeneratorEntry`. Content is migrated from
+       SPEC.md's existing (already well-written) §17 table, not rewritten from scratch.
+    4. **`scripts/gen-spec-tables.mjs` gains a third render function**, `renderDiagnosticsTable`,
+       and SPEC.md §17 gets a `<!-- GENERATED:diagnostics:start/end -->` marker pair replacing
+       its hand-written table — same reversal already done for §6.2/§7 (decision 16.4).
+    5. **New site page `reference/diagnostics.md`**, same Vue-table pattern as `matchers.md`/
+       `generators.md`/`cli.md` (imports `DIAGNOSTICS`, renders a plain HTML table client-side),
+       added to the `/reference/` sidebar after CLI flags (matches SPEC.md's own ordering — a
+       troubleshooting lookup, reached for only after something's already gone wrong, not part of
+       the normal writing flow the other three Reference pages support).
+    6. **LSP hover gains diagnostic support** — today `packages/lsp-server/src/resolution/
+       hover.ts` only resolves `MATCHERS`/`GENERATORS` entries (plus symbol refs/defs); hovering
+       an active diagnostic squiggle shows only its live message/hint, never a canonical
+       explanation. Wire hover to look up the active diagnostic's `code` in the new `DIAGNOSTICS`
+       manifest and show the meaning + example alongside the live message — a real payoff beyond
+       the docs site itself, not just plumbing for its own sake.
+    7. **`diagnostic.ts`'s per-code comments are deleted**, replaced with a single pointer comment
+       above the `Codes` object (`/** meanings: see DIAGNOSTICS in spec-data.ts */`) — keeping
+       them would recreate the exact two-copies-of-one-sentence drift risk this decision exists
+       to remove.
+    8. **CLI error output (`renderDiagnostic` in `diagnostic.ts`) stays untouched — no URL/pointer
+       line added.** Considered and rejected: rustc's own convention is a separate `--explain
+       E0384` lookup rather than a URL inline in every error, and this project's diagnostics are
+       heavily snapshot-tested — a new trailing line would touch snapshot tests across `lang`/
+       `runtime`/CI fixtures for a change that's really about the docs site, not the CLI. "Explain
+       this code" lives in exactly two places: the site page and LSP hover.
+    9. **Home page "Why tflw" gap**: confirmed the site's `index.md` has zero mentions of
+       `README.md`'s "Why tflw" section — the concrete, evidence-backed comparison (2.8× fewer
+       lines, ~3× faster runs from session reuse, sourced from `acceptance/README.md`'s
+       benchmark) and its honest "where tflw isn't the right pick" concession to Karate/Hurl. The
+       site's home page currently only has four generic feature bullets — no numbers, no honest
+       alternatives, the weakest cold-visitor material in the repo despite being the actual "full
+       docs" entry point link from README.
+    10. **Fix: keep the four existing feature cards** (solid quick-scan bullets, no change) **and
+        add a new prose section below them** in `index.md`, adapted from README's "Why tflw" —
+        VitePress's `layout: home` renders ordinary markdown below the hero+features frontmatter
+        block, so this doesn't require restructuring the existing layout. Hand-maintained/adapted
+        from README, not generated — same precedent as the Guide pages themselves (decision
+        16.2), and a two-sentence benchmark stat doesn't justify a generation pipeline.
+    11. **Reviewed `spec-data.ts`'s existing `MATCHERS`/`GENERATORS`/`CLI_FLAGS` content quality
+        while in the area — no changes needed.** Terse, precise reference-table cells are the
+        right register for a Reference page (Guide pages carry the prose); this branch of the
+        interview closes with "add `DIAGNOSTICS`," not "rewrite the rest."
+    12. **Cadence exception, same as clusters 4/5**: no new DSL grammar or runtime behavior, so no
+        testFlow-tests consumption milestone.
+
 ## Execution shape
 
 Per the big-build workflow rule: each cluster is a numbered milestone in **testFlow/PLAN.md**
