@@ -58,8 +58,12 @@ First public draft. API-only — the browser half lands in `0.2.0`.
 - Documentation site (VitePress, `packages/docs-site`, deployed to GitHub Pages): a hand-adapted
   Guide, a generated Reference (matchers/generators/CLI flags, from a new canonical
   `packages/lang/src/spec-data.ts` manifest that also regenerates SPEC.md's own matcher/generator
-  tables), the Grammar reference, and an in-browser parse+check playground. `GRAMMAR.md` was
-  refreshed to cover the full grammar through this release (it had been a frozen M0-only snapshot).
+  tables), the Grammar reference, an Editor page (install, plus live in-page demos of diagnostics,
+  hover, autocomplete, go-to-definition, rename, signature help, and semantic highlighting — each
+  one runs the real `@tflw/lang`/`@tflw/lsp-server` classifier and resolver code client-side against
+  an editable or fixed sample, not a screenshot or recording), and an in-browser parse+check
+  playground. `GRAMMAR.md` was refreshed to cover the full grammar through this release (it had
+  been a frozen M0-only snapshot).
 - `tflw lsp` — a real Language Server Protocol implementation (`packages/lsp-server`), replacing
   the VS Code extension's old child-process `tflw check --format json` diagnostics. Diagnostics,
   hover, go-to-definition, autocomplete, rename, and signature help, all live over debounced

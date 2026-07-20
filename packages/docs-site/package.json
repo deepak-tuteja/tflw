@@ -10,7 +10,8 @@
     "preview": "vitepress preview ."
   },
   "dependencies": {
-    "@tflw/lang": "*"
+    "@tflw/lang": "*",
+    "@tflw/lsp-server": "*"
   },
   "devDependencies": {
     "vitepress": "^1.6.4"

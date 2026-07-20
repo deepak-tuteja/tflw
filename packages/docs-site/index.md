@@ -23,4 +23,6 @@ features:
     details: Source line + caret + "did you mean", stable TF0xx codes, a conservative unknown-variable checker pass — errors read like a compiler's, not a stack trace.
   - title: One language, API today, browser next
     details: 0.2.0 adds UI steps to the same grammar, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing two tools together.
+  - title: Real editor support
+    details: A real Language Server Protocol implementation (tflw lsp) powers the VS Code extension — diagnostics, hover, go-to-definition, autocomplete, rename, signature help, and semantic highlighting, live as you type.
 ---

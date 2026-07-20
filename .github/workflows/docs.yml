@@ -28,9 +28,10 @@ jobs:
 
       - run: npm ci
 
-      # The playground page imports @tflw/lang directly (a workspace dependency, decision 16.3) —
-      # it needs to be built before the site does, same as packages/cli already depends on it.
+      # The playground/editor pages import @tflw/lang and @tflw/lsp-server/pure directly (workspace
+      # dependencies, decisions 16.3/107) — both need to be built before the site does.
       - run: npm run build -w @tflw/lang
+      - run: npm run build -w @tflw/lsp-server
 
       - run: npm run build -w @tflw/docs-site
 

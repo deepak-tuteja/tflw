@@ -1,7 +1,8 @@
 # Getting started
 
 Install & quickstart takes under 5 minutes, no browser install required (`v0.1.0` is API-only —
-the browser half lands in `0.2.0`).
+the browser half lands in `0.2.0`). Writing tests in VS Code? See [Editor support](/editor) for
+diagnostics, autocomplete, rename, and more, live as you type.
 
 ```sh
 npm i -D tflw

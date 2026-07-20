@@ -19,6 +19,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/first-test' },
       { text: 'Reference', link: '/reference/matchers' },
       { text: 'Grammar', link: '/grammar' },
+      { text: 'Editor', link: '/editor' },
       { text: 'Playground', link: '/playground' },
       { text: 'Changelog', link: '/changelog' },
     ],
