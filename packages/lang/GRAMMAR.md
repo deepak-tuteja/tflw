@@ -1,7 +1,9 @@
 # testFlow grammar
 
 The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **PLAN
-decision 102** (M11, the enterprise-readiness arc's cluster 3). This is a strict subset of the
+decision 108** (M14, the enterprise-readiness arc's cluster 5.5 — `request connects`/`fails`;
+clusters 4/5 in between, M12/M13, added no new grammar, per `PLAN_ENTERPRISE.md`'s decision 16/17
+cadence exception). This is a strict subset of the
 full language design in [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md); SPEC.md is the prose reference with rationale
 and examples, this file is the grammar shape only. Cross-references to SPEC decisions are `(P#n)`;
 cross-references to a SPEC section are `(§n)`.
@@ -121,6 +123,8 @@ Subject     := 'status'
              | 'duration'
              | 'header' STRING
              | 'body' BodyPath?                                 # bare `body` = whole-body subject
+             | 'request'                                        # (§6.2.2, PLAN decision 18) — the
+                                                                  # connection attempt, not a response
 BodyPath    := ('.' IDENT | '[' NUMBER ']')+                     # .items[0].price
 
 MatcherCore := 'equals' Value
@@ -133,8 +137,16 @@ MatcherCore := 'equals' Value
              | 'has' 'count' NUMBER
              | 'has' 'value' Value                                # 🔮 UI subjects only
              | 'is' StateWord                                    # 🔮 UI subjects only
+             | 'connects'                                        # `request` subject only (§6.2.2)
+             | 'fails' ('matching' STRING)?                       # `request` subject only (§6.2.2)
 StateWord   := 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked'
 ```
+
+A step combining a `request`-subject assertion with a `status`/`header`/`body`/`duration` one on
+the same request, or a `request`-subject assertion inside `wait until api`, is a checker error
+(`TF031`, §6.2.2) — the grammar above accepts both shapes syntactically; the restriction is
+semantic, enforced by `checkRequestAssertions` (`packages/lang/src/checker.ts`), the same layer
+`checkServices`/`checkSessions` already live in.
 
 See the generated [matcher table](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#62-matcher-table)
 (§6.2, from [`spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts))
@@ -145,6 +157,8 @@ for one example per matcher.
 ```
 LetStmt     := 'let' IDENT '=' Value NEWLINE
 CaptureStmt := 'capture' Subject 'as' IDENT NEWLINE
+              # `request` parses here syntactically (it's the same Subject production) but is a
+              # runtime error — it carries no value to capture (§6.2.2, PLAN decision 18).
 GiveStmt    := 'give' Value NEWLINE                               # an action's return value (§8)
 
 Value       := AddSub

@@ -75,6 +75,12 @@ export const Codes = {
   /** Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its
    * scope (`let`/`capture`/action param/inline table column) — conservative, decision 57. */
   UNKNOWN_VARIABLE: 'TF030',
+  /** Checker: `expect`/`check request connects`/`fails` combined with a response-based assertion
+   * (status/header/body/duration) on the same request — there's no response for those to
+   * evaluate once a connection-level failure is being asserted on — or used at all inside `wait
+   * until api`, which doesn't opt into catching a connection failure (PLAN decision 18,
+   * enterprise arc cluster 5.5). */
+  REQUEST_ASSERTION_INVALID: 'TF031',
 } as const;
 
 // ---------------------------------------------------------------------------

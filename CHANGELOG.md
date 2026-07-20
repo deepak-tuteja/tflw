@@ -75,6 +75,15 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   richer and theme-independent, closing a gap the static TextMate grammar structurally can't (it
   has no way to color arbitrary user-chosen names, and some of its scopes go unstyled under
   themes that don't define rules for them).
+- `expect`/`check request connects`/`fails` — asserts on the connection attempt itself rather than
+  a response: a request that fails before any HTTP response exists (a TLS handshake rejection, DNS
+  failure, `ECONNREFUSED`, an `allow hosts` block) can now be the expected, passing outcome of a
+  test instead of always crashing the run. `fails matching "<regex>"` asserts on the failure reason
+  too, reusing the same teaching-error text already unwrapped for connection failures. Opt-in per
+  request (only an `api` step immediately followed by a `request` assertion catches the error;
+  every other request keeps today's unconditional fail-fast); a `request` assertion can't be
+  combined with a response-based one on the same request, and isn't supported inside `wait until
+  api` (both checker errors, `TF031`).
 
 ### Fixed
 

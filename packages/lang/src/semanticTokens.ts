@@ -41,11 +41,11 @@ const KEYWORDS = new Set([
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`). */
 const OPERATORS = new Set([
   'equals', 'contains', 'matches', 'subset', 'has', 'is', 'not', 'count', 'value', 'greater', 'less', 'than',
-  'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all',
+  'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
 ]);
 
 /** Subject words (tflw.tmLanguage.json's `keywords-subject`). */
-const TYPES = new Set(['status', 'duration', 'text']);
+const TYPES = new Set(['status', 'duration', 'text', 'request']);
 
 /** Generator words (tflw.tmLanguage.json's `keywords-generator`). */
 const FUNCTIONS = new Set([

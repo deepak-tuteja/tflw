@@ -43,6 +43,23 @@ test('getHover: an action param def shows its symbol kind', () => {
   assert.deepEqual(result, { contents: '**name**: action parameter', span: def.span });
 });
 
+test('getHover: `connects`/`fails` matchers surface their own spec-data.ts entries, not the visible/hidden state-word one (decision 18)', () => {
+  const source = `test "ok"\n  api GET /health\n  expect request connects\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+  const result = getHover(program, table, source.indexOf('connects') + 1);
+  assert.ok(result);
+  assert.match(result!.contents, /`connects`/);
+  assert.match(result!.contents, /`request`/);
+
+  const failsSource = `test "ok"\n  api GET /health\n  expect request fails matching "certificate"\n`;
+  const { program: failsProgram } = parseSource(failsSource);
+  const failsTable = collectSymbols(failsProgram, failsSource);
+  const failsResult = getHover(failsProgram, failsTable, failsSource.indexOf('fails') + 1);
+  assert.ok(failsResult);
+  assert.match(failsResult!.contents, /`fails`/);
+});
+
 test('getHover: null when nothing is at the offset', () => {
   const source = `test "ok"\n  api GET /health\n  expect status equals 200\n`;
   const { program } = parseSource(source);

@@ -18,7 +18,7 @@ export interface CompletionSources {
 }
 
 const STEP_KEYWORDS = ['api', 'expect', 'check', 'let', 'capture', 'wait', 'give'] as const;
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body'] as const;
+const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request'] as const;
 
 /** Plain typeable matcher keyword → the `spec-data.ts` `MatcherEntry.id` supplying its detail
  * text. Not 1:1 with `MatcherEntry` rows (`is greater than`/`is less than` share one row; the five
@@ -41,6 +41,8 @@ const MATCHER_CANDIDATES: readonly { readonly label: string; readonly specId: st
   { label: 'is enabled', specId: 'state-word' },
   { label: 'is disabled', specId: 'state-word' },
   { label: 'is checked', specId: 'state-word' },
+  { label: 'connects', specId: 'connects' },
+  { label: 'fails', specId: 'fails' },
   { label: 'not', specId: '' },
 ];
 

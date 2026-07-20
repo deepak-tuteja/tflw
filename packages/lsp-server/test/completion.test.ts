@@ -24,6 +24,30 @@ test('getCompletions: matcher kind attaches spec-data.ts detail text', () => {
   assert.match(equalsCandidate!.detail ?? '', /any value/);
 });
 
+test('getCompletions: subject kind includes `request` (decision 18)', () => {
+  const source = 'test "ok"\n  expect r';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(
+    getCompletions(ctx).map((c) => c.label),
+    ['request'],
+  );
+});
+
+test('getCompletions: matcher kind includes `connects`/`fails` with their own spec-data.ts detail text, not the state-word one (decision 18)', () => {
+  const source = 'test "ok"\n  expect request c';
+  const ctx = getCompletionContext(source, source.length)!;
+  const candidates = getCompletions(ctx);
+  const connectsCandidate = candidates.find((c) => c.label === 'connects');
+  assert.ok(connectsCandidate);
+  assert.match(connectsCandidate!.detail ?? '', /`request`/);
+
+  const failsSource = 'test "ok"\n  expect request f';
+  const failsCtx = getCompletionContext(failsSource, failsSource.length)!;
+  const failsCandidate = getCompletions(failsCtx).find((c) => c.label === 'fails');
+  assert.ok(failsCandidate);
+  assert.match(failsCandidate!.detail ?? '', /`request`/);
+});
+
 test('getCompletions: session kind uses the caller-supplied knownSessions list', () => {
   const source = 'test "ok" as a';
   const ctx = getCompletionContext(source, source.length)!;

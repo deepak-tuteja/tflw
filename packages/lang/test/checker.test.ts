@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, parseConfigSource, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables } from '../src/index.js';
+import { parseSource, parseConfigSource, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables, checkRequestAssertions } from '../src/index.js';
 
 test('checkServices: accepts a known named service', () => {
   const { program } = parseSource(`test "ok"\n  api billing GET /invoices/1\n  expect status equals 200\n`);
@@ -259,4 +259,57 @@ test('checkUnknownVariables: a broken `before`(each) hook shared by two tests is
 test('parser: rejects a bare `header` step outside a session block', () => {
   const { diagnostics } = parseSource(`test "bad"\n  header "X" is "1"\n`);
   assert.ok(diagnostics.length > 0, 'expected a diagnostic — `header` is only valid inside a `session` block');
+});
+
+test('checkRequestAssertions: accepts a bare `request connects`/`fails`', () => {
+  const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request connects\n\ntest "also ok"\n  api GET /health\n  expect request fails\n`);
+  assert.deepEqual(checkRequestAssertions(program), []);
+});
+
+test('checkRequestAssertions: accepts `fails matching "text"` and `not connects`', () => {
+  const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request fails matching "certificate"\n\ntest "also ok"\n  api GET /health\n  expect request not connects\n`);
+  assert.deepEqual(checkRequestAssertions(program), []);
+});
+
+test('checkRequestAssertions: flags a status assertion mixed with `request fails` on the same request', () => {
+  const { program } = parseSource(`test "bad"\n  api GET /health\n  expect request fails\n  expect status equals 200\n`);
+  const diags = checkRequestAssertions(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF031');
+  assert.match(diags[0]!.message, /`expect status` can't be combined with `request connects`\/`fails`/);
+});
+
+test('checkRequestAssertions: flags every non-request assertion in the run, regardless of order', () => {
+  const { program } = parseSource(`test "bad"\n  api GET /health\n  expect status equals 200\n  expect request connects\n  expect body.ok equals true\n`);
+  const diags = checkRequestAssertions(program);
+  assert.equal(diags.length, 2);
+  const messages = diags.map((d) => d.message).sort();
+  assert.match(messages[0]!, /`expect body`/);
+  assert.match(messages[1]!, /`expect status`/);
+});
+
+test('checkRequestAssertions: a request-only run is fine even across several expects', () => {
+  const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request connects\n  expect request not fails\n`);
+  assert.deepEqual(checkRequestAssertions(program), []);
+});
+
+test('checkRequestAssertions: two separate `api` calls each get their own clean group', () => {
+  const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request fails\n  api GET /other\n  expect status equals 200\n`);
+  assert.deepEqual(checkRequestAssertions(program), []);
+});
+
+test('checkRequestAssertions: also validates inside `action`/`hook` bodies', () => {
+  const { program: actionProgram } = parseSource(`action ping()\n  api GET /health\n  expect request fails\n  expect status equals 200\n  give true\n`);
+  assert.equal(checkRequestAssertions(actionProgram).length, 1);
+
+  const { program: hookProgram } = parseSource(`before file\n  api GET /health\n  expect request fails\n  expect status equals 200\n\ntest "ok"\n  api GET /health\n  expect status equals 200\n`);
+  assert.equal(checkRequestAssertions(hookProgram).length, 1);
+});
+
+test('checkRequestAssertions: rejects a `request` assertion inside `wait until api`', () => {
+  const { program } = parseSource(`test "bad"\n  wait until api GET /health\n    expect request connects\n`);
+  const diags = checkRequestAssertions(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF031');
+  assert.match(diags[0]!.message, /not supported inside `wait until api`/);
 });

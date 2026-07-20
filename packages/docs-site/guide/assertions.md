@@ -7,9 +7,10 @@ expect <subject> [not] <matcher> [value]
 check  <subject> [not] <matcher> [value]     # soft twin
 ```
 
-Subjects: `status`, `duration`, `header "<name>"`, `body`, `body.<path>`. The matcher set is
-**closed** — custom logic goes through the [JS escape hatch](/guide/actions). See the full
-[Matchers reference](/reference/matchers) for every matcher, what it applies to, and an example.
+Subjects: `status`, `duration`, `header "<name>"`, `body`, `body.<path>`, `request` (the connection
+attempt itself — see below). The matcher set is **closed** — custom logic goes through the
+[JS escape hatch](/guide/actions). See the full [Matchers reference](/reference/matchers) for
+every matcher, what it applies to, and an example.
 
 `not` negates any matcher: `expect status not equals 404`.
 
@@ -49,6 +50,28 @@ assertion against the same source reuses it, including across `--workers N`. `al
 (see [Config & environments](/guide/config)) gates this fetch the same as any `api` step.
 `not matches schema ...` asserts the subject does **not** conform — useful for a
 deliberately-drifted-endpoint regression check.
+
+## Connection-failure assertions
+
+```
+api GET /health
+expect request fails matching "certificate"
+```
+
+A request that fails *before* any HTTP response exists — a TLS handshake rejection, DNS failure,
+`ECONNREFUSED`, an [`allow hosts`](/guide/config) block — normally crashes the whole test
+immediately. `expect`/`check request connects`/`fails` opts a single request into catching that
+error instead, so a guardrail like this can be a genuinely passing regression test rather than
+something only provable by unit-testing the tool itself. `fails matching "<regex>"` additionally
+checks *why* it failed; a bare `fails` accepts any connection-level failure. `not` composes the
+same way it does everywhere else — `expect request not connects` behaves exactly like a bare
+`expect request fails`.
+
+Only the request immediately followed by a `request` assertion opts in — every other `api` step
+keeps today's fail-fast behavior unchanged. `request` can't be combined with a response-based
+assertion (`status`/`header`/`body`/`duration`) on the same request, isn't supported inside `wait
+until api`, and isn't `capture`-able — it carries no value, only a pass/fail judgment on whether a
+connection was established.
 
 ## Hard vs. soft
 

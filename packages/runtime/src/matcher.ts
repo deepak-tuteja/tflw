@@ -87,9 +87,46 @@ function rawMatch(actual: unknown, matcher: Matcher, ctx: EvalCtx): RawMatch {
       const len = count(actual);
       return { ok: len === expected, phrase: 'to have count', expected: String(expected) };
     }
+    case 'connects':
+    case 'fails':
+      throw new RuntimeError(`matcher \`${matcher.name}\` is only valid on a \`request\` subject (\`expect request ${matcher.name}\`, SPEC §6.2.2)`);
     default:
       throw new RuntimeError(`matcher \`${matcher.name}\` is not supported on an API subject (it is UI-only, added in M3)`);
   }
+}
+
+/** `expect`/`check request connects`/`fails` (SPEC §6.2.2, PLAN decision 18, enterprise arc
+ * cluster 5.5) — evaluated separately from `evalMatcher`/`rawMatch` above (bypassed entirely by
+ * `evaluateExpect`, the same way `matchesSchema` already is), because there's no response value
+ * to navigate to: the "actual" here is *whether a connection-level error occurred at all*, not
+ * something read off a `ResponseTrace`. `connectionError` is the redacted message the interpreter
+ * caught from `execApi` for this request, or `null` if it connected normally. */
+export function evalRequestMatcher(matcher: Matcher, connectionError: string | null, ctx: EvalCtx): MatchOutcome {
+  let raw: { ok: boolean; phrase: string; expected: string };
+  if (matcher.name === 'connects') {
+    raw = { ok: connectionError === null, phrase: 'to connect', expected: '' };
+  } else if (matcher.name === 'fails') {
+    if (matcher.value) {
+      const pattern = String(evalValue(matcher.value, ctx));
+      let matches = false;
+      try {
+        matches = connectionError !== null && new RegExp(pattern).test(connectionError);
+      } catch {
+        throw new RuntimeError(`invalid regex in matcher: ${repr(pattern)}`);
+      }
+      raw = { ok: matches, phrase: 'to fail matching', expected: ' ' + repr(pattern) };
+    } else {
+      raw = { ok: connectionError !== null, phrase: 'to fail', expected: '' };
+    }
+  } else {
+    throw new RuntimeError(`matcher \`${matcher.name}\` is not valid on a \`request\` subject — use \`connects\`/\`fails\``);
+  }
+  const ok = matcher.negated ? !raw.ok : raw.ok;
+  const not = matcher.negated ? 'not ' : '';
+  const expectation = `request ${not}${raw.phrase}${raw.expected}`;
+  const got = connectionError !== null ? connectionError : 'the request connected successfully';
+  const message = ok ? expectation : `expected ${expectation}, but got: ${truncate(got)}`;
+  return { ok, message };
 }
 
 /** Structural equality: object key *order* never matters (only membership + values); array

@@ -122,8 +122,8 @@ export interface CompletionContext {
 }
 
 const STATEMENT_KEYWORDS = ['api', 'expect', 'check', 'let', 'capture', 'wait', 'give'] as const;
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body'] as const;
-const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'not'] as const;
+const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request'] as const;
+const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact'] as const;
@@ -1374,6 +1374,9 @@ class Parser {
         const subj: BodySubject = { type: 'BodySubject', path, span: this.spanFrom(start) };
         return subj;
       }
+      case 'request':
+        this.advance();
+        return { type: 'RequestSubject', span: this.spanFrom(start) };
       default: {
         const hint = suggest(tok.value, SUBJECT_KEYWORDS);
         this.error(
@@ -1426,6 +1429,19 @@ class Parser {
     const mk = (name: MatcherName, value: Value | null): Matcher => ({ type: 'Matcher', name, negated, value, span: this.spanFrom(start) });
 
     switch (tok.value) {
+      case 'connects': {
+        this.advance();
+        return mk('connects', null);
+      }
+      case 'fails': {
+        this.advance();
+        if (this.isKw(this.peek(), 'matching')) {
+          this.advance();
+          const v = this.expectString('a regex string, e.g. `fails matching "certificate"`');
+          return v ? mk('fails', v) : null;
+        }
+        return mk('fails', null);
+      }
       case 'equals': {
         this.advance();
         const v = this.parseValue();

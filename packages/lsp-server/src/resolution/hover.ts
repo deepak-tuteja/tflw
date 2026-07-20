@@ -30,6 +30,8 @@ const MATCHER_SPEC_ID: Record<MatcherName, string> = {
   enabled: 'state-word',
   disabled: 'state-word',
   checked: 'state-word',
+  connects: 'connects',
+  fails: 'fails',
 };
 
 /** Generator AST node `type` → the matching `spec-data.ts` `GeneratorEntry.id`. Only generator

@@ -336,6 +336,17 @@ test "rate-limited create honors Retry-After"
   expect status equals 200
 `,
   },
+  {
+    name: 'request-connects-fails',
+    source: `# PLAN decision 18, enterprise arc cluster 5.5
+test "the mTLS listener rejects a client with no certificate, the plain one accepts it"
+  api GET /health
+  expect request fails matching "certificate"
+  api GET /health
+  expect request connects
+  check request not fails
+`,
+  },
 ];
 
 // Config-dialect fixtures (tflw.config). Valid ones parse + check clean; invalid ones each
@@ -692,6 +703,13 @@ test "invite {role}"
     source: `test "forgot up to"
   api GET /health
     retry honoring "Retry-After" 3
+`,
+  },
+  {
+    name: 'fails-matching-missing-string',
+    source: `test "forgot the regex"
+  api GET /health
+  expect request fails matching
 `,
   },
 ];

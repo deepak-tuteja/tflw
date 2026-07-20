@@ -1,0 +1,107 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "the mTLS listener rejects a client with no certificate, the plain one accepts it",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "the mTLS listener rejects a client with no certificate, the plain one accepts it"
+          }
+        ]
+      },
+      "tags": [],
+      "sessions": [],
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/health"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true,
+          "retryAfter": null
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "RequestSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "fails",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "certificate",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "certificate"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/health"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true,
+          "retryAfter": null
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "RequestSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "connects",
+            "negated": false,
+            "value": null
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": true,
+          "quantifier": null,
+          "subject": {
+            "type": "RequestSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "fails",
+            "negated": true,
+            "value": null
+          }
+        }
+      ]
+    }
+  ]
+}

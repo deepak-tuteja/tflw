@@ -217,10 +217,17 @@ export interface ExpectStmt extends Node {
   readonly matcher: Matcher;
 }
 
-export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject;
+export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject | RequestSubject;
 
 export interface StatusSubject extends Node {
   readonly type: 'StatusSubject';
+}
+
+/** `request` — the connection attempt itself, not the response (SPEC §5.3/§6.2.2, PLAN decision
+ * 18, enterprise arc cluster 5.5). Only meaningful with the `connects`/`fails` matchers; carries
+ * no data of its own to navigate (unlike every other subject, which reads the response). */
+export interface RequestSubject extends Node {
+  readonly type: 'RequestSubject';
 }
 
 export interface DurationSubject extends Node {
@@ -262,14 +269,18 @@ export type MatcherName =
   | 'hidden'
   | 'enabled'
   | 'disabled'
-  | 'checked';
+  | 'checked'
+  | 'connects'
+  | 'fails';
 
 export interface Matcher extends Node {
   readonly type: 'Matcher';
   readonly name: MatcherName;
   readonly negated: boolean;
   /** Operand for value matchers (equals/contains/…); null for state matchers (visible/…) and for
-   * `matchesSchema` (which uses `schemaName`/`schemaSource` instead). */
+   * `matchesSchema` (which uses `schemaName`/`schemaSource` instead). Also holds `fails`'s
+   * optional `matching "text"` regex operand (SPEC §6.2.2, decision 18) — null for a bare
+   * `fails`; always null for `connects`, which never takes an operand. */
   readonly value: Value | null;
   /** `matches schema "Name" from "source"` (SPEC, PLAN decision 102a, enterprise arc cluster 3,
    * closes TFLW-GAPS.md gap #6) — set only when `name === 'matchesSchema'`. `schemaName` is the

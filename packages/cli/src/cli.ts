@@ -19,6 +19,7 @@ import {
   checkDataTables,
   checkSessions,
   checkUnknownVariables,
+  checkRequestAssertions,
   suggest,
   type Program,
   type Diagnostic,
@@ -262,7 +263,8 @@ async function loadAndValidate(
     const tableDiags = checkDataTables(parsed.program);
     const sessionDiags = checkSessions(parsed.program, knownSessions);
     const variableDiags = checkUnknownVariables(parsed.program);
-    const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags];
+    const requestDiags = checkRequestAssertions(parsed.program);
+    const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags, ...requestDiags];
     if (diagnostics.length > 0) {
       if (onFileDiagnostics) onFileDiagnostics(file, source, diagnostics);
       else process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');

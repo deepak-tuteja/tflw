@@ -28,6 +28,8 @@ export const MATCHERS: readonly MatcherEntry[] = [
   { id: 'has-count', syntax: '`has count N`', appliesTo: 'arrays, UI lists', example: '`expect body.items has count 3`', status: 'shipped' },
   { id: 'has-value', syntax: '`has value`', appliesTo: 'UI fields', example: '`expect field "Email" has value "a@b.c"`', status: 'planned' },
   { id: 'state-word', syntax: '`is visible/hidden/enabled/disabled/checked`', appliesTo: 'UI locators', example: '`expect button "Pay" is enabled`', status: 'planned' },
+  { id: 'connects', syntax: '`connects`', appliesTo: '`request`', example: '`expect request connects`', status: 'shipped' },
+  { id: 'fails', syntax: '`fails` / `fails matching "<regex>"`', appliesTo: '`request`', example: '`expect request fails matching "certificate"`', status: 'shipped' },
 ] as const;
 
 /** One row of SPEC §7's new generators quick-reference table (§7.2/§7.3 previously had no table,

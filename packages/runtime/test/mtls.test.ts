@@ -93,6 +93,48 @@ test('without `cert`/`key`, a server that requires a client cert rejects the con
   assert.match(report.tests[0]!.error ?? '', /request failed/);
 });
 
+test('with `expect request fails`, the exact same missing-client-cert scenario now passes green (decision 18)', async () => {
+  // The whole point of decision 18: the previous test proves this scenario crashes the run
+  // unconditionally today; this one proves the new assertion turns it into a genuinely passing
+  // regression test instead — same server, same missing cert, same real TLS rejection.
+  const config = testConfig(baseUrl, {}, true); // insecure: true, mtls: null
+  const source = `test "health check"\n  api GET /health\n  expect request fails\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+});
+
+test('`expect request connects` correctly fails when the connection was actually rejected', async () => {
+  const config = testConfig(baseUrl, {}, true); // insecure: true, mtls: null
+  const source = `test "health check"\n  api GET /health\n  expect request connects\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /expected request to connect, but got:/);
+});
+
+test('`expect request connects` passes for a real successful request against the same server, with a valid client cert', async () => {
+  const config = { ...testConfig(baseUrl), mtls: { certPath: clientCertPath, keyPath: clientKeyPath } };
+  const source = `test "health check"\n  api GET /health\n  expect request connects\n  check request not fails\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+});
+
+test('the `api` step itself still reports `ok: true` when it caught a connection failure — the `expect` step is what judges it', async () => {
+  const config = testConfig(baseUrl, {}, true); // insecure: true, mtls: null
+  const source = `test "health check"\n  api GET /health\n  expect request fails\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  assert.equal(apiStep.ok, true);
+  assert.match(apiStep.detail, /connection failed/);
+});
+
 test('the same client cert is reused across requests, not re-read from disk every time', async () => {
   const config = { ...testConfig(baseUrl), mtls: { certPath: clientCertPath, keyPath: clientKeyPath } };
   const source = `test "first"\n  api GET /health\n  expect status equals 200\n\ntest "second"\n  api GET /health\n  expect status equals 200\n`;

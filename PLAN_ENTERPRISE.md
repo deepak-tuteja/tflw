@@ -5,7 +5,13 @@
 Amended 2026-07-19 (decisions 16–17, a second `/grill-me` session) to insert two new clusters —
 docs site and LSP — before what was cluster 4. Cluster 4 (docs site) shipped 2026-07-19 as M12
 (PLAN.md decision 103) — see decision 16's per-item status below. Cluster 5 (LSP) shipped
-2026-07-20 as M13 (PLAN.md decision 104) — see decision 17's status line above.*
+2026-07-20 as M13 (PLAN.md decision 104) — see decision 17's status line above. Amended again
+2026-07-20 (decisions 18–19, a third `/grill-me` session, prompted by planning testFlow-tests
+CI) to insert cluster 5.5 — connection-failure assertions (`request connects`/`fails`) — plus
+its testFlow-tests consumption (CI workflow + mTLS/redaction test hardening). Cluster 5.5's tflw
+side shipped 2026-07-20 as M14 (PLAN.md decision 108) — see decision 18's status line below. Its
+testFlow-tests consumption (decision 19) is unblocked but not yet built — see
+`testFlow-tests/PLAN_CI.md` for the consumption-side milestone breakdown.*
 
 ## Context
 
@@ -187,6 +193,95 @@ the browser half (M3)** as tflw's next work.
     documented pause in the ping-pong pattern (decision 14), which resumes normally at cluster 6
     (CI ergonomics), since that cluster *does* add new dogfoodable CLI behavior.
 
+18. **Connection-failure assertions: `request connects`/`request fails`** *(2026-07-20
+    `/grill-me` session — inserted as cluster 5.5, immediately after LSP; discovered while
+    planning testFlow-tests CI, decision 19)* — ✅ **shipped 2026-07-20 as M14, PLAN.md decision
+    108**. Closed a real gap: before this, a request that fails
+    *before* any HTTP response exists (TLS handshake rejection, DNS failure, ECONNREFUSED, an
+    `allow hosts` block) always crashes the whole test fail-fast (`report.ok = false`), with no
+    way to write a genuinely green regression test proving a guardrail actually triggers.
+    Confirmed concretely via `testFlow-tests/tests/mtls.tflw` (its negative case — no client
+    cert against the mTLS-requiring nginx listener — is untestable in the DSL today, only unit-
+    tested against a throwaway fixture server in `packages/runtime/test/mtls.test.ts`) and
+    `testFlow-tests/tests/.demo-fail/` (8 fixtures kept deliberately red to *show* failure
+    output, since there's no way to assert "this should fail" and stay green — that whole
+    directory is a related, larger opportunity this decision doesn't take on, scope stays to
+    what decision 19 actually needs).
+    1. **Syntax**: `request` as a new assertion subject; `connects`/`fails` as bare, argument-
+       less matchers — the same shape as the UI matcher `not visible` (a state, not a value
+       comparison), the closest existing grammar precedent, at the user's suggestion. `expect
+       request connects` / `expect request fails`, `check` for the soft form; `not` still
+       composes generically (`expect request not connects` ≡ `expect request fails`, since "`not`
+       negates any matcher" already holds). Optional `fails matching "text"` (regex, same
+       semantics as other `matches` clauses) asserts on *why*, reusing the exact teaching-error
+       text SPEC §3.5 already unwraps (`insecure true`/`NODE_EXTRA_CA_CERTS` hints,
+       `ECONNREFUSED`, `ENOTFOUND`).
+    2. **Interpreter**: only a step carrying a `request connects`/`fails` assertion opts into
+       catching a connection-level error instead of the existing fail-fast crash — every other
+       step's behavior is unchanged (zero risk to the other ~500 existing tests across both
+       repos).
+    3. **Checker**: new hard error (new TF0xx code) if a step combines `expect`/`check request
+       fails` with any status/header/body/duration assertion in the same step — there's no
+       response for those to evaluate against.
+    4. **Full fidelity, same bar as every prior cluster**: `packages/lang` (grammar/AST/
+       checker), `packages/runtime` (interpreter), `packages/lsp-server` (hover/autocomplete for
+       the new subject+matchers, consumes `spec-data.ts`, decision 16.4), SPEC.md/GRAMMAR.md/
+       docs-site Reference (generated from `spec-data.ts`), CHANGELOG. Each package's own unit
+       tests, same as every existing matcher.
+    5. **Redaction verification is a separate, unrelated gap** — `safety-redaction.tflw` wanting
+       to prove `report.html` actually shows `[redacted]` means asserting on the tool's own
+       *output artifact*, not a request/response; that doesn't fit this decision's grammar and
+       doesn't get one. Proven instead by an out-of-band Node script in testFlow-tests (decision
+       19) that inspects the run's report data directly. `packages/runtime/test/
+       field-redaction.test.ts` already proves the masking mechanism generically against
+       fixture data; the testFlow-tests-side script proves it against this app's real PII shape,
+       not the mechanism itself.
+    6. **testFlow-tests consumption**: decision 19.
+
+19. **testFlow-tests: CI workflow + mTLS/redaction test hardening** *(same 2026-07-20 `/grill-me`
+    session, consumption side of decision 18)*.
+    1. **Trigger**: push to `main` only (matches the ask literally — a post-merge signal, not a
+       PR gate; branch-protection/required-status-check work stays out of scope).
+    2. **Sourcing tflw**: no committed vendor tarball. The workflow checks out `testFlow` as a
+       second sibling repo in the same job and runs `scripts/refresh-tflw.mjs` (npm ci + npm
+       pack against testFlow's own `main`) — every CI run dogfoods tflw's actual current state,
+       matching this repo's entire reason for existing (gap-discovery instrument) rather than
+       testing a possibly-stale committed artifact.
+    3. **apiV2's own tests run first**: `npm run lint` + `npm test` (Jest) inside `apiV2/`, no
+       Docker needed — fails fast on a real code/lint bug before spending time on Docker builds
+       and the multi-phase regression sweep.
+    4. **Stack lifecycle**: reuses `cli.mjs start`/`stop` as-is (`docker compose up -d --build
+       --wait` / `down -v`) — already CI-runner-friendly, Docker ships on `ubuntu-latest`, no
+       changes needed there.
+    5. **Test scope**: `npm run regression` (the existing multi-phase sweep: full suite + each
+       area tag + smoke + smoke×area, each phase with its own fresh Docker restart), extended
+       with two new phases (mtls-rejection, safety-redaction-check — item 7 below) so CI
+       coverage matches what this repo can actually prove end to end.
+    6. **`tests/mtls.tflw`'s negative case** (enabled by decision 18): a new dedicated env
+       `mtlsSidecarNoCert` in `tflw.config` (same base URL as `mtlsSidecar`, `https://
+       localhost:8444/v1`, deliberately no `cert`/`key` — mirrors why `allowHostsBlocked` is its
+       own env, separate blast radius from `mtlsSidecar`'s positive-path config) and a new file
+       `tests/mtls-rejection.tflw` (can't share a file with the existing positive-path tests —
+       one `--env` per run) asserting `expect request fails matching "certificate"` (or whatever
+       substring Node's TLS error actually surfaces — confirm empirically when building this).
+       New `npm run test:mtls-rejection` script, same pattern as `test:mtls`/`test:safety`.
+    7. **`tests/safety-redaction.tflw`'s report proof**: a new `scripts/verify-redaction.mjs` —
+       runs `tflw run --env safetyRedaction tests/safety-redaction.tflw`, then inspects the
+       emitted report data for the `/profile/export` step: asserts `[redacted]` appears where
+       `email`/`address.*` should be masked, and that the real seeded PII values (`env(
+       ADMIN_EMAIL)`, the address/phone fixture values) do **not** appear anywhere in the
+       artifact.
+    8. **`scripts/regression.mjs`**: `PHASES` gains two entries — `--env mtlsSidecarNoCert
+       tests/mtls-rejection.tflw` and the new `verify-redaction.mjs` phase — both get the same
+       fresh-restart-per-phase treatment as every other phase, for the same isolation reason.
+    9. **Artifacts**: `report.html`/`junit.xml` from every regression phase always uploaded via
+       `actions/upload-artifact` (pass or fail — not failure-only, so a green run's evidence is
+       still inspectable), plus a JUnit-reporting action (e.g. `dorny/test-reporter`) for inline
+       Actions-run/PR-check annotations instead of a bare red X.
+    10. **No GitHub Secrets needed**: every credential `docker-compose.yml` needs already has a
+        dev-safe default (`${JWT_ACCESS_SECRET:-dev-access-secret-change-me}` etc.) — this stack
+        is fully ephemeral and self-contained per run, nothing production-adjacent to protect.
+
 ## Execution shape
 
 Per the big-build workflow rule: each cluster is a numbered milestone in **testFlow/PLAN.md**
@@ -212,6 +307,16 @@ feature proven against the running apiV2 stack (the M17–M20 pattern) — excep
   prefix-based error-tolerant completion mode in `packages/lang`'s parser;
   `packages/vscode/src/extension.ts` rewritten as a thin LSP client (diagnostics spawn path
   deleted); `packages/cli` gains `tflw lsp`.
+- **Cluster 5.5 (connection-failure assertions, decision 18)** — ✅ **shipped 2026-07-20 as M14,
+  PLAN.md decision 108**: `packages/lang` (new `request` subject, `connects`/`fails` matchers,
+  checker rule), `packages/runtime` (interpreter opt-in error catch), `packages/lsp-server`
+  (hover/autocomplete), SPEC.md/GRAMMAR.md/docs-site Reference, CHANGELOG. testFlow-tests
+  (decision 19, **not yet built** — was hard-blocked on the above, now unblocked): new `env
+  mtlsSidecarNoCert` (`tflw.config`), new `tests/mtls-rejection.tflw`, new
+  `scripts/verify-redaction.mjs`, `scripts/regression.mjs` gains two phases, new
+  `.github/workflows/ci.yml` (push-to-main trigger, second-repo checkout+build of tflw, apiV2
+  lint+Jest, docker stack via `cli.mjs`, `npm run regression`, always-on artifact upload + JUnit
+  annotations). See `testFlow-tests/PLAN_CI.md` for the full milestone breakdown.
 - Clusters 6–8 (not yet detailed): `packages/cli` (--failed/--bail/--format json/
   --forbid-insecure, `init --openapi`), SPEC.md status badges, SECURITY.md; provenance CI staged
   for the first real publish.
@@ -237,3 +342,12 @@ Code session proving all six capabilities (diagnostics-on-type, hover, go-to-def
 autocomplete mid-typing, rename, signature help) against a real `.tflw` file in a real tflw
 project (e.g. testFlow-tests' own `tests/`); `tflw lsp` manually confirmed reachable over stdio
 outside VS Code (e.g. a minimal Neovim `lspconfig` smoke test, if available).
+
+**Cluster 5.5 (connection-failure assertions, decision 18)** — ✅ met: `packages/lang`/
+`packages/runtime` unit tests green for `request connects`/`fails` (positive, negative,
+`matching`, and the checker's combine-with-response-assertion rejection), plus a real end-to-end
+proof — reuses `packages/runtime/test/mtls.test.ts`'s existing throwaway-server fixture to show a
+`.tflw` file
+with `expect request fails` now passes green where it previously crashed the run. Consumption
+(decision 19) verified per testFlow-tests/PLAN_CI.md's own verification section — its bar is a
+green `.github/workflows/ci.yml` run on a real push to `main`, including the two new phases.

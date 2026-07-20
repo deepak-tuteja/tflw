@@ -1,0 +1,7 @@
+error[TF010]: expected a regex string, e.g. `fails matching "certificate"`, found end of line
+ --> fails-matching-missing-string.tflw:3:32
+  |
+3 |   expect request fails matching
+  |                                ^
+  |
+  = help: expected a string

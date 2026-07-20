@@ -27,7 +27,7 @@ import type {
   WaitUntilApiStmt,
 } from '@tflw/lang';
 import { evalValue, interpolatePath, navigate, RuntimeError, stringify, type EvalCtx } from './eval.js';
-import { evalMatcher, repr, type MatchOutcome } from './matcher.js';
+import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
 import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
@@ -679,13 +679,39 @@ interface StepsExec {
  * their own scope and their own `lastResponse` (calling one never clobbers the caller's last api
  * response); their step results are still appended into the *same* report so a manual QA can see
  * exactly what an action did (P#5's reporting-first philosophy extends to composed actions). */
+/** Which `ApiStep` indices should catch a connection-level error instead of letting it crash the
+ * whole test (SPEC §6.2.2, PLAN decision 18) — exactly those immediately followed by a
+ * contiguous run of `expect`/`check` steps containing a `request` assertion. `checkRequestAssertions`
+ * (lang checker, TF031) already guarantees such a run is *only* `request` assertions, so no other
+ * step's behavior anywhere in that run is affected. Computed once per `execSteps` call, not per
+ * step, since it needs to look ahead of the step currently executing. */
+function findRequestAssertionApiIndices(steps: readonly Step[]): ReadonlySet<number> {
+  const indices = new Set<number>();
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i]!.type !== 'ApiStep') continue;
+    for (let j = i + 1; j < steps.length && steps[j]!.type === 'ExpectStmt'; j++) {
+      if ((steps[j] as ExpectStmt).subject.type === 'RequestSubject') {
+        indices.add(i);
+        break;
+      }
+    }
+  }
+  return indices;
+}
+
 async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: EvalCtx, tc: TestCtx, testName: string, registry: CallRegistry): Promise<StepsExec> {
   const results: StepResult[] = [];
   let lastResponse: ResponseTrace | null = null;
+  // Set only by an `ApiStep` opted into catching a connection failure (below); read by
+  // `expect`/`check request connects`/`fails` via `evaluateExpect`. Reset to null on every
+  // *other* `ApiStep` (including a non-opted-in one), so it can never leak across requests.
+  let lastConnectionError: string | null = null;
   let giveValue: unknown;
   const softFailures: string[] = [];
+  const requestAssertionApiIndices = findRequestAssertionApiIndices(steps);
 
-  for (const step of steps) {
+  for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+    const step = steps[stepIndex]!;
     const stepStart = performance.now();
     const src = (tc.lines[step.span.start.line - 1] ?? '').trim();
     try {
@@ -693,30 +719,48 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       let callSoftError: string | undefined;
       switch (step.type) {
         case 'ApiStep': {
-          let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir);
-          // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
-          // just `oauth2`) gets this: a revoked/expired-early credential shouldn't fail every
-          // remaining step of a test that's otherwise unrelated to auth. Retried at most once per
-          // step, so a server that genuinely, persistently 401s still fails fast instead of
-          // looping. `ctx.sessionNames` is `[]` for an anonymous test, so this is a no-op there.
-          if (trace.response.status === 401 && ctx.sessionNames.length > 0) {
-            const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
-            results.push(...refresh.steps);
-            if (refresh.ok) {
-              ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir));
+          const catchConnectionError = requestAssertionApiIndices.has(stepIndex);
+          try {
+            let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir);
+            // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
+            // just `oauth2`) gets this: a revoked/expired-early credential shouldn't fail every
+            // remaining step of a test that's otherwise unrelated to auth. Retried at most once per
+            // step, so a server that genuinely, persistently 401s still fails fast instead of
+            // looping. `ctx.sessionNames` is `[]` for an anonymous test, so this is a no-op there.
+            if (trace.response.status === 401 && ctx.sessionNames.length > 0) {
+              const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
+              results.push(...refresh.steps);
+              if (refresh.ok) {
+                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir));
+              }
             }
+            lastResponse = trace.response;
+            lastConnectionError = null;
+            // Report visibility for retries is a standing principle here (P#5/P#16, the same one
+            // `test … retry N`'s `flaky` badge already follows) — a `retry honoring` step that
+            // actually retried says so right in its own report line, not just silently in the
+            // final status.
+            const retrySuffix = retryAfterAttempts > 0 ? `, retried ${retryAfterAttempts}x honoring Retry-After (waited ${retryAfterWaitedMs}ms total)` : '';
+            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}`, redacted.request, redacted.response);
+          } catch (err) {
+            // Not opted in (no `request connects`/`fails` assertion follows this request, decision
+            // 18.2) — rethrow unchanged, caught by this function's own outer `catch` below exactly
+            // like every request always has (P#16's unconditional fail-fast), zero behavior change
+            // for the ~500 existing tests across both repos that never use this feature.
+            if (!catchConnectionError) throw err;
+            const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
+            const redactedMessage = tc.redactor.redact(message);
+            lastResponse = null;
+            lastConnectionError = redactedMessage;
+            // Reported `ok: true` on the `api` line itself (like every other request, whatever
+            // status code it got back) — this step's job is just to attempt the request; the
+            // following `expect`/`check request connects`/`fails` step is what judges the outcome.
+            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${step.path.raw} → connection failed: ${redactedMessage}`);
           }
-          lastResponse = trace.response;
-          // Report visibility for retries is a standing principle here (P#5/P#16, the same one
-          // `test … retry N`'s `flaky` badge already follows) — a `retry honoring` step that
-          // actually retried says so right in its own report line, not just silently in the
-          // final status.
-          const retrySuffix = retryAfterAttempts > 0 ? `, retried ${retryAfterAttempts}x honoring Retry-After (waited ${retryAfterWaitedMs}ms total)` : '';
-          result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}`, redacted.request, redacted.response);
           break;
         }
         case 'ExpectStmt': {
-          result = await execExpect(step, lastResponse, ctx, src, stepStart, config);
+          result = await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config);
           break;
         }
         case 'LetStmt': {
@@ -738,6 +782,12 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'WaitUntilApiStmt': {
           const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, src, stepStart);
           lastResponse = waited.response;
+          // `wait until api` never opts into catching a connection failure (checker-enforced,
+          // decision 18) — reaching here always means a real response came back (a genuine
+          // connection failure instead throws out of `execApi`, uncaught, straight to this
+          // function's own outer `catch`), so any stale `lastConnectionError` from an earlier
+          // opted-in `api` step must not leak into an `expect request …` step that follows this one.
+          lastConnectionError = null;
           result = waited.result;
           break;
         }
@@ -1024,8 +1074,8 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
   }
 }
 
-async function execExpect(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
-  const outcome = await evaluateExpect(step, response, ctx, config);
+async function execExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
+  const outcome = await evaluateExpect(step, response, connectionError, ctx, config);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }
 
@@ -1082,7 +1132,11 @@ async function execWaitUntilApi(
     const requestTimeout = Math.max(1, Math.min(step.request.timeoutMs ?? config.timeouts.step, remainingMs));
     const request = { ...step.request, timeoutMs: requestTimeout };
     const { trace, redacted } = await execApi(request, config, ctx, redactor, baseDir);
-    const outcomes = await Promise.all(step.expects.map((e) => evaluateExpect(e, trace.response, ctx, config)));
+    // `wait until api` never opts into catching a connection failure (`checkRequestAssertions`
+    // statically forbids a `request` assertion here, decision 18) — `connectionError` is always
+    // null; a real connection failure still throws out of `execApi` above and crashes the poll
+    // loop exactly like today, unchanged.
+    const outcomes = await Promise.all(step.expects.map((e) => evaluateExpect(e, trace.response, null, ctx, config)));
     const allOk = outcomes.every((o) => o.ok);
     const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
     if (allOk) {
@@ -1111,7 +1165,11 @@ function sleep(ms: number): Promise<void> {
 
 // ---- expect evaluation (shared by `expect` and `wait until api`) ----------
 
-async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx, config: ResolvedConfig): Promise<MatchOutcome> {
+async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, config: ResolvedConfig): Promise<MatchOutcome> {
+  // `request connects`/`fails` (SPEC §6.2.2, PLAN decision 18) judges the connection attempt
+  // itself, not the response — bypasses `resolveSubject`/`evalMatcher` entirely, the same way
+  // `matchesSchema` below bypasses `evalMatcher` for its own different reason.
+  if (step.subject.type === 'RequestSubject') return evalRequestMatcher(step.matcher, connectionError, ctx);
   if (step.quantifier) return evaluateQuantified(step, response, ctx);
   const { value, label } = resolveSubject(step.subject, response);
   // `matches schema` (SPEC, PLAN decision 102a, enterprise arc cluster 3) fetches an external
@@ -1193,6 +1251,12 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
       for (const seg of subject.path) value = navigate(value, seg, pathLabel(subject.path));
       return { value, label: 'body' + pathLabel(subject.path) };
     }
+    case 'RequestSubject':
+      // `evaluateExpect` bypasses `resolveSubject` entirely for a `RequestSubject` (same as it
+      // already does for `matchesSchema`) and dispatches to `evalRequestMatcher` instead — reached
+      // here only for a use `checkRequestAssertions` doesn't (yet) statically forbid, e.g.
+      // `capture request as x` (SPEC §6.2.2, decision 18: `request` carries no value to capture).
+      throw new RuntimeError('`request` is not a capturable/comparable value — only `expect`/`check request connects`/`fails` (SPEC §6.2.2)');
   }
 }
 

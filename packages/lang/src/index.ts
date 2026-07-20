@@ -23,7 +23,7 @@ export {
   type CompletionKind,
   type CompletionContext,
 } from './parser.js';
-export { validateConfig, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables } from './checker.js';
+export { validateConfig, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables, checkRequestAssertions } from './checker.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
 export { getCompletionContext } from './completion.js';
 export { collectSemanticTokens, type SemanticToken, type SemanticTokenType } from './semanticTokens.js';

@@ -195,6 +195,89 @@ export function checkDataTables(program: Program): Diagnostic[] {
 }
 
 /**
+ * `expect`/`check request connects`/`fails` validity (SPEC §6.2.2, PLAN decision 18, enterprise
+ * arc cluster 5.5): the one piece of matcher↔subject compatibility checking that *is* static
+ * (everything else stays a runtime concern, per the module doc above), because this one has a
+ * structural reason a response-based assertion can never coexist with it — a connection-level
+ * failure means there is no response for `status`/`header`/`body`/`duration` to read.
+ *
+ *  - Inside a plain `test`/`action`/`hook` body: for each `api` step, the contiguous run of
+ *    `expect`/`check` steps immediately following it (until the next `api` step, `wait until
+ *    api`, or end of body) may not mix a `request` assertion with any other subject — flags every
+ *    non-`request` assertion in a run that contains at least one `request` assertion.
+ *  - Inside `wait until api`'s nested expects: a `request` assertion is rejected outright. `wait
+ *    until api` polls a response and re-issues the request on every failed attempt; it never
+ *    opts into catching a connection failure the way a plain `api` step does when paired with
+ *    `expect request connects`/`fails` (`runtime/src/interpreter.ts`), so a `request` assertion
+ *    there would either always report itself as unmet (nothing ever populates a connection error
+ *    for it to read) or, if a real connection failure did occur, crash the whole run exactly like
+ *    today's unconditional fail-fast — neither is the passing-green behavior this feature exists
+ *    to provide.
+ */
+export function checkRequestAssertions(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const walk = (steps: readonly Step[]): void => {
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]!;
+      if (step.type === 'WaitUntilApiStmt') {
+        for (const expect of step.expects) {
+          if (expect.subject.type === 'RequestSubject') {
+            diags.push({
+              code: Codes.REQUEST_ASSERTION_INVALID,
+              severity: 'error',
+              message: '`request` assertions are not supported inside `wait until api`',
+              span: expect.span,
+              hint: '`wait until api` polls a response and never opts into catching a connection failure — use a plain `api` step followed by `expect request connects`/`fails` instead',
+            });
+          }
+        }
+        continue;
+      }
+      if (step.type !== 'ApiStep') continue;
+      let j = i + 1;
+      const requestExpects: ExpectStmt[] = [];
+      const otherExpects: ExpectStmt[] = [];
+      while (j < steps.length && steps[j]!.type === 'ExpectStmt') {
+        const expect = steps[j] as ExpectStmt;
+        (expect.subject.type === 'RequestSubject' ? requestExpects : otherExpects).push(expect);
+        j++;
+      }
+      if (requestExpects.length > 0 && otherExpects.length > 0) {
+        for (const expect of otherExpects) {
+          diags.push({
+            code: Codes.REQUEST_ASSERTION_INVALID,
+            severity: 'error',
+            message: `\`expect ${subjectKeyword(expect.subject)}\` can't be combined with \`request connects\`/\`fails\` on the same request`,
+            span: expect.span,
+            hint: 'there is no response to check once a connection-level failure is being asserted on — move this assertion to a separate `api` call',
+          });
+        }
+      }
+    }
+  };
+  for (const test of program.tests) walk(test.body);
+  for (const action of program.actions) walk(action.body);
+  for (const hook of program.hooks) walk(hook.body);
+  return diags;
+}
+
+function subjectKeyword(subject: Subject): string {
+  switch (subject.type) {
+    case 'StatusSubject':
+      return 'status';
+    case 'DurationSubject':
+      return 'duration';
+    case 'HeaderSubject':
+      return 'header';
+    case 'BodySubject':
+    case 'BodyTextSubject':
+      return 'body';
+    case 'RequestSubject':
+      return 'request';
+  }
+}
+
+/**
  * Conservative unknown-`{var}` pass (decision 57): flags a bare-identifier value (`VarRef`) or a
  * `{ref}` interpolation whose *base* name is provably never bound anywhere reachable in its scope
  * — a `let`, a `capture`, an action's own parameter, or (for a test with an *inline* `with each`

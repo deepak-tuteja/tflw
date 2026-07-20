@@ -537,7 +537,8 @@ A nested object/array literal's first key may be either a bare ident or a **quot
 
 ### 5.3 Response subjects (what `expect` can see after an api step)
 
-`status`, `header "<name>"`, `body.<path>` (JSON), `body text` (non-JSON), `duration`.
+`status`, `header "<name>"`, `body.<path>` (JSON), `body text` (non-JSON), `duration`, `request`
+(§6.2.2 — the connection attempt itself, not the response).
 
 - `body.<path>`: dot/index addressing — `body.items[0].price`. On a non-JSON response, a
   JSON-path expect raises a teaching error pointing at `body text` (P#33).
@@ -547,6 +548,10 @@ A nested object/array literal's first key may be either a bare ident or a **quot
   `expect body text contains "healthy"`. Implemented end-to-end in M2.65 (PLAN decision 51):
   lexer/parser accept `body text` as a subject (`BodyTextSubject` AST node), the interpreter
   resolves it to `response.bodyText`, and it works with `expect`/`check`/`capture` alike.
+- `request`: not response-scoped like the others — judges whether the connection attempt itself
+  succeeded (`connects`) or failed (`fails`) before any response existed. Only meaningful with
+  those two matchers; not capturable, and can't be combined with a response-based assertion on the
+  same request (§6.2.2).
 
 ### 5.4 `capture` (P#7)
 
@@ -623,6 +628,8 @@ below is ✅ shipped.
 | `has count N` | arrays, UI lists | `expect body.items has count 3` |
 | `has value` | UI fields | `expect field "Email" has value "a@b.c"` |
 | `is visible/hidden/enabled/disabled/checked` | UI locators | `expect button "Pay" is enabled` |
+| `connects` | `request` | `expect request connects` |
+| `fails` / `fails matching "<regex>"` | `request` | `expect request fails matching "certificate"` |
 <!-- GENERATED:matchers:end -->
 
 Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
@@ -658,6 +665,54 @@ expect body matches schema "ProductResponseDto" from "/openapi.json"
   loudly rather than silently doing something surprising.
 - `not matches schema ...` asserts the subject does **not** conform — useful for a deliberately-
   drifted-endpoint regression check.
+
+### 6.2.2 Connection-failure assertions — `request connects`/`fails` (PLAN decision 18,
+enterprise arc cluster 5.5)
+
+Before this, a request that failed *before* any HTTP response existed — a TLS handshake rejection
+(bad/missing client cert against an mTLS-requiring listener), DNS failure, `ECONNREFUSED`, an
+`allow hosts` block (§3.7) — always crashed the whole test fail-fast, with no way to write a
+genuinely passing regression test proving a guardrail actually triggers. `request` is a subject
+carrying no response data of its own; `connects`/`fails` are bare, argument-less matchers judging
+the connection attempt itself, the same state-matcher shape `is visible`/`is hidden` use for the UI
+half (§9.4) — chosen over a `fail`-style keyword specifically so the positive/negative pair reads
+as natural-language opposites (`connects`/`fails`), the DSL's founding design philosophy, rather
+than forcing every negative case through `not connects`:
+
+```
+api GET /health
+expect request fails matching "certificate"
+```
+
+- **Opt-in, not a mode switch**: only an `api` step immediately followed by a `request`-subject
+  `expect`/`check` opts into catching a connection-level error instead of the ordinary fail-fast
+  crash — every other `api` step anywhere, in either this repo or any existing suite, is completely
+  unaffected (P#16's fail-fast default still holds everywhere else).
+- **`fails matching "<regex>"`** (optional): same regex semantics as `matches "<regex>"` elsewhere,
+  tested against the same teaching-error text §3.5 already unwraps for a connection failure
+  (`insecure true`/`NODE_EXTRA_CA_CERTS` hints, `ECONNREFUSED`, `ENOTFOUND` — confirm the exact
+  substring empirically per server/cause rather than guessing). A bare `fails` (no `matching`)
+  passes on any connection-level failure, whatever its cause.
+- **`not` still composes generically** (P#15's existing rule already covers this) —
+  `expect request not connects` behaves exactly like a bare `expect request fails`, and vice versa;
+  no special-cased negation logic, just the same "`not` negates any matcher" rule every other
+  matcher already follows.
+- **Not capturable**: `capture request as x` is a runtime error — there's no value here, only a
+  pass/fail judgment on whether a connection was established.
+- **Can't mix with a response-based assertion on the same request** — `expect status`/`header`/
+  `body`/`duration` immediately after an `api` step that also carries a `request` assertion is a
+  checker error (`TF031`): once a connection-level failure is being asserted on, there is no
+  response for those to evaluate. Two separate `api` calls in the same test each get their own
+  independent, unmixed assertion group.
+- **Not supported inside `wait until api`** (`TF031`) — polling re-issues the request until its
+  nested expects pass or the wait deadline elapses; it never opts into catching a connection
+  failure the way a plain `api` step does, so a `request` assertion there would be structurally
+  meaningless (either silently never satisfied, or a real failure still crashes the poll loop
+  exactly like today, unchanged).
+- Verifying that a report/artifact actually *shows* a masked/redacted value is a separate, unrelated
+  concern from this — asserting on the tool's own output isn't a request/response judgment and
+  doesn't fit this (or any) DSL assertion; that stays an out-of-band concern for whatever consumes
+  `report.html`/`junit.xml` directly.
 
 ### 6.3 Array quantifiers (P#14)
 

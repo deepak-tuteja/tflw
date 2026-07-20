@@ -99,6 +99,21 @@ test('`is greater than` on a non-number subject is a clear runtime error', async
   await server.close();
 });
 
+test('`connects`/`fails` on a non-`request` subject is a clear runtime error naming the right subject, not the UI-only message (decision 18)', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+
+  const source = `test "boom"
+  api GET /health
+  expect status connects
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /matcher `connects` is only valid on a `request` subject/);
+
+  await server.close();
+});
+
 test('matcher.ts describes a non-number type using the same shared `describe()` as eval.ts (decision 71)', () => {
   // Before decision 71, matcher.ts maintained its own copy of this helper and it had drifted —
   // missing the `Date` case, so a matcher error on a Date-typed actual rendered as "object" instead
