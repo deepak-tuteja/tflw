@@ -1149,13 +1149,16 @@ contributions open (P#80).
 
 ## 17. Diagnostic codes (TF0xx) ✅
 
-Every diagnostic carries a stable code (`packages/lang/src/diagnostic.ts`'s `Codes` table — the
-single source of truth this appendix mirrors). **Stability rule (P#77):** a shipped code is never
+Every diagnostic carries a stable code (`packages/lang/src/diagnostic.ts`'s `Codes` table defines
+the constants; `packages/lang/src/spec-data.ts`'s `DIAGNOSTICS` manifest is the single source of
+truth for what each one *means* — this appendix, the docs-site Reference page, and LSP hover all
+generate from it, decision 20). **Stability rule (P#77):** a shipped code is never
 renumbered or reused; a retired diagnostic leaves its number retired, and a new diagnostic always
 gets a new one. Codes print in every `error[TFxxx]: …` line, so they're what a CI grep filter, a
 bug report, or a search engine query anchors on — this appendix exists so that lookup doesn't
 require reading the source.
 
+<!-- GENERATED:diagnostics:start -->
 | Code | Meaning | Example |
 |---|---|---|
 | `TF001` | Lexer: a character that cannot begin any token. | `let y = $oops` → `unexpected character "$"` |
@@ -1179,6 +1182,8 @@ require reading the source.
 | `TF028` | Checker: a `test … as <session>[, <session>...]` name not declared by any `session` block — one diagnostic per unknown name. | `test "…" as ghost` with no `session ghost` declared |
 | `TF029` | Checker (config): a duplicate `session` name. | two `session admin` blocks in one `tflw.config` |
 | `TF030` | Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that's *definitely* unreachable, never one that merely might be. | `capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId` |
+| `TF031` | Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (decision 18). | `expect request connects` followed by `expect status equals 200` on the same `api` step → `can't be combined with `request connects`/`fails` on the same request` |
+<!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —
 they were never assigned to a diagnostic, so they stay open for a genuinely new one rather than

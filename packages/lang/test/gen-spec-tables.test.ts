@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-expect-error — plain .mjs script, no type declarations
-import { renderMatcherTable, renderGeneratorTable } from '../scripts/gen-spec-tables.mjs';
+import { renderMatcherTable, renderGeneratorTable, renderDiagnosticsTable } from '../scripts/gen-spec-tables.mjs';
 
 test('renderMatcherTable emits a header row, separator, and one row per entry in order', () => {
   const table = renderMatcherTable([
@@ -36,4 +36,21 @@ test('renderGeneratorTable emits a header row, separator, and one row per entry 
   assert.equal(lines[1], '|---|---|---|---|');
   assert.equal(lines[2], '| unique | `unique email` | collision-safe | `unique email` |');
   assert.equal(lines[3], '| random | `random uuid` | collisions allowed | `random uuid` |');
+});
+
+test('renderDiagnosticsTable emits a header row, separator, and one row per entry with the code backtick-wrapped', () => {
+  const table = renderDiagnosticsTable([
+    { code: 'TF001', meaning: 'Lexer: a character that cannot begin any token.', example: '`let y = $oops` → `unexpected character "$"`' },
+    { code: 'TF031', meaning: 'Checker: a `request` assertion combined with a response-based one.', example: '`expect request connects` + `expect status equals 200`' },
+  ]);
+  const lines = table.split('\n');
+  assert.equal(lines[0], '| Code | Meaning | Example |');
+  assert.equal(lines[1], '|---|---|---|');
+  assert.equal(lines[2], '| `TF001` | Lexer: a character that cannot begin any token. | `let y = $oops` → `unexpected character "$"` |');
+  assert.equal(lines[3], '| `TF031` | Checker: a `request` assertion combined with a response-based one. | `expect request connects` + `expect status equals 200` |');
+});
+
+test('renderDiagnosticsTable renders an empty array as just the header + separator', () => {
+  const table = renderDiagnosticsTable([]);
+  assert.equal(table, '| Code | Meaning | Example |\n|---|---|---|');
 });

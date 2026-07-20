@@ -146,7 +146,7 @@ export function startServer(options: StartServerOptions = {}): void {
     const offset = doc.offsetAt(params.position);
     const root = analysis.program ?? analysis.config;
     if (!root) return null;
-    const result = getHover(root, analysis.symbols, offset);
+    const result = getHover(root, analysis.symbols, offset, analysis.diagnostics);
     if (!result) return null;
     return { contents: { kind: 'markdown', value: result.contents }, range: toLspRange(result.span) };
   });

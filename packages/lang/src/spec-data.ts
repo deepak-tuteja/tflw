@@ -66,6 +66,43 @@ export interface CliFlagEntry {
   readonly effect: string;
 }
 
+/** One row of SPEC §17's diagnostic codes table (decision 20.3, docs-site polish cluster 9) — the
+ * single source of truth for what a `TF0xx` code *means* going forward. `packages/lang/src/
+ * diagnostic.ts`'s `Codes` object stays the source of the code constants themselves (and every
+ * per-occurrence `message`/`hint` stays call-site-specific, generated at each checker/parser call
+ * site — this manifest is only the canonical, code-general explanation, not a replacement for
+ * either). `meaning`/`example` are markdown-ready cell text. */
+export interface DiagnosticEntry {
+  readonly code: string;
+  readonly meaning: string;
+  readonly example: string;
+}
+
+export const DIAGNOSTICS: readonly DiagnosticEntry[] = [
+  { code: 'TF001', meaning: 'Lexer: a character that cannot begin any token.', example: '`let y = $oops` → `unexpected character "$"`' },
+  { code: 'TF002', meaning: 'Lexer: a string literal has no closing quote before end of line.', example: '`test "open string`' },
+  { code: 'TF003', meaning: 'Lexer: indentation does not line up with any enclosing block.', example: 'a dedent that lands between two open indent levels' },
+  { code: 'TF010', meaning: 'Parser: a token appeared where the grammar didn\'t allow it (the catch-all "unexpected token" code — covers many distinct shapes: a missing path after `api GET`, a multi-word call missing its parens, a malformed table row cell count, etc.).', example: '`api GET` (no path) → `expected a path like `/orders`, found end of line`' },
+  { code: 'TF011', meaning: 'Parser: an unrecognised statement keyword where a step was expected.', example: '`expct status equals 200` → `did you mean `expect`?`' },
+  { code: 'TF012', meaning: 'Parser: an unknown HTTP method after `api`.', example: '`api FETCH /health` → `did you mean `PATCH`?`' },
+  { code: 'TF013', meaning: 'Parser: an unrecognised `expect`/`capture` subject.', example: '`expect statuss equals 200` → `did you mean `status`?`' },
+  { code: 'TF014', meaning: 'Parser: an unrecognised matcher after a subject.', example: '`expect status eq 200` → `did you mean` one of `equals, contains, matches, is …, has …`' },
+  { code: 'TF015', meaning: 'Parser: a `test`/`action`/hook block has no indented body.', example: 'a `before file` block with no steps under it' },
+  { code: 'TF016', meaning: 'Parser: top-level content that isn\'t a `test`/`action`/`import`/`use`/`before`/`after`.', example: 'a bare `expect …` line outside any block' },
+  { code: 'TF020', meaning: 'Parser (config): an unrecognised key inside a config block.', example: '`headr "Accept" is "…"` → `did you mean `header`?`' },
+  { code: 'TF021', meaning: 'Parser (config): a `test` appears in the declaration-only config dialect.', example: '`test "not allowed here"` inside `tflw.config`' },
+  { code: 'TF022', meaning: 'Parser (config): top-level config content that isn\'t `defaults`/`env`/`session`/`require`.', example: '`workers 3` at the top level of `tflw.config` (belongs inside a block)' },
+  { code: 'TF023', meaning: 'Parser (config): a duration with an unknown unit.', example: '`timeout step 5x` → `expected ms, s, or m`' },
+  { code: 'TF024', meaning: 'Checker (config): more than one `env` marked `default`, or a duplicate env name.', example: 'two `env … default` blocks in one `tflw.config`' },
+  { code: 'TF025', meaning: 'Checker (config): a key used in the wrong block.', example: '`web "…"` inside `defaults` (belongs in an `env` block)' },
+  { code: 'TF026', meaning: 'Checker: an `api <service>`/`wait until api <service>` name not declared in the active env — checked in test/action/hook bodies **and** inside `session` blocks (decision 66).', example: '`api billng POST /auth/login` → `did you mean `billing`?`' },
+  { code: 'TF027', meaning: 'Checker: a `{col}` reference not among an inline `with each` table\'s declared columns.', example: 'referencing `{prcie}` when the table\'s header column is `price`' },
+  { code: 'TF028', meaning: 'Checker: a `test … as <session>[, <session>...]` name not declared by any `session` block — one diagnostic per unknown name.', example: '`test "…" as ghost` with no `session ghost` declared' },
+  { code: 'TF029', meaning: 'Checker (config): a duplicate `session` name.', example: 'two `session admin` blocks in one `tflw.config`' },
+  { code: 'TF030', meaning: 'Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that\'s *definitely* unreachable, never one that merely might be.', example: '`capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId`' },
+  { code: 'TF031', meaning: 'Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (decision 18).', example: '`expect request connects` followed by `expect status equals 200` on the same `api` step → `can\'t be combined with `request connects`/`fails` on the same request`' },
+] as const;
+
 export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--env <name>`', command: 'run', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one — e.g. run the same suite against `staging`' },
   { flag: '`--tag <name>[,<name>...]`', command: 'run', effect: 'only runs tests carrying any of the listed `@name`s (comma-separated OR; combines with `--only` as AND)' },

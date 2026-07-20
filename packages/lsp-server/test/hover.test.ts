@@ -60,6 +60,30 @@ test('getHover: `connects`/`fails` matchers surface their own spec-data.ts entri
   assert.match(failsResult!.contents, /`fails`/);
 });
 
+test('getHover: an active diagnostic at the offset shows its live message + hint plus the canonical DIAGNOSTICS meaning/example (decision 20.6), taking priority over an overlapping matcher hover', () => {
+  const source = `test "ok"\n  api GET /health\n  expect status eq 200\n`;
+  const { program, diagnostics } = parseSource(source);
+  const table = collectSymbols(program, source);
+  const diag = diagnostics.find((d) => d.code === 'TF014')!;
+  assert.ok(diag, 'expected a TF014 unrecognised-matcher diagnostic in this fixture');
+  const result = getHover(program, table, diag.span.start.offset + 1, diagnostics);
+  assert.ok(result);
+  assert.match(result!.contents, /error\[TF014\]/);
+  assert.match(result!.contents, /unknown matcher `eq`/);
+  assert.match(result!.contents, /expected one of: equals, contains, matches/);
+  assert.match(result!.contents, /unrecognised matcher/);
+  assert.match(result!.contents, /Example:/);
+});
+
+test('getHover: no diagnostics list falls through to normal matcher/symbol hover unchanged', () => {
+  const source = `test "ok"\n  api GET /health\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+  const result = getHover(program, table, source.indexOf('equals') + 1);
+  assert.ok(result);
+  assert.match(result!.contents, /any value/);
+});
+
 test('getHover: null when nothing is at the offset', () => {
   const source = `test "ok"\n  api GET /health\n  expect status equals 200\n`;
   const { program } = parseSource(source);

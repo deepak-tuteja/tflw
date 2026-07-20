@@ -30,56 +30,32 @@ export class TflwSyntaxError extends Error {
   }
 }
 
-/** Diagnostic codes used by the M0 lexer/parser. Kept in one place so they stay unique + documented. */
+/** Diagnostic codes used by the M0 lexer/parser. Kept in one place so they stay unique. Meanings:
+ * see `DIAGNOSTICS` in `spec-data.ts` (decision 20.7, docs-site polish cluster 9) — the single
+ * source of truth for what each code means, feeding SPEC.md §17, the docs-site Reference page,
+ * and LSP hover. */
 export const Codes = {
-  /** Lexer: a character that cannot begin any token. */
   UNEXPECTED_CHAR: 'TF001',
-  /** Lexer: string literal without a closing quote before end of line. */
   UNTERMINATED_STRING: 'TF002',
-  /** Lexer: indentation that does not line up with any open block. */
   INCONSISTENT_INDENT: 'TF003',
-  /** Parser: a token appeared where the grammar did not allow it. */
   UNEXPECTED_TOKEN: 'TF010',
-  /** Parser: a statement keyword was expected to start a step. */
   UNKNOWN_STATEMENT: 'TF011',
-  /** Parser: an unknown HTTP method after `api`. */
   UNKNOWN_METHOD: 'TF012',
-  /** Parser: an unrecognised `expect`/`capture` subject. */
   UNKNOWN_SUBJECT: 'TF013',
-  /** Parser: an unrecognised matcher after a subject. */
   UNKNOWN_MATCHER: 'TF014',
-  /** Parser: a `test` (or other block) had no indented body. */
   EMPTY_BLOCK: 'TF015',
-  /** Parser: top-level content that is not a `test`. */
   UNEXPECTED_TOP_LEVEL: 'TF016',
-  /** Parser (config): an unrecognised config key inside a block. */
   CONFIG_UNKNOWN_KEY: 'TF020',
-  /** Parser (config): a `test` appeared in the declaration-only config dialect. */
   CONFIG_TEST_NOT_ALLOWED: 'TF021',
-  /** Parser (config): top-level content that is not defaults/env/require. */
   CONFIG_UNEXPECTED: 'TF022',
-  /** Parser (config): a duration with an unknown unit (expected ms/s/m). */
   UNKNOWN_DURATION_UNIT: 'TF023',
-  /** Checker (config): more than one `env` marked `default`, or a duplicate env name. */
   CONFIG_ENV_CONFLICT: 'TF024',
-  /** Checker (config): a key used in the wrong block (e.g. `web` in `defaults`). */
   CONFIG_KEY_CONTEXT: 'TF025',
-  /** Checker: an `api <service>`/`wait until api <service>` name not declared in the active env (P#29). */
   UNKNOWN_SERVICE: 'TF026',
-  /** Checker: a `{col}` reference not among an inline `with each` table's declared columns (SPEC §4.3). */
   UNKNOWN_TABLE_COLUMN: 'TF027',
-  /** Checker: a `test … as <session>` name not declared by any `session` block (SPEC §3.3, P#42). */
   UNKNOWN_SESSION: 'TF028',
-  /** Checker (config): duplicate `session` name. */
   CONFIG_SESSION_CONFLICT: 'TF029',
-  /** Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its
-   * scope (`let`/`capture`/action param/inline table column) — conservative, decision 57. */
   UNKNOWN_VARIABLE: 'TF030',
-  /** Checker: `expect`/`check request connects`/`fails` combined with a response-based assertion
-   * (status/header/body/duration) on the same request — there's no response for those to
-   * evaluate once a connection-level failure is being asserted on — or used at all inside `wait
-   * until api`, which doesn't opt into catching a connection failure (PLAN decision 18,
-   * enterprise arc cluster 5.5). */
   REQUEST_ASSERTION_INVALID: 'TF031',
 } as const;
 

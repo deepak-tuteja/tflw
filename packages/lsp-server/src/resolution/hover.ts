@@ -1,9 +1,13 @@
 // Hover (PLAN_M13_LSP.md Phase 2, decision 17.7): a pure function producing markdown for whatever
 // AST node / symbol sits at an offset. Matcher and generator hover text is sourced from
 // `@tflw/lang`'s `spec-data.ts` (`MATCHERS`/`GENERATORS`, the same manifest the docs site and
-// `gen-spec-tables.mjs` already render from — single source of truth, decision 17.7).
+// `gen-spec-tables.mjs` already render from — single source of truth, decision 17.7). Hovering an
+// active diagnostic squiggle additionally surfaces `DIAGNOSTICS`' canonical meaning + example
+// alongside the diagnostic's own live message/hint (decision 20.6, docs-site polish cluster 9) —
+// takes priority over matcher/generator/symbol hover, since "why is this red" is the most
+// relevant thing to show when there's an error right here.
 
-import { GENERATORS, MATCHERS, type Matcher, type MatcherName, type Node, type SymbolKind, type SymbolTable } from '@tflw/lang';
+import { DIAGNOSTICS, GENERATORS, MATCHERS, type Diagnostic, type Matcher, type MatcherName, type Node, type SymbolKind, type SymbolTable } from '@tflw/lang';
 import { findNodeAtOffset, spanContains } from './findNodeAtOffset.js';
 import type { Span } from '@tflw/lang';
 
@@ -71,8 +75,21 @@ const SYMBOL_KIND_LABEL: Record<SymbolKind, string> = {
  * `root` accepts either dialect's AST root (`Program` or `ConfigFile`, both `Node`s) — Phase 3
  * needs hover to also work over `tflw.config` buffers (decision A), and this function never reads
  * a `Program`-specific field, only threads it through to `findNodeAtOffset`'s generic `Node` walk.
+ *
+ * `diagnostics` (default none) is the document's current diagnostic list — if `offset` falls
+ * inside one, its live `message`/`hint` plus `DIAGNOSTICS`' canonical meaning/example win over
+ * everything else below (decision 20.6).
  */
-export function getHover(root: Node, table: SymbolTable, offset: number): HoverResult | null {
+export function getHover(root: Node, table: SymbolTable, offset: number, diagnostics: readonly Diagnostic[] = []): HoverResult | null {
+  const diag = diagnostics.find((d) => spanContains(d.span, offset));
+  if (diag) {
+    const entry = DIAGNOSTICS.find((e) => e.code === diag.code);
+    const parts = [`**${diag.severity}[${diag.code}]**: ${diag.message}`];
+    if (diag.hint) parts.push(`= help: ${diag.hint}`);
+    if (entry) parts.push(`---\n\n${entry.meaning}\n\nExample: ${entry.example}`);
+    return { contents: parts.join('\n\n'), span: diag.span };
+  }
+
   const path = findNodeAtOffset(root, offset);
   for (let i = path.length - 1; i >= 0; i--) {
     const node = path[i]!;

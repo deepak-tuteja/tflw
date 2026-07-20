@@ -52,6 +52,7 @@ export default defineConfig({
             { text: 'Matchers', link: '/reference/matchers' },
             { text: 'Generators', link: '/reference/generators' },
             { text: 'CLI flags', link: '/reference/cli' },
+            { text: 'Diagnostic codes', link: '/reference/diagnostics' },
           ],
         },
       ],

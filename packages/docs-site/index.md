@@ -26,3 +26,19 @@ features:
   - title: Real editor support
     details: A real Language Server Protocol implementation (tflw lsp) powers the VS Code extension — diagnostics, hover, go-to-definition, autocomplete, rename, signature help, and semantic highlighting, live as you type.
 ---
+
+## Why tflw
+
+Compared to writing API tests by hand with `fetch` + a general-purpose test runner:
+
+- **Reporting is built in, not bolted on.** Every step is an event by construction — `report.html`
+  and `junit.xml` fall out of the same run, with secrets redacted everywhere automatically. No
+  logging or capture code to write yourself.
+- **Errors read like a compiler's, not a stack trace.** Source line + caret + "did you mean",
+  stable `TF0xx` codes you can look up, a conservative unknown-variable checker pass.
+- **One language, not several tools glued together.** Sessions, retries, generated test data, and
+  data-driven tables are grammar, not helper functions you maintain per project.
+
+Compared to other dedicated tools: if you already have **Karate** working for your team, its
+Java/Gherkin ecosystem and maturity are a real reason to stay. **Hurl**'s single-file, no-runtime
+`.hurl` scripts are a better fit for simple curl-replacement smoke checks than a full DSL.
