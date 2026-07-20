@@ -14,8 +14,9 @@ doubles as the single source of truth for what's actually built vs. still ahead.
 Three things tflw does that a general-purpose language + an HTTP client doesn't give you for free:
 
 - **Reporting-first runtime.** Every step is an event, by construction — a self-contained
-  `report.html` (full request/response detail) and `junit.xml` fall out of the same event stream
-  `tflw run` already emits, with secrets redacted everywhere automatically. Nothing to wire up.
+  `report.html` (full request/response detail), `junit.xml`, and `results.json` all fall out of
+  the same event stream `tflw run` already emits, with secrets redacted everywhere automatically.
+  Nothing to wire up.
 - **Teaching-quality diagnostics.** Source line + caret + "did you mean", stable `TF0xx` codes
   (§17), a conservative unknown-variable checker pass — errors read like a compiler's, not a stack
   trace.
@@ -40,7 +41,7 @@ the rest is the implementation and the evidence behind the numbers above.
 |---|---|
 | `packages/lang` | Lexer, parser, and checker — the `.tflw` grammar. Grammar reference: [`GRAMMAR.md`](packages/lang/GRAMMAR.md) |
 | `packages/runtime` | The interpreter: HTTP execution, sessions, hooks, retries, data tables, generators |
-| `packages/reporter` | Turns the runtime's event stream into `report.html` and `junit.xml` |
+| `packages/reporter` | Turns the runtime's event stream into `report.html`, `junit.xml`, and `results.json` (+ `events.ndjson` under `--format ndjson`) |
 | `packages/cli` | The `tflw` command itself — what `npm i -D tflw` installs. Own [README](packages/cli/README.md) (what ships in the npm package) |
 | `packages/vscode` | VS Code extension: `.tflw` syntax highlighting |
 | `packages/docs-site` | [The documentation site](https://deepak-tuteja.github.io/tflw/) (VitePress), deployed to GitHub Pages |
@@ -63,9 +64,9 @@ npx tflw run    # runs it — green in seconds
 ```
 
 `tflw init` scaffolds a health-check test against `http://localhost:3001` — point `tflw.config`'s
-`api` line at your own service and edit `example.tflw` from there. A run writes
-`report/report.html` (open it in a browser — full request/response detail, redacted secrets) and
-`report/junit.xml` (for CI).
+`api` line at your own service and edit `example.tflw` from there. A run always writes
+`report/report.html` (open it in a browser — full request/response detail, redacted secrets),
+`report/junit.xml` (for CI), and `report/results.json` (the same redacted report as JSON).
 
 ```
 test "health check"
@@ -83,16 +84,18 @@ JS/TS escape hatch, and the full CLI/matcher/generator reference, see
 
 `tflw check` validates every file (parse + the full checker pipeline) with no execution and no
 secrets required — a fast pre-commit/CI lint step. `tflw run` exits non-zero on any test failure
-and writes `report/junit.xml`, so it drops into any CI runner as a plain command — no plugin
-needed. See [CI, reporting & safety](https://deepak-tuteja.github.io/tflw/guide/ci-and-reporting)
+and writes `report/junit.xml` + `report/results.json`, so it drops into any CI runner as a plain
+command — no plugin needed. `--bail` stops at the first failure; `--failed` re-runs just what
+failed last time. See [CI, reporting & safety](https://deepak-tuteja.github.io/tflw/guide/ci-and-reporting)
 for a worked GitHub Actions example and the redaction/evidence-level/host-allowlist safety
 features.
 
 ## Status & roadmap
 
 `v0.1.0` is shipped: config-as-tflw, sessions, capture-chaining, hooks/retry/tags/data-tables,
-actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, parallel workers, and
-a self-contained `report.html` + `junit.xml`. **Next: `0.2.0`** adds the browser half (Playwright —
+actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, parallel workers, CI
+ergonomics (`--failed`/`--bail`/`--format ndjson`), and a self-contained `report.html` + `junit.xml`
++ `results.json`. **Next: `0.2.0`** adds the browser half (Playwright —
 `open`/`click`/`fill`, selectors, screenshots). See [SPEC.md](SPEC.md)'s per-section status badges
 for the full shipped-vs-planned breakdown, and [CHANGELOG.md](CHANGELOG.md) for released versions.
 

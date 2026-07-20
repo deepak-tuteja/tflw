@@ -35,10 +35,11 @@ PASS 1/1 passed · env local · seed 1486355565 · now 2026-07-20T19:09:07.104Z 
 report: report/report.html
 ```
 
-— one line per test, a summary tally, and the report path. It writes `report/report.html` (open it
-in a browser — full request/response detail, redacted secrets) and `report/junit.xml` (for CI). If
-a test fails instead, see [Running & debugging tests](/guide/debugging) for how to read the
-failure, isolate it, and reproduce it exactly.
+— one line per test, a summary tally, and the report path. It always writes `report/report.html`
+(open it in a browser — full request/response detail, redacted secrets), `report/junit.xml` (for
+CI), and `report/results.json` (the same redacted report as JSON, for scripting). If a test fails
+instead, see [Running & debugging tests](/guide/debugging) for how to read the failure, isolate
+it, and reproduce it exactly.
 
 ## Your first test
 

@@ -8,8 +8,9 @@ browser half (Playwright) lands in `0.2.0`.
 Three things tflw does that a general-purpose language + an HTTP client doesn't give you for free:
 
 - **Reporting-first runtime.** Every step is an event, by construction — a self-contained
-  `report.html` (full request/response detail) and `junit.xml` fall out of the same event stream
-  `tflw run` already emits, with secrets redacted everywhere automatically. Nothing to wire up.
+  `report.html` (full request/response detail), `junit.xml`, and `results.json` all fall out of
+  the same event stream `tflw run` already emits, with secrets redacted everywhere automatically.
+  Nothing to wire up.
 - **Teaching-quality diagnostics.** Source line + caret + "did you mean", stable `TF0xx` codes, a
   conservative unknown-variable checker pass — errors read like a compiler's, not a stack trace.
 - **One language, API today, browser next.** `0.2.0` adds UI steps to the same grammar, so a login
@@ -37,9 +38,9 @@ npx tflw run    # runs it — green in seconds
 ```
 
 `tflw init` scaffolds a health-check test against `http://localhost:3001` — point `tflw.config`'s
-`api` line at your own service and edit `example.tflw` from there. A run writes
-`report/report.html` (open it in a browser — full request/response detail, redacted secrets) and
-`report/junit.xml` (for CI).
+`api` line at your own service and edit `example.tflw` from there. A run always writes
+`report/report.html` (open it in a browser — full request/response detail, redacted secrets),
+`report/junit.xml` (for CI), and `report/results.json` (the same redacted report as JSON).
 
 ## Writing a test
 
@@ -165,9 +166,13 @@ Full worked examples (hooks, generators, CSV, CLI flag reference) are in the roo
 ## CLI
 
 ```
-tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--workers <n>] [--no-color]
-tflw check [files...] [--env <name>] [--no-color]
+tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>]
+         [--workers <n>] [--no-color] [--verbose] [--forbid-insecure] [--evidence <level>]
+         [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>]
+tflw check [files...] [--env <name>] [--no-color] [--format json]
 tflw init
+tflw docs [topic]
+tflw lsp
 tflw --version, -v
 tflw --help, -h
 ```
@@ -176,12 +181,19 @@ tflw --help, -h
 npx tflw run --env staging --workers 4 --seed 42 --now 2026-01-01T00:00:00.000Z --no-color
 ```
 
+Every run always writes `report/report.html`, `report/junit.xml`, and `report/results.json`
+(plus `report/.last-run.json` for `--failed` and `report/events.ndjson` under `--format ndjson`).
+See the [full CLI flags reference](https://deepak-tuteja.github.io/tflw/reference/cli) for what
+each flag does, or [Running & debugging tests](https://deepak-tuteja.github.io/tflw/guide/debugging)
+for a walkthrough.
+
 ## CI
 
 `tflw check` validates every file (parse + the full checker pipeline) with no execution and no
 secrets required — a fast pre-commit/CI lint step. `tflw run` exits non-zero on any test failure
-and writes `report/junit.xml`, so it drops into any CI runner as a plain command — no plugin
-needed.
+and writes `report/junit.xml` + `report/results.json`, so it drops into any CI runner as a plain
+command — no plugin needed. `--bail` stops at the first failure; `--failed` re-runs just what
+failed last time.
 
 ```yaml
 - uses: actions/setup-node@v4

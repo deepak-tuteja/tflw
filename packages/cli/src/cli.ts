@@ -45,7 +45,15 @@ import {
   type RunEvent,
   type ResolvedConfig,
 } from '@tflw/runtime';
-import { writeReport, writeJunitXml, renderCliSummary } from '@tflw/reporter';
+import {
+  writeReport,
+  writeJunitXml,
+  writeResultsJson,
+  writeLastRun,
+  readLastRun,
+  writeEventsNdjson,
+  renderCliSummary,
+} from '@tflw/reporter';
 import { startServer } from '@tflw/lsp-server';
 import { buildEnviron } from './env.js';
 import { DOCS_TOPICS } from './docs-data.generated.js';
@@ -128,6 +136,23 @@ interface RunArgs {
   /** Raw `--evidence` text, validated in `runCommand` against `EVIDENCE_LEVELS` (decision 101c) —
    * overrides `tflw.config`'s `evidence` key for this run only. */
   readonly evidenceRaw?: string | undefined;
+  /** `tflw run --failed` (PLAN decision 111, M17) — replay only the previous run's failing tests,
+   * read from `report/.last-run.json`. Composes with `--tag`/`--only` as AND, same as they
+   * already compose with each other. */
+  readonly failed: boolean;
+  /** `--bail` (PLAN decision 111, M17) — stop the run after the first failing test's final
+   * (post-retry) verdict. Under `--workers > 1`, stops the pool from pulling new files; files
+   * already in flight finish normally. */
+  readonly bail: boolean;
+  /** Raw `--format` text (PLAN decision 111, M17) — only `ndjson` is recognized for `run` (a
+   * separate feature from `check --format json`, see decision 111.4). */
+  readonly formatRaw?: string | undefined;
+  /** `--no-timestamps` (PLAN decision 111, M17) — timestamps are on by default; this opts out,
+   * symmetric to `--no-color`. */
+  readonly noTimestamps: boolean;
+  /** `--log-file <path>` (PLAN decision 111, M17) — duplicates console output to a file, always
+   * plain text (ANSI stripped) regardless of stdout's own color state. */
+  readonly logFile?: string | undefined;
 }
 
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
@@ -144,6 +169,11 @@ function parseRunArgs(argv: string[]): RunArgs {
   let verbose = false;
   let forbidInsecure = false;
   let evidenceRaw: string | undefined;
+  let failed = false;
+  let bail = false;
+  let formatRaw: string | undefined;
+  let noTimestamps = false;
+  let logFile: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = argv[++i];
@@ -163,6 +193,13 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--forbid-insecure') forbidInsecure = true;
     else if (a === '--evidence') evidenceRaw = argv[++i];
     else if (a.startsWith('--evidence=')) evidenceRaw = a.slice('--evidence='.length);
+    else if (a === '--failed') failed = true;
+    else if (a === '--bail') bail = true;
+    else if (a === '--format') formatRaw = argv[++i];
+    else if (a.startsWith('--format=')) formatRaw = a.slice('--format='.length);
+    else if (a === '--no-timestamps') noTimestamps = true;
+    else if (a === '--log-file') logFile = argv[++i];
+    else if (a.startsWith('--log-file=')) logFile = a.slice('--log-file='.length);
     else files.push(a);
   }
   const tagList = tagRaw
@@ -170,7 +207,24 @@ function parseRunArgs(argv: string[]): RunArgs {
     .map((t) => t.trim())
     .filter((t) => t.length > 0);
   const tags = tagList && tagList.length > 0 ? tagList : undefined;
-  return { files, env, seedRaw, nowRaw, tags, only, workersRaw, noColor, verbose, forbidInsecure, evidenceRaw };
+  return {
+    files,
+    env,
+    seedRaw,
+    nowRaw,
+    tags,
+    only,
+    workersRaw,
+    noColor,
+    verbose,
+    forbidInsecure,
+    evidenceRaw,
+    failed,
+    bail,
+    formatRaw,
+    noTimestamps,
+    logFile,
+  };
 }
 
 /** Parsed + checker-clean state shared by `tflw run` and `tflw check` (decision 75) — everything
@@ -282,6 +336,7 @@ async function runCommand(argv: string[]): Promise<number> {
   const args = parseRunArgs(argv);
   const color = args.noColor ? false : process.stdout.isTTY === true;
   const cwd = process.cwd();
+  const out = makeConsole(args.logFile);
 
   // 0. Validate numeric flags up front — a usage error, never a silent bad-value coercion (P#46).
   let seedArg: number | undefined;
@@ -316,6 +371,13 @@ async function runCommand(argv: string[]): Promise<number> {
     }
     evidenceArg = args.evidenceRaw as EvidenceLevel;
   }
+  // `--format ndjson` (decision 111/M17) — a separate feature from `check --format json` (decision
+  // 111.4), so `run` recognizes a different, single value.
+  if (args.formatRaw !== undefined && args.formatRaw !== 'ndjson') {
+    err(`unknown --format \`${args.formatRaw}\` — only \`ndjson\` is supported.`);
+    return EXIT_USAGE;
+  }
+  const ndjsonActive = args.formatRaw === 'ndjson';
 
   const loaded = await loadAndValidate(cwd, args.files, args.env, color);
   if (typeof loaded === 'number') return loaded;
@@ -354,22 +416,42 @@ async function runCommand(argv: string[]): Promise<number> {
   const now = resolveRunClock(nowArg).toISOString();
   const uniqueSeq = makeUniqueSeq();
 
-  // Apply `--tag`/`--only` filtering once, up front — a file with no matching test is dropped
-  // entirely; if *no* file anywhere has a match, that's a hard usage error, not a silent green CI
-  // (P#46). `--tag` itself is OR across its comma-separated list (decision 97: a test runs if it
-  // carries *any* listed tag); that OR-list then combines with `--only` as AND, same as before.
+  // `tflw run --failed` (decision 111/M17): replay only the previous run's failing tests. Read
+  // the prior state *before* this run's own write overwrites it. No state file, or a prior run
+  // with zero failures: fall back to a full run with a note, matching pytest's `--lf` default
+  // rather than erroring or silently running nothing (decision 111.2). Suppressed under
+  // `--format ndjson` so stdout stays pure JSON lines (decision 111.4).
+  let failedSet: Set<string> | undefined;
+  if (args.failed) {
+    const lastRun = await readLastRun(join(cwd, resolved.reportDir));
+    if (lastRun && lastRun.failed.length > 0) {
+      failedSet = new Set(lastRun.failed.map((f) => `${f.file}::${f.test}`));
+    } else if (!ndjsonActive) {
+      out.write(withTimestamps('no failed tests from the last run — running the full suite', !args.noTimestamps) + '\n');
+    }
+  }
+
+  // Apply `--tag`/`--only`/`--failed` filtering once, up front — a file with no matching test is
+  // dropped entirely; if *no* file anywhere has a match, that's a hard usage error, not a silent
+  // green CI (P#46). `--tag` itself is OR across its comma-separated list (decision 97: a test
+  // runs if it carries *any* listed tag); that OR-list then combines with `--only`/`--failed` as
+  // AND, same as `--tag`/`--only` already combined before this.
   const runnable = parsedFiles
-    .map(({ file, source, program: fileProgram }) => ({
-      file,
-      source,
-      program: {
-        ...fileProgram,
-        tests: fileProgram.tests
-          .filter((t) => !args.tags || args.tags.some((tag) => t.tags.includes(tag)))
-          .filter((t) => !args.only || t.name.value === args.only),
-      },
-    }))
-    .filter((f) => (!args.tags && !args.only) || f.program.tests.length > 0);
+    .map(({ file, source, program: fileProgram }) => {
+      const relFile = relative(cwd, file);
+      return {
+        file,
+        source,
+        program: {
+          ...fileProgram,
+          tests: fileProgram.tests
+            .filter((t) => !args.tags || args.tags.some((tag) => t.tags.includes(tag)))
+            .filter((t) => !args.only || t.name.value === args.only)
+            .filter((t) => !failedSet || failedSet.has(`${relFile}::${t.name.value}`)),
+        },
+      };
+    })
+    .filter((f) => (!args.tags && !args.only && !failedSet) || f.program.tests.length > 0);
   if (args.tags && runnable.length === 0) {
     const tagList = args.tags.map((t) => `\`${t}\``).join(', ');
     err(`no test anywhere carries ${args.tags.length > 1 ? 'any of the tags' : 'the tag'} ${tagList}.`);
@@ -377,6 +459,10 @@ async function runCommand(argv: string[]): Promise<number> {
   }
   if (args.only && runnable.length === 0) {
     err(`no test anywhere is named \`${args.only}\`.`);
+    return EXIT_USAGE;
+  }
+  if (failedSet && runnable.length === 0) {
+    err('none of the previously-failed tests were found in the current suite — did the files change since the last run?');
     return EXIT_USAGE;
   }
 
@@ -406,77 +492,103 @@ async function runCommand(argv: string[]): Promise<number> {
   }
 
   const workers = workersArg ?? resolved.workers;
+  const githubActions = process.env.GITHUB_ACTIONS === 'true';
+  const timestamps = !args.noTimestamps;
 
-  // Live console output (P#4/#5's event stream, consumed here — never the report's data source,
-  // decision 86): the shared ticker always runs now — a failing test's diff is surfaced live
-  // unconditionally (not gated on an interactive TTY or `--verbose`), while a passing test's tick
-  // line stays gated on `color`/`--verbose` so a plain CI/piped run stays exactly as terse as
-  // before on green suites (see `formatEvent`). `--verbose` additionally needs per-step lines,
-  // which under `--workers > 1` would interleave illegibly across concurrent files with no way to
-  // tell them apart (no file id on any `RunEvent`, and `runWithConcurrency` is a real in-process
-  // concurrent pool, not just sequential-looking async) — so in that combination each file gets
-  // its own buffered sink instead, flushed as one contiguous block once that file finishes, and
-  // the shared live sink is skipped entirely.
-  const useBufferedVerbose = args.verbose && workers > 1;
-  const sharedEmit = useBufferedVerbose ? undefined : liveEmit(color, args.verbose);
+  // Console output (P#4/#5's event stream, consumed here — never the report's data source,
+  // decision 86). `--format ndjson` (decision 111/M17) replaces all of this with a pure,
+  // file-tagged JSON-line stream instead of human text — safe to pipe straight into a log
+  // aggregator or `jq`, and needs no per-file buffering under `--workers > 1` since every line is
+  // self-contained (unlike human text, which can't otherwise be told apart across concurrent
+  // files — see `withFileTag`). Otherwise: the shared ticker always runs — a failing test's diff
+  // is surfaced live unconditionally (not gated on an interactive TTY or `--verbose`), while a
+  // passing test's tick line stays gated on `color`/`--verbose` so a plain CI/piped run stays
+  // exactly as terse as before on green suites (see `formatEvent`). `--verbose` additionally
+  // needs per-step lines, which under `--workers > 1` would interleave illegibly across
+  // concurrent files in the human renderer — so in that combination each file gets its own
+  // buffered sink instead, flushed as one contiguous block once that file finishes, and the
+  // shared live sink is skipped entirely.
+  const useBufferedVerbose = !ndjsonActive && args.verbose && workers > 1;
+  const sharedHumanEmit = !ndjsonActive && !useBufferedVerbose ? liveEmit(out, color, args.verbose, githubActions, timestamps) : undefined;
+  const ndjsonCollected: RunEvent[] = [];
+  const sharedNdjsonEmit = ndjsonActive ? ndjsonEmit(out, ndjsonCollected) : undefined;
 
-  const reports = await runWithConcurrency(runnable, workers, async ({ file, source, program }, i) => {
-    const buffered = useBufferedVerbose ? bufferedEmit(color, args.verbose) : undefined;
-    const fileEmit = buffered?.sink ?? sharedEmit;
-    try {
-      const { report } = await runProgram(program, resolved, {
-        source,
-        baseDir: dirname(file),
-        environ,
-        redactor,
-        sessionCache,
-        seed,
-        now,
-        uniqueSeq,
-        testIndexOffset: offsets[i]!,
-        sessionSpliceOwners,
-        ...(fileEmit ? { emit: fileEmit } : {}),
-      });
-      buffered?.flush();
-      // Stamp each test with the relative file it came from (report.html's per-file grouping,
-      // decision 92) — done here, once, after the fact, rather than threading a new `RunOptions`
-      // field through the whole interpreter, since `file` is a display concern only.
+  const reports = await runWithConcurrency(
+    runnable,
+    workers,
+    async ({ file, source, program }, i) => {
       const fileLabel = relative(cwd, file);
-      return { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) };
-    } catch (e) {
-      buffered?.flush();
-      // A runtime throw in this file (e.g. a bad `import`/`use` path) must never sink the whole
-      // run silently — other files' reports still get merged and written (P#46: "always write the
-      // report for tests that ran").
-      const message = e instanceof Error ? e.message : String(e);
-      const fileLabel = relative(cwd, file);
-      const crashed: RunReport = {
-        ok: false,
-        env: resolved.envName,
-        startedAt: new Date().toISOString(),
-        durationMs: 0,
-        total: 1,
-        passed: 0,
-        failed: 1,
-        tests: [{ name: `${fileLabel} (crashed)`, ok: false, durationMs: 0, steps: [], error: redactor.redact(message), file: fileLabel }],
-        seed,
-        now,
-        insecure: resolved.insecure,
-      };
-      return crashed;
-    }
-  });
+      const buffered = useBufferedVerbose ? bufferedEmit(out, color, args.verbose, githubActions, timestamps) : undefined;
+      const rawSink = buffered?.sink ?? sharedHumanEmit ?? sharedNdjsonEmit;
+      const fileEmit = rawSink ? withFileTag(rawSink, fileLabel) : undefined;
+      try {
+        const { report } = await runProgram(program, resolved, {
+          source,
+          baseDir: dirname(file),
+          environ,
+          redactor,
+          sessionCache,
+          seed,
+          now,
+          uniqueSeq,
+          testIndexOffset: offsets[i]!,
+          sessionSpliceOwners,
+          ...(fileEmit ? { emit: fileEmit } : {}),
+        });
+        buffered?.flush();
+        // Stamp each test with the relative file it came from (report.html's per-file grouping,
+        // decision 92) — done here, once, after the fact, rather than threading a new `RunOptions`
+        // field through the whole interpreter, since `file` is a display concern only.
+        return { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) };
+      } catch (e) {
+        buffered?.flush();
+        // A runtime throw in this file (e.g. a bad `import`/`use` path) must never sink the whole
+        // run silently — other files' reports still get merged and written (P#46: "always write
+        // the report for tests that ran").
+        const message = e instanceof Error ? e.message : String(e);
+        const crashed: RunReport = {
+          ok: false,
+          env: resolved.envName,
+          startedAt: new Date().toISOString(),
+          durationMs: 0,
+          total: 1,
+          passed: 0,
+          failed: 1,
+          tests: [{ name: `${fileLabel} (crashed)`, ok: false, durationMs: 0, steps: [], error: redactor.redact(message), file: fileLabel }],
+          seed,
+          now,
+          insecure: resolved.insecure,
+        };
+        return crashed;
+      }
+    },
+    // `--bail` (decision 111/M17): stop pulling new files once any in-flight one reports a
+    // failure. `TestResult.ok` is already the final, post-retry verdict (same one `flaky` uses),
+    // so a mid-retry failing attempt never trips this early.
+    args.bail ? (r: RunReport) => !r.ok : undefined,
+  );
 
-  // 6. Merge reports, write report.html + junit.xml, print the summary. A second full-report
-  //    redaction pass (decision 56) here — on top of the one each `runProgram` call already did on
-  //    its own file's report — closes the *cross-file* half of the ordering window: a secret first
-  //    registered by one file (e.g. running later, or concurrently under `--workers`) can still
-  //    retroactively mask an earlier file's already-built report once everything is merged.
+  // 6. Merge reports, write report.html + junit.xml + results.json (decision 111.1) +
+  //    .last-run.json (decision 111.2, always overwritten — unconditional, not just under
+  //    --failed) + events.ndjson (decision 111.4, only under --format ndjson), print the summary.
+  //    A second full-report redaction pass (decision 56) here — on top of the one each
+  //    `runProgram` call already did on its own file's report — closes the *cross-file* half of
+  //    the ordering window: a secret first registered by one file (e.g. running later, or
+  //    concurrently under `--workers`) can still retroactively mask an earlier file's
+  //    already-built report once everything is merged.
   const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure), redactor);
-  const outPath = await writeReport(merged, join(cwd, resolved.reportDir));
-  await writeJunitXml(merged, join(cwd, resolved.reportDir));
-  process.stdout.write('\n' + renderCliSummary(merged, color) + '\n');
-  process.stdout.write(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}\n`);
+  const reportDir = join(cwd, resolved.reportDir);
+  const outPath = await writeReport(merged, reportDir);
+  await writeJunitXml(merged, reportDir);
+  await writeResultsJson(merged, reportDir);
+  await writeLastRun(merged, reportDir);
+  if (ndjsonActive) await writeEventsNdjson(ndjsonCollected, reportDir);
+
+  if (!ndjsonActive) {
+    out.write(withTimestamps('\n' + renderCliSummary(merged, color), timestamps) + '\n');
+    out.write(withTimestamps(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}`, timestamps) + '\n');
+  }
+  await out.save();
 
   return merged.ok ? EXIT_OK : EXIT_FAIL;
 }
@@ -593,20 +705,35 @@ async function lspCommand(_argv: string[]): Promise<number> {
  * Run `items` with at most `limit` in flight at once, preserving each result at its original
  * index regardless of completion order (P#47: in-process promise pool, per-file granularity — a
  * file itself always runs sequentially inside, only *different* files run concurrently).
+ *
+ * `shouldBail`, when given, is checked after every result — once it returns `true` the pool stops
+ * *pulling new items*, but any file already claimed by a worker still runs to completion (PLAN
+ * decision 111/M17, `--bail` under `--workers > 1`: no hard-abort/cancellation-token plumbing into
+ * `runProgram`, just stop starting new work). Items never claimed are simply absent from the
+ * returned array, not `undefined` holes.
  */
-async function runWithConcurrency<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
+async function runWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+  shouldBail?: (result: R) => boolean,
+): Promise<R[]> {
+  const results: (R | undefined)[] = new Array(items.length);
   let next = 0;
+  let bailed = false;
   async function runNext(): Promise<void> {
     for (;;) {
+      if (bailed) return;
       const i = next++;
       if (i >= items.length) return;
-      results[i] = await worker(items[i]!, i);
+      const r = await worker(items[i]!, i);
+      results[i] = r;
+      if (shouldBail?.(r)) bailed = true;
     }
   }
   const poolSize = Math.max(1, Math.min(limit, items.length));
   await Promise.all(Array.from({ length: poolSize }, () => runNext()));
-  return results;
+  return results.filter((r): r is R => r !== undefined);
 }
 
 /** Combine per-file reports into one run report, in original file order regardless of the
@@ -650,15 +777,23 @@ function tick(color: boolean, ok: boolean): string {
  *
  * Verbose (`--verbose`): additionally prints a header line per test (`test:start`) and one
  * indented line per step, pass or fail (`step:end`), using the step's existing `detail`/
- * `durationMs` — no new computation. */
-function formatEvent(ev: RunEvent, color: boolean, verbose: boolean): string | undefined {
-  if (verbose && ev.type === 'test:start') return ev.name;
+ * `durationMs` — no new computation.
+ *
+ * `githubActions` (PLAN decision 111/M17): wraps a test's block in `::group::`/`::endgroup::` —
+ * only when `verbose` is also on, since non-verbose mode is already one line per test and folding
+ * a single line adds a click-to-expand around nothing worth folding (decision 111.8). Not a GitHub
+ * annotation (`::error::`) — pure log folding, a different mechanism from the "no GitHub
+ * annotations" scope boundary decision 7 already drew. */
+function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActions: boolean): string | undefined {
+  const grouping = verbose && githubActions;
+  if (verbose && ev.type === 'test:start') return grouping ? `::group::${ev.name}` : ev.name;
   if (verbose && ev.type === 'step:end') {
     const label = ev.step.detail ?? ev.step.kind;
     return `  ${tick(color, ev.step.ok)} ${label} (${ev.step.durationMs}ms)`;
   }
   if (ev.type === 'test:end') {
     const durSuffix = verbose ? ` (${ev.result.durationMs}ms)` : '';
+    const closeGroup = grouping ? '\n::endgroup::' : '';
     if (!ev.result.ok) {
       // Always surfaced, live, regardless of `--verbose`/TTY color — a failing test's diff
       // shouldn't require an interactive terminal or opening report.html to see (the CLI
@@ -667,42 +802,118 @@ function formatEvent(ev: RunEvent, color: boolean, verbose: boolean): string | u
       for (const step of ev.result.steps) {
         if (!step.ok && step.detail) lines.push(`    ${step.detail}`);
       }
-      return lines.join('\n');
+      return lines.join('\n') + closeGroup;
     }
     // A passing test's tick line is cosmetic — keep it gated on `color` (today's existing
     // interactive-only ticker) or `--verbose`, so a plain CI/piped green run stays exactly as
     // terse as before.
-    if (verbose || color) return `${tick(color, true)} ${ev.result.name}${durSuffix}`;
+    if (verbose || color) return `${tick(color, true)} ${ev.result.name}${durSuffix}${closeGroup}`;
     return undefined;
   }
   return undefined;
+}
+
+/** `HH:MM:SS.mmm` wall-clock — compact, easy to eyeball-correlate against another log stream open
+ * side by side (PLAN decision 111/M17). Not full ISO 8601: that only earns its noise when
+ * correlating against another *service's* structured logs, not a stated need here. */
+function timestamp(): string {
+  const d = new Date();
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+/** Prefixes every physical line of a (possibly multi-line, e.g. a failing test's block) console
+ * block with the same instant — the block corresponds to one event that happened once, so one
+ * timestamp captured for the whole block, not recomputed per line (PLAN decision 111/M17, on by
+ * default; `--no-timestamps` opts out, symmetric to `--no-color`). */
+function withTimestamps(block: string, enabled: boolean): string {
+  if (!enabled) return block;
+  const ts = timestamp();
+  // A blank spacer line (report.html summary's blank line before the final tally, or the leading
+  // `\n` before the "report:" line) gets no bare timestamp — there's no content to correlate.
+  return block
+    .split('\n')
+    .map((l) => (l.length === 0 ? l : `${ts} ${l}`))
+    .join('\n');
+}
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+/** `--log-file` always writes plain text regardless of stdout's own color state (PLAN decision
+ * 111/M17) — a log file with raw ANSI escape codes isn't readable in a plain editor/grep. */
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '');
+}
+
+/** Every piece of `tflw run`'s console output goes through this one write path so `--log-file`
+ * (PLAN decision 111/M17) can mirror it — always plain text, independent of what stdout itself is
+ * doing. Buffers the whole run's output in memory rather than streaming to the file: a run's
+ * console output is never large enough to justify a real file stream, and this keeps ordering
+ * trivially correct without a second I/O lifecycle to manage. */
+function makeConsole(logFile: string | undefined): { write: (text: string) => void; save: () => Promise<void> } {
+  const chunks: string[] = [];
+  return {
+    write(text: string) {
+      process.stdout.write(text);
+      if (logFile !== undefined) chunks.push(stripAnsi(text));
+    },
+    async save() {
+      if (logFile !== undefined) await writeFile(logFile, chunks.join(''), 'utf8');
+    },
+  };
+}
+
+/** Tags every event a file's `runProgram` call emits with that file's relative path before it
+ * reaches any real sink (PLAN decision 111/M17) — `runProgram` itself stays unaware of `file`,
+ * same "display concern, stamped by the CLI" precedent as `TestResult.file`. */
+function withFileTag(sink: EventSink, file: string): EventSink {
+  return (ev) => sink({ ...ev, file });
 }
 
 /** The default live ticker: writes straight to stdout as events arrive. Safe to share across every
  * concurrently-running file when `--verbose` is off (only `test:end` prints, and today's existing
  * cross-file interleaving of those lines is pre-existing, unchanged behavior) — but never used for
  * verbose output under `--workers > 1`, see `bufferedEmit` below. */
-function liveEmit(color: boolean, verbose: boolean): EventSink {
+function liveEmit(out: { write: (text: string) => void }, color: boolean, verbose: boolean, githubActions: boolean, timestamps: boolean): EventSink {
   return (ev) => {
-    const line = formatEvent(ev, color, verbose);
-    if (line !== undefined) process.stdout.write(line + '\n');
+    const line = formatEvent(ev, color, verbose, githubActions);
+    if (line !== undefined) out.write(withTimestamps(line, timestamps) + '\n');
   };
 }
 
 /** One buffered sink per concurrently-running file: collects its formatted lines instead of
  * writing them, so `flush()` (called once that file's `runProgram` resolves) prints them as a
  * single contiguous block — concurrent files' verbose step logs can never interleave line-by-line. */
-function bufferedEmit(color: boolean, verbose: boolean): { sink: EventSink; flush: () => void } {
+function bufferedEmit(
+  out: { write: (text: string) => void },
+  color: boolean,
+  verbose: boolean,
+  githubActions: boolean,
+  timestamps: boolean,
+): { sink: EventSink; flush: () => void } {
   const lines: string[] = [];
   const sink: EventSink = (ev) => {
-    const line = formatEvent(ev, color, verbose);
-    if (line !== undefined) lines.push(line);
+    const line = formatEvent(ev, color, verbose, githubActions);
+    if (line !== undefined) lines.push(withTimestamps(line, timestamps));
   };
   return {
     sink,
     flush: () => {
-      if (lines.length > 0) process.stdout.write(lines.join('\n') + '\n');
+      if (lines.length > 0) out.write(lines.join('\n') + '\n');
     },
+  };
+}
+
+/** `--format ndjson` (PLAN decision 111/M17): every `RunEvent` (already file-tagged), one JSON
+ * line per event, always full detail regardless of `--verbose` — "how much to show a human" and
+ * "what the machine event stream contains" are different concerns. Safe to share unbuffered across
+ * concurrent files unlike the human ticker: each line is self-contained, so interleaving across
+ * `--workers > 1` needs no special-casing the way verbose human text does. `collected` also feeds
+ * `report/events.ndjson` (decision 111.4 — a permanent artifact, not just a live stream). */
+function ndjsonEmit(out: { write: (text: string) => void }, collected: RunEvent[]): EventSink {
+  return (ev) => {
+    collected.push(ev);
+    out.write(JSON.stringify(ev) + '\n');
   };
 }
 
@@ -835,12 +1046,18 @@ function printUsage(): void {
       '',
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--workers <n>] [--no-color] [--verbose]',
+      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>]',
       '                                                      run .tflw tests (default: all under cwd)',
       '                                                      --now replays the exact run-clock instant',
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
       '                                                      --verbose prints one line per step, not just per test',
       '                                                      --only runs a single test by its exact declared name',
       '                                                      --tag a,b runs a test carrying any of the listed tags (OR)',
+      '                                                      --failed re-runs only the previous run\'s failing tests',
+      '                                                      --bail stops after the first failing test',
+      '                                                      --format ndjson streams the event log as JSON lines',
+      '                                                      --log-file <path> duplicates console output to a file (plain text)',
+      '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json}',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',

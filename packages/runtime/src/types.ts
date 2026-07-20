@@ -148,11 +148,17 @@ export interface RunReport {
 
 // ---- Event stream ----------------------------------------------------------
 
+// `file` is optional and unset by the interpreter itself — `runProgram` runs one file per call
+// and has no reason to know its own path (a display concern, same precedent as `TestResult.file`
+// below). The CLI tags it onto every event by wrapping the `EventSink` it passes in (PLAN decision
+// 111/M17) — needed so a machine consumer (`--format ndjson`) can tell concurrent files' events
+// apart under `--workers > 1`, the same ambiguity that already forces `--verbose` to buffer
+// per-file instead of interleaving (see `cli.ts`'s `bufferedEmit`).
 export type RunEvent =
-  | { readonly type: 'run:start'; readonly total: number; readonly env: string }
-  | { readonly type: 'test:start'; readonly name: string }
-  | { readonly type: 'step:end'; readonly test: string; readonly step: StepResult }
-  | { readonly type: 'test:end'; readonly result: TestResult }
-  | { readonly type: 'run:end'; readonly report: RunReport };
+  | { readonly type: 'run:start'; readonly total: number; readonly env: string; readonly file?: string }
+  | { readonly type: 'test:start'; readonly name: string; readonly file?: string }
+  | { readonly type: 'step:end'; readonly test: string; readonly step: StepResult; readonly file?: string }
+  | { readonly type: 'test:end'; readonly result: TestResult; readonly file?: string }
+  | { readonly type: 'run:end'; readonly report: RunReport; readonly file?: string };
 
 export type EventSink = (event: RunEvent) => void;

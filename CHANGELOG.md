@@ -84,6 +84,16 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   every other request keeps today's unconditional fail-fast); a `request` assertion can't be
   combined with a response-based one on the same request, and isn't supported inside `wait until
   api` (both checker errors, `TF031`).
+- CI ergonomics + console/log output: `report/results.json` (always written, the same redacted
+  run report as JSON, no flag) and `report/.last-run.json` (always overwritten, feeds `--failed`).
+  `tflw run --failed` re-runs only the previous run's failing tests; `--bail` stops after the
+  first failing test (in-flight files still finish under `--workers > 1`). `--format ndjson`
+  streams the event log as one JSON line per event (always file-tagged, full detail regardless of
+  `--verbose`) instead of human text, also written to `report/events.ndjson`. Console output now
+  gets an `HH:MM:SS.mmm` timestamp prefix by default (`--no-timestamps` opts out); on GitHub
+  Actions, `--verbose` output folds into a collapsible `::group::`/`::endgroup::` block per test
+  (auto-detected, no flag). `--log-file <path>` duplicates console output to a file, always plain
+  text regardless of stdout's own color state.
 
 ### Fixed
 

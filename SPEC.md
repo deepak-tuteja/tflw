@@ -78,7 +78,7 @@ project/
   payloads/            # file-backed request bodies (§5.3)
   data/                # file-backed data tables, *.csv / *.json (§7.5)
   helpers/             # JS/TS escape-hatch modules (§11)
-  report/              # per-run report.html + junit.xml (output)
+  report/              # per-run report.html + junit.xml + results.json + .last-run.json (output)
 ```
 
 ## 3. The config dialect — `tflw.config` (P#27–31) ✅
@@ -1007,7 +1007,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13 |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
@@ -1026,8 +1026,8 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 ## 13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧
 
 ✅ Everything API-side: the event stream, req/res panels, per-`check` rows, generated values
-inline, seed header, redaction, CLI summary, `junit.xml`, exit codes. 🔮 Screenshots per browser
-step wait for M3/M4.
+inline, seed header, redaction, CLI summary, `junit.xml`/`results.json`, exit codes, `--failed`/
+`--bail`/`--format ndjson` CI ergonomics. 🔮 Screenshots per browser step wait for M3/M4.
 
 - Interpreter emits `step:start` / `step:end` (timing, screenshot for browser steps, full
   req/res trace for API steps); reporter is a pure consumer.
@@ -1043,7 +1043,9 @@ step wait for M3/M4.
   with the first failing test's panel shown; an all-passing run defaults to the first file's first
   test. `@media print` forces every panel visible and hides the sidebar, so printing/PDF export is
   unaffected.
-- CI: summary to stdout, `junit.xml` (seed in properties), meaningful exit codes.
+- CI: summary to stdout, `junit.xml` (seed in properties), meaningful exit codes. `report/` also
+  always gets `results.json` (the same redacted `RunReport` as JSON) and `.last-run.json` (this
+  run's failing tests) — see the CI ergonomics subsection below.
 
 `junit.xml`'s escaping strips XML-invalid C0 control characters (keeping tab/LF/CR, which XML 1.0
 permits) in addition to entity-escaping `& < > "` — a test name or error message that happens to
@@ -1067,6 +1069,34 @@ identically under `evidence none`; only what a human (or CI artifact) later sees
 of operations on that report-only trace: secret redaction (this section, taint-based) → `redact`
 declarative field redaction (§3.4) → evidence-level trim (coarsest cut, applied last).
 
+**CI ergonomics + console/log output (PLAN decision 111, enterprise arc cluster 6).**
+
+- `report/results.json` — always written (no flag), the exact same redacted `RunReport` that
+  feeds `report.html`, so CI can read a run's outcome from a file instead of scraping stdout.
+- `tflw run --failed` — re-runs only the previous run's failing tests. State lives in
+  `report/.last-run.json` (always overwritten, every run, including `--failed` runs themselves —
+  a test that failed on an earlier `retry` attempt but ultimately passed, i.e. `flaky`, is never
+  in this list, since `TestResult.ok` is already the final post-retry verdict). No state file, or
+  a prior run with zero failures: falls back to the full suite with a printed note, matching
+  pytest's `--lf` default. Composes with `--tag`/`--only` as AND.
+- `--bail` — stops after the first failing test's final (post-retry) verdict. Under
+  `--workers > 1`, the pool stops pulling new files once a failure is seen; files already claimed
+  finish normally (no hard-abort/cancellation-token plumbing into the interpreter).
+- `--format ndjson` — replaces the human console output with one `JSON.stringify`'d `RunEvent` per
+  line (always full step-level detail, independent of `--verbose`), safe to pipe into a log
+  aggregator; also always written to `report/events.ndjson` as a permanent artifact. `RunEvent`
+  carries an optional `file` field (tagged by the CLI, not the interpreter — same "display
+  concern" precedent as `TestResult.file`) so concurrent files' events stay distinguishable under
+  `--workers > 1`.
+- Timestamps — every console line gets an `HH:MM:SS.mmm` wall-clock prefix by default;
+  `--no-timestamps` opts out (symmetric to `--no-color`).
+- GitHub Actions log grouping — auto-detected via the `GITHUB_ACTIONS` env var, wraps a test's
+  block in `::group::`/`::endgroup::`, only under `--verbose` (normal mode is already one line per
+  test). Pure log folding, not a GitHub annotation (`::error::`) — out of scope, unchanged from
+  decision 7.
+- `--log-file <path>` — duplicates console output to a file, always plain text (ANSI stripped)
+  regardless of stdout's own color state.
+
 ## 14. Architecture (P#1, P#12) 🔧
 
 ✅ `lang`/`runtime` (fetch binding)/`reporter`/`cli`/`vscode`, bundled via esbuild for publish.
@@ -1077,7 +1107,7 @@ packages/
   lang/      lexer, parser, AST, checker (pure, no I/O) — also parses tflw.config
   runtime/   interpreter, fetch binding (M1) + Playwright binding (M3), event stream,
              taint tracking, seed derivation
-  reporter/  events → report.html + junit.xml, redaction rendering
+  reporter/  events → report.html + junit.xml + results.json (+ events.ndjson), redaction rendering
   cli/       tflw run / check / init / docs / watch / pick / refactor
   vscode/    highlighting + child-process diagnostics + run CodeLens (decision 94) — a thin
              extension-host client of the CLI's `--format json`, not a wrap of lang/ (no LSP)

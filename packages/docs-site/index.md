@@ -18,7 +18,7 @@ hero:
 
 features:
   - title: Reporting-first runtime
-    details: Every step is an event by construction — a self-contained report.html (full request/response detail) and junit.xml fall out of the same event stream tflw run already emits, secrets redacted everywhere automatically.
+    details: Every step is an event by construction — a self-contained report.html (full request/response detail), junit.xml, and results.json all fall out of the same event stream tflw run already emits, secrets redacted everywhere automatically.
   - title: Teaching-quality diagnostics
     details: Source line + caret + "did you mean", stable TF0xx codes, a conservative unknown-variable checker pass — errors read like a compiler's, not a stack trace.
   - title: One language, API today, browser next
@@ -31,9 +31,9 @@ features:
 
 Compared to writing API tests by hand with `fetch` + a general-purpose test runner:
 
-- **Reporting is built in, not bolted on.** Every step is an event by construction — `report.html`
-  and `junit.xml` fall out of the same run, with secrets redacted everywhere automatically. No
-  logging or capture code to write yourself.
+- **Reporting is built in, not bolted on.** Every step is an event by construction — `report.html`,
+  `junit.xml`, and `results.json` all fall out of the same run, with secrets redacted everywhere
+  automatically. No logging or capture code to write yourself.
 - **Errors read like a compiler's, not a stack trace.** Source line + caret + "did you mean",
   stable `TF0xx` codes you can look up, a conservative unknown-variable checker pass.
 - **One language, not several tools glued together.** Sessions, retries, generated test data, and

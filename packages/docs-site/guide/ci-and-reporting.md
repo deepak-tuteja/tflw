@@ -3,8 +3,9 @@
 ## Reports
 
 Every run writes a self-contained `report/report.html` (step timeline, full request/response
-detail) and `report/junit.xml` (for CI test-result ingestion) — they fall out of the same event
-stream `tflw run` already emits, nothing to wire up.
+detail), `report/junit.xml` (for CI test-result ingestion), and `report/results.json` (the same
+redacted run report as JSON — read a run's outcome from a file instead of scraping stdout) — they
+all fall out of the same event stream `tflw run` already emits, nothing to wire up.
 
 `tflw check [files]` runs the same parse + full checker pipeline `run` executes before it does
 anything, with **no execution** and no secrets required — a fast pre-commit/CI lint step. `tflw
@@ -63,6 +64,38 @@ env staging
 Fails **before any test runs** if `insecure true` (TLS verification disabled — see
 [Config & environments](/guide/config)) is active for the env actually running. Use it in CI to
 make sure a self-signed-cert workaround never silently ships as the default for a shared pipeline.
+
+## Replaying failures — `--failed` and `--bail`
+
+```sh
+npx tflw run --failed   # re-run only what failed last time
+npx tflw run --bail     # stop at the first failing test
+```
+
+`--failed` reads `report/.last-run.json` (always written, every run) and re-runs just those
+tests — nothing failed last time, or no state file yet: falls back to the full suite with a note,
+never a silent zero-test run. `--bail` stops after the first failing test's final verdict; under
+`--workers > 1` it stops starting new files, but files already in flight finish normally.
+
+## Structured logs — `--format ndjson`
+
+```sh
+npx tflw run --format ndjson
+```
+
+Replaces the human console output with one JSON object per line (`RunEvent`s — `run:start`/
+`test:start`/`step:end`/`test:end`/`run:end`, each tagged with its source file) — pure stdout, no
+human text mixed in, safe to pipe into a log aggregator or `jq`. Always full step-level detail,
+independent of `--verbose`. Also always written to `report/events.ndjson`, so the stream survives
+even when the invoking process didn't capture stdout.
+
+## Console ergonomics — timestamps, GitHub Actions grouping, `--log-file`
+
+Every console line gets an `HH:MM:SS.mmm` prefix by default — `--no-timestamps` opts out. On
+GitHub Actions (auto-detected via the `GITHUB_ACTIONS` env var), `--verbose`'s per-test step lines
+fold into a collapsible `::group::`/`::endgroup::` block — normal mode is already one line per
+test, so grouping only kicks in under `--verbose`. `--log-file <path>` duplicates console output to
+a file, always plain text regardless of whether stdout itself has color.
 
 Full reference: [SPEC.md §12](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#12-cli-),
 [§13 (events/report)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#13-events-report-ci-outputs-p4-5-p23-p30-).

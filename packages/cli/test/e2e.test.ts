@@ -1001,7 +1001,10 @@ test('--verbose prints one indented line per step under a test-name header (Trac
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color'], { cwd: dir });
+      // --no-timestamps: this test is about verbose's step structure, not the separate
+      // decision-111/M17 timestamp-prefix feature (its own dedicated test below) — keeps the
+      // header line an exact `health check` match instead of coupling to timestamp formatting.
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], { cwd: dir });
       const lines = stdout.split('\n');
       const headerIdx = lines.indexOf('health check');
       assert.notEqual(headerIdx, -1, 'expected a bare test-name header line in verbose mode');
@@ -1253,4 +1256,285 @@ test('uuid/password generators + base64/hex/url transforms work end to end, incl
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
+});
+
+// ---- M17 (PLAN decision 111, enterprise arc cluster 6): CI ergonomics + console/log output ----
+
+test('report/results.json is always written (no flag) and mirrors the exact redacted RunReport, secrets included', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-results-json-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n  header "X-Token" is env(TOKEN)\n\nrequire env TOKEN\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir, env: { ...process.env, TOKEN: 'shh-secret' } });
+      assert.match(stdout, /1\/1 passed/);
+
+      const resultsPath = join(dir, 'report', 'results.json');
+      const results = JSON.parse(await readFile(resultsPath, 'utf8')) as {
+        ok: boolean;
+        total: number;
+        passed: number;
+        tests: { name: string; ok: boolean }[];
+        seed: number;
+      };
+      assert.equal(results.ok, true);
+      assert.equal(results.total, 1);
+      assert.equal(results.passed, 1);
+      assert.equal(results.tests[0]?.name, 'health check');
+      assert.equal(typeof results.seed, 'number');
+      // Redaction applies to results.json exactly like report.html/junit.xml (same RunReport
+      // object, decision 111.1) — the raw secret must never appear in the artifact.
+      const raw = await readFile(resultsPath, 'utf8');
+      assert.doesNotMatch(raw, /shh-secret/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw run --failed` re-runs only the previous run\'s failing tests (decision 111.2)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-failed-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a.tflw'), `test "passes"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      await writeFile(join(dir, 'b.tflw'), `test "fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+
+      await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }));
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string });
+      assert.match(stdout, /1\/1 passed, 0 failed|0\/1 passed, 1 failed/);
+      assert.doesNotMatch(stdout, /passes/);
+      assert.match(stdout, /fails/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw run --failed` with no prior state falls back to the full suite, with a note (decision 111.2)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-failed-empty-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir });
+      assert.match(stdout, /no failed tests from the last run — running the full suite/);
+      assert.match(stdout, /1\/1 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw run --failed` narrows further on repeated invocations once a test is fixed (state always overwritten)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-failed-narrow-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a.tflw'), `test "passes"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      await writeFile(join(dir, 'b.tflw'), `test "fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+
+      await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }));
+      await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }));
+
+      // Fix the test, then --failed again: this run's own (empty) failure set gets recorded.
+      await writeFile(join(dir, 'b.tflw'), `test "fails"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir });
+      assert.match(stdout, /fails/);
+      assert.match(stdout, /1\/1 passed/);
+
+      const lastRun = JSON.parse(await readFile(join(dir, 'report', '.last-run.json'), 'utf8')) as { failed: unknown[] };
+      assert.deepEqual(lastRun.failed, []);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--bail stops the run after the first failing test — a later file never starts (decision 111.3)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-bail-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a-fails.tflw'), `test "a fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+      await writeFile(join(dir, 'b-should-not-run.tflw'), `test "b should not run"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const err = await execFileAsync('node', [cliEntry, 'run', '--bail', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string; code: number });
+      assert.equal(err.code, 1);
+      assert.match(err.stdout, /a fails/);
+      assert.doesNotMatch(err.stdout, /b should not run/);
+
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { total: number };
+      assert.equal(results.total, 1, 'only the first (failing) file should have run at all');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('without --bail, both files still run after an earlier failure (unchanged default)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-no-bail-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a-fails.tflw'), `test "a fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+      await writeFile(join(dir, 'b-runs.tflw'), `test "b runs"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }));
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { total: number };
+      assert.equal(results.total, 2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--format ndjson streams one JSON-parseable, file-tagged RunEvent per line, no human text mixed in, and also writes report/events.ndjson (decision 111.4)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      const lines = stdout.trim().split('\n');
+      assert.ok(lines.length >= 5, `expected run:start/test:start/step:end*2/test:end/run:end, got ${lines.length} lines`);
+      const events = lines.map((l) => JSON.parse(l) as { type: string; file?: string });
+      assert.equal(events[0]?.type, 'run:start');
+      assert.equal(events.at(-1)?.type, 'run:end');
+      for (const ev of events) assert.equal(ev.file, 'health.tflw', `every event must be file-tagged, got ${JSON.stringify(ev)}`);
+      // No human text (a stray non-JSON line) mixed into stdout.
+      for (const l of lines) assert.doesNotThrow(() => JSON.parse(l));
+
+      const ndjsonPath = join(dir, 'report', 'events.ndjson');
+      const fileLines = (await readFile(ndjsonPath, 'utf8')).trim().split('\n');
+      assert.deepEqual(fileLines.map((l) => JSON.parse(l)), events);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--format ndjson always includes step-level detail even without --verbose (decision 111.4)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-detail-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      const events = stdout
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as { type: string });
+      const stepEvents = events.filter((e) => e.type === 'step:end');
+      assert.equal(stepEvents.length, 2, 'api + expect steps, without --verbose ever being passed');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('an unsupported `tflw run --format` value is a usage error, not silently ignored', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-format-bad-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', '--format', 'xml', '--no-color'], { cwd: dir }),
+      (e: unknown) => (e as { code?: number }).code === 2,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('console output gets an HH:MM:SS.mmm timestamp prefix by default (decision 111.7)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-timestamps-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color'], { cwd: dir });
+      assert.match(stdout, /^\d{2}:\d{2}:\d{2}\.\d{3} health check$/m);
+      // Pre-existing quirk, unrelated to this decision: a verbose step line's `detail` already
+      // bakes in its own duration text, and formatEvent appends a second `(Nms)` after it — not
+      // anchoring on a trailing `$` here since that's not what this test is checking.
+      assert.match(stdout, /^\d{2}:\d{2}:\d{2}\.\d{3} +✓ GET .*\/health → 200/m);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--no-timestamps opts out, restoring the plain (pre-decision-111) output shape', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-no-timestamps-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], { cwd: dir });
+      // Anchored to line-start: the summary's own `now 2026-...T20:15:49.955Z` field legitimately
+      // contains an HH:MM:SS.mmm-shaped substring midline — only a *leading* one would mean the
+      // opt-out failed.
+      assert.doesNotMatch(stdout, /^\d{2}:\d{2}:\d{2}\.\d{3} /m);
+      assert.match(stdout, /^health check$/m);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('GitHub Actions log grouping wraps a test\'s output in ::group::/::endgroup:: only under --verbose, auto-detected via GITHUB_ACTIONS (decision 111.8)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-gh-group-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const verbose = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], {
+        cwd: dir,
+        env: { ...process.env, GITHUB_ACTIONS: 'true' },
+      });
+      assert.match(verbose.stdout, /^::group::health check$/m);
+      assert.match(verbose.stdout, /^::endgroup::$/m);
+
+      const notVerbose = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--no-timestamps'], {
+        cwd: dir,
+        env: { ...process.env, GITHUB_ACTIONS: 'true' },
+      });
+      assert.doesNotMatch(notVerbose.stdout, /::group::/, 'normal mode is already one line per test — nothing worth folding');
+
+      const notOnActions = await execFileAsync('node', [cliEntry, 'run', '--verbose', '--no-color', '--no-timestamps'], { cwd: dir });
+      assert.doesNotMatch(notOnActions.stdout, /::group::/, 'no GITHUB_ACTIONS env var set — no grouping');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--log-file duplicates console output to a file (decision 111.9)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-file-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const logPath = join(dir, 'run.log');
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--no-timestamps', '--log-file', logPath], { cwd: dir });
+
+      const logged = await readFile(logPath, 'utf8');
+      assert.match(logged, /1\/1 passed/);
+      assert.match(logged, /report:/);
+      // Whatever went to stdout also landed in the log file (no ANSI codes to strip under
+      // --no-color, so this is a direct comparison here).
+      assert.equal(logged, stdout);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

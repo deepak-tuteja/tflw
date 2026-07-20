@@ -56,7 +56,15 @@ Re-running the whole suite to chase one failure is slow. Narrow to exactly what 
 npx tflw run --only "health check"        # one test, by its exact declared name
 npx tflw run --tag smoke                  # every test carrying @smoke (comma-separated OR)
 npx tflw run --only "health check" --tag smoke   # composes as AND
+npx tflw run --failed                     # only what failed last time (report/.last-run.json)
+npx tflw run --bail                       # stop at the first failure — don't wait for the rest
 ```
+
+`--failed` is the fast loop for fixing a batch of failures one at a time: run once, fix the first
+thing, `tflw run --failed` again to check just what's still red — the failure set narrows every
+time until an all-green `--failed` run falls back to the full suite (nothing left to replay).
+`--bail` is the opposite direction: stop as soon as anything breaks, so a broken early assumption
+doesn't waste time running everything downstream of it.
 
 ## Reproduce a failure exactly
 
