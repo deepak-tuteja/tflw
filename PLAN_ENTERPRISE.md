@@ -4,7 +4,8 @@
 `../testFlow-tests/` (the dogfood app) — the two proceed in parallel, ping-pong per cluster.
 Amended 2026-07-19 (decisions 16–17, a second `/grill-me` session) to insert two new clusters —
 docs site and LSP — before what was cluster 4. Cluster 4 (docs site) shipped 2026-07-19 as M12
-(PLAN.md decision 103) — see decision 16's per-item status below.*
+(PLAN.md decision 103) — see decision 16's per-item status below. Cluster 5 (LSP) shipped
+2026-07-20 as M13 (PLAN.md decision 104) — see decision 17's status line above.*
 
 ## Context
 
@@ -134,8 +135,9 @@ the browser half (M3)** as tflw's next work.
         palette.
 
 17. **LSP** *(2026-07-19 `/grill-me` session — inserted as cluster 5, immediately after the docs
-    site, consuming its `spec-data.ts` manifest)*: replace the VS Code extension's child-process
-    `tflw check --format json` diagnostics with a real Language Server Protocol implementation.
+    site, consuming its `spec-data.ts` manifest)* — ✅ **shipped 2026-07-20 as M13, PLAN.md
+    decision 104**: replace the VS Code extension's child-process `tflw check --format json`
+    diagnostics with a real Language Server Protocol implementation.
     1. **v1 scope — full feature set** (not phased): diagnostics, hover, go-to-definition,
        autocomplete, rename, signature help, all in this cluster.
     2. **Architecture — stay in this monorepo, restructured**: new `packages/lsp-server`

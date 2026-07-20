@@ -81,6 +81,31 @@
         "command": "tflw.runTest",
         "title": "tflw: Run this test"
       }
+    ],
+    "configuration": {
+      "title": "tflw",
+      "properties": {
+        "tflw.env": {
+          "type": "string",
+          "default": null,
+          "description": "The tflw.config environment to resolve services/sessions against (same precedence slot as `tflw run --env`/`TFLW_ENV`, decision B). Leave unset to use the config's default or sole environment."
+        }
+      }
+    },
+    "semanticTokenScopes": [
+      {
+        "language": "tflw",
+        "scopes": {
+          "keyword": ["keyword.control.tflw"],
+          "operator": ["keyword.operator.word.tflw"],
+          "type": ["support.type.tflw"],
+          "function": ["support.function.generator.tflw"],
+          "number": ["constant.numeric.tflw"],
+          "variable": ["variable.tflw"],
+          "parameter": ["variable.parameter.tflw"],
+          "property": ["variable.other.property.tflw"]
+        }
+      }
     ]
   },
   "devDependencies": {
@@ -88,6 +113,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
+    "vscode-languageclient": "^10.1.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   }

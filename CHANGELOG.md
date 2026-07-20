@@ -60,6 +60,17 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   `packages/lang/src/spec-data.ts` manifest that also regenerates SPEC.md's own matcher/generator
   tables), the Grammar reference, and an in-browser parse+check playground. `GRAMMAR.md` was
   refreshed to cover the full grammar through this release (it had been a frozen M0-only snapshot).
+- `tflw lsp` — a real Language Server Protocol implementation (`packages/lsp-server`), replacing
+  the VS Code extension's old child-process `tflw check --format json` diagnostics. Diagnostics,
+  hover, go-to-definition, autocomplete, rename, and signature help, all live over debounced
+  in-process reparsing, for both `.tflw` test files and `tflw.config`; a `tflw.env` VS Code setting
+  controls which environment diagnostics resolve services/sessions against. `tflw lsp` itself
+  speaks LSP over stdio, so any LSP-capable editor (not just VS Code) can use it. It also serves
+  `textDocument/semanticTokens/full`, coloring matcher/operator words, numbers, variable/parameter
+  names, and object-literal field keys using the editor's own built-in default semantic palette —
+  richer and theme-independent, closing a gap the static TextMate grammar structurally can't (it
+  has no way to color arbitrary user-chosen names, and some of its scopes go unstyled under
+  themes that don't define rules for them).
 
 ### Fixed
 

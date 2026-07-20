@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { findProjectRoot, resolveTflwBin, spanToZeroBasedRange, parseTestDeclarationLine } from '../src/lib.js';
+import { findProjectRoot, resolveTflwBin, parseTestDeclarationLine } from '../src/lib.js';
 
 test('findProjectRoot walks up until it finds a directory containing tflw.config', () => {
   const fakeFs = new Set(['/home/user/project/tflw.config']);
@@ -37,16 +37,6 @@ test('resolveTflwBin looks for a "tflw.cmd" filename (not bare "tflw") when plat
   const expected = join('/proj', 'node_modules', '.bin', 'tflw.cmd');
   const exists = (p: string) => p === expected;
   assert.equal(resolveTflwBin('/proj', 'win32', exists), expected);
-});
-
-test('spanToZeroBasedRange converts SPEC.md\'s 1-based line/column to VS Code\'s 0-based Position', () => {
-  const range = spanToZeroBasedRange({ start: { line: 3, column: 5 }, end: { line: 3, column: 12 } });
-  assert.deepEqual(range, { startLine: 2, startCol: 4, endLine: 2, endCol: 11 });
-});
-
-test('spanToZeroBasedRange never goes negative even for a (hypothetical) line/column of 0', () => {
-  const range = spanToZeroBasedRange({ start: { line: 0, column: 0 }, end: { line: 0, column: 0 } });
-  assert.deepEqual(range, { startLine: 0, startCol: 0, endLine: 0, endCol: 0 });
 });
 
 test('parseTestDeclarationLine extracts the decoded test name from a `test "..."` line', () => {

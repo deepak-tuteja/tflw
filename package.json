@@ -17,6 +17,7 @@
     "packages/lang",
     "packages/runtime",
     "packages/reporter",
+    "packages/lsp-server",
     "packages/cli",
     "packages/vscode",
     "packages/docs-site"

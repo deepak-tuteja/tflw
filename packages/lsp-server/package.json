@@ -1,0 +1,33 @@
+{
+  "name": "@tflw/lsp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "testFlow Language Server (PLAN_ENTERPRISE.md decision 17) — Phase 3: stdio protocol wiring (vscode-languageserver) + the I/O layer (project discovery, tflw.config/env resolution, debounced document reparse, cross-file resolution) over Phase 2's pure resolution functions.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test --test-force-exit \"test/**/*.test.ts\""
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@tflw/lang": "*",
+    "@tflw/runtime": "*",
+    "vscode-languageserver": "^10.1.0",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  },
+  "devDependencies": {
+    "vscode-jsonrpc": "^9.0.1"
+  }
+}

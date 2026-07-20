@@ -13,8 +13,20 @@ export * from './ast.js';
 export * from './diagnostic.js';
 export * from './spec-data.js';
 export { lex, type LexResult } from './lexer.js';
-export { parse as parseTokens, parseConfig as parseConfigTokens, parseStringParts, type ParseResult, type ConfigResult } from './parser.js';
+export {
+  parse as parseTokens,
+  parseConfig as parseConfigTokens,
+  parseForCompletion,
+  parseStringParts,
+  type ParseResult,
+  type ConfigResult,
+  type CompletionKind,
+  type CompletionContext,
+} from './parser.js';
 export { validateConfig, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables } from './checker.js';
+export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
+export { getCompletionContext } from './completion.js';
+export { collectSemanticTokens, type SemanticToken, type SemanticTokenType } from './semanticTokens.js';
 
 export interface ParsedSource {
   readonly program: Program;

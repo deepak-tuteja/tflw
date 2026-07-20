@@ -31,12 +31,13 @@
     "predev": "npm run docs:gen",
     "docs:gen": "npm run docs:gen --prefix ../lang && node scripts/gen-docs.mjs",
     "bundle": "npm run docs:gen && node scripts/bundle.mjs",
-    "prepack": "npm run build --prefix ../.. -w @tflw/lang -w @tflw/runtime -w @tflw/reporter && npm run build"
+    "prepack": "npm run build --prefix ../.. -w @tflw/lang -w @tflw/runtime -w @tflw/reporter -w @tflw/lsp-server && npm run build"
   },
   "devDependencies": {
     "@tflw/lang": "*",
     "@tflw/runtime": "*",
     "@tflw/reporter": "*",
+    "@tflw/lsp-server": "*",
     "esbuild": "^0.28.1"
   }
 }

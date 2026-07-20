@@ -107,6 +107,20 @@ export interface ConfigResult {
   readonly diagnostics: readonly Diagnostic[];
 }
 
+/** Which of the six instrumented grammar productions the cursor sat in (PLAN_M13_LSP.md decision
+ * 17.6) — `packages/lsp-server` maps this to a candidate list (symbol names from `symbols.ts` for
+ * `session`/`step`'s action-call case, `spec-data.ts` entries for `subject`/`matcher`/`unique`/
+ * `random`, and the fixed statement-keyword set for `step`). Autocomplete has no case for a value
+ * position (`parseAtom`'s broad dispatch, decision 17.6) — too large a candidate set, low payoff. */
+export type CompletionKind = 'step' | 'subject' | 'matcher' | 'session' | 'unique' | 'random';
+
+export interface CompletionContext {
+  readonly kind: CompletionKind;
+  /** Partial identifier text already typed at the cursor (e.g. `"ex"` mid-typing `expect`), or
+   * `''` when the cursor sits right after a completed token (e.g. right after a space). */
+  readonly prefix: string;
+}
+
 const STATEMENT_KEYWORDS = ['api', 'expect', 'check', 'let', 'capture', 'wait', 'give'] as const;
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'not'] as const;
@@ -123,8 +137,46 @@ const QUANTIFIERS = ['any', 'all'] as const;
 class Parser {
   private pos = 0;
   private readonly diagnostics: Diagnostic[] = [];
+  /** Set only by `runCompletion()`. When on, the six guarded production entry points below check
+   * `atCompletionPoint()` before doing their normal work and, on a hit, record `completionResult`
+   * and return `null` instead of erroring — no behavior change to `diagnostics`/the returned
+   * `program` otherwise (ordinary `parse()`/`parseConfig()` never sets this). */
+  private completionMode = false;
+  private completionResult: CompletionContext | null = null;
 
   constructor(private readonly tokens: readonly Token[]) {}
+
+  /** Parse `tokens` (already truncated at the cursor by `completion.ts`) purely to discover which
+   * grammar production the cursor sits in. Reuses `parse()` itself — panic-mode recovery carries
+   * parsing forward past anything already resolved, so only the one production actually active at
+   * the truncated end of input ever reaches its `atCompletionPoint()` guard (PLAN_M13_LSP.md
+   * decision 17.9/architecture: full reparse, no incremental state). */
+  runCompletion(): CompletionContext | null {
+    this.completionMode = true;
+    this.parse();
+    return this.completionResult;
+  }
+
+  /** True when the parser has nothing left to consume (`eof`) or is sitting on the last
+   * identifier of the truncated source — i.e. the user has either just typed a delimiter
+   * (space/newline) or is mid-word on the token the cursor sits in. The lexer always closes out
+   * whatever's on the last physical line as if it were complete (a synthetic trailing `newline`,
+   * then a `dedent` per still-open indentation level, then `eof` — lexer.ts's `lex()`), so "the
+   * last real token" isn't literally followed by `eof`; skip over that synthetic closing tail to
+   * find out. `completionPrefix()` below extracts what's typed so far. */
+  private atCompletionPoint(): boolean {
+    if (this.atEof()) return true;
+    if (!this.check('ident')) return false;
+    for (let k = 1; ; k++) {
+      const t = this.peek(k);
+      if (t.type === 'eof') return true;
+      if (t.type !== 'newline' && t.type !== 'dedent') return false;
+    }
+  }
+
+  private completionPrefix(): string {
+    return this.check('ident') ? this.peek().value : '';
+  }
 
   parse(): ParseResult {
     const tests: TestDecl[] = [];
@@ -799,10 +851,18 @@ class Parser {
     const sessions: string[] = [];
     if (this.isKw(this.peek(), 'as')) {
       this.advance();
+      if (this.completionMode && this.atCompletionPoint()) {
+        this.completionResult = { kind: 'session', prefix: this.completionPrefix() };
+        return null;
+      }
       const first = this.expect('ident', 'a session name after `as`');
       if (first) sessions.push(first.value);
       while (this.check('comma')) {
         this.advance();
+        if (this.completionMode && this.atCompletionPoint()) {
+          this.completionResult = { kind: 'session', prefix: this.completionPrefix() };
+          return null;
+        }
         const s = this.expect('ident', 'a session name');
         if (s) sessions.push(s.value);
       }
@@ -921,6 +981,10 @@ class Parser {
   }
 
   private parseStep(): Step | null {
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: 'step', prefix: this.completionPrefix() };
+      return null;
+    }
     const tok = this.peek();
     if (tok.type === 'ident') {
       switch (tok.value) {
@@ -1276,6 +1340,10 @@ class Parser {
   }
 
   private parseSubject(): Subject | null {
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: 'subject', prefix: this.completionPrefix() };
+      return null;
+    }
     const tok = this.peek();
     if (tok.type !== 'ident') {
       this.error(Codes.UNKNOWN_SUBJECT, `expected a subject (${SUBJECT_KEYWORDS.join(', ')}), found ${describeToken(tok)}`, tok.span);
@@ -1345,6 +1413,10 @@ class Parser {
     if (this.isKw(this.peek(), 'not')) {
       this.advance();
       negated = true;
+    }
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: 'matcher', prefix: this.completionPrefix() };
+      return null;
     }
     const tok = this.peek();
     if (tok.type !== 'ident') {
@@ -1624,6 +1696,10 @@ class Parser {
   private parseUniqueExpr(): Value | null {
     const start = this.peek().span.start;
     this.advance(); // `unique`
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: 'unique', prefix: this.completionPrefix() };
+      return null;
+    }
     if (this.check('lparen')) {
       this.advance();
       const prefix = this.parseValue();
@@ -1662,6 +1738,10 @@ class Parser {
   private parseRandomExpr(): Value | null {
     const start = this.peek().span.start;
     this.advance(); // `random`
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: 'random', prefix: this.completionPrefix() };
+      return null;
+    }
     const tok = this.peek();
     if (this.isKw(tok, 'number')) {
       this.advance();
@@ -2055,4 +2135,9 @@ export function parse(tokens: readonly Token[]): ParseResult {
 
 export function parseConfig(tokens: readonly Token[]): ConfigResult {
   return new Parser(tokens).parseConfig();
+}
+
+/** Entry point for `completion.ts` — see `Parser#runCompletion`. */
+export function parseForCompletion(tokens: readonly Token[]): CompletionContext | null {
+  return new Parser(tokens).runCompletion();
 }

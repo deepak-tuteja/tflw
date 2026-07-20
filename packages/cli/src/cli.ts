@@ -45,6 +45,7 @@ import {
   type ResolvedConfig,
 } from '@tflw/runtime';
 import { writeReport, writeJunitXml, renderCliSummary } from '@tflw/reporter';
+import { startServer } from '@tflw/lsp-server';
 import { buildEnviron } from './env.js';
 import { DOCS_TOPICS } from './docs-data.generated.js';
 
@@ -74,6 +75,8 @@ async function main(argv: string[]): Promise<number> {
       return checkCommand(rest);
     case 'docs':
       return docsCommand(rest);
+    case 'lsp':
+      return lspCommand(rest);
     case '--version':
     case '-v':
       process.stdout.write(`${await getVersion()}\n`);
@@ -85,7 +88,7 @@ async function main(argv: string[]): Promise<number> {
       printUsage();
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
-      err(`unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, or \`tflw docs\`.`);
+      err(`unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, or \`tflw lsp\`.`);
       return EXIT_USAGE;
   }
 }
@@ -566,6 +569,24 @@ async function docsCommand(argv: string[]): Promise<number> {
   return EXIT_OK;
 }
 
+// ---- tflw lsp ---------------------------------------------------------------
+
+/** Speaks the Language Server Protocol over stdio (PLAN_M13_LSP.md Phase 4) — how an editor (VS
+ * Code's `LanguageClient`, decision 17.2/17.4) reaches `@tflw/lsp-server`: spawn `tflw lsp` as a
+ * child process and talk JSON-RPC over its stdin/stdout. `startServer()` wires every handler
+ * synchronously and returns immediately, so this command must not let `main()`'s own
+ * `.then((code) => process.exit(code))` run right after — the returned promise simply never
+ * resolves, keeping the process alive for as long as the connection is open. Process termination
+ * itself isn't this command's job: `vscode-languageserver`'s `createConnection()` (reached via
+ * `startServer()`) already registers `end`/`close` handlers directly on the input stream and calls
+ * `process.exit()` itself once the client disconnects — 0 after a clean LSP `shutdown` request +
+ * `exit` notification handshake, 1 on an abrupt pipe close — so any exit-handling wired up here
+ * would just race it and lose. */
+async function lspCommand(_argv: string[]): Promise<number> {
+  startServer();
+  return new Promise<number>(() => {});
+}
+
 /**
  * Run `items` with at most `limit` in flight at once, preserving each result at its original
  * index regardless of completion order (P#47: in-process promise pool, per-file granularity — a
@@ -823,6 +844,7 @@ function printUsage(): void {
       '                                                      --format json is for editor integrations (VS Code)',
       '  tflw init                                          scaffold tflw.config + example.tflw',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
+      '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',
