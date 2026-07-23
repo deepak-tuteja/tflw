@@ -107,12 +107,14 @@ export interface ConfigResult {
   readonly diagnostics: readonly Diagnostic[];
 }
 
-/** Which of the six instrumented grammar productions the cursor sat in (PLAN_M13_LSP.md decision
- * 17.6) — `packages/lsp-server` maps this to a candidate list (symbol names from `symbols.ts` for
- * `session`/`step`'s action-call case, `spec-data.ts` entries for `subject`/`matcher`/`unique`/
- * `random`, and the fixed statement-keyword set for `step`). Autocomplete has no case for a value
- * position (`parseAtom`'s broad dispatch, decision 17.6) — too large a candidate set, low payoff. */
-export type CompletionKind = 'step' | 'subject' | 'matcher' | 'session' | 'unique' | 'random';
+/** Which of the seven instrumented grammar productions the cursor sat in (PLAN_M13_LSP.md decision
+ * 17.6; `transform` added decision 22/M18) — `packages/lsp-server` maps this to a candidate list
+ * (symbol names from `symbols.ts` for `session`/`step`'s action-call case, `spec-data.ts` entries
+ * for `subject`/`matcher`/`unique`/`random`/`transform`, and the fixed statement-keyword set for
+ * `step`). Autocomplete has no case for a value position (`parseAtom`'s broad dispatch, decision
+ * 17.6) — too large a candidate set, low payoff; `unique`/`random`/`transform` are each instrumented
+ * only for the sub-keyword right after their entry word (`email`/`number`/…, `encode`/`decode`). */
+export type CompletionKind = 'step' | 'subject' | 'matcher' | 'session' | 'unique' | 'random' | 'transform';
 
 export interface CompletionContext {
   readonly kind: CompletionKind;
@@ -1125,6 +1127,12 @@ class Parser {
     if (!this.expectKw('as')) return null;
     const fieldName = this.expectString('a field name string after `as`');
     if (!fieldName) return null;
+    let contentType: StringLit | null = null;
+    if (this.isKw(this.peek(), 'type')) {
+      this.advance();
+      contentType = this.expectString('a MIME type string after `type`, e.g. `type "image/png"`');
+      if (!contentType) return null;
+    }
     let extra: FormField[] = [];
     if (this.isKw(this.peek(), 'form')) {
       this.advance();
@@ -1132,7 +1140,7 @@ class Parser {
       if (!fields) return null;
       extra = fields;
     }
-    return { type: 'UploadBody', filePath, fieldName, extra, span: this.spanFrom(start) };
+    return { type: 'UploadBody', filePath, fieldName, contentType, extra, span: this.spanFrom(start) };
   }
 
   private parseFormFields(): FormField[] | null {
@@ -1879,6 +1887,10 @@ class Parser {
   private parseTransformExpr(kind: 'base64' | 'hex' | 'url'): Value | null {
     const start = this.peek().span.start;
     this.advance(); // `base64` / `hex` / `url`
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: 'transform', prefix: this.completionPrefix() };
+      return null;
+    }
     const dirTok = this.peek();
     let direction: 'encode' | 'decode';
     if (this.isKw(dirTok, 'encode')) direction = 'encode';

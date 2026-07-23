@@ -57,6 +57,7 @@ export const Codes = {
   CONFIG_SESSION_CONFLICT: 'TF029',
   UNKNOWN_VARIABLE: 'TF030',
   REQUEST_ASSERTION_INVALID: 'TF031',
+  INVALID_CONTENT_TYPE: 'TF032',
 } as const;
 
 // ---------------------------------------------------------------------------

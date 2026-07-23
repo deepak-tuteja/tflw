@@ -408,6 +408,10 @@ function checkApiBody(body: ApiBody, bound: Set<string>, diags: Diagnostic[]): v
     case 'UploadBody':
       checkStringLit(body.filePath, bound, diags);
       checkStringLit(body.fieldName, bound, diags);
+      if (body.contentType) {
+        checkStringLit(body.contentType, bound, diags);
+        checkContentTypeShape(body.contentType, diags);
+      }
       for (const field of body.extra) checkValue(field.value, bound, diags);
       break;
   }
@@ -476,6 +480,23 @@ function checkValue(value: Value, bound: Set<string>, diags: Diagnostic[]): void
 
 function checkStringLit(lit: StringLit, bound: Set<string>, diags: Diagnostic[]): void {
   checkStringParts(lit.parts, lit.span, bound, diags);
+}
+
+/** `upload … type "…"` shape check (decision 22/M19) — only for a literal with no `{var}` holes;
+ * an interpolated value is a runtime concern, not a static-checker one (mirrors `checkStringLit`'s
+ * general split between what's known at check time vs. run time). */
+const CONTENT_TYPE_SHAPE = /^[\w.+-]+\/[\w.+-]+$/;
+
+function checkContentTypeShape(lit: StringLit, diags: Diagnostic[]): void {
+  const isPureLiteral = lit.parts.length === 1 && lit.parts[0]?.kind === 'text';
+  if (!isPureLiteral) return;
+  if (CONTENT_TYPE_SHAPE.test(lit.value)) return;
+  diags.push({
+    code: Codes.INVALID_CONTENT_TYPE,
+    severity: 'error',
+    message: `invalid content type "${lit.value}", expected a "type/subtype" shape like "image/png"`,
+    span: lit.span,
+  });
 }
 
 function checkRawPath(raw: string, span: Span, bound: Set<string>, diags: Diagnostic[]): void {

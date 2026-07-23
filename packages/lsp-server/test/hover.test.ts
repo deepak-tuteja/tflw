@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, collectSymbols } from '@tflw/lang';
+import { parseSource, collectSymbols, checkUnknownVariables } from '@tflw/lang';
 import { getHover } from '../src/index.js';
 
 test('getHover: a matcher keyword surfaces its spec-data.ts entry', () => {
@@ -22,6 +22,16 @@ test('getHover: a generator expression surfaces its spec-data.ts entry', () => {
   const result = getHover(program, table, source.indexOf('unique email') + 2);
   assert.ok(result);
   assert.match(result!.contents, /unique email/);
+});
+
+test('getHover: a base64/hex/url transform expression surfaces its spec-data.ts entry (decision 22/M18)', () => {
+  const source = `test "ok"\n  let creds = base64 encode("{email}:{pw}")\n  api GET /health\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+  const result = getHover(program, table, source.indexOf('base64 encode') + 2);
+  assert.ok(result);
+  assert.match(result!.contents, /base64 encode/);
+  assert.match(result!.contents, /decision 98/);
 });
 
 test('getHover: a variable ref shows its symbol kind', () => {
@@ -58,6 +68,20 @@ test('getHover: `connects`/`fails` matchers surface their own spec-data.ts entri
   const failsResult = getHover(failsProgram, failsTable, failsSource.indexOf('fails') + 1);
   assert.ok(failsResult);
   assert.match(failsResult!.contents, /`fails`/);
+});
+
+test('getHover: an active TF032 diagnostic (malformed `upload … type "…"`) shows its canonical DIAGNOSTICS meaning/example (decision 22/M19)', () => {
+  const source = `test "bad"\n  api POST /uploads upload "./img.png" as "avatar" type "imagepng"\n`;
+  const { program, diagnostics: parseDiags } = parseSource(source);
+  const diagnostics = [...parseDiags, ...checkUnknownVariables(program)];
+  const table = collectSymbols(program, source);
+  const diag = diagnostics.find((d) => d.code === 'TF032')!;
+  assert.ok(diag, 'expected a TF032 invalid-content-type diagnostic in this fixture');
+  const result = getHover(program, table, diag.span.start.offset + 1, diagnostics);
+  assert.ok(result);
+  assert.match(result!.contents, /error\[TF032\]/);
+  assert.match(result!.contents, /invalid content type "imagepng"/);
+  assert.match(result!.contents, /type\/subtype/);
 });
 
 test('getHover: an active diagnostic at the offset shows its live message + hint plus the canonical DIAGNOSTICS meaning/example (decision 20.6), taking priority over an overlapping matcher hover', () => {

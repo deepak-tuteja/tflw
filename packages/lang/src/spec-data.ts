@@ -36,7 +36,7 @@ export const MATCHERS: readonly MatcherEntry[] = [
  * prose only). `syntax`/`example` are markdown-ready cell text. */
 export interface GeneratorEntry {
   readonly id: string;
-  readonly family: 'unique' | 'random';
+  readonly family: 'unique' | 'random' | 'transform';
   readonly syntax: string;
   readonly notes: string;
   readonly example: string;
@@ -55,6 +55,9 @@ export const GENERATORS: readonly GeneratorEntry[] = [
   { id: 'random-like', family: 'random', syntax: '`random like "SKU-####-??"`', notes: '`#` = digit, `?` = letter; seed-reproducible pattern fill', example: '`random like "SKU-####-??"`' },
   { id: 'random-uuid', family: 'random', syntax: '`random uuid`', notes: 'v4, collisions allowed (not collision-guaranteed like `unique uuid`)', example: '`random uuid`' },
   { id: 'random-password', family: 'random', syntax: '`random password [N]`', notes: 'default length 12, min 4; satisfies a validation policy, not fake-identity realism', example: '`random password 16`' },
+  { id: 'transform-base64', family: 'transform', syntax: '`base64 encode(...)` / `base64 decode(...)`', notes: 'pure deterministic value transform, not a fresh-value generator (decision 98)', example: '`base64 encode("{email}:{password}")`' },
+  { id: 'transform-hex', family: 'transform', syntax: '`hex encode(...)` / `hex decode(...)`', notes: 'pure deterministic value transform, not a fresh-value generator (decision 98)', example: '`hex encode("{token}")`' },
+  { id: 'transform-url', family: 'transform', syntax: '`url encode(...)` / `url decode(...)`', notes: 'pure deterministic value transform, not a fresh-value generator (decision 98)', example: '`url encode("{query}")`' },
 ] as const;
 
 /** One CLI flag, entered by hand (decision 16.4 — `cli.ts`'s arg parsing has nothing to
@@ -101,6 +104,7 @@ export const DIAGNOSTICS: readonly DiagnosticEntry[] = [
   { code: 'TF029', meaning: 'Checker (config): a duplicate `session` name.', example: 'two `session admin` blocks in one `tflw.config`' },
   { code: 'TF030', meaning: 'Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that\'s *definitely* unreachable, never one that merely might be.', example: '`capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId`' },
   { code: 'TF031', meaning: 'Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (decision 18).', example: '`expect request connects` followed by `expect status equals 200` on the same `api` step → `can\'t be combined with `request connects`/`fails` on the same request`' },
+  { code: 'TF032', meaning: 'Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (decision 22/M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run.', example: '`upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"`' },
 ] as const;
 
 export const CLI_FLAGS: readonly CliFlagEntry[] = [

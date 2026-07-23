@@ -7,7 +7,7 @@
 // takes priority over matcher/generator/symbol hover, since "why is this red" is the most
 // relevant thing to show when there's an error right here.
 
-import { DIAGNOSTICS, GENERATORS, MATCHERS, type Diagnostic, type Matcher, type MatcherName, type Node, type SymbolKind, type SymbolTable } from '@tflw/lang';
+import { DIAGNOSTICS, GENERATORS, MATCHERS, type Diagnostic, type Matcher, type MatcherName, type Node, type SymbolKind, type SymbolTable, type TransformExpr } from '@tflw/lang';
 import { findNodeAtOffset, spanContains } from './findNodeAtOffset.js';
 import type { Span } from '@tflw/lang';
 
@@ -58,6 +58,15 @@ const GENERATOR_SPEC_ID: Partial<Record<string, string>> = {
   RandomPasswordExpr: 'random-password',
 };
 
+/** `TransformExpr.kind` → the matching `spec-data.ts` `GeneratorEntry.id` (decision 22/M18 — one
+ * AST node type covers all three transform kinds, unlike the generator nodes above which are each
+ * one-node-per-id, so this needs its own lookup keyed on `kind` rather than `node.type`). */
+const TRANSFORM_SPEC_ID: Record<TransformExpr['kind'], string> = {
+  base64: 'transform-base64',
+  hex: 'transform-hex',
+  url: 'transform-url',
+};
+
 const SYMBOL_KIND_LABEL: Record<SymbolKind, string> = {
   variable: 'variable',
   param: 'action parameter',
@@ -101,6 +110,10 @@ export function getHover(root: Node, table: SymbolTable, offset: number, diagnos
     const genId = GENERATOR_SPEC_ID[node.type];
     if (genId) {
       const entry = GENERATORS.find((g) => g.id === genId);
+      if (entry) return { contents: `${entry.syntax}\n\n${entry.notes}\n\nExample: ${entry.example}`, span: node.span };
+    }
+    if (node.type === 'TransformExpr') {
+      const entry = GENERATORS.find((g) => g.id === TRANSFORM_SPEC_ID[(node as TransformExpr).kind]);
       if (entry) return { contents: `${entry.syntax}\n\n${entry.notes}\n\nExample: ${entry.example}`, span: node.span };
     }
   }

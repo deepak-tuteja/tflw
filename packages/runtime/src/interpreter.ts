@@ -7,7 +7,7 @@
 //    request and to evaluate assertions are the real ones (P#30).
 
 import { readFile } from 'node:fs/promises';
-import { basename, resolve as resolvePath } from 'node:path';
+import { basename, extname, resolve as resolvePath } from 'node:path';
 import { parseSource, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   ApiBody,
@@ -1016,6 +1016,33 @@ function parseRetryAfterMs(value: string): number | null {
   return null;
 }
 
+/** `upload` Content-Type inference (decision 22/M19) — a small curated extension→MIME table, not
+ * an exhaustive MIME database (keeps the zero-new-runtime-dependency policy, decision 13, intact).
+ * An extension not listed here falls back to `application/octet-stream` — never a hard error, so
+ * nothing that depended on the old always-octet-stream behavior regresses. An explicit `upload …
+ * type "…"` clause always wins over this table. */
+const EXTENSION_MIME_TABLE: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.json': 'application/json',
+  '.xml': 'application/xml',
+  '.zip': 'application/zip',
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript',
+};
+
+function inferContentType(filePath: string): string {
+  return EXTENSION_MIME_TABLE[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+}
+
 interface PreparedBody {
   readonly sendBody: BodyInit | undefined;
   /** Human-readable text for the report/redaction; undefined only if there truly is no body. */
@@ -1061,9 +1088,10 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
         throw new RuntimeError(`could not read \`upload\` file "${filePath}" (resolved ${abs}): ${(err as Error).message}`);
       }
       const fieldName = String(evalValue(body.fieldName, ctx));
+      const contentType = body.contentType ? String(evalValue(body.contentType, ctx)) : inferContentType(abs);
       const form = new FormData();
-      form.append(fieldName, new Blob([new Uint8Array(buf)]), basename(abs));
-      const traceParts = [`${fieldName}=${basename(abs)}`];
+      form.append(fieldName, new Blob([new Uint8Array(buf)], { type: contentType }), basename(abs));
+      const traceParts = [`${fieldName}=${basename(abs)} (${contentType})`];
       for (const field of body.extra) {
         const value = stringify(evalValue(field.value, ctx));
         form.append(field.key, value);

@@ -100,6 +100,21 @@ test('tokenizes a representative .tflw snippet with the expected scopes', () => 
   assert.ok(hasScope(findToken(lines, 'subset'), 'keyword.operator.word.tflw'), '`subset` is a matcher keyword (matches subset {...})');
 });
 
+test('tokenizes base64/hex/url transform keywords (decision 22/M18) as generator-family highlighting', () => {
+  const lines = tokenizeLines(['  let creds = base64 encode("{email}:{pw}")']);
+
+  assert.ok(hasScope(findToken(lines, 'base64'), 'support.function.generator.tflw'), '`base64` should share the generator/transform highlight class');
+  assert.ok(hasScope(findToken(lines, 'encode'), 'support.function.generator.tflw'), '`encode` should share the generator/transform highlight class');
+});
+
+test('tokenizes `upload … type "…"` — `upload`/`as`/`type` all get statement-keyword highlighting (decision 22/M19)', () => {
+  const lines = tokenizeLines(['  api POST /uploads upload "./img.png" as "avatar" type "image/png"']);
+
+  assert.ok(hasScope(findToken(lines, 'upload'), 'keyword.control.tflw'), '`upload` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'as'), 'keyword.control.tflw'), '`as` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'type'), 'keyword.control.tflw'), '`type` should get the same statement-keyword highlight class as `upload`/`as`/`form`');
+});
+
 test('tokenizes tflw.config keywords (env/defaults/require/session) and env(NAME) calls', () => {
   const lines = tokenizeLines(['env local default', '  api "http://localhost:3001"', '', 'require env ADMIN_TOKEN', '', 'session admin', '  header "Authorization" is env(ADMIN_TOKEN)']);
 

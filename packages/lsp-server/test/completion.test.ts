@@ -83,3 +83,23 @@ test('getCompletions: random kind attaches spec-data.ts detail text', () => {
     ['number'],
   );
 });
+
+test('getCompletions: transform kind attaches spec-data.ts detail text (decision 22/M18)', () => {
+  const source = 'test "ok"\n  let x = base64 e';
+  const ctx = getCompletionContext(source, source.length)!;
+  const candidates = getCompletions(ctx);
+  assert.deepEqual(
+    candidates.map((c) => c.label),
+    ['encode'],
+  );
+  assert.match(candidates[0]!.detail ?? '', /decision 98/);
+});
+
+test('getCompletions: transform kind after `hex`/`url` too, matching on `decode`', () => {
+  const source = 'test "ok"\n  let x = hex d';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(
+    getCompletions(ctx).map((c) => c.label),
+    ['decode'],
+  );
+});

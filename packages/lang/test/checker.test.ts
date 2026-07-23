@@ -205,6 +205,32 @@ test('checkUnknownVariables: flags a bare `VarRef` on the right side of `let`', 
   assert.match(diags[0]!.message, /unknown variable "grandTotal"/);
 });
 
+test('checkUnknownVariables: accepts a well-shaped literal `upload … type "…"` (decision 22/M19)', () => {
+  const { program } = parseSource(`test "ok"\n  api POST /uploads upload "./img.png" as "avatar" type "image/png"\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables: flags a malformed literal `upload … type "…"` with TF032', () => {
+  const { program } = parseSource(`test "bad"\n  api POST /uploads upload "./img.png" as "avatar" type "imagepng"\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF032');
+  assert.match(diags[0]!.message, /invalid content type "imagepng"/);
+});
+
+test('checkUnknownVariables: skips the TF032 shape check for an interpolated `type "{var}"` — a runtime concern, not static', () => {
+  const { program } = parseSource(`test "ok"\n  let mime = "image/png"\n  api POST /uploads upload "./img.png" as "avatar" type "{mime}"\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables: still flags an unknown variable inside an interpolated `type "{var}"`', () => {
+  const { program } = parseSource(`test "bad"\n  api POST /uploads upload "./img.png" as "avatar" type "{mimetype}"\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF030');
+  assert.match(diags[0]!.message, /unknown variable "mimetype"/);
+});
+
 test('checkUnknownVariables: does not check a test with a file-backed table — its columns are unknown statically', () => {
   const { program } = parseSource(`with each from "./x.csv"\ntest "invite {role}"\n  api POST /invites body { role: {role}, email: {email} }\n`);
   assert.deepEqual(checkUnknownVariables(program), []);

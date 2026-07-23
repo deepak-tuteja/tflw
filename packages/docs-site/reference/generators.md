@@ -9,7 +9,7 @@ const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
 
 # Generators reference
 
-Every `unique`/`random` form — generated from
+Every `unique`/`random`/transform form — generated from
 [`packages/lang/src/spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts),
 the same manifest that generates the
 [SPEC.md §7.3.1 quick reference](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#731-generators-quick-reference-plan-decision-103-enterprise-arc-cluster-4).

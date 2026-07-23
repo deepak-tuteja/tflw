@@ -66,6 +66,15 @@ const RANDOM_CANDIDATES: readonly { readonly label: string; readonly specId: str
   { label: 'password', specId: 'random-password' },
 ];
 
+/** After `base64`/`hex`/`url` (decision 22/M18) — the completion context doesn't carry which of
+ * the three transform keywords was typed (`CompletionKind` is just `'transform'`), but every
+ * `transform-*` spec-data row shares the same kind-agnostic `notes` text, so any one of the three
+ * ids is a valid detail source for both candidates here. */
+const TRANSFORM_CANDIDATES: readonly { readonly label: string; readonly specId: string }[] = [
+  { label: 'encode', specId: 'transform-base64' },
+  { label: 'decode', specId: 'transform-base64' },
+];
+
 function matcherDetail(specId: string): string | undefined {
   const entry = MATCHERS.find((m) => m.id === specId);
   return entry ? `${entry.appliesTo} — ${entry.example}` : undefined;
@@ -92,6 +101,8 @@ export function getCompletions(ctx: CompletionContext, sources: CompletionSource
       return UNIQUE_CANDIDATES.filter((c) => byPrefix(c.label)).map((c) => ({ label: c.label, detail: generatorDetail(c.specId) }));
     case 'random':
       return RANDOM_CANDIDATES.filter((c) => byPrefix(c.label)).map((c) => ({ label: c.label, detail: generatorDetail(c.specId) }));
+    case 'transform':
+      return TRANSFORM_CANDIDATES.filter((c) => byPrefix(c.label)).map((c) => ({ label: c.label, detail: generatorDetail(c.specId) }));
     case 'session':
       return (sources.knownSessions ?? []).filter(byPrefix).map((label) => ({ label }));
   }

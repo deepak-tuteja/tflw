@@ -519,10 +519,18 @@ interpolate the raw value, unencoded, since that's JSON/text content, not a URL.
 | Inline JSON | `body { name: {n}, qty: random number 1 to 5 }` | small payloads; expressions + generators inside |
 | File-backed | `body from "./payloads/order.json"` | file is a template — `{vars}` interpolate; checker verifies existence |
 | Form-encoded | `form user={u}, pass=env(PW)` | `application/x-www-form-urlencoded` |
-| Multipart upload | `upload "./files/img.png" as "avatar"` | may combine with `form` fields |
+| Multipart upload | `upload "./files/img.png" as "avatar"` | Content-Type inferred from the file extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` overrides the inference; may combine with `form` fields (decision 22/M19) |
 | Raw text | `body text "plain payload"` | sets no JSON content-type |
 
 Out of v1: binary bodies, GraphQL blocks, XML helpers (P#32).
+
+**`upload`'s Content-Type** (decision 22/M19): `upload "./files/img.png" as "avatar" type "image/png"`
+places the optional `type "…"` clause after `as "field"` and before any `form k=v, …` fields. Left
+out, the Content-Type is inferred from the file's extension; an unrecognized extension (or no
+extension) falls back to `application/octet-stream`, matching pre-M19 behavior exactly. When given,
+`type` always wins over inference — useful for a negative test deliberately sending a wrong or
+missing type. A non-interpolated `type` literal is checker-validated against a light
+`type/subtype` shape (TF032) — a typo check, not an IANA-vocabulary gatekeeper.
 
 **Multi-line object/array literals** (`body { … }` spanning several hand-indented lines) are
 supported: the lexer tracks `{}`/`[]` bracket depth and suppresses `NEWLINE`/`INDENT`/`DEDENT`
@@ -840,6 +848,9 @@ fill (decision 98).
 | random | `random like "SKU-####-??"` | `#` = digit, `?` = letter; seed-reproducible pattern fill | `random like "SKU-####-??"` |
 | random | `random uuid` | v4, collisions allowed (not collision-guaranteed like `unique uuid`) | `random uuid` |
 | random | `random password [N]` | default length 12, min 4; satisfies a validation policy, not fake-identity realism | `random password 16` |
+| transform | `base64 encode(...)` / `base64 decode(...)` | pure deterministic value transform, not a fresh-value generator (decision 98) | `base64 encode("{email}:{password}")` |
+| transform | `hex encode(...)` / `hex decode(...)` | pure deterministic value transform, not a fresh-value generator (decision 98) | `hex encode("{token}")` |
+| transform | `url encode(...)` / `url decode(...)` | pure deterministic value transform, not a fresh-value generator (decision 98) | `url encode("{query}")` |
 <!-- GENERATED:generators:end -->
 
 Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
@@ -1213,6 +1224,7 @@ require reading the source.
 | `TF029` | Checker (config): a duplicate `session` name. | two `session admin` blocks in one `tflw.config` |
 | `TF030` | Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that's *definitely* unreachable, never one that merely might be. | `capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId` |
 | `TF031` | Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (decision 18). | `expect request connects` followed by `expect status equals 200` on the same `api` step → `can't be combined with `request connects`/`fails` on the same request` |
+| `TF032` | Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (decision 22/M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run. | `upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

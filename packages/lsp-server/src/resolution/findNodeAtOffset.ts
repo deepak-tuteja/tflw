@@ -118,7 +118,7 @@ function children(node: Node): readonly Node[] {
       return [(node as TextBody).value];
     case 'UploadBody': {
       const n = node as UploadBody;
-      return [n.filePath, n.fieldName, ...n.extra];
+      return [n.filePath, n.fieldName, ...(n.contentType ? [n.contentType] : []), ...n.extra];
     }
     case 'ExpectStmt': {
       const n = node as ExpectStmt;

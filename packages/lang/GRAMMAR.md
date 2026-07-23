@@ -102,7 +102,9 @@ BodyForm        := 'body' Object                                 # inline JSON
                  | 'body' 'from' STRING                          # file-backed JSON
                  | 'body' 'text' STRING                          # raw payload, any content-type
                  | 'form' FormField (',' FormField)*              # application/x-www-form-urlencoded
-                 | 'upload' STRING 'as' STRING ('field' STRING)?  # multipart file upload
+                 | 'upload' STRING 'as' STRING ('type' STRING)?   # multipart file upload; `type`
+                    ('form' FormField (',' FormField)*)?          # overrides extension-based MIME
+                                                                    # inference (decision 22/M19)
 FormField       := IDENT '=' Value
 
 HeaderLine      := 'header' STRING 'is' Value NEWLINE

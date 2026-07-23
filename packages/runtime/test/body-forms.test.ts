@@ -70,6 +70,57 @@ test('inline, file, form, upload, and text bodies all reach the server correctly
   await rm(dir, { recursive: true, force: true });
 });
 
+test('upload infers Content-Type from the file extension by default (decision 22/M19)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-upload-'));
+  await writeFile(join(dir, 'img.png'), 'fake-png-bytes');
+  const server = await startFixtureServer({ '/uploads': (_req, res) => json(res, 201, { ok: true }) });
+
+  const source = `test "infer"\n  api POST /uploads upload "./img.png" as "avatar"\n  expect status equals 201\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const upload = server.received.get('/uploads')![0]!;
+  assert.match(upload.body, /name="avatar"[\s\S]*?Content-Type: image\/png/);
+
+  await server.close();
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('upload `type "…"` overrides extension-based inference (decision 22/M19)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-upload-'));
+  await writeFile(join(dir, 'img.png'), 'fake-png-bytes');
+  const server = await startFixtureServer({ '/uploads': (_req, res) => json(res, 201, { ok: true }) });
+
+  const source = `test "override"\n  api POST /uploads upload "./img.png" as "avatar" type "application/x-custom"\n  expect status equals 201\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const upload = server.received.get('/uploads')![0]!;
+  assert.match(upload.body, /name="avatar"[\s\S]*?Content-Type: application\/x-custom/);
+
+  await server.close();
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('upload falls back to `application/octet-stream` for an unrecognized extension, same as pre-M19 behavior', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-upload-'));
+  await writeFile(join(dir, 'data.xyz'), 'fake-bytes');
+  const server = await startFixtureServer({ '/uploads': (_req, res) => json(res, 201, { ok: true }) });
+
+  const source = `test "fallback"\n  api POST /uploads upload "./data.xyz" as "avatar"\n  expect status equals 201\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const upload = server.received.get('/uploads')![0]!;
+  assert.match(upload.body, /name="avatar"[\s\S]*?Content-Type: application\/octet-stream/);
+
+  await server.close();
+  await rm(dir, { recursive: true, force: true });
+});
+
 test('a hand-formatted multi-line inline body sends the same JSON as its single-line equivalent (P#46)', async () => {
   const server = await startFixtureServer({ '/booking': (_req, res) => json(res, 200, { ok: true }) });
 

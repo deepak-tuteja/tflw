@@ -54,7 +54,7 @@
       "name": "support.function.env.tflw"
     },
     "keywords-statement": {
-      "match": "\\b(test|action|before|after|session|import|use|api|expect|check|let|capture|wait|until|give|require|env|default|defaults|workers|report|timeout|retry|with|each|from|as|without|redirects|upload|form|header|body)\\b",
+      "match": "\\b(test|action|before|after|session|import|use|api|expect|check|let|capture|wait|until|give|require|env|default|defaults|workers|report|timeout|retry|with|each|from|as|without|redirects|upload|form|header|body|type)\\b",
       "name": "keyword.control.tflw"
     },
     "keywords-subject": {
@@ -66,7 +66,7 @@
       "name": "keyword.operator.word.tflw"
     },
     "keywords-generator": {
-      "match": "\\b(unique|random|like|of|number|decimal|date|in|past|future|between|and|string|email|today|now|format)\\b",
+      "match": "\\b(unique|random|like|of|number|decimal|date|in|past|future|between|and|string|email|today|now|format|base64|hex|url|encode|decode)\\b",
       "name": "support.function.generator.tflw"
     },
     "constants": {

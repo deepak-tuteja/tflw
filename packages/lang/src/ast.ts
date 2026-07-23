@@ -197,11 +197,14 @@ export interface TextBody extends Node {
   readonly value: StringLit;
 }
 
-/** `upload "./f" as "field"` (+ optional `form k=v, …`) — multipart/form-data. */
+/** `upload "./f" as "field"` (+ optional `type "mime/type"`, + optional `form k=v, …`) —
+ * multipart/form-data. `contentType` null means infer from the file extension at run time
+ * (decision 22/M19), falling back to `application/octet-stream` for an unrecognized extension. */
 export interface UploadBody extends Node {
   readonly type: 'UploadBody';
   readonly filePath: StringLit;
   readonly fieldName: StringLit;
+  readonly contentType: StringLit | null;
   readonly extra: readonly FormField[];
 }
 

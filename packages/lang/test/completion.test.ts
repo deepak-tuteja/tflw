@@ -61,6 +61,16 @@ test('getCompletionContext: random-generator sub-kind position', () => {
   assert.deepEqual(ctx, { kind: 'random', prefix: 'n' });
 });
 
+test('getCompletionContext: transform sub-kind position (decision 22/M18)', () => {
+  const ctx = ctxAt('test "ok"\n  let x = base64 e');
+  assert.deepEqual(ctx, { kind: 'transform', prefix: 'e' });
+});
+
+test('getCompletionContext: transform sub-kind position after `hex`/`url` too', () => {
+  assert.deepEqual(ctxAt('test "ok"\n  let x = hex d'), { kind: 'transform', prefix: 'd' });
+  assert.deepEqual(ctxAt('test "ok"\n  let x = url e'), { kind: 'transform', prefix: 'e' });
+});
+
 test('getCompletionContext: null when the cursor sits right after an already-complete statement', () => {
   const ctx = ctxAt('test "ok"\n  api GET /health\n  expect status equals 200');
   assert.equal(ctx, null);

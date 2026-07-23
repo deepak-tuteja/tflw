@@ -34,7 +34,7 @@ export interface SemanticToken {
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
-  'with', 'each', 'from', 'as', 'without', 'redirects', 'upload', 'form', 'header', 'body',
+  'with', 'each', 'from', 'as', 'without', 'redirects', 'upload', 'form', 'header', 'body', 'type',
   'GET', 'POST', 'PUT', 'DELETE', 'PATCH',
 ]);
 
