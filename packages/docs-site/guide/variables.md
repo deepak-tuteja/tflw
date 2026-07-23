@@ -3,7 +3,7 @@
 `let` declares a variable; `{name}` interpolates it anywhere a value goes — request bodies, table
 cells, expect values:
 
-```
+```tflw
 test "creates a widget with a random price"
   let price = random decimal 5 to 50
   api POST /widgets body { name: "Random Widget", price: {price} }
@@ -42,9 +42,12 @@ A closed grammar, usable in `let`, fills, api bodies, table cells, expect values
 
 ## Value transforms
 
-```
-base64 encode({value})    base64 decode({value})
-hex encode({value})       url encode({value})
+```tflw
+test "transforms a value with base64/hex/url encoding"
+  let token = base64 encode("hello")
+  let decoded = base64 decode({token})
+  let hexToken = hex encode("hello")
+  let urlSafe = url encode("a b")
 ```
 
 Pure transforms — unlike generators, these consume an existing value rather than manufacture a

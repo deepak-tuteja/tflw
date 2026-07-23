@@ -4,7 +4,7 @@ A `.tflw` file is a sequence of `test` blocks. A test is a name plus indented st
 boilerplate imports, no test-runner ceremony. (Diagnostics, autocomplete, and more are live as you
 type in VS Code — see [Editor support](/editor).)
 
-```
+```tflw
 test "health check"
   api GET /health
   expect status equals 200
@@ -14,7 +14,7 @@ Blocks are **indentation-delimited** — the same offside rule Python uses. `api
 HTTP request; `expect` is a hard assertion (it stops the test on failure). `check` is its soft
 twin — it records a failure and keeps going, only failing the test at the very end:
 
-```
+```tflw
 test "product listing looks right"
   api GET /products
   expect status equals 200
@@ -30,7 +30,7 @@ final-state audits (report everything wrong at once).
 `capture` pulls a value out of a response and gives it a name; later steps reference it with
 `{name}` string interpolation:
 
-```
+```tflw-config
 session admin
   api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
   expect status equals 200
@@ -46,7 +46,7 @@ gets the session's captured headers auto-applied, no repeated login boilerplate.
 
 `with each` runs one reported case per row of an inline table:
 
-```
+```tflw
 with each
   | category   |
   | "tools"    |

@@ -43,7 +43,7 @@ it, and reproduce it exactly.
 
 ## Your first test
 
-```
+```tflw
 test "health check"
   api GET /health
   expect status equals 200

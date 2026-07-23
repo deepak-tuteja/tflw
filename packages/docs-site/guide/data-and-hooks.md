@@ -5,7 +5,7 @@
 `before`/`after` run once per test and share its scope — seed data in `before`, clean it up in
 `after`, no manual plumbing between them:
 
-```
+```tflw
 import "./shared/create.tflw"
 
 before
@@ -29,14 +29,14 @@ after
 `with each` reads rows from a file instead of an inline table — same one-case-per-row reporting,
 CSV or JSON:
 
-```
+```csv
 # data/widgets.csv
 name,price
 "Widget, Standard",9.99
 Widget Pro,19.99
 ```
 
-```
+```tflw
 with each from "./data/widgets.csv"
 test "creates {name} from a CSV row"
   api POST /widgets body { name: {name}, price: {price} }

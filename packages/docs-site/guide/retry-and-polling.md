@@ -5,7 +5,7 @@ one.
 
 ## `retry N` — re-run a failing test
 
-```
+```tflw
 test "flaky endpoint eventually succeeds" retry 2
   api GET /flaky
   expect status equals 200
@@ -29,7 +29,7 @@ For state that becomes true asynchronously (a job finishes, an order ships), re-
 request until its `expect`-only block passes or the wait timeout elapses (default 30s,
 `timeout wait <duration>` in config to override):
 
-```
+```tflw
 test "order eventually ships"
   api POST /products body { name: "Widget", status: "processing" }
   expect status equals 201

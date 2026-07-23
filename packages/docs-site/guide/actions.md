@@ -4,7 +4,7 @@ Factor a repeated step sequence into an `action` and reuse it across files with 
 into real JS/TS with `use` when a value needs computing (hashing, signing, formatting) rather than
 declaring:
 
-```
+```tflw
 # shared/create.tflw
 action create widget(name, price)
   api POST /widgets body { name: {name}, price: {price} }
@@ -20,7 +20,7 @@ export function makeLabel(ctx: { env: NodeJS.ProcessEnv }, id: string, price: nu
 }
 ```
 
-```
+```tflw
 import "./shared/create.tflw"
 use "./helpers/label.ts"
 

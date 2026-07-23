@@ -35,7 +35,7 @@ prints as `•••(NAME)` in `report.html`, traces, and CLI output, automatica
 `redact` masks a JSON field regardless of where its value came from — useful for PII (`email`,
 `address`, `ssn`) that's never actually read through `env(...)`:
 
-```
+```tflw-config
 env staging
   api "https://staging.example.com"
   redact body.email, body.*.address
@@ -46,7 +46,7 @@ the report-only trace — `expect`/`capture` always see the real, unmasked value
 
 ## Evidence levels — how much trace lands in the report
 
-```
+```tflw-config
 env staging
   evidence "headers-only"
 ```

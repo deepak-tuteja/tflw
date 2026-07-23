@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress';
+import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type: 'json' };
 
 // Decision 16.3 (PLAN_ENTERPRISE.md): Home · Getting Started · Guide (10 sub-topics) · Reference ·
 // Grammar · Changelog. `appearance` is intentionally left unset — VitePress's default (`true`)
@@ -13,6 +14,14 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['**/README.md'],
+
+  // Real syntax highlighting for ```tflw / ```tflw-config fences (M22, root test-coverage audit
+  // follow-up) — reuses the same TextMate grammar the VS Code extension ships, so a code sample
+  // colors identically to the editor rather than falling back to shiki's plain-text default for
+  // an unregistered language.
+  markdown: {
+    languages: [{ ...(tflwGrammar as object), aliases: ['tflw-config'] }],
+  },
 
   themeConfig: {
     nav: [

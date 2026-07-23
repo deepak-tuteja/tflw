@@ -4,7 +4,7 @@
 declaration-only (`test` is a checker error here). Two tiers, `defaults` then the active `env`
 (same-key-wins, no `extends` chains):
 
-```
+```tflw-config
 defaults
   header "Accept" is "application/json"
   timeout step 10s, expect 5s, wait 30s
@@ -25,7 +25,7 @@ resolvable env is a startup error. Unknown config keys are checker errors, not s
 
 ## Named services
 
-```
+```tflw-config
 env staging
   api "https://stg.example.com/api"          # default service
   api billing "https://billing-stg.example.com"
@@ -37,7 +37,7 @@ env staging
 
 ## Secrets
 
-```
+```tflw-config
 require env ADMIN_USER, ADMIN_PW
 ```
 
@@ -67,7 +67,7 @@ the service is actually listening.
 
 ## Client certificates (mTLS)
 
-```
+```tflw-config
 env staging
   api "https://staging.example.com"
   cert "./certs/client.pem"
@@ -80,7 +80,7 @@ alongside it.
 
 ## Host allowlist — an anti-pointed-at-prod guardrail
 
-```
+```tflw-config
 defaults
   allow hosts "api.example.com", "*.staging.example.com"
 ```

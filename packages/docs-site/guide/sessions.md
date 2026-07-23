@@ -43,7 +43,7 @@ goes stale:
 
 For the common client-credentials shape, skip the hand-written login steps:
 
-```
+```tflw-config
 session billing oauth2
   token url env(BILLING_TOKEN_URL)
   client id env(BILLING_CLIENT_ID)
