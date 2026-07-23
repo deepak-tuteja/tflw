@@ -28,3 +28,17 @@ jobs:
       - run: npm run typecheck
 
       - run: npm test
+
+      # Coverage baseline (decision: M21) — informational only, no threshold gate yet (a
+      # green-field target picked before a real baseline exists is unfair debt). Runs once (not
+      # once per Node version in the matrix) since it's the same source regardless of runtime.
+      - name: Coverage
+        if: matrix.node-version == 22
+        run: npm run coverage
+
+      - name: Upload coverage report
+        if: matrix.node-version == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
