@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "vscode": ["./test/mocks/vscode.ts"],
+      "vscode-languageclient/node": ["./test/mocks/vscode-languageclient-node.ts"]
+    }
+  }
+}
