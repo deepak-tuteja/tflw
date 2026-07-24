@@ -1,4 +1,4 @@
-error[TF012]: expected an HTTP method (GET, POST, PUT, DELETE, PATCH), found `FETCH`
+error[TF012]: expected an HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS), found `FETCH`
  --> unknown-method.tflw:2:7
   |
 2 |   api FETCH /health

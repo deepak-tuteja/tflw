@@ -109,7 +109,7 @@ export interface HeaderStmt extends Node {
 
 // ---- API steps -------------------------------------------------------------
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
 
 /** Shared shape of an api request line — used by `ApiStep` and `wait until api` (SPEC §5.5). */
 export interface ApiRequestSpec {

@@ -145,6 +145,15 @@ test('`/` right after an HTTP method starts a PATH token', () => {
   assert.deepEqual(kinds, ['ident', 'string', 'ident', 'ident', 'path']);
 });
 
+test('`/` right after HEAD or OPTIONS starts a PATH token too (gap #16)', () => {
+  for (const verb of ['HEAD', 'OPTIONS']) {
+    const { tokens, diagnostics } = lex(`test "x"\n  api ${verb} /orders/{id}\n`);
+    assert.equal(diagnostics.length, 0, `unexpected diagnostics for verb ${verb}`);
+    const path = tokens.find((t) => t.type === 'path');
+    assert.equal(path?.value, '/orders/{id}', `path token for verb ${verb}`);
+  }
+});
+
 test('`/` anywhere else is the arithmetic divide operator (M2, P#25)', () => {
   const { tokens, diagnostics } = lex(`test "x"\n  let ratio = {a} / {b}\n  api GET /health\n`);
   assert.equal(diagnostics.length, 0);
@@ -161,7 +170,7 @@ test('a named service before the method does not confuse divide-detection', () =
 });
 
 test('a variable named after an HTTP verb still divides (decision 60)', () => {
-  for (const verb of ['get', 'post', 'put', 'delete', 'patch', 'GET', 'Post']) {
+  for (const verb of ['get', 'post', 'put', 'delete', 'patch', 'head', 'options', 'GET', 'Post']) {
     const src = `test "x"\n  let ${verb} = 10\n  let ratio = ${verb} / 2\n  api GET /health\n`;
     const { tokens, diagnostics } = lex(src);
     assert.equal(diagnostics.length, 0, `unexpected diagnostics for verb ${verb}`);

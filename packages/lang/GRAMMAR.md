@@ -95,7 +95,7 @@ WaitUntilApiStep:= 'wait' 'until' 'api' ApiRequestLine NEWLINE
                                                                   # poll-until-passes retry semantics
 
 ApiRequestLine  := IDENT? METHOD PATH BodyForm? ('timeout' Duration)? ('without' 'redirects')?
-METHOD          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
+METHOD          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'
 IDENT?                                                           # an optional named service prefix (§3.2)
 
 BodyForm        := 'body' Object                                 # inline JSON

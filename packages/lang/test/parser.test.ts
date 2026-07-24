@@ -29,6 +29,16 @@ test('parses every top-level test', () => {
   assert.equal(program.tests.length, VALID.length);
 });
 
+test('parses `HEAD`/`OPTIONS` as valid HTTP methods (gap #16)', () => {
+  for (const verb of ['HEAD', 'OPTIONS']) {
+    const { program, diagnostics } = parseSource(`test "ok"\n  api ${verb} /health\n`);
+    assert.deepEqual(diagnostics, [], `unexpected diagnostics for verb ${verb}`);
+    const step = program.tests[0]!.body[0]!;
+    assert.equal(step.type, 'ApiStep');
+    assert.equal((step as { method: string }).method, verb);
+  }
+});
+
 test('parses `upload … type "…"` into UploadBody.contentType (decision 22/M19)', () => {
   const { program, diagnostics } = parseSource(
     `test "ok"\n  api POST /uploads upload "./img.png" as "avatar" type "image/png"\n`,

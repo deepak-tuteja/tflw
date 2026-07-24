@@ -41,8 +41,8 @@
       "match": "\\|"
     },
     "http-request": {
-      "comment": "`api [<service>] GET|POST|PUT|DELETE|PATCH /path`",
-      "match": "\\b(GET|POST|PUT|DELETE|PATCH)\\b(\\s+)(/\\S*)?",
+      "comment": "`api [<service>] GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS /path`",
+      "match": "\\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\\b(\\s+)(/\\S*)?",
       "captures": {
         "1": { "name": "keyword.control.http-method.tflw" },
         "3": { "name": "string.unquoted.path.tflw" }

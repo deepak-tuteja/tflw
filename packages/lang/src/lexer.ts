@@ -16,7 +16,7 @@ const PATH_CHARS = /[A-Za-z0-9_\-./{}?=&:%~]/;
 
 /** HTTP method words — a `/` right after one of these starts a PATH token; elsewhere `/` is the
  * arithmetic divide operator (M2, P#25). Case-insensitive to match the parser's method check. */
-const METHOD_WORDS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
+const METHOD_WORDS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']);
 
 function isIdentStart(ch: string): boolean {
   return /[A-Za-z_]/.test(ch);
