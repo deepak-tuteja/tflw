@@ -146,7 +146,7 @@ test('`has count` measures arrays and strings, and rejects everything else', asy
   const { program: p2 } = parseSource(invalid);
   const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: invalid });
   assert.equal(r2.ok, false);
-  assert.match(r2.tests[0]!.error ?? '', /`has count` expects an array \(or string\) subject, got number/);
+  assert.match(r2.tests[0]!.error ?? '', /`has count` expects an array \(or string, or `body bytes`\) subject, got number/);
 
   await server.close();
 });

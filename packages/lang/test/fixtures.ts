@@ -327,6 +327,18 @@ test "product response matches its documented schema"
 `,
   },
   {
+    name: 'binary-body-matcher',
+    source: `# closes TFLW-GAPS.md gap #17
+test "receipt PDF round-trips byte for byte"
+  api GET /orders/{orderId}/receipt
+  expect status equals 200
+  expect body bytes has count 45296
+  expect body bytes matches file "fixtures/expected-receipt.pdf"
+  expect body bytes not matches file "fixtures/wrong-receipt.pdf"
+  capture body bytes as receiptBytes
+`,
+  },
+  {
     name: 'retry-honoring-retry-after',
     source: `# PLAN decision 102b, enterprise arc cluster 3, closes TFLW-GAPS.md gap #5
 test "rate-limited create honors Retry-After"

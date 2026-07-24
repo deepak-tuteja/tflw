@@ -220,7 +220,7 @@ export interface ExpectStmt extends Node {
   readonly matcher: Matcher;
 }
 
-export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject | RequestSubject;
+export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject | BodyBytesSubject | RequestSubject;
 
 export interface StatusSubject extends Node {
   readonly type: 'StatusSubject';
@@ -254,6 +254,14 @@ export interface BodyTextSubject extends Node {
   readonly type: 'BodyTextSubject';
 }
 
+/** `body bytes` — the raw, untouched response body (gap #17, TFLW-GAPS.md), for binary responses
+ * (PDF, image, etc.) that `body text` would otherwise irreversibly UTF-8-corrupt. Only `hasCount`
+ * (byte length) and `matches file "<path>"` are meaningful matchers against it — see `MatcherName`
+ * and `evaluateExpect`'s dedicated `matchesFile` dispatch. */
+export interface BodyBytesSubject extends Node {
+  readonly type: 'BodyBytesSubject';
+}
+
 export type PathSegment =
   | { readonly kind: 'prop'; readonly name: string }
   | { readonly kind: 'index'; readonly index: number };
@@ -264,6 +272,7 @@ export type MatcherName =
   | 'matches'
   | 'matchesSubset'
   | 'matchesSchema'
+  | 'matchesFile'
   | 'greaterThan'
   | 'lessThan'
   | 'hasCount'
@@ -291,6 +300,11 @@ export interface Matcher extends Node {
    * (absolute) or path (resolved against the default service's base URL). */
   readonly schemaName?: StringLit;
   readonly schemaSource?: StringLit;
+  /** `matches file "<path>"` (gap #17) — set only when `name === 'matchesFile'`. A plain string
+   * literal, never `{var}`-interpolated (same deliberate choice as `schemaName`/`schemaSource`:
+   * read directly, never run through `evalValue`). Resolved against the test file's own directory
+   * at runtime, same as `schemaSource`'s relative-path handling. */
+  readonly filePath?: StringLit;
 }
 
 // ---- Bindings --------------------------------------------------------------

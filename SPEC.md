@@ -545,8 +545,8 @@ A nested object/array literal's first key may be either a bare ident or a **quot
 
 ### 5.3 Response subjects (what `expect` can see after an api step)
 
-`status`, `header "<name>"`, `body.<path>` (JSON), `body text` (non-JSON), `duration`, `request`
-(§6.2.2 — the connection attempt itself, not the response).
+`status`, `header "<name>"`, `body.<path>` (JSON), `body text` (non-JSON), `body bytes` (binary),
+`duration`, `request` (§6.2.2 — the connection attempt itself, not the response).
 
 - `body.<path>`: dot/index addressing — `body.items[0].price`. On a non-JSON response, a
   JSON-path expect raises a teaching error pointing at `body text` (P#33).
@@ -556,6 +556,14 @@ A nested object/array literal's first key may be either a bare ident or a **quot
   `expect body text contains "healthy"`. Implemented end-to-end in M2.65 (PLAN decision 51):
   lexer/parser accept `body text` as a subject (`BodyTextSubject` AST node), the interpreter
   resolves it to `response.bodyText`, and it works with `expect`/`check`/`capture` alike.
+- `body bytes`: the raw, untouched response body, for binary responses (PDF, image, …) that
+  `body text` would otherwise irreversibly UTF-8-corrupt — closes TFLW-GAPS.md gap #17.
+  `capture body bytes as x` and `expect body bytes hasCount N` (byte length) work like any other
+  subject; the one dedicated matcher is `matches file "<path>"`, a byte-for-byte comparison
+  against a file on disk (§6.2.1), since there's no literal syntax for an inline binary value.
+  `any`/`all` and every other matcher are rejected on `body bytes` — raw bytes aren't a
+  quantifiable array, and `equals`/`contains` have no non-lossy inline literal to compare against
+  (only reachable via a *captured* variable, gap #12's existing limitation, not new here).
 - `request`: not response-scoped like the others — judges whether the connection attempt itself
   succeeded (`connects`) or failed (`fails`) before any response existed. Only meaningful with
   those two matchers; not capturable, and can't be combined with a response-based assertion on the
@@ -632,8 +640,9 @@ below is ✅ shipped.
 | `matches "<regex>"` | strings | `expect header "content-type" matches "json"` |
 | `matches subset {...}` | objects | `expect body matches subset { type: "about:blank", status: 422 }` |
 | `matches schema "Name" from "src"` | objects | `expect body matches schema "ProductResponseDto" from "/openapi.json"` |
+| `matches file "<path>"` | `body bytes` | `expect body bytes matches file "expected-receipt.pdf"` |
 | `is greater than` / `is less than` | numbers, `duration` | `expect body.total is less than 100` |
-| `has count N` | arrays, UI lists | `expect body.items has count 3` |
+| `has count N` | arrays, UI lists, `body bytes` | `expect body.items has count 3` |
 | `has value` | UI fields | `expect field "Email" has value "a@b.c"` |
 | `is visible/hidden/enabled/disabled/checked` | UI locators | `expect button "Pay" is enabled` |
 | `connects` | `request` | `expect request connects` |
@@ -721,6 +730,33 @@ expect request fails matching "certificate"
   concern from this — asserting on the tool's own output isn't a request/response judgment and
   doesn't fit this (or any) DSL assertion; that stays an out-of-band concern for whatever consumes
   `report.html`/`junit.xml` directly.
+
+### 6.2.3 Binary body matching — `matches file "<path>"` (closes TFLW-GAPS.md gap #17)
+
+`body bytes` (§5.3) captures the raw, untouched response body — a binary response (PDF, image, …)
+that `body text` would otherwise irreversibly UTF-8-corrupt before any assertion ever saw it.
+`matches file` is the one dedicated matcher for it: a byte-for-byte comparison against a file on
+disk, proving "the file I get back is the file that was actually sent":
+
+```
+api GET /orders/{orderId}/receipt
+capture body bytes as receiptBytes
+expect body bytes matches file "fixtures/expected-receipt.pdf"
+```
+
+- **Only on `body bytes`** — `matches file` on any other subject is a runtime error.
+- **Path is a plain string literal, never `{var}`-interpolated** — resolved against the test
+  file's own directory, the same convention `import`/`use`/`upload`/`cert`/`key` already use.
+  Deliberately consistent with `matches schema "Name" from "src"` (§6.2.1), which reads its own
+  `schemaName`/`schemaSource` operands the same direct, non-interpolated way.
+  Same reasoning: no byte-array or base64 literal syntax exists in the grammar, so an inline
+  binary expected value can't be spelled any other way — comparing against a real file on disk is
+  the only non-lossy option, and inventing a literal syntax is a separate, much bigger feature.
+- **`hasCount` also widened** to accept `body bytes` (byte length), reusing the existing matcher —
+  `expect body bytes hasCount 45296`.
+- **`equals`/`contains` are not supported** directly on `body bytes` for the same no-inline-literal
+  reason above — only reachable via a *captured* variable from an earlier `body bytes` capture,
+  which is gap #12's already-known, already-accepted limitation, not new here.
 
 ### 6.3 Array quantifiers (P#14)
 

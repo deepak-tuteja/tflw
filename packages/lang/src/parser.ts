@@ -15,6 +15,7 @@ import type {
   ApiServiceDecl,
   ArrayLit,
   BinaryExpr,
+  BodyBytesSubject,
   BodySubject,
   BodyTextSubject,
   CallExpr,
@@ -1378,6 +1379,11 @@ class Parser {
           const subj: BodyTextSubject = { type: 'BodyTextSubject', span: this.spanFrom(start) };
           return subj;
         }
+        if (this.isKw(this.peek(), 'bytes')) {
+          this.advance();
+          const subj: BodyBytesSubject = { type: 'BodyBytesSubject', span: this.spanFrom(start) };
+          return subj;
+        }
         const path = this.parseBodyPath();
         const subj: BodySubject = { type: 'BodySubject', path, span: this.spanFrom(start) };
         return subj;
@@ -1475,6 +1481,12 @@ class Parser {
           const schemaSource = this.expectString('a URL or path to the OpenAPI document, e.g. `from "/openapi.json"`');
           if (!schemaSource) return null;
           return { type: 'Matcher', name: 'matchesSchema', negated, value: null, schemaName, schemaSource, span: this.spanFrom(start) };
+        }
+        if (this.isKw(this.peek(), 'file')) {
+          this.advance();
+          const filePath = this.expectString('a file path string, e.g. `matches file "expected.pdf"`');
+          if (!filePath) return null;
+          return { type: 'Matcher', name: 'matchesFile', negated, value: null, filePath, span: this.spanFrom(start) };
         }
         const v = this.expectString('a regex string, e.g. `matches "json"`');
         return v ? mk('matches', v) : null;

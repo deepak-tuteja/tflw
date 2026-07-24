@@ -76,6 +76,9 @@ export interface ResponseTrace {
   readonly statusText: string;
   readonly headers: Readonly<Record<string, string>>;
   readonly bodyText: string;
+  /** Raw, untouched response body bytes (gap #17) — `bodyText` is derived from this buffer, not
+   * from a separate `res.text()` read, so both stay consistent with what was actually received. */
+  readonly bodyBytes: Buffer;
   /** Parsed JSON if the body parsed as JSON, else undefined. */
   readonly json?: unknown;
   readonly durationMs: number;

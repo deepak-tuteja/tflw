@@ -33,6 +33,7 @@ import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
 import { redactFields } from './fieldRedact.js';
 import { evaluateSchemaMatch } from './contract.js';
+import { evaluateFileMatch } from './binary-match.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
@@ -760,7 +761,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'ExpectStmt': {
-          result = await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config);
+          result = await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
         case 'LetStmt': {
@@ -1102,8 +1103,8 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
   }
 }
 
-async function execExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
-  const outcome = await evaluateExpect(step, response, connectionError, ctx, config);
+async function execExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig, baseDir: string): Promise<StepResult> {
+  const outcome = await evaluateExpect(step, response, connectionError, ctx, config, baseDir);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }
 
@@ -1164,7 +1165,7 @@ async function execWaitUntilApi(
     // statically forbids a `request` assertion here, decision 18) — `connectionError` is always
     // null; a real connection failure still throws out of `execApi` above and crashes the poll
     // loop exactly like today, unchanged.
-    const outcomes = await Promise.all(step.expects.map((e) => evaluateExpect(e, trace.response, null, ctx, config)));
+    const outcomes = await Promise.all(step.expects.map((e) => evaluateExpect(e, trace.response, null, ctx, config, baseDir)));
     const allOk = outcomes.every((o) => o.ok);
     const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
     if (allOk) {
@@ -1193,7 +1194,7 @@ function sleep(ms: number): Promise<void> {
 
 // ---- expect evaluation (shared by `expect` and `wait until api`) ----------
 
-async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, config: ResolvedConfig): Promise<MatchOutcome> {
+async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, config: ResolvedConfig, baseDir: string): Promise<MatchOutcome> {
   // `request connects`/`fails` (SPEC §6.2.2, PLAN decision 18) judges the connection attempt
   // itself, not the response — bypasses `resolveSubject`/`evalMatcher` entirely, the same way
   // `matchesSchema` below bypasses `evalMatcher` for its own different reason.
@@ -1205,6 +1206,14 @@ async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, 
   // can't evaluate itself — dispatched here instead, bypassing it entirely.
   if (step.matcher.name === 'matchesSchema') {
     return evaluateSchemaMatch(label, value, step.matcher.schemaName!.value, step.matcher.schemaSource!.value, config, step.matcher.negated);
+  }
+  // `matches file "<path>"` (gap #17) reads a file off disk — same reason as `matchesSchema`
+  // above, bypassing `evalMatcher` (pure, synchronous by design) entirely.
+  if (step.matcher.name === 'matchesFile') {
+    if (!(value instanceof Uint8Array)) {
+      throw new RuntimeError('`matches file` is only valid on a `body bytes` subject');
+    }
+    return evaluateFileMatch(label, Buffer.from(value), step.matcher.filePath!.value, baseDir, step.matcher.negated);
   }
   return evalMatcher(label, value, step.matcher, ctx);
 }
@@ -1271,6 +1280,8 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
       return { value: response.headers[subject.name.value.toLowerCase()], label: `header "${subject.name.value}"` };
     case 'BodyTextSubject':
       return { value: response.bodyText, label: 'body text' };
+    case 'BodyBytesSubject':
+      return { value: response.bodyBytes, label: 'body bytes' };
     case 'BodySubject': {
       if (response.json === undefined) {
         throw new RuntimeError('response body is not JSON — a `body.<path>` subject needs a JSON response (use `body text` for non-JSON)');
@@ -1342,18 +1353,27 @@ function redactRequest(req: RequestTrace, r: Redactor, config: ResolvedConfig): 
   return { method: req.method, url, headers, ...(body !== undefined ? { body } : {}) };
 }
 
+// Gap #17: the report-only copy never carries real bytes, at any evidence level — `results.json`
+// is `JSON.stringify`'d verbatim (reporter/src/index.ts), and a raw `Buffer` serializes as one
+// array entry per byte (`{"type":"Buffer","data":[…]}`), exactly the unreadable-artifact problem
+// D17.4 fixed for `repr()`'s failure-message text. This field only exists to satisfy
+// `ResponseTrace`'s shape for this report copy — nothing in `packages/reporter` ever reads it back
+// (html.ts/junit rendering only ever used `bodyText`); the live, ungutted `response.bodyBytes` used
+// by `expect`/`capture` comes from the raw trace `execApi` returns alongside this, never from here.
+const NO_REPORT_BODY_BYTES = Buffer.alloc(0);
+
 function redactResponse(res: ResponseTrace, r: Redactor, config: ResolvedConfig): ResponseTrace {
   const statusText = r.redact(res.statusText);
   if (config.evidenceLevel === 'none') {
-    return { status: res.status, statusText, headers: {}, bodyText: EVIDENCE_OMITTED_BODY, durationMs: res.durationMs };
+    return { status: res.status, statusText, headers: {}, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
   }
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(res.headers)) headers[k] = r.redact(v);
   if (config.evidenceLevel === 'headers-only') {
-    return { status: res.status, statusText, headers, bodyText: EVIDENCE_OMITTED_BODY, durationMs: res.durationMs };
+    return { status: res.status, statusText, headers, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
   }
   const bodyText = redactFields(r.redact(res.bodyText), config.redactPatterns);
-  return { status: res.status, statusText, headers, bodyText, durationMs: res.durationMs };
+  return { status: res.status, statusText, headers, bodyText, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
 }
 
 // ---- helpers ---------------------------------------------------------------

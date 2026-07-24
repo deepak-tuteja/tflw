@@ -271,6 +271,7 @@ function subjectKeyword(subject: Subject): string {
       return 'header';
     case 'BodySubject':
     case 'BodyTextSubject':
+    case 'BodyBytesSubject':
       return 'body';
     case 'RequestSubject':
       return 'request';

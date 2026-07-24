@@ -127,13 +127,19 @@ function children(node: Node): readonly Node[] {
     case 'StatusSubject':
     case 'DurationSubject':
     case 'BodyTextSubject':
+    case 'BodyBytesSubject':
     case 'BodySubject':
       return [];
     case 'HeaderSubject':
       return [(node as HeaderSubject).name];
     case 'Matcher': {
       const n = node as Matcher;
-      return [...(n.value ? [n.value] : []), ...(n.schemaName ? [n.schemaName] : []), ...(n.schemaSource ? [n.schemaSource] : [])];
+      return [
+        ...(n.value ? [n.value] : []),
+        ...(n.schemaName ? [n.schemaName] : []),
+        ...(n.schemaSource ? [n.schemaSource] : []),
+        ...(n.filePath ? [n.filePath] : []),
+      ];
     }
     case 'LetStmt':
       return [(node as LetStmt).value];

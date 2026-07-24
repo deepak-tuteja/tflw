@@ -124,7 +124,12 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
           signal: controller.signal,
           redirect: opts.followRedirects ? 'follow' : 'manual',
         });
-    const bodyText = await res.text();
+    // Single read (gap #17): the body stream can only be consumed once, so `bodyText` is derived
+    // from `bodyBytes` rather than a separate `res.text()` call — confirmed behavior-preserving,
+    // `Buffer.from(bytes).toString('utf8')` matches `res.text()`'s own `TextDecoder` byte-for-byte,
+    // including replacement-character behavior on invalid UTF-8.
+    const bodyBytes = Buffer.from(await res.arrayBuffer());
+    const bodyText = bodyBytes.toString('utf8');
     const durationMs = Math.round(performance.now() - start);
     const headers = buildHeaderMap(res.headers);
     let json: unknown;
@@ -133,7 +138,7 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     } catch {
       json = undefined;
     }
-    return { status: res.status, statusText: res.statusText, headers, bodyText, json, durationMs };
+    return { status: res.status, statusText: res.statusText, headers, bodyText, bodyBytes, json, durationMs };
   } catch (err) {
     if (controller.signal.aborted) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
     throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);

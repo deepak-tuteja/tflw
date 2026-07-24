@@ -1,0 +1,133 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "receipt PDF round-trips byte for byte",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "receipt PDF round-trips byte for byte"
+          }
+        ]
+      },
+      "tags": [],
+      "sessions": [],
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}/receipt"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true,
+          "retryAfter": null
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "StatusSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 200,
+              "raw": "200"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyBytesSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "hasCount",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 45296,
+              "raw": "45296"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyBytesSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "matchesFile",
+            "negated": false,
+            "value": null,
+            "filePath": {
+              "type": "StringLit",
+              "value": "fixtures/expected-receipt.pdf",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "fixtures/expected-receipt.pdf"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyBytesSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "matchesFile",
+            "negated": true,
+            "value": null,
+            "filePath": {
+              "type": "StringLit",
+              "value": "fixtures/wrong-receipt.pdf",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "fixtures/wrong-receipt.pdf"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodyBytesSubject"
+          },
+          "name": "receiptBytes"
+        }
+      ]
+    }
+  ]
+}

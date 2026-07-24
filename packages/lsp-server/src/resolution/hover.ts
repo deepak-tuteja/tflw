@@ -25,6 +25,7 @@ const MATCHER_SPEC_ID: Record<MatcherName, string> = {
   matches: 'matches-regex',
   matchesSubset: 'matches-subset',
   matchesSchema: 'matches-schema',
+  matchesFile: 'matches-file',
   greaterThan: 'greater-less-than',
   lessThan: 'greater-less-than',
   hasCount: 'has-count',

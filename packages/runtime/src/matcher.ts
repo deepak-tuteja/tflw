@@ -209,7 +209,10 @@ function contains(actual: unknown, expected: unknown): boolean {
 function count(actual: unknown): number {
   if (Array.isArray(actual)) return actual.length;
   if (typeof actual === 'string') return actual.length;
-  throw new RuntimeError(`\`has count\` expects an array (or string) subject, got ${describe(actual)}`);
+  // gap #17: `body bytes hasCount N` — byte length. `Buffer` extends `Uint8Array`, so this covers
+  // `ResponseTrace.bodyBytes` directly, no `Buffer`-specific branch needed.
+  if (actual instanceof Uint8Array) return actual.length;
+  throw new RuntimeError(`\`has count\` expects an array (or string, or \`body bytes\`) subject, got ${describe(actual)}`);
 }
 
 function num(value: unknown, matcher: string): number {
@@ -222,5 +225,9 @@ function num(value: unknown, matcher: string): number {
 export function repr(value: unknown): string {
   if (value === undefined) return 'undefined';
   if (typeof value === 'string') return JSON.stringify(value);
+  // gap #17: `JSON.stringify` on a `Buffer`/`Uint8Array` serializes one object key per byte
+  // (`{"0":37,"1":80,…}`) — unreadable in a `capture` step message or a `hasCount` failure. A
+  // short human-readable summary instead, no attempt to dump raw bytes into text.
+  if (value instanceof Uint8Array) return `<binary body, ${value.length} bytes>`;
   return JSON.stringify(value) ?? String(value);
 }

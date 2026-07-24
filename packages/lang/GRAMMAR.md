@@ -124,6 +124,8 @@ Quantifier  := 'any' | 'all'                                    # only over a bo
 Subject     := 'status'
              | 'duration'
              | 'header' STRING
+             | 'body' 'text'                                     # raw response body as a string (§5.3, decision 51)
+             | 'body' 'bytes'                                    # raw response body bytes (§6.2.1, gap #17)
              | 'body' BodyPath?                                 # bare `body` = whole-body subject
              | 'request'                                        # (§6.2.2, PLAN decision 18) — the
                                                                   # connection attempt, not a response
@@ -134,6 +136,7 @@ MatcherCore := 'equals' Value
              | 'matches' STRING                                  # regex
              | 'matches' 'subset' Object                         # (§6.3.1)
              | 'matches' 'schema' STRING 'from' STRING            # (§6.2.1, PLAN decision 102a, gap #6)
+             | 'matches' 'file' STRING                            # (§6.2.1, gap #17) — `body bytes` only
              | 'is' 'greater' 'than' Value
              | 'is' 'less' 'than' Value
              | 'has' 'count' NUMBER
