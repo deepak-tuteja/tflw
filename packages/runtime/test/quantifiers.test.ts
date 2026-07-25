@@ -123,3 +123,26 @@ test('`all` also treats a per-element navigation failure as that element failing
 
   await server.close();
 });
+
+// D19.8 (TFLW-GAPS.md gap #19) — `any`/`all` extend to `body csv`, same walk-until-array
+// evaluation, just rooted at freshly-parsed CSV rows instead of `response.json`.
+test('`any`/`all` extend to `body csv` (D19.8), same as `body.<path>`', async () => {
+  const server = await startFixtureServer({
+    '/orders': (_req, res) => res.writeHead(200, { 'content-type': 'text/csv' }).end('id,status\n1,delivered\n2,pending\n'),
+  });
+
+  const source = `test "quantifiers over body csv"
+  api GET /orders
+  expect any body csv.status equals "delivered"
+  expect all body csv.status equals "delivered"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  const t = report.tests[0]!;
+  assert.equal(t.steps[1]!.ok, true); // any ... equals "delivered"
+  assert.equal(t.steps[2]!.ok, false); // all ... equals "delivered" — row 2 is pending
+  assert.match(t.steps[2]!.detail ?? '', /body csv\[1\]\.status/);
+
+  await server.close();
+});

@@ -1,4 +1,4 @@
-error[TF010]: `any` only applies to a `body.<path>` subject
+error[TF010]: `any` only applies to a `body.<path>` or `body csv` subject
  --> quantifier-on-non-body-subject.tflw:3:14
   |
 3 |   expect any status equals 200

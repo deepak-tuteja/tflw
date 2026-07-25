@@ -339,6 +339,20 @@ test "receipt PDF round-trips byte for byte"
 `,
   },
   {
+    name: 'body-csv-pdf-subjects',
+    source: `# closes TFLW-GAPS.md gap #19
+test "asserts on CSV and PDF response bodies"
+  api GET /orders/export
+  expect body csv has count 2
+  expect body csv[0].status equals "delivered"
+  expect any body csv.status equals "delivered"
+  capture body csv as rows
+
+  api GET /orders/{orderId}/receipt
+  expect body pdf text contains "Total: $19.98"
+`,
+  },
+  {
     name: 'retry-honoring-retry-after',
     source: `# PLAN decision 102b, enterprise arc cluster 3, closes TFLW-GAPS.md gap #5
 test "rate-limited create honors Retry-After"
@@ -639,6 +653,13 @@ export const INVALID: readonly Fixture[] = [
     source: `test "any only applies to body"
   api GET /health
   expect any status equals 200
+`,
+  },
+  {
+    name: 'body-pdf-only-text-defined',
+    source: `test "only body pdf text is defined"
+  api GET /orders/{orderId}/receipt
+  expect body pdf foo contains "Total"
 `,
   },
   {

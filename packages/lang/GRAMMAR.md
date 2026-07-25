@@ -120,12 +120,14 @@ RetryAfterClause:= 'retry' 'honoring' STRING 'up' 'to' NUMBER NEWLINE
 ExpectStmt  := 'expect' Quantifier? Subject 'not'? MatcherCore NEWLINE
 CheckStmt   := 'check'  Quantifier? Subject 'not'? MatcherCore NEWLINE      # soft twin of expect
 
-Quantifier  := 'any' | 'all'                                    # only over a body.<path> subject
+Quantifier  := 'any' | 'all'                                    # only over a body.<path> or body csv subject
 Subject     := 'status'
              | 'duration'
              | 'header' STRING
              | 'body' 'text'                                     # raw response body as a string (§5.3, decision 51)
              | 'body' 'bytes'                                    # raw response body bytes (§6.2.1, gap #17)
+             | 'body' 'csv' BodyPath?                            # body parsed as RFC 4180 CSV (gap #19)
+             | 'body' 'pdf' 'text'                               # text extracted from a PDF body (gap #19)
              | 'body' BodyPath?                                 # bare `body` = whole-body subject
              | 'request'                                        # (§6.2.2, PLAN decision 18) — the
                                                                   # connection attempt, not a response

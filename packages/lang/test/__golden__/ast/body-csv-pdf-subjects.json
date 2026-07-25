@@ -1,0 +1,168 @@
+{
+  "type": "Program",
+  "imports": [],
+  "uses": [],
+  "actions": [],
+  "hooks": [],
+  "tests": [
+    {
+      "type": "TestDecl",
+      "name": {
+        "type": "StringLit",
+        "value": "asserts on CSV and PDF response bodies",
+        "parts": [
+          {
+            "kind": "text",
+            "value": "asserts on CSV and PDF response bodies"
+          }
+        ]
+      },
+      "tags": [],
+      "sessions": [],
+      "retry": 0,
+      "table": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/export"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true,
+          "retryAfter": null
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyCsvSubject",
+            "path": []
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "hasCount",
+            "negated": false,
+            "value": {
+              "type": "NumberLit",
+              "value": 2,
+              "raw": "2"
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyCsvSubject",
+            "path": [
+              {
+                "kind": "index",
+                "index": 0
+              },
+              {
+                "kind": "prop",
+                "name": "status"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "delivered",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "delivered"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": "any",
+          "subject": {
+            "type": "BodyCsvSubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "status"
+              }
+            ]
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "equals",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "delivered",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "delivered"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodyCsvSubject",
+            "path": []
+          },
+          "name": "rows"
+        },
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "GET",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/orders/{orderId}/receipt"
+          },
+          "body": null,
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true,
+          "retryAfter": null
+        },
+        {
+          "type": "ExpectStmt",
+          "soft": false,
+          "quantifier": null,
+          "subject": {
+            "type": "BodyPdfTextSubject"
+          },
+          "matcher": {
+            "type": "Matcher",
+            "name": "contains",
+            "negated": false,
+            "value": {
+              "type": "StringLit",
+              "value": "Total: $19.98",
+              "parts": [
+                {
+                  "kind": "text",
+                  "value": "Total: $19.98"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

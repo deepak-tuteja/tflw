@@ -45,7 +45,7 @@ const OPERATORS = new Set([
 ]);
 
 /** Subject words (tflw.tmLanguage.json's `keywords-subject`). */
-const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'request']);
+const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request']);
 
 /** Generator words (tflw.tmLanguage.json's `keywords-generator`). */
 const FUNCTIONS = new Set([

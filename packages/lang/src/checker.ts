@@ -272,6 +272,8 @@ function subjectKeyword(subject: Subject): string {
     case 'BodySubject':
     case 'BodyTextSubject':
     case 'BodyBytesSubject':
+    case 'BodyCsvSubject':
+    case 'BodyPdfTextSubject':
       return 'body';
     case 'RequestSubject':
       return 'request';

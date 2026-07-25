@@ -128,6 +128,8 @@ function children(node: Node): readonly Node[] {
     case 'DurationSubject':
     case 'BodyTextSubject':
     case 'BodyBytesSubject':
+    case 'BodyCsvSubject':
+    case 'BodyPdfTextSubject':
     case 'BodySubject':
       return [];
     case 'HeaderSubject':

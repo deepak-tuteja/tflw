@@ -220,7 +220,7 @@ export interface ExpectStmt extends Node {
   readonly matcher: Matcher;
 }
 
-export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject | BodyBytesSubject | RequestSubject;
+export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject | BodyBytesSubject | BodyCsvSubject | BodyPdfTextSubject | RequestSubject;
 
 export interface StatusSubject extends Node {
   readonly type: 'StatusSubject';
@@ -260,6 +260,23 @@ export interface BodyTextSubject extends Node {
  * and `evaluateExpect`'s dedicated `matchesFile` dispatch. */
 export interface BodyBytesSubject extends Node {
   readonly type: 'BodyBytesSubject';
+}
+
+/** `body csv` / `body csv[0].name` (gap #19, TFLW-GAPS.md) — the response body parsed as RFC 4180
+ * CSV (header row required) into `Array<Record<string, string>>`, then addressed via the same
+ * `path` machinery `BodySubject` already uses. Parsed lazily from `response.bodyText` inside
+ * `resolveSubject`, not eagerly at request time. */
+export interface BodyCsvSubject extends Node {
+  readonly type: 'BodyCsvSubject';
+  /** Empty path = the whole parsed array; otherwise dot/index segments, same as `BodySubject`. */
+  readonly path: readonly PathSegment[];
+}
+
+/** `body pdf text` (gap #19, TFLW-GAPS.md) — text extracted from a PDF response body (walks the
+ * `Pages` tree, inflates `/FlateDecode` content streams, reads `Tj`/`TJ`/`T*` operators). Flat
+ * string subject, no path — pages join with a blank line, lines within a page join with `\n`. */
+export interface BodyPdfTextSubject extends Node {
+  readonly type: 'BodyPdfTextSubject';
 }
 
 export type PathSegment =

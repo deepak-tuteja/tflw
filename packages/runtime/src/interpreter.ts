@@ -34,6 +34,8 @@ import { Redactor, redactReport } from './redact.js';
 import { redactFields } from './fieldRedact.js';
 import { evaluateSchemaMatch } from './contract.js';
 import { evaluateFileMatch } from './binary-match.js';
+import { parseCsv } from './csv-parse.js';
+import { extractPdfText } from './pdf-text.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
@@ -1222,23 +1224,34 @@ async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, 
  * until a value is an array, then apply the remaining segments per element. */
 function evaluateQuantified(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx): MatchOutcome {
   if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion');
-  if (response.json === undefined) throw new RuntimeError('`any`/`all` need a JSON response body (use `body text` for non-JSON)');
-  if (step.subject.type !== 'BodySubject') throw new RuntimeError('`any`/`all` only apply to a `body.<path>` subject');
+  if (step.subject.type !== 'BodySubject' && step.subject.type !== 'BodyCsvSubject') {
+    throw new RuntimeError('`any`/`all` only apply to a `body.<path>` or `body csv` subject');
+  }
   if (step.matcher.name === 'matchesSchema') {
     throw new RuntimeError('`any`/`all` cannot be combined with `matches schema` — validate the whole array element by element isn\'t supported for contract matching');
   }
   const path = step.subject.path;
 
-  let current: unknown = response.json;
+  // D19.8 — the root value to walk depends on the subject: JSON body for `body.<path>`, freshly
+  // parsed CSV rows for `body csv`. Everything from here (walk remaining path, find the first
+  // array, map + `evalMatcher` over elements) is already subject-agnostic once it has a root value.
+  let current: unknown;
+  if (step.subject.type === 'BodyCsvSubject') {
+    current = parseCsv(response.bodyText);
+  } else {
+    if (response.json === undefined) throw new RuntimeError('`any`/`all` need a JSON response body (use `body text` for non-JSON)');
+    current = response.json;
+  }
+  const subjectLabel = step.subject.type === 'BodyCsvSubject' ? 'body csv' : 'body';
   let i = 0;
   while (i < path.length && !Array.isArray(current)) {
     current = navigate(current, path[i]!, pathLabel(path.slice(0, i + 1)));
     i++;
   }
   if (!Array.isArray(current)) {
-    throw new RuntimeError(`\`${step.quantifier}\` needs an array somewhere in \`body${pathLabel(path)}\`, but never found one`);
+    throw new RuntimeError(`\`${step.quantifier}\` needs an array somewhere in \`${subjectLabel}${pathLabel(path)}\`, but never found one`);
   }
-  const arrayLabel = `body${pathLabel(path.slice(0, i))}`;
+  const arrayLabel = `${subjectLabel}${pathLabel(path.slice(0, i))}`;
   const remaining = path.slice(i);
 
   // A per-element navigation failure (an element missing the remaining path entirely, e.g. a
@@ -1282,6 +1295,14 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
       return { value: response.bodyText, label: 'body text' };
     case 'BodyBytesSubject':
       return { value: response.bodyBytes, label: 'body bytes' };
+    case 'BodyCsvSubject': {
+      const rows = parseCsv(response.bodyText);
+      let value: unknown = rows;
+      for (const seg of subject.path) value = navigate(value, seg, pathLabel(subject.path));
+      return { value, label: 'body csv' + pathLabel(subject.path) };
+    }
+    case 'BodyPdfTextSubject':
+      return { value: extractPdfText(response.bodyBytes), label: 'body pdf text' };
     case 'BodySubject': {
       if (response.json === undefined) {
         throw new RuntimeError('response body is not JSON — a `body.<path>` subject needs a JSON response (use `body text` for non-JSON)');

@@ -16,6 +16,8 @@ import type {
   ArrayLit,
   BinaryExpr,
   BodyBytesSubject,
+  BodyCsvSubject,
+  BodyPdfTextSubject,
   BodySubject,
   BodyTextSubject,
   CallExpr,
@@ -1337,8 +1339,8 @@ class Parser {
     }
     const subject = this.parseSubject();
     if (!subject) return null;
-    if (quantifier && subject.type !== 'BodySubject') {
-      this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
+    if (quantifier && subject.type !== 'BodySubject' && subject.type !== 'BodyCsvSubject') {
+      this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
       return null;
     }
     const matcher = this.parseMatcher();
@@ -1382,6 +1384,18 @@ class Parser {
         if (this.isKw(this.peek(), 'bytes')) {
           this.advance();
           const subj: BodyBytesSubject = { type: 'BodyBytesSubject', span: this.spanFrom(start) };
+          return subj;
+        }
+        if (this.isKw(this.peek(), 'csv')) {
+          this.advance();
+          const path = this.parseBodyPath();
+          const subj: BodyCsvSubject = { type: 'BodyCsvSubject', path, span: this.spanFrom(start) };
+          return subj;
+        }
+        if (this.isKw(this.peek(), 'pdf')) {
+          this.advance();
+          if (!this.expectKw('text')) return null; // `body pdf <x>` — only `text` is defined for v1
+          const subj: BodyPdfTextSubject = { type: 'BodyPdfTextSubject', span: this.spanFrom(start) };
           return subj;
         }
         const path = this.parseBodyPath();

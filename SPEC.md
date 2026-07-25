@@ -546,7 +546,8 @@ A nested object/array literal's first key may be either a bare ident or a **quot
 ### 5.3 Response subjects (what `expect` can see after an api step)
 
 `status`, `header "<name>"`, `body.<path>` (JSON), `body text` (non-JSON), `body bytes` (binary),
-`duration`, `request` (§6.2.2 — the connection attempt itself, not the response).
+`body csv` (CSV), `body pdf text` (PDF), `duration`, `request` (§6.2.2 — the connection attempt
+itself, not the response).
 
 - `body.<path>`: dot/index addressing — `body.items[0].price`. On a non-JSON response, a
   JSON-path expect raises a teaching error pointing at `body text` (P#33).
@@ -564,6 +565,19 @@ A nested object/array literal's first key may be either a bare ident or a **quot
   `any`/`all` and every other matcher are rejected on `body bytes` — raw bytes aren't a
   quantifiable array, and `equals`/`contains` have no non-lossy inline literal to compare against
   (only reachable via a *captured* variable, gap #12's existing limitation, not new here).
+- `body csv` / `body csv[0].name`: the response body parsed as RFC 4180 CSV (header row required,
+  comma delimiter, `""`-escaped quoted fields — closes TFLW-GAPS.md gap #19), addressed via the
+  same `body.<path>` machinery — bare `body csv` is the whole parsed array, `body csv[0].name`
+  indexes into a row's column. Every matcher works on it like any other array/object subject
+  (`equals`/`contains`/`matches subset`/`hasCount`/…), and `any`/`all` extend to it too:
+  `expect any body csv.status equals "delivered"`. A malformed row (wrong field count for the
+  header) raises a specific `RuntimeError`, not a silent empty/partial result.
+- `body pdf text`: text extracted from a PDF response body (closes TFLW-GAPS.md gap #19) — walks
+  the `/Pages` tree (every page, not just the first), inflating each `/Contents` stream when
+  `/Filter /FlateDecode` is present, and reads the `Tj`/`TJ`/`T*` text-showing operators. A flat
+  string subject (no path): lines within a page join with `\n`, pages join with `\n\n`. Scoped to
+  PDFs shaped like what a simple PDF writer emits (standard text encoding, no embedded fonts,
+  annotations, or images) — a malformed/unparsable PDF raises a specific `RuntimeError`.
 - `request`: not response-scoped like the others — judges whether the connection attempt itself
   succeeded (`connects`) or failed (`fails`) before any response existed. Only meaningful with
   those two matchers; not capturable, and can't be combined with a response-based assertion on the

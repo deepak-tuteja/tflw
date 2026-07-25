@@ -1,0 +1,5 @@
+error[TF010]: expected `text`, found `foo`
+ --> body-pdf-only-text-defined.tflw:3:19
+  |
+3 |   expect body pdf foo contains "Total"
+  |                   ^^^
