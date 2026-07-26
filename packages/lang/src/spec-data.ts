@@ -27,8 +27,8 @@ export const MATCHERS: readonly MatcherEntry[] = [
   { id: 'matches-file', syntax: '`matches file "<path>"`', appliesTo: '`body bytes`', example: '`expect body bytes matches file "expected-receipt.pdf"`', status: 'shipped' },
   { id: 'greater-less-than', syntax: '`is greater than` / `is less than`', appliesTo: 'numbers, `duration`', example: '`expect body.total is less than 100`', status: 'shipped' },
   { id: 'has-count', syntax: '`has count N`', appliesTo: 'arrays, UI lists, `body bytes`', example: '`expect body.items has count 3`', status: 'shipped' },
-  { id: 'has-value', syntax: '`has value`', appliesTo: 'UI fields', example: '`expect field "Email" has value "a@b.c"`', status: 'planned' },
-  { id: 'state-word', syntax: '`is visible/hidden/enabled/disabled/checked`', appliesTo: 'UI locators', example: '`expect button "Pay" is enabled`', status: 'planned' },
+  { id: 'has-value', syntax: '`has value`', appliesTo: 'UI fields', example: '`expect field "Email" has value "a@b.c"`', status: 'shipped' },
+  { id: 'state-word', syntax: '`is visible/hidden/enabled/disabled/checked`', appliesTo: 'UI locators', example: '`expect button "Pay" is enabled`', status: 'shipped' },
   { id: 'connects', syntax: '`connects`', appliesTo: '`request`', example: '`expect request connects`', status: 'shipped' },
   { id: 'fails', syntax: '`fails` / `fails matching "<regex>"`', appliesTo: '`request`', example: '`expect request fails matching "certificate"`', status: 'shipped' },
 ] as const;

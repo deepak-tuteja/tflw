@@ -34,4 +34,12 @@ await build({
   target: 'node22',
   outfile: 'dist/cli.cjs',
   define: { __TFLW_VERSION__: JSON.stringify(pkg.version) },
+  // `playwright` (M3a, D5) is an optional peer of `@tflw/runtime`, dynamically imported only when
+  // a test actually runs a browser step — it must NOT be inlined into this bundle: (a) it's often
+  // not installed at all (an API-only consumer never needs it, and this build must still succeed
+  // without it), and (b) even when it is, `playwright-core`'s own bundle references optional
+  // native-transport deps (`chromium-bidi`) that esbuild can't resolve statically. `external`
+  // leaves the `import('playwright')` call as a real runtime resolution against the consumer's own
+  // `node_modules` — exactly the optional-peer behavior `browser.ts`'s `loadPlaywright()` expects.
+  external: ['playwright'],
 });

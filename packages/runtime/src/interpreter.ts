@@ -16,6 +16,7 @@ import type {
   ExpectStmt,
   HookDecl,
   LetStmt,
+  Locator as LocatorAst,
   Oauth2SessionConfig,
   PathSegment,
   Program,
@@ -27,8 +28,29 @@ import type {
   TestDecl,
   WaitUntilApiStmt,
 } from '@tflw/lang';
-import { evalValue, interpolatePath, navigate, RuntimeError, stringify, type EvalCtx } from './eval.js';
+import { evalValue, interpolatePath, navigate, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
+import { evalUiMatcherOnce } from './uiMatcher.js';
+import {
+  BrowserPageState,
+  describeLocator,
+  performCheck,
+  performClick,
+  performFill,
+  performHover,
+  performOpen,
+  performPressOnLocator,
+  performPressOnPage,
+  performScrollIntoView,
+  performSelect,
+  performUncheck,
+  requireSingleMatch,
+  resolveLocator,
+  resolveLocatorSnapshot,
+  type BrowserManager,
+  type PWPage,
+  type ResolvedLocator,
+} from './browser.js';
 import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
@@ -86,6 +108,11 @@ export interface RunOptions {
    * test helpers), where there is no cross-call race and the original first-caller-wins behavior
    * applies instead. */
   readonly sessionSpliceOwners?: ReadonlyMap<string, number>;
+  /** One shared browser process for the whole `tflw run` invocation (M3a, D13) — the CLI creates
+   * it once and passes the same instance to every file's `runProgram` call, closing it after all
+   * of them finish. Omitted entirely means no browser step can run this call (a clear internal
+   * error, not a crash) — the case for every existing API-only test harness/fixture. */
+  readonly browserManager?: BrowserManager;
 }
 
 export interface RunOutput {
@@ -138,14 +165,14 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length, env: config.envName });
 
   const results: TestResult[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   if (beforeFileOk) {
     for (const [i, kase] of cases.entries()) {
       const globalIndex = testIndexOffset + i;
       const testSeed = subSeed(runSeed, globalIndex);
-      const tc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache };
+      const tc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager };
       // Per session *name*, not per test — a test opting into several sessions at once can own
       // the splice for one of them and not another, if some earlier test already claimed a name
       // it also opts into.
@@ -291,6 +318,7 @@ interface TestCtx {
   readonly runClock: Date;
   readonly uniqueSeq: { next(): number };
   readonly sessionCache: SessionCache;
+  readonly browserManager?: BrowserManager;
 }
 
 interface SessionOutcome {
@@ -611,6 +639,33 @@ async function runTestAttempt(
   }
   if (isFirstAttempt) tc.emit({ type: 'test:start', name });
 
+  // Fresh browser context+page per test *attempt* (M3a, D13 — a retried test gets a clean slate,
+  // never a failed attempt's leftover UI state). Cheap to create even for an API-only test: no
+  // real browser process/page exists until a browser step actually calls `ensurePage()`. Closed in
+  // the `finally` below on every exit path, including every early `return` already in this
+  // function (session failure, `before` hook failure, …).
+  const browserPageState = tc.browserManager ? new BrowserPageState() : undefined;
+  try {
+    return await runTestAttemptBody(test, config, tc, registry, beforeEach, afterEach, sessionOwnership, name, nameCtx, testStart, steps, browserPageState);
+  } finally {
+    if (browserPageState) await browserPageState.close();
+  }
+}
+
+async function runTestAttemptBody(
+  test: TestDecl,
+  config: ResolvedConfig,
+  tc: TestCtx,
+  registry: CallRegistry,
+  beforeEach: readonly HookDecl[],
+  afterEach: readonly HookDecl[],
+  sessionOwnership: ReadonlyMap<string, boolean> | undefined,
+  name: string,
+  nameCtx: EvalCtx,
+  testStart: number,
+  steps: StepResult[],
+  browserPageState: BrowserPageState | undefined,
+): Promise<TestResult> {
   // Several independent, unrelated sessions can be opted into at once (`as admin, userA`) — each
   // one's headers/cookies fold into this test's starting state in declared order, later-listed
   // session winning any header/cookie-name conflict against an earlier one (same "later source
@@ -637,7 +692,13 @@ async function runTestAttempt(
     // must never leak back into the session cache or a concurrently-running sibling test.
     cookieJar.mergeFrom(outcome.cookieJar.clone());
   }
-  const evalCtx: EvalCtx = { ...nameCtx, sessionHeaders, sessionNames: test.sessions, cookieJar };
+  const evalCtx: EvalCtx = {
+    ...nameCtx,
+    sessionHeaders,
+    sessionNames: test.sessions,
+    cookieJar,
+    ...(tc.browserManager && browserPageState ? { browser: { manager: tc.browserManager, page: browserPageState, scope: null } } : {}),
+  };
 
   for (const hook of beforeEach) {
     const exec = await execSteps(hook.body, config, evalCtx, tc, name, registry);
@@ -703,6 +764,47 @@ function findRequestAssertionApiIndices(steps: readonly Step[]): ReadonlySet<num
   return indices;
 }
 
+// ---- UI / browser step helpers (M3a, SPEC §9) ------------------------------
+
+function requireBrowserCtx(ctx: EvalCtx): BrowserAttemptContext {
+  if (!ctx.browser) {
+    throw new RuntimeError(
+      'a browser step ran but no browser support was initialized for this run (internal: `runProgram` was called without a `browserManager` — every real `tflw run` invocation supplies one; this only happens in a test harness that builds `RunOptions` by hand)',
+    );
+  }
+  return ctx.browser;
+}
+
+async function ensurePageForStep(ctx: EvalCtx): Promise<PWPage> {
+  const browser = requireBrowserCtx(ctx);
+  return browser.page.ensurePage(browser.manager);
+}
+
+/** Resolves a locator for an *action* (click/fill/…) — exactly one match required, ambiguity or a
+ * persistently-missing element both hard-fail (D7, `resolveLocator` in browser.ts). */
+async function resolveForStep(ctx: EvalCtx, config: ResolvedConfig, locatorAst: LocatorAst): Promise<ResolvedLocator> {
+  const browser = requireBrowserCtx(ctx);
+  const page = await browser.page.ensurePage(browser.manager);
+  const scope = browser.scope ?? page;
+  return resolveLocator(scope, locatorAst, ctx, config.timeouts.step);
+}
+
+function resolveWebUrl(path: string, config: ResolvedConfig): string {
+  if (!config.webBaseUrl) {
+    throw new RuntimeError('no `web` base URL is configured for the active env — add `web "http://localhost:..."` to `tflw.config` (SPEC §3.1, §9.1)');
+  }
+  return `${config.webBaseUrl}${ensureLeadingSlash(path)}`;
+}
+
+/** `field "Email"` normally; `field "Email" (resolved via placeholder)` when the cascade (D6) had
+ * to fall past its first tier — every other locator kind has only one tier, so this never fires
+ * for them. */
+function locatorDetail(locatorAst: LocatorAst, name: string, via: string): string {
+  const base = describeLocator(locatorAst.kind, name);
+  const isTier1 = locatorAst.kind !== 'field' || via === 'label';
+  return isTier1 ? base : `${base} (resolved via ${via})`;
+}
+
 async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: EvalCtx, tc: TestCtx, testName: string, registry: CallRegistry): Promise<StepsExec> {
   const results: StepResult[] = [];
   let lastResponse: ResponseTrace | null = null;
@@ -764,7 +866,13 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'ExpectStmt': {
-          result = await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
+          // UI locator subjects (SPEC §9.4) get their own retry-until-timeout path — the exact
+          // opposite of an API expect's evaluate-once/fail-fast (P#15) — so they're intercepted
+          // here rather than inside `execExpect`.
+          result =
+            step.subject.type === 'LocatorSubject'
+              ? await execUiExpect(step, ctx, src, stepStart, config)
+              : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
         case 'LetStmt': {
@@ -811,6 +919,112 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const value = stringify(evalValue(step.value, ctx));
           if (ctx.headerSink) ctx.headerSink[name] = value;
           result = mkStep('header', src, step.span, true, stepStart, tc.redactor.redact(`header "${name}" is ${JSON.stringify(value)}`));
+          break;
+        }
+        case 'OpenStmt': {
+          const page = await ensurePageForStep(ctx);
+          const url = resolveWebUrl(String(evalValue(step.path, ctx)), config);
+          await performOpen(page, url, config.timeouts.step);
+          result = mkStep('open', src, step.span, true, stepStart, `open ${url}`);
+          break;
+        }
+        case 'ClickStmt': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          await performClick(pwLocator, step.kind, config.timeouts.step);
+          const verb = step.kind === 'double' ? 'double click' : step.kind === 'right' ? 'right click' : 'click';
+          result = mkStep('click', src, step.span, true, stepStart, `${verb} ${locatorDetail(step.locator, name, via)}`);
+          break;
+        }
+        case 'FillStmt': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          const value = stringify(evalValue(step.value, ctx));
+          await performFill(pwLocator, value, config.timeouts.step);
+          result = mkStep('fill', src, step.span, true, stepStart, tc.redactor.redact(`fill ${locatorDetail(step.locator, name, via)} with ${JSON.stringify(value)}`));
+          break;
+        }
+        case 'FillFormStmt': {
+          const details: string[] = [];
+          for (const row of step.rows) {
+            const fieldLocator: LocatorAst = { type: 'Locator', kind: 'field', value: row.field, span: row.span };
+            const { pwLocator, via } = await resolveForStep(ctx, config, fieldLocator);
+            const value = stringify(evalValue(row.value, ctx));
+            await performFill(pwLocator, value, config.timeouts.step);
+            details.push(`${locatorDetail(fieldLocator, row.field.value, via)} = ${JSON.stringify(value)}`);
+          }
+          result = mkStep('fill', src, step.span, true, stepStart, tc.redactor.redact(`fill form: ${details.join(', ')}`));
+          break;
+        }
+        case 'SelectStmt': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          const value = stringify(evalValue(step.value, ctx));
+          await performSelect(pwLocator, value, config.timeouts.step);
+          result = mkStep('select', src, step.span, true, stepStart, `select ${JSON.stringify(value)} from ${locatorDetail(step.locator, name, via)}`);
+          break;
+        }
+        case 'CheckStmt': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          await performCheck(pwLocator, config.timeouts.step);
+          result = mkStep('checkbox', src, step.span, true, stepStart, `check ${locatorDetail(step.locator, name, via)}`);
+          break;
+        }
+        case 'UncheckStmt': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          await performUncheck(pwLocator, config.timeouts.step);
+          result = mkStep('uncheckbox', src, step.span, true, stepStart, `uncheck ${locatorDetail(step.locator, name, via)}`);
+          break;
+        }
+        case 'HoverStmt': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          await performHover(pwLocator, config.timeouts.step);
+          result = mkStep('hover', src, step.span, true, stepStart, `hover ${locatorDetail(step.locator, name, via)}`);
+          break;
+        }
+        case 'ScrollStmt': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          await performScrollIntoView(pwLocator, config.timeouts.step);
+          result = mkStep('scroll', src, step.span, true, stepStart, `scroll to ${locatorDetail(step.locator, name, via)}`);
+          break;
+        }
+        case 'PressStmt': {
+          const keys = String(evalValue(step.keys, ctx));
+          if (step.locator) {
+            const name = String(evalValue(step.locator.value, ctx));
+            const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+            await performPressOnLocator(pwLocator, keys, config.timeouts.step);
+            result = mkStep('press', src, step.span, true, stepStart, `press ${JSON.stringify(keys)} on ${locatorDetail(step.locator, name, via)}`);
+          } else {
+            const page = await ensurePageForStep(ctx);
+            await performPressOnPage(page, keys);
+            result = mkStep('press', src, step.span, true, stepStart, `press ${JSON.stringify(keys)}`);
+          }
+          break;
+        }
+        case 'AcceptDialogStmt':
+        case 'DismissDialogStmt': {
+          const browser = requireBrowserCtx(ctx);
+          await browser.page.ensurePage(browser.manager); // the dialog handler is wired on page creation
+          const which = step.type === 'AcceptDialogStmt' ? 'accept' : 'dismiss';
+          browser.page.armedDialog = which;
+          result = mkStep('dialog', src, step.span, true, stepStart, `${which} the next dialog`);
+          break;
+        }
+        case 'WithinBlock': {
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          const browser = requireBrowserCtx(ctx);
+          const childCtx: EvalCtx = { ...ctx, browser: { ...browser, scope: pwLocator } };
+          const within = await execSteps(step.body, config, childCtx, tc, testName, registry);
+          results.push(...within.steps);
+          const detail = within.ok ? `within ${locatorDetail(step.locator, name, via)}` : (within.error ?? 'a step inside `within` failed');
+          result = mkStep('within', src, step.span, within.ok, stepStart, detail);
+          if (within.soft && !within.ok) callSoftError = within.error;
           break;
         }
       }
@@ -1112,6 +1326,32 @@ async function execExpect(step: ExpectStmt, response: ResponseTrace | null, conn
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(message));
 }
 
+/** UI `expect`/`check` (SPEC §9.4) — auto-retries to `timeouts.expect` (P#15's web-first half;
+ * API expects evaluate once, UI expects retry), unlike `execExpect`'s single evaluation. Resolves
+ * the locator itself on every poll (rather than once up front) so a state matcher observes the
+ * element's *current* state each time, and a genuinely-missing element (zero matches) is a valid
+ * observation, not an error — `is hidden`/`has count 0` must be able to pass against nothing. */
+async function execUiExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
+  const subject = step.subject as Extract<Subject, { type: 'LocatorSubject' }>;
+  const browser = requireBrowserCtx(ctx);
+  const page = await browser.page.ensurePage(browser.manager);
+  const scope = browser.scope ?? page;
+  const name = String(evalValue(subject.locator.value, ctx));
+  const deadline = performance.now() + config.timeouts.expect;
+  for (;;) {
+    const { pwLocator, via, count } = await resolveLocatorSnapshot(scope, subject.locator, ctx);
+    // `has count` is the one UI matcher meaningful against more than one element (SPEC §9.4) — for
+    // every other matcher, matching several elements is still ambiguous (D7), same as an action.
+    if (step.matcher.name !== 'hasCount') await requireSingleMatch(subject.locator, name, { pwLocator, via }, count);
+    const label = locatorDetail(subject.locator, name, via);
+    const outcome = await evalUiMatcherOnce(label, pwLocator, step.matcher, ctx, count);
+    if (outcome.ok || performance.now() >= deadline) {
+      return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+    }
+    await sleep(WAIT_POLL_INTERVAL_MS);
+  }
+}
+
 /** Gap #15 (TFLW-GAPS.md): a plain (non-quantified) `body.<path>` assertion's own detail text can
  * expose a `redact`-covered field's real value — as the `actual` side of a failing comparison, or
  * (since a passing `equals` necessarily has `actual === expected`) as the literal shown even on
@@ -1339,6 +1579,12 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
       // here only for a use `checkRequestAssertions` doesn't (yet) statically forbid, e.g.
       // `capture request as x` (SPEC §6.2.2, decision 18: `request` carries no value to capture).
       throw new RuntimeError('`request` is not a capturable/comparable value — only `expect`/`check request connects`/`fails` (SPEC §6.2.2)');
+    case 'LocatorSubject':
+      // `execUiExpect` intercepts every `LocatorSubject` expect/check before `resolveSubject` is
+      // ever called (see the `ExpectStmt` case in `execSteps`) — reached only via `capture
+      // button "…" as x`, which isn't a defined operation (SPEC §9.4: locators are asserted, not
+      // captured as values).
+      throw new RuntimeError('a UI locator is not a capturable value — only `expect`/`check` against it (SPEC §9.4)');
   }
 }
 
@@ -1459,6 +1705,30 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'give';
     case 'HeaderStmt':
       return 'header';
+    case 'OpenStmt':
+      return 'open';
+    case 'ClickStmt':
+      return 'click';
+    case 'FillStmt':
+    case 'FillFormStmt':
+      return 'fill';
+    case 'SelectStmt':
+      return 'select';
+    case 'CheckStmt':
+      return 'checkbox';
+    case 'UncheckStmt':
+      return 'uncheckbox';
+    case 'PressStmt':
+      return 'press';
+    case 'HoverStmt':
+      return 'hover';
+    case 'ScrollStmt':
+      return 'scroll';
+    case 'WithinBlock':
+      return 'within';
+    case 'AcceptDialogStmt':
+    case 'DismissDialogStmt':
+      return 'dialog';
   }
 }
 

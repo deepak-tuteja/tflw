@@ -15,10 +15,9 @@ export interface ResolvedHeader {
 
 export interface ResolvedTimeouts {
   readonly step: number;
-  /** Resolved from `timeout expect` but **inert in the API-only tool** — nothing in `interpreter.ts`
-   * reads it yet. Kept in the grammar so it stays additive-only past publish (PLAN decision 58);
-   * it starts doing something once auto-retrying UI expects land (M3, SPEC §3.1). Do not read it
-   * from here without also updating SPEC §3.1's note. */
+  /** `timeout expect` — the retry budget for a UI `expect`/`check` (M3a, `execUiExpect` in
+   * `interpreter.ts`, SPEC §3.1/§9.4). Still inert for a plain API `expect`, which evaluates once
+   * and fails fast by design (P#15) rather than retrying. */
   readonly expect: number;
   readonly wait: number;
 }
@@ -62,7 +61,27 @@ export const DEFAULT_TIMEOUTS: ResolvedTimeouts = { step: 30_000, expect: 5_000,
 
 // ---- Traces & results ------------------------------------------------------
 
-export type StepKind = 'api' | 'expect' | 'check' | 'let' | 'capture' | 'wait' | 'call' | 'give' | 'header';
+export type StepKind =
+  | 'api'
+  | 'expect'
+  | 'check'
+  | 'let'
+  | 'capture'
+  | 'wait'
+  | 'call'
+  | 'give'
+  | 'header'
+  | 'open'
+  | 'click'
+  | 'fill'
+  | 'select'
+  | 'checkbox'
+  | 'uncheckbox'
+  | 'press'
+  | 'hover'
+  | 'scroll'
+  | 'within'
+  | 'dialog';
 
 export interface RequestTrace {
   readonly method: string;

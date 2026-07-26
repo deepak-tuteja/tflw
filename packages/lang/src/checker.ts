@@ -151,6 +151,7 @@ export function checkSessionServices(sessions: readonly SessionDecl[], knownServ
 function checkStepService(step: Step, knownServices: readonly string[], diags: Diagnostic[]): void {
   if (step.type === 'ApiStep') checkService(step.service, step.span, knownServices, diags);
   else if (step.type === 'WaitUntilApiStmt') checkService(step.request.service, step.span, knownServices, diags);
+  else if (step.type === 'WithinBlock') for (const s of step.body) checkStepService(s, knownServices, diags);
 }
 
 function checkService(service: string | null, span: Span, knownServices: readonly string[], diags: Diagnostic[]): void {
@@ -233,6 +234,10 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
         }
         continue;
       }
+      if (step.type === 'WithinBlock') {
+        walk(step.body); // M3a: a `within` block can nest any step, incl. `api`/`expect`.
+        continue;
+      }
       if (step.type !== 'ApiStep') continue;
       let j = i + 1;
       const requestExpects: ExpectStmt[] = [];
@@ -277,6 +282,8 @@ function subjectKeyword(subject: Subject): string {
       return 'body';
     case 'RequestSubject':
       return 'request';
+    case 'LocatorSubject':
+      return subject.locator.kind;
   }
 }
 
@@ -370,6 +377,47 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         checkStringLit(step.name, bound, diags);
         checkValue(step.value, bound, diags);
         break;
+      case 'OpenStmt':
+        checkStringLit(step.path, bound, diags);
+        break;
+      case 'ClickStmt':
+      case 'HoverStmt':
+      case 'ScrollStmt':
+      case 'UncheckStmt':
+        checkStringLit(step.locator.value, bound, diags);
+        break;
+      case 'CheckStmt':
+        checkStringLit(step.locator.value, bound, diags);
+        break;
+      case 'FillStmt':
+        checkStringLit(step.locator.value, bound, diags);
+        checkValue(step.value, bound, diags);
+        break;
+      case 'FillFormStmt':
+        for (const row of step.rows) {
+          checkStringLit(row.field, bound, diags);
+          checkValue(row.value, bound, diags);
+        }
+        break;
+      case 'SelectStmt':
+        checkStringLit(step.locator.value, bound, diags);
+        checkValue(step.value, bound, diags);
+        break;
+      case 'PressStmt':
+        checkStringLit(step.keys, bound, diags);
+        if (step.locator) checkStringLit(step.locator.value, bound, diags);
+        break;
+      case 'WithinBlock':
+        checkStringLit(step.locator.value, bound, diags);
+        // A `within` block shares its enclosing scope (it's a resolution-scoping construct, not a
+        // new variable scope) — `bound` is threaded through, not copied, so a `let` above the block
+        // is visible inside it and (deliberately, same as any other nested block in this checker) a
+        // `let` inside it stays visible to steps after the block too.
+        checkStepSequence(step.body, bound, diags);
+        break;
+      case 'AcceptDialogStmt':
+      case 'DismissDialogStmt':
+        break;
     }
   }
 }
@@ -383,6 +431,7 @@ function checkSubject(subject: Subject, bound: Set<string>, diags: Diagnostic[])
   // `status`/`duration`/`body`/`body text` all reference response data, never a user `{var}`;
   // only a header *name* can itself be interpolated.
   if (subject.type === 'HeaderSubject') checkStringLit(subject.name, bound, diags);
+  if (subject.type === 'LocatorSubject') checkStringLit(subject.locator.value, bound, diags);
 }
 
 function checkApiRequestSpec(spec: ApiRequestSpec, bound: Set<string>, diags: Diagnostic[]): void {

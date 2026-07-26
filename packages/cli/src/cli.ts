@@ -39,12 +39,14 @@ import {
   Redactor,
   redactReport,
   SessionCache,
+  BrowserManager,
   type RunReport,
   type TestResult,
   type EventSink,
   type RunEvent,
   type ResolvedConfig,
 } from '@tflw/runtime';
+import { spawn } from 'node:child_process';
 import {
   writeReport,
   writeJunitXml,
@@ -86,6 +88,8 @@ async function main(argv: string[]): Promise<number> {
       return docsCommand(rest);
     case 'lsp':
       return lspCommand(rest);
+    case 'install-browsers':
+      return installBrowsersCommand(rest);
     case '--version':
     case '-v':
       process.stdout.write(`${await getVersion()}\n`);
@@ -97,9 +101,42 @@ async function main(argv: string[]): Promise<number> {
       printUsage();
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
-      err(`unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, or \`tflw lsp\`.`);
+      err(`unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, or \`tflw install-browsers\`.`);
       return EXIT_USAGE;
   }
+}
+
+// ---- tflw install-browsers (M3a, D5) ---------------------------------------
+
+const SUPPORTED_BROWSERS = ['chromium', 'firefox', 'webkit'] as const;
+
+/**
+ * `playwright` is an optional peer (D5): browser step support only activates once the consuming
+ * project installs it themselves (`npm install -D playwright`) and downloads a browser binary via
+ * this command. Shells out to the `playwright` CLI that ships inside that same npm package (via
+ * `npx`, so it resolves the consumer's own installed version) rather than reaching into any
+ * private Playwright API — the well-supported, documented install path.
+ */
+async function installBrowsersCommand(argv: string[]): Promise<number> {
+  let browser: string = 'chromium'; // D11: Chromium default
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--browser') browser = argv[++i] ?? browser;
+    else if (a.startsWith('--browser=')) browser = a.slice('--browser='.length);
+  }
+  if (!(SUPPORTED_BROWSERS as readonly string[]).includes(browser)) {
+    err(`unknown --browser \`${browser}\` — expected one of: ${SUPPORTED_BROWSERS.join(', ')}.`);
+    return EXIT_USAGE;
+  }
+  const code = await new Promise<number>((resolvePromise) => {
+    const child = spawn('npx', ['--yes', 'playwright', 'install', browser], { stdio: 'inherit', shell: process.platform === 'win32' });
+    child.on('error', (e) => {
+      err(`could not run \`npx playwright install ${browser}\`: ${e.message}\n  make sure \`playwright\` is installed (\`npm install -D playwright\`) and \`npx\` is on PATH.`);
+      resolvePromise(EXIT_USAGE);
+    });
+    child.on('exit', (exitCode) => resolvePromise(exitCode ?? EXIT_USAGE));
+  });
+  return code === 0 ? EXIT_OK : EXIT_USAGE;
 }
 
 // ---- tflw run --------------------------------------------------------------
@@ -513,6 +550,10 @@ async function runCommand(argv: string[]): Promise<number> {
   const ndjsonCollected: RunEvent[] = [];
   const sharedNdjsonEmit = ndjsonActive ? ndjsonEmit(out, ndjsonCollected) : undefined;
 
+  // One shared browser process for the whole invocation (M3a, D13) — lazily launched on the first
+  // browser step anywhere in the run; closed unconditionally below even if nothing ever used it.
+  const browserManager = new BrowserManager();
+
   const reports = await runWithConcurrency(
     runnable,
     workers,
@@ -528,6 +569,7 @@ async function runCommand(argv: string[]): Promise<number> {
           environ,
           redactor,
           sessionCache,
+          browserManager,
           seed,
           now,
           uniqueSeq,
@@ -589,6 +631,7 @@ async function runCommand(argv: string[]): Promise<number> {
     out.write(withTimestamps(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}`, timestamps) + '\n');
   }
   await out.save();
+  await browserManager.close(); // no-op if no test in this run ever used a browser step
 
   return merged.ok ? EXIT_OK : EXIT_FAIL;
 }
@@ -1064,6 +1107,8 @@ function printUsage(): void {
       '  tflw init                                          scaffold tflw.config + example.tflw',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
       '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
+      '  tflw install-browsers [--browser chromium|firefox|webkit]',
+      '                                                      download a browser binary for UI steps (SPEC §9); default chromium',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',

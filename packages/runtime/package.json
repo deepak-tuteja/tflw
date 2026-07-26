@@ -2,7 +2,7 @@
   "name": "@tflw/runtime",
   "version": "0.1.0",
   "private": true,
-  "description": "testFlow runtime — interpreter over the AST, fetch binding, event stream, taint tracking. Playwright binding lands in M3.",
+  "description": "testFlow runtime — interpreter over the AST, fetch binding, event stream, taint tracking, and (M3a) the Playwright-backed browser step driver.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,7 +12,10 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -25,5 +28,16 @@
     "@tflw/lang": "*",
     "ajv": "^8.17.1",
     "undici": "^8.7.0"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "playwright": "^1.62.0"
   }
 }

@@ -7,6 +7,7 @@ import type { Position, Span, Token } from './token.js';
 import { describeToken, describeTokenType } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import type {
+  AcceptDialogStmt,
   ActionDecl,
   AllowHostsDecl,
   ApiBody,
@@ -23,6 +24,9 @@ import type {
   CallExpr,
   CaptureStmt,
   CertDecl,
+  CheckStmt,
+  ClickKind,
+  ClickStmt,
   ConfigEntry,
   ConfigFile,
   DataTable,
@@ -30,6 +34,7 @@ import type {
   DateOffsetLit,
   DateOffsetUnit,
   DefaultsBlock,
+  DismissDialogStmt,
   DurationLit,
   EnvBlock,
   EnvRef,
@@ -39,6 +44,9 @@ import type {
   Field,
   FieldValue,
   FileBody,
+  FillFormRow,
+  FillFormStmt,
+  FillStmt,
   FormatExpr,
   FormBody,
   FormField,
@@ -46,6 +54,7 @@ import type {
   HeaderDecl,
   HeaderStmt,
   HookDecl,
+  HoverStmt,
   HttpMethod,
   ImportDecl,
   InlineBody,
@@ -53,13 +62,18 @@ import type {
   Interp,
   KeyDecl,
   LetStmt,
+  Locator,
+  LocatorKind,
+  LocatorSubject,
   Matcher,
   MatcherName,
   NumberLit,
   Oauth2SessionConfig,
   ObjectLit,
+  OpenStmt,
   PathExpr,
   PathSegment,
+  PressStmt,
   Program,
   RandomDateBetweenExpr,
   RandomDateInFutureExpr,
@@ -77,6 +91,8 @@ import type {
   ReportDecl,
   RequireDecl,
   RetryAfterClause,
+  ScrollStmt,
+  SelectStmt,
   SessionDecl,
   Step,
   StringLit,
@@ -87,6 +103,7 @@ import type {
   TimeoutDecl,
   TimeoutTarget,
   TransformExpr,
+  UncheckStmt,
   UniqueEmailExpr,
   UniqueLikeExpr,
   UniqueNumberExpr,
@@ -97,6 +114,7 @@ import type {
   Value,
   WaitUntilApiStmt,
   WebDecl,
+  WithinBlock,
   WorkersDecl,
 } from './ast.js';
 
@@ -126,8 +144,30 @@ export interface CompletionContext {
   readonly prefix: string;
 }
 
-const STATEMENT_KEYWORDS = ['api', 'expect', 'check', 'let', 'capture', 'wait', 'give'] as const;
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request'] as const;
+const STATEMENT_KEYWORDS = [
+  'api',
+  'expect',
+  'check',
+  'let',
+  'capture',
+  'wait',
+  'give',
+  'open',
+  'click',
+  'double',
+  'right',
+  'fill',
+  'select',
+  'uncheck',
+  'press',
+  'hover',
+  'scroll',
+  'within',
+  'accept',
+  'dismiss',
+] as const;
+const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath'] as const;
+const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
@@ -998,7 +1038,7 @@ class Parser {
         case 'expect':
           return this.parseExpect(false);
         case 'check':
-          return this.parseExpect(true);
+          return this.parseCheckStep();
         case 'let':
           return this.parseLet();
         case 'capture':
@@ -1007,6 +1047,32 @@ class Parser {
           return this.parseWaitUntilApi();
         case 'give':
           return this.parseGive();
+        case 'open':
+          return this.parseOpenStep();
+        case 'click':
+          return this.parseClickStep('single');
+        case 'double':
+          return this.parseDoubleOrRightClickStep('double');
+        case 'right':
+          return this.parseDoubleOrRightClickStep('right');
+        case 'fill':
+          return this.parseFillStep();
+        case 'select':
+          return this.parseSelectStep();
+        case 'uncheck':
+          return this.parseUncheckStep();
+        case 'press':
+          return this.parsePressStep();
+        case 'hover':
+          return this.parseHoverStep();
+        case 'scroll':
+          return this.parseScrollStep();
+        case 'within':
+          return this.parseWithinStep();
+        case 'accept':
+          return this.parseDialogStep('accept');
+        case 'dismiss':
+          return this.parseDialogStep('dismiss');
         default: {
           const hint = suggest(tok.value, STATEMENT_KEYWORDS);
           this.error(
@@ -1405,6 +1471,16 @@ class Parser {
       case 'request':
         this.advance();
         return { type: 'RequestSubject', span: this.spanFrom(start) };
+      case 'button':
+      case 'field':
+      case 'text':
+      case 'list':
+      case 'css':
+      case 'xpath': {
+        const locator = this.parseLocator();
+        if (!locator) return null;
+        return { type: 'LocatorSubject', locator, span: this.spanFrom(start) };
+      }
       default: {
         const hint = suggest(tok.value, SUBJECT_KEYWORDS);
         this.error(
@@ -1562,6 +1638,227 @@ class Parser {
         return null;
       }
     }
+  }
+
+  // -- UI / browser steps (SPEC §9, M3a) --------------------------------------
+
+  private parseLocator(): Locator | null {
+    const tok = this.peek();
+    if (tok.type !== 'ident' || !(LOCATOR_KEYWORDS as readonly string[]).includes(tok.value)) {
+      const hint = tok.type === 'ident' ? suggest(tok.value, LOCATOR_KEYWORDS) : undefined;
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `expected a locator, found ${describeToken(tok)}`,
+        tok.span,
+        hint ? `did you mean \`${hint}\`?` : `expected one of: ${LOCATOR_KEYWORDS.join(', ')}`,
+      );
+      return null;
+    }
+    const start = tok.span.start;
+    const kind = this.advance().value as LocatorKind;
+    const value = this.expectString(`a ${kind} name/selector, e.g. \`${kind} "…"\``);
+    if (!value) return null;
+    return { type: 'Locator', kind, value, span: this.spanFrom(start) };
+  }
+
+  /** True at end-of-statement (newline/dedent/eof) — used to tell `check`'s dual grammar apart
+   * (SPEC §9.1): a locator subject with nothing after it is the `check` action, one followed by a
+   * matcher is the soft assertion. */
+  private atStatementEnd(): boolean {
+    return this.check('newline') || this.check('dedent') || this.atEof();
+  }
+
+  private parseOpenStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `open`
+    const path = this.expectString('a path to open, e.g. `open "/orders/{orderId}"`');
+    if (!path) return null;
+    this.endLine();
+    return { type: 'OpenStmt', path, span: this.spanFrom(start) };
+  }
+
+  private parseClickStep(kind: ClickKind): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `click`
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    return { type: 'ClickStmt', kind, locator, span: this.spanFrom(start) };
+  }
+
+  private parseDoubleOrRightClickStep(kind: ClickKind): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `double`/`right`
+    if (!this.expectKw('click')) return null;
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    return { type: 'ClickStmt', kind, locator, span: this.spanFrom(start) };
+  }
+
+  private parseFillStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `fill`
+    if (this.isKw(this.peek(), 'form')) return this.parseFillFormStep(start);
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    if (!this.expectKw('with')) return null;
+    const value = this.parseValue();
+    if (!value) return null;
+    this.endLine();
+    return { type: 'FillStmt', locator, value, span: this.spanFrom(start) };
+  }
+
+  private parseFillFormStep(start: Position): Step | null {
+    this.advance(); // `form`
+    this.endLine();
+    if (!this.check('indent')) {
+      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.peek().span, 'indent at least one `| "Field" | value |` row');
+      return null;
+    }
+    this.advance(); // indent
+    const rows = this.parseFillFormRows();
+    if (this.check('dedent')) this.advance();
+    if (rows.length === 0) {
+      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.spanFrom(start), 'add at least one `| "Field" | value |` row');
+      return null;
+    }
+    return { type: 'FillFormStmt', rows, span: this.spanFrom(start) };
+  }
+
+  private parseFillFormRows(): FillFormRow[] {
+    const rows: FillFormRow[] = [];
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const row = this.parseFillFormRow();
+      if (row) rows.push(row);
+      else this.synchronize();
+      if (this.pos === before) this.advance(); // guarantee progress
+    }
+    return rows;
+  }
+
+  private parseFillFormRow(): FillFormRow | null {
+    const start = this.peek().span.start;
+    if (!this.expect('pipe', '`|` to start the form row')) return null;
+    const field = this.expectString('a field name, e.g. `| "Email" | … |`');
+    if (!field) return null;
+    if (!this.expect('pipe', '`|` after the field name')) return null;
+    const value = this.parseValue();
+    if (!value) return null;
+    if (!this.expect('pipe', '`|` to close the form row')) return null;
+    this.endLine();
+    return { type: 'FillFormRow', field, value, span: this.spanFrom(start) };
+  }
+
+  private parseSelectStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `select`
+    const value = this.parseValue();
+    if (!value) return null;
+    if (!this.expectKw('from')) return null;
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    return { type: 'SelectStmt', locator, value, span: this.spanFrom(start) };
+  }
+
+  /** `check` is dual-grammar (SPEC §9.1): the soft-assertion keyword AND the checkbox-tick action.
+   * Parsed together (rather than reusing `parseExpect`) so the disambiguation — locator subject +
+   * nothing following ⇒ action, anything else ⇒ assertion — lives in one place. */
+  private parseCheckStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `check`
+    let quantifier: 'any' | 'all' | null = null;
+    const lead = this.peek();
+    if (lead.type === 'ident' && (QUANTIFIERS as readonly string[]).includes(lead.value)) {
+      quantifier = this.advance().value as 'any' | 'all';
+    }
+    const subject = this.parseSubject();
+    if (!subject) return null;
+    if (subject.type === 'LocatorSubject' && this.atStatementEnd()) {
+      if (quantifier) {
+        this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier — `check <locator>` ticks a checkbox, it has no quantifier form');
+        return null;
+      }
+      this.endLine();
+      return { type: 'CheckStmt', locator: subject.locator, span: this.spanFrom(start) };
+    }
+    if (quantifier && subject.type !== 'BodySubject' && subject.type !== 'BodyCsvSubject') {
+      this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
+      return null;
+    }
+    const matcher = this.parseMatcher();
+    if (!matcher) return null;
+    this.endLine();
+    return { type: 'ExpectStmt', soft: true, quantifier, subject, matcher, span: this.spanFrom(start) };
+  }
+
+  private parseUncheckStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `uncheck`
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    return { type: 'UncheckStmt', locator, span: this.spanFrom(start) };
+  }
+
+  private parsePressStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `press`
+    const keys = this.expectString('a key or chord, e.g. `press "Enter"` or `press "Control+A"`');
+    if (!keys) return null;
+    let locator: Locator | null = null;
+    if (this.isKw(this.peek(), 'on')) {
+      this.advance();
+      locator = this.parseLocator();
+      if (!locator) return null;
+    }
+    this.endLine();
+    return { type: 'PressStmt', keys, locator, span: this.spanFrom(start) };
+  }
+
+  private parseHoverStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `hover`
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    return { type: 'HoverStmt', locator, span: this.spanFrom(start) };
+  }
+
+  private parseScrollStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `scroll`
+    if (!this.expectKw('to')) return null;
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    return { type: 'ScrollStmt', locator, span: this.spanFrom(start) };
+  }
+
+  private parseWithinStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `within`
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    const body = this.parseBlock('within');
+    return { type: 'WithinBlock', locator, body, span: this.spanFrom(start) };
+  }
+
+  private parseDialogStep(which: 'accept' | 'dismiss'): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `accept`/`dismiss`
+    if (!this.expectKw('dialog')) return null;
+    this.endLine();
+    return which === 'accept'
+      ? ({ type: 'AcceptDialogStmt', span: this.spanFrom(start) } satisfies AcceptDialogStmt)
+      : ({ type: 'DismissDialogStmt', span: this.spanFrom(start) } satisfies DismissDialogStmt);
   }
 
   // -- let / capture ---------------------------------------------------------

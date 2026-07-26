@@ -89,7 +89,27 @@ export interface FileDataTable extends Node {
   readonly path: StringLit;
 }
 
-export type Step = ApiStep | ExpectStmt | LetStmt | CaptureStmt | WaitUntilApiStmt | GiveStmt | HeaderStmt;
+export type Step =
+  | ApiStep
+  | ExpectStmt
+  | LetStmt
+  | CaptureStmt
+  | WaitUntilApiStmt
+  | GiveStmt
+  | HeaderStmt
+  | OpenStmt
+  | ClickStmt
+  | FillStmt
+  | FillFormStmt
+  | SelectStmt
+  | CheckStmt
+  | UncheckStmt
+  | PressStmt
+  | HoverStmt
+  | ScrollStmt
+  | WithinBlock
+  | AcceptDialogStmt
+  | DismissDialogStmt;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */
 export interface GiveStmt extends Node {
@@ -220,7 +240,27 @@ export interface ExpectStmt extends Node {
   readonly matcher: Matcher;
 }
 
-export type Subject = StatusSubject | DurationSubject | HeaderSubject | BodySubject | BodyTextSubject | BodyBytesSubject | BodyCsvSubject | BodyPdfTextSubject | RequestSubject;
+export type Subject =
+  | StatusSubject
+  | DurationSubject
+  | HeaderSubject
+  | BodySubject
+  | BodyTextSubject
+  | BodyBytesSubject
+  | BodyCsvSubject
+  | BodyPdfTextSubject
+  | RequestSubject
+  | LocatorSubject;
+
+/** A UI locator used as an `expect`/`check` subject (`expect button "Add to cart" is visible`,
+ * SPEC §9.4, M3a). Only the state/value/count matchers of §6.2 are meaningful against it —
+ * `checkUiMatcherSubject` (checker.ts) rejects the value-comparison matchers (`equals`/
+ * `contains`/`matches`/…) statically, the same way `RequestSubject` already restricts itself to
+ * `connects`/`fails`. */
+export interface LocatorSubject extends Node {
+  readonly type: 'LocatorSubject';
+  readonly locator: Locator;
+}
 
 export interface StatusSubject extends Node {
   readonly type: 'StatusSubject';
@@ -322,6 +362,130 @@ export interface Matcher extends Node {
    * read directly, never run through `evalValue`). Resolved against the test file's own directory
    * at runtime, same as `schemaSource`'s relative-path handling. */
   readonly filePath?: StringLit;
+}
+
+// ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a) -------------------------
+//
+// M3a ships: open/click(+double/right)/fill/fill form/select/check/uncheck/press/hover/scroll/
+// within + the state/value/count UI expect subjects + dialogs. Deferred to later browser-arc
+// milestones (PLAN_BROWSER_PERF_SECURITY.md §1.12): frames/tabs/downloads/drag-drop (M3b), the
+// `report/` directory + screenshots/trace (M3c), network observe/mock (M3d), the a11y subject
+// (M3e), `element <name> = <locator>` aliases (§8, no milestone owns them yet), and the live-DOM
+// "nearest candidate" cold-start diagnosis + `tflw pick` (M5).
+
+/** Locator noun (D6, SPEC §9.3): the noun picks the resolution strategy — `button`/`text`/`list`
+ * single-strategy, `field` a closed 3-step cascade (label → placeholder → role), `css`/`xpath`
+ * escapes. `element` aliases are not yet implemented (deferred, see note above). */
+export type LocatorKind = 'button' | 'field' | 'text' | 'list' | 'css' | 'xpath';
+
+export interface Locator extends Node {
+  readonly type: 'Locator';
+  readonly kind: LocatorKind;
+  /** Accessible name / visible text for `button`/`field`/`text`/`list`; the raw selector string
+   * for `css`/`xpath`. `{ref}`-interpolation-aware like any other `StringLit`. */
+  readonly value: StringLit;
+}
+
+/** `open "/orders/{orderId}"` — relative to the env's `web` base URL (SPEC §3.1, §9.1). A quoted
+ * `StringLit` (not a bare api-style path token — `open` has no method/service prefix to gate a
+ * contextual `/`, so it stays a normal, already-interpolation-aware string). */
+export interface OpenStmt extends Node {
+  readonly type: 'OpenStmt';
+  readonly path: StringLit;
+}
+
+export type ClickKind = 'single' | 'double' | 'right';
+
+/** `click button "Add to cart"` / `double click …` / `right click …` (SPEC §9.1). */
+export interface ClickStmt extends Node {
+  readonly type: 'ClickStmt';
+  readonly kind: ClickKind;
+  readonly locator: Locator;
+}
+
+/** `fill field "Email" with {email}` (SPEC §9.1). */
+export interface FillStmt extends Node {
+  readonly type: 'FillStmt';
+  readonly locator: Locator;
+  readonly value: Value;
+}
+
+/** `fill form` + an indented table (SPEC §9.2). Each row's left cell is a `field` name (same
+ * resolution as a bare `fill field`); each row executes and reports as its own sub-step. */
+export interface FillFormStmt extends Node {
+  readonly type: 'FillFormStmt';
+  readonly rows: readonly FillFormRow[];
+}
+
+export interface FillFormRow extends Node {
+  readonly type: 'FillFormRow';
+  readonly field: StringLit;
+  readonly value: Value;
+}
+
+/** `select "Widget" from field "Size"` — chooses an option by its visible text/value. */
+export interface SelectStmt extends Node {
+  readonly type: 'SelectStmt';
+  readonly locator: Locator;
+  readonly value: Value;
+}
+
+/** `check field "Accept terms"` — ticks a checkbox/radio. Grammar note: `check` is also the
+ * soft-assertion keyword (`check <subject> <matcher>`); the parser disambiguates by whether a
+ * matcher follows the parsed subject — present ⇒ `ExpectStmt(soft: true)`, absent ⇒ `CheckStmt`
+ * (SPEC §9.1, checker/parser share this via `parseCheckStep`). */
+export interface CheckStmt extends Node {
+  readonly type: 'CheckStmt';
+  readonly locator: Locator;
+}
+
+/** `uncheck field "Accept terms"` — never ambiguous with the assertion form (no `uncheck` matcher
+ * exists), always an action. */
+export interface UncheckStmt extends Node {
+  readonly type: 'UncheckStmt';
+  readonly locator: Locator;
+}
+
+/** `press "Enter"` (page-level) or `press "Enter" on field "Search"` (locator-scoped, preferred
+ * when the key should be typed into a specific control). Supports chords (`"Control+A"`). */
+export interface PressStmt extends Node {
+  readonly type: 'PressStmt';
+  readonly keys: StringLit;
+  readonly locator: Locator | null;
+}
+
+/** `hover button "Menu"` (SPEC §9.1). */
+export interface HoverStmt extends Node {
+  readonly type: 'HoverStmt';
+  readonly locator: Locator;
+}
+
+/** `scroll to list "Cart items"` — scrolls the locator into view (SPEC §9.1). */
+export interface ScrollStmt extends Node {
+  readonly type: 'ScrollStmt';
+  readonly locator: Locator;
+}
+
+/** `within <locator>` + an indented step block — scopes every nested step's locator resolution to
+ * inside this container (D7, SPEC §9.3), the same indented-block shape every other construct in
+ * the language uses (test/action/hook bodies) rather than inventing brace syntax. Block form only,
+ * no inline `in` suffix (frozen additive-only so one can be added later without breaking this). */
+export interface WithinBlock extends Node {
+  readonly type: 'WithinBlock';
+  readonly locator: Locator;
+  readonly body: readonly Step[];
+}
+
+/** `accept dialog` / `dismiss dialog` — arms a one-shot handler for the *next* native dialog
+ * (`confirm`/`alert`/`prompt`) raised by the step(s) that follow, so a `confirm()`-guarded action
+ * doesn't silently no-op the way Playwright's own default auto-dismiss would (SPEC §9.1, decision
+ * D8's mandatory dialog handling). */
+export interface AcceptDialogStmt extends Node {
+  readonly type: 'AcceptDialogStmt';
+}
+
+export interface DismissDialogStmt extends Node {
+  readonly type: 'DismissDialogStmt';
 }
 
 // ---- Bindings --------------------------------------------------------------

@@ -6,6 +6,18 @@ import { parseStringParts, type BinaryOp, type DateOffsetUnit, type PathSegment,
 import type { Redactor } from './redact.js';
 import { subSeed, mulberry32 } from './seed.js';
 import type { CookieJar } from './cookieJar.js';
+import type { BrowserManager, BrowserPageState, LocatorScope } from './browser.js';
+
+/** This test attempt's browser state (M3a) — present whenever the run was given a
+ * `BrowserManager` (SPEC §9), regardless of whether this particular test ends up using a browser
+ * step; the manager/page are both lazy (no real browser process/page until first actual use).
+ * `scope` narrows on entry to a `within` block (a fresh child `EvalCtx`, D7, SPEC §9.3) and is
+ * restored automatically on exit since it's never mutated in place. */
+export interface BrowserAttemptContext {
+  readonly manager: BrowserManager;
+  readonly page: BrowserPageState;
+  readonly scope: LocatorScope | null;
+}
 
 export class RuntimeError extends Error {
   constructor(message: string) {
@@ -50,6 +62,10 @@ export interface EvalCtx {
    * `as <session>` starts with a *clone* of that session's own jar (§3.3) so its mutations never
    * leak back into the shared session cache or a concurrently-running sibling test. */
   readonly cookieJar: CookieJar;
+  /** Undefined when the run has no `BrowserManager` at all (a test harness building `RunOptions`
+   * directly without one) — a browser step reaching that case throws a clear internal error
+   * instead of a null-deref (see `requireBrowserCtx` in `interpreter.ts`). */
+  readonly browser?: BrowserAttemptContext;
 }
 
 export function evalValue(value: Value, ctx: EvalCtx): unknown {

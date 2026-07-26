@@ -339,3 +339,46 @@ test('checkRequestAssertions: rejects a `request` assertion inside `wait until a
   assert.equal(diags[0]!.code, 'TF031');
   assert.match(diags[0]!.message, /not supported inside `wait until api`/);
 });
+
+// ---- M3a: browser steps (SPEC §9) — variable-binding walk + recursion into `within` -----------
+
+test('checkUnknownVariables: flags an unknown `{var}` inside a locator name', () => {
+  const { program } = parseSource(`test "bad"\n  click button "Remove {itemName}"\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF030');
+});
+
+test('checkUnknownVariables: accepts a `{var}` inside a locator name once it is `let`-bound', () => {
+  const { program } = parseSource(`test "ok"\n  let itemName = "Widget"\n  click button "Remove {itemName}"\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables: recurses into a `within` block body, sharing the enclosing scope', () => {
+  const bad = parseSource(`test "bad"\n  within list "Cart items"\n    fill field "Qty" with {qty}\n`).program;
+  assert.equal(checkUnknownVariables(bad).length, 1);
+
+  const ok = parseSource(`test "ok"\n  let qty = 2\n  within list "Cart items"\n    fill field "Qty" with {qty}\n`).program;
+  assert.deepEqual(checkUnknownVariables(ok), []);
+
+  // A `let` bound *inside* the block stays visible to steps that follow it, same as any other
+  // nested block in this checker (WithinBlock is a resolution scope, not a variable scope).
+  const insideThenAfter = parseSource(
+    `test "ok"\n  within list "Cart items"\n    let qty = 2\n    fill field "Qty" with {qty}\n  expect field "Total" has value {qty}\n`,
+  ).program;
+  assert.deepEqual(checkUnknownVariables(insideThenAfter), []);
+});
+
+test('checkServices: validates `api <service>` references nested inside a `within` block', () => {
+  const { program } = parseSource(`test "bad"\n  within list "Cart items"\n    api billing GET /health\n`);
+  const diags = checkServices(program, ['shipping']);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF026');
+});
+
+test('checkRequestAssertions: validates an `api`+`expect request` pair nested inside a `within` block', () => {
+  const { program } = parseSource(`test "bad"\n  within list "Cart items"\n    api GET /health\n    expect request connects\n    expect status equals 200\n`);
+  const diags = checkRequestAssertions(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF031');
+});

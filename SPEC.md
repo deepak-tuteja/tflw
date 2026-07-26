@@ -108,10 +108,9 @@ env staging
 - Checker: unknown keys are errors, not ignored.
 - Active env selection precedence: `--env <name>` flag > `TFLW_ENV` env var > block marked
   `default`. No resolvable env → startup error.
-- `timeout step` (per-request) and `timeout wait` (`wait until api`) are consumed today.
-  🔮 `timeout expect` parses and resolves but is **inert in the API-only tool** — it only applies to
-  auto-retrying UI expects, which arrive with the browser half (M3); until then it does nothing.
-  SPEC-noted rather than removed, so the grammar stays additive-only past publish (PLAN decision 58).
+- `timeout step` (per-request, and per browser-step locator resolution, M3a), `timeout wait`
+  (`wait until api`), and `timeout expect` (a UI `expect`/`check`'s retry budget, M3a — still inert
+  for a plain API `expect`, which evaluates once and fails fast, P#15) are all consumed today.
 - `insecure true` — a per-env (or `defaults`) key that disables TLS certificate verification for
   the whole run, for self-signed/private-CA staging certs (PLAN decision 78). Explicit and
   greppable in review; a run with it active carries a visible warning in the CLI summary and the
@@ -657,9 +656,9 @@ through the JS escape hatch (§11).
 
 ### 6.2 Matcher table
 
-🔮 The UI-only rows (`has value`, `is visible/hidden/enabled/disabled/checked`) aren't callable yet
-— there are no UI subjects to apply them to until the browser half (M3) exists. Everything else
-below is ✅ shipped.
+✅ Every row below is shipped, including the UI-only ones (`has value`,
+`is visible/hidden/enabled/disabled/checked`) — M3a (§9.4) added the UI locator subjects that make
+them callable.
 
 <!-- GENERATED:matchers:start -->
 | Matcher | Applies to | Example |
@@ -1018,52 +1017,104 @@ test "pay for an order"
   fully prepared extraction (name, params, call-site diff) targeting `shared/`; applied only via
   `tflw refactor apply <id>` or an IDE code action. Builds never mutate source.
 
-## 9. UI steps (P#8–9, P#26) 🔮
+## 9. UI steps (P#8–9, P#26) 🔧
 
-Planned for the browser half, `0.2.0` (M3). Nothing in this section is callable yet.
+Browser half, `0.2.0` (M3), landing in slices — see `PLAN_BROWSER_PERF_SECURITY.md` §1.12. **M3a
+✅ shipped**: the core interaction steps below, the selector model, strict ambiguity, `within`
+scoping, and the state/value/count UI expect subjects. **Still planned**: frames/tabs/windows/
+downloads + drag-drop + `wait until <ui>` (M3b); `report/` becoming a directory with failure
+screenshots/trace + `--browser`/`--headed`/viewport (M3c); network observe/mock (M3d); the a11y
+subject (M3e); `element <name> = <locator>` aliases (§8 — no milestone owns them yet); and the
+live-DOM "nearest candidate" cold-start diagnosis + `tflw pick <url>` (M5). `tflw install-browsers
+[--browser chromium|firefox|webkit]` downloads the browser binary (`playwright` is an optional
+peer, D5 — installed and dynamically imported only once a suite actually runs a browser step).
 
-### 9.1 Navigation & interaction
+### 9.1 Navigation & interaction ✅
 
 ```
-open "/orders/{orderId}"        # relative to env web baseUrl
+open "/orders/{orderId}"                 # relative to env `web` base URL (§3.1)
 click button "Add to cart"
+double click button "Row"
+right click button "Row"
 fill field "Email" with {email}
+select "Widget" from field "Size"
+check field "Accept terms"               # ticks a checkbox/radio
+uncheck field "Accept terms"
+hover button "Menu"
+press "Enter"                            # page-level
+press "Enter" on field "Search"          # scoped to one locator
+scroll to button "Load more"             # scrolls the locator into view
+
+within list "Cart items"                 # an indented step block, scoped resolution (§9.3, D7)
+  click button "Remove"
+
+accept dialog                            # arms a one-shot handler for the *next* native dialog
+click button "Delete"                    # (Playwright otherwise auto-dismisses silently — a real
+                                          #  no-op trap for a confirm()-guarded action)
+dismiss dialog
 ```
 
-### 9.2 `fill form` (P#26)
+`check` is dual-grammar (unchanged from §6: `check <subject> <matcher>` is the soft-assertion
+keyword) — a locator with a matcher following it (`check field "X" is checked`) parses as the
+soft assertion; a bare locator with nothing after it (`check field "X"`) is this action instead.
+`uncheck` never collides — no assertion form exists for it.
+
+### 9.2 `fill form` (P#26) ✅
 
 ```
 fill form
-  | Name  | unique("user")         |
-  | Email | unique email           |
-  | Age   | random number 18 to 99 |
+  | "Name"  | unique("user")         |
+  | "Email" | unique email           |
+  | "Age"   | random number 18 to 99 |
 ```
 
-Each row executes and reports as its own sub-step; same locator resolution as `fill field`.
-No fill-and-remember auto-verify — audits are explicit `check` lines.
+Each row's left cell is a quoted field name — same resolution as a bare `fill field` — and each
+row executes and reports as its own sub-step. No fill-and-remember auto-verify — audits are
+explicit `check`/`expect` lines.
 
-### 9.3 Locators (P#8–9)
+### 9.3 Locators (P#8–9) ✅ (`element` aliases not yet built)
 
-- Semantic-first, documented resolution tier: role+name → label → placeholder → visible text
-  (Playwright getByRole/getByLabel underneath).
-- Escapes: `css "…"`, `xpath "…"` — greppable, lint-nudged behind `element` aliases (§8).
-- Unresolved locator ⇒ diagnosis, never silent fallback: runtime scans the live DOM and prints
-  nearest candidates as ready-to-paste locators; `tflw pick <url>` opens the page and prints the
-  best locator for a clicked element.
+- The **noun picks the resolution strategy** (D6) — cascading isn't the sin, cascading
+  *invisibly* is:
+  - `button "…"` / `text "…"` / `list "…"` — single strategy (role+name / visible text /
+    role="list"+name).
+  - `field "…"` — a closed 3-step cascade: label → placeholder → role (textbox). A below-tier-1
+    resolution is annotated right in the CLI/report line (`field "Search" (resolved via
+    placeholder)`), never silently accepted.
+  - Escapes: `css "…"`, `xpath "…"` — greppable; lint-nudged behind `element` aliases once §8
+    builds them.
+- **Strict ambiguity (D7):** more than one match is always a hard error — never "take the first".
+  The error lists up to 5 matched candidates' visible text and suggests `within <container>` or a
+  more specific name.
+- **`within <locator>`** + an indented step block scopes every nested step's locator resolution to
+  inside that container (block form only, same indentation every other construct uses — no brace
+  syntax).
+- Not yet built: the live-DOM "nearest candidate" diagnosis on an unresolved locator, and
+  `tflw pick <url>` — both M5.
 
-### 9.4 Waiting & UI subjects
+### 9.4 Waiting & UI subjects ✅
 
-- Every step auto-waits; `sleep` does not exist — only `wait until <condition>` (P#8).
-- UI expect subjects: locators (`button "…"`, `field "…"`, `text "…"`, `list "…"`, `element`
-  aliases) with the state/value/count matchers of §6.2, all auto-retrying.
+- Every interaction step polls up to `timeout step` (default 30s) for its locator to resolve
+  (D9's spirit: a not-yet-rendered element isn't the same failure as a genuinely missing one) —
+  `sleep` does not exist, only auto-waiting/auto-retrying.
+- **UI expect subjects** (D5: tflw owns 100% of this retry loop, not Playwright) — locators
+  (`button "…"`, `field "…"`, `text "…"`, `list "…"`, `css "…"`, `xpath "…"`) with the state/value/
+  count matchers of §6.2 (`visible`/`hidden`/`enabled`/`disabled`/`checked`/`has value`/
+  `has count`), auto-retrying to `timeout expect` (default 5s). `has count` is the one matcher
+  meaningful against more than one element; every other matcher still hard-errors on ambiguity.
+  "Zero elements" is itself a legitimate, non-erroring state for `is hidden`/`has count 0`.
 
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
-✅ The `session` block half shipped in M2.6 (§3.3). 🔮 Fresh-browser-context-per-test and applying
-a session's cached storage state to it are the browser half, M3.
+✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
+*attempt* shipped in M3a (D13) — one shared browser process for the whole run, a clean context per
+test so a retried test never inherits a failed attempt's leftover UI state. 🔮 Not yet built:
+applying a `session`'s cached storage state to a browser context — SPEC §3.3/§9's cookie jar and a
+browser context's storage state are two separate representations that are deliberately never
+bridged (D10); a mixed UI+API test establishes identity twice (an API login call and a UI form
+login), each independently cached.
 
-Fresh browser context per test; cached `session` blocks solve auth cost (§3.3). Login flows
-still get their own dedicated tests. Context-per-file is rejected — ordering coupling.
+Context-per-file is rejected — ordering coupling. Login flows still get their own dedicated tests.
 
 ## 11. JS escape hatch (P#11) ✅
 
@@ -1087,6 +1138,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
+| `tflw install-browsers [--browser chromium\|firefox\|webkit]` | one-time browser binary download for UI steps (M3a, P#36, default chromium per D11) — shells out to the `playwright` CLI (`npx playwright install <browser>`) that ships inside the optional peer dependency itself, so it always resolves whatever version the consumer installed |
 
 **🔮 Planned:**
 
@@ -1096,7 +1148,6 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | `tflw watch` | save → affected test re-runs headed, browser stays open at failure, reuses last failing seed (M5) |
 | `tflw pick <url>` | click an element, get the best locator printed (M5) |
 | `tflw refactor apply <id>` | apply a reuse-pass extraction (M6) |
-| `tflw install-browsers` | one-time Playwright browser download for UI tests, P#36 (M3) |
 | `tflw migrate` | mechanically rewrite a suite past grammar deprecations, P#38 (1.0 gate) |
 
 ## 13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧
@@ -1175,16 +1226,19 @@ declarative field redaction (§3.4) → evidence-level trim (coarsest cut, appli
 
 ## 14. Architecture (P#1, P#12) 🔧
 
-✅ `lang`/`runtime` (fetch binding)/`reporter`/`cli`/`vscode`, bundled via esbuild for publish.
-🔮 The Playwright binding in `runtime` is M3.
+✅ `lang`/`runtime` (fetch binding + Playwright binding, M3a)/`reporter`/`cli`/`vscode`, bundled via
+esbuild for publish (esbuild marks `playwright` external — M3a's optional peer must never be
+inlined into the single-file CLI bundle, both because it's often absent and because
+`playwright-core`'s own bundle references optional native-transport deps esbuild can't resolve
+statically).
 
 ```
 packages/
   lang/      lexer, parser, AST, checker (pure, no I/O) — also parses tflw.config
-  runtime/   interpreter, fetch binding (M1) + Playwright binding (M3), event stream,
+  runtime/   interpreter, fetch binding (M1) + Playwright binding (M3a), event stream,
              taint tracking, seed derivation
   reporter/  events → report.html + junit.xml + results.json (+ events.ndjson), redaction rendering
-  cli/       tflw run / check / init / docs / watch / pick / refactor
+  cli/       tflw run / check / init / docs / watch / pick / refactor / install-browsers
   vscode/    highlighting + child-process diagnostics + run CodeLens (decision 94) — a thin
              extension-host client of the CLI's `--format json`, not a wrap of lang/ (no LSP)
 tests/       dogfood .tflw suite (against automationTestPOC)
@@ -1192,7 +1246,9 @@ tests/       dogfood .tflw suite (against automationTestPOC)
 
 - Hand-rolled lexer + recursive-descent parser; no parser generator (diagnostics ownership, P#12).
 - `lang/` is a pure library so a real LSP can wrap it in v2.
-- Build order M0–M7 is API-first: `runtime/` has **no Playwright dependency until M3** (P#34).
+- Build order M0–M7 is API-first: `runtime/` had **no Playwright dependency until M3a** (P#34) —
+  it's an optional peer dependency now (D5), dynamically imported only on a test's first browser
+  step, so an API-only consumer's install/bundle is completely unaffected.
 
 ## 15. Distribution (P#35–39, amended by P#41–50) 🔧
 
