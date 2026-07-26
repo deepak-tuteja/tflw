@@ -19,6 +19,7 @@ import type {
   Oauth2SessionConfig,
   PathSegment,
   Program,
+  RedactPattern,
   SessionDecl,
   Span,
   Step,
@@ -31,7 +32,7 @@ import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matc
 import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
-import { redactFields } from './fieldRedact.js';
+import { maskDetailValue, pathMatchesRedactPattern, redactFields } from './fieldRedact.js';
 import { evaluateSchemaMatch } from './contract.js';
 import { evaluateFileMatch } from './binary-match.js';
 import { parseCsv } from './csv-parse.js';
@@ -779,7 +780,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'CaptureStmt': {
-          result = execCapture(step, lastResponse, ctx, src, stepStart, tc.redactor);
+          result = execCapture(step, lastResponse, ctx, src, stepStart, tc.redactor, config);
           break;
         }
         case 'WaitUntilApiStmt': {
@@ -1107,7 +1108,21 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
 
 async function execExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig, baseDir: string): Promise<StepResult> {
   const outcome = await evaluateExpect(step, response, connectionError, ctx, config, baseDir);
-  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+  const message = maskExpectDetail(step, response, outcome.message, config.redactPatterns);
+  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(message));
+}
+
+/** Gap #15 (TFLW-GAPS.md): a plain (non-quantified) `body.<path>` assertion's own detail text can
+ * expose a `redact`-covered field's real value — as the `actual` side of a failing comparison, or
+ * (since a passing `equals` necessarily has `actual === expected`) as the literal shown even on
+ * success. Quantified (`any`/`all`) assertions are deliberately left alone: the per-element path
+ * that actually matched isn't known statically here the way a plain subject's is, and the messages
+ * they build (`arrayLabel[idx]...`) don't reduce to one resolvable subject value to mask. */
+function maskExpectDetail(step: ExpectStmt, response: ResponseTrace | null, message: string, patterns: readonly RedactPattern[]): string {
+  if (step.quantifier || step.subject.type !== 'BodySubject' || !response) return message;
+  if (!pathMatchesRedactPattern(step.subject.path, patterns)) return message;
+  const { value } = resolveSubject(step.subject, response);
+  return maskDetailValue(message, repr(value));
 }
 
 function execLet(step: LetStmt, ctx: EvalCtx, src: string, start: number, redactor: Redactor): StepResult {
@@ -1124,10 +1139,17 @@ function generatorTag(valueType: string): string {
   return '';
 }
 
-function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, redactor: Redactor): StepResult {
+function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, redactor: Redactor, config: ResolvedConfig): StepResult {
   const { value } = resolveSubject(step.subject, response);
   ctx.scope.set(step.name, value);
-  return mkStep('capture', src, step.span, true, start, redactor.redact(`${step.name} = ${repr(value)} (captured)`));
+  // Gap #15 (TFLW-GAPS.md): `capture`'s own detail line renders the live value directly — mask it
+  // the same way a `redact`-covered field is masked everywhere else, when this capture's subject
+  // is one of the configured `body.<path>` patterns. The captured *variable* itself stays the real
+  // value (so a later `expect {name} equals ...` still asserts against ground truth) — only this
+  // step's own report text changes.
+  const masked = step.subject.type === 'BodySubject' && pathMatchesRedactPattern(step.subject.path, config.redactPatterns);
+  const rendered = masked ? '[redacted]' : repr(value);
+  return mkStep('capture', src, step.span, true, start, redactor.redact(`${step.name} = ${rendered} (captured)`));
 }
 
 async function execWaitUntilApi(

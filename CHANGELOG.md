@@ -43,7 +43,10 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   active; `evidence full|headers-only|none` config key + `--evidence` CLI override control how
   much of the request/response trace lands in the report (never affects what `expect`/`capture`
   can see); `redact body.email, body.*.address` masks matching JSON fields with `[redacted]` in
-  the report, a declarative mechanism distinct from the existing `env(...)` secret redaction.
+  the report, a declarative mechanism distinct from the existing `env(...)` secret redaction — now
+  also masking a plain `body.<path>` `capture`/`expect`/`check` step's own detail text when its
+  subject is redact-covered (closes TFLW-GAPS.md gap #15), not just the request/response trace;
+  quantified `any`/`all` assertions are a documented exception, left unmasked.
 - Contract validation: `expect body matches schema "Name" from "source"` runs real ajv JSON-Schema
   validation against a schema in an API's own generated OpenAPI document (`components.schemas`),
   including cross-`$ref` resolution — the assertion itself fetches and caches the document.

@@ -98,6 +98,121 @@ test('a non-JSON body is left untouched — masking is best-effort, never a hard
   await server.close();
 });
 
+// Gap #15 (TFLW-GAPS.md): `redact` previously only rewrote the request/response JSON trace above —
+// a `capture`/`expect` step's own rendered detail text composed the live value directly, leaking a
+// redact-covered field regardless. These prove the detail line is masked too, while the live value
+// used for evaluation (what the assertion actually compares, what a later step reads via the
+// captured variable) is completely unaffected — same "sees the real value, reports the masked one"
+// split `redactFields` already established for the request/response trace.
+
+test('`capture body.phone` on a redact-covered field masks its own detail line, but the captured variable still holds the real value', async () => {
+  const server = await startFixtureServer({ '/profile': (_req, res) => json(res, 200, { phone: '+1-234-335-0035', name: 'A' }) });
+  const patterns: RedactPattern[] = [{ root: 'body', segments: [{ kind: 'prop', name: 'phone' }] }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "reads a profile"\n  api GET /profile\n  expect status equals 200\n  capture body.phone as p\n  expect body.name equals "{p}"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  // `expect body.name equals "{p}"` fails (name is "A", not the phone number) — proves the
+  // captured variable really did carry the real, unmasked phone number into a later step, not
+  // literally the string "[redacted]".
+  assert.equal(report.ok, false);
+  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  assert.equal(captureStep.detail, 'p = [redacted] (captured)');
+  const expectSteps = report.tests[0]!.steps.filter((s) => s.kind === 'expect');
+  assert.match(expectSteps[1]!.detail!, /\+1-234-335-0035/, 'the later expect proves the real value, not the mask, was actually used');
+
+  await server.close();
+});
+
+test('`capture` on a field not covered by `redact` is unaffected', async () => {
+  const server = await startFixtureServer({ '/profile': (_req, res) => json(res, 200, { phone: '+1-234-335-0035', name: 'A' }) });
+  const patterns: RedactPattern[] = [{ root: 'body', segments: [{ kind: 'prop', name: 'email' }] }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "reads a profile"\n  api GET /profile\n  expect status equals 200\n  capture body.phone as p\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  assert.equal(captureStep.detail, 'p = "+1-234-335-0035" (captured)');
+
+  await server.close();
+});
+
+test('a passing `expect body.phone equals ...` on a redact-covered field masks the value even though the assertion passed', async () => {
+  const server = await startFixtureServer({ '/profile': (_req, res) => json(res, 200, { phone: '+1-234-335-0035' }) });
+  const patterns: RedactPattern[] = [{ root: 'body', segments: [{ kind: 'prop', name: 'phone' }] }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "reads a profile"\n  api GET /profile\n  expect body.phone equals "+1-234-335-0035"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  assert.doesNotMatch(expectStep.detail!, /\+1-234-335-0035/);
+  assert.match(expectStep.detail!, /\[redacted\]/);
+
+  await server.close();
+});
+
+test('a failing `expect body.phone equals ...` masks the real (`got`) side, even though the hardcoded `expected` literal in source stays visible (it is already in cleartext on the source line regardless)', async () => {
+  const server = await startFixtureServer({ '/profile': (_req, res) => json(res, 200, { phone: '+1-234-335-0035' }) });
+  const patterns: RedactPattern[] = [{ root: 'body', segments: [{ kind: 'prop', name: 'phone' }] }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "reads a profile"\n  api GET /profile\n  expect body.phone equals "+1-999-999-9999"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false);
+  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  assert.doesNotMatch(expectStep.detail!, /\+1-234-335-0035/, 'the real response value (the `got` side) must be masked');
+  assert.match(expectStep.detail!, /\[redacted\]/);
+
+  await server.close();
+});
+
+test('`any`/`all` over a redact-covered path is deliberately left unmasked (documented limitation, gap #15)', async () => {
+  const server = await startFixtureServer({ '/users': (_req, res) => json(res, 200, [{ phone: '+1-234-335-0035' }]) });
+  const patterns: RedactPattern[] = [{ root: 'body', segments: [{ kind: 'wildcard' }, { kind: 'prop', name: 'phone' }] }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  // `all` (not `any`) deliberately mismatched: only a *failing* per-element outcome's message ever
+  // echoes the real value (`evalMatcher`'s own "expected ..., but got ..." text) — a passing
+  // quantified check's message never includes element values at all (`"any/all of N matched"`),
+  // so it wouldn't prove anything about masking either way.
+  const source = `test "lists users"\n  api GET /users\n  expect all body.phone equals "+1-999-999-9999"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false);
+  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  assert.match(expectStep.detail!, /\+1-234-335-0035/, 'quantified assertions are out of scope for this fix — no crash, no (incorrect) masking attempted');
+
+  await server.close();
+});
+
+test('no `redact` patterns declared means capture/expect detail text passes through unmasked (existing behavior unchanged)', async () => {
+  const server = await startFixtureServer({ '/profile': (_req, res) => json(res, 200, { phone: '+1-234-335-0035' }) });
+  const config = testConfig(server.baseUrl); // redactPatterns: [] by default
+
+  const source = `test "reads a profile"\n  api GET /profile\n  capture body.phone as p\n  expect body.phone equals "+1-234-335-0035"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  assert.equal(captureStep.detail, 'p = "+1-234-335-0035" (captured)');
+  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  assert.match(expectStep.detail!, /\+1-234-335-0035/);
+
+  await server.close();
+});
+
 test('no `redact` patterns declared means the body passes through byte-for-byte (no gratuitous reformatting)', async () => {
   const server = await startFixtureServer({ '/user': (_req, res) => json(res, 200, { email: 'a@example.com' }) });
   const config = testConfig(server.baseUrl); // redactPatterns: [] by default

@@ -295,13 +295,28 @@ env staging
   and/or a `.* ` wildcard segment (matches every key of an object, or every element of an array —
   both are plain JS values from `JSON.parse`'s point of view, so one wildcard form covers both).
   Accumulates across `defaults` + `env`, like `allow hosts` (§3.7) — not override semantics.
-- Applied only to the **report-only** trace — the same `redactRequest`/`redactResponse` boundary
-  every step already routes through, right after the secret redactor above and right before the
-  evidence-level trim (§13). `expect`/`capture` always see the real, unmasked value; only what
-  lands in `report.html`/`junit.xml` is affected.
+- Applied to the request/response **report-only** trace — the same `redactRequest`/
+  `redactResponse` boundary every step already routes through, right after the secret redactor
+  above and right before the evidence-level trim (§13) — *and*, since gap #15 (TFLW-GAPS.md,
+  fixed in tflw 0.1.0), to a `capture`/`expect`/`check` step's own rendered detail text when its
+  subject is a plain (non-quantified) `body.<path>` covered by a pattern: `capture body.phone as p`
+  renders `p = [redacted] (captured)` instead of the real number, and `expect body.phone equals
+  "..."` masks whichever side of the message carries the real response value — even on a *passing*
+  assertion, where the shown "expected" text is the real value by construction (`actual ===
+  expected`). In every case, `expect`/`capture` still **see** (evaluate against) the real,
+  unmasked value — only what's **rendered** into `report.html`/`junit.xml`/the CLI line is
+  affected; a later step reading a captured variable gets the real value regardless of whether its
+  own capture line was masked. Quantified (`any`/`all`) assertions are a known, deliberate
+  exception — the per-element path that actually matched isn't known statically the way a plain
+  subject's is — so their messages are never masked, whatever `redact` patterns are configured.
 - Best-effort: a non-JSON body, or a pattern that matches nothing in a particular body, passes
   through unchanged (no attempt to force JSON parsing, no crash). A matched leaf is replaced with
-  the literal string `[redacted]`.
+  the literal string `[redacted]`. The `capture`/`expect` detail-text masking above is a plain
+  substring replace of the value's own rendered text (not a JSON-structure rewrite, since a step's
+  detail is already a sentence, not a document) and — matching the secret redactor's own
+  `MIN_REDACTABLE_LENGTH` reasoning (§3.4 above) — skips a value shorter than 6 characters, so a
+  short redacted field (e.g. a 4-digit PIN) doesn't blot out unrelated short substrings elsewhere
+  in the same message.
 
 ### 3.5 Corporate networks (proxies, private CAs, self-signed certs) ✅
 
