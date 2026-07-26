@@ -7,7 +7,7 @@
 //    request and to evaluate assertions are the real ones (P#30).
 
 import { readFile } from 'node:fs/promises';
-import { basename, extname, resolve as resolvePath } from 'node:path';
+import { basename, resolve as resolvePath } from 'node:path';
 import { parseSource, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   ApiBody,
@@ -27,6 +27,7 @@ import type {
   Subject,
   TestDecl,
   WaitUntilApiStmt,
+  WaitUntilUiStmt,
 } from '@tflw/lang';
 import { evalValue, interpolatePath, navigate, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
@@ -36,6 +37,8 @@ import {
   describeLocator,
   performCheck,
   performClick,
+  performDrag,
+  performDropFile,
   performFill,
   performHover,
   performOpen,
@@ -62,6 +65,7 @@ import { extractPdfText } from './pdf-text.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
+import { inferContentType } from './mime.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
 import type { AttemptResult, EventSink, RequestTrace, ResolvedConfig, ResponseTrace, RunReport, StepResult, TestResult } from './types.js';
 
@@ -1019,12 +1023,85 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
           const browser = requireBrowserCtx(ctx);
-          const childCtx: EvalCtx = { ...ctx, browser: { ...browser, scope: pwLocator } };
+          // `within frame` (M3b) crosses into the iframe's own document via `contentFrame()` — a
+          // `FrameLocator`, not a `Locator` — before running the nested steps; the ordinary form
+          // scopes to `pwLocator` itself, same as M3a. Both are valid `LocatorScope` values.
+          const scope = step.frame ? pwLocator.contentFrame() : pwLocator;
+          const childCtx: EvalCtx = { ...ctx, browser: { ...browser, scope } };
           const within = await execSteps(step.body, config, childCtx, tc, testName, registry);
           results.push(...within.steps);
-          const detail = within.ok ? `within ${locatorDetail(step.locator, name, via)}` : (within.error ?? 'a step inside `within` failed');
+          const label = `within ${step.frame ? 'frame ' : ''}${locatorDetail(step.locator, name, via)}`;
+          const detail = within.ok ? label : (within.error ?? 'a step inside `within` failed');
           result = mkStep('within', src, step.span, within.ok, stepStart, detail);
           if (within.soft && !within.ok) callSoftError = within.error;
+          break;
+        }
+        case 'SwitchToNewTabBlock': {
+          const browser = requireBrowserCtx(ctx);
+          let inner: StepsExec | undefined;
+          const switched = await browser.page.runNewTabBlock(browser.manager, config.timeouts.step, async () => {
+            inner = await execSteps(step.body, config, ctx, tc, testName, registry);
+            return inner.ok;
+          });
+          results.push(...inner!.steps);
+          const ok = inner!.ok && switched.opened;
+          const detail = switched.error ? tc.redactor.redact(switched.error) : ok ? 'switched to new tab' : (inner!.error ?? 'a step inside `switch to new tab` failed');
+          result = mkStep('switchTab', src, step.span, ok, stepStart, detail);
+          if (!ok && !switched.error && inner!.soft) callSoftError = inner!.error;
+          break;
+        }
+        case 'SwitchToTabStmt': {
+          const browser = requireBrowserCtx(ctx);
+          await ensurePageForStep(ctx); // ensure at least the first tab exists before switching
+          browser.page.switchToTab(step.index);
+          result = mkStep('switchTab', src, step.span, true, stepStart, `switch to tab ${step.index}`);
+          break;
+        }
+        case 'CloseTabStmt': {
+          const browser = requireBrowserCtx(ctx);
+          await browser.page.closeTab();
+          result = mkStep('closeTab', src, step.span, true, stepStart, 'close tab');
+          break;
+        }
+        case 'DownloadBlock': {
+          const browser = requireBrowserCtx(ctx);
+          let inner: StepsExec | undefined;
+          const downloaded = await browser.page.runDownloadBlock(browser.manager, config.timeouts.step, async () => {
+            inner = await execSteps(step.body, config, ctx, tc, testName, registry);
+            return inner.ok;
+          });
+          results.push(...inner!.steps);
+          if (downloaded.filename !== null) {
+            ctx.scope.set(step.name, downloaded.filename);
+            result = mkStep('download', src, step.span, true, stepStart, `${step.name} = ${JSON.stringify(downloaded.filename)} (downloaded)`);
+          } else {
+            const detail = downloaded.error ? tc.redactor.redact(downloaded.error) : (inner!.error ?? 'a step inside `download` failed');
+            result = mkStep('download', src, step.span, false, stepStart, detail);
+            if (!downloaded.error && inner!.soft) callSoftError = inner!.error;
+          }
+          break;
+        }
+        case 'DragStmt': {
+          const fromName = String(evalValue(step.from.value, ctx));
+          const toName = String(evalValue(step.to.value, ctx));
+          const { pwLocator: fromLoc, via: fromVia } = await resolveForStep(ctx, config, step.from);
+          const { pwLocator: toLoc, via: toVia } = await resolveForStep(ctx, config, step.to);
+          await performDrag(fromLoc, toLoc, config.timeouts.step);
+          result = mkStep('drag', src, step.span, true, stepStart, `drag ${locatorDetail(step.from, fromName, fromVia)} to ${locatorDetail(step.to, toName, toVia)}`);
+          break;
+        }
+        case 'DropFileStmt': {
+          const filePath = String(evalValue(step.filePath, ctx));
+          const abs = resolvePath(tc.baseDir, filePath);
+          const page = await ensurePageForStep(ctx);
+          const name = String(evalValue(step.locator.value, ctx));
+          const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
+          await performDropFile(page, abs, pwLocator, config.timeouts.step);
+          result = mkStep('dropFile', src, step.span, true, stepStart, `drop file ${JSON.stringify(filePath)} onto ${locatorDetail(step.locator, name, via)}`);
+          break;
+        }
+        case 'WaitUntilUiStmt': {
+          result = await execWaitUntilUi(step, ctx, src, stepStart, config);
           break;
         }
       }
@@ -1234,33 +1311,6 @@ function parseRetryAfterMs(value: string): number | null {
   return null;
 }
 
-/** `upload` Content-Type inference (decision 22/M19) — a small curated extension→MIME table, not
- * an exhaustive MIME database (keeps the zero-new-runtime-dependency policy, decision 13, intact).
- * An extension not listed here falls back to `application/octet-stream` — never a hard error, so
- * nothing that depended on the old always-octet-stream behavior regresses. An explicit `upload …
- * type "…"` clause always wins over this table. */
-const EXTENSION_MIME_TABLE: Readonly<Record<string, string>> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.pdf': 'application/pdf',
-  '.txt': 'text/plain',
-  '.csv': 'text/csv',
-  '.json': 'application/json',
-  '.xml': 'application/xml',
-  '.zip': 'application/zip',
-  '.html': 'text/html',
-  '.css': 'text/css',
-  '.js': 'text/javascript',
-};
-
-function inferContentType(filePath: string): string {
-  return EXTENSION_MIME_TABLE[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
-}
-
 interface PreparedBody {
   readonly sendBody: BodyInit | undefined;
   /** Human-readable text for the report/redaction; undefined only if there truly is no body. */
@@ -1347,6 +1397,30 @@ async function execUiExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: 
     const outcome = await evalUiMatcherOnce(label, pwLocator, step.matcher, ctx, count);
     if (outcome.ok || performance.now() >= deadline) {
       return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+    }
+    await sleep(WAIT_POLL_INTERVAL_MS);
+  }
+}
+
+/** `wait until <locator> [not] <matcher>` (SPEC §9.5, M3b) — the UI sibling of `execUiExpect`:
+ * same resolve-fresh-every-poll / `hasCount`-exception logic, but polling `timeout wait` (default
+ * 30s, the same clock `wait until api` uses) instead of `timeout expect` (default 5s), for a UI
+ * condition that can legitimately take longer to settle than the ordinary UI-expect budget. Always
+ * hard-fails on exhaustion — there is no soft/`check` form for `wait until`. */
+async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
+  const subject = step.subject;
+  const browser = requireBrowserCtx(ctx);
+  const page = await browser.page.ensurePage(browser.manager);
+  const scope = browser.scope ?? page;
+  const name = String(evalValue(subject.locator.value, ctx));
+  const deadline = performance.now() + config.timeouts.wait;
+  for (;;) {
+    const { pwLocator, via, count } = await resolveLocatorSnapshot(scope, subject.locator, ctx);
+    if (step.matcher.name !== 'hasCount') await requireSingleMatch(subject.locator, name, { pwLocator, via }, count);
+    const label = locatorDetail(subject.locator, name, via);
+    const outcome = await evalUiMatcherOnce(label, pwLocator, step.matcher, ctx, count);
+    if (outcome.ok || performance.now() >= deadline) {
+      return mkStep('wait', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
     }
     await sleep(WAIT_POLL_INTERVAL_MS);
   }
@@ -1700,6 +1774,7 @@ function stepKind(step: Step): StepResult['kind'] {
     case 'CaptureStmt':
       return 'capture';
     case 'WaitUntilApiStmt':
+    case 'WaitUntilUiStmt':
       return 'wait';
     case 'GiveStmt':
       return 'give';
@@ -1729,6 +1804,17 @@ function stepKind(step: Step): StepResult['kind'] {
     case 'AcceptDialogStmt':
     case 'DismissDialogStmt':
       return 'dialog';
+    case 'SwitchToNewTabBlock':
+    case 'SwitchToTabStmt':
+      return 'switchTab';
+    case 'CloseTabStmt':
+      return 'closeTab';
+    case 'DownloadBlock':
+      return 'download';
+    case 'DragStmt':
+      return 'drag';
+    case 'DropFileStmt':
+      return 'dropFile';
   }
 }
 

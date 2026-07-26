@@ -199,3 +199,116 @@ test('`expect field "..." has value "..."` and `has count N` parse against a loc
   const hasCount = firstStep('test "ok"\n  expect list "Cart items" has count 3\n') as { matcher: { name: string } };
   assert.equal(hasCount.matcher.name, 'hasCount');
 });
+
+// ---- M3b: frames / tabs / downloads / drag-drop / wait until <ui> ---------
+
+test('`within <locator>` (no `frame`) parses WithinBlock with frame: false', () => {
+  const step = firstStep('test "ok"\n  within list "Cart items"\n    click button "Remove"\n') as { type: string; frame: boolean };
+  assert.equal(step.type, 'WithinBlock');
+  assert.equal(step.frame, false);
+});
+
+test('`within frame <locator>` sets WithinBlock.frame: true', () => {
+  const step = firstStep('test "ok"\n  within frame css "#payment-frame"\n    click button "Pay"\n') as {
+    type: string;
+    frame: boolean;
+    locator: { kind: string; value: { value: string } };
+    body: { type: string }[];
+  };
+  assert.equal(step.type, 'WithinBlock');
+  assert.equal(step.frame, true);
+  assert.equal(step.locator.kind, 'css');
+  assert.equal(step.locator.value.value, '#payment-frame');
+  assert.deepEqual(
+    step.body.map((s) => s.type),
+    ['ClickStmt'],
+  );
+});
+
+test('`switch to new tab` + an indented block parses a SwitchToNewTabBlock with a nested body', () => {
+  const step = firstStep('test "ok"\n  switch to new tab\n    click text "Open in new tab"\n') as { type: string; body: { type: string }[] };
+  assert.equal(step.type, 'SwitchToNewTabBlock');
+  assert.deepEqual(
+    step.body.map((s) => s.type),
+    ['ClickStmt'],
+  );
+});
+
+test('`switch to tab N` parses a SwitchToTabStmt carrying the 1-based index', () => {
+  const step = firstStep('test "ok"\n  switch to tab 2\n') as { type: string; index: number };
+  assert.equal(step.type, 'SwitchToTabStmt');
+  assert.equal(step.index, 2);
+});
+
+test('`close tab` parses a zero-field CloseTabStmt', () => {
+  const step = firstStep('test "ok"\n  close tab\n') as { type: string };
+  assert.equal(step.type, 'CloseTabStmt');
+});
+
+test('`download as <name>` + an indented block parses a DownloadBlock', () => {
+  const step = firstStep('test "ok"\n  download as file\n    click text "Download report"\n') as {
+    type: string;
+    name: string;
+    body: { type: string }[];
+  };
+  assert.equal(step.type, 'DownloadBlock');
+  assert.equal(step.name, 'file');
+  assert.deepEqual(
+    step.body.map((s) => s.type),
+    ['ClickStmt'],
+  );
+});
+
+test('`download as <name>` with no indented body is an error, not a silent empty step', () => {
+  const { diagnostics } = parseSource('test "ok"\n  download as file\n  expect status equals 200\n');
+  assert.ok(diagnostics.some((d) => d.code === 'TF015'), JSON.stringify(diagnostics));
+});
+
+test('`drag <locator> to <locator>` parses a DragStmt with both locators', () => {
+  const step = firstStep('test "ok"\n  drag text "First item" to text "Second item"\n') as {
+    type: string;
+    from: { kind: string; value: { value: string } };
+    to: { kind: string; value: { value: string } };
+  };
+  assert.equal(step.type, 'DragStmt');
+  assert.equal(step.from.kind, 'text');
+  assert.equal(step.from.value.value, 'First item');
+  assert.equal(step.to.kind, 'text');
+  assert.equal(step.to.value.value, 'Second item');
+});
+
+test('`drop file "..." onto <locator>` parses a DropFileStmt', () => {
+  const step = firstStep('test "ok"\n  drop file "./receipt.txt" onto css "#dropzone"\n') as {
+    type: string;
+    filePath: { value: string };
+    locator: { kind: string; value: { value: string } };
+  };
+  assert.equal(step.type, 'DropFileStmt');
+  assert.equal(step.filePath.value, './receipt.txt');
+  assert.equal(step.locator.kind, 'css');
+  assert.equal(step.locator.value.value, '#dropzone');
+});
+
+test('`wait until <locator> <matcher>` parses a WaitUntilUiStmt (not the api form)', () => {
+  const step = firstStep('test "ok"\n  wait until button "Submit" is enabled\n') as {
+    type: string;
+    subject: { type: string; locator: { kind: string; value: { value: string } } };
+    matcher: { name: string };
+  };
+  assert.equal(step.type, 'WaitUntilUiStmt');
+  assert.equal(step.subject.type, 'LocatorSubject');
+  assert.equal(step.subject.locator.kind, 'button');
+  assert.equal(step.subject.locator.value.value, 'Submit');
+  assert.equal(step.matcher.name, 'enabled');
+});
+
+test('`wait until` against a non-locator, non-`api` subject is a diagnosed error', () => {
+  const { diagnostics } = parseSource('test "ok"\n  wait until status equals 200\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic');
+  assert.ok(diagnostics[0]!.message.includes('expects either'), diagnostics[0]!.message);
+});
+
+test('`wait until api …` still parses as WaitUntilApiStmt (unaffected by the `wait until <ui>` dispatch)', () => {
+  const step = firstStep('test "ok"\n  wait until api GET /orders/{orderId}\n    expect body.status equals "shipped"\n') as { type: string };
+  assert.equal(step.type, 'WaitUntilApiStmt');
+});

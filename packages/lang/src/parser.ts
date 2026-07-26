@@ -27,6 +27,7 @@ import type {
   CheckStmt,
   ClickKind,
   ClickStmt,
+  CloseTabStmt,
   ConfigEntry,
   ConfigFile,
   DataTable,
@@ -35,6 +36,9 @@ import type {
   DateOffsetUnit,
   DefaultsBlock,
   DismissDialogStmt,
+  DownloadBlock,
+  DragStmt,
+  DropFileStmt,
   DurationLit,
   EnvBlock,
   EnvRef,
@@ -98,6 +102,8 @@ import type {
   StringLit,
   StringPart,
   Subject,
+  SwitchToNewTabBlock,
+  SwitchToTabStmt,
   TestDecl,
   TextBody,
   TimeoutDecl,
@@ -113,6 +119,7 @@ import type {
   UseDecl,
   Value,
   WaitUntilApiStmt,
+  WaitUntilUiStmt,
   WebDecl,
   WithinBlock,
   WorkersDecl,
@@ -165,6 +172,11 @@ const STATEMENT_KEYWORDS = [
   'within',
   'accept',
   'dismiss',
+  'switch',
+  'close',
+  'download',
+  'drag',
+  'drop',
 ] as const;
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
@@ -1044,7 +1056,7 @@ class Parser {
         case 'capture':
           return this.parseCapture();
         case 'wait':
-          return this.parseWaitUntilApi();
+          return this.parseWaitUntil();
         case 'give':
           return this.parseGive();
         case 'open':
@@ -1073,6 +1085,16 @@ class Parser {
           return this.parseDialogStep('accept');
         case 'dismiss':
           return this.parseDialogStep('dismiss');
+        case 'switch':
+          return this.parseSwitchStep();
+        case 'close':
+          return this.parseCloseTabStep();
+        case 'download':
+          return this.parseDownloadStep();
+        case 'drag':
+          return this.parseDragStep();
+        case 'drop':
+          return this.parseDropFileStep();
         default: {
           const hint = suggest(tok.value, STATEMENT_KEYWORDS);
           this.error(
@@ -1325,15 +1347,21 @@ class Parser {
     return { type: 'ApiHeader', name, value, span: this.spanFrom(start) };
   }
 
-  // -- wait until api ---------------------------------------------------------
+  // -- wait until api / wait until <ui> ---------------------------------------
 
-  /** `wait until api …` re-issues the request until its nested `expect`s pass or wait times out
-   * (SPEC §5.5, P#15). Caller has not yet consumed `wait`. */
-  private parseWaitUntilApi(): Step | null {
+  /** `wait until …` — dispatches on what follows `until`: `api …` re-issues a request until its
+   * nested `expect`s pass or wait times out (SPEC §5.5, P#15); anything else is parsed as a UI
+   * locator condition (SPEC §9.5, M3b). Caller has not yet consumed `wait`. */
+  private parseWaitUntil(): Step | null {
     const start = this.peek().span.start;
     this.advance(); // `wait`
     if (!this.expectKw('until')) return null;
-    if (!this.expectKw('api')) return null;
+    if (this.isKw(this.peek(), 'api')) return this.parseWaitUntilApiRest(start);
+    return this.parseWaitUntilUiRest(start);
+  }
+
+  private parseWaitUntilApiRest(start: Position): Step | null {
+    this.advance(); // `api`
     const request = this.parseApiRequestLine();
     if (!request) return null;
     this.endLine();
@@ -1344,6 +1372,28 @@ class Parser {
       expects,
       span: this.spanFrom(start),
     };
+  }
+
+  /** `wait until <locator> [not] <matcher>` (SPEC §9.5, M3b) — a single line, the UI sibling of
+   * `wait until api`'s block form: no separate request to re-issue, so the whole condition is just
+   * an ordinary subject+matcher pair, polled against `timeout wait` instead of `timeout expect`. */
+  private parseWaitUntilUiRest(start: Position): Step | null {
+    const subject = this.parseSubject();
+    if (!subject) return null;
+    if (subject.type !== 'LocatorSubject') {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`wait until` expects either `api ...` or a UI locator condition',
+        subject.span,
+        'e.g. `wait until button "Submit" is enabled`',
+      );
+      return null;
+    }
+    const matcher = this.parseMatcher();
+    if (!matcher) return null;
+    this.endLine();
+    const stmt: WaitUntilUiStmt = { type: 'WaitUntilUiStmt', subject, matcher, span: this.spanFrom(start) };
+    return stmt;
   }
 
   /** The indented block under `wait until api …`: optional `header "…" is …` lines (SPEC §5.5,
@@ -1841,14 +1891,21 @@ class Parser {
     return { type: 'ScrollStmt', locator, span: this.spanFrom(start) };
   }
 
+  /** `within <locator>` or `within frame <locator>` (SPEC §9.3/§9.5) — `frame` is a contextual
+   * keyword recognized only right after `within`, not a reserved word elsewhere. */
   private parseWithinStep(): Step | null {
     const start = this.peek().span.start;
     this.advance(); // `within`
+    let frame = false;
+    if (this.isKw(this.peek(), 'frame')) {
+      this.advance();
+      frame = true;
+    }
     const locator = this.parseLocator();
     if (!locator) return null;
     this.endLine();
-    const body = this.parseBlock('within');
-    return { type: 'WithinBlock', locator, body, span: this.spanFrom(start) };
+    const body = this.parseBlock(frame ? 'within frame' : 'within');
+    return { type: 'WithinBlock', locator, frame, body, span: this.spanFrom(start) };
   }
 
   private parseDialogStep(which: 'accept' | 'dismiss'): Step | null {
@@ -1859,6 +1916,79 @@ class Parser {
     return which === 'accept'
       ? ({ type: 'AcceptDialogStmt', span: this.spanFrom(start) } satisfies AcceptDialogStmt)
       : ({ type: 'DismissDialogStmt', span: this.spanFrom(start) } satisfies DismissDialogStmt);
+  }
+
+  // -- UI / browser steps (SPEC §9.5, M3b) ------------------------------------
+
+  /** `switch to new tab` + block, or `switch to tab N` (SPEC §9.5). Caller has not yet consumed
+   * `switch`. */
+  private parseSwitchStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `switch`
+    if (!this.expectKw('to')) return null;
+    if (this.isKw(this.peek(), 'new')) {
+      this.advance(); // `new`
+      if (!this.expectKw('tab')) return null;
+      this.endLine();
+      const body = this.parseBlock('switch to new tab');
+      const stmt: SwitchToNewTabBlock = { type: 'SwitchToNewTabBlock', body, span: this.spanFrom(start) };
+      return stmt;
+    }
+    if (!this.expectKw('tab')) return null;
+    const num = this.expect('number', 'a tab number, e.g. `switch to tab 1`');
+    if (!num) return null;
+    this.endLine();
+    const stmt: SwitchToTabStmt = { type: 'SwitchToTabStmt', index: Number(num.value), span: this.spanFrom(start) };
+    return stmt;
+  }
+
+  private parseCloseTabStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `close`
+    if (!this.expectKw('tab')) return null;
+    this.endLine();
+    const stmt: CloseTabStmt = { type: 'CloseTabStmt', span: this.spanFrom(start) };
+    return stmt;
+  }
+
+  /** `download as <name>` + block (SPEC §9.5). */
+  private parseDownloadStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `download`
+    if (!this.expectKw('as')) return null;
+    const name = this.expect('ident', 'a variable name after `as`, e.g. `download as file`');
+    if (!name) return null;
+    this.endLine();
+    const body = this.parseBlock('download');
+    const stmt: DownloadBlock = { type: 'DownloadBlock', name: name.value, body, span: this.spanFrom(start) };
+    return stmt;
+  }
+
+  private parseDragStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `drag`
+    const from = this.parseLocator();
+    if (!from) return null;
+    if (!this.expectKw('to')) return null;
+    const to = this.parseLocator();
+    if (!to) return null;
+    this.endLine();
+    const stmt: DragStmt = { type: 'DragStmt', from, to, span: this.spanFrom(start) };
+    return stmt;
+  }
+
+  private parseDropFileStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `drop`
+    if (!this.expectKw('file')) return null;
+    const filePath = this.expectString('a file path, e.g. `drop file "./f.png" onto css ".dropzone"`');
+    if (!filePath) return null;
+    if (!this.expectKw('onto')) return null;
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    const stmt: DropFileStmt = { type: 'DropFileStmt', filePath, locator, span: this.spanFrom(start) };
+    return stmt;
   }
 
   // -- let / capture ---------------------------------------------------------

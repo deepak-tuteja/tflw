@@ -151,7 +151,9 @@ export function checkSessionServices(sessions: readonly SessionDecl[], knownServ
 function checkStepService(step: Step, knownServices: readonly string[], diags: Diagnostic[]): void {
   if (step.type === 'ApiStep') checkService(step.service, step.span, knownServices, diags);
   else if (step.type === 'WaitUntilApiStmt') checkService(step.request.service, step.span, knownServices, diags);
-  else if (step.type === 'WithinBlock') for (const s of step.body) checkStepService(s, knownServices, diags);
+  else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+    for (const s of step.body) checkStepService(s, knownServices, diags);
+  }
 }
 
 function checkService(service: string | null, span: Span, knownServices: readonly string[], diags: Diagnostic[]): void {
@@ -234,8 +236,8 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
         }
         continue;
       }
-      if (step.type === 'WithinBlock') {
-        walk(step.body); // M3a: a `within` block can nest any step, incl. `api`/`expect`.
+      if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+        walk(step.body); // M3a/M3b: these block-shaped steps can nest any step, incl. `api`/`expect`.
         continue;
       }
       if (step.type !== 'ApiStep') continue;
@@ -412,11 +414,36 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         // A `within` block shares its enclosing scope (it's a resolution-scoping construct, not a
         // new variable scope) — `bound` is threaded through, not copied, so a `let` above the block
         // is visible inside it and (deliberately, same as any other nested block in this checker) a
-        // `let` inside it stays visible to steps after the block too.
+        // `let` inside it stays visible to steps after the block too. Same sharing for `within
+        // frame` (M3b) — `frame` only changes *where* nested locators resolve, not variable scope.
         checkStepSequence(step.body, bound, diags);
         break;
       case 'AcceptDialogStmt':
       case 'DismissDialogStmt':
+        break;
+      case 'WaitUntilUiStmt':
+        checkSubject(step.subject, bound, diags);
+        if (step.matcher.value) checkValue(step.matcher.value, bound, diags);
+        break;
+      case 'SwitchToNewTabBlock':
+        // Shares scope with its enclosing sequence, same as `within` (M3b) — the block exists to
+        // let the runtime catch a popup event around its trigger step(s), not to isolate variables.
+        checkStepSequence(step.body, bound, diags);
+        break;
+      case 'SwitchToTabStmt':
+      case 'CloseTabStmt':
+        break;
+      case 'DownloadBlock':
+        checkStepSequence(step.body, bound, diags);
+        bound.add(step.name);
+        break;
+      case 'DragStmt':
+        checkStringLit(step.from.value, bound, diags);
+        checkStringLit(step.to.value, bound, diags);
+        break;
+      case 'DropFileStmt':
+        checkStringLit(step.filePath, bound, diags);
+        checkStringLit(step.locator.value, bound, diags);
         break;
     }
   }

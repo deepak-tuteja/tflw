@@ -6,7 +6,18 @@
 // interaction step (open/click/fill/fill form/select/check/uncheck/hover/press/scroll), the
 // tflw-owned UI-expect retry loop (state/value/count matchers, including `hidden`/`has count 0`
 // against a genuinely-absent element), and dialog handling (`accept dialog`/`dismiss dialog`).
+//
+// M3b adds: `within frame` (a real cross-origin-free `<iframe>`, traversed via
+// `Locator.contentFrame()`), tabs (`switch to new tab`/`switch to tab N`/`close tab` against a
+// real `target="_blank"` popup), `download as <name>` (a real `Content-Disposition: attachment`
+// response), `drag … to …` (a hand-rolled two-item reorder list with real `dragstart`/`dragover`/
+// `drop` listeners — the same "fully known behavior" fixture philosophy as testFlow-tests' webV2),
+// `drop file … onto …` (a real dropzone with no `<input type="file">`, fed an actual on-disk file's
+// bytes), and `wait until <ui condition>`.
 
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
@@ -53,6 +64,70 @@ const FIXTURE_HTML = `<!doctype html>
 
   <button id="delete" onclick="if (confirm('Really delete?')) { document.getElementById('status').textContent = 'deleted'; } else { document.getElementById('status').textContent = 'kept'; }">Delete</button>
   <p id="status">untouched</p>
+
+  <iframe id="payment-frame" src="/frame" title="payment"></iframe>
+
+  <a href="/tab2" target="_blank">Open in new tab</a>
+
+  <a href="/download">Download report</a>
+
+  <ul id="reorder-list" aria-label="Reorder items">
+    <li draggable="true" data-name="First">First item</li>
+    <li draggable="true" data-name="Second">Second item</li>
+  </ul>
+  <p id="order-status">First, Second</p>
+
+  <div id="dropzone">Drop files here</div>
+  <p id="dropzone-status">no file</p>
+
+  <script>
+    (function () {
+      var list = document.getElementById('reorder-list');
+      var dragged = null;
+      list.addEventListener('dragstart', function (e) { dragged = e.target; });
+      list.addEventListener('dragover', function (e) { e.preventDefault(); });
+      list.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var target = e.target.closest('li');
+        if (target && dragged && target !== dragged) {
+          var draggedNext = dragged.nextSibling;
+          var targetNext = target.nextSibling;
+          target.parentNode.insertBefore(dragged, targetNext);
+          dragged.parentNode.insertBefore(target, draggedNext);
+        }
+        var names = Array.prototype.map.call(list.querySelectorAll('li'), function (li) { return li.dataset.name; });
+        document.getElementById('order-status').textContent = names.join(', ');
+      });
+
+      var dz = document.getElementById('dropzone');
+      dz.addEventListener('dragover', function (e) { e.preventDefault(); });
+      dz.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var file = e.dataTransfer.files[0];
+        document.getElementById('dropzone-status').textContent = file ? file.name : 'no file';
+      });
+    })();
+  </script>
+</body>
+</html>`;
+
+const FRAME_HTML = `<!doctype html>
+<html>
+<body>
+  <button id="frame-btn">Frame button</button>
+  <p id="frame-status">untouched</p>
+  <script>
+    document.getElementById('frame-btn').addEventListener('click', function () {
+      document.getElementById('frame-status').textContent = 'clicked';
+    });
+  </script>
+</body>
+</html>`;
+
+const TAB2_HTML = `<!doctype html>
+<html>
+<body>
+  <h1>Second tab</h1>
 </body>
 </html>`;
 
@@ -63,6 +138,10 @@ let browserManager: BrowserManager;
 before(async () => {
   server = await startFixtureServer({
     '/': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(FIXTURE_HTML),
+    '/frame': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(FRAME_HTML),
+    '/tab2': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(TAB2_HTML),
+    '/download': (_req, res) =>
+      res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="report.csv"' }).end('a,b\n1,2\n'),
   });
   config = { ...testConfig(server.baseUrl), webBaseUrl: server.baseUrl };
   browserManager = new BrowserManager();
@@ -137,7 +216,7 @@ test('`within` scopes locator resolution to one container, disambiguating an oth
   // not just re-run globally and coincidentally passing.
   const { report } = await run(`test "within scoping"
   open "/"
-  within css "li:first-child"
+  within css "ul[aria-label='Cart items'] li:first-child"
     click button "Remove"
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
@@ -213,4 +292,119 @@ test('a browser step with no `browserManager` supplied fails clearly instead of 
   const { report } = await runProgram(program, config, { source: 'x' });
   assert.equal(report.ok, false);
   assert.match(report.tests[0]!.error ?? '', /no browser support was initialized/);
+});
+
+// ---- M3b: frames / tabs / downloads / drag-drop / wait until <ui> ---------
+
+test('`within frame` traverses into a real `<iframe>`\'s own document via `contentFrame()`', async () => {
+  const { report } = await run(`test "frame traversal"
+  open "/"
+  within frame css "#payment-frame"
+    click button "Frame button"
+    expect text "clicked" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const steps = report.tests[0]!.steps;
+  assert.deepEqual(
+    steps.map((s) => s.kind),
+    ['open', 'click', 'expect', 'within'],
+  );
+});
+
+test('tabs: `switch to new tab` catches a real `target="_blank"` popup, `switch to tab N` and `close tab` move between them', async () => {
+  const { report } = await run(`test "tabs"
+  open "/"
+  switch to new tab
+    click text "Open in new tab"
+  expect text "Second tab" is visible
+  switch to tab 1
+  expect button "Add to cart" is visible
+  switch to tab 2
+  close tab
+  expect button "Add to cart" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const steps = report.tests[0]!.steps;
+  assert.deepEqual(
+    steps.map((s) => s.kind),
+    ['open', 'click', 'switchTab', 'expect', 'switchTab', 'expect', 'switchTab', 'closeTab', 'expect'],
+  );
+});
+
+test('closing the only remaining tab is a runtime error, not a silent no-op', async () => {
+  const { report } = await run('test "close last tab"\n  open "/"\n  close tab\n');
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /only tab open/);
+});
+
+test('`switch to tab N` out of range is a clear error', async () => {
+  const { report } = await run('test "bad tab index"\n  open "/"\n  switch to tab 2\n');
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /no tab 2 — 1 tab\(s\) currently open/);
+});
+
+test('`download as <name>` captures a real `Content-Disposition: attachment` response\'s suggested filename', async () => {
+  const { report } = await run(`test "download"
+  open "/"
+  download as file
+    click text "Download report"
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const steps = report.tests[0]!.steps;
+  assert.deepEqual(
+    steps.map((s) => s.kind),
+    ['open', 'click', 'download'],
+  );
+  assert.match(steps[2]!.detail ?? '', /file = "report\.csv" \(downloaded\)/);
+});
+
+test('`drag … to …` dispatches a real dragstart/dragenter/dragover/drop sequence a hand-rolled reorder list actually listens for', async () => {
+  const { report } = await run(`test "drag reorder"
+  open "/"
+  drag text "First item" to text "Second item"
+  expect text "Second, First" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const steps = report.tests[0]!.steps;
+  assert.deepEqual(
+    steps.map((s) => s.kind),
+    ['open', 'drag', 'expect'],
+  );
+});
+
+test('`drop file … onto …` builds a real in-page `File` from actual on-disk bytes for a dropzone with no `<input type="file">`', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-dropfile-'));
+  try {
+    await writeFile(join(dir, 'receipt.txt'), 'hello from disk');
+    const { program, diagnostics } = parseSource(`test "drop file"
+  open "/"
+  drop file "./receipt.txt" onto css "#dropzone"
+  expect text "receipt.txt" is visible
+`);
+    assert.deepEqual(diagnostics, []);
+    const { report } = await runProgram(program, config, { source: 'x', browserManager, baseDir: dir });
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`wait until <ui condition>` polls against `timeout wait`, not `timeout expect`, and always hard-fails on exhaustion', async () => {
+  const { report } = await run(`test "wait until ui"
+  open "/"
+  wait until button "Add to cart" is enabled
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.equal(report.tests[0]!.steps[1]!.kind, 'wait');
+});
+
+test('`wait until <ui condition>` that never becomes true fails after the wait timeout (not the shorter expect one)', async () => {
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 300 } };
+  const { program } = parseSource(`test "never enabled"
+  open "/"
+  wait until button "Disabled button" is enabled
+`);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /expected .*to be enabled/);
 });

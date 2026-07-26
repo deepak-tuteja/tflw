@@ -1,10 +1,13 @@
-// Playwright-backed browser step driver (M3a, SPEC §9). `playwright` is an optional peer (D5,
+// Playwright-backed browser step driver (M3a/M3b, SPEC §9). `playwright` is an optional peer (D5,
 // PLAN_BROWSER_PERF_SECURITY.md §1.1): dynamically imported on first use so `tflw run` against an
 // API-only suite never touches it, and a consumer who never installed the peer never pays for it.
 //
 // Lifecycle (D13): one shared `Browser` process for the whole `tflw run` invocation
 // (`BrowserManager`, owned by the CLI, threaded through `RunOptions`/`TestCtx`), one fresh
 // `BrowserContext` + `Page` per test attempt (`BrowserPageState`, created in `runTestAttempt`).
+// M3b extends `BrowserPageState` to track *several* pages per context (tabs/windows) with one
+// "active" index — every existing single-page caller keeps working unchanged since `ensurePage`
+// always returns whichever page is currently active.
 //
 // Selector model (D6): the locator noun picks the resolution strategy — `button`/`text`/`list`/
 // `css`/`xpath` are single-strategy, `field` is a closed 3-step cascade (label → placeholder →
@@ -12,18 +15,25 @@
 // silently accepted. Ambiguity (D7) is a hard error with up to 5 candidate descriptions — never
 // "take the first match".
 
+import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import type { Locator as LocatorAst, LocatorKind } from '@tflw/lang';
 import { RuntimeError, evalValue, type EvalCtx } from './eval.js';
+import { inferContentType } from './mime.js';
 
 type PWModule = typeof import('playwright');
 export type PWBrowser = import('playwright').Browser;
 export type PWBrowserContext = import('playwright').BrowserContext;
 export type PWPage = import('playwright').Page;
 export type PWLocator = import('playwright').Locator;
+export type PWFrameLocator = import('playwright').FrameLocator;
 
-/** Anything a locator can resolve against — a whole page, or (inside a `within` block) a
- * container `Locator`. Both types implement this same query surface in Playwright's own API. */
-export type LocatorScope = PWPage | PWLocator;
+/** Anything a locator can resolve against — a whole page, a container `Locator` (inside a plain
+ * `within` block), or a `FrameLocator` (inside `within frame`, M3b — an iframe's own document has
+ * its own resolution root, reached via `Locator.contentFrame()`). All three implement the same
+ * `getByRole`/`getByText`/`getByLabel`/`getByPlaceholder`/`locator` query surface in Playwright's
+ * own API, which is all `candidateStrategies` below ever calls. */
+export type LocatorScope = PWPage | PWLocator | PWFrameLocator;
 
 let pwModulePromise: Promise<PWModule> | undefined;
 
@@ -61,32 +71,126 @@ export class BrowserManager {
 
 /** Per-test-attempt browser state (D13: fresh context per test — and, in this implementation,
  * per retry attempt too, so a failed attempt's UI state never bleeds into a retry). Lazily creates
- * its context+page on the first browser step actually executed. */
+ * its context + first page on the first browser step actually executed.
+ *
+ * M3b: tracks every open tab/window in this context (`pages`) plus which one is "active"
+ * (`activeIndex`) — `switch to new tab`/`switch to tab N`/`close tab` move `activeIndex`, and
+ * every other browser step reads the active page through `ensurePage`/`currentPage`, unaware
+ * there's more than one. The dialog handler (SPEC §9.1) is wired identically on every page, first
+ * or not — `armedDialog` is one flag shared across tabs, matching the language's "the next dialog,
+ * wherever it fires" framing (SPEC §9.1/§9.5). */
 export class BrowserPageState {
-  private page: PWPage | undefined;
+  private pages: PWPage[] = [];
+  private activeIndex = 0;
   private context: PWBrowserContext | undefined;
   /** Set by `accept dialog`/`dismiss dialog` — armed for exactly the next native dialog, then
    * cleared (SPEC §9.1). */
   armedDialog: 'accept' | 'dismiss' | null = null;
   lastDialogMessage: string | null = null;
 
-  async ensurePage(manager: BrowserManager): Promise<PWPage> {
-    if (this.page) return this.page;
-    const browser = await manager.getBrowser();
-    this.context = await browser.newContext();
-    this.page = await this.context.newPage();
-    this.page.on('dialog', (dialog) => {
+  private wireDialogHandler(page: PWPage): void {
+    page.on('dialog', (dialog) => {
       const armed = this.armedDialog;
       this.armedDialog = null; // one-shot (SPEC §9.1)
       this.lastDialogMessage = dialog.message();
       void (armed === 'accept' ? dialog.accept() : dialog.dismiss());
     });
-    return this.page;
+  }
+
+  async ensurePage(manager: BrowserManager): Promise<PWPage> {
+    if (this.pages.length === 0) {
+      const browser = await manager.getBrowser();
+      // `acceptDownloads: true` (M3b) — explicit rather than relying on Playwright's own default,
+      // since `download as <name>` needs every context to actually surface a `download` event
+      // instead of letting the browser navigate to (or silently drop) the response.
+      this.context = await browser.newContext({ acceptDownloads: true });
+      const page = await this.context.newPage();
+      this.wireDialogHandler(page);
+      this.pages.push(page);
+      this.activeIndex = 0;
+    }
+    return this.pages[this.activeIndex]!;
+  }
+
+  /** How many tabs are currently open — used by `switchToTab`/`closeTab` for range/last-tab
+   * checks (SPEC §9.5). */
+  get tabCount(): number {
+    return this.pages.length;
+  }
+
+  /** `switch to new tab` + block (SPEC §9.5, M3b): starts listening for the context's next `page`
+   * (popup) event *before* `runBody` runs (so a fast-opening tab can't race past the listener),
+   * runs the block's own step(s) (expected to trigger the new tab), then makes the newly-opened
+   * page active — unlike `within`'s locator scoping, this persists past the block.
+   *
+   * `runBody` reports whether its own steps succeeded; when they didn't, no popup is coming, so
+   * this returns `{ opened: false }` immediately rather than waiting out the full timeout for an
+   * event that will never fire. Never throws — a timeout/failure while actually waiting for the
+   * popup comes back as `{ opened: false, error }` instead, so the caller (which has already
+   * recorded `runBody`'s own step results) can always finish reporting them. */
+  async runNewTabBlock(manager: BrowserManager, timeoutMs: number, runBody: () => Promise<boolean>): Promise<{ readonly opened: boolean; readonly error?: string }> {
+    await this.ensurePage(manager);
+    const context = this.context!;
+    const pagePromise = context.waitForEvent('page', { timeout: timeoutMs });
+    const bodyOk = await runBody();
+    if (!bodyOk) {
+      pagePromise.catch(() => {}); // avoid an unhandled rejection once this promise settles unobserved
+      return { opened: false };
+    }
+    try {
+      const newPage = await runAction('switch to new tab', () => pagePromise);
+      this.wireDialogHandler(newPage);
+      this.pages.push(newPage);
+      this.activeIndex = this.pages.length - 1;
+      return { opened: true };
+    } catch (err) {
+      return { opened: false, error: (err as Error).message };
+    }
+  }
+
+  /** `switch to tab N` (1-based, SPEC §9.5) — the tab already exists, no event to wait for. */
+  switchToTab(index: number): void {
+    if (index < 1 || index > this.pages.length) {
+      throw new RuntimeError(`no tab ${index} — ${this.pages.length} tab(s) currently open`);
+    }
+    this.activeIndex = index - 1;
+  }
+
+  /** `close tab` (SPEC §9.5) — closes the active tab, then falls back to the previous one in open
+   * order. Closing the last remaining tab is a runtime error, not a silent no-op. */
+  async closeTab(): Promise<void> {
+    if (this.pages.length <= 1) {
+      throw new RuntimeError("can't close tab — it's the only tab open");
+    }
+    const page = this.pages[this.activeIndex]!;
+    await page.close();
+    this.pages.splice(this.activeIndex, 1);
+    this.activeIndex = Math.max(0, this.activeIndex - 1);
+  }
+
+  /** `download as <name>` + block (SPEC §9.5, M3b) — same before/run/await shape and non-throwing
+   * contract as `runNewTabBlock`, but listens for the *active* page's `download` event and returns
+   * its suggested filename (the value bound to the block's `name`) on success. */
+  async runDownloadBlock(manager: BrowserManager, timeoutMs: number, runBody: () => Promise<boolean>): Promise<{ readonly filename: string | null; readonly error?: string }> {
+    const page = await this.ensurePage(manager);
+    const downloadPromise = page.waitForEvent('download', { timeout: timeoutMs });
+    const bodyOk = await runBody();
+    if (!bodyOk) {
+      downloadPromise.catch(() => {});
+      return { filename: null };
+    }
+    try {
+      const download = await runAction('download', () => downloadPromise);
+      return { filename: download.suggestedFilename() };
+    } catch (err) {
+      return { filename: null, error: (err as Error).message };
+    }
   }
 
   async close(): Promise<void> {
     if (this.context) await this.context.close();
-    this.page = undefined;
+    this.pages = [];
+    this.activeIndex = 0;
     this.context = undefined;
   }
 }
@@ -265,4 +369,53 @@ export async function performPressOnLocator(pwLocator: PWLocator, keys: string, 
 
 export async function performOpen(page: PWPage, url: string, timeoutMs: number): Promise<void> {
   await runAction('open', () => page.goto(url, { timeout: timeoutMs }));
+}
+
+/** `drag <locator> to <locator>` (SPEC §9.5, M3b) — dispatches a native HTML5 drag-and-drop
+ * sequence with a real `DataTransfer` rather than using Playwright's own `dragTo()`, which relies
+ * on simulated mouse movement and doesn't reliably fire native `dragstart`/`drop` listeners
+ * (testFlow-tests' webV2-3 build hit this directly: `dragTo()` silently no-op'd a hand-rolled
+ * drag-reorder list). This is Playwright's own documented manual-DnD recipe. */
+export async function performDrag(fromLocator: PWLocator, toLocator: PWLocator, timeoutMs: number): Promise<void> {
+  await runAction('drag', async () => {
+    await fromLocator.waitFor({ state: 'visible', timeout: timeoutMs });
+    await toLocator.waitFor({ state: 'visible', timeout: timeoutMs });
+    const page = fromLocator.page();
+    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+    await fromLocator.dispatchEvent('dragstart', { dataTransfer });
+    await toLocator.dispatchEvent('dragenter', { dataTransfer });
+    await toLocator.dispatchEvent('dragover', { dataTransfer });
+    await toLocator.dispatchEvent('drop', { dataTransfer });
+    await fromLocator.dispatchEvent('dragend', { dataTransfer });
+  });
+}
+
+/** `drop file "./f.png" onto <locator>` (SPEC §9.5, M3b) — for a dropzone with no underlying
+ * `<input type="file">` for `upload`/`setInputFiles` to target. Reads the file's real bytes on the
+ * host, base64-encodes them across the Node↔browser boundary (`page.evaluateHandle`'s argument
+ * serialization has no first-class Buffer/Uint8Array support), and reconstructs a genuine in-page
+ * `File` — not a fake object — before dispatching the drop. */
+export async function performDropFile(page: PWPage, absFilePath: string, pwLocator: PWLocator, timeoutMs: number): Promise<void> {
+  await runAction('drop file', async () => {
+    const buf = await readFile(absFilePath);
+    const base64 = buf.toString('base64');
+    const fileName = basename(absFilePath);
+    const mimeType = inferContentType(absFilePath);
+    const dataTransfer = await page.evaluateHandle(
+      ({ base64, fileName, mimeType }: { base64: string; fileName: string; mimeType: string }) => {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const file = new File([bytes], fileName, { type: mimeType });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        return dt;
+      },
+      { base64, fileName, mimeType },
+    );
+    await pwLocator.waitFor({ state: 'visible', timeout: timeoutMs });
+    await pwLocator.dispatchEvent('dragenter', { dataTransfer });
+    await pwLocator.dispatchEvent('dragover', { dataTransfer });
+    await pwLocator.dispatchEvent('drop', { dataTransfer });
+  });
 }

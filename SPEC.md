@@ -109,8 +109,9 @@ env staging
 - Active env selection precedence: `--env <name>` flag > `TFLW_ENV` env var > block marked
   `default`. No resolvable env → startup error.
 - `timeout step` (per-request, and per browser-step locator resolution, M3a), `timeout wait`
-  (`wait until api`), and `timeout expect` (a UI `expect`/`check`'s retry budget, M3a — still inert
-  for a plain API `expect`, which evaluates once and fails fast, P#15) are all consumed today.
+  (`wait until api`, and since M3b `wait until <ui condition>`, §9.5), and `timeout expect` (a UI
+  `expect`/`check`'s retry budget, M3a — still inert for a plain API `expect`, which evaluates once
+  and fails fast, P#15) are all consumed today.
 - `insecure true` — a per-env (or `defaults`) key that disables TLS certificate verification for
   the whole run, for self-signed/private-CA staging certs (PLAN decision 78). Explicit and
   greppable in review; a run with it active carries a visible warning in the CLI summary and the
@@ -1021,8 +1022,9 @@ test "pay for an order"
 
 Browser half, `0.2.0` (M3), landing in slices — see `PLAN_BROWSER_PERF_SECURITY.md` §1.12. **M3a
 ✅ shipped**: the core interaction steps below, the selector model, strict ambiguity, `within`
-scoping, and the state/value/count UI expect subjects. **Still planned**: frames/tabs/windows/
-downloads + drag-drop + `wait until <ui>` (M3b); `report/` becoming a directory with failure
+scoping, and the state/value/count UI expect subjects. **M3b ✅ shipped**: frame traversal
+(`within frame`), tab/window switching, download capture, drag-drop, and `wait until <ui
+condition>` — see §9.5. **Still planned**: `report/` becoming a directory with failure
 screenshots/trace + `--browser`/`--headed`/viewport (M3c); network observe/mock (M3d); the a11y
 subject (M3e); `element <name> = <locator>` aliases (§8 — no milestone owns them yet); and the
 live-DOM "nearest candidate" cold-start diagnosis + `tflw pick <url>` (M5). `tflw install-browsers
@@ -1104,11 +1106,67 @@ explicit `check`/`expect` lines.
   meaningful against more than one element; every other matcher still hard-errors on ambiguity.
   "Zero elements" is itself a legitimate, non-erroring state for `is hidden`/`has count 0`.
 
+### 9.5 Frames, tabs, downloads, drag-drop & `wait until <ui>` (M3b) ✅
+
+```
+within frame css "#payment-frame"        # traverses into the iframe's own document (Locator.
+  click button "Pay"                     # contentFrame()) — nested steps resolve inside it, not
+                                          # on the main page
+
+switch to new tab                        # arms a listener for the *next* popup before running the
+  click text "Open in new tab"           # block, then makes the new tab active for every step
+                                          # after this block (persists, unlike `within`'s scoping)
+expect text "Second tab" is visible
+switch to tab 1                          # 1-based, in the order tabs were opened
+close tab                                # closes the active tab, falls back to the previous one —
+                                          # closing the last remaining tab is a runtime error
+
+download as file                         # arms a listener for the active page's next download,
+  click text "Download report"           # runs the block, then binds the suggested filename
+expect field "Filename" has value {file}
+
+drag text "First item" to text "Second item"    # native dragstart/dragenter/dragover/drop/dragend,
+                                                 # dispatched directly with a real DataTransfer —
+                                                 # not Playwright's own dragTo() mouse simulation,
+                                                 # which doesn't reliably fire native DnD listeners
+drop file "./receipt.png" onto css "#dropzone"  # for a dropzone with no <input type="file">; reads
+                                                 # the file's real bytes and builds a genuine in-
+                                                 # page File before dispatching the drop
+
+wait until button "Submit" is enabled    # like `expect`, but polls `timeout wait` (default 30s)
+                                          # instead of `timeout expect` (default 5s) — for a UI
+                                          # condition that can legitimately outlast the ordinary
+                                          # UI-expect budget. Always hard-fails; no soft/`check` form.
+```
+
+- **`within frame <locator>`** — the container locator must resolve to exactly one `<iframe>`
+  element; nested steps resolve inside that frame's own document, not merely inside a container
+  element on the same page like the ordinary (non-frame) `within`.
+- **Tabs**: `switch to new tab` + block is the only form that opens one (the block's step(s) are
+  expected to trigger it, e.g. clicking a `target="_blank"` link) — the popup listener starts
+  *before* the block runs, so a fast-opening tab can't race past it. `switch to tab N` moves
+  directly (no event to wait for). `close tab` always falls back to the previous tab in open order;
+  closing the only open tab is a runtime error, not a silent no-op.
+- **`download as <name>`** — same before/run/listen shape as `switch to new tab`, but for the active
+  page's `download` event. Binds the download's suggested filename as a plain string; the file's
+  actual bytes/on-disk path aren't yet surfaced as a report artifact (that lands with M3c's
+  `report/` directory).
+- **`drag`/`drop file`** are both real native-event simulations, not semantic "reorder the list"
+  actions — they only work against a page that actually listens for `dragstart`/`dragover`/`drop`
+  the way a real drag-and-drop UI does (a fixture/app with no such listeners simply won't react,
+  same as a real user dragging over it wouldn't do anything either).
+- **`wait until <locator> [not] <matcher>`** is the UI sibling of `wait until api` (§5.5): same
+  "budget, not a moment" framing, but for a UI condition — no separate request to re-issue, so it's
+  a single line rather than a block. `has count` keeps its ambiguity exception from §9.4.
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
 *attempt* shipped in M3a (D13) — one shared browser process for the whole run, a clean context per
-test so a retried test never inherits a failed attempt's leftover UI state. 🔮 Not yet built:
+test so a retried test never inherits a failed attempt's leftover UI state. Since M3b, a context
+can hold several open tabs at once (§9.5) — still just the one context per attempt; `switch to new
+tab`/`switch to tab N`/`close tab` move between pages within it, not across contexts. 🔮 Not yet
+built:
 applying a `session`'s cached storage state to a browser context — SPEC §3.3/§9's cookie jar and a
 browser context's storage state are two separate representations that are deliberately never
 bridged (D10); a mixed UI+API test establishes identity twice (an API login call and a UI form

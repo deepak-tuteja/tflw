@@ -95,6 +95,7 @@ export type Step =
   | LetStmt
   | CaptureStmt
   | WaitUntilApiStmt
+  | WaitUntilUiStmt
   | GiveStmt
   | HeaderStmt
   | OpenStmt
@@ -109,7 +110,13 @@ export type Step =
   | ScrollStmt
   | WithinBlock
   | AcceptDialogStmt
-  | DismissDialogStmt;
+  | DismissDialogStmt
+  | SwitchToNewTabBlock
+  | SwitchToTabStmt
+  | CloseTabStmt
+  | DownloadBlock
+  | DragStmt
+  | DropFileStmt;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */
 export interface GiveStmt extends Node {
@@ -170,6 +177,17 @@ export interface WaitUntilApiStmt extends Node {
   readonly type: 'WaitUntilApiStmt';
   readonly request: ApiRequestSpec;
   readonly expects: readonly ExpectStmt[];
+}
+
+/** `wait until <locator> [not] <matcher>` (SPEC §9.5, M3b) — the UI sibling of `wait until api`:
+ * same "budget, not a moment" semantics, but for a UI condition that can outlast the ordinary UI
+ * expect budget (`timeout expect`, default 5s) without a separate request to re-issue, so it's a
+ * single line rather than a block. Polls up to `timeout wait` (default 30s, same clock `wait until
+ * api` uses) and always hard-fails on exhaustion — there is no soft/`check` form. */
+export interface WaitUntilUiStmt extends Node {
+  readonly type: 'WaitUntilUiStmt';
+  readonly subject: LocatorSubject;
+  readonly matcher: Matcher;
 }
 
 export interface ApiHeader extends Node {
@@ -364,14 +382,17 @@ export interface Matcher extends Node {
   readonly filePath?: StringLit;
 }
 
-// ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a) -------------------------
+// ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a/M3b) ---------------------
 //
-// M3a ships: open/click(+double/right)/fill/fill form/select/check/uncheck/press/hover/scroll/
-// within + the state/value/count UI expect subjects + dialogs. Deferred to later browser-arc
-// milestones (PLAN_BROWSER_PERF_SECURITY.md §1.12): frames/tabs/downloads/drag-drop (M3b), the
-// `report/` directory + screenshots/trace (M3c), network observe/mock (M3d), the a11y subject
-// (M3e), `element <name> = <locator>` aliases (§8, no milestone owns them yet), and the live-DOM
-// "nearest candidate" cold-start diagnosis + `tflw pick` (M5).
+// M3a shipped: open/click(+double/right)/fill/fill form/select/check/uncheck/press/hover/scroll/
+// within + the state/value/count UI expect subjects + dialogs. M3b adds: frame traversal (`within
+// frame <locator>`), tab/window switching (`switch to new tab`/`switch to tab N`/`close tab`),
+// download capture (`download as <name>`), drag-drop (`drag … to …`/`drop file … onto …`), and
+// `wait until <ui condition>`. Still deferred to later browser-arc milestones
+// (PLAN_BROWSER_PERF_SECURITY.md §1.12): the `report/` directory + screenshots/trace (M3c),
+// network observe/mock (M3d), the a11y subject (M3e), `element <name> = <locator>` aliases (§8, no
+// milestone owns them yet), and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick`
+// (M5).
 
 /** Locator noun (D6, SPEC §9.3): the noun picks the resolution strategy — `button`/`text`/`list`
  * single-strategy, `field` a closed 3-step cascade (label → placeholder → role), `css`/`xpath`
@@ -469,10 +490,15 @@ export interface ScrollStmt extends Node {
 /** `within <locator>` + an indented step block — scopes every nested step's locator resolution to
  * inside this container (D7, SPEC §9.3), the same indented-block shape every other construct in
  * the language uses (test/action/hook bodies) rather than inventing brace syntax. Block form only,
- * no inline `in` suffix (frozen additive-only so one can be added later without breaking this). */
+ * no inline `in` suffix (frozen additive-only so one can be added later without breaking this).
+ * `within frame <locator>` (M3b, SPEC §9.5) sets `frame: true` — the container locator must
+ * resolve to exactly one `<iframe>` element, and nested steps resolve *inside that frame's own
+ * document* (via Playwright's `Locator.contentFrame()`), not merely inside a container element on
+ * the same page like the ordinary (non-frame) form. */
 export interface WithinBlock extends Node {
   readonly type: 'WithinBlock';
   readonly locator: Locator;
+  readonly frame: boolean;
   readonly body: readonly Step[];
 }
 
@@ -486,6 +512,63 @@ export interface AcceptDialogStmt extends Node {
 
 export interface DismissDialogStmt extends Node {
   readonly type: 'DismissDialogStmt';
+}
+
+/** `switch to new tab` + an indented step block (SPEC §9.5, M3b) — the block's step(s) are
+ * expected to trigger a new tab/window to open (e.g. clicking a `target="_blank"` link); the
+ * runtime starts listening for the browser context's next `page` (popup) event *before* running
+ * the block (so it can't miss a fast-opening tab), then makes the new tab the active one for every
+ * step after this block. Unlike `within`, this scoping is **not** transient — it persists past the
+ * block, the way switching tabs in a real browser does, until another `switch to`/`close tab`. */
+export interface SwitchToNewTabBlock extends Node {
+  readonly type: 'SwitchToNewTabBlock';
+  readonly body: readonly Step[];
+}
+
+/** `switch to tab N` (1-based, in the order tabs were opened) — switches the active tab directly,
+ * no event to wait for since the tab already exists (SPEC §9.5, M3b). */
+export interface SwitchToTabStmt extends Node {
+  readonly type: 'SwitchToTabStmt';
+  readonly index: number;
+}
+
+/** `close tab` — closes the active tab and switches back to the previous one in open order (index
+ * - 1, floor 0). Closing the last remaining tab is a runtime error, not a silent no-op (SPEC §9.5,
+ * M3b) — a test that meant to end up back on the main tab should know if there wasn't one. */
+export interface CloseTabStmt extends Node {
+  readonly type: 'CloseTabStmt';
+}
+
+/** `download as <name>` + an indented step block (SPEC §9.5, M3b) — like `switch to new tab`,
+ * wraps the triggering step(s) so the runtime can start listening for the active page's `download`
+ * event before running them. Captures the download's suggested filename as a plain string bound to
+ * `name`; the actual file bytes/on-disk path aren't yet surfaced as report artifacts — that lands
+ * with M3c's `report/` directory. */
+export interface DownloadBlock extends Node {
+  readonly type: 'DownloadBlock';
+  readonly name: string;
+  readonly body: readonly Step[];
+}
+
+/** `drag <locator> to <locator>` (SPEC §9.5, M3b) — reorders/moves an element via a native HTML5
+ * drag-and-drop sequence (`dragstart`/`dragenter`/`dragover`/`drop`/`dragend` dispatched directly
+ * with a real `DataTransfer`, not Playwright's own `dragTo()` mouse simulation — testFlow-tests'
+ * webV2-3 build found `dragTo()` doesn't reliably fire native DnD listeners in headless Chromium,
+ * while direct `DragEvent` dispatch does). */
+export interface DragStmt extends Node {
+  readonly type: 'DragStmt';
+  readonly from: Locator;
+  readonly to: Locator;
+}
+
+/** `drop file "./f.png" onto <locator>` (SPEC §9.5, M3b) — simulates a native file drop onto a
+ * dropzone element that has no underlying `<input type="file">` for `upload`/`setInputFiles` to
+ * target. Reads the file's real bytes on the host, builds an in-page `DataTransfer` carrying an
+ * actual `File` (not a fake), then dispatches `dragenter`/`dragover`/`drop` on the target. */
+export interface DropFileStmt extends Node {
+  readonly type: 'DropFileStmt';
+  readonly filePath: StringLit;
+  readonly locator: Locator;
 }
 
 // ---- Bindings --------------------------------------------------------------

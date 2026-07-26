@@ -382,3 +382,54 @@ test('checkRequestAssertions: validates an `api`+`expect request` pair nested in
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF031');
 });
+
+// ---- M3b: frames / tabs / downloads / drag-drop / wait until <ui> -----------------------------
+
+test('checkUnknownVariables: flags an unknown `{var}` inside `drag …to…`\'s from/to locator names', () => {
+  const fromBad = parseSource(`test "bad"\n  drag text "{missing} item" to text "Second item"\n`).program;
+  assert.equal(checkUnknownVariables(fromBad).length, 1);
+  const toBad = parseSource(`test "bad"\n  drag text "First item" to text "{missing} item"\n`).program;
+  assert.equal(checkUnknownVariables(toBad).length, 1);
+  const ok = parseSource(`test "ok"\n  let n = "Second"\n  drag text "First item" to text "{n} item"\n`).program;
+  assert.deepEqual(checkUnknownVariables(ok), []);
+});
+
+test('checkUnknownVariables: flags an unknown `{var}` inside `drop file … onto …`\'s path and locator', () => {
+  const pathBad = parseSource(`test "bad"\n  drop file "{missing}.png" onto css "#dropzone"\n`).program;
+  assert.equal(checkUnknownVariables(pathBad).length, 1);
+  const locatorBad = parseSource(`test "bad"\n  drop file "./f.png" onto css "{missing}"\n`).program;
+  assert.equal(checkUnknownVariables(locatorBad).length, 1);
+});
+
+test('checkUnknownVariables: flags an unknown `{var}` inside `wait until <locator> <matcher>`', () => {
+  const bad = parseSource(`test "bad"\n  wait until field "Qty" has value {qty}\n`).program;
+  assert.equal(checkUnknownVariables(bad).length, 1);
+  const ok = parseSource(`test "ok"\n  let qty = "2"\n  wait until field "Qty" has value {qty}\n`).program;
+  assert.deepEqual(checkUnknownVariables(ok), []);
+});
+
+test('checkUnknownVariables: recurses into `switch to new tab`\'s block body, sharing the enclosing scope', () => {
+  const bad = parseSource(`test "bad"\n  switch to new tab\n    fill field "Qty" with {qty}\n`).program;
+  assert.equal(checkUnknownVariables(bad).length, 1);
+  const ok = parseSource(`test "ok"\n  let qty = 2\n  switch to new tab\n    fill field "Qty" with {qty}\n`).program;
+  assert.deepEqual(checkUnknownVariables(ok), []);
+});
+
+test('checkUnknownVariables: `download as <name>` binds `name` for steps after the block', () => {
+  const { program } = parseSource(`test "ok"\n  download as file\n    click text "Download report"\n  expect field "Filename" has value {file}\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkServices: validates `api <service>` references nested inside `switch to new tab` and `download` blocks', () => {
+  const tab = parseSource(`test "bad"\n  switch to new tab\n    api billing GET /health\n`).program;
+  assert.equal(checkServices(tab, ['shipping']).length, 1);
+  const download = parseSource(`test "bad"\n  download as file\n    api billing GET /health\n`).program;
+  assert.equal(checkServices(download, ['shipping']).length, 1);
+});
+
+test('checkRequestAssertions: validates an `api`+`expect request` pair nested inside `switch to new tab` and `download` blocks', () => {
+  const tab = parseSource(`test "bad"\n  switch to new tab\n    api GET /health\n    expect request connects\n    expect status equals 200\n`).program;
+  assert.equal(checkRequestAssertions(tab).length, 1);
+  const download = parseSource(`test "bad"\n  download as file\n    api GET /health\n    expect request connects\n    expect status equals 200\n`).program;
+  assert.equal(checkRequestAssertions(download).length, 1);
+});

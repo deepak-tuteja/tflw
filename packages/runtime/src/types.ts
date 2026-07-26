@@ -19,6 +19,9 @@ export interface ResolvedTimeouts {
    * `interpreter.ts`, SPEC §3.1/§9.4). Still inert for a plain API `expect`, which evaluates once
    * and fails fast by design (P#15) rather than retrying. */
   readonly expect: number;
+  /** `timeout wait` — the retry budget for `wait until api` (P#15) and, since M3b, `wait until
+   * <ui condition>` (`execWaitUntilUi` in `interpreter.ts`, SPEC §9.5) — the UI sibling for a
+   * condition that can legitimately outlast the ordinary `timeout expect` budget. */
   readonly wait: number;
 }
 
@@ -81,7 +84,12 @@ export type StepKind =
   | 'hover'
   | 'scroll'
   | 'within'
-  | 'dialog';
+  | 'dialog'
+  | 'switchTab'
+  | 'closeTab'
+  | 'download'
+  | 'drag'
+  | 'dropFile';
 
 export interface RequestTrace {
   readonly method: string;
