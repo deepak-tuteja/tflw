@@ -378,6 +378,9 @@ function walkSteps(
 function walkExpectStmt(step: ExpectStmt, bound: Map<string, Span>, scopeId: string, source: string, actionDefs: Map<string, SymbolDef>, refs: SymbolRef[]): void {
   walkSubject(source, step.subject, bound, scopeId, refs);
   if (step.matcher.value) walkValue(step.matcher.value, bound, scopeId, source, actionDefs, refs);
+  // `matches snapshot "<name>"` + `mask <locator>` (M4b) — mirrors checker.ts's checkExpectStmt.
+  if (step.matcher.snapshotName) walkStringLit(source, step.matcher.snapshotName, bound, scopeId, refs);
+  for (const mask of step.masks) walkStringLit(source, mask.value, bound, scopeId, refs);
 }
 
 function walkSubject(source: string, subject: Subject, bound: Map<string, Span>, scopeId: string, refs: SymbolRef[]): void {

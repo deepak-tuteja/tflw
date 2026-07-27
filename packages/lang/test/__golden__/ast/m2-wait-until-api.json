@@ -69,7 +69,8 @@
               "value": 201,
               "raw": "201"
             }
-          }
+          },
+          "masks": []
         },
         {
           "type": "CaptureStmt",
@@ -129,7 +130,8 @@
                     }
                   ]
                 }
-              }
+              },
+              "masks": []
             },
             {
               "type": "ExpectStmt",
@@ -148,7 +150,8 @@
                   "value": 200,
                   "raw": "200"
                 }
-              }
+              },
+              "masks": []
             }
           ]
         }

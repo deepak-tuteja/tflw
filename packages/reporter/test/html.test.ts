@@ -263,6 +263,54 @@ test('a trace with no matching assetHrefs entry renders no link at all (safe deg
   assert.doesNotMatch(html, /<p class="trace-link"/);
 });
 
+// ---- M4b: `matches snapshot` before/after/diff triptych (D15) --------------
+
+test('a snapshotDiff with baseline+actual+diff renders all three figures, inline when no assetHrefs match', () => {
+  const withDiff: RunReport = {
+    ...baseReport,
+    tests: [
+      {
+        name: 'visual test',
+        ok: false,
+        durationMs: 5,
+        steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: false, durationMs: 5, snapshotDiff: { baseline: 'YmFzZQ==', actual: 'YWN0', diff: 'ZGlmZg==' } }],
+      },
+    ],
+  };
+  const html = renderReportHtml(withDiff);
+  assert.match(html, /<div class="snapshot-diff">/);
+  assert.match(html, /<figcaption>baseline<\/figcaption><img src="data:image\/png;base64,YmFzZQ=="/);
+  assert.match(html, /<figcaption>actual<\/figcaption><img src="data:image\/png;base64,YWN0"/);
+  assert.match(html, /<figcaption>diff<\/figcaption><img src="data:image\/png;base64,ZGlmZg=="/);
+});
+
+test('a snapshotDiff with only `actual` (a brand-new baseline) renders just the actual figure', () => {
+  const withDiff: RunReport = {
+    ...baseReport,
+    tests: [{ name: 'visual test', ok: true, durationMs: 5, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 5, snapshotDiff: { actual: 'YWN0' } }] }],
+  };
+  const html = renderReportHtml(withDiff);
+  assert.match(html, /<figcaption>actual<\/figcaption>/);
+  assert.doesNotMatch(html, /<figcaption>baseline<\/figcaption>/);
+  assert.doesNotMatch(html, /<figcaption>diff<\/figcaption>/);
+});
+
+test('a step with no snapshotDiff at all (a clean pass) renders no snapshot-diff div', () => {
+  const html = renderReportHtml(baseReport);
+  assert.doesNotMatch(html, /<div class="snapshot-diff">/);
+});
+
+test('a snapshotDiff image whose hash IS in assetHrefs renders the external href instead of inlining', () => {
+  const withDiff: RunReport = {
+    ...baseReport,
+    tests: [{ name: 'visual test', ok: false, durationMs: 5, steps: [{ kind: 'expect', source: 's', line: 1, ok: false, durationMs: 5, snapshotDiff: { baseline: 'YmFzZQ==', actual: 'YWN0dWFs' } }] }],
+  };
+  const { hrefs } = resolveReportAssets(withDiff, 0); // budget 0 forces every image external
+  const html = renderReportHtml(withDiff, hrefs);
+  assert.match(html, /<figcaption>baseline<\/figcaption><img src="assets\/screenshots\/[0-9a-f]{16}\.png"/);
+  assert.doesNotMatch(html, /data:image\/png;base64/);
+});
+
 test('report.browserEngine renders a small header badge; its absence renders nothing', () => {
   const withEngine: RunReport = { ...baseReport, browserEngine: 'firefox' };
   assert.match(renderReportHtml(withEngine), /<div class="engine-badge">browser <code>firefox<\/code><\/div>/);

@@ -485,3 +485,68 @@ test('`has` with neither `count`/`value`/`no` after it is still a diagnosed erro
   const { diagnostics } = parseSource('test "ok"\n  expect list "items" has 3\n');
   assert.ok(diagnostics.length > 0, 'expected a diagnostic');
 });
+
+// ---- M4b: `matches snapshot "<name>"` + `mask <locator>` -------------------
+
+test('`expect page matches snapshot "<name>"` parses a PageSubject with the matchesSnapshot matcher and no masks', () => {
+  const step = firstStep('test "ok"\n  expect page matches snapshot "checkout-page"\n') as {
+    subject: { type: string };
+    matcher: { name: string; negated: boolean; snapshotName: { value: string } | undefined };
+    masks: readonly unknown[];
+  };
+  assert.equal(step.subject.type, 'PageSubject');
+  assert.equal(step.matcher.name, 'matchesSnapshot');
+  assert.equal(step.matcher.negated, false);
+  assert.equal(step.matcher.snapshotName?.value, 'checkout-page');
+  assert.deepEqual(step.masks, []);
+});
+
+test('`expect <locator> matches snapshot "<name>"` parses a LocatorSubject with the matchesSnapshot matcher', () => {
+  const step = firstStep('test "ok"\n  expect list "Cart items" matches snapshot "cart-badge"\n') as {
+    subject: { type: string; locator: { kind: string; value: { value: string } } };
+    matcher: { name: string; snapshotName: { value: string } | undefined };
+  };
+  assert.equal(step.subject.type, 'LocatorSubject');
+  assert.equal(step.subject.locator.kind, 'list');
+  assert.equal(step.matcher.snapshotName?.value, 'cart-badge');
+});
+
+test('one or more trailing `mask <locator>` clauses parse into ExpectStmt.masks, in source order', () => {
+  const step = firstStep('test "ok"\n  expect page matches snapshot "checkout-page" mask css ".timestamp" mask css ".order-id"\n') as {
+    masks: readonly { readonly kind: string; readonly value: { readonly value: string } }[];
+  };
+  assert.equal(step.masks.length, 2);
+  assert.equal(step.masks[0]!.kind, 'css');
+  assert.equal(step.masks[0]!.value.value, '.timestamp');
+  assert.equal(step.masks[1]!.value.value, '.order-id');
+});
+
+test('`mask <locator>` is also accepted after `check ... matches snapshot`, the soft ExpectStmt form', () => {
+  const step = firstStep('test "ok"\n  check page matches snapshot "checkout-page" mask css ".timestamp"\n') as {
+    type: string;
+    soft: boolean;
+    masks: readonly unknown[];
+  };
+  assert.equal(step.type, 'ExpectStmt');
+  assert.equal(step.soft, true);
+  assert.equal(step.masks.length, 1);
+});
+
+test('`not matches snapshot "<name>"` negates via the ordinary `not` prefix', () => {
+  const step = firstStep('test "ok"\n  expect page not matches snapshot "checkout-page"\n') as {
+    matcher: { name: string; negated: boolean };
+  };
+  assert.equal(step.matcher.name, 'matchesSnapshot');
+  assert.equal(step.matcher.negated, true);
+});
+
+test('every other subject/matcher pair still parses with an empty `masks` array (no accidental grammar change)', () => {
+  const step = firstStep('test "ok"\n  expect status equals 200\n') as { masks: readonly unknown[] };
+  assert.deepEqual(step.masks, []);
+});
+
+test('`matches` with an unknown word instead of `subset`/`schema`/`file`/`snapshot` still falls through to the plain regex case, unaffected', () => {
+  const step = firstStep('test "ok"\n  expect body matches "^ok$"\n') as { matcher: { name: string; value: { value: string } | null } };
+  assert.equal(step.matcher.name, 'matches');
+  assert.equal(step.matcher.value?.value, '^ok$');
+});

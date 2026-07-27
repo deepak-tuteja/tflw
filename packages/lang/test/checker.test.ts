@@ -223,6 +223,25 @@ test('checkUnknownVariables: skips the TF032 shape check for an interpolated `ty
   assert.deepEqual(checkUnknownVariables(program), []);
 });
 
+test('checkUnknownVariables (M4b): accepts a `{var}` inside `matches snapshot "<name>"` and inside a `mask <locator>`', () => {
+  const { program } = parseSource(`test "ok"\n  let step = "checkout"\n  let region = ".timestamp"\n  expect page matches snapshot "{step}-page" mask css "{region}"\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables (M4b): flags a typo\'d `{var}` inside `matches snapshot "<name>"`', () => {
+  const { program } = parseSource(`test "bad"\n  let step = "checkout"\n  expect page matches snapshot "{stp}-page"\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.message, /unknown variable "stp"/);
+});
+
+test('checkUnknownVariables (M4b): flags a typo\'d `{var}` inside a `mask <locator>`', () => {
+  const { program } = parseSource(`test "bad"\n  let region = ".timestamp"\n  expect page matches snapshot "checkout" mask css "{regoin}"\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.message, /unknown variable "regoin"/);
+});
+
 test('checkUnknownVariables: still flags an unknown variable inside an interpolated `type "{var}"`', () => {
   const { program } = parseSource(`test "bad"\n  api POST /uploads upload "./img.png" as "avatar" type "{mimetype}"\n`);
   const diags = checkUnknownVariables(program);
@@ -331,6 +350,11 @@ test('checkRequestAssertions: a `request to "…" was made` (M3d) is exempt from
 
 test('checkRequestAssertions: `page has no … a11y violations` (M3e) is likewise exempt — reads the page\'s DOM, not this api step\'s response', () => {
   const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request connects\n  expect page has no critical a11y violations\n`);
+  assert.deepEqual(checkRequestAssertions(program), []);
+});
+
+test('checkRequestAssertions: `page matches snapshot "…"` (M4b) is likewise exempt — reads the page, not this api step\'s response', () => {
+  const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request connects\n  expect page matches snapshot "checkout"\n`);
   assert.deepEqual(checkRequestAssertions(program), []);
 });
 

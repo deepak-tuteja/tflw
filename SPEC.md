@@ -682,6 +682,7 @@ them callable.
 | `fails` / `fails matching "<regex>"` | `request` | `expect request fails matching "certificate"` |
 | `was made` | `request to "<url>"` | `expect request to "/api/orders" was made` |
 | `has no [minor/moderate/serious/critical] a11y violations` | `page` | `expect page has no critical a11y violations` |
+| `matches snapshot "<name>" [mask <locator>]*` | `page`, UI locators | `expect page matches snapshot "checkout-page" mask css ".timestamp"` |
 <!-- GENERATED:matchers:end -->
 
 Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
@@ -1033,7 +1034,9 @@ scoping, and the state/value/count UI expect subjects. **M3b ✅ shipped**: fram
 condition>` — see §9.5. **M3c ✅ shipped**: `screenshot`, failure screenshots, Playwright
 trace-on-failure/retry, `report/assets/`, `--browser`/`--headed`/`viewport` — see §9.6. **M3d ✅
 shipped**: network observation (`request to "…"`, `of request to "…"`) and `stub` — see §9.7.
-**M3e ✅ shipped**: the `page` a11y subject (axe-core) — see §9.8.
+**M3e ✅ shipped**: the `page` a11y subject (axe-core) — see §9.8. **M4a ✅ shipped**: LSP/VS Code
+tooling catch-up for M3a-M3e (no new grammar). **M4b ✅ shipped**: visual regression
+(`matches snapshot`) — see §9.9.
 **Still planned**: `element <name> = <locator>` aliases (§8 — no milestone
 owns them yet); and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick <url>` (M5).
 `tflw install-browsers [--browser chromium|firefox|webkit]` downloads the browser binary
@@ -1296,6 +1299,63 @@ expect page has no critical a11y violations       # a severity floor, not an exa
   `any`/`all` quantifiers against `page`; per-rule allow-listing (e.g. suppressing one known-noisy
   rule id while still failing on everything else) — only a severity floor is a first-class filter
   today.
+
+### 9.9 Visual regression (M4b, D15) ✅
+
+```
+open "/checkout"
+expect page matches snapshot "checkout-page" mask css ".timestamp" mask css ".order-id"
+
+click button "Add to cart"
+expect list "Cart items" matches snapshot "cart-badge"
+```
+
+- **`expect`/`check page|<locator> matches snapshot "<name>" [mask <locator>]*`** — captures either
+  the whole active page (`page`) or one element's own bounding box (a `LocatorSubject` — `button`/
+  `field`/`text`/`list`/`css`/`xpath`, same D6 resolution, same D7 single-match requirement as
+  every other locator use) and compares it, pixel for pixel, against a baseline PNG. Never retries
+  (unlike every other UI expect, §9.4/§9.8) — a screenshot is one point-in-time capture, not a
+  condition that becomes true as the page settles.
+- **`mask <locator>`** — zero or more, each resolved the same way and painted over (Playwright's
+  own `screenshot({ mask })`) *before* the comparison runs, so a dynamic region (a timestamp, an
+  avatar, an order id) can never itself cause a failure. Only meaningful alongside
+  `matches snapshot` — a stray `mask` after any other matcher is a runtime error. **Apply the same
+  `mask` clause(s) every time a given `<name>` is written or compared** — masking paints a solid
+  color over the region on *every* capture, baseline included; a baseline written without a mask
+  still has the real, unmasked pixels underneath, so comparing it against a later masked capture
+  fails on the mask itself, not because anything real changed.
+- **Baselines are committed to the repo** at `snapshots/<file>/<test>/<name>.png` (resolved against
+  the `.tflw` file's own directory, the same "relative to this file" convention `matches file`/
+  `body from`/`upload` already use) — diffable in code review like any other checked-in fixture.
+  `snapshots/` is deliberately **not** in `.gitignore` (only `.env`/`report/` are, `tflw init`).
+- **Platform-key pinned, hard error, not a tolerance knob.** Each baseline's directory also carries
+  a `<name>.platform.json` sidecar recording the OS + browser engine + exact browser build version
+  that produced it (`linux-chromium-131.0.6778.33`). A run whose own platform key doesn't match the
+  baseline's fails immediately with a clear message, *before* any pixel is compared — font
+  hinting/subpixel AA between two OSes or engines never reconciles, and a looser cross-platform
+  threshold only hides real regressions instead of catching them. Generate and verify baselines in
+  the same environment (a CI image, most reliably — `testFlow-tests` has a Docker compose stack
+  that's free to run this in).
+- **The compare itself has no exposed fuzz knob either** — same-platform pixels are compared with
+  pixelmatch's own default anti-aliasing threshold (just enough to absorb harmless AA jitter on an
+  otherwise byte-identical render) and a pass requires **zero** differing pixels. There is no
+  "% of image allowed to differ" setting: a real visual change is a real regression, not something
+  to tune a slider against.
+- **`tflw run --update-snapshots`** writes a new baseline (first run) or overwrites the existing one
+  (every later run, whatever it currently compares as) instead of comparing — the accept step for a
+  deliberate visual change. `report.html` shows a **before/after/diff triptych** for any step that
+  wrote or changed a baseline, or that failed to match one; a step that matched an unchanged
+  baseline shows nothing extra (D12's "don't inflate the report on success" restraint, same reason
+  screenshot-per-step-by-default was rejected in §9.6).
+- **`not matches snapshot "<name>"`** asserts the opposite — that the current render *differs* from
+  the baseline. Only meaningful once a same-platform, same-dimensions baseline actually exists to
+  compare against; a missing baseline or a platform-key mismatch is "couldn't compare" either way,
+  not a yes/no answer `not` could flip (mirrors `matches file`/`matches schema`'s own handling of
+  negation).
+- **Not supported (out of scope for M4b):** `capture ... matches snapshot` isn't a thing —
+  `matches snapshot` is a matcher, not a subject, so this is simply not valid grammar; `any`/`all`
+  quantifiers (there's no array to quantify over); a configurable diff-pixel-ratio tolerance (see
+  above — deliberately not exposed).
 
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 

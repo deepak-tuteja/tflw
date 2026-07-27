@@ -157,6 +157,16 @@ test('tokenizes `request to "…" was made` (M3d, M4a catch-up)', () => {
   assert.ok(hasScope(findToken(lines, 'made'), 'keyword.operator.word.tflw'));
 });
 
+test('tokenizes `matches snapshot "<name>" mask <locator>` (M4b)', () => {
+  const lines = tokenizeLines(['  expect page matches snapshot "checkout-page" mask css ".timestamp"']);
+
+  assert.ok(hasScope(findToken(lines, 'matches'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(lines, 'snapshot'), 'keyword.operator.word.tflw'), '`snapshot` is a matcher sub-word');
+  assert.ok(lines[0]!.some((t) => t.text === 'checkout-page' && hasScope(t, 'string.quoted.double.tflw')));
+  assert.ok(hasScope(findToken(lines, 'mask'), 'keyword.control.tflw'), '`mask` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'css'), 'support.type.tflw'), '`css` is a locator-noun subject keyword');
+});
+
 test('tokenizes tflw.config keywords (env/defaults/require/session) and env(NAME) calls', () => {
   const lines = tokenizeLines(['env local default', '  api "http://localhost:3001"', '', 'require env ADMIN_TOKEN', '', 'session admin', '  header "Authorization" is env(ADMIN_TOKEN)']);
 

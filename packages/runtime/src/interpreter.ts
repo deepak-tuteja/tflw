@@ -52,6 +52,7 @@ import {
   performScreenshot,
   performScrollIntoView,
   performSelect,
+  performSnapshotCapture,
   performStub,
   performUncheck,
   requireSingleMatch,
@@ -59,9 +60,11 @@ import {
   resolveLocatorSnapshot,
   type BrowserManager,
   type CapturedNetworkRequest,
+  type PWLocator,
   type PWPage,
   type ResolvedLocator,
 } from './browser.js';
+import { evaluateSnapshot, snapshotPaths } from './snapshot.js';
 import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
@@ -125,6 +128,15 @@ export interface RunOptions {
    * of them finish. Omitted entirely means no browser step can run this call (a clear internal
    * error, not a crash) — the case for every existing API-only test harness/fixture. */
   readonly browserManager?: BrowserManager;
+  /** This file's own identity for `snapshots/<file>/<test>/<name>.png` (M4b, D15) — unlike
+   * `report.tests[].file` (stamped post-hoc, purely a display concern, `cli.ts`), a snapshot
+   * baseline's path is needed *during* execution, so it has to come in through `RunOptions`
+   * itself. Falls back to a fixed label when omitted (a test harness driving `runProgram` from an
+   * in-memory source string, with no real file at all). */
+  readonly filePath?: string;
+  /** `--update-snapshots` (M4b, D15) — writes/overwrites baselines instead of just comparing
+   * against them. Defaults to `false` (compare-only), same as every prior milestone's behavior. */
+  readonly updateSnapshots?: boolean;
 }
 
 export interface RunOutput {
@@ -167,6 +179,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const uniqueSeq = opts.uniqueSeq ?? makeUniqueSeq();
   const testIndexOffset = opts.testIndexOffset ?? 0;
   const sessionCache = opts.sessionCache ?? new SessionCache();
+  const filePath = opts.filePath ?? 'inline';
+  const updateSnapshots = opts.updateSnapshots ?? false;
   const registry = await buildRegistry(program, baseDir);
   const beforeFile = program.hooks.filter((h) => h.scope === 'file' && h.when === 'before');
   const afterFile = program.hooks.filter((h) => h.scope === 'file' && h.when === 'after');
@@ -177,14 +191,14 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length, env: config.envName });
 
   const results: TestResult[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   if (beforeFileOk) {
     for (const [i, kase] of cases.entries()) {
       const globalIndex = testIndexOffset + i;
       const testSeed = subSeed(runSeed, globalIndex);
-      const tc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager };
+      const tc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
       // Per session *name*, not per test — a test opting into several sessions at once can own
       // the splice for one of them and not another, if some earlier test already claimed a name
       // it also opts into.
@@ -332,6 +346,9 @@ interface TestCtx {
   readonly uniqueSeq: { next(): number };
   readonly sessionCache: SessionCache;
   readonly browserManager?: BrowserManager;
+  /** M4b, D15 — see `RunOptions.filePath`/`updateSnapshots`. */
+  readonly filePath: string;
+  readonly updateSnapshots: boolean;
 }
 
 interface SessionOutcome {
@@ -894,19 +911,28 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'ExpectStmt': {
+          // `mask <locator>` (M4b, D15) only ever means something alongside `matches snapshot` —
+          // syntactically legal after any matcher (parser.ts's `parseSnapshotMasks`), but a stray
+          // one elsewhere is a clear authoring mistake, caught here rather than silently ignored.
+          if (step.masks.length > 0 && step.matcher.name !== 'matchesSnapshot') {
+            throw new RuntimeError('`mask <locator>` only applies alongside `matches snapshot "…"` (SPEC §9.9)');
+          }
           // UI locator subjects (SPEC §9.4), network-observation subjects (`request to "…"`/`of
-          // request to "…"`, M3d, SPEC §9.7), and the `page` a11y subject (M3e, SPEC §9.8) each get
-          // their own retry-until-timeout path — the exact opposite of an API expect's
-          // evaluate-once/fail-fast (P#15) — so all three are intercepted here rather than inside
-          // `execExpect`.
+          // request to "…"`, M3d, SPEC §9.7), the `page` a11y subject (M3e, SPEC §9.8), and
+          // `matches snapshot "…"` against `page`/a locator (M4b, SPEC §9.9) each get their own
+          // dedicated path — the exact opposite of an API expect's evaluate-once/fail-fast (P#15)
+          // — so all four are intercepted here rather than inside `execExpect`.
           const networkRef = subjectNetworkRef(step.subject);
+          const isSnapshot = step.matcher.name === 'matchesSnapshot' && (step.subject.type === 'LocatorSubject' || step.subject.type === 'PageSubject');
           result = networkRef
             ? await execNetworkExpect(step, networkRef, ctx, src, stepStart, config)
-            : step.subject.type === 'LocatorSubject'
-              ? await execUiExpect(step, ctx, src, stepStart, config)
-              : step.subject.type === 'PageSubject'
-                ? await execA11yExpect(step, ctx, src, stepStart, config)
-                : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
+            : isSnapshot
+              ? await execSnapshotExpect(step, ctx, src, stepStart, config, tc, testName)
+              : step.subject.type === 'LocatorSubject'
+                ? await execUiExpect(step, ctx, src, stepStart, config)
+                : step.subject.type === 'PageSubject'
+                  ? await execA11yExpect(step, ctx, src, stepStart, config)
+                  : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
         case 'LetStmt': {
@@ -1459,6 +1485,30 @@ async function execUiExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: 
     }
     await sleep(WAIT_POLL_INTERVAL_MS);
   }
+}
+
+/** `expect`/`check page|<locator> matches snapshot "<name>" [mask <locator>]*` (M4b, D15, SPEC
+ * §9.9) — unlike every other UI expect, this never retries: a screenshot is one point-in-time
+ * capture compared once against a baseline committed to the repo, not a condition that becomes
+ * true as the page settles. `target === null` captures the whole page (`PageSubject`); otherwise
+ * one element's own bounding box (`LocatorSubject`, D7's usual single-match requirement via
+ * `resolveForStep`). Masks resolve the same way, painted over before comparison ever runs. */
+async function execSnapshotExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig, tc: TestCtx, testName: string): Promise<StepResult> {
+  const browser = requireBrowserCtx(ctx);
+  const page = await browser.page.ensurePage(browser.manager);
+  const name = String(evalValue(step.matcher.snapshotName!, ctx));
+
+  const target: PWLocator | null = step.subject.type === 'LocatorSubject' ? (await resolveForStep(ctx, config, step.subject.locator)).pwLocator : null;
+  const maskLocators: PWLocator[] = [];
+  for (const mask of step.masks) maskLocators.push((await resolveForStep(ctx, config, mask)).pwLocator);
+
+  const actualPng = await performSnapshotCapture(page, target, maskLocators);
+  const platformKey = await browser.manager.platformKey();
+  const paths = snapshotPaths(tc.baseDir, tc.filePath, testName, name);
+  const outcome = await evaluateSnapshot(paths, name, actualPng, platformKey, tc.updateSnapshots, step.matcher.negated);
+
+  const result = mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+  return outcome.diff ? { ...result, snapshotDiff: outcome.diff } : result;
 }
 
 /** `wait until <locator> [not] <matcher>` (SPEC §9.5, M3b) — the UI sibling of `execUiExpect`:

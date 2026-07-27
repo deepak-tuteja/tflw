@@ -290,3 +290,28 @@ test('collectSymbols: `expect page has no a11y violations` (bare PageSubject) co
   const { program } = parseSource(source);
   assert.doesNotThrow(() => collectSymbols(program, source));
 });
+
+test('collectSymbols (M4b): `{var}` inside `matches snapshot "<name>"` and inside a `mask <locator>` both resolve', () => {
+  const source = `test "ok"\n  let step = unique("checkout")\n  let region = unique(".ts")\n  expect page matches snapshot "{step}-page" mask css "{region}"\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const stepDef = table.defs.find((d) => d.name === 'step');
+  const stepRef = table.refs.find((r) => r.name === 'step');
+  assert.ok(stepDef && stepRef, 'expected `step` def + ref inside the snapshot name');
+  assert.deepEqual(stepRef!.defSpan, stepDef!.span);
+
+  const regionDef = table.defs.find((d) => d.name === 'region');
+  const regionRef = table.refs.find((r) => r.name === 'region');
+  assert.ok(regionDef && regionRef, 'expected `region` def + ref inside the mask locator');
+  assert.deepEqual(regionRef!.defSpan, regionDef!.span);
+});
+
+test('collectSymbols (M4b): `matches snapshot` against a LocatorSubject resolves both the locator name and the snapshot name', () => {
+  const source = `test "ok"\n  let name = unique("Pay")\n  let snap = unique("pay-button")\n  expect button "{name}" matches snapshot "{snap}"\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  assert.ok(table.refs.find((r) => r.name === 'name'), 'expected a `name` ref from the button locator');
+  assert.ok(table.refs.find((r) => r.name === 'snap'), 'expected a `snap` ref from the snapshot name');
+});

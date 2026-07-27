@@ -30,6 +30,7 @@ import { basename, join } from 'node:path';
 import type { Locator as LocatorAst, LocatorKind } from '@tflw/lang';
 import { RuntimeError, evalValue, type EvalCtx } from './eval.js';
 import { inferContentType } from './mime.js';
+import { computePlatformKey } from './snapshot.js';
 import type { ScreenshotAsset, TraceAsset } from './types.js';
 
 type PWModule = typeof import('playwright');
@@ -113,6 +114,15 @@ export class BrowserManager {
       this.browserPromise = loadPlaywright().then((pw) => pw[this.engine].launch({ headless: this.headless }));
     }
     return this.browserPromise;
+  }
+
+  /** `linux-chromium-131.0.6778.33` (M4b, D15) — `snapshot.ts#computePlatformKey`, this run's own
+   * engine plus the actually-launched build's real version string. Requires the browser to already
+   * be running (`browser.version()`), so this necessarily launches it if nothing has yet — same
+   * lazy-launch cost every other browser step already pays on first use. */
+  async platformKey(): Promise<string> {
+    const browser = await this.getBrowser();
+    return computePlatformKey(this.engine, browser.version());
   }
 
   async close(): Promise<void> {
@@ -346,6 +356,16 @@ export class BrowserPageState {
 export async function performScreenshot(page: PWPage): Promise<ScreenshotAsset> {
   const buf = await runAction('screenshot', () => page.screenshot({ type: 'png' }));
   return { base64: buf.toString('base64') };
+}
+
+/** `expect page|<locator> matches snapshot "<name>" [mask <locator>]*` (M4b, D15) — captures either
+ * the whole page or a single element's own bounding box, painting solid boxes over `masks` first
+ * (Playwright's own `mask` screenshot option — the exact mechanism D15 asks for, not a tflw-owned
+ * reimplementation). `target` is `null` for a `page` subject, a resolved `PWLocator` for a
+ * `LocatorSubject` one. */
+export async function performSnapshotCapture(page: PWPage, target: PWLocator | null, masks: readonly PWLocator[]): Promise<Buffer> {
+  const opts = { type: 'png' as const, ...(masks.length > 0 ? { mask: [...masks] } : {}) };
+  return runAction('matches snapshot', () => (target ? target.screenshot(opts) : page.screenshot(opts)));
 }
 
 /** Automatic failure-screenshot capture (M3c, D12's "failure-first capture") — supplementary

@@ -1486,8 +1486,9 @@ class Parser {
     }
     const matcher = this.parseMatcher();
     if (!matcher) return null;
+    const masks = this.parseSnapshotMasks();
     this.endLine();
-    const stmt: ExpectStmt = { type: 'ExpectStmt', soft, quantifier, subject, matcher, span: this.spanFrom(start) };
+    const stmt: ExpectStmt = { type: 'ExpectStmt', soft, quantifier, subject, matcher, masks, span: this.spanFrom(start) };
     return stmt;
   }
 
@@ -1707,6 +1708,12 @@ class Parser {
           if (!filePath) return null;
           return { type: 'Matcher', name: 'matchesFile', negated, value: null, filePath, span: this.spanFrom(start) };
         }
+        if (this.isKw(this.peek(), 'snapshot')) {
+          this.advance();
+          const snapshotName = this.expectString('a snapshot name, e.g. `matches snapshot "checkout-page"`');
+          if (!snapshotName) return null;
+          return { type: 'Matcher', name: 'matchesSnapshot', negated, value: null, snapshotName, span: this.spanFrom(start) };
+        }
         const v = this.expectString('a regex string, e.g. `matches "json"`');
         return v ? mk('matches', v) : null;
       }
@@ -1807,6 +1814,21 @@ class Parser {
     const value = this.expectString(`a ${kind} name/selector, e.g. \`${kind} "…"\``);
     if (!value) return null;
     return { type: 'Locator', kind, value, span: this.spanFrom(start) };
+  }
+
+  /** Zero or more trailing `mask <locator>` clauses (M4b, D15) — dynamic regions to paint over
+   * before a `matches snapshot "…"` comparison. Syntactically legal after any matcher (mirrors
+   * every other subject/matcher pairing, where mismatch is a runtime rather than parse-time
+   * concern) but only meaningful with `matchesSnapshot`; `checkExpect` rejects a stray one. */
+  private parseSnapshotMasks(): Locator[] {
+    const masks: Locator[] = [];
+    while (this.isKw(this.peek(), 'mask')) {
+      this.advance(); // `mask`
+      const locator = this.parseLocator();
+      if (!locator) break;
+      masks.push(locator);
+    }
+    return masks;
   }
 
   /** True at end-of-statement (newline/dedent/eof) — used to tell `check`'s dual grammar apart
@@ -1942,8 +1964,9 @@ class Parser {
     }
     const matcher = this.parseMatcher();
     if (!matcher) return null;
+    const masks = this.parseSnapshotMasks();
     this.endLine();
-    return { type: 'ExpectStmt', soft: true, quantifier, subject, matcher, span: this.spanFrom(start) };
+    return { type: 'ExpectStmt', soft: true, quantifier, subject, matcher, masks, span: this.spanFrom(start) };
   }
 
   private parseUncheckStep(): Step | null {

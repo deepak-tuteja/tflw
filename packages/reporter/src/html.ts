@@ -149,12 +149,33 @@ function renderScreenshot(shot: { readonly base64: string } | undefined, assetHr
   return `<div class="screenshot"><img src="${esc(src)}" alt="screenshot" loading="lazy"></div>`;
 }
 
+/** Before/after/diff triptych (M4b, D15) for a `matches snapshot` step — `snapshotDiff` is only
+ * ever set when there's something worth showing (a new/updated baseline, a mismatch, a platform
+ * error), so this renders unconditionally once present; a clean pass never reaches here at all
+ * (`SnapshotOutcome`'s own doc comment, `snapshot.ts`). Each of the up-to-three images resolves
+ * independently through `assetHrefs` — they're deduped/inlined exactly like an ordinary screenshot,
+ * `resolveReportAssets`'s `addSnapshotStep` reuses `addScreenshot` for all three. */
+function renderSnapshotDiff(diff: StepResult['snapshotDiff'], assetHrefs: ReadonlyMap<string, string>): string {
+  if (!diff) return '';
+  const img = (label: string, base64: string): string => {
+    const href = assetHrefs.get(assetHash(base64));
+    const src = href ?? `data:image/png;base64,${base64}`;
+    return `<figure><figcaption>${esc(label)}</figcaption><img src="${esc(src)}" alt="${esc(label)}" loading="lazy"></figure>`;
+  };
+  return `<div class="snapshot-diff">
+    ${diff.baseline ? img('baseline', diff.baseline) : ''}
+    ${img('actual', diff.actual)}
+    ${diff.diff ? img('diff', diff.diff) : ''}
+  </div>`;
+}
+
 function renderStep(step: StepResult, assetHrefs: ReadonlyMap<string, string>): string {
   const panels = step.request ? renderTrace(step.request, step.response) : '';
   return `<li class="step ${step.ok ? 'ok' : 'fail'} kind-${step.kind}">
     <div class="line"><span class="mark">${step.ok ? '✓' : '✗'}</span><code>${esc(step.source)}</code><span class="sms">${step.durationMs} ms</span></div>
     ${step.detail ? `<div class="detail ${step.ok ? '' : 'baddetail'}">${esc(step.detail)}</div>` : ''}
     ${renderScreenshot(step.screenshot, assetHrefs)}
+    ${renderSnapshotDiff(step.snapshotDiff, assetHrefs)}
     ${panels}
   </li>`;
 }
@@ -255,6 +276,10 @@ ol.steps{list-style:none;margin:0;padding:0}
 .trace{margin:6px 0 4px 22px;display:grid;gap:8px}
 .screenshot{margin:6px 0 4px 22px}
 .screenshot img{max-width:min(640px,100%);border:1px solid var(--line);border-radius:6px;display:block}
+.snapshot-diff{margin:6px 0 4px 22px;display:flex;flex-wrap:wrap;gap:10px}
+.snapshot-diff figure{margin:0}
+.snapshot-diff figcaption{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.snapshot-diff img{max-width:min(320px,100%);border:1px solid var(--line);border-radius:6px;display:block}
 .trace-link{margin:4px 0 4px 22px;color:var(--mut);font-size:12px}
 .trace-link code{font-size:11px}
 .panel{background:var(--code);border:1px solid var(--line);border-radius:6px;overflow:hidden}

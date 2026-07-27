@@ -69,7 +69,8 @@
               "value": 200,
               "raw": "200"
             }
-          }
+          },
+          "masks": []
         },
         {
           "type": "ApiStep",
@@ -118,7 +119,8 @@
               "value": 200,
               "raw": "200"
             }
-          }
+          },
+          "masks": []
         },
         {
           "type": "ApiStep",
@@ -151,7 +153,8 @@
               "value": 204,
               "raw": "204"
             }
-          }
+          },
+          "masks": []
         },
         {
           "type": "ApiStep",
@@ -184,7 +187,8 @@
               "value": 301,
               "raw": "301"
             }
-          }
+          },
+          "masks": []
         },
         {
           "type": "ExpectStmt",
@@ -201,7 +205,8 @@
               "type": "DurationLit",
               "ms": 500
             }
-          }
+          },
+          "masks": []
         }
       ]
     }

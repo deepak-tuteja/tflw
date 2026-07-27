@@ -135,6 +135,14 @@ test('collectSemanticTokens: `was made` (M3d) classifies as `operator`', () => {
   assertTypeAt(tokens, source, 'made', 'operator');
 });
 
+test('collectSemanticTokens (M4b): `mask` classifies as `keyword`, `snapshot` classifies as `operator`', () => {
+  const source = `test "ok"\n  expect page matches snapshot "checkout-page" mask css ".timestamp"\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'matches', 'operator');
+  assertTypeAt(tokens, source, 'snapshot', 'operator');
+  assertTypeAt(tokens, source, 'mask', 'keyword');
+});
+
 test('collectSemanticTokens: a variable used inside a browser step (`fill … with {var}`) is colored `variable` (relies on symbols.ts walking browser steps, M4a)', () => {
   const source = `test "ok"\n  let userEmail = unique email\n  fill field "Email" with {userEmail}\n`;
   const tokens = tokensOf(source);

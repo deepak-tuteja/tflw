@@ -258,6 +258,10 @@ export interface ExpectStmt extends Node {
   readonly quantifier: 'any' | 'all' | null;
   readonly subject: Subject;
   readonly matcher: Matcher;
+  /** Zero or more trailing `mask <locator>` clauses (M4b, D15) — dynamic regions (timestamps,
+   * avatars, order IDs) to paint over before a `matches snapshot "…"` comparison. Meaningless
+   * (and never parsed) on any other matcher; a plain `[]` here, not `undefined`, when none given. */
+  readonly masks: readonly Locator[];
 }
 
 export type Subject =
@@ -407,7 +411,8 @@ export type MatcherName =
   | 'connects'
   | 'fails'
   | 'wasMade'
-  | 'hasNoA11yViolations';
+  | 'hasNoA11yViolations'
+  | 'matchesSnapshot';
 
 /** axe-core's own impact scale (M3e, SPEC §9.8), increasing severity. Shared with
  * `@tflw/runtime`'s `finding.ts` — the generic `Severity`/`Finding` model the pentest scan arc
@@ -440,6 +445,10 @@ export interface Matcher extends Node {
    * — `serious` also counts `critical` findings, since a "no serious violations" bar that a worse
    * violation could quietly slip under would be a teaching trap, not a convenience. */
   readonly a11ySeverity?: A11ySeverity;
+  /** `matches snapshot "<name>"` (M4b, D15) — set only when `name === 'matchesSnapshot'`. Becomes
+   * the baseline's file name (slugified) under `snapshots/<file>/<test>/<name>.png` — not a file
+   * path itself, the same "display label, not a path" framing `ScreenshotStmt.name` already uses. */
+  readonly snapshotName?: StringLit;
 }
 
 // ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a-M3e) ----------------------
@@ -452,9 +461,11 @@ export interface Matcher extends Node {
 // Playwright trace-on-failure/retry, the `report/assets/` directory, `--browser`/`--headed`, and
 // `viewport` config (D11, D12). M3d adds: network observation (`request to "…"`/`of request to
 // "…"`) and `stub` route mocking. M3e adds: the `page` subject + `hasNoA11yViolations` matcher
-// (axe-core). Still deferred to later browser-arc milestones (PLAN_BROWSER_PERF_SECURITY.md
-// §1.12): `element <name> = <locator>` aliases (§8, no milestone owns them yet), and the live-DOM
-// "nearest candidate" cold-start diagnosis + `tflw pick` (M5).
+// (axe-core). M4a is pure LSP/VS Code tooling catch-up (no new AST). M4b adds: the
+// `matchesSnapshot` matcher (`page`/a `LocatorSubject` `matches snapshot "<name>"`, D15) and
+// `ExpectStmt.masks` (`mask <locator>`). Still deferred to later browser-arc milestones
+// (PLAN_BROWSER_PERF_SECURITY.md §1.12): `element <name> = <locator>` aliases (§8, no milestone
+// owns them yet), and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick` (M5).
 
 /** Locator noun (D6, SPEC §9.3): the noun picks the resolution strategy — `button`/`text`/`list`
  * single-strategy, `field` a closed 3-step cascade (label → placeholder → role), `css`/`xpath`

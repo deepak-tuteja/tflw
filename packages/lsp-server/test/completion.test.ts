@@ -120,12 +120,12 @@ test('getCompletions: matcher kind includes `has no [<severity>] a11y violations
   }
 });
 
-test('getCompletions: matcher kind includes `matches file` (gap #17) and `was made` (M3d)', () => {
+test('getCompletions: matcher kind includes `matches file` (gap #17), `matches snapshot` (M4b), and `was made` (M3d)', () => {
   const fileSource = 'test "ok"\n  expect body bytes m';
   const fileCtx = getCompletionContext(fileSource, fileSource.length)!;
   assert.deepEqual(
     getCompletions(fileCtx).map((c) => c.label),
-    ['matches', 'matches subset', 'matches schema', 'matches file'],
+    ['matches', 'matches subset', 'matches schema', 'matches file', 'matches snapshot'],
   );
 
   const madeSource = 'test "ok"\n  expect request to "/x" w';
@@ -140,4 +140,19 @@ test('getCompletions: transform kind after `hex`/`url` too, matching on `decode`
     getCompletions(ctx).map((c) => c.label),
     ['decode'],
   );
+});
+
+// -- M4b: visual regression (`matches snapshot`) ------------------------------------------------
+
+test('getCompletions: matcher kind includes `matches snapshot` once `matches` is fully typed (trailing space)', () => {
+  const source = 'test "ok"\n  expect page matches ';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(ctx, { kind: 'matcher', prefix: 'matches' });
+  const candidates = getCompletions(ctx);
+  assert.deepEqual(
+    candidates.map((c) => c.label),
+    ['matches', 'matches subset', 'matches schema', 'matches file', 'matches snapshot'],
+  );
+  const snapshotCandidate = candidates.find((c) => c.label === 'matches snapshot');
+  assert.match(snapshotCandidate?.detail ?? '', /page.*UI locators/);
 });

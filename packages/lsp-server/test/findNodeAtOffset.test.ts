@@ -150,6 +150,24 @@ test('findNodeAtOffset: descends into a DragStmt\'s two locators and a DropFileS
   );
 });
 
+test('findNodeAtOffset (M4b): descends into a `matches snapshot "<name>"` Matcher.snapshotName', () => {
+  const source = `test "ok"\n  expect page matches snapshot "checkout-page"\n`;
+  const { program } = parseSource(source);
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('checkout-page') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'ExpectStmt', 'Matcher', 'StringLit'],
+  );
+});
+
+test('findNodeAtOffset (M4b): descends into a trailing `mask <locator>` clause on ExpectStmt', () => {
+  const source = `test "ok"\n  expect page matches snapshot "checkout-page" mask css ".timestamp"\n`;
+  const { program } = parseSource(source);
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('.timestamp') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'ExpectStmt', 'Locator', 'StringLit'],
+  );
+});
+
 test('spanContains: inclusive of both endpoints', () => {
   const span = { start: { offset: 5, line: 1, column: 6 }, end: { offset: 10, line: 1, column: 11 } };
   assert.equal(spanContains(span, 5), true);

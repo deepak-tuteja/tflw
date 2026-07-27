@@ -33,6 +33,7 @@ export const MATCHERS: readonly MatcherEntry[] = [
   { id: 'fails', syntax: '`fails` / `fails matching "<regex>"`', appliesTo: '`request`', example: '`expect request fails matching "certificate"`', status: 'shipped' },
   { id: 'was-made', syntax: '`was made`', appliesTo: '`request to "<url>"`', example: '`expect request to "/api/orders" was made`', status: 'shipped' },
   { id: 'has-no-a11y-violations', syntax: '`has no [minor/moderate/serious/critical] a11y violations`', appliesTo: '`page`', example: '`expect page has no critical a11y violations`', status: 'shipped' },
+  { id: 'matches-snapshot', syntax: '`matches snapshot "<name>" [mask <locator>]*`', appliesTo: '`page`, UI locators', example: '`expect page matches snapshot "checkout-page" mask css ".timestamp"`', status: 'shipped' },
 ] as const;
 
 /** One row of SPEC §7's new generators quick-reference table (§7.2/§7.3 previously had no table,
@@ -126,6 +127,9 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--format ndjson`', command: 'run', effect: 'streams the event log as one JSON object per line to stdout (plus `report/events.ndjson`) instead of human text; always full detail regardless of `--verbose`' },
   { flag: '`--no-timestamps`', command: 'run', effect: 'omits the `HH:MM:SS.mmm` prefix every console line otherwise gets by default' },
   { flag: '`--log-file <path>`', command: 'run', effect: 'duplicates console output to a file, always plain text (ANSI stripped) regardless of stdout\'s own color state' },
+  { flag: '`--browser <engine>`', command: 'run', effect: 'switches every browser step to one engine — chromium/firefox/webkit (default chromium)' },
+  { flag: '`--headed`', command: 'run', effect: 'shows the browser window instead of running headless (local debugging only)' },
+  { flag: '`--update-snapshots`', command: 'run', effect: 'writes/overwrites `matches snapshot` baselines instead of just comparing against them' },
   { flag: '`--format json`', command: 'check', effect: 'prints the target file\'s `Diagnostic[]` as JSON instead of text — for editor integrations' },
   { flag: '`--version`, `-v`', command: 'global', effect: 'print the installed version' },
   { flag: '`--help`, `-h`', command: 'global', effect: 'print usage' },

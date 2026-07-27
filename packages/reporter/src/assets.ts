@@ -16,7 +16,7 @@
 // IDs with this module beyond hashing the same bytes the same way.
 
 import { createHash } from 'node:crypto';
-import type { RunReport } from '@tflw/runtime';
+import type { RunReport, StepResult } from '@tflw/runtime';
 
 /** Screenshots (PNG) larger than this inline as a plain `data:` URI in `report.html`; at/above it
  * they're written to `assets/screenshots/<hash>.png` and linked by relative path instead. Traces
@@ -72,11 +72,26 @@ export function resolveReportAssets(report: RunReport, inlineBudgetBytes: number
     files.push({ relPath, base64 });
   };
 
+  // A `matches snapshot` step's baseline/actual/diff (M4b, D15) are each just another PNG — reused
+  // through the exact same `addScreenshot` inline-budget/dedup logic, not a parallel asset kind.
+  const addSnapshotStep = (step: StepResult): void => {
+    if (!step.snapshotDiff) return;
+    if (step.snapshotDiff.baseline) addScreenshot(step.snapshotDiff.baseline);
+    addScreenshot(step.snapshotDiff.actual);
+    if (step.snapshotDiff.diff) addScreenshot(step.snapshotDiff.diff);
+  };
+
   for (const test of report.tests) {
-    for (const step of test.steps) if (step.screenshot) addScreenshot(step.screenshot.base64);
+    for (const step of test.steps) {
+      if (step.screenshot) addScreenshot(step.screenshot.base64);
+      addSnapshotStep(step);
+    }
     if (test.trace) addTrace(test.trace.base64);
     for (const attempt of test.attempts ?? []) {
-      for (const step of attempt.steps) if (step.screenshot) addScreenshot(step.screenshot.base64);
+      for (const step of attempt.steps) {
+        if (step.screenshot) addScreenshot(step.screenshot.base64);
+        addSnapshotStep(step);
+      }
       if (attempt.trace) addTrace(attempt.trace.base64);
     }
   }

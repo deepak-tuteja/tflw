@@ -471,6 +471,10 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
 function checkExpectStmt(step: ExpectStmt, bound: Set<string>, diags: Diagnostic[]): void {
   checkSubject(step.subject, bound, diags);
   if (step.matcher.value) checkValue(step.matcher.value, bound, diags);
+  // `matches snapshot "<name>"` (M4b) — interpolation-aware like `screenshot "<name>"`, unlike
+  // `matchesSchema`/`matchesFile`'s deliberately-plain `schemaName`/`filePath` (ast.ts).
+  if (step.matcher.snapshotName) checkStringLit(step.matcher.snapshotName, bound, diags);
+  for (const mask of step.masks) checkStringLit(mask.value, bound, diags);
 }
 
 function checkSubject(subject: Subject, bound: Set<string>, diags: Diagnostic[]): void {

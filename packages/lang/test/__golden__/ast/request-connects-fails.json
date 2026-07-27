@@ -57,7 +57,8 @@
                 }
               ]
             }
-          }
+          },
+          "masks": []
         },
         {
           "type": "ApiStep",
@@ -85,7 +86,8 @@
             "name": "connects",
             "negated": false,
             "value": null
-          }
+          },
+          "masks": []
         },
         {
           "type": "ExpectStmt",
@@ -99,7 +101,8 @@
             "name": "fails",
             "negated": true,
             "value": null
-          }
+          },
+          "masks": []
         }
       ]
     }

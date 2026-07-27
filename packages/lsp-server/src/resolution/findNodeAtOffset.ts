@@ -148,7 +148,7 @@ function children(node: Node): readonly Node[] {
     }
     case 'ExpectStmt': {
       const n = node as ExpectStmt;
-      return [n.subject, n.matcher];
+      return [n.subject, n.matcher, ...n.masks];
     }
     case 'DurationSubject':
     case 'BodyBytesSubject':
@@ -243,6 +243,7 @@ function children(node: Node): readonly Node[] {
         ...(n.schemaName ? [n.schemaName] : []),
         ...(n.schemaSource ? [n.schemaSource] : []),
         ...(n.filePath ? [n.filePath] : []),
+        ...(n.snapshotName ? [n.snapshotName] : []),
       ];
     }
     case 'LetStmt':

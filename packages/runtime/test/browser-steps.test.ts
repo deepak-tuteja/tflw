@@ -15,7 +15,7 @@
 // `drop file … onto …` (a real dropzone with no `<input type="file">`, fed an actual on-disk file's
 // bytes), and `wait until <ui condition>`.
 
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, before, after } from 'node:test';
@@ -23,6 +23,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { BrowserManager, BrowserPageState } from '../src/browser.js';
+import { snapshotPaths } from '../src/snapshot.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
 
@@ -190,6 +191,23 @@ const A11Y_DYNAMIC_HTML = `<!doctype html>
 let flakyRequests = 0;
 const FLAKY_HTML = (label: string) => `<!doctype html><html><body><button>${label}</button></body></html>`;
 
+// M4b: `expect page|<locator> matches snapshot "<name>" [mask <locator>]*` (SPEC §9.9, D15).
+// `#fixed` is byte-identical across every render; `#dynamic`'s color is the one thing a `mask`
+// clause has to actually blank out for a masked comparison to pass despite it changing.
+const SNAP_HTML = (dynamicColor: string) => `<!doctype html>
+<html><head><style>body{margin:0}</style></head>
+<body>
+  <div id="fixed" style="width:120px;height:80px;background:#2a63d6"></div>
+  <div id="dynamic" style="width:120px;height:80px;background:${dynamicColor}"></div>
+</body></html>`;
+
+const SNAP_WIDGET_HTML = `<!doctype html>
+<html><head><style>body{margin:0}</style></head>
+<body>
+  <p>surrounding page content that must NOT be part of the captured element</p>
+  <button style="width:100px;height:40px;background:#2a63d6;color:#fff">Checkout</button>
+</body></html>`;
+
 let server: FixtureServer;
 let config: ResolvedConfig;
 let browserManager: BrowserManager;
@@ -213,6 +231,15 @@ before(async () => {
     '/a11y-clean': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_CLEAN_HTML),
     '/a11y-bad': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_BAD_HTML),
     '/a11y-dynamic': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_DYNAMIC_HTML),
+    // M4b: two real renders of the same layout — a `#fixed` box that never changes, plus a
+    // `#dynamic` box whose color differs between them (simulating a timestamp/avatar) — so masking
+    // it is what genuinely determines pass/fail, not a coincidence. `SNAP_HTML`'s own `dynamicColor`
+    // param controls the second box.
+    '/snap': (req, res) => {
+      const color = new URL(req.url ?? '/', 'http://x').searchParams.get('dynamic') ?? 'red';
+      res.writeHead(200, { 'content-type': 'text/html' }).end(SNAP_HTML(color));
+    },
+    '/snap-widget': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(SNAP_WIDGET_HTML),
   });
   config = { ...testConfig(server.baseUrl), webBaseUrl: server.baseUrl };
   browserManager = new BrowserManager();
@@ -778,4 +805,174 @@ test('the a11y expect retries and re-scans, passing once a violation genuinely f
   expect page has no critical a11y violations
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+// ---- M4b: `matches snapshot "<name>" [mask <locator>]*` (visual regression, D15) ---------------
+
+const PNG_MAGIC_M4B = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+async function runSnapshot(source: string, baseDir: string, opts: { filePath?: string; updateSnapshots?: boolean } = {}) {
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, [], `unexpected parse diagnostics: ${JSON.stringify(diagnostics)}`);
+  return runProgram(program, config, { source, browserManager, baseDir, filePath: opts.filePath ?? 'visual.tflw', updateSnapshots: opts.updateSnapshots ?? false });
+}
+
+test('with no baseline and no `--update-snapshots`, the step fails clearly and attaches the actual capture as evidence', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    const { report } = await runSnapshot('test "no baseline"\n  open "/snap"\n  expect page matches snapshot "first"\n', dir);
+    assert.equal(report.ok, false);
+    const step = report.tests[0]!.steps.at(-1)!;
+    assert.match(step.detail ?? '', /no baseline exists yet.*--update-snapshots/);
+    assert.ok(step.snapshotDiff, 'expected evidence even on a missing-baseline failure');
+    assert.equal(step.snapshotDiff!.baseline, undefined);
+    assert.ok(Buffer.from(step.snapshotDiff!.actual, 'base64').subarray(0, 4).equals(PNG_MAGIC_M4B));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`--update-snapshots` on a first run writes a real baseline PNG + platform sidecar to snapshots/<file>/<test>/<name>.png', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    const { report } = await runSnapshot('test "writes baseline"\n  open "/snap"\n  expect page matches snapshot "first"\n', dir, { filePath: 'visual.tflw', updateSnapshots: true });
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    const step = report.tests[0]!.steps.at(-1)!;
+    assert.match(step.detail ?? '', /new baseline written/);
+
+    const paths = snapshotPaths(dir, 'visual.tflw', 'writes baseline', 'first');
+    const png = await readFile(paths.pngPath);
+    assert.ok(png.subarray(0, 4).equals(PNG_MAGIC_M4B), 'expected a real PNG committed to snapshots/');
+    const sidecar = JSON.parse(await readFile(paths.sidecarPath, 'utf8')) as { platformKey: string };
+    assert.match(sidecar.platformKey, /^\w+-chromium-[\d.]+$/, `unexpected platform key shape: ${sidecar.platformKey}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a matching second run against an unchanged baseline passes with no `snapshotDiff` on the step (D12 restraint)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "same"\n', dir, { updateSnapshots: true });
+    const { report } = await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "same"\n', dir);
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    const step = report.tests[0]!.steps.at(-1)!;
+    assert.match(step.detail ?? '', /matches baseline/);
+    assert.equal(step.snapshotDiff, undefined, 'a clean pass should carry no evidence at all');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a real pixel difference (`dynamic` box recolored) fails without `--update-snapshots`, carrying a real baseline/actual/diff triptych', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "changed"\n', dir, { updateSnapshots: true });
+    const { report } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "changed"\n', dir);
+    assert.equal(report.ok, false);
+    const step = report.tests[0]!.steps.at(-1)!;
+    assert.match(step.detail ?? '', /does not match baseline.*px.*%.*--update-snapshots/);
+    assert.ok(step.snapshotDiff?.baseline && step.snapshotDiff.diff, 'expected a full triptych on a real mismatch');
+    for (const b64 of [step.snapshotDiff!.baseline!, step.snapshotDiff!.actual, step.snapshotDiff!.diff!]) {
+      assert.ok(Buffer.from(b64, 'base64').subarray(0, 4).equals(PNG_MAGIC_M4B));
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`--update-snapshots` against a real mismatch overwrites the baseline and passes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "accept"\n', dir, { updateSnapshots: true });
+    const { report } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "accept"\n', dir, { updateSnapshots: true });
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    assert.match(report.tests[0]!.steps.at(-1)!.detail ?? '', /baseline updated/);
+
+    // Prove the overwrite really happened: comparing again against the (now green) baseline with a
+    // fresh green render passes cleanly with no diff evidence.
+    const { report: verify } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "accept"\n', dir);
+    assert.equal(verify.ok, true);
+    assert.equal(verify.tests[0]!.steps.at(-1)!.snapshotDiff, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a platform-key mismatch fails immediately with a clear message, before any pixel is compared — not affected by `--update-snapshots`\'s absence or presence changing that message', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "platform"\n', dir, { updateSnapshots: true });
+    const paths = snapshotPaths(dir, 'visual.tflw', 'seed', 'platform');
+    await writeFile(paths.sidecarPath, JSON.stringify({ platformKey: 'macos-webkit-999.0' }));
+
+    const { report } = await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "platform"\n', dir);
+    assert.equal(report.ok, false);
+    assert.match(report.tests[0]!.steps.at(-1)!.detail ?? '', /platform.*macos-webkit-999\.0.*not a tolerance knob/s);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`mask <locator>` genuinely changes the outcome: unmasked fails on the recolored region, masked passes despite it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    // Sanity half: no mask anywhere — the same #dynamic recolor that `mask` is about to absorb
+    // really does fail an ordinary compare (proves the fixture, not just the mask, is doing real work).
+    await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "unmasked"\n', dir, { updateSnapshots: true });
+    const { report: unmasked } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "unmasked"\n', dir);
+    assert.equal(unmasked.ok, false, 'sanity check: without a mask, the recolored #dynamic box really does fail the compare');
+
+    // Masked half: `mask` paints the *same* solid color over #dynamic on every capture, baseline
+    // included — so the baseline itself has to be seeded with the identical `mask` clause too, or
+    // it's comparing a masked actual against an unmasked (still-red) baseline and failing for the
+    // wrong reason. Only #fixed's real pixels are ever actually compared here.
+    await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "masked" mask css "#dynamic"\n', dir, { updateSnapshots: true });
+    const { report: masked } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "masked" mask css "#dynamic"\n', dir);
+    assert.equal(masked.ok, true, JSON.stringify(masked.tests[0], null, 2));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`matches snapshot` against a LocatorSubject captures only that element\'s own bounding box, not the whole page', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    const { report } = await runSnapshot('test "widget"\n  open "/snap-widget"\n  expect button "Checkout" matches snapshot "checkout-button"\n', dir, { updateSnapshots: true });
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    const paths = snapshotPaths(dir, 'visual.tflw', 'widget', 'checkout-button');
+    const png = await readFile(paths.pngPath);
+    // The full page (default viewport, 1280x720) is far larger than a ~100x40 button — a real
+    // element-scoped capture, not an accidental full-page screenshot mislabeled as one.
+    const size = (await stat(paths.pngPath)).size;
+    assert.ok(size > 0);
+    assert.ok(png.subarray(0, 4).equals(PNG_MAGIC_M4B));
+    assert.ok(size < 20_000, `expected a small element-scoped PNG, got ${size} bytes — looks like a full-page capture instead`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`not matches snapshot` asserts the opposite: fails while it matches, passes once it genuinely differs', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "negated"\n', dir, { updateSnapshots: true });
+
+    const { report: stillMatches } = await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page not matches snapshot "negated"\n', dir);
+    assert.equal(stillMatches.ok, false, 'still identical to the baseline — `not matches` should fail');
+    assert.match(stillMatches.tests[0]!.steps.at(-1)!.detail ?? '', /expected to differ.*matched exactly/);
+
+    const { report: nowDiffers } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page not matches snapshot "negated"\n', dir);
+    assert.equal(nowDiffers.ok, true, JSON.stringify(nowDiffers.tests[0], null, 2));
+    assert.match(nowDiffers.tests[0]!.steps.at(-1)!.detail ?? '', /differs from baseline as expected/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a stray `mask <locator>` after a matcher other than `matches snapshot` is a clear runtime error, checked before any response/browser work', async () => {
+  const { program } = parseSource('test "bad mask"\n  expect status equals 200 mask css "#x"\n');
+  const { report } = await runProgram(program, config, { source: 'x' });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /`mask <locator>` only applies alongside `matches snapshot "…"`/);
 });

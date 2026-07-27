@@ -3,6 +3,7 @@
 
 import type { EvidenceLevel, RedactPattern, SessionDecl, Value } from '@tflw/lang';
 import type { BrowserEngine } from './browser.js';
+import type { SnapshotDiffAsset } from './snapshot.js';
 
 // ---- Resolved config -------------------------------------------------------
 
@@ -146,6 +147,11 @@ export interface StepResult {
   /** Set on an explicit `screenshot "<name>"` step, or best-effort on any step that failed while a
    * browser page existed for this test attempt (M3c, D12's "failure-first capture"). */
   readonly screenshot?: ScreenshotAsset;
+  /** Set on a `matches snapshot "<name>"` step whenever there's something worth showing — a new or
+   * updated baseline, a mismatch, or a platform-key error — but omitted on a clean pass against an
+   * unchanged baseline (M4b, D15: the same "don't inflate the report on success" restraint D12
+   * already applied to screenshot-per-step). */
+  readonly snapshotDiff?: SnapshotDiffAsset;
 }
 
 /** One `retry` attempt's outcome — captured so a flaky pass's earlier failing evidence survives

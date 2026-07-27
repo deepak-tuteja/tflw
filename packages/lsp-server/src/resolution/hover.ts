@@ -39,6 +39,7 @@ const MATCHER_SPEC_ID: Record<MatcherName, string> = {
   fails: 'fails',
   wasMade: 'was-made',
   hasNoA11yViolations: 'has-no-a11y-violations',
+  matchesSnapshot: 'matches-snapshot',
 };
 
 /** Generator AST node `type` → the matching `spec-data.ts` `GeneratorEntry.id`. Only generator

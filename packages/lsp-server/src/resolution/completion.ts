@@ -58,6 +58,7 @@ const MATCHER_CANDIDATES: readonly { readonly label: string; readonly specId: st
   { label: 'has no moderate a11y violations', specId: 'has-no-a11y-violations' },
   { label: 'has no serious a11y violations', specId: 'has-no-a11y-violations' },
   { label: 'has no critical a11y violations', specId: 'has-no-a11y-violations' },
+  { label: 'matches snapshot', specId: 'matches-snapshot' },
   { label: 'not', specId: '' },
 ];
 

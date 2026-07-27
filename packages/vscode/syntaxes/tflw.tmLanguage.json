@@ -54,8 +54,8 @@
       "name": "support.function.env.tflw"
     },
     "keywords-statement": {
-      "comment": "M4a: includes the M3a-M3e browser-step keywords (open/click/.../stub) and their sub-clause words (on/to/onto/dialog/new/tab/frame/respond), catching up parser.ts's STATEMENT_KEYWORDS.",
-      "match": "\\b(test|action|before|after|session|import|use|api|expect|check|let|capture|wait|until|give|require|env|default|defaults|workers|report|timeout|retry|with|each|from|as|without|redirects|upload|form|header|body|type|open|click|double|right|fill|select|uncheck|press|hover|scroll|within|accept|dismiss|switch|close|download|drag|drop|screenshot|stub|on|to|onto|dialog|new|tab|frame|respond)\\b",
+      "comment": "M4a: includes the M3a-M3e browser-step keywords (open/click/.../stub) and their sub-clause words (on/to/onto/dialog/new/tab/frame/respond), catching up parser.ts's STATEMENT_KEYWORDS. M4b adds `mask` (the `mask <locator>` snapshot-masking clause).",
+      "match": "\\b(test|action|before|after|session|import|use|api|expect|check|let|capture|wait|until|give|require|env|default|defaults|workers|report|timeout|retry|with|each|from|as|without|redirects|upload|form|header|body|type|open|click|double|right|fill|select|uncheck|press|hover|scroll|within|accept|dismiss|switch|close|download|drag|drop|screenshot|stub|on|to|onto|dialog|new|tab|frame|respond|mask)\\b",
       "name": "keyword.control.tflw"
     },
     "keywords-subject": {
@@ -64,8 +64,8 @@
       "name": "support.type.tflw"
     },
     "keywords-matcher": {
-      "comment": "M4a: includes `was`/`made` (M3d `was made`) and `no`/`a11y`/`violations`/severity words (M3e `has no [<severity>] a11y violations`).",
-      "match": "\\b(equals|contains|matches|subset|file|has|is|not|count|value|greater|less|than|visible|hidden|enabled|disabled|checked|any|all|connects|fails|matching|was|made|no|a11y|violations|minor|moderate|serious|critical)\\b",
+      "comment": "M4a: includes `was`/`made` (M3d `was made`) and `no`/`a11y`/`violations`/severity words (M3e `has no [<severity>] a11y violations`). M4b adds `snapshot` (`matches snapshot \"<name>\"`).",
+      "match": "\\b(equals|contains|matches|subset|file|has|is|not|count|value|greater|less|than|visible|hidden|enabled|disabled|checked|any|all|connects|fails|matching|was|made|no|a11y|violations|minor|moderate|serious|critical|snapshot)\\b",
       "name": "keyword.operator.word.tflw"
     },
     "keywords-generator": {

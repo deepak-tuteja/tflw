@@ -77,6 +77,51 @@ test('a clean run with no screenshots or traces produces no files and no hrefs a
   assert.equal(hrefs.size, 0);
 });
 
+// -- M4b: `matches snapshot` triptych (baseline/actual/diff) ---------------------------------
+
+test('a snapshot step\'s baseline+actual+diff each resolve through the same inline-budget/dedup logic as an ordinary screenshot', () => {
+  const baseline = bigPngBase64(2048);
+  const actual = bigPngBase64(2049); // different bytes, so it doesn't dedupe with baseline
+  const diff = bigPngBase64(2050);
+  const report = baseReport([
+    { name: 't', ok: false, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: false, durationMs: 1, snapshotDiff: { baseline, actual, diff } }] },
+  ]);
+  const { files, hrefs } = resolveReportAssets(report, 1024);
+  assert.equal(files.length, 3, 'baseline, actual, and diff each get their own file');
+  for (const f of files) assert.match(f.relPath, /^assets\/screenshots\/[0-9a-f]{16}\.png$/);
+  assert.equal(hrefs.size, 3);
+});
+
+test('a snapshot step with only `actual` (a brand-new baseline, nothing to diff against) writes just one file', () => {
+  const actual = bigPngBase64(2048);
+  const report = baseReport([{ name: 't', ok: true, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 1, snapshotDiff: { actual } }] }]);
+  const { files } = resolveReportAssets(report, 1024);
+  assert.equal(files.length, 1);
+});
+
+test('a clean-pass snapshot step (no `snapshotDiff` at all) writes nothing, same as a step with no screenshot', () => {
+  const report = baseReport([{ name: 't', ok: true, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 1 }] }]);
+  const { files, hrefs } = resolveReportAssets(report, 1024);
+  assert.deepEqual(files, []);
+  assert.equal(hrefs.size, 0);
+});
+
+test('an identical baseline/actual pair across two attempts dedupes each role independently', () => {
+  const baseline = bigPngBase64(2048);
+  const actual = bigPngBase64(2049);
+  const report = baseReport([
+    {
+      name: 't',
+      ok: false,
+      durationMs: 1,
+      steps: [{ kind: 'expect', source: 's1', line: 1, ok: false, durationMs: 1, snapshotDiff: { baseline, actual } }],
+      attempts: [{ attempt: 1, ok: false, durationMs: 1, steps: [{ kind: 'expect', source: 's1', line: 1, ok: false, durationMs: 1, snapshotDiff: { baseline, actual } }] }],
+    },
+  ]);
+  const { files } = resolveReportAssets(report, 1024);
+  assert.equal(files.length, 2, 'baseline and actual each dedupe to one file across both the test and its attempt');
+});
+
 test('walks retry attempts too, not just the kept final steps/trace', () => {
   const big = bigPngBase64(2048);
   const tinyZip = Buffer.from('PK\x03\x04').toString('base64');

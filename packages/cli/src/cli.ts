@@ -198,6 +198,9 @@ interface RunArgs {
   /** `--headed` (M3c) — headless by default; this opts into a visible browser window (only
    * meaningful locally, never in CI). */
   readonly headed: boolean;
+  /** `--update-snapshots` (M4b, D15) — writes/overwrites `matches snapshot` baselines instead of
+   * just comparing against them. Off by default, same as every prior milestone's behavior. */
+  readonly updateSnapshots: boolean;
 }
 
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
@@ -221,6 +224,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let logFile: string | undefined;
   let browserRaw: string | undefined;
   let headed = false;
+  let updateSnapshots = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = argv[++i];
@@ -250,6 +254,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--browser') browserRaw = argv[++i];
     else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
     else if (a === '--headed') headed = true;
+    else if (a === '--update-snapshots') updateSnapshots = true;
     else files.push(a);
   }
   const tagList = tagRaw
@@ -276,6 +281,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     logFile,
     browserRaw,
     headed,
+    updateSnapshots,
   };
 }
 
@@ -603,12 +609,17 @@ async function runCommand(argv: string[]): Promise<number> {
           uniqueSeq,
           testIndexOffset: offsets[i]!,
           sessionSpliceOwners,
+          filePath: fileLabel,
+          updateSnapshots: args.updateSnapshots,
           ...(fileEmit ? { emit: fileEmit } : {}),
         });
         buffered?.flush();
         // Stamp each test with the relative file it came from (report.html's per-file grouping,
-        // decision 92) — done here, once, after the fact, rather than threading a new `RunOptions`
-        // field through the whole interpreter, since `file` is a display concern only.
+        // decision 92) — done here, once, after the fact. `filePath` above is a *separate* threading
+        // of the same relative label: `RunOptions.filePath` is needed live, during execution, for a
+        // `matches snapshot` step's `snapshots/<file>/…` path (M4b) — this stamp remains the
+        // display-only one `report.tests[].file` has always been, kept as its own assignment rather
+        // than merged into the two so neither concern's rationale gets confused for the other's.
         return { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) };
       } catch (e) {
         buffered?.flush();
@@ -1118,7 +1129,7 @@ function printUsage(): void {
       '',
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--workers <n>] [--no-color] [--verbose]',
-      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed]',
+      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]',
       '                                                      run .tflw tests (default: all under cwd)',
       '                                                      --now replays the exact run-clock instant',
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
@@ -1131,6 +1142,7 @@ function printUsage(): void {
       '                                                      --log-file <path> duplicates console output to a file (plain text)',
       '                                                      --browser switches every browser step to one engine (default chromium)',
       '                                                      --headed shows the browser window instead of running headless',
+      '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
       '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json}',
       '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
