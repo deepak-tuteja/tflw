@@ -1,0 +1,11 @@
+test "row-scoped add-to-cart on a page of a dozen identical buttons, with its async toast"
+  open "/login"
+  fill field "Email" with env(USER_A_EMAIL)
+  fill field "Password" with env(USER_A_PW)
+  click button "Log in"
+  expect button "Log out" is visible
+  open "/"
+  fill field "Search" with "Bulk Item 100"
+  within css "[aria-label='Bulk Item 100']"
+    click button "Add to cart"
+  expect text "Added 1 × Bulk Item 100 to your cart." is visible

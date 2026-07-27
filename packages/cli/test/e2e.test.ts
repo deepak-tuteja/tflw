@@ -308,6 +308,33 @@ test "create gadget order"
   });
 });
 
+// ---- tflw migrate (P#38, decision 45's 1.0-gate deliverable) ---------------
+
+test('`tflw --help` mentions `tflw migrate`', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
+  assert.match(stdout, /tflw migrate \[files/);
+});
+
+test('`tflw migrate` against a real, checker-clean suite reports nothing to migrate and touches no files (no deprecation exists in the grammar yet, decision 45)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-clean-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      const testSource = `test "health check"\n  api GET /health\n  expect status equals 200\n`;
+      await writeFile(join(dir, 'health.tflw'), testSource, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'migrate', '--no-color'], { cwd: dir });
+      assert.match(stdout, /no deprecated syntax found — nothing to migrate\./);
+
+      // Genuinely untouched — not just "reported clean" while quietly rewriting the file.
+      const after = await readFile(join(dir, 'health.tflw'), 'utf8');
+      assert.equal(after, testSource);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('--tag matching zero tests anywhere is a hard usage error, not a silent green CI (P#46)', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tag-zero-'));

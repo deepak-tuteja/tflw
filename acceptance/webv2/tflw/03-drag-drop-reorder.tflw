@@ -1,0 +1,38 @@
+test "cart rows are drag-drop reorderable, verified row by row"
+  api GET /products?q=Bulk%20Item%20100&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk100Id
+  api GET /products?q=Bulk%20Item%2010&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk10Id
+  api POST /auth/login body { email: env(USER_A_EMAIL), password: env(USER_A_PW) }
+  expect status equals 200
+  capture body.accessToken as apiToken
+  api POST /cart/checkout
+    header "Authorization" is "Bearer {apiToken}"
+
+  open "/login"
+  fill field "Email" with env(USER_A_EMAIL)
+  fill field "Password" with env(USER_A_PW)
+  click button "Log in"
+  expect button "Log out" is visible
+  open "/products/{bulk100Id}"
+  fill field "Quantity" with "1"
+  click button "Add to cart"
+  expect text "Added 1 × Bulk Item 100 to your cart." is visible
+  open "/products/{bulk10Id}"
+  fill field "Quantity" with "1"
+  click button "Add to cart"
+  expect text "Added 1 × Bulk Item 10 to your cart." is visible
+
+  api GET /cart
+    header "Authorization" is "Bearer {apiToken}"
+  expect status equals 200
+  capture body.items[0].product.name as row1Name
+  capture body.items[1].product.name as row2Name
+
+  open "/cart"
+  expect css "table tbody tr:nth-child(1) th:text-is('{row1Name}')" is visible
+  drag css ".drag-handle[aria-label='Drag to reorder {row1Name}']" to css "table tbody tr th:text-is('{row2Name}')"
+  expect css "table tbody tr:nth-child(1) th:text-is('{row2Name}')" is visible
+  expect css "table tbody tr:nth-child(2) th:text-is('{row1Name}')" is visible

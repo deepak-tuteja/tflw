@@ -296,6 +296,21 @@ test('open + click + fill (labelled) + fill (placeholder cascade) + select + che
   assert.ok((steps[3]!.detail ?? '').includes('field "Search"` (resolved via placeholder)'), steps[3]!.detail);
 });
 
+test('a browser action invoked via a bare `CallStmt` shares its caller\'s browser context (M7 bug fix — actionCtx dropped `browser` entirely before this)', async () => {
+  const { report } = await run(`action addToCart()
+  open "/"
+  click button "Add to cart"
+  expect button "Add to cart" is visible
+
+test "checkout via a shared browser action"
+  addToCart()
+  fill field "Email" with "a@b.com"
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const steps = report.tests[0]!.steps;
+  assert.deepEqual(steps.map((s) => s.kind), ['open', 'click', 'expect', 'call', 'fill']);
+});
+
 test('`fill form` runs each row as its own reported sub-step', async () => {
   const { report } = await run(`test "fill form"
   open "/"

@@ -18,15 +18,29 @@ let axeSourcePromise: Promise<string> | undefined;
 async function loadAxeSource(): Promise<string> {
   if (!axeSourcePromise) {
     axeSourcePromise = (async () => {
-      let url: string;
+      let path: string;
       try {
-        url = import.meta.resolve('axe-core/axe.min.js');
+        // `import.meta.resolve` is an ESM-only construct — dead in the packaged CLI's bundled
+        // CJS output (esbuild empties `import.meta` there, same warning `browser.ts`'s
+        // `loadPlaywright` sidesteps with a plain dynamic `import()` instead), so a real
+        // `expect page has no … a11y violations` run against the *published* `tflw` threw
+        // "import_meta.resolve is not a function" even though `axe-core` was genuinely
+        // installed (M7 acceptance — invisible from the monorepo's own tsx/ESM-run tests, which
+        // never exercise the bundled artifact). The CJS bundle's own `require` (a real local
+        // binding esbuild's wrapper provides) resolves the consumer's `node_modules` exactly the
+        // way `import.meta.resolve` would have in genuine ESM — but the two return different
+        // shapes: `require.resolve` is already a plain filesystem path, while
+        // `import.meta.resolve` returns a `file://` URL that still needs `fileURLToPath`.
+        path =
+          typeof require === 'function'
+            ? require.resolve('axe-core/axe.min.js')
+            : fileURLToPath(import.meta.resolve('axe-core/axe.min.js'));
       } catch (err) {
         throw new RuntimeError(
           `this test uses \`expect page has no … a11y violations\`, but the optional \`axe-core\` peer dependency isn't installed. Run \`npm install -D axe-core\` (SPEC §9.8). (${(err as Error).message})`,
         );
       }
-      return readFile(fileURLToPath(url), 'utf8');
+      return readFile(path, 'utf8');
     })();
     axeSourcePromise.catch(() => {
       axeSourcePromise = undefined;

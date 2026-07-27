@@ -26,6 +26,7 @@
 //     a v1 requirement.
 
 import type { GeneratorExpr, Program, Step, TestDecl, Value } from './ast.js';
+import { STATEMENT_KEYWORDS } from './parser.js';
 import type { Span } from './token.js';
 
 // ---------------------------------------------------------------------------
@@ -204,11 +205,39 @@ interface StepAnalysis {
   readonly literals: Literals;
 }
 
+/** True if any string leaf of a step's structural shape carries a `{name}`-shaped interpolation.
+ * These fields (`OpenStmt.path`, a `Locator`'s own name/text, `DropFileStmt.filePath`, a `stub`'s
+ * `urlPattern`, …) are deliberately copied through `analyzeStep` as opaque, byte-identical text —
+ * never routed through `maskValue`'s genuine `Interp` case (SPEC's `{ref}`-interpolation only
+ * exists as a distinct AST node inside a `Value`-typed position; a raw string field like
+ * `OpenStmt.path` just stores `"/products/{bulk100Id}"` verbatim, `{bulk100Id}` and all). Two
+ * occurrences can still be byte-identical text (e.g. two tests that both happen to `capture … as
+ * bulk100Id` before opening it) and cluster into a hint — but the variable only exists in each
+ * *caller's* own scope, never inside the extracted action's, so the generated action is broken on
+ * its very first run (M7 acceptance: found via a real `tflw refactor apply` against
+ * testFlow-tests' webv2-storefront.tflw, whose extracted action's `open "/products/{bulk100Id}"`
+ * step referenced a variable nothing inside the action itself ever bound). Excluding any step
+ * with this shape from matching entirely is conservative but correct — v1 has no mechanism to
+ * turn a free reference like this into a real action parameter (`OpenStmt.path` is one of the
+ * StringLit-strict fields the module doc above already excludes from `maskValue` parameterization
+ * for a different reason — exactness — and reusing that same non-parameterizable status here). */
+function hasFreeInterpolation(shape: unknown): boolean {
+  if (typeof shape === 'string') return /\{[A-Za-z_][A-Za-z0-9_]*\}/.test(shape);
+  if (Array.isArray(shape)) return shape.some(hasFreeInterpolation);
+  if (shape && typeof shape === 'object') return Object.values(shape).some(hasFreeInterpolation);
+  return false;
+}
+
 /** Structural shape (JSON-stable-stringified by the caller) plus every masked literal, in
  * traversal order. Returns `null` for an ineligible step type. */
 function analyzeStep(step: Step): StepAnalysis | null {
   if (!ELIGIBLE_STEP_TYPES.has(step.type)) return null;
   const literals: Literals = [];
+  const analysis = analyzeEligibleStep(step, literals);
+  return analysis && hasFreeInterpolation(analysis.shape) ? null : analysis;
+}
+
+function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | null {
   switch (step.type) {
     case 'ApiStep': {
       const body = step.body;
@@ -569,7 +598,7 @@ function proposeActionName(steps: readonly Step[]): string {
     if (s.type === 'ApiStep') return words(`${s.method} ${lastPathSegment(s.path.raw)}`);
   }
   for (const s of steps) {
-    if (s.type === 'OpenStmt') return words(`open ${lastPathSegment(s.path.value)}`);
+    if (s.type === 'OpenStmt') return words(lastPathSegment(s.path.value));
   }
   return 'shared steps';
 }
@@ -583,12 +612,26 @@ function lastPathSegment(raw: string): string {
   return parts[parts.length - 1] ?? 'root';
 }
 
+const STATEMENT_KEYWORD_SET: ReadonlySet<string> = new Set(STATEMENT_KEYWORDS);
+
 function words(text: string): string {
   const w = text
     .split(/[^a-zA-Z0-9]+/)
     .filter((p) => p.length > 0)
     .map((p) => p.toLowerCase());
-  return w.length > 0 ? w.join(' ') : 'shared steps';
+  if (w.length === 0) return 'shared steps';
+  // A bare `CallStmt`'s call site is just `<name>(...)` as a standalone step — if the generated
+  // name's first word happens to be a real statement keyword (most reliably reachable via the
+  // `OpenStmt` fallback above, whose source path segment can itself be a word like "open", but
+  // also possible from a `ClickStmt`'s own user-facing locator text, e.g. a button literally
+  // labeled "Close panel"), the parser's statement dispatcher greedily routes on that leading
+  // word and never considers "this might be a call to a user action" — `open products()` fails
+  // to parse the same way a hand-written one would (TF010, "expected a path to open"). Found via
+  // M7 acceptance running `tflw refactor apply` against a real extraction whose only `OpenStmt`
+  // opened `/products/{id}` (testFlow-tests' webv2-storefront.tflw). "the" is never a statement
+  // keyword, so prefixing with it always produces a parseable call site.
+  if (STATEMENT_KEYWORD_SET.has(w[0]!)) return ['the', ...w].join(' ');
+  return w.join(' ');
 }
 
 // ---------------------------------------------------------------------------

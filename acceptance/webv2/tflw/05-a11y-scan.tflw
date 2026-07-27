@@ -1,0 +1,13 @@
+test "the happy-path product and catalog pages have no accessibility violations"
+  api GET /products?q=Bulk%20Item%20100&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk100Id
+  open "/login"
+  fill field "Email" with env(USER_A_EMAIL)
+  fill field "Password" with env(USER_A_PW)
+  click button "Log in"
+  expect button "Log out" is visible
+  open "/products/{bulk100Id}"
+  expect page has no a11y violations
+  open "/"
+  expect page has no a11y violations

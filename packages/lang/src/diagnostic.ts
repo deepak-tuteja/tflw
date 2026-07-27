@@ -18,6 +18,15 @@ export interface Diagnostic {
   readonly label?: string;
   /** A `= help:` line, e.g. a "did you mean `expect`?" suggestion. */
   readonly hint?: string;
+  /** Present only on a `severity: 'warning'` deprecation diagnostic (decision 38: removed/renamed
+   * syntax spends ≥1 release as a checker warning before removal, never silent). `replacement` is
+   * the exact text `tflw migrate` (P#38, the 1.0-gate deliverable) splices in at `span` to
+   * mechanically upgrade the suite — the same "generate a fully-prepared rewrite alongside the
+   * diagnostic" shape the reuse pass (M6) already uses for its own hints. No checker rule sets
+   * this yet (the grammar has been additive-only since the very first release, decision 45) — the
+   * field and `tflw migrate`'s rewrite engine exist ahead of the first real deprecation on
+   * purpose, so the day one lands it's mechanical, not a scramble. */
+  readonly deprecation?: { readonly replacement: string };
 }
 
 /** Thrown for a fatal parse stop (rare — the parser prefers recovery + collected diagnostics). */

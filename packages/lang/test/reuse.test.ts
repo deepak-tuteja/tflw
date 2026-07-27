@@ -115,6 +115,48 @@ test('the same 3-step block repeated twice inside one test is detected (self-dup
   assert.equal(hints[0]!.occurrences[0]!.path, 't.tflw');
 });
 
+test('a proposed action name never collides with a statement keyword (M7 acceptance regression)', () => {
+  // No `ClickStmt`/`ApiStep` in this window, so `proposeActionName` falls through to the
+  // `OpenStmt` path — which, before this fix, literally prefixed the name with the word "open"
+  // (`words('open ' + lastPathSegment(...))`). The generated call site was then `open products()`,
+  // a real string a real user would see — and since the parser's statement dispatcher routes
+  // unconditionally on a leading `open` token to `parseOpenStep()` (expects a string-literal path
+  // next), that bare `CallStmt` failed to parse with "expected a path to open" (TF010). Found via
+  // M7 acceptance running `tflw refactor apply` against a real extraction in testFlow-tests'
+  // webv2-storefront.tflw whose only distinguishing step was an `OpenStmt`.
+  // `OpenStmt.path` is a strictly-typed field (never parameterized — module doc above), so both
+  // occurrences must open the exact same path; the differing `fill` value is what makes this a
+  // genuine (non-trivial) duplicate instead of two byte-identical tests.
+  const a = `test "a"\n  open "/products/widget"\n  fill field "Quantity" with "1"\n  expect button "Log out" is visible\n`;
+  const b = `test "b"\n  open "/products/widget"\n  fill field "Quantity" with "2"\n  expect button "Log out" is visible\n`;
+  const hints = detectReuse([entry('t.tflw', a + '\n' + b)]);
+  assert.equal(hints.length, 1);
+  const hint = hints[0]!;
+  assert.notEqual(hint.actionName.split(' ')[0], 'open');
+  // The generated action source itself must round-trip through the parser cleanly — the real bug
+  // was invisible from `actionName` alone (a plain string) until actually re-parsed.
+  const { diagnostics } = parseSource(hint.actionSource);
+  assert.deepEqual(diagnostics, [], `generated action source must parse cleanly:\n${hint.actionSource}`);
+  const replacement = renderCallSiteReplacement(hint.actionName, hint.occurrences[0]!, a);
+  const { diagnostics: callDiagnostics } = parseSource(`test "x"\n${replacement.text}`);
+  assert.deepEqual(callDiagnostics, [], `generated call site must parse cleanly: ${replacement.text}`);
+});
+
+test('a window step referencing a variable only bound in the caller (outside the window) is never matched (M7 acceptance regression)', () => {
+  // Both tests' `open` step is byte-identical text — `"/products/{bulk100Id}"` — so naive
+  // structural matching would cluster them just like the keyword-collision test above. But
+  // `bulk100Id` is bound by each test's own preceding `capture`, *outside* the candidate window
+  // (captures can never appear inside one — module doc above) — the variable doesn't exist inside
+  // an extracted action's own scope, so a real `tflw refactor apply` against this exact shape
+  // (testFlow-tests' webv2-storefront.tflw, M7 acceptance) produced an action whose first `open`
+  // step failed with "unknown variable bulk100Id" the moment it actually ran. The step must be
+  // excluded from matching entirely, not just from parameterization.
+  const a = `test "a"\n  api GET /products\n  capture body.id as bulk100Id\n  open "/products/{bulk100Id}"\n  fill field "Quantity" with "1"\n  expect button "Log out" is visible\n`;
+  const b = `test "b"\n  api GET /other\n  capture body.id as bulk100Id\n  open "/products/{bulk100Id}"\n  fill field "Quantity" with "2"\n  expect button "Log out" is visible\n`;
+  const hints = detectReuse([entry('t.tflw', a + '\n' + b)]);
+  assert.deepEqual(hints, []);
+});
+
 test('three or more occurrences of the same sequence cluster into a single hint', () => {
   const mk = (n: number) => `test "user ${n}"\n  open "/login"\n  fill field "Username" with "user${n}"\n  click button "Log In"\n`;
   const src = [mk(1), mk(2), mk(3)].join('\n');

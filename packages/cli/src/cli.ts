@@ -25,6 +25,8 @@ import {
   detectReuse,
   renderCallSiteReplacement,
   importInsertionOffset,
+  collectMigrations,
+  applyMigrations,
   type Program,
   type Diagnostic,
   type EvidenceLevel,
@@ -106,6 +108,8 @@ async function main(argv: string[]): Promise<number> {
       return watchCommand(rest);
     case 'refactor':
       return refactorCommand(rest);
+    case 'migrate':
+      return migrateCommand(rest);
     case '--version':
     case '-v':
       process.stdout.write(`${await getVersion()}\n`);
@@ -118,7 +122,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, or \`tflw refactor apply\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
       );
       return EXIT_USAGE;
   }
@@ -613,11 +617,22 @@ async function loadAndValidate(
     const variableDiags = checkUnknownVariables(parsed.program);
     const requestDiags = checkRequestAssertions(parsed.program);
     const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags, ...requestDiags];
-    if (diagnostics.length > 0) {
+    // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
+    // deprecation notices, `tflw migrate`'s own input) is advisory: printed/handed to the caller,
+    // but the file still runs. No diagnostic in the shipped checker uses `'warning'` yet (the
+    // grammar is additive-only, decision 45), so this branch is currently unreachable in practice
+    // — ready for the day a real deprecation rule exists rather than a scramble then.
+    const errors = diagnostics.filter((d) => d.severity === 'error');
+    const warnings = diagnostics.filter((d) => d.severity === 'warning');
+    if (errors.length > 0) {
       if (onFileDiagnostics) onFileDiagnostics(file, source, diagnostics);
       else process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
       hadErrors = true;
       continue;
+    }
+    if (warnings.length > 0) {
+      if (onFileDiagnostics) onFileDiagnostics(file, source, warnings);
+      else process.stderr.write(renderDiagnostics(warnings, source, { filename: relative(cwd, file), color }) + '\n');
     }
     parsedFiles.push({ file, source, program: parsed.program });
   }
@@ -1083,6 +1098,51 @@ async function refactorCommand(argv: string[]): Promise<number> {
   return EXIT_OK;
 }
 
+// ---- tflw migrate (P#38, decision 45's 1.0-gate deliverable, SPEC §12) -----
+
+/**
+ * Mechanically rewrites a suite past every checker-flagged deprecation (decision 38): a
+ * `severity: 'warning'` diagnostic carrying a `deprecation.replacement` gets its exact source
+ * span spliced with that replacement, file by file, the same widest-first ordering
+ * `refactorCommand` already uses for its own edits. Unlike `refactor apply <id>`, there is no id
+ * to pick — every deprecation the checker finds across the discovered files is applied in one
+ * pass (a deprecation warning is never something to leave half-migrated on purpose).
+ *
+ * `loadAndValidate`'s own `onFileDiagnostics` hook is how this sees diagnostics: warning-only
+ * files still reach it (and still end up in `parsedFiles`, per that function's error/warning
+ * split) so a plain `tflw migrate` run needs no separate checker invocation of its own.
+ */
+async function migrateCommand(argv: string[]): Promise<number> {
+  const args = parseCheckArgs(argv);
+  const cwd = process.cwd();
+  const color = args.noColor ? false : process.stdout.isTTY === true;
+
+  const byFile = new Map<string, { source: string; diagnostics: Diagnostic[] }>();
+  const loaded = await loadAndValidate(cwd, args.files, args.env, color, (file, source, diagnostics) => {
+    byFile.set(file, { source, diagnostics: [...diagnostics] });
+  });
+  if (typeof loaded === 'number') return loaded;
+
+  const changedFiles: string[] = [];
+  for (const [file, { source, diagnostics }] of byFile) {
+    const edits = collectMigrations(diagnostics, source);
+    if (edits.length === 0) continue;
+    const migrated = applyMigrations(source, edits);
+    await writeFile(file, migrated, 'utf8');
+    changedFiles.push(relative(cwd, file));
+  }
+
+  if (changedFiles.length === 0) {
+    process.stdout.write('no deprecated syntax found — nothing to migrate.\n');
+    return EXIT_OK;
+  }
+
+  process.stdout.write(`migrated ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}:\n`);
+  process.stdout.write(`  ${changedFiles.sort().join('\n  ')}\n`);
+  process.stdout.write('re-run `tflw check` to confirm the rewritten suite is clean.\n');
+  return EXIT_OK;
+}
+
 // ---- tflw docs --------------------------------------------------------------
 
 /** A quick-reference cheatsheet, generated at `npm prepack`/`pack` time from SPEC.md (decision
@@ -1508,6 +1568,9 @@ function printUsage(): void {
       '                                                      saving tflw.config re-runs everything; runs until Ctrl+C',
       '  tflw refactor apply <id>                           apply a reuse-pass extraction (SPEC §8/§12, M6);',
       '                                                      `tflw check` prints available ids (RF001, RF002, …) alongside its diagnostics',
+      '  tflw migrate [files...] [--env <name>] [--no-color]',
+      '                                                      mechanically rewrite past checker-flagged deprecations (decision 38/45, M7 1.0 gate);',
+      '                                                      prints "nothing to migrate" when the suite has none (mutates source only when it does)',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',

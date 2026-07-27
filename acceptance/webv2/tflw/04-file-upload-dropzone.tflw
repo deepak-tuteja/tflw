@@ -1,0 +1,10 @@
+test "the support page's drop-zone accepts a real file, surviving a per-render dynamic field id"
+  open "/login"
+  fill field "Email" with env(USER_A_EMAIL)
+  fill field "Password" with env(USER_A_PW)
+  click button "Log in"
+  expect button "Log out" is visible
+  open "/support"
+  fill field "Subject" with "M7 acceptance upload"
+  drop file "./payloads/sample.csv" onto css ".drop-zone"
+  expect text "sample.csv" is visible

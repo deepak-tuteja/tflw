@@ -154,7 +154,7 @@ export interface CompletionContext {
   readonly prefix: string;
 }
 
-const STATEMENT_KEYWORDS = [
+export const STATEMENT_KEYWORDS = [
   'api',
   'expect',
   'check',

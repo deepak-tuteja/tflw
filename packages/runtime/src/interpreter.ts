@@ -1263,6 +1263,12 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       // and update the same cookies its caller sees on the next step, the same way it shares the
       // caller's `rng`/`redactor`/etc.
       cookieJar: callerCtx.cookieJar,
+      // M7 bug fix: an action's own browser steps (open/click/fill/…) need the caller's browser
+      // context (manager/page/`within` scope) the same way its api steps need the caller's cookie
+      // jar — dropped here, `requireBrowserCtx` throws on the action's very first browser step even
+      // when the run genuinely has a `BrowserManager`. Unexercised until M7 wrote the first action
+      // whose body is browser steps (M3a-M6 actions were all API-era).
+      browser: callerCtx.browser,
     };
     const exec = await execSteps(action.body, config, actionCtx, tc, `${call.name}(...)`, registry);
     // A hard failure inside the action (a failing `expect`, or a thrown error) still aborts the

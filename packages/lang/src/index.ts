@@ -28,6 +28,7 @@ export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolK
 export { getCompletionContext } from './completion.js';
 export { collectSemanticTokens, type SemanticToken, type SemanticTokenType } from './semanticTokens.js';
 export { detectReuse, renderCallSiteReplacement, importInsertionOffset, type SuiteEntry, type ReuseHint, type ReuseOccurrence } from './reuse.js';
+export { collectMigrations, applyMigrations, type MigrationEdit } from './migrate.js';
 
 export interface ParsedSource {
   readonly program: Program;
