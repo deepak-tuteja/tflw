@@ -46,6 +46,40 @@ test "checkout composes an action"
   await server.close();
 });
 
+test('a bare call statement (M6, no `let`) executes an action and discards its return value', async () => {
+  const server = await startFixtureServer({
+    '/orders': (_req, res) => json(res, 201, { id: 42 }),
+    '/health': (_req, res) => json(res, 200, { ok: true }),
+  });
+
+  const source = `action create order(name, qty)
+  api POST /orders body { name: {name}, qty: {qty} }
+  expect status equals 201
+  capture body.id as id
+  give id
+
+test "fire and forget"
+  create order("Widget", 3)
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const steps = report.tests[0]!.steps;
+  // action's own api/expect/capture/give land inline, then the bare call step (no binding), then
+  // the caller's own steps — same "call is encapsulated, doesn't touch the caller's lastResponse"
+  // shape as a `let`-bound call (SPEC §8), just without a variable to discard the `give` into.
+  assert.deepEqual(
+    steps.map((s) => s.kind),
+    ['api', 'expect', 'capture', 'give', 'call', 'api', 'expect'],
+  );
+  assert.match(steps[4]!.detail ?? '', /create order\("Widget", 3\) = 42/);
+
+  await server.close();
+});
+
 test('an action imported via `import` works the same way', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-import-'));
   await writeFile(

@@ -947,6 +947,13 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           }
           break;
         }
+        case 'CallStmt': {
+          const call = await execCall(step.call, config, ctx, tc, registry, src, stepStart);
+          results.push(...call.subSteps);
+          result = call.result;
+          callSoftError = call.softError;
+          break;
+        }
         case 'CaptureStmt': {
           result = execCapture(step, lastResponse, ctx, src, stepStart, tc.redactor, config);
           break;
@@ -2071,6 +2078,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'wait';
     case 'GiveStmt':
       return 'give';
+    case 'CallStmt':
+      return 'call';
     case 'HeaderStmt':
       return 'header';
     case 'OpenStmt':

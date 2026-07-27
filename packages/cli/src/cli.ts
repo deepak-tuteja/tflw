@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// testFlow CLI (M1): `tflw run` and `tflw init`. Browser steps (M3), `tflw pick`/`tflw watch` (M5)
-// followed; `tflw refactor` (M6) is still the one thing left unbuilt.
+// testFlow CLI (M1): `tflw run` and `tflw init`. Browser steps (M3), `tflw pick`/`tflw watch` (M5),
+// and the reuse-pass `tflw refactor apply` (M6) followed.
 //
 // `tflw run` pipeline (SPEC §2–3, §13):
 //   read tflw.config → parseConfigSource → selectEnv → resolveConfig
@@ -8,7 +8,7 @@
 //   → for each .tflw: parseSource (abort on diagnostics) → runProgram (shared Redactor)
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
-import { readFile, readdir, writeFile, access } from 'node:fs/promises';
+import { readFile, readdir, writeFile, access, mkdir } from 'node:fs/promises';
 import { watch as fsWatch } from 'node:fs';
 import { join, resolve, relative, dirname, basename } from 'node:path';
 import {
@@ -22,9 +22,14 @@ import {
   checkUnknownVariables,
   checkRequestAssertions,
   suggest,
+  detectReuse,
+  renderCallSiteReplacement,
+  importInsertionOffset,
   type Program,
   type Diagnostic,
   type EvidenceLevel,
+  type SuiteEntry,
+  type ReuseOccurrence,
 } from '@tflw/lang';
 import {
   runProgram,
@@ -99,6 +104,8 @@ async function main(argv: string[]): Promise<number> {
       return pickCommand(rest);
     case 'watch':
       return watchCommand(rest);
+    case 'refactor':
+      return refactorCommand(rest);
     case '--version':
     case '-v':
       process.stdout.write(`${await getVersion()}\n`);
@@ -111,7 +118,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, or \`tflw watch\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, or \`tflw refactor apply\`.`,
       );
       return EXIT_USAGE;
   }
@@ -979,6 +986,100 @@ async function checkCommand(argv: string[]): Promise<number> {
 
   const n = loaded.parsedFiles.length;
   process.stdout.write(`${n} file${n === 1 ? '' : 's'} checked, no problems found.\n`);
+
+  // The reuse pass (M6, P#2) — advisory only, never affects the exit code: `tflw check` already
+  // established every file is individually clean, and a reuse hint is a suggestion, not a defect.
+  // Scanned over exactly the file set this invocation checked (`--format json` skips this — it's a
+  // per-file editor-diagnostics contract, decision 94, not the right shape for a suite-wide hint).
+  const entries: SuiteEntry[] = loaded.parsedFiles.map((f) => ({ path: relative(cwd, f.file), source: f.source, program: f.program }));
+  const hints = detectReuse(entries);
+  if (hints.length > 0) {
+    process.stdout.write(`\n${hints.length} reuse ${hints.length === 1 ? 'hint' : 'hints'} found (P#2) — apply with \`tflw refactor apply <id>\`:\n\n`);
+    process.stdout.write(hints.map((h) => h.diffPreview).join('\n\n') + '\n');
+  }
+
+  return EXIT_OK;
+}
+
+// ---- tflw refactor apply <id> (M6, P#2, SPEC §12) --------------------------
+
+/** POSIX-separated relative import path from `fromDir` to `toFileAbs`, always `./`- or `../`-
+ * prefixed — matches the `import "./shared/x.tflw"` shape every hand-written import already uses
+ * (SPEC §8). */
+function toImportPath(fromDir: string, toFileAbs: string): string {
+  const rel = relative(fromDir, toFileAbs).split('\\').join('/');
+  return rel.startsWith('.') ? rel : `./${rel}`;
+}
+
+/**
+ * Apply one reuse-pass extraction (P#2): re-run the same deterministic detection `tflw check`
+ * would over the whole default suite (no `[files]` argument here — SPEC §12's table gives this
+ * command exactly one positional, `<id>`), find the hint with that id, write its extracted
+ * `action` into a fresh `shared/<name>.tflw`, and rewrite every occurrence's call site in place.
+ * Builds never mutate source (P#2) — only this explicit, user-invoked command does.
+ */
+async function refactorCommand(argv: string[]): Promise<number> {
+  const [sub, id, ...rest] = argv;
+  if (sub !== 'apply' || !id || rest.length > 0) {
+    err('usage: tflw refactor apply <id>  (e.g. `tflw refactor apply RF001` — run `tflw check` first to see current hint ids)');
+    return EXIT_USAGE;
+  }
+
+  const cwd = process.cwd();
+  const color = process.stdout.isTTY === true;
+  const loaded = await loadAndValidate(cwd, [], undefined, color);
+  if (typeof loaded === 'number') return loaded;
+
+  const entries: SuiteEntry[] = loaded.parsedFiles.map((f) => ({ path: relative(cwd, f.file), source: f.source, program: f.program }));
+  const hints = detectReuse(entries);
+  const hint = hints.find((h) => h.id === id);
+  if (!hint) {
+    const available = hints.map((h) => h.id).join(', ') || '(none)';
+    err(`no reuse hint \`${id}\` found. Run \`tflw check\` for current ids (they can shift as the suite changes) — available right now: ${available}.`);
+    return EXIT_USAGE;
+  }
+
+  const actionFileAbs = join(cwd, hint.actionFile);
+  if (await exists(actionFileAbs)) {
+    err(`\`${hint.actionFile}\` already exists — remove it or rename the conflicting file, then re-run \`tflw check\` for fresh ids.`);
+    return EXIT_USAGE;
+  }
+
+  const byPath = new Map<string, ReuseOccurrence[]>();
+  for (const occ of hint.occurrences) {
+    const list = byPath.get(occ.path) ?? [];
+    list.push(occ);
+    byPath.set(occ.path, list);
+  }
+
+  const changedFiles: string[] = [];
+  for (const [path, occs] of byPath) {
+    const abs = join(cwd, path);
+    const parsedFile = loaded.parsedFiles.find((f) => f.file === abs)!;
+    let source = parsedFile.source;
+
+    const edits: { start: number; end: number; text: string }[] = occs.map((occ) => renderCallSiteReplacement(hint.actionName, occ, source));
+    const importPath = toImportPath(dirname(abs), actionFileAbs);
+    const alreadyImported = parsedFile.program.imports.some((imp) => imp.path.value === importPath);
+    if (!alreadyImported) {
+      const at = importInsertionOffset(parsedFile.program, source);
+      edits.push({ start: at, end: at, text: `import "${importPath}"\n` });
+    }
+
+    // Apply widest-first (descending start) so an earlier edit's offset shift never invalidates a
+    // later one still expressed in terms of the *original* source.
+    edits.sort((a, b) => b.start - a.start);
+    for (const e of edits) source = source.slice(0, e.start) + e.text + source.slice(e.end);
+
+    await writeFile(abs, source, 'utf8');
+    changedFiles.push(path);
+  }
+
+  await mkdir(dirname(actionFileAbs), { recursive: true });
+  await writeFile(actionFileAbs, hint.actionSource, 'utf8');
+
+  process.stdout.write(`applied ${hint.id}: extracted \`action ${hint.actionName}(${hint.params.join(', ')})\` into ${hint.actionFile}\n`);
+  process.stdout.write(`  updated: ${changedFiles.sort().join(', ')}\n`);
   return EXIT_OK;
 }
 
@@ -1405,6 +1506,8 @@ function printUsage(): void {
       '  tflw watch [files...] [--env <name>] [--seed <n>] [--browser chromium|firefox|webkit] [--no-color]',
       '                                                      re-run headed on every save, one browser window for the whole session (SPEC §12, M5);',
       '                                                      saving tflw.config re-runs everything; runs until Ctrl+C',
+      '  tflw refactor apply <id>                           apply a reuse-pass extraction (SPEC §8/§12, M6);',
+      '                                                      `tflw check` prints available ids (RF001, RF002, …) alongside its diagnostics',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',

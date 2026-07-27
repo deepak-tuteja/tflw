@@ -295,6 +295,9 @@ function walkSteps(
       case 'GiveStmt':
         walkValue(step.value, bound, scopeId, source, actionDefs, refs);
         break;
+      case 'CallStmt':
+        walkValue(step.call, bound, scopeId, source, actionDefs, refs);
+        break;
       case 'HeaderStmt':
         walkStringLit(source, step.name, bound, scopeId, refs);
         walkValue(step.value, bound, scopeId, source, actionDefs, refs);

@@ -994,9 +994,10 @@ in the report (§7.4) — same as `format`, they're not generators.
 
 ## 8. Actions, imports, element aliases (P#2, P#17–18) 🔧
 
-✅ Actions, `give` returns, `import`, and the reuse-pass description apply today. 🔮 `element`
-aliases and the lint nudging a duplicated `css`/`xpath` escape behind one are UI-only and wait for
-the browser half (M3); the reuse pass itself (extraction + `tflw refactor apply`) is M6.
+✅ Actions, `give` returns, `import`, the bare-call `CallStmt` form, and the reuse pass itself
+(`tflw check` diagnostics + `tflw refactor apply`, M6) all apply today. 🔮 `element` aliases and
+the lint nudging a duplicated `css`/`xpath` escape behind one remain unbuilt — no milestone owns
+them yet (M6 shipped the reuse *pass*; alias-centralized locators are a separate, still-open gap).
 
 ```
 # shared/orders.tflw
@@ -1019,11 +1020,30 @@ test "pay for an order"
 ```
 
 - Actions: parameters + `give` return values; file-scoped; shared via `import`. No globals (P#17).
+- `login("alice", "secret1")` — a bare call to an action or JS helper as a standalone step (M6),
+  its return value (if any) discarded. Exists alongside `let x = login(...)` specifically so a
+  reuse-pass extraction that produces nothing worth binding gets a natural call site.
 - Element aliases centralize locators; lint: a `css`/`xpath` escape duplicated across files
-  SHOULD move behind an alias (checker warning) (P#18).
-- The **reuse pass** (P#2) detects similar step sequences suite-wide and emits diagnostics with a
-  fully prepared extraction (name, params, call-site diff) targeting `shared/`; applied only via
-  `tflw refactor apply <id>` or an IDE code action. Builds never mutate source.
+  SHOULD move behind an alias (checker warning) (P#18). Not yet built (see the status line above).
+- The **reuse pass** (P#2, M6) scans every test body `tflw check` is given and reports similar
+  step sequences as hints (`RF001`, `RF002`, …, stable within one scan/run — not a content hash)
+  alongside the ordinary checker diagnostics, each with a fully prepared extraction: a proposed
+  `action` name, its params, and a call-site preview. Applying one (`tflw refactor apply <id>`)
+  writes the action into a fresh `shared/<name>.tflw` and rewrites every occurrence's call site in
+  place — the *only* command that ever mutates source; `tflw check`/`tflw run` never do.
+  v1 scope (a deliberate cut, not the final ambition of P#2): only `test` bodies are scanned (not
+  `action`/`before`/`after` bodies); a candidate sequence may only contain steps that neither
+  introduce a binding (`let`/`capture`) nor carry a nested step block (`within`, `switch to new
+  tab`, `download as`, `fill form`, `wait until`) — so an extracted action never needs `give`,
+  every call site is a bare `CallStmt` (above), and no binding-escape analysis across the
+  extraction boundary is required; and only literals sitting in a genuinely value-typed position
+  (a `fill … with` value, a matcher operand, an object-literal field, a call argument, …) become
+  parameters — a locator's own name/text, an opened path, and similar `StringLit`/`NumberLit`
+  -*typed* fields stay structural (must match exactly) since there is no `{ref}`-shaped hole to
+  parameterize them into without an IDE code action or another language release. Matching itself
+  is greedy and longest-window-first, not a full suite-wide LCS search — simple, deterministic, and
+  enough to find the obviously-duplicated flows this targets. No IDE code action yet (P#2's other
+  named entry point) — `tflw refactor apply <id>` is the only way to apply a hint today.
 
 ## 9. UI steps (P#8–9, P#26) 🔧
 
@@ -1398,19 +1418,19 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
 | `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless |
-| `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check |
+| `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check. Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this (a per-file contract, not a suite-wide one) |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
 | `tflw install-browsers [--browser chromium\|firefox\|webkit]` | one-time browser binary download for UI steps (M3a, P#36, default chromium per D11) — shells out to the `playwright` CLI (`npx playwright install <browser>`) that ships inside the optional peer dependency itself, so it always resolves whatever version the consumer installed |
 | `tflw pick <url> [--browser chromium\|firefox\|webkit]` | opens a real, visible browser at `<url>`; every click prints the best *verified* tflw locator for whatever was clicked (M5, §9.3) — walks the same resolution tiers (D6) the runtime itself uses and only ever prints a suggestion once it's confirmed to resolve to exactly the clicked element (D7), falling back to a generated CSS selector when nothing semantic round-trips. Picking is inert: `preventDefault`/`stopPropagation` stop a clicked link or submit button from actually navigating/submitting. Runs until the window is closed or Ctrl+C; `<url>` must be absolute (no `tflw.config` involved) |
 | `tflw watch [files] [--env E] [--seed S] [--browser chromium\|firefox\|webkit] [--no-color]` | save → the affected test re-runs headed (M5) — one shared, real browser window for the *whole watch session* (not relaunched per save), so it's still there to inspect after a failure. One seed, resolved once at startup (`--seed`, else freshly minted) and reused for every run for the life of the session — since it never changes, a run right after a fix trivially reuses the seed the failing run before it used. Saving a `.tflw` file re-runs *that file*; saving `tflw.config` re-runs the whole (requested) suite, since every file's resolved settings could have changed — no cross-file dependency tracking beyond that (a `.ts` helper behind `use "…"` isn't watched). Runs until Ctrl+C |
+| `tflw refactor apply <id>` | apply one reuse-pass extraction (M6, §8, P#2) — re-runs the same deterministic detection over the whole default-discovered suite (no `[files]`, matching `tflw run`/`tflw check` with none given), finds the hint with that id, writes its `action` into a fresh `shared/<name>.tflw`, and rewrites every occurrence's call site in place (a bare `CallStmt`, §8) — adding an `import "…"` line to each affected file that doesn't already have one. Refuses (exit 2, nothing written) if the id isn't found (ids can shift as the suite changes — re-run `tflw check` for fresh ones) or if the target `shared/<name>.tflw` already exists, rather than ever guessing or clobbering. The only command that mutates source (P#2's "builds never mutate source" is about `run`/`check`, not this explicit, user-invoked one) |
 
 **🔮 Planned:**
 
 | Command | Purpose |
 |---|---|
 | `tflw init --ui` | also scaffold a UI test + prompt for `tflw install-browsers` (M3) |
-| `tflw refactor apply <id>` | apply a reuse-pass extraction (M6) |
 | `tflw migrate` | mechanically rewrite a suite past grammar deprecations, P#38 (1.0 gate) |
 
 ## 13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧

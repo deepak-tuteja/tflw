@@ -54,6 +54,29 @@ async function withFixtureServer<T>(fn: (baseUrl: string) => Promise<T>): Promis
   }
 }
 
+/** `/health` (200) plus a `POST /orders` (201) — used by the `tflw refactor apply` round-trip
+ * test, which needs a real duplicated *API* flow (no browser/Playwright dependency). */
+async function withOrdersServer<T>(fn: (baseUrl: string) => Promise<T>): Promise<T> {
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    } else if (req.url === '/orders' && req.method === 'POST') {
+      res.writeHead(201, { 'content-type': 'application/json' }).end('{"id":1}');
+    } else {
+      res.writeHead(404).end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  try {
+    return await fn(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+}
+
 test('the built dist/cli.cjs runs a real test file against a real server and writes report.html', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-'));
@@ -200,6 +223,89 @@ test('`tflw pick <url> <extra>` (too many positional args) is a usage error', as
 test('`tflw --help` mentions `tflw pick`', async () => {
   const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
   assert.match(stdout, /tflw pick <url>/);
+});
+
+// ---- tflw refactor apply <id> (M6, P#2) ------------------------------------
+
+test('`tflw refactor apply` with no subcommand/id is a usage error', async () => {
+  await assert.rejects(
+    execFileAsync('node', [cliEntry, 'refactor']),
+    (e: unknown) => (e as { code?: number; stderr?: string }).code === 2 && /usage: tflw refactor apply <id>/.test((e as { stderr: string }).stderr),
+  );
+});
+
+test('`tflw refactor apply <unknown-id>` is a clear usage error, not a crash', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-refactor-badid-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'refactor', 'apply', 'RF999'], { cwd: dir }),
+      (e: unknown) => (e as { code?: number; stderr?: string }).code === 2 && /no reuse hint `RF999` found/.test((e as { stderr: string }).stderr),
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw --help` mentions `tflw refactor apply`', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
+  assert.match(stdout, /tflw refactor apply <id>/);
+});
+
+test('`tflw refactor apply` extracts a real duplicated API flow, and the rewritten suite still runs green (M6, P#2)', async () => {
+  await withOrdersServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-refactor-apply-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'orders.tflw'),
+        `test "create widget order"
+  api POST /orders body { name: "Widget", qty: 3 }
+  expect status equals 201
+  api GET /health
+  expect status equals 200
+
+test "create gadget order"
+  api POST /orders body { name: "Gadget", qty: 3 }
+  expect status equals 201
+  api GET /health
+  expect status equals 200
+`,
+        'utf8',
+      );
+
+      const { stdout: checkBefore } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+      assert.match(checkBefore, /reuse\[RF001\]/);
+
+      const { stdout: applyOut } = await execFileAsync('node', [cliEntry, 'refactor', 'apply', 'RF001'], { cwd: dir });
+      assert.match(applyOut, /applied RF001: extracted `action post orders\(name\)` into shared\/post-orders\.tflw/);
+      assert.match(applyOut, /updated: orders\.tflw/);
+
+      const sharedSource = await readFile(join(dir, 'shared', 'post-orders.tflw'), 'utf8');
+      assert.match(sharedSource, /^action post orders\(name\)$/m);
+      assert.match(sharedSource, /api POST \/orders body \{ name: \{name\}, qty: 3 \}/);
+      assert.match(sharedSource, /expect status equals 201/);
+      assert.match(sharedSource, /api GET \/health/);
+      assert.match(sharedSource, /expect status equals 200/);
+
+      const rewritten = await readFile(join(dir, 'orders.tflw'), 'utf8');
+      assert.match(rewritten, /^import ".\/shared\/post-orders\.tflw"/m);
+      assert.match(rewritten, /post orders\("Widget"\)/);
+      assert.match(rewritten, /post orders\("Gadget"\)/);
+      // the extraction removed the duplication — a second `tflw check` must find no more hints,
+      // and the rewritten file must still be checker-clean (a real syntax/semantics smoke test of
+      // the splice itself, not just a string match).
+      const { stdout: checkAfter } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+      assert.match(checkAfter, /2 files checked, no problems found\./); // orders.tflw + the new shared/post-orders.tflw
+      assert.doesNotMatch(checkAfter, /reuse hint/);
+
+      const { stdout: runOut } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+      assert.match(runOut, /2\/2 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 test('--tag matching zero tests anywhere is a hard usage error, not a silent green CI (P#46)', async () => {
@@ -780,12 +886,47 @@ test('`tflw check` passes clean files with no execution and no HTTP traffic (dec
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
     assert.match(stdout, /1 file checked, no problems found\./);
+    assert.doesNotMatch(stdout, /reuse hint/, 'a single test with nothing duplicated must never print a reuse section');
     assert.equal(hits, 0, '`tflw check` must never make an HTTP request — it only parses and validates');
     await assert.rejects(access(join(dir, 'report', 'report.html')), '`tflw check` must not write a report — it never executes anything');
   } finally {
     await rm(dir, { recursive: true, force: true });
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+test('`tflw check` also surfaces reuse-pass hints (M6, P#2) — advisory, exit 0 regardless', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-check-reuse-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n  web "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(
+      join(dir, 'checkout.tflw'),
+      `test "checkout as alice"
+  open "/login"
+  fill field "Username" with "alice"
+  fill field "Password" with "secret1"
+  click button "Log In"
+  expect button "Sign out" is visible
+
+test "checkout as bob"
+  open "/login"
+  fill field "Username" with "bob"
+  fill field "Password" with "secret2"
+  click button "Log In"
+  expect button "Sign out" is visible
+`,
+      'utf8',
+    );
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+    assert.match(stdout, /1 file checked, no problems found\./);
+    assert.match(stdout, /1 reuse hint found \(P#2\) — apply with `tflw refactor apply <id>`:/);
+    assert.match(stdout, /reuse\[RF001\]: 2 occurrences of a similar 5-step sequence/);
+    assert.match(stdout, /proposed: action log in\(username, password\) in shared\/log-in\.tflw/);
+    assert.match(stdout, /apply: tflw refactor apply RF001/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

@@ -97,6 +97,7 @@ export type Step =
   | WaitUntilApiStmt
   | WaitUntilUiStmt
   | GiveStmt
+  | CallStmt
   | HeaderStmt
   | OpenStmt
   | ClickStmt
@@ -124,6 +125,16 @@ export type Step =
 export interface GiveStmt extends Node {
   readonly type: 'GiveStmt';
   readonly value: Value;
+}
+
+/** `login("alice", "secret1")` — a bare call to an `action` or `use`d JS/TS helper as a standalone
+ * step, its return value (if any) discarded (M6, P#2). Before M6 a call could only appear as a
+ * `Value` (`let x = login(...)`); the reuse pass needs a natural call-site for an extracted
+ * sequence that produces nothing worth binding, so a bare-call statement form was added alongside
+ * it — a small, generically useful grammar completion, not reuse-pass-specific machinery itself. */
+export interface CallStmt extends Node {
+  readonly type: 'CallStmt';
+  readonly call: CallExpr;
 }
 
 /** `header "Authorization" is "Bearer {token}"` — a bare header capture, only meaningful inside a
@@ -463,9 +474,9 @@ export interface Matcher extends Node {
 // "…"`) and `stub` route mocking. M3e adds: the `page` subject + `hasNoA11yViolations` matcher
 // (axe-core). M4a is pure LSP/VS Code tooling catch-up (no new AST). M4b adds: the
 // `matchesSnapshot` matcher (`page`/a `LocatorSubject` `matches snapshot "<name>"`, D15) and
-// `ExpectStmt.masks` (`mask <locator>`). Still deferred to later browser-arc milestones
-// (PLAN_BROWSER_PERF_SECURITY.md §1.12): `element <name> = <locator>` aliases (§8, no milestone
-// owns them yet), and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick` (M5).
+// `ExpectStmt.masks` (`mask <locator>`). M5 (live-DOM diagnosis + `tflw pick`) and M6 (the reuse
+// pass + `CallStmt`, see below) added no further Locator-related AST. Still deferred, no milestone
+// owns it yet: `element <name> = <locator>` aliases (§8).
 
 /** Locator noun (D6, SPEC §9.3): the noun picks the resolution strategy — `button`/`text`/`list`
  * single-strategy, `field` a closed 3-step cascade (label → placeholder → role), `css`/`xpath`

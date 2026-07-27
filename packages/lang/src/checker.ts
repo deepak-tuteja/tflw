@@ -387,6 +387,9 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'GiveStmt':
         checkValue(step.value, bound, diags);
         break;
+      case 'CallStmt':
+        checkValue(step.call, bound, diags);
+        break;
       case 'HeaderStmt':
         checkStringLit(step.name, bound, diags);
         checkValue(step.value, bound, diags);

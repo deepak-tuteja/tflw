@@ -1121,6 +1121,7 @@ class Parser {
         case 'stub':
           return this.parseStubStep();
         default: {
+          if (this.looksLikeCallStart()) return this.parseCallStmt(tok);
           const hint = suggest(tok.value, STATEMENT_KEYWORDS);
           this.error(
             Codes.UNKNOWN_STATEMENT,
@@ -1135,6 +1136,26 @@ class Parser {
     }
     this.error(Codes.UNKNOWN_STATEMENT, `expected a step, found ${describeToken(tok)}`, tok.span);
     return null;
+  }
+
+  /** Lookahead-only (no tokens consumed): does the step starting here have the shape of a bare
+   * call (`name(...)`  or `multi word name(...)`)? Mirrors `parseIdentOrCall`'s own lookahead
+   * (M6, P#2) — checked before falling into the "unknown step" error so a call needs no `let`. */
+  private looksLikeCallStart(): boolean {
+    let k = 0;
+    while (this.peek(k).type === 'ident') k++;
+    return k > 0 && this.peek(k).type === 'lparen';
+  }
+
+  /** `login("alice", "secret1")` — a call statement (M6). Only reached once `looksLikeCallStart`
+   * has confirmed the `ident+ lparen` shape, so `parseIdentOrCall` always returns a `CallExpr`
+   * here (never a bare `VarRef`). */
+  private parseCallStmt(first: Token): Step | null {
+    const start = first.span.start;
+    const value = this.parseIdentOrCall(first);
+    if (!value) return null;
+    this.endLine();
+    return { type: 'CallStmt', call: value as CallExpr, span: this.spanFrom(start) };
   }
 
   // -- api step --------------------------------------------------------------

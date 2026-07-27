@@ -27,6 +27,7 @@ export { validateConfig, checkServices, checkSessionServices, checkDataTables, c
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
 export { getCompletionContext } from './completion.js';
 export { collectSemanticTokens, type SemanticToken, type SemanticTokenType } from './semanticTokens.js';
+export { detectReuse, renderCallSiteReplacement, importInsertionOffset, type SuiteEntry, type ReuseHint, type ReuseOccurrence } from './reuse.js';
 
 export interface ParsedSource {
   readonly program: Program;

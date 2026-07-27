@@ -177,6 +177,19 @@ test('checkUnknownVariables: accepts an action parameter referenced in its own b
   assert.deepEqual(checkUnknownVariables(program), []);
 });
 
+test('checkUnknownVariables: flags a typo\'d ref used as a bare CallStmt argument (M6)', () => {
+  const { program } = parseSource(`test "bad"\n  let id = unique number\n  login(idd)\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF030');
+  assert.match(diags[0]!.hint ?? '', /did you mean `id`\?/);
+});
+
+test('checkUnknownVariables: accepts a known ref used as a bare CallStmt argument (M6)', () => {
+  const { program } = parseSource(`test "ok"\n  let id = unique number\n  login(id)\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
 test('checkUnknownVariables: accepts `env(NAME)` unconditionally — not a `{var}` reference', () => {
   const { program } = parseSource(`test "ok"\n  api POST /login body { pass: env(ADMIN_PW) }\n`);
   assert.deepEqual(checkUnknownVariables(program), []);
