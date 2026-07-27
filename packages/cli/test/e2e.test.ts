@@ -161,6 +161,47 @@ test('`tflw --version`/`-v` print the real package version, injected at bundle t
   assert.equal(short.trim(), pkg.version);
 });
 
+// `tflw pick` opens a real, visible browser window (SPEC §12, M5) — genuinely launching one isn't
+// CI-portable (no display server), so that path is covered headlessly by `wirePickSession`'s own
+// tests in @tflw/runtime. What's testable here, against the real dist binary, is argument
+// validation — every one of these returns before a browser is ever launched.
+
+test('`tflw pick` with no url is a usage error', async () => {
+  await assert.rejects(
+    execFileAsync('node', [cliEntry, 'pick']),
+    (e: unknown) => (e as { code?: number; stderr?: string }).code === 2 && /needs a URL/.test((e as { stderr: string }).stderr),
+  );
+});
+
+test('`tflw pick <bare-path>` (no scheme) is a usage error, not a silent misinterpretation', async () => {
+  await assert.rejects(
+    execFileAsync('node', [cliEntry, 'pick', '/checkout']),
+    (e: unknown) =>
+      (e as { code?: number; stderr?: string }).code === 2 && /isn't an absolute URL/.test((e as { stderr: string }).stderr),
+  );
+});
+
+test('`tflw pick <url> --browser <unknown>` is a usage error', async () => {
+  await assert.rejects(
+    execFileAsync('node', [cliEntry, 'pick', 'http://localhost:1', '--browser', 'bogus']),
+    (e: unknown) =>
+      (e as { code?: number; stderr?: string }).code === 2 && /--browser expects one of/.test((e as { stderr: string }).stderr),
+  );
+});
+
+test('`tflw pick <url> <extra>` (too many positional args) is a usage error', async () => {
+  await assert.rejects(
+    execFileAsync('node', [cliEntry, 'pick', 'http://localhost:1', 'extra']),
+    (e: unknown) =>
+      (e as { code?: number; stderr?: string }).code === 2 && /unexpected argument/.test((e as { stderr: string }).stderr),
+  );
+});
+
+test('`tflw --help` mentions `tflw pick`', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
+  assert.match(stdout, /tflw pick <url>/);
+});
+
 test('--tag matching zero tests anywhere is a hard usage error, not a silent green CI (P#46)', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tag-zero-'));

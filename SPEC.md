@@ -1103,8 +1103,15 @@ explicit `check`/`expect` lines.
 - **`within <locator>`** + an indented step block scopes every nested step's locator resolution to
   inside that container (block form only, same indentation every other construct uses — no brace
   syntax).
-- Not yet built: the live-DOM "nearest candidate" diagnosis on an unresolved locator, and
-  `tflw pick <url>` — both M5.
+- **Live-DOM "nearest candidate" diagnosis (M5):** a persistently-unresolved semantic locator
+  (`button`/`field`/`text`/`list` — `css`/`xpath` are skipped, no semantic name to fuzzy-match
+  against) scans the live DOM for elements of the right shape and appends up to 5 ranked
+  ready-to-paste suggestions to the "no element found" error, e.g. `click button "Add to Crat"`
+  (a typo) surfaces `button "Add to Cart"`. An element with no usable name at all (an icon-only
+  button, e.g.) is still surfaced via a generated CSS selector rather than dropped. This is a
+  diagnosis, not a fallback — it never changes which element a step acts on, only what the failure
+  message suggests. See also `tflw pick <url>` (§12), which prints a *verified* (not just
+  best-guess) locator for a clicked element.
 
 ### 9.4 Waiting & UI subjects ✅
 
@@ -1395,14 +1402,14 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
 | `tflw install-browsers [--browser chromium\|firefox\|webkit]` | one-time browser binary download for UI steps (M3a, P#36, default chromium per D11) — shells out to the `playwright` CLI (`npx playwright install <browser>`) that ships inside the optional peer dependency itself, so it always resolves whatever version the consumer installed |
+| `tflw pick <url> [--browser chromium\|firefox\|webkit]` | opens a real, visible browser at `<url>`; every click prints the best *verified* tflw locator for whatever was clicked (M5, §9.3) — walks the same resolution tiers (D6) the runtime itself uses and only ever prints a suggestion once it's confirmed to resolve to exactly the clicked element (D7), falling back to a generated CSS selector when nothing semantic round-trips. Picking is inert: `preventDefault`/`stopPropagation` stop a clicked link or submit button from actually navigating/submitting. Runs until the window is closed or Ctrl+C; `<url>` must be absolute (no `tflw.config` involved) |
+| `tflw watch [files] [--env E] [--seed S] [--browser chromium\|firefox\|webkit] [--no-color]` | save → the affected test re-runs headed (M5) — one shared, real browser window for the *whole watch session* (not relaunched per save), so it's still there to inspect after a failure. One seed, resolved once at startup (`--seed`, else freshly minted) and reused for every run for the life of the session — since it never changes, a run right after a fix trivially reuses the seed the failing run before it used. Saving a `.tflw` file re-runs *that file*; saving `tflw.config` re-runs the whole (requested) suite, since every file's resolved settings could have changed — no cross-file dependency tracking beyond that (a `.ts` helper behind `use "…"` isn't watched). Runs until Ctrl+C |
 
 **🔮 Planned:**
 
 | Command | Purpose |
 |---|---|
 | `tflw init --ui` | also scaffold a UI test + prompt for `tflw install-browsers` (M3) |
-| `tflw watch` | save → affected test re-runs headed, browser stays open at failure, reuses last failing seed (M5) |
-| `tflw pick <url>` | click an element, get the best locator printed (M5) |
 | `tflw refactor apply <id>` | apply a reuse-pass extraction (M6) |
 | `tflw migrate` | mechanically rewrite a suite past grammar deprecations, P#38 (1.0 gate) |
 

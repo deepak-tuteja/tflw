@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// testFlow CLI (M1): `tflw run` and `tflw init`. API-only for now — watch/pick/refactor and the
-// browser binding arrive in later milestones.
+// testFlow CLI (M1): `tflw run` and `tflw init`. Browser steps (M3), `tflw pick`/`tflw watch` (M5)
+// followed; `tflw refactor` (M6) is still the one thing left unbuilt.
 //
 // `tflw run` pipeline (SPEC §2–3, §13):
 //   read tflw.config → parseConfigSource → selectEnv → resolveConfig
@@ -9,7 +9,8 @@
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
 import { readFile, readdir, writeFile, access } from 'node:fs/promises';
-import { join, resolve, relative, dirname } from 'node:path';
+import { watch as fsWatch } from 'node:fs';
+import { join, resolve, relative, dirname, basename } from 'node:path';
 import {
   parseSource,
   parseConfigSource,
@@ -41,12 +42,14 @@ import {
   SessionCache,
   BrowserManager,
   SUPPORTED_BROWSER_ENGINES,
+  startPickSession,
   type BrowserEngine,
   type RunReport,
   type TestResult,
   type EventSink,
   type RunEvent,
   type ResolvedConfig,
+  type PickSessionHandle,
 } from '@tflw/runtime';
 import { spawn } from 'node:child_process';
 import {
@@ -92,6 +95,10 @@ async function main(argv: string[]): Promise<number> {
       return lspCommand(rest);
     case 'install-browsers':
       return installBrowsersCommand(rest);
+    case 'pick':
+      return pickCommand(rest);
+    case 'watch':
+      return watchCommand(rest);
     case '--version':
     case '-v':
       process.stdout.write(`${await getVersion()}\n`);
@@ -103,7 +110,9 @@ async function main(argv: string[]): Promise<number> {
       printUsage();
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
-      err(`unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, or \`tflw install-browsers\`.`);
+      err(
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, or \`tflw watch\`.`,
+      );
       return EXIT_USAGE;
   }
 }
@@ -137,6 +146,226 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
     child.on('exit', (exitCode) => resolvePromise(exitCode ?? EXIT_USAGE));
   });
   return code === 0 ? EXIT_OK : EXIT_USAGE;
+}
+
+// ---- tflw pick <url> (M5, SPEC §12) -----------------------------------------
+
+const ABSOLUTE_URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/** Opens a real, visible browser at `<url>` and prints one verified tflw locator per click
+ * (`startPickSession` in `@tflw/runtime` — every printed locator is confirmed to resolve to
+ * exactly the clicked element, D6/D7, not a guess). Runs until the window is closed or Ctrl+C.
+ * No `tflw.config` involved — this command has no notion of a `web` base URL, so `<url>` must be
+ * absolute (unlike `open "/path"` inside a `.tflw` file, which resolves against one). */
+async function pickCommand(argv: string[]): Promise<number> {
+  let url: string | undefined;
+  let browserRaw: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--browser') browserRaw = argv[++i];
+    else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
+    else if (url === undefined) url = a;
+    else {
+      err(`unexpected argument \`${a}\`. Usage: tflw pick <url> [--browser chromium|firefox|webkit]`);
+      return EXIT_USAGE;
+    }
+  }
+  if (!url) {
+    err('tflw pick needs a URL. Usage: tflw pick <url> [--browser chromium|firefox|webkit]');
+    return EXIT_USAGE;
+  }
+  if (!ABSOLUTE_URL_RE.test(url)) {
+    err(`\`${url}\` isn't an absolute URL — include a scheme, e.g. http://localhost:3000${url.startsWith('/') ? url : `/${url}`}`);
+    return EXIT_USAGE;
+  }
+  let engine: BrowserEngine = 'chromium';
+  if (browserRaw !== undefined) {
+    if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browserRaw)) {
+      err(`--browser expects one of ${SUPPORTED_BROWSER_ENGINES.join(', ')}, got "${browserRaw}"`);
+      return EXIT_USAGE;
+    }
+    engine = browserRaw as BrowserEngine;
+  }
+
+  process.stdout.write(`opening ${url} — click any element to print its locator. Close the window or press Ctrl+C to stop.\n`);
+
+  let resolveClosed: () => void = () => {};
+  const closed = new Promise<void>((res) => {
+    resolveClosed = res;
+  });
+
+  let session: PickSessionHandle;
+  try {
+    session = await startPickSession(
+      url,
+      engine,
+      (picked) => process.stdout.write(`${picked.syntax}\n`),
+      () => resolveClosed(),
+    );
+  } catch (e) {
+    err(e instanceof Error ? e.message : String(e));
+    return EXIT_USAGE;
+  }
+
+  const onSigint = (): void => void session.close();
+  process.on('SIGINT', onSigint);
+  await closed;
+  process.off('SIGINT', onSigint);
+  return EXIT_OK;
+}
+
+// ---- tflw watch (M5, SPEC §12) ----------------------------------------------
+//
+// Save → the affected test re-runs headed (`runCommand` under the hood, via `RunCommandWatchOptions`
+// above), one shared headed browser process for the *whole watch session* (not one per triggered
+// run — `runCommand` would otherwise construct-then-close a fresh one every single save, which is
+// both slow and defeats "the browser stays open"). One seed, resolved once at startup and reused
+// for every run for the life of the session (`--seed` if given, else freshly minted the same way
+// `tflw run` would) — since it never changes, a run that just failed and the next run after a fix
+// are trivially using "the same seed the last failing run used" (the milestone's own phrasing),
+// with no extra bookkeeping needed to specifically detect and carry forward *only* a failing seed.
+//
+// Scope, deliberately: saving a `.tflw` file re-runs *that file* (not a suite-wide dependency
+// graph — actions/imports aren't statically traced here); saving `tflw.config` re-runs everything,
+// since every file's resolved settings could have changed. A save of anything else (a `.ts` helper
+// behind `use "…"`, e.g.) is not watched — cross-file impact analysis is future work, not promised
+// by this milestone.
+
+interface WatchArgs {
+  readonly files: string[];
+  readonly env?: string | undefined;
+  readonly browserRaw?: string | undefined;
+  readonly seedRaw?: string | undefined;
+  readonly noColor: boolean;
+}
+
+function parseWatchArgs(argv: string[]): WatchArgs {
+  const files: string[] = [];
+  let env: string | undefined;
+  let browserRaw: string | undefined;
+  let seedRaw: string | undefined;
+  let noColor = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--env') env = argv[++i];
+    else if (a.startsWith('--env=')) env = a.slice('--env='.length);
+    else if (a === '--browser') browserRaw = argv[++i];
+    else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
+    else if (a === '--seed') seedRaw = argv[++i];
+    else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
+    else if (a === '--no-color') noColor = true;
+    else files.push(a);
+  }
+  return { files, env, browserRaw, seedRaw, noColor };
+}
+
+async function watchCommand(argv: string[]): Promise<number> {
+  const args = parseWatchArgs(argv);
+  const cwd = process.cwd();
+
+  let seedArg: number | undefined;
+  if (args.seedRaw !== undefined) {
+    seedArg = Number(args.seedRaw);
+    if (!Number.isFinite(seedArg)) {
+      err(`--seed expects a number, got "${args.seedRaw}"`);
+      return EXIT_USAGE;
+    }
+  }
+  let engine: BrowserEngine = 'chromium';
+  if (args.browserRaw !== undefined) {
+    if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(args.browserRaw)) {
+      err(`--browser expects one of ${SUPPORTED_BROWSER_ENGINES.join(', ')}, got "${args.browserRaw}"`);
+      return EXIT_USAGE;
+    }
+    engine = args.browserRaw as BrowserEngine;
+  }
+  const seed = resolveRunSeed(seedArg);
+  // Normalized the same way `runCommand`'s own file args eventually are (`resolve(cwd, f)`) so a
+  // watch event's cwd-relative `filename` compares equal regardless of how the user typed it
+  // (`./foo.tflw`, `foo.tflw`, an absolute path, …).
+  const watchFiles = args.files.map((f) => resolve(cwd, f));
+
+  process.stdout.write(`tflw watch — seed ${seed} (pass \`--seed ${seed}\` to \`tflw run\` to reproduce outside watch)\n`);
+
+  let browserManager: BrowserManager | undefined;
+  let stopped = false;
+
+  const runOne = async (target: string | 'all'): Promise<void> => {
+    const label = target === 'all' ? 'the full suite' : relative(cwd, target);
+    process.stdout.write(`\n[watch] running ${label}…\n`);
+    const runArgv = [
+      ...(target === 'all' ? args.files : [target]),
+      '--headed',
+      '--seed',
+      String(seed),
+      '--browser',
+      engine,
+      ...(args.env ? ['--env', args.env] : []),
+      ...(args.noColor ? ['--no-color'] : []),
+    ];
+    await runCommand(runArgv, {
+      browserManager,
+      onBrowserManagerReady: (bm) => {
+        browserManager = bm;
+      },
+      keepBrowserOpen: true,
+    });
+    if (!stopped) process.stdout.write(`\n[watch] watching for changes — save a .tflw file to re-run, Ctrl+C to stop\n`);
+  };
+
+  // A tiny queue-of-one: `runChain` is a promise chain that serializes every triggered run, so a
+  // save arriving mid-run is never dropped, but a burst of saves collapses into exactly one
+  // trailing re-run (`queuedTarget`, coalesced — `all` always wins over a specific file, since a
+  // config change makes any single-file target stale) rather than one run per keystroke's autosave.
+  let queuedTarget: string | 'all' | null = 'all'; // the initial run, kicked off below
+  let debounceTimer: NodeJS.Timeout | undefined;
+  let runChain: Promise<void> = Promise.resolve();
+
+  const flushQueued = (): void => {
+    runChain = runChain.then(async () => {
+      if (stopped || queuedTarget === null) return;
+      const target = queuedTarget;
+      queuedTarget = null;
+      await runOne(target);
+    });
+  };
+
+  const watcher = fsWatch(cwd, { recursive: true }, (_event, filename) => {
+    if (!filename || stopped) return;
+    const absPath = resolve(cwd, filename);
+    let target: string | 'all' | null = null;
+    if (basename(filename) === 'tflw.config') target = 'all';
+    else if (filename.endsWith('.tflw')) {
+      if (watchFiles.length > 0 && !watchFiles.includes(absPath)) return; // outside the requested set
+      target = absPath;
+    } else {
+      return;
+    }
+    queuedTarget = queuedTarget === 'all' ? 'all' : target;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(flushQueued, 200);
+  });
+
+  return new Promise<number>((resolveExit) => {
+    const stop = async (): Promise<void> => {
+      if (stopped) return;
+      stopped = true;
+      watcher.close();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      await runChain;
+      await browserManager?.close();
+      resolveExit(EXIT_OK);
+    };
+    // Once a browser has launched, Playwright installs its own SIGINT handler (to kill its spawned
+    // subprocess on Ctrl+C) alongside this one — Node invokes every registered listener, so both
+    // run, and Playwright's typically wins the race to actually terminate the process, producing
+    // the standard Unix "died from signal" exit code (128+SIGINT=130) instead of `EXIT_OK` below.
+    // Either outcome is a clean stop (the browser is closed either way) — this handler's own
+    // graceful shutdown still matters for the no-browser-yet case (an API-only suite, or Ctrl+C
+    // before the very first run's first browser step).
+    process.on('SIGINT', () => void stop());
+    flushQueued(); // the initial full run
+  });
 }
 
 // ---- tflw run --------------------------------------------------------------
@@ -390,7 +619,22 @@ async function loadAndValidate(
   return { resolved, parsedConfig, environ, parsedFiles };
 }
 
-async function runCommand(argv: string[]): Promise<number> {
+/** `tflw watch`-only knobs (M5) — invisible to the real `tflw run` CLI path (`main()` always calls
+ * `runCommand(rest)` with no second argument, so every existing behavior is unchanged by default).
+ * `watchCommand` owns one `BrowserManager` for its whole session instead of letting each triggered
+ * run construct (and unconditionally close) its own — `browserManager` lets it hand that one in;
+ * `onBrowserManagerReady` lets it *capture* the manager the very first time (constructed here, the
+ * only place that has `resolved.viewport` to build it with correctly) so every later iteration can
+ * pass it back in; `keepBrowserOpen` skips the close this function would otherwise always do at the
+ * end, since the whole point of `tflw watch` (SPEC §12) is a real browser window that outlives any
+ * one run — including a failing one, so the author can inspect the live DOM. */
+interface RunCommandWatchOptions {
+  readonly browserManager?: BrowserManager;
+  readonly onBrowserManagerReady?: (bm: BrowserManager) => void;
+  readonly keepBrowserOpen?: boolean;
+}
+
+async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): Promise<number> {
   const args = parseRunArgs(argv);
   const color = args.noColor ? false : process.stdout.isTTY === true;
   const cwd = process.cwd();
@@ -583,10 +827,12 @@ async function runCommand(argv: string[]): Promise<number> {
   const sharedNdjsonEmit = ndjsonActive ? ndjsonEmit(out, ndjsonCollected) : undefined;
 
   // One shared browser process for the whole invocation (M3a, D13) — lazily launched on the first
-  // browser step anywhere in the run; closed unconditionally below even if nothing ever used it.
-  // Engine (`--browser`, D11) and headed mode (`--headed`, M3c) are run-level, resolved once here;
-  // `viewport` comes from `tflw.config` (M3c).
-  const browserManager = new BrowserManager({ engine: browserEngine, headless: !args.headed, viewport: resolved.viewport });
+  // browser step anywhere in the run; closed unconditionally below even if nothing ever used it —
+  // unless `watchOpts` says otherwise (M5, `RunCommandWatchOptions` above). Engine (`--browser`,
+  // D11) and headed mode (`--headed`, M3c) are run-level, resolved once here; `viewport` comes from
+  // `tflw.config` (M3c).
+  const browserManager = watchOpts?.browserManager ?? new BrowserManager({ engine: browserEngine, headless: !args.headed, viewport: resolved.viewport });
+  watchOpts?.onBrowserManagerReady?.(browserManager);
 
   const reports = await runWithConcurrency(
     runnable,
@@ -670,7 +916,7 @@ async function runCommand(argv: string[]): Promise<number> {
     out.write(withTimestamps(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}`, timestamps) + '\n');
   }
   await out.save();
-  await browserManager.close(); // no-op if no test in this run ever used a browser step
+  if (!watchOpts?.keepBrowserOpen) await browserManager.close(); // no-op if no test in this run ever used a browser step
 
   return merged.ok ? EXIT_OK : EXIT_FAIL;
 }
@@ -1153,6 +1399,12 @@ function printUsage(): void {
       '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
       '  tflw install-browsers [--browser chromium|firefox|webkit]',
       '                                                      download a browser binary for UI steps (SPEC §9); default chromium',
+      '  tflw pick <url> [--browser chromium|firefox|webkit]',
+      '                                                      click an element in a real browser window, print its best locator (SPEC §12, M5);',
+      '                                                      runs until the window is closed or Ctrl+C — <url> must be absolute',
+      '  tflw watch [files...] [--env <name>] [--seed <n>] [--browser chromium|firefox|webkit] [--no-color]',
+      '                                                      re-run headed on every save, one browser window for the whole session (SPEC §12, M5);',
+      '                                                      saving tflw.config re-runs everything; runs until Ctrl+C',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',

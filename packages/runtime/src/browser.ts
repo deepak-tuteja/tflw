@@ -489,9 +489,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** Resolves a locator against a live page/scope, polling up to `timeoutMs` (a not-yet-rendered
- * element is not the same failure as a genuinely missing one, D9's spirit even though the full
- * live-DOM "nearest candidate" diagnosis is M5). Throws immediately — never waits out the rest of
- * the timeout — on real ambiguity (D7: strict, N>1 is always an error). */
+ * element is not the same failure as a genuinely missing one, D9's spirit). Throws immediately —
+ * never waits out the rest of the timeout — on real ambiguity (D7: strict, N>1 is always an
+ * error). A persistent zero-match failure gets the live-DOM "nearest candidate" diagnosis (M5,
+ * `diagnoseMissingLocator` below) appended before throwing. */
 export async function resolveLocator(scope: LocatorScope, locatorAst: LocatorAst, ctx: EvalCtx, timeoutMs: number): Promise<ResolvedLocator> {
   const name = String(evalValue(locatorAst.value, ctx));
   const attempts = candidateStrategies(scope, locatorAst.kind, name);
@@ -505,7 +506,8 @@ export async function resolveLocator(scope: LocatorScope, locatorAst: LocatorAst
     if (Date.now() >= deadline) {
       const triedVia = attempts.map((a) => a.via).join(', ');
       const suffix = attempts.length > 1 ? ` — tried ${triedVia}, none matched` : '';
-      throw new RuntimeError(`no element found for ${describeLocator(locatorAst.kind, name)}${suffix}`);
+      const diagnosis = await diagnoseMissingLocator(scope, locatorAst.kind, name);
+      throw new RuntimeError(`no element found for ${describeLocator(locatorAst.kind, name)}${suffix}${diagnosis}`);
     }
     await sleep(POLL_INTERVAL_MS);
   }
@@ -529,6 +531,168 @@ async function ambiguityError(
   return new RuntimeError(
     `ambiguous locator ${describeLocator(locatorAst.kind, name)} (resolved via ${attempt.via}) — matched ${count} elements:\n${descriptions.join('\n')}${more}\nnarrow it with \`within <container>\`, or make the name more specific (SPEC §9.3)`,
   );
+}
+
+// ---- M5: live-DOM "nearest candidate" diagnosis (SPEC §9.3) ---------------------------------
+//
+// A persistently-unresolved semantic locator (button/field/text/list — `css`/`xpath` are the
+// explicit escape hatch and have no semantic name to fuzzy-match against, so they're skipped) gets
+// one extra round-trip: scan the live DOM for elements of the right shape, rank them by how close
+// their computed name is to what the author typed, and print the closest few as ready-to-paste
+// tflw locators. An element with no usable name at all (icon-only buttons, e.g.) still gets
+// surfaced via a generated CSS selector rather than being silently dropped — "including generated
+// CSS/XPath when nothing semantic exists" (PLAN.md §9). This is a diagnosis, not a fallback: it
+// never changes which element a step actually acts on, only what the failure message suggests.
+
+const DIAGNOSIS_SCAN_CSS: Partial<Record<LocatorKind, string>> = {
+  button: 'button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"], a[role="button"]',
+  field: 'input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="hidden"]), textarea, select, [role="textbox"]',
+  text: '*',
+  list: 'ul, ol, [role="list"]',
+};
+
+const MAX_DIAGNOSIS_CANDIDATES = 5;
+const MIN_DIAGNOSIS_SIMILARITY = 0.3;
+
+interface DomCandidateRaw {
+  readonly name: string | null;
+  readonly cssPath: string;
+}
+
+/** Hand-rolled Levenshtein distance — no dependency justified for ~15 lines (contrast `pixelmatch`,
+ * added in M4b only because pixel-diffing genuinely isn't a from-scratch afternoon). */
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i]![0] = i;
+  for (let j = 0; j <= n; j++) dp[0]![j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i]![j] = a[i - 1] === b[j - 1] ? dp[i - 1]![j - 1]! : 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
+    }
+  }
+  return dp[m]![n]!;
+}
+
+/** 1.0 = identical, 0 = nothing in common. A containment match (typed text is a substring of the
+ * candidate's name, or vice versa — the common case of comparing a short typed name against a
+ * longer real label) is deliberately scored above plain edit-distance so `field "Email"` ranks a
+ * real `field "Email address"` ahead of an unrelated same-length label a few edits away. */
+function similarity(typed: string, candidate: string): number {
+  const a = typed.toLowerCase().trim();
+  const b = candidate.toLowerCase().trim();
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (b.includes(a) || a.includes(b)) return 0.85;
+  return Math.max(0, 1 - editDistance(a, b) / Math.max(a.length, b.length));
+}
+
+/** Runs entirely inside the page (Playwright serializes this function into the browser) — DOM
+ * access has to happen there. Computes, per candidate element: its best-effort accessible name
+ * (aria-label → the kind-specific tier: field's own label/placeholder, a leaf text node for
+ * `text`, else innerText/value) and a generated CSS selector good enough to paste (`#id` →
+ * `data-testid` → `name` attr → a short tag+nth-of-type path up to 4 ancestors). */
+async function scanDomCandidates(scope: LocatorScope, kind: LocatorKind): Promise<DomCandidateRaw[]> {
+  const css = DIAGNOSIS_SCAN_CSS[kind];
+  if (!css) return []; // css/xpath: no semantic name to scan for
+  try {
+    // Deliberately has NO named inner function/const bindings (`cssPathFor`, `labelFor`, …) —
+    // Playwright serializes this callback via `.toString()` and re-evaluates it inside the page's
+    // own isolated realm, which doesn't share this module's scope. Under some build/dev-loader
+    // pipelines (esbuild's name-preservation transform, used by `tsx` here) a named function
+    // binding gets rewritten to call a `__name` helper that only exists in *this* module — that
+    // helper reference then throws `ReferenceError: __name is not defined` once the string is
+    // re-parsed with no such helper in scope. Anonymous callback arguments (`.filter((c) => …)`)
+    // are unaffected, so the fix is inlining rather than factoring into named helpers.
+    return await scope.locator(css).evaluateAll((els: Element[], k: string) => {
+      const seen = new Set<Element>();
+      const out: { name: string | null; cssPath: string }[] = [];
+      for (const el of els) {
+        if (seen.has(el)) continue;
+        seen.add(el);
+
+        let cssPath: string;
+        if (el.id) {
+          cssPath = `#${CSS.escape(el.id)}`;
+        } else if (el.getAttribute('data-testid')) {
+          cssPath = `[data-testid="${el.getAttribute('data-testid')}"]`;
+        } else if (el.getAttribute('name')) {
+          cssPath = `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]`;
+        } else {
+          const parts: string[] = [];
+          let node: Element | null = el;
+          for (let i = 0; i < 4 && node; i++) {
+            let part = node.tagName.toLowerCase();
+            const parent: Element | null = node.parentElement;
+            if (parent) {
+              const siblings = Array.from(parent.children).filter((c) => c.tagName === node!.tagName);
+              if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+            }
+            parts.unshift(part);
+            node = parent;
+          }
+          cssPath = parts.join(' > ');
+        }
+
+        let name: string | null = null;
+        const ariaLabel = el.getAttribute('aria-label');
+        if (ariaLabel?.trim()) {
+          name = ariaLabel.trim();
+        } else if (k === 'field') {
+          let label: string | null = null;
+          const id = el.getAttribute('id');
+          if (id) {
+            const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+            if (lbl?.textContent?.trim()) label = lbl.textContent.trim();
+          }
+          if (!label) {
+            const parentLabel = el.closest('label');
+            if (parentLabel?.textContent?.trim()) label = parentLabel.textContent.trim();
+          }
+          if (label) {
+            name = label;
+          } else {
+            const ph = el.getAttribute('placeholder');
+            name = ph?.trim() ? ph.trim() : null;
+          }
+        } else if (k === 'text') {
+          if (el.children.length === 0) {
+            const t = (el.textContent ?? '').trim();
+            name = t.length > 0 && t.length < 120 ? t : null;
+          }
+        } else {
+          const text = (el as HTMLElement).innerText?.trim();
+          if (text) {
+            name = text;
+          } else {
+            const value = (el as HTMLInputElement).value;
+            name = value?.trim() ? value.trim() : null;
+          }
+        }
+
+        out.push({ name, cssPath });
+      }
+      return out;
+    }, kind);
+  } catch {
+    return []; // best-effort diagnosis — never let a scan failure mask the real "not found" error
+  }
+}
+
+/** Empty string when nothing plausible was found (leaves the caller's message unchanged) — never
+ * itself the failure, only ever appended to one. */
+async function diagnoseMissingLocator(scope: LocatorScope, kind: LocatorKind, typedName: string): Promise<string> {
+  const raw = await scanDomCandidates(scope, kind);
+  const named = raw
+    .filter((c): c is { name: string; cssPath: string } => !!c.name)
+    .map((c) => ({ suggestion: describeLocator(kind, c.name), score: similarity(typedName, c.name) }))
+    .filter((c) => c.score >= MIN_DIAGNOSIS_SIMILARITY)
+    .sort((a, b) => b.score - a.score);
+  const unnamed = raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 }));
+  const combined = [...named, ...unnamed].slice(0, MAX_DIAGNOSIS_CANDIDATES);
+  if (combined.length === 0) return '';
+  return `\n  nearest matches on the page:\n${combined.map((c) => `    - ${c.suggestion}`).join('\n')}`;
 }
 
 /** Strips Playwright's verbose multi-line "Call log:" trailer down to just its first line, so a
@@ -639,4 +803,252 @@ export async function performDropFile(page: PWPage, absFilePath: string, pwLocat
     await pwLocator.dispatchEvent('dragover', { dataTransfer });
     await pwLocator.dispatchEvent('drop', { dataTransfer });
   });
+}
+
+// ---- M5: `tflw pick <url>` (SPEC §12) ---------------------------------------------------------
+//
+// Opens a real headed browser at a URL, lets a human click an element, and prints the best tflw
+// locator for it — reusing this module's own resolution model (`candidateStrategies`, D6) to
+// *verify* the guess, not just print a plausible-looking one: a suggestion only ever gets printed
+// once Node has confirmed it resolves to exactly one element (D7) and that element is the one that
+// was actually clicked. Falls back to a generated CSS selector when no semantic name round-trips
+// (an icon-only button, e.g.) — same "always give the author something to paste" spirit as the M5
+// diagnosis above, just verified rather than best-effort-ranked.
+//
+// `installPickClickCapture` is passed BY REFERENCE to `page.addInitScript` — Playwright serializes
+// it via `.toString()` and re-runs it inside the page's own isolated realm. It deliberately has NO
+// nested named function/const bindings in its body, for the same reason `scanDomCandidates` above
+// doesn't: some build/dev-loader pipelines (esbuild's name-preservation transform, used by `tsx`)
+// rewrite a *nested* named binding into a call to a `__name` helper that only exists in this
+// module, throwing `ReferenceError: __name is not defined` once the extracted text is re-parsed
+// with no such helper in scope. A plain top-level named function with no such nesting serializes
+// cleanly (verified empirically) — keep it that way if this ever needs another helper.
+
+const PICK_MARKER_ATTR = 'data-tflw-pick';
+
+export type PickLocatorKind = 'button' | 'field' | 'list' | 'text' | 'css';
+
+export interface PickedLocator {
+  /** Ready to paste as-is, e.g. `button "Add to Cart"` — no surrounding backticks. */
+  readonly syntax: string;
+  readonly via: PickLocatorKind;
+}
+
+/** Best-effort per-kind name guesses for the just-clicked element, plus a generated CSS fallback —
+ * computed entirely in the page (`installPickClickCapture`), verified against the live DOM in
+ * Node (`resolvePickedLocator`) before anything is ever printed. */
+interface RawPickInfo {
+  readonly buttonName: string | null;
+  readonly fieldName: string | null;
+  readonly listName: string | null;
+  readonly textName: string | null;
+  readonly cssPath: string;
+  readonly primaryKind: 'button' | 'field' | 'list' | 'text' | null;
+}
+
+/** `page.addInitScript` callback (re-attaches on every navigation, so picking survives the user
+ * clicking a real link before `preventDefault` stops it) — captures the next click anywhere on the
+ * page, marks the clicked element (`data-tflw-pick="1"`; any prior mark is cleared first, so a
+ * fast double-click can't leave two elements marked), gives it a brief visual highlight, and
+ * reports its per-kind name guesses up to Node via `window.__tflwPickReport`. `preventDefault`/
+ * `stopPropagation` keep picking inert — clicking a link or a submit button identifies it without
+ * actually navigating or submitting. */
+function installPickClickCapture(marker: string): void {
+  document.addEventListener(
+    'click',
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const el = event.target;
+      if (!(el instanceof Element)) return;
+
+      document.querySelectorAll(`[${marker}]`).forEach((prior) => prior.removeAttribute(marker));
+      el.setAttribute(marker, '1');
+      const prevOutline = (el as HTMLElement).style.outline;
+      (el as HTMLElement).style.outline = '3px solid #ff5252';
+      setTimeout(() => {
+        (el as HTMLElement).style.outline = prevOutline;
+      }, 500);
+
+      const tag = el.tagName;
+      const ariaLabel = el.getAttribute('aria-label');
+
+      let buttonName: string | null = null;
+      if (ariaLabel?.trim()) {
+        buttonName = ariaLabel.trim();
+      } else {
+        const text = (el as HTMLElement).innerText?.trim();
+        if (text) {
+          buttonName = text;
+        } else {
+          const value = (el as HTMLInputElement).value;
+          buttonName = value?.trim() ? value.trim() : null;
+        }
+      }
+
+      let fieldName: string | null = null;
+      if (ariaLabel?.trim()) {
+        fieldName = ariaLabel.trim();
+      } else {
+        let label: string | null = null;
+        const id = el.getAttribute('id');
+        if (id) {
+          const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+          if (lbl?.textContent?.trim()) label = lbl.textContent.trim();
+        }
+        if (!label) {
+          const parentLabel = el.closest('label');
+          if (parentLabel?.textContent?.trim()) label = parentLabel.textContent.trim();
+        }
+        if (label) {
+          fieldName = label;
+        } else {
+          const ph = el.getAttribute('placeholder');
+          fieldName = ph?.trim() ? ph.trim() : null;
+        }
+      }
+
+      const listName = ariaLabel?.trim() ? ariaLabel.trim() : null;
+
+      let textName: string | null = null;
+      if (el.children.length === 0) {
+        const t = (el.textContent ?? '').trim();
+        textName = t.length > 0 && t.length < 120 ? t : null;
+      }
+
+      let cssPath: string;
+      if (el.id) {
+        cssPath = `#${CSS.escape(el.id)}`;
+      } else if (el.getAttribute('data-testid')) {
+        cssPath = `[data-testid="${el.getAttribute('data-testid')}"]`;
+      } else if (el.getAttribute('name')) {
+        cssPath = `${tag.toLowerCase()}[name="${el.getAttribute('name')}"]`;
+      } else {
+        const parts: string[] = [];
+        let node: Element | null = el;
+        for (let i = 0; i < 4 && node; i++) {
+          let part = node.tagName.toLowerCase();
+          const parent: Element | null = node.parentElement;
+          if (parent) {
+            const siblings = Array.from(parent.children).filter((c) => c.tagName === node!.tagName);
+            if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+          }
+          parts.unshift(part);
+          node = parent;
+        }
+        cssPath = parts.join(' > ');
+      }
+
+      const isButtonish =
+        tag === 'BUTTON' ||
+        el.getAttribute('role') === 'button' ||
+        (tag === 'INPUT' && ['button', 'submit', 'reset'].includes((el as HTMLInputElement).type)) ||
+        (tag === 'A' && el.getAttribute('role') === 'button');
+      const isFieldish = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.getAttribute('role') === 'textbox';
+      const isListish = tag === 'UL' || tag === 'OL' || el.getAttribute('role') === 'list';
+      const primaryKind = isButtonish ? 'button' : isFieldish ? 'field' : isListish ? 'list' : el.children.length === 0 ? 'text' : null;
+
+      (window as unknown as { __tflwPickReport: (info: RawPickInfo) => void }).__tflwPickReport({
+        buttonName,
+        fieldName,
+        listName,
+        textName,
+        cssPath,
+        primaryKind,
+      });
+    },
+    true,
+  );
+}
+
+const PICK_KIND_ORDER: readonly ('button' | 'field' | 'list' | 'text')[] = ['button', 'field', 'list', 'text'];
+
+/** Tries the clicked element's tag-inferred kind first (so a `<div role="button">` prefers its
+ * clearer button name before falling through to a coincidental text match), then the remaining
+ * three, in each case walking that kind's own resolution tiers (D6, `candidateStrategies`) and
+ * accepting the first one that resolves to exactly one element (D7) *and* that element is the one
+ * marked as clicked. No tier anywhere verifies → the generated CSS path, which is unique by
+ * construction (derived from the live DOM path to that exact element). */
+async function resolvePickedLocator(page: PWPage, raw: RawPickInfo): Promise<PickedLocator> {
+  const namesByKind: Record<'button' | 'field' | 'list' | 'text', string | null> = {
+    button: raw.buttonName,
+    field: raw.fieldName,
+    list: raw.listName,
+    text: raw.textName,
+  };
+  const order = raw.primaryKind ? [raw.primaryKind, ...PICK_KIND_ORDER.filter((k) => k !== raw.primaryKind)] : PICK_KIND_ORDER;
+  for (const kind of order) {
+    const name = namesByKind[kind];
+    if (!name) continue;
+    for (const strategy of candidateStrategies(page, kind, name)) {
+      const count = await strategy.pwLocator.count();
+      if (count !== 1) continue;
+      const marked = await strategy.pwLocator.first().getAttribute(PICK_MARKER_ATTR);
+      if (marked === '1') {
+        await clearPickMarker(page);
+        return { syntax: `${kind} ${JSON.stringify(name)}`, via: kind };
+      }
+    }
+  }
+  await clearPickMarker(page);
+  return { syntax: `css ${JSON.stringify(raw.cssPath)}`, via: 'css' };
+}
+
+async function clearPickMarker(page: PWPage): Promise<void> {
+  await page.locator(`[${PICK_MARKER_ATTR}]`).evaluateAll((els, attr) => {
+    for (const el of els) el.removeAttribute(attr);
+  }, PICK_MARKER_ATTR);
+}
+
+/** Wires an already-created page for picking: click-capture (survives navigation), the Node-side
+ * report bridge, and a `close`/`disconnected` → `onClosed` bridge. Deliberately takes a `PWPage`
+ * rather than launching one itself — the actual "must be a real, visible window" requirement
+ * (`headless: false`) lives only in `startPickSession` below, so this half (which is where
+ * virtually all of the real logic is: capture, name-guessing, verified resolution) stays testable
+ * against an ordinary headless page, same as every other browser-step test in this package. Headed
+ * vs. headless makes no difference to DOM events, `addInitScript`, or `evaluateAll` — only to
+ * whether a window is actually rendered on screen. */
+export function wirePickSession(page: PWPage, onPick: (picked: PickedLocator) => void, onClosed: () => void): Promise<void> {
+  let closed = false;
+  const notifyClosed = (): void => {
+    if (closed) return;
+    closed = true;
+    onClosed();
+  };
+  page.on('close', notifyClosed);
+  page.context().browser()?.on('disconnected', notifyClosed);
+  return (async () => {
+    await page.exposeFunction('__tflwPickReport', async (raw: RawPickInfo) => {
+      onPick(await resolvePickedLocator(page, raw));
+    });
+    await page.addInitScript(installPickClickCapture, PICK_MARKER_ATTR);
+  })();
+}
+
+export interface PickSessionHandle {
+  /** Closes the browser this session opened. Safe to call even after the user already closed the
+   * window themselves (`browser.close()` on an already-closed browser is a no-op in Playwright). */
+  readonly close: () => Promise<void>;
+}
+
+/** Drives one `tflw pick <url>` session end-to-end: launches a real, visible browser at `url`
+ * (`headless: false` — the whole point is a human clicking it), reports every verified pick via
+ * `onPick`, and calls `onClosed` once (whichever of "user closed the window" / "the browser
+ * process disconnected" fires first) so the CLI knows to stop waiting. */
+export async function startPickSession(
+  url: string,
+  engine: BrowserEngine,
+  onPick: (picked: PickedLocator) => void,
+  onClosed: () => void,
+): Promise<PickSessionHandle> {
+  const manager = new BrowserManager({ engine, headless: false });
+  const browser = await manager.getBrowser();
+  const page = await browser.newPage();
+  await wirePickSession(page, onPick, onClosed);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  return {
+    close: async () => {
+      await manager.close().catch(() => {});
+    },
+  };
 }

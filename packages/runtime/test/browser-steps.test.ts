@@ -208,6 +208,17 @@ const SNAP_WIDGET_HTML = `<!doctype html>
   <button style="width:100px;height:40px;background:#2a63d6;color:#fff">Checkout</button>
 </body></html>`;
 
+// M5: live-DOM "nearest candidate" diagnosis (SPEC §9.3). `#checkout-btn` and `Email Address` are
+// the "real, findable" elements a typo should surface; `.icon-btn` has no accessible name at all
+// (no text, no aria-label) so it can only ever be suggested via its generated CSS selector.
+const DIAGNOSE_HTML = `<!doctype html>
+<html><body>
+  <button id="checkout-btn">Add to Cart</button>
+  <button class="icon-btn"><svg width="16" height="16"></svg></button>
+  <label for="em">Email Address</label>
+  <input id="em" type="text" />
+</body></html>`;
+
 let server: FixtureServer;
 let config: ResolvedConfig;
 let browserManager: BrowserManager;
@@ -240,6 +251,7 @@ before(async () => {
       res.writeHead(200, { 'content-type': 'text/html' }).end(SNAP_HTML(color));
     },
     '/snap-widget': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(SNAP_WIDGET_HTML),
+    '/diagnose': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(DIAGNOSE_HTML),
   });
   config = { ...testConfig(server.baseUrl), webBaseUrl: server.baseUrl };
   browserManager = new BrowserManager();
@@ -375,6 +387,62 @@ test('a locator that never appears fails with a clear "no element found" error, 
   const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   assert.match(report.tests[0]!.error ?? '', /no element found for `button "Does Not Exist"`/);
+});
+
+// ---- M5: live-DOM "nearest candidate" diagnosis (SPEC §9.3) ---------------------------------
+
+test('a typo\'d button name surfaces the real button as a ready-to-paste suggestion', async () => {
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const { program } = parseSource('test "typo"\n  open "/diagnose"\n  click button "Add to Crat"\n');
+  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /no element found for `button "Add to Crat"`/);
+  assert.match(error, /nearest matches on the page:/);
+  assert.match(error, /button "Add to Cart"/);
+});
+
+test('a typo\'d field name surfaces the real labelled field, not a raw css guess', async () => {
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const { program } = parseSource('test "typo"\n  open "/diagnose"\n  fill field "Emial Address" with "x"\n');
+  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /field "Email Address"/);
+});
+
+test('an unrelated name with no similar match falls back to the unnamed element\'s generated css selector', async () => {
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const { program } = parseSource('test "no similar name"\n  open "/diagnose"\n  click button "Totally Unrelated Nonexistent Thing"\n');
+  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.doesNotMatch(error, /"Add to Cart"/); // not similar enough to suggest
+  assert.match(error, /nearest matches on the page:/);
+  // The icon-only button has no id/data-testid/name attribute to key off, so the fallback is a
+  // generated tag+nth-of-type path (classes are a styling hook, not an identity one — not used).
+  assert.match(error, /css "html > body > button:nth-of-type\(2\)"/);
+});
+
+test('nothing of the right kind on the page at all leaves the error message unchanged (no diagnosis noise)', async () => {
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  // `/diagnose` has no `ul`/`ol`/`[role=list]` element anywhere — the scan itself comes back empty.
+  const { program } = parseSource('test "no candidates"\n  open "/diagnose"\n  click list "Anything"\n');
+  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /no element found for `list "Anything"`/);
+  assert.doesNotMatch(error, /nearest matches on the page:/);
+});
+
+test('css/xpath locators never get a diagnosis suffix — no semantic name to fuzzy-match against', async () => {
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const { program } = parseSource('test "css escape"\n  open "/diagnose"\n  click css ".nonexistent"\n');
+  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /no element found for `css ".nonexistent"`/);
+  assert.doesNotMatch(error, /nearest matches on the page:/);
 });
 
 test('`open` without a `web` base URL configured is a clear error, not a crash', async () => {
