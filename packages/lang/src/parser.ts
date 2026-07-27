@@ -7,6 +7,7 @@ import type { Position, Span, Token } from './token.js';
 import { describeToken, describeTokenType } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import type {
+  A11ySeverity,
   AcceptDialogStmt,
   ActionDecl,
   AllowHostsDecl,
@@ -182,10 +183,13 @@ const STATEMENT_KEYWORDS = [
   'screenshot',
   'stub',
 ] as const;
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath'] as const;
+const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'was', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
+/** `has no [<severity>] a11y violations` (M3e, SPEC §9.8) — increasing severity, matching axe-core's
+ * own `impact` scale (`A11ySeverity`, ast.ts). */
+const A11Y_SEVERITY_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport'] as const;
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
@@ -1565,6 +1569,10 @@ class Parser {
         if (!locator) return null;
         return { type: 'LocatorSubject', locator, span: this.spanFrom(start) };
       }
+      case 'page': {
+        this.advance();
+        return { type: 'PageSubject', span: this.spanFrom(start) };
+      }
       default: {
         const hint = suggest(tok.value, SUBJECT_KEYWORDS);
         this.error(
@@ -1717,7 +1725,11 @@ class Parser {
           const v = this.parseValue();
           return v ? mk('hasValue', v) : null;
         }
-        this.error(Codes.UNKNOWN_MATCHER, `expected \`count\` or \`value\` after \`has\`, found ${describeToken(next)}`, next.span);
+        if (this.isKw(next, 'no')) {
+          this.advance();
+          return this.parseA11yViolationsMatcher(start, negated);
+        }
+        this.error(Codes.UNKNOWN_MATCHER, `expected \`count\`, \`value\`, or \`no\` after \`has\`, found ${describeToken(next)}`, next.span);
         return null;
       }
       case 'is': {
@@ -1759,6 +1771,21 @@ class Parser {
         return null;
       }
     }
+  }
+
+  /** `no [<severity>] a11y violations` (M3e, SPEC §9.8) — caller has already consumed `has no`.
+   * `<severity>` is an optional bare word (`minor`/`moderate`/`serious`/`critical`, a *floor*, not
+   * an exact-match filter — see `Matcher.a11ySeverity`'s doc comment in ast.ts); omitted means every
+   * severity counts. */
+  private parseA11yViolationsMatcher(start: Position, negated: boolean): Matcher | null {
+    const sevTok = this.peek();
+    let a11ySeverity: A11ySeverity | undefined;
+    if (sevTok.type === 'ident' && (A11Y_SEVERITY_WORDS as readonly string[]).includes(sevTok.value)) {
+      a11ySeverity = this.advance().value as A11ySeverity;
+    }
+    if (!this.expectKw('a11y')) return null;
+    if (!this.expectKw('violations')) return null;
+    return { type: 'Matcher', name: 'hasNoA11yViolations', negated, value: null, a11ySeverity, span: this.spanFrom(start) };
   }
 
   // -- UI / browser steps (SPEC §9, M3a) --------------------------------------

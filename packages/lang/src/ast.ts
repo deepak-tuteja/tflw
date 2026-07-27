@@ -271,7 +271,8 @@ export type Subject =
   | BodyPdfTextSubject
   | RequestSubject
   | NetworkRequestSubject
-  | LocatorSubject;
+  | LocatorSubject
+  | PageSubject;
 
 /** A UI locator used as an `expect`/`check` subject (`expect button "Add to cart" is visible`,
  * SPEC §9.4, M3a). Only the state/value/count matchers of §6.2 are meaningful against it —
@@ -324,6 +325,15 @@ export interface NetworkRequestRef extends Node {
 
 export interface DurationSubject extends Node {
   readonly type: 'DurationSubject';
+}
+
+/** `page` (M3e, D14, SPEC §9.8) — the active browser page as a whole, not a specific locator.
+ * Currently only meaningful with the `hasNoA11yViolations` matcher (`expect page has no [<severity>]
+ * a11y violations`); a bare subject (like `RequestSubject`) rather than one carrying its own data,
+ * since what it means depends entirely on which matcher follows — the same shape a future `page`
+ * matcher (title/url) would reuse without a new subject type. */
+export interface PageSubject extends Node {
+  readonly type: 'PageSubject';
 }
 
 export interface HeaderSubject extends Node {
@@ -396,7 +406,14 @@ export type MatcherName =
   | 'checked'
   | 'connects'
   | 'fails'
-  | 'wasMade';
+  | 'wasMade'
+  | 'hasNoA11yViolations';
+
+/** axe-core's own impact scale (M3e, SPEC §9.8), increasing severity. Shared with
+ * `@tflw/runtime`'s `finding.ts` — the generic `Severity`/`Finding` model the pentest scan arc
+ * (v1.2.0) is meant to reuse (PLAN_BROWSER_PERF_SECURITY.md §1.10, D14) rather than reimplementing
+ * its own severity vocabulary. */
+export type A11ySeverity = 'minor' | 'moderate' | 'serious' | 'critical';
 
 export interface Matcher extends Node {
   readonly type: 'Matcher';
@@ -418,9 +435,14 @@ export interface Matcher extends Node {
    * read directly, never run through `evalValue`). Resolved against the test file's own directory
    * at runtime, same as `schemaSource`'s relative-path handling. */
   readonly filePath?: StringLit;
+  /** `has no [<severity>] a11y violations` (M3e) — set only when `name === 'hasNoA11yViolations'`.
+   * `undefined` (bare `has no a11y violations`) means every severity counts; otherwise a *floor*
+   * — `serious` also counts `critical` findings, since a "no serious violations" bar that a worse
+   * violation could quietly slip under would be a teaching trap, not a convenience. */
+  readonly a11ySeverity?: A11ySeverity;
 }
 
-// ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a/M3b/M3c) -----------------
+// ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a-M3e) ----------------------
 //
 // M3a shipped: open/click(+double/right)/fill/fill form/select/check/uncheck/press/hover/scroll/
 // within + the state/value/count UI expect subjects + dialogs. M3b adds: frame traversal (`within
@@ -428,10 +450,11 @@ export interface Matcher extends Node {
 // download capture (`download as <name>`), drag-drop (`drag … to …`/`drop file … onto …`), and
 // `wait until <ui condition>`. M3c adds: `screenshot "<name>"`, automatic failure screenshots,
 // Playwright trace-on-failure/retry, the `report/assets/` directory, `--browser`/`--headed`, and
-// `viewport` config (D11, D12). Still deferred to later browser-arc milestones
-// (PLAN_BROWSER_PERF_SECURITY.md §1.12): network observe/mock (M3d), the a11y subject (M3e),
-// `element <name> = <locator>` aliases (§8, no milestone owns them yet), and the live-DOM "nearest
-// candidate" cold-start diagnosis + `tflw pick` (M5).
+// `viewport` config (D11, D12). M3d adds: network observation (`request to "…"`/`of request to
+// "…"`) and `stub` route mocking. M3e adds: the `page` subject + `hasNoA11yViolations` matcher
+// (axe-core). Still deferred to later browser-arc milestones (PLAN_BROWSER_PERF_SECURITY.md
+// §1.12): `element <name> = <locator>` aliases (§8, no milestone owns them yet), and the live-DOM
+// "nearest candidate" cold-start diagnosis + `tflw pick` (M5).
 
 /** Locator noun (D6, SPEC §9.3): the noun picks the resolution strategy — `button`/`text`/`list`
  * single-strategy, `field` a closed 3-step cascade (label → placeholder → role), `css`/`xpath`

@@ -248,10 +248,11 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
       while (j < steps.length && steps[j]!.type === 'ExpectStmt') {
         const expect = steps[j] as ExpectStmt;
         // `NetworkRequestSubject` (M3d, `request to "…"`) reads the browser's observed network
-        // traffic, not this `api` step's own response/connection state — orthogonal to the
-        // connects/fails restriction below, so it's excluded from both buckets entirely rather than
+        // traffic, and `PageSubject` (M3e, `page has no … a11y violations`) reads the page's DOM —
+        // neither is this `api` step's own response/connection state, so both are orthogonal to the
+        // connects/fails restriction below and excluded from both buckets entirely rather than
         // being misclassified as an incompatible response-based assertion.
-        if (expect.subject.type !== 'NetworkRequestSubject') {
+        if (expect.subject.type !== 'NetworkRequestSubject' && expect.subject.type !== 'PageSubject') {
           (expect.subject.type === 'RequestSubject' ? requestExpects : otherExpects).push(expect);
         }
         j++;
@@ -295,6 +296,8 @@ function subjectKeyword(subject: Subject): string {
       return 'request';
     case 'LocatorSubject':
       return subject.locator.kind;
+    case 'PageSubject':
+      return 'page';
   }
 }
 

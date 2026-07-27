@@ -329,6 +329,11 @@ test('checkRequestAssertions: a `request to "…" was made` (M3d) is exempt from
   assert.deepEqual(checkRequestAssertions(program), []);
 });
 
+test('checkRequestAssertions: `page has no … a11y violations` (M3e) is likewise exempt — reads the page\'s DOM, not this api step\'s response', () => {
+  const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request connects\n  expect page has no critical a11y violations\n`);
+  assert.deepEqual(checkRequestAssertions(program), []);
+});
+
 test('checkRequestAssertions: also validates inside `action`/`hook` bodies', () => {
   const { program: actionProgram } = parseSource(`action ping()\n  api GET /health\n  expect request fails\n  expect status equals 200\n  give true\n`);
   assert.equal(checkRequestAssertions(actionProgram).length, 1);

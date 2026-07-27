@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, resolve as resolvePath } from 'node:path';
 import { parseSource, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
+  A11ySeverity,
   ApiBody,
   ApiRequestSpec,
   CaptureStmt,
@@ -33,6 +34,8 @@ import type {
 import { evalValue, interpolatePath, navigate, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
 import { evalUiMatcherOnce } from './uiMatcher.js';
+import { runA11yScan } from './a11y.js';
+import { filterBySeverity, type Finding } from './finding.js';
 import {
   BrowserPageState,
   captureFailureScreenshot,
@@ -891,16 +894,19 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'ExpectStmt': {
-          // UI locator subjects (SPEC §9.4) and network-observation subjects (`request to "…"`/`of
-          // request to "…"`, M3d, SPEC §9.7) each get their own retry-until-timeout path — the
-          // exact opposite of an API expect's evaluate-once/fail-fast (P#15) — so both are
-          // intercepted here rather than inside `execExpect`.
+          // UI locator subjects (SPEC §9.4), network-observation subjects (`request to "…"`/`of
+          // request to "…"`, M3d, SPEC §9.7), and the `page` a11y subject (M3e, SPEC §9.8) each get
+          // their own retry-until-timeout path — the exact opposite of an API expect's
+          // evaluate-once/fail-fast (P#15) — so all three are intercepted here rather than inside
+          // `execExpect`.
           const networkRef = subjectNetworkRef(step.subject);
           result = networkRef
             ? await execNetworkExpect(step, networkRef, ctx, src, stepStart, config)
             : step.subject.type === 'LocatorSubject'
               ? await execUiExpect(step, ctx, src, stepStart, config)
-              : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
+              : step.subject.type === 'PageSubject'
+                ? await execA11yExpect(step, ctx, src, stepStart, config)
+                : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
         case 'LetStmt': {
@@ -1596,6 +1602,52 @@ function subjectNetworkRef(subject: Subject): NetworkRequestRef | null {
   return null;
 }
 
+/** `expect`/`check page has no [<severity>] a11y violations` (M3e, D14, SPEC §9.8) — auto-retries
+ * to `timeout expect` like `execUiExpect`/`execNetworkExpect`: a page still hydrating (a label
+ * attached once data loads, an async toast) can legitimately fix its own accessibility gaps before
+ * the assertion's budget runs out. Re-runs a full `runA11yScan` on every poll rather than caching
+ * one result — the same "observe the *current* state every time" shape `execUiExpect` already uses
+ * for its locator, not a performance shortcut. */
+async function execA11yExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
+  if (step.matcher.name !== 'hasNoA11yViolations') {
+    throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`page\` — only \`has no [<severity>] a11y violations\` (SPEC §9.8)`);
+  }
+  const browser = requireBrowserCtx(ctx);
+  const page = await browser.page.ensurePage(browser.manager);
+  const floor = step.matcher.a11ySeverity ?? null;
+  const deadline = performance.now() + config.timeouts.expect;
+  for (;;) {
+    const violations = filterBySeverity(await runA11yScan(page), floor);
+    const outcome = describeA11yOutcome(step, floor, violations);
+    if (outcome.ok || performance.now() >= deadline) {
+      return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+    }
+    await sleep(WAIT_POLL_INTERVAL_MS);
+  }
+}
+
+/** At most 5 violations listed in the failure message (mirrors `matcher.ts`'s `MAX_DIFF_CHARS`
+ * truncation in spirit — a large real page can have dozens of instances of the same rule, and the
+ * point is "here's enough to start fixing", not a full audit dump); the full axe-core result isn't
+ * surfaced anywhere else, unlike a response body, so this is the only place worth being generous
+ * with detail per item shown. */
+function describeA11yOutcome(step: ExpectStmt, floor: A11ySeverity | null, violations: readonly Finding[]): MatchOutcome {
+  const kind = floor ? `${floor} a11y violation` : 'a11y violation';
+  const negated = step.matcher.negated;
+  const noneFound = violations.length === 0;
+  const ok = negated ? !noneFound : noneFound;
+  if (ok) {
+    const state = negated ? `has ${violations.length} ${kind}${violations.length === 1 ? '' : 's'}` : `has no ${kind}s`;
+    return { ok: true, message: `page ${state} (as expected)` };
+  }
+  if (negated) {
+    return { ok: false, message: `expected page to have at least one ${kind}, but found none` };
+  }
+  const shown = violations.slice(0, 5).map((v) => `  - [${v.severity}] ${v.id}: ${v.description} (${v.detail})`);
+  const more = violations.length > 5 ? [`  … and ${violations.length - 5} more`] : [];
+  return { ok: false, message: `expected page to have no ${kind}s, but found ${violations.length}:\n${[...shown, ...more].join('\n')}` };
+}
+
 /** Gap #15 (TFLW-GAPS.md): a plain (non-quantified) `body.<path>` assertion's own detail text can
  * expose a `redact`-covered field's real value — as the `actual` side of a failing comparison, or
  * (since a passing `equals` necessarily has `actual === expected`) as the literal shown even on
@@ -1798,6 +1850,12 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
   if (subjectNetworkRef(subject)) {
     throw new RuntimeError('`capture` does not support a `request to "…"`/`of request to "…"` subject (SPEC §9.7) — only `expect`/`check` against it');
   }
+  // Same reasoning, same ordering (before the response-null guard below, which is meaningless for
+  // a subject that was never going to read `response` in the first place): `execA11yExpect`
+  // intercepts every `PageSubject` expect/check (SPEC §9.8); reached only via `capture page as x`.
+  if (subject.type === 'PageSubject') {
+    throw new RuntimeError('`page` is not a capturable value — only `expect`/`check page has no … a11y violations` (SPEC §9.8)');
+  }
   if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion/capture');
   switch (subject.type) {
     case 'StatusSubject':
@@ -1842,6 +1900,8 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
       // Unreachable in practice — the `subjectNetworkRef` guard above already throws before this
       // switch runs for any network-observation subject. Kept for exhaustiveness.
       throw new RuntimeError('`capture` does not support a `request to "…"` subject (SPEC §9.7) — only `expect`/`check` against it');
+    // `PageSubject` is excluded from this switch's domain entirely — the guard above already threw
+    // for it, so TS's narrowing means it's not a case this switch needs (or is allowed) to handle.
   }
 }
 

@@ -137,6 +137,52 @@ const TAB2_HTML = `<!doctype html>
 </body>
 </html>`;
 
+// M3e: a genuinely clean page (proper landmark, labelled input, real axe-core run confirms 0
+// violations) and a genuinely broken one (confirmed via a real scan to produce exactly 5
+// violations: `image-alt`/`label` at critical, `color-contrast` at serious, `landmark-one-main`/
+// `region` at moderate) — real markup, not a mocked scan result, so severity-floor filtering is
+// exercised against real axe-core output.
+const A11Y_CLEAN_HTML = `<!doctype html>
+<html lang="en">
+<head><title>Accessible page</title></head>
+<body>
+  <main>
+    <h1>Accessible page</h1>
+    <label for="name">Name</label>
+    <input id="name" type="text" />
+    <button type="button">Submit</button>
+  </main>
+</body>
+</html>`;
+
+const A11Y_BAD_HTML = `<!doctype html>
+<html lang="en">
+<head><title>Broken page</title></head>
+<body>
+  <h1>Broken page</h1>
+  <img src="/nonexistent.png" />
+  <input type="text" />
+  <button style="color:#eeeeee;background:#ffffff;">Ghost button</button>
+</body>
+</html>`;
+
+// A `label`-rule (critical) violation that fixes itself 400ms after load — proves
+// `execA11yExpect` re-scans on every poll rather than judging the page once against a stale DOM,
+// the same "current state every time" property `execUiExpect` already has for its locator.
+const A11Y_DYNAMIC_HTML = `<!doctype html>
+<html lang="en">
+<head><title>Dynamic page</title></head>
+<body>
+  <main>
+    <h1>Dynamic page</h1>
+    <input id="field" type="text" />
+  </main>
+  <script>
+    setTimeout(function () { document.getElementById('field').setAttribute('aria-label', 'Name'); }, 400);
+  </script>
+</body>
+</html>`;
+
 // M3c: served on the *first* request only (a real deterministic "fails once, then passes" fixture
 // — same closure-counter technique M2.65's session-retry test used against a real HTTP handler,
 // not a mock) — the button `retry`'s two attempts are looking for isn't there until the second
@@ -163,6 +209,10 @@ before(async () => {
     // observation reads the browser's real traffic, so there must be real traffic to observe.
     '/api/orders': (_req, res) => json(res, 200, { status: 'created', items: [{ id: 1 }] }),
     '/api/payments': (req, res) => json(res, 200, { approved: true, method: req.method }),
+    // M3e: real accessible/inaccessible pages for `expect page has no … a11y violations`.
+    '/a11y-clean': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_CLEAN_HTML),
+    '/a11y-bad': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_BAD_HTML),
+    '/a11y-dynamic': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_DYNAMIC_HTML),
   });
   config = { ...testConfig(server.baseUrl), webBaseUrl: server.baseUrl };
   browserManager = new BrowserManager();
@@ -648,6 +698,84 @@ test('`stub` with no `body` clause responds with just the status code', async ()
   stub GET "/api/orders" respond status 503
   click button "Fetch orders"
   expect status of request to "/api/orders" equals 503
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+// ---- M3e: `expect page has no [<severity>] a11y violations` (axe-core) -----
+
+test('`expect page has no a11y violations` passes against a real, genuinely accessible page', async () => {
+  const { report } = await run(`test "a11y clean"
+  open "/a11y-clean"
+  expect page has no a11y violations
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('`expect page has no a11y violations` fails against a real broken page, listing real axe-core findings', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  const { program } = parseSource(`test "a11y bad"
+  open "/a11y-bad"
+  expect page has no a11y violations
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /expected page to have no a11y violations, but found 5/);
+  assert.match(error, /image-alt/);
+  assert.match(error, /\[critical\]/);
+});
+
+test('a `<severity>` floor counts that severity and everything worse, not an exact match', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  // `/a11y-bad` has 2 critical (image-alt, label), 1 serious (color-contrast), 2 moderate
+  // (landmark-one-main, region) — a `serious` floor must also catch the 2 critical ones (3 total),
+  // never just the exact-`serious` one, so a worse violation can't quietly slip under the bar.
+  const { program } = parseSource(`test "a11y severity floor"
+  open "/a11y-bad"
+  expect page has no serious a11y violations
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /found 3/);
+});
+
+test('a `critical` floor correctly fails against a page that really does have critical violations', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  // Sanity check the floor isn't accidentally inverted (i.e. it would wrongly pass here if
+  // `critical` were somehow treated as "exclude critical" instead of "include only critical+").
+  const { program } = parseSource(`test "critical floor, real critical violations"
+  open "/a11y-bad"
+  expect page has no critical a11y violations
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /found 2/);
+});
+
+test('negation: `not has no … violations` passes when the page genuinely has that severity', async () => {
+  const { report } = await run(`test "a11y negated"
+  open "/a11y-bad"
+  expect page not has no critical a11y violations
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('negation fails cleanly when no violation of that severity exists', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  const { program } = parseSource(`test "a11y negated, none to find"
+  open "/a11y-clean"
+  expect page not has no a11y violations
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /expected page to have at least one a11y violation, but found none/);
+});
+
+test('the a11y expect retries and re-scans, passing once a violation genuinely fixes itself mid-poll', async () => {
+  const { report } = await run(`test "a11y self-heals"
+  open "/a11y-dynamic"
+  expect page has no critical a11y violations
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
 });

@@ -438,3 +438,50 @@ test('`stub` missing `respond status` is a diagnosed error, not a silent parse',
   const { diagnostics } = parseSource('test "ok"\n  stub GET "/api/orders"\n');
   assert.ok(diagnostics.length > 0, 'expected a diagnostic for a missing `respond status`');
 });
+
+// ---- M3e: `page` subject + `has no [<severity>] a11y violations` ----------
+
+test('`expect page has no a11y violations` parses a PageSubject with the hasNoA11yViolations matcher, no severity', () => {
+  const step = firstStep('test "ok"\n  expect page has no a11y violations\n') as {
+    subject: { type: string };
+    matcher: { name: string; negated: boolean; a11ySeverity: string | undefined };
+  };
+  assert.equal(step.subject.type, 'PageSubject');
+  assert.equal(step.matcher.name, 'hasNoA11yViolations');
+  assert.equal(step.matcher.negated, false);
+  assert.equal(step.matcher.a11ySeverity, undefined);
+});
+
+test('`expect page has no <severity> a11y violations` carries the severity for each of minor/moderate/serious/critical', () => {
+  for (const severity of ['minor', 'moderate', 'serious', 'critical']) {
+    const step = firstStep(`test "ok"\n  expect page has no ${severity} a11y violations\n`) as {
+      matcher: { a11ySeverity: string | undefined };
+    };
+    assert.equal(step.matcher.a11ySeverity, severity);
+  }
+});
+
+test('`expect page not has no critical a11y violations` negates via the ordinary `not` prefix', () => {
+  const step = firstStep('test "ok"\n  expect page not has no critical a11y violations\n') as {
+    matcher: { name: string; negated: boolean; a11ySeverity: string | undefined };
+  };
+  assert.equal(step.matcher.name, 'hasNoA11yViolations');
+  assert.equal(step.matcher.negated, true);
+  assert.equal(step.matcher.a11ySeverity, 'critical');
+});
+
+test('`check page has no a11y violations` parses as the soft ExpectStmt form, same as any other subject', () => {
+  const step = firstStep('test "ok"\n  check page has no a11y violations\n') as { type: string; soft: boolean };
+  assert.equal(step.type, 'ExpectStmt');
+  assert.equal(step.soft, true);
+});
+
+test('`has no` with an unknown word instead of `a11y` is a diagnosed error, not a silent parse', () => {
+  const { diagnostics } = parseSource('test "ok"\n  expect page has no bogus violations\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic');
+});
+
+test('`has` with neither `count`/`value`/`no` after it is still a diagnosed error (unaffected by the new `no` branch)', () => {
+  const { diagnostics } = parseSource('test "ok"\n  expect list "items" has 3\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic');
+});

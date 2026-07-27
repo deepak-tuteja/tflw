@@ -681,6 +681,7 @@ them callable.
 | `connects` | `request` | `expect request connects` |
 | `fails` / `fails matching "<regex>"` | `request` | `expect request fails matching "certificate"` |
 | `was made` | `request to "<url>"` | `expect request to "/api/orders" was made` |
+| `has no [minor/moderate/serious/critical] a11y violations` | `page` | `expect page has no critical a11y violations` |
 <!-- GENERATED:matchers:end -->
 
 Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
@@ -1032,7 +1033,8 @@ scoping, and the state/value/count UI expect subjects. **M3b ✅ shipped**: fram
 condition>` — see §9.5. **M3c ✅ shipped**: `screenshot`, failure screenshots, Playwright
 trace-on-failure/retry, `report/assets/`, `--browser`/`--headed`/`viewport` — see §9.6. **M3d ✅
 shipped**: network observation (`request to "…"`, `of request to "…"`) and `stub` — see §9.7.
-**Still planned**: the a11y subject (M3e); `element <name> = <locator>` aliases (§8 — no milestone
+**M3e ✅ shipped**: the `page` a11y subject (axe-core) — see §9.8.
+**Still planned**: `element <name> = <locator>` aliases (§8 — no milestone
 owns them yet); and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick <url>` (M5).
 `tflw install-browsers [--browser chromium|firefox|webkit]` downloads the browser binary
 (`playwright` is an optional peer, D5 — installed and dynamically imported only once a suite
@@ -1259,6 +1261,42 @@ expect text "gateway down" is visible
   universal secret-value redactor every step's report text already gets, just not that
   more-targeted, path-declared masking).
 
+### 9.8 Accessibility (M3e, D14) ✅
+
+```
+open "/checkout"
+expect page has no a11y violations              # every severity
+
+open "/admin/legacy-widget"                      # a known-broken corner (dogfood-flagged for M7)
+expect page has no critical a11y violations       # a severity floor, not an exact match
+```
+
+- **`expect`/`check page has no [<severity>] a11y violations`** — a real [axe-core](https://github.com/dequelabs/axe-core)
+  scan of the active page's current DOM. `<severity>` (`minor`/`moderate`/`serious`/`critical`,
+  axe-core's own impact scale) is optional and, when given, is a **floor, not an exact match** —
+  `has no serious a11y violations` also counts `critical` findings, so a worse violation can never
+  quietly slip under a lower bar. Omitting it counts every severity. Retries to `timeout expect`
+  (default 5s) like every other UI expect (§9.4) — re-scanning the *current* DOM on every poll, not
+  judging a stale snapshot, so a page that's still hydrating (a label attached once data loads) has
+  the same "not yet, not never" grace a not-yet-rendered locator gets. `axe-core` is a second
+  optional peer dependency alongside `playwright` (D5) — installed and dynamically imported only
+  once a suite actually writes this assertion. A failing assertion lists up to 5 real violations
+  (rule id, severity, description, and a target-element pointer) in the failure message — the
+  diagnostics pillar applied to accessibility, not just a pass/fail bit.
+- **Scan-arc reuse (D14).** This is deliberately built as a generic two-layer shape: `a11y.ts` is
+  the only file that knows axe-core exists, mapping its output onto `finding.ts`'s
+  scanner-agnostic `Finding`/`Severity` model (id/severity/description/detail, plus
+  `filterBySeverity`'s floor semantics above) — the "scan-and-assert machinery" the pentest scan
+  arc (v1.2.0, §3 below) is required to reuse rather than reimplementing its own severity
+  vocabulary and filter/count logic. A future HTTP-scan finding source slots into `finding.ts`
+  without touching this section's grammar or `a11y.ts`.
+- **Not supported (out of scope for M3e):** `capture page as x` (a clear runtime error, same
+  "not capturable" precedent as §6.2.2's connection-attempt `request` subject and §9.7's
+  network-observation subjects — a page's a11y findings are asserted, never captured as a value);
+  `any`/`all` quantifiers against `page`; per-rule allow-listing (e.g. suppressing one known-noisy
+  rule id while still failing on everything else) — only a severity floor is a first-class filter
+  today.
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
@@ -1317,8 +1355,10 @@ screenshots, Playwright trace on failure and every retry attempt (§9.6). M3d's 
 `of request to "…"`/`stub` steps report through the same generic step timeline as every other step
 (source line + pass/fail detail, e.g. `stub POST "/api/payments/**" → 500`) — no dedicated
 network-panel evidence was added; the full request/response is inspectable via the kept Playwright
-trace (§9.6) when one exists. 🔮 Visual regression baselines wait for M4b; the a11y subject's own
-evidence for M3e.
+trace (§9.6) when one exists. M3e's `page has no … a11y violations` reports the same way — its
+failure detail text lists up to 5 real axe-core findings inline (§9.8) rather than gaining its own
+report panel; a kept Playwright trace still has the DOM these findings point at. 🔮 Visual
+regression baselines (their own before/after/diff evidence) wait for M4b.
 
 - Interpreter emits `step:start` / `step:end` (timing + screenshot when one was captured for a
   browser step, full req/res trace for API steps); reporter is a pure consumer.

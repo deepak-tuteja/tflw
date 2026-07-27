@@ -1,8 +1,8 @@
 # testFlow grammar
 
-The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **M3d**
-(`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — network observation (`request to "…"`/`of request to
-"…"`) and `stub`; the browser-arc gap noted below is now closed for M3a–M3d together). This is a strict subset of the
+The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **M3e**
+(`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — M3d's network observation (`request to "…"`/`of request to
+"…"`) and `stub`, plus M3e's `page` a11y subject; the browser-arc gap noted below is now closed for M3a–M3e together). This is a strict subset of the
 full language design in [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md); SPEC.md is the prose reference with rationale
 and examples, this file is the grammar shape only. Cross-references to SPEC decisions are `(P#n)`;
 cross-references to a SPEC section are `(§n)`.
@@ -133,6 +133,8 @@ Subject     := 'status' NetworkRef?
              | 'request' NetworkRef                              # (§9.7, M3d) — an *observed* network
                                                                   # request; disambiguated from the bare
                                                                   # form above by whether `to` follows
+             | 'page'                                            # (§9.8, M3e) — the active browser page;
+                                                                  # only `has no … a11y violations` reads it
 BodyPath    := ('.' IDENT | '[' NUMBER ']')+                     # .items[0].price
 NetworkRef  := 'to' STRING ('with' 'method' STRING)?              # (§9.7, M3d)
              | 'of' 'request' 'to' STRING ('with' 'method' STRING)?  # trailing clause on status/header/body/body text
@@ -151,7 +153,11 @@ MatcherCore := 'equals' Value
              | 'connects'                                        # `request` subject only (§6.2.2)
              | 'fails' ('matching' STRING)?                       # `request` subject only (§6.2.2)
              | 'was' 'made'                                       # `request to "…"` subject only (§9.7, M3d)
+             | 'has' 'no' A11ySeverity? 'a11y' 'violations'       # `page` subject only (§9.8, M3e) —
+                                                                   # severity is a *floor*, not an exact
+                                                                   # match: `serious` also counts `critical`
 StateWord   := 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked'
+A11ySeverity := 'minor' | 'moderate' | 'serious' | 'critical'      # axe-core's own impact scale (§9.8)
 ```
 
 A step combining a `request`-subject assertion with a `status`/`header`/`body`/`duration` one on
@@ -159,8 +165,9 @@ the same request, or a `request`-subject assertion inside `wait until api`, is a
 (`TF031`, §6.2.2) — the grammar above accepts both shapes syntactically; the restriction is
 semantic, enforced by `checkRequestAssertions` (`packages/lang/src/checker.ts`), the same layer
 `checkServices`/`checkSessions` already live in. `request to "…"` (the M3d network-observation
-form) is exempt from this restriction — `checkRequestAssertions` recognizes it as an unrelated
-subject reading the browser's own network log, not this `api` step's response/connection state.
+form) and `page` (the M3e a11y subject) are both exempt from this restriction —
+`checkRequestAssertions` recognizes each as an unrelated subject (the browser's own network log,
+and the page's DOM, respectively), not this `api` step's response/connection state.
 
 See the generated [matcher table](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#62-matcher-table)
 (§6.2, from [`spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts))
@@ -175,7 +182,8 @@ CaptureStmt := 'capture' Subject 'as' IDENT NEWLINE
               # runtime error — it carries no value to capture (§6.2.2, PLAN decision 18).
               # `request to "…"` and any `of request to "…"` clause parse here too (same Subject
               # production) but are likewise runtime errors — no `capture` form exists for a
-              # network-observation subject, only `expect`/`check` (§9.7, M3d).
+              # network-observation subject, only `expect`/`check` (§9.7, M3d). Same for `page`
+              # (§9.8, M3e) — a page's a11y findings are asserted, never captured as a value.
 GiveStmt    := 'give' Value NEWLINE                               # an action's return value (§8)
 
 Value       := AddSub
