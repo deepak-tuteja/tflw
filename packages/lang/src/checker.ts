@@ -24,7 +24,7 @@ import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import { parseStringParts } from './parser.js';
 
 /** Keys valid only in `defaults`, only in `env`, or in both. */
-const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl']);
+const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl', 'ViewportDecl']);
 const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl']);
 
 export function validateConfig(config: ConfigFile): Diagnostic[] {
@@ -445,6 +445,9 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         checkStringLit(step.filePath, bound, diags);
         checkStringLit(step.locator.value, bound, diags);
         break;
+      case 'ScreenshotStmt':
+        checkStringLit(step.name, bound, diags);
+        break;
     }
   }
 }
@@ -641,5 +644,7 @@ function keyName(entry: ConfigEntry): string {
       return 'evidence';
     case 'RedactDecl':
       return 'redact';
+    case 'ViewportDecl':
+      return 'viewport';
   }
 }

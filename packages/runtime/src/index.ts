@@ -7,4 +7,4 @@ export { RuntimeError } from './eval.js';
 export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSelection } from './resolve.js';
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
 export { resolveRunSeed, resolveRunClock } from './seed.js';
-export { BrowserManager } from './browser.js';
+export { BrowserManager, SUPPORTED_BROWSER_ENGINES, type BrowserEngine, type BrowserManagerOptions } from './browser.js';

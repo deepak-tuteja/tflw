@@ -1,13 +1,16 @@
-// Playwright-backed browser step driver (M3a/M3b, SPEC §9). `playwright` is an optional peer (D5,
-// PLAN_BROWSER_PERF_SECURITY.md §1.1): dynamically imported on first use so `tflw run` against an
-// API-only suite never touches it, and a consumer who never installed the peer never pays for it.
+// Playwright-backed browser step driver (M3a/M3b/M3c, SPEC §9). `playwright` is an optional peer
+// (D5, PLAN_BROWSER_PERF_SECURITY.md §1.1): dynamically imported on first use so `tflw run`
+// against an API-only suite never touches it, and a consumer who never installed the peer never
+// pays for it.
 //
 // Lifecycle (D13): one shared `Browser` process for the whole `tflw run` invocation
 // (`BrowserManager`, owned by the CLI, threaded through `RunOptions`/`TestCtx`), one fresh
 // `BrowserContext` + `Page` per test attempt (`BrowserPageState`, created in `runTestAttempt`).
 // M3b extends `BrowserPageState` to track *several* pages per context (tabs/windows) with one
 // "active" index — every existing single-page caller keeps working unchanged since `ensurePage`
-// always returns whichever page is currently active.
+// always returns whichever page is currently active. M3c adds: engine selection + `--headed` +
+// `viewport` on `BrowserManager` (D11); screenshot capture; a Playwright trace started per context
+// and conditionally saved by `BrowserPageState.finish()` (D12).
 //
 // Selector model (D6): the locator noun picks the resolution strategy — `button`/`text`/`list`/
 // `css`/`xpath` are single-strategy, `field` is a closed 3-step cascade (label → placeholder →
@@ -15,11 +18,14 @@
 // silently accepted. Ambiguity (D7) is a hard error with up to 5 candidate descriptions — never
 // "take the first match".
 
-import { readFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { readFile, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import type { Locator as LocatorAst, LocatorKind } from '@tflw/lang';
 import { RuntimeError, evalValue, type EvalCtx } from './eval.js';
 import { inferContentType } from './mime.js';
+import type { ScreenshotAsset, TraceAsset } from './types.js';
 
 type PWModule = typeof import('playwright');
 export type PWBrowser = import('playwright').Browser;
@@ -27,6 +33,12 @@ export type PWBrowserContext = import('playwright').BrowserContext;
 export type PWPage = import('playwright').Page;
 export type PWLocator = import('playwright').Locator;
 export type PWFrameLocator = import('playwright').FrameLocator;
+
+/** The three engines Playwright ships (D11) — `chromium` is the default everywhere (`tflw run`,
+ * `tflw install-browsers`). A run switches its *whole* suite to one engine; no in-run matrix (D11:
+ * "engine is a run-level property in the report header" — CI matrixes three jobs instead). */
+export type BrowserEngine = 'chromium' | 'firefox' | 'webkit';
+export const SUPPORTED_BROWSER_ENGINES: readonly BrowserEngine[] = ['chromium', 'firefox', 'webkit'];
 
 /** Anything a locator can resolve against — a whole page, a container `Locator` (inside a plain
  * `within` block), or a `FrameLocator` (inside `within frame`, M3b — an iframe's own document has
@@ -49,15 +61,35 @@ async function loadPlaywright(): Promise<PWModule> {
   return pwModulePromise;
 }
 
+export interface BrowserManagerOptions {
+  /** D11: chromium default. */
+  readonly engine?: BrowserEngine;
+  /** `--headed` (M3c) — headless by default, matching every prior milestone's behavior. */
+  readonly headless?: boolean;
+  /** `viewport <w> <h>` (M3c) — `null`/omitted lets Playwright use its own default. */
+  readonly viewport?: { readonly width: number; readonly height: number } | null;
+}
+
 /** One per `tflw run` invocation (D13) — owned by the CLI, passed through `RunOptions`. Launches
  * lazily on the first browser step anywhere in the run; `close()` is safe to call even if a
- * browser was never actually launched. */
+ * browser was never actually launched. `engine`/`viewport` are public so `runProgram` can stamp
+ * the report header (D11) and `BrowserPageState.ensurePage` can size new contexts, without either
+ * needing its own copy of this run's settings. */
 export class BrowserManager {
+  readonly engine: BrowserEngine;
+  readonly viewport: { readonly width: number; readonly height: number } | null;
+  private readonly headless: boolean;
   private browserPromise: Promise<PWBrowser> | undefined;
+
+  constructor(opts: BrowserManagerOptions = {}) {
+    this.engine = opts.engine ?? 'chromium';
+    this.headless = opts.headless ?? true;
+    this.viewport = opts.viewport ?? null;
+  }
 
   async getBrowser(): Promise<PWBrowser> {
     if (!this.browserPromise) {
-      this.browserPromise = loadPlaywright().then((pw) => pw.chromium.launch({ headless: true }));
+      this.browserPromise = loadPlaywright().then((pw) => pw[this.engine].launch({ headless: this.headless }));
     }
     return this.browserPromise;
   }
@@ -102,14 +134,28 @@ export class BrowserPageState {
       const browser = await manager.getBrowser();
       // `acceptDownloads: true` (M3b) — explicit rather than relying on Playwright's own default,
       // since `download as <name>` needs every context to actually surface a `download` event
-      // instead of letting the browser navigate to (or silently drop) the response.
-      this.context = await browser.newContext({ acceptDownloads: true });
+      // instead of letting the browser navigate to (or silently drop) the response. `viewport`
+      // (M3c) is this run's configured size, or Playwright's own default when `null`.
+      this.context = await browser.newContext({ acceptDownloads: true, ...(manager.viewport ? { viewport: manager.viewport } : {}) });
+      // Started unconditionally (M3c, D12) — cheap enough to always run; `finish()` below decides
+      // at the *end* of the attempt whether it's worth keeping (failure, or a retry attempt),
+      // discarding it otherwise. `sources: true` lets a trace viewer show the actual `.tflw` source
+      // alongside the DOM/network timeline.
+      await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();
       this.wireDialogHandler(page);
       this.pages.push(page);
       this.activeIndex = 0;
     }
     return this.pages[this.activeIndex]!;
+  }
+
+  /** The active page, if a browser step has already created one this attempt — never creates one
+   * (unlike `ensurePage`). Used for best-effort failure screenshots (M3c): a failing *API* step in
+   * an otherwise UI-less test must never spin up a real browser process just to try to screenshot
+   * nothing. */
+  currentPageIfAny(): PWPage | undefined {
+    return this.pages[this.activeIndex];
   }
 
   /** How many tabs are currently open — used by `switchToTab`/`closeTab` for range/last-tab
@@ -192,6 +238,57 @@ export class BrowserPageState {
     this.pages = [];
     this.activeIndex = 0;
     this.context = undefined;
+  }
+
+  /** Ends this attempt's browser state (M3c, D12): stops the trace started in `ensurePage`,
+   * keeping the archive only when `shouldSaveTrace` — the caller decides that from "did this
+   * attempt fail, or is it a retry" (`runTestAttempt`, interpreter.ts) — then closes the context.
+   * Idempotent with `close()`: safe to call `close()` again afterward (a no-op, `context` is
+   * already cleared) as a defensive fallback if something throws before `finish()` runs.
+   *
+   * Playwright's `tracing.stop()` only writes to a real file path, never returns bytes directly —
+   * routed through a throwaway temp file, read back into memory, then deleted; the report itself
+   * is the archive's permanent home (`reporter`'s `resolveReportAssets`). No context at all (a
+   * browser was never actually used this attempt) returns `undefined` without touching tracing. */
+  async finish(shouldSaveTrace: boolean): Promise<TraceAsset | undefined> {
+    if (!this.context) return undefined;
+    let trace: TraceAsset | undefined;
+    if (shouldSaveTrace) {
+      const tmpPath = join(tmpdir(), `tflw-trace-${randomUUID()}.zip`);
+      try {
+        await this.context.tracing.stop({ path: tmpPath });
+        trace = { base64: (await readFile(tmpPath)).toString('base64') };
+      } finally {
+        await unlink(tmpPath).catch(() => {});
+      }
+    } else {
+      await this.context.tracing.stop();
+    }
+    await this.close();
+    return trace;
+  }
+}
+
+/** `screenshot "<name>"` (M3c) — a real step like `click`/`fill`: a failure here (a closed page,
+ * an unexpected navigation mid-capture) is itself a diagnosis and surfaces like any other action
+ * failure (`runAction`'s cleaned-up message), never silently swallowed. */
+export async function performScreenshot(page: PWPage): Promise<ScreenshotAsset> {
+  const buf = await runAction('screenshot', () => page.screenshot({ type: 'png' }));
+  return { base64: buf.toString('base64') };
+}
+
+/** Automatic failure-screenshot capture (M3c, D12's "failure-first capture") — supplementary
+ * evidence attached *alongside* an already-failed step, so it must never itself throw and mask (or
+ * replace) the real failure. Swallows both "no page exists yet" (`page` is `undefined`, e.g. an
+ * API step failed before any browser step ran) and any capture-time error (a mid-navigation page,
+ * an already-closed context) the same way — `undefined`, no screenshot, original failure intact. */
+export async function captureFailureScreenshot(page: PWPage | undefined): Promise<ScreenshotAsset | undefined> {
+  if (!page) return undefined;
+  try {
+    const buf = await page.screenshot({ type: 'png' });
+    return { base64: buf.toString('base64') };
+  } catch {
+    return undefined;
   }
 }
 

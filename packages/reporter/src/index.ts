@@ -2,8 +2,9 @@
 // renderJunitXml are pure; writeReport/writeJunitXml are the only I/O (write into the report dir).
 
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { RunReport } from '@tflw/runtime';
+import { resolveReportAssets } from './assets.js';
 import { renderReportHtml } from './html.js';
 import { renderJunitXml } from './junit.js';
 
@@ -12,13 +13,23 @@ export { renderCliSummary } from './cli-summary.js';
 export { renderJunitXml } from './junit.js';
 export { writeLastRun, readLastRun, renderLastRun, type LastRun, type LastRunFailure } from './last-run.js';
 export { writeEventsNdjson } from './events-ndjson.js';
+export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
-/** Write report.html into `dir` (created if needed). Returns the absolute path written. */
+/** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links
+ * to — a screenshot over the inline budget, or a Playwright trace archive (always external).
+ * Returns the absolute path written to report.html. A run with none of those writes no `assets/`
+ * directory at all, keeping today's single-file UX for an API-only (or UI-but-all-green) run. */
 export async function writeReport(report: RunReport, dir: string): Promise<string> {
   const outDir = resolve(dir);
   await mkdir(outDir, { recursive: true });
+  const { hrefs, files } = resolveReportAssets(report);
+  for (const file of files) {
+    const filePath = join(outDir, file.relPath);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, Buffer.from(file.base64, 'base64'));
+  }
   const path = join(outDir, 'report.html');
-  await writeFile(path, renderReportHtml(report), 'utf8');
+  await writeFile(path, renderReportHtml(report, hrefs), 'utf8');
   return path;
 }
 

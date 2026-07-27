@@ -118,6 +118,7 @@ import type {
   UploadBody,
   UseDecl,
   Value,
+  ViewportDecl,
   WaitUntilApiStmt,
   WaitUntilUiStmt,
   WebDecl,
@@ -177,13 +178,14 @@ const STATEMENT_KEYWORDS = [
   'download',
   'drag',
   'drop',
+  'screenshot',
 ] as const;
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
-const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact'] as const;
+const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport'] as const;
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 const RETRY_AFTER_HEADERS = ['Retry-After'] as const;
 const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
@@ -632,6 +634,8 @@ class Parser {
         return this.wrap(this.parseEvidenceDecl());
       case 'redact':
         return this.wrap(this.parseRedactDecl());
+      case 'viewport':
+        return this.wrap(this.parseViewportDecl());
       default: {
         const hint = suggest(tok.value, CONFIG_KEYS);
         this.error(
@@ -821,6 +825,17 @@ class Parser {
     }
     this.endLine();
     return { type: 'RedactDecl', patterns, span: this.spanFrom(start) };
+  }
+
+  private parseViewportDecl(): ViewportDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `viewport`
+    const width = this.expect('number', 'a viewport width in px, e.g. `viewport 1280 720`');
+    if (!width) return null;
+    const height = this.expect('number', 'a viewport height in px, e.g. `viewport 1280 720`');
+    if (!height) return null;
+    this.endLine();
+    return { type: 'ViewportDecl', width: Number(width.value), height: Number(height.value), span: this.spanFrom(start) };
   }
 
   private parseReportDecl(): ReportDecl | null {
@@ -1095,6 +1110,8 @@ class Parser {
           return this.parseDragStep();
         case 'drop':
           return this.parseDropFileStep();
+        case 'screenshot':
+          return this.parseScreenshotStep();
         default: {
           const hint = suggest(tok.value, STATEMENT_KEYWORDS);
           this.error(
@@ -1989,6 +2006,15 @@ class Parser {
     this.endLine();
     const stmt: DropFileStmt = { type: 'DropFileStmt', filePath, locator, span: this.spanFrom(start) };
     return stmt;
+  }
+
+  private parseScreenshotStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `screenshot`
+    const name = this.expectString('a screenshot name, e.g. `screenshot "checkout-step-2"`');
+    if (!name) return null;
+    this.endLine();
+    return { type: 'ScreenshotStmt', name, span: this.spanFrom(start) };
   }
 
   // -- let / capture ---------------------------------------------------------

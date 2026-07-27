@@ -470,6 +470,15 @@ env staging
   redact body.email, body.*.address
 `,
   },
+  {
+    name: 'viewport',
+    source: `defaults
+  viewport 1280 720
+
+env staging
+  api "https://staging.example.com"
+`,
+  },
 ];
 
 export const CONFIG_INVALID: readonly Fixture[] = [
@@ -579,6 +588,19 @@ env staging
     source: `env staging
   api "https://staging.example.com"
   redact body
+`,
+  },
+  {
+    name: 'viewport-in-env',
+    source: `env staging
+  api "https://staging.example.com"
+  viewport 1280 720
+`,
+  },
+  {
+    name: 'viewport-missing-height',
+    source: `defaults
+  viewport 1280
 `,
   },
 ];

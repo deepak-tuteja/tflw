@@ -94,6 +94,7 @@ defaults
   timeout step 10s, expect 5s, wait 30s
   workers 4
   report "./report"
+  viewport 1280 720
 
 env local default
   web "http://localhost:5173"
@@ -116,6 +117,9 @@ env staging
   the whole run, for self-signed/private-CA staging certs (PLAN decision 78). Explicit and
   greppable in review; a run with it active carries a visible warning in the CLI summary and the
   report header — never a silent trade-off. See §3.5 for the full corporate-networks story.
+- `viewport <width> <height>` (M3c, D11, §9.6) — browser window size in px for every new context;
+  `defaults`-only (a run-level browser setting, like `workers`/`report`, not one that varies per
+  env). Omitted: Playwright's own default (1280×720) applies.
 
 ### 3.2 Named API services (P#29)
 
@@ -1024,10 +1028,11 @@ Browser half, `0.2.0` (M3), landing in slices — see `PLAN_BROWSER_PERF_SECURIT
 ✅ shipped**: the core interaction steps below, the selector model, strict ambiguity, `within`
 scoping, and the state/value/count UI expect subjects. **M3b ✅ shipped**: frame traversal
 (`within frame`), tab/window switching, download capture, drag-drop, and `wait until <ui
-condition>` — see §9.5. **Still planned**: `report/` becoming a directory with failure
-screenshots/trace + `--browser`/`--headed`/viewport (M3c); network observe/mock (M3d); the a11y
-subject (M3e); `element <name> = <locator>` aliases (§8 — no milestone owns them yet); and the
-live-DOM "nearest candidate" cold-start diagnosis + `tflw pick <url>` (M5). `tflw install-browsers
+condition>` — see §9.5. **M3c ✅ shipped**: `screenshot`, failure screenshots, Playwright
+trace-on-failure/retry, `report/assets/`, `--browser`/`--headed`/`viewport` — see §9.6. **Still
+planned**: network observe/mock (M3d); the a11y subject (M3e); `element <name> = <locator>`
+aliases (§8 — no milestone owns them yet); and the live-DOM "nearest candidate" cold-start
+diagnosis + `tflw pick <url>` (M5). `tflw install-browsers
 [--browser chromium|firefox|webkit]` downloads the browser binary (`playwright` is an optional
 peer, D5 — installed and dynamically imported only once a suite actually runs a browser step).
 
@@ -1149,8 +1154,8 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
   closing the only open tab is a runtime error, not a silent no-op.
 - **`download as <name>`** — same before/run/listen shape as `switch to new tab`, but for the active
   page's `download` event. Binds the download's suggested filename as a plain string; the file's
-  actual bytes/on-disk path aren't yet surfaced as a report artifact (that lands with M3c's
-  `report/` directory).
+  actual bytes/on-disk path still aren't surfaced as a report artifact — M3c's `report/assets/`
+  directory (§9.6, §13) covers screenshots and traces, not downloads; no milestone owns this yet.
 - **`drag`/`drop file`** are both real native-event simulations, not semantic "reorder the list"
   actions — they only work against a page that actually listens for `dragstart`/`dragover`/`drop`
   the way a real drag-and-drop UI does (a fixture/app with no such listeners simply won't react,
@@ -1158,6 +1163,40 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
 - **`wait until <locator> [not] <matcher>`** is the UI sibling of `wait until api` (§5.5): same
   "budget, not a moment" framing, but for a UI condition — no separate request to re-issue, so it's
   a single line rather than a block. `has count` keeps its ambiguity exception from §9.4.
+
+### 9.6 Screenshots, failure evidence & Playwright trace (M3c, D12) ✅
+
+```
+open "/checkout"
+screenshot "before payment"       # captures the active page unconditionally, whatever happens next
+click button "Pay"
+expect text "Order confirmed" is visible
+```
+
+- **Explicit `screenshot "<name>"`** — a real step, reported like any other (`click`/`fill`): a
+  capture failure (a closed page, an unexpected navigation mid-capture) is itself a diagnosis and
+  surfaces the same way any other action failure does, never silently swallowed.
+- **Automatic failure screenshot** — best-effort, attached to whichever step just failed (a browser
+  action, a UI `expect`, or even an API step inside an otherwise-UI test) whenever a browser page
+  already exists for the attempt. Never creates a browser process just to try to screenshot nothing
+  (an API-only test sharing a `BrowserManager` never pays for this), and never masks the real
+  failure if the capture itself fails.
+- **Playwright trace** — a full time-travel DOM + network + console recording, started for every
+  browser context and kept only when it's worth keeping: **on a failing attempt, and on every
+  `retry` attempt** (passed or not — the retry path itself is the evidence worth keeping, D12). A
+  clean, single-attempt pass never captures one. Open a kept trace with
+  `npx playwright show-trace <path>` — the single best answer to "passed locally, failed in CI".
+- **`report/assets/`** — screenshots and traces land here, not inlined into `report.html`, once a
+  run actually produces one (an API-only run, or an all-green UI run with no explicit `screenshot`
+  step, still writes no `assets/` directory at all — §13). A small screenshot instead stays inlined
+  as a `data:` URI, under a configurable byte budget, so the "one self-contained file" UX an
+  API-only suite already has is never taken away by an occasional UI test running alongside it.
+- **Engine & viewport (D11)** — `tflw run --browser chromium|firefox|webkit` (default chromium)
+  switches the *whole* run's browser steps to one engine; no in-run matrix — a CI pipeline matrixes
+  three separate jobs instead. The engine actually used is stamped on the report header. `--headed`
+  shows a real browser window (local debugging only). `viewport <width> <height>` in `tflw.config`
+  (`defaults` only, §3.1) sizes every new browser context; omitted, Playwright's own default
+  (1280×720) applies.
 
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
@@ -1192,7 +1231,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13 |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
@@ -1212,19 +1251,31 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 
 ✅ Everything API-side: the event stream, req/res panels, per-`check` rows, generated values
 inline, seed header, redaction, CLI summary, `junit.xml`/`results.json`, exit codes, `--failed`/
-`--bail`/`--format ndjson` CI ergonomics. 🔮 Screenshots per browser step wait for M3/M4.
+`--bail`/`--format ndjson` CI ergonomics. ✅ Browser-side evidence since M3c: failure/explicit
+screenshots, Playwright trace on failure and every retry attempt (§9.6). 🔮 Visual regression
+baselines wait for M4b; network-mock/a11y evidence for M3d/M3e.
 
-- Interpreter emits `step:start` / `step:end` (timing, screenshot for browser steps, full
-  req/res trace for API steps); reporter is a pure consumer.
-- `report.html` (self-contained, per run): step timeline mirroring source; screenshot per
-  browser step; req/res panels per API step; failures as source line + expected/actual +
-  before/after artifacts; per-`check` pass/fail rows; generated values inline; run seed in the
-  header; taint-redacted secrets throughout.
+- Interpreter emits `step:start` / `step:end` (timing + screenshot when one was captured for a
+  browser step, full req/res trace for API steps); reporter is a pure consumer.
+- `report.html` (per run): step timeline mirroring source; a screenshot under a failed or explicit
+  `screenshot` step, a Playwright trace link on a failing/retry attempt (§9.6); req/res panels per
+  API step; failures as source line + expected/actual + before/after artifacts; per-`check`
+  pass/fail rows; generated values inline; run seed + (when a browser ran) engine in the header;
+  taint-redacted secrets throughout.
+- **`report/assets/`** (M3c, D12) — screenshots over a byte-size budget and every Playwright trace
+  (always, regardless of size — a multi-hundred-KB binary zip is never usefully embeddable) are
+  written here as `assets/screenshots/<hash>.png` / `assets/traces/<hash>.zip`, linked from
+  `report.html` by relative path; identical bytes (the same failure screenshot from two steps)
+  dedupe to one file. A screenshot under the budget stays inlined as a `data:` URI instead — a run
+  that never produces one (API-only, or an all-green UI run with no explicit `screenshot` step)
+  writes no `assets/` directory at all, so `report.html` stays the single self-contained file it
+  always was.
 - A collapsible sidebar tree groups every test by its source file, with one clickable link per
   test and one detail panel per test in `<main>` toggled via a shared `active` class — a small
   inline `<script>` (decision 92) wires up click-to-switch, a text filter, and an All/Failed/Passed
-  status toggle. Still a single self-contained file (no external requests, opens via `file://`
-  the same as before) — just no longer JS-free. A file group with any failing test starts expanded
+  status toggle. Self-contained (no external requests, opens via `file://`) whenever the run
+  produced no external `assets/` (M3c, above) — no longer JS-free either way. A file group with any
+  failing test starts expanded
   with the first failing test's panel shown; an all-passing run defaults to the first file's first
   test. `@media print` forces every panel visible and hides the sidebar, so printing/PDF export is
   unaffected.

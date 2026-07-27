@@ -2,6 +2,7 @@
 // emits (SPEC §13 — the reporter is a pure consumer of these), and the aggregated run report.
 
 import type { EvidenceLevel, RedactPattern, SessionDecl, Value } from '@tflw/lang';
+import type { BrowserEngine } from './browser.js';
 
 // ---- Resolved config -------------------------------------------------------
 
@@ -58,6 +59,9 @@ export interface ResolvedConfig {
   /** `redact body.email, body.*.address` — JSON field paths masked with `[redacted]` in the
    * report-only trace (SPEC §3.4, PLAN decision 101d). Accumulates across `defaults` + `env`. */
   readonly redactPatterns: readonly RedactPattern[];
+  /** `viewport <width> <height>` — browser window size in px (M3c, SPEC §9, D11). `null` = let
+   * Playwright use its own default (1280×720). `defaults`-only, like `workers`/`report`. */
+  readonly viewport: { readonly width: number; readonly height: number } | null;
 }
 
 export const DEFAULT_TIMEOUTS: ResolvedTimeouts = { step: 30_000, expect: 5_000, wait: 30_000 };
@@ -89,7 +93,8 @@ export type StepKind =
   | 'closeTab'
   | 'download'
   | 'drag'
-  | 'dropFile';
+  | 'dropFile'
+  | 'screenshot';
 
 export interface RequestTrace {
   readonly method: string;
@@ -111,6 +116,21 @@ export interface ResponseTrace {
   readonly durationMs: number;
 }
 
+/** A captured page screenshot (M3c, SPEC §13) — raw PNG bytes, base64-encoded. Never redacted (the
+ * redaction pass only walks text fields, `redact.ts`'s header comment) — a known, accepted
+ * limitation shared with every other visual-testing tool; a page that renders a secret on screen
+ * shows it in the screenshot the same as it would to a real user looking at it. */
+export interface ScreenshotAsset {
+  readonly base64: string;
+}
+
+/** A Playwright trace archive (M3c, D12) — a `.zip` (time-travel DOM + network + console), raw
+ * bytes base64-encoded. Always written out as a `report/assets/` file by the reporter, never
+ * inlined into `report.html` (too large/binary to usefully embed). */
+export interface TraceAsset {
+  readonly base64: string;
+}
+
 export interface StepResult {
   readonly kind: StepKind;
   /** The original source line, for the report timeline (mirrors source, SPEC §13). */
@@ -122,6 +142,9 @@ export interface StepResult {
   readonly detail?: string;
   readonly request?: RequestTrace;
   readonly response?: ResponseTrace;
+  /** Set on an explicit `screenshot "<name>"` step, or best-effort on any step that failed while a
+   * browser page existed for this test attempt (M3c, D12's "failure-first capture"). */
+  readonly screenshot?: ScreenshotAsset;
 }
 
 /** One `retry` attempt's outcome — captured so a flaky pass's earlier failing evidence survives
@@ -132,6 +155,10 @@ export interface AttemptResult {
   readonly durationMs: number;
   readonly steps: readonly StepResult[];
   readonly error?: string;
+  /** Present when this attempt used a browser and either failed or was itself a retry (M3c, D12:
+   * "trace on failure and on every retry attempt") — a clean single-attempt pass never captures
+   * one. */
+  readonly trace?: TraceAsset;
 }
 
 export interface TestResult {
@@ -154,6 +181,9 @@ export interface TestResult {
    * single-attempt test has no `attempts` field at all — same shape as before this field existed.
    * When present, `attempts[attempts.length - 1].steps === steps` (SPEC §4.4, PLAN decision 86). */
   readonly attempts?: readonly AttemptResult[];
+  /** This test's own kept (last) attempt's trace, mirroring `AttemptResult.trace` the same way
+   * `steps` mirrors the last attempt's `steps` (M3c). */
+  readonly trace?: TraceAsset;
 }
 
 export interface RunReport {
@@ -174,6 +204,10 @@ export interface RunReport {
   /** True when this run had `insecure true` active (TLS verification disabled) — surfaced as a
    * visible warning in the CLI summary and report header, never silently (decision 78). */
   readonly insecure: boolean;
+  /** The Playwright engine this run's browser steps ran against (M3c, D11: "engine is a run-level
+   * property in the report header"). Undefined only for a run given no `BrowserManager` at all
+   * (a hand-built test harness, never a real `tflw run` invocation, which always supplies one). */
+  readonly browserEngine?: BrowserEngine;
 }
 
 // ---- Event stream ----------------------------------------------------------

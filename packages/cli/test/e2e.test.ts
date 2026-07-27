@@ -1567,3 +1567,59 @@ test('--log-file duplicates console output to a file (decision 111.9)', async ()
     }
   });
 });
+
+// ---- M3c: --browser / --headed (D11) ---------------------------------------
+
+async function withWebFixtureServer<T>(fn: (baseUrl: string) => Promise<T>): Promise<T> {
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/') {
+      res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><html><body><button>Add to cart</button></body></html>');
+    } else {
+      res.writeHead(404).end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  try {
+    return await fn(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+}
+
+test('`tflw run --browser firefox` runs a real UI test end-to-end and stamps the engine on the report', async () => {
+  await withWebFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-browser-firefox-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  web "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'ui.tflw'), `test "storefront"\n  open "/"\n  click button "Add to cart"\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--browser', 'firefox', '--no-color'], { cwd: dir });
+      assert.match(stdout, /1\/1 passed/);
+
+      const resultsJson = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { browserEngine?: string };
+      assert.equal(resultsJson.browserEngine, 'firefox');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw run --browser <bogus>` is a usage error, not a silent fall-back to chromium', async () => {
+  await withWebFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-browser-bogus-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  web "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'ui.tflw'), `test "storefront"\n  open "/"\n`, 'utf8');
+
+      const failure = await execFileAsync('node', [cliEntry, 'run', '--browser', 'edge', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      assert.equal(failure.code, 2);
+      assert.match(failure.stderr, /--browser expects one of chromium, firefox, webkit, got "edge"/);
+      await assert.rejects(access(join(dir, 'report', 'report.html')), 'no report should be written for a usage error');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -40,6 +40,8 @@ import {
   redactReport,
   SessionCache,
   BrowserManager,
+  SUPPORTED_BROWSER_ENGINES,
+  type BrowserEngine,
   type RunReport,
   type TestResult,
   type EventSink,
@@ -108,8 +110,6 @@ async function main(argv: string[]): Promise<number> {
 
 // ---- tflw install-browsers (M3a, D5) ---------------------------------------
 
-const SUPPORTED_BROWSERS = ['chromium', 'firefox', 'webkit'] as const;
-
 /**
  * `playwright` is an optional peer (D5): browser step support only activates once the consuming
  * project installs it themselves (`npm install -D playwright`) and downloads a browser binary via
@@ -124,8 +124,8 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
     if (a === '--browser') browser = argv[++i] ?? browser;
     else if (a.startsWith('--browser=')) browser = a.slice('--browser='.length);
   }
-  if (!(SUPPORTED_BROWSERS as readonly string[]).includes(browser)) {
-    err(`unknown --browser \`${browser}\` — expected one of: ${SUPPORTED_BROWSERS.join(', ')}.`);
+  if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browser)) {
+    err(`unknown --browser \`${browser}\` — expected one of: ${SUPPORTED_BROWSER_ENGINES.join(', ')}.`);
     return EXIT_USAGE;
   }
   const code = await new Promise<number>((resolvePromise) => {
@@ -190,6 +190,14 @@ interface RunArgs {
   /** `--log-file <path>` (PLAN decision 111, M17) — duplicates console output to a file, always
    * plain text (ANSI stripped) regardless of stdout's own color state. */
   readonly logFile?: string | undefined;
+  /** Raw `--browser` text (M3c, D11), validated in `runCommand` against `SUPPORTED_BROWSER_ENGINES`
+   * — switches the whole run's browser steps to one engine (chromium default). Independent of
+   * `tflw install-browsers --browser`'s own flag of the same name (that one just downloads a
+   * binary; this one picks which already-downloaded binary a real run launches). */
+  readonly browserRaw?: string | undefined;
+  /** `--headed` (M3c) — headless by default; this opts into a visible browser window (only
+   * meaningful locally, never in CI). */
+  readonly headed: boolean;
 }
 
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
@@ -211,6 +219,8 @@ function parseRunArgs(argv: string[]): RunArgs {
   let formatRaw: string | undefined;
   let noTimestamps = false;
   let logFile: string | undefined;
+  let browserRaw: string | undefined;
+  let headed = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = argv[++i];
@@ -237,6 +247,9 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--no-timestamps') noTimestamps = true;
     else if (a === '--log-file') logFile = argv[++i];
     else if (a.startsWith('--log-file=')) logFile = a.slice('--log-file='.length);
+    else if (a === '--browser') browserRaw = argv[++i];
+    else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
+    else if (a === '--headed') headed = true;
     else files.push(a);
   }
   const tagList = tagRaw
@@ -261,6 +274,8 @@ function parseRunArgs(argv: string[]): RunArgs {
     formatRaw,
     noTimestamps,
     logFile,
+    browserRaw,
+    headed,
   };
 }
 
@@ -416,6 +431,17 @@ async function runCommand(argv: string[]): Promise<number> {
   }
   const ndjsonActive = args.formatRaw === 'ndjson';
 
+  // `--browser` (M3c, D11): chromium default, switches the *whole* run's browser steps to one
+  // engine; no in-run matrix (CI matrixes three jobs instead, per D11).
+  let browserEngine: BrowserEngine = 'chromium';
+  if (args.browserRaw !== undefined) {
+    if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(args.browserRaw)) {
+      err(`--browser expects one of ${SUPPORTED_BROWSER_ENGINES.join(', ')}, got "${args.browserRaw}"`);
+      return EXIT_USAGE;
+    }
+    browserEngine = args.browserRaw as BrowserEngine;
+  }
+
   const loaded = await loadAndValidate(cwd, args.files, args.env, color);
   if (typeof loaded === 'number') return loaded;
   const { parsedFiles, environ } = loaded;
@@ -552,7 +578,9 @@ async function runCommand(argv: string[]): Promise<number> {
 
   // One shared browser process for the whole invocation (M3a, D13) — lazily launched on the first
   // browser step anywhere in the run; closed unconditionally below even if nothing ever used it.
-  const browserManager = new BrowserManager();
+  // Engine (`--browser`, D11) and headed mode (`--headed`, M3c) are run-level, resolved once here;
+  // `viewport` comes from `tflw.config` (M3c).
+  const browserManager = new BrowserManager({ engine: browserEngine, headless: !args.headed, viewport: resolved.viewport });
 
   const reports = await runWithConcurrency(
     runnable,
@@ -618,7 +646,7 @@ async function runCommand(argv: string[]): Promise<number> {
   //    the ordering window: a secret first registered by one file (e.g. running later, or
   //    concurrently under `--workers`) can still retroactively mask an earlier file's
   //    already-built report once everything is merged.
-  const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure), redactor);
+  const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine), redactor);
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir);
   await writeJunitXml(merged, reportDir);
@@ -781,7 +809,7 @@ async function runWithConcurrency<T, R>(
 
 /** Combine per-file reports into one run report, in original file order regardless of the
  * per-file worker concurrency that produced them (P#47). */
-function mergeReports(reports: readonly RunReport[], envName: string, seed: number, now: string, insecure: boolean): RunReport {
+function mergeReports(reports: readonly RunReport[], envName: string, seed: number, now: string, insecure: boolean, browserEngine: BrowserEngine): RunReport {
   const tests: TestResult[] = reports.flatMap((r) => r.tests);
   const passed = tests.filter((t) => t.ok).length;
   return {
@@ -796,6 +824,7 @@ function mergeReports(reports: readonly RunReport[], envName: string, seed: numb
     seed,
     now,
     insecure,
+    browserEngine,
   };
 }
 
@@ -1089,7 +1118,7 @@ function printUsage(): void {
       '',
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--workers <n>] [--no-color] [--verbose]',
-      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>]',
+      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed]',
       '                                                      run .tflw tests (default: all under cwd)',
       '                                                      --now replays the exact run-clock instant',
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
@@ -1100,7 +1129,10 @@ function printUsage(): void {
       '                                                      --bail stops after the first failing test',
       '                                                      --format ndjson streams the event log as JSON lines',
       '                                                      --log-file <path> duplicates console output to a file (plain text)',
+      '                                                      --browser switches every browser step to one engine (default chromium)',
+      '                                                      --headed shows the browser window instead of running headless',
       '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json}',
+      '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',

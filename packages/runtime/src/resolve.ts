@@ -56,6 +56,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   let allowHosts: string[] | null = null;
   let evidenceLevel: EvidenceLevel = 'full';
   const redactPatterns: RedactPattern[] = [];
+  let viewport: { width: number; height: number } | null = null;
 
   const applyEntries = (entries: EnvBlock['entries']): void => {
     for (const entry of entries) {
@@ -98,6 +99,9 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
         case 'RedactDecl':
           redactPatterns.push(...entry.patterns);
           break;
+        case 'ViewportDecl':
+          viewport = { width: entry.width, height: entry.height };
+          break;
       }
     }
   };
@@ -134,6 +138,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     allowHosts,
     evidenceLevel,
     redactPatterns,
+    viewport,
   };
 }
 

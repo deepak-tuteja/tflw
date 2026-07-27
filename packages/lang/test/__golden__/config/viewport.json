@@ -1,0 +1,38 @@
+{
+  "type": "ConfigFile",
+  "defaults": {
+    "type": "DefaultsBlock",
+    "entries": [
+      {
+        "type": "ViewportDecl",
+        "width": 1280,
+        "height": 720
+      }
+    ]
+  },
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "staging",
+      "isDefault": false,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "https://staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://staging.example.com"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "requires": [],
+  "sessions": []
+}

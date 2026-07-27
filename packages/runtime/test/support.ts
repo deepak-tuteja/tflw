@@ -67,6 +67,7 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     allowHosts: null,
     evidenceLevel: 'full',
     redactPatterns: [],
+    viewport: null,
   };
 }
 

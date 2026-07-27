@@ -1,9 +1,8 @@
 # testFlow grammar
 
-The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **PLAN
-decision 108** (M14, the enterprise-readiness arc's cluster 5.5 — `request connects`/`fails`;
-clusters 4/5 in between, M12/M13, added no new grammar, per `PLAN_ENTERPRISE.md`'s decision 16/17
-cadence exception). This is a strict subset of the
+The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **M3c**
+(`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — `screenshot`, failure/retry trace capture, `viewport`
+config; the browser-arc gap noted below is now closed for M3a/M3b/M3c together). This is a strict subset of the
 full language design in [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md); SPEC.md is the prose reference with rationale
 and examples, this file is the grammar shape only. Cross-references to SPEC decisions are `(P#n)`;
 cross-references to a SPEC section are `(§n)`.
@@ -17,7 +16,7 @@ every milestone that changes the grammar updates this file alongside SPEC.md, th
 Notation: `UPPER` = terminal token class, `'x'` = literal keyword/punct, `?` optional, `*` zero+,
 `+` one+, `|` alternation, `(...)` grouping. Blocks are **indentation-delimited** (offside rule) —
 `INDENT`/`DEDENT`/`NEWLINE` are synthetic tokens from the lexer. 🔮 marks a production that parses
-but has no callable subject yet (UI steps land in `0.2.0`).
+but has no callable subject yet (e.g. `has value`/`is StateWord` outside a UI context).
 
 ## Lexical
 
@@ -73,7 +72,7 @@ DataTable   := 'with' 'each' ('from' STRING)? NEWLINE
 
 Block       := INDENT Step+ DEDENT
 Step        := ApiStep | WaitUntilApiStep | ExpectStmt | CheckStmt | LetStmt | CaptureStmt
-             | GiveStmt | HeaderStmt
+             | GiveStmt | HeaderStmt | UiStep                    # UiStep: see §9, below
 ```
 
 - `TAG*` may sit on its own line(s) above `test` (and above its `with each` table, if present).
@@ -219,6 +218,75 @@ callable values (via the `CallName '(' ... ')'` production in `Atom`, above). Ne
 `use` calls nor `import`/`use` declarations are available inside a `session` block's body (§3.3)
 — a session runs with an empty call registry.
 
+## UI / browser steps (§9, M3a/M3b/M3c)
+
+```
+UiStep      := OpenStmt | ClickStmt | FillStmt | FillFormStmt | SelectStmt
+             | CheckStmt | UncheckStmt | PressStmt | HoverStmt | ScrollStmt
+             | WithinBlock | DialogStmt | TabStmt | DownloadBlock
+             | DragStmt | DropFileStmt | WaitUntilUiStmt | ScreenshotStmt
+
+OpenStmt        := 'open' STRING                                   # relative to env's `web` (§3.1)
+ClickStmt       := ('double' | 'right')? 'click' Locator
+FillStmt        := 'fill' Locator 'with' Value
+FillFormStmt    := 'fill' 'form' NEWLINE INDENT ('|' STRING '|' Value '|' NEWLINE)+ DEDENT
+SelectStmt      := 'select' Value 'from' Locator
+CheckStmt       := 'check' Locator                                  # the checkbox action (AST type
+                                                                      # `CheckStmt`) — `check Locator
+                                                                      # not? MatcherCore` (Assertions
+                                                                      # §6, above) is the *other*
+                                                                      # `check` shape: an `ExpectStmt`
+                                                                      # with `soft: true`, dual-
+                                                                      # dispatched purely on whether a
+                                                                      # matcher follows (§9.1)
+UncheckStmt     := 'uncheck' Locator
+PressStmt       := 'press' STRING ('on' Locator)?
+HoverStmt       := 'hover' Locator
+ScrollStmt      := 'scroll' 'to' Locator
+WithinBlock     := 'within' 'frame'? Locator NEWLINE Block           # `frame` traverses into an
+                                                                      # <iframe>'s own document (M3b)
+
+Locator         := LocatorKind (STRING | Interp)
+LocatorKind     := 'button' | 'field' | 'text' | 'list' | 'css' | 'xpath'   # (§9.3, D6)
+
+DialogStmt      := ('accept' | 'dismiss') 'dialog'
+TabStmt         := 'switch' 'to' 'new' 'tab' NEWLINE Block           # M3b
+                 | 'switch' 'to' 'tab' NUMBER                        # 1-based
+                 | 'close' 'tab'
+DownloadBlock   := 'download' 'as' IDENT NEWLINE Block                # M3b — binds the suggested
+                                                                       # filename to IDENT
+DragStmt        := 'drag' Locator 'to' Locator                        # M3b
+DropFileStmt    := 'drop' 'file' STRING 'onto' Locator                 # M3b
+
+WaitUntilUiStmt := 'wait' 'until' Subject 'not'? MatcherCore          # M3b — the UI sibling of
+                                                                       # WaitUntilApiStep (§5.5);
+                                                                       # polls `timeout wait`, not
+                                                                       # `timeout expect`; always
+                                                                       # hard-fails, no soft form
+
+ScreenshotStmt  := 'screenshot' STRING                                 # M3c — captures the active
+                                                                        # page unconditionally
+```
+
+- **Selector model (D6, §9.3):** the locator noun picks the resolution strategy —
+  `button`/`text`/`list`/`css`/`xpath` are single-strategy; `field` is a closed 3-step cascade
+  (label → placeholder → role). A below-tier-1 hit is annotated in the report, never silently
+  accepted (`element` aliases are not yet implemented — no milestone owns them yet).
+- **Ambiguity (D7):** more than one match for a locator is always a hard error listing candidates —
+  never "take the first". No positional selection (`nth`/`first`/`last`); `within` is the only
+  scoping mechanism.
+- **`check`'s dual grammar:** `check field "Accept terms"` alone is the checkbox action
+  (`CheckStmt`); `check field "Accept terms" is checked` is the soft-assertion form (`ExpectStmt`
+  with `soft: true`) — disambiguated by whether a matcher follows, not by a separate keyword.
+- **UI subjects** (`Subject` in §6, above) additionally accept a `Locator` — `has value`/`is
+  StateWord`/`has count` — for `expect`/`check`/`wait until` against UI state.
+- **M3c (D12):** an automatic screenshot is attached to whichever step just failed whenever a
+  browser page already exists for the attempt (best-effort, never a grammar concern) — `screenshot`
+  is only the *explicit*, unconditional form. A Playwright trace is captured on a failing attempt
+  and on every `retry` attempt (passed or not); `report/` gains an `assets/` directory only when a
+  run actually produced one of these. `--browser chromium|firefox|webkit` (`tflw run`, default
+  chromium, D11) and `--headed` are CLI-only, not grammar. `viewport` is config-only (below).
+
 ## The config dialect — `tflw.config` (§3)
 
 Parsed by the same lexer/parser as test files; declaration-only (`test`/`action`/etc. are checker
@@ -233,6 +301,7 @@ EnvBlock        := 'env' IDENT 'default'? NEWLINE INDENT ConfigEntry* DEDENT
 
 ConfigEntry     := HeaderDecl | TimeoutDecl | WorkersDecl | ReportDecl | WebDecl | ApiServiceDecl
                  | InsecureDecl | CertDecl | KeyDecl | AllowHostsDecl | EvidenceDecl | RedactDecl
+                 | ViewportDecl
 
 HeaderDecl      := 'header' STRING 'is' Value ('for' IDENT)? (',' 'header' STRING 'is' Value ('for' IDENT)?)*
 TimeoutDecl     := 'timeout' TimeoutKind Duration (',' TimeoutKind Duration)*
@@ -241,7 +310,7 @@ TimeoutKind     := 'step' | 'expect' | 'wait'                    # `expect` pars
 Duration        := NUMBER ('ms' | 's' | 'm')
 WorkersDecl     := 'workers' NUMBER
 ReportDecl      := 'report' STRING
-WebDecl         := 'web' STRING                                  # 🔮 the browser half's base URL
+WebDecl         := 'web' STRING                                  # the browser half's base URL (§9)
 ApiServiceDecl  := 'api' IDENT? STRING                            # bare = default service (§3.2)
 InsecureDecl    := 'insecure' ('true' | 'false')
 CertDecl        := 'cert' STRING
@@ -250,6 +319,10 @@ AllowHostsDecl  := 'allow' 'hosts' STRING (',' STRING)*           # accumulates 
 EvidenceDecl    := 'evidence' STRING                              # "full" | "headers-only" | "none" (§13)
 RedactDecl      := 'redact' RedactPattern (',' RedactPattern)*    # accumulates across defaults+env (§3.4)
 RedactPattern   := 'body' ('.' IDENT | '.' '*')+
+ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height, px (§9, M3c, D11);
+                                                                   # `defaults`-only, like `workers`/
+                                                                   # `report`; omitted = Playwright's
+                                                                   # own default (1280×720)
 
 SessionDecl     := 'session' IDENT ('oauth2' NEWLINE INDENT Oauth2Config DEDENT | NEWLINE Block)
 Oauth2Config    := 'token' 'url' Value NEWLINE

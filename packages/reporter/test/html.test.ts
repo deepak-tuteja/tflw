@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { RunReport } from '@tflw/runtime';
+import { resolveReportAssets } from '../src/assets.js';
 import { renderReportHtml } from '../src/html.js';
 
 const baseReport: RunReport = {
@@ -35,6 +36,7 @@ test('renderReportHtml renders a non-retried test identically whether or not the
   const expected = [
     '<section class="test ok" id="t0" data-file="(no file)">',
     '  <h2><span class="dot ok"></span>health check <span class="tms">12 ms</span></h2>',
+    '  ',
     '  ',
     '  ',
     '  ',
@@ -214,4 +216,55 @@ test('the sidebar carries a filter input, a status-filter toggle, and one <scrip
   assert.match(html, /data-status="ok"/);
   assert.match(html, /<script>[\s\S]*applyFilter[\s\S]*<\/script>/);
   assert.doesNotMatch(html, /<script src=/, 'must stay self-contained — no external script reference');
+});
+
+// ---- M3c: screenshots + trace links (D12) ----------------------------------
+
+test('a screenshot with no matching assetHrefs entry (the default empty map) renders as an inline data: URI', () => {
+  const withShot: RunReport = {
+    ...baseReport,
+    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 5, screenshot: { base64: 'aGVsbG8=' } }] }],
+  };
+  const html = renderReportHtml(withShot);
+  assert.match(html, /<img src="data:image\/png;base64,aGVsbG8="/);
+});
+
+test('a screenshot whose hash IS in assetHrefs renders the external href instead of inlining', () => {
+  const withShot: RunReport = {
+    ...baseReport,
+    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 5, screenshot: { base64: 'aGVsbG8=' } }] }],
+  };
+  const { hrefs } = resolveReportAssets(withShot, 0); // budget 0 forces every screenshot external
+  const html = renderReportHtml(withShot, hrefs);
+  assert.match(html, /<img src="assets\/screenshots\/[0-9a-f]{16}\.png"/);
+  assert.doesNotMatch(html, /data:image\/png;base64/);
+});
+
+test('a test/attempt trace renders a download link + `npx playwright show-trace` hint when resolved via resolveReportAssets', () => {
+  const withTrace: RunReport = {
+    ...baseReport,
+    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [], trace: { base64: 'UEsDBA==' } }],
+  };
+  const { hrefs } = resolveReportAssets(withTrace);
+  const html = renderReportHtml(withTrace, hrefs);
+  assert.match(html, /<a href="assets\/traces\/[0-9a-f]{16}\.zip" download>trace\.zip<\/a>/);
+  assert.match(html, /npx playwright show-trace assets\/traces\//);
+});
+
+test('a trace with no matching assetHrefs entry renders no link at all (safe degrade, never a broken href)', () => {
+  const withTrace: RunReport = {
+    ...baseReport,
+    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [], trace: { base64: 'UEsDBA==' } }],
+  };
+  const html = renderReportHtml(withTrace); // default empty map — resolveReportAssets never ran
+  // Note: the embedded <style> block always defines `.trace-link` CSS regardless of any actual
+  // link (same caveat as the `.attempt`/`.attempt-badge` test above) — assert on the element, not
+  // a bare substring.
+  assert.doesNotMatch(html, /<p class="trace-link"/);
+});
+
+test('report.browserEngine renders a small header badge; its absence renders nothing', () => {
+  const withEngine: RunReport = { ...baseReport, browserEngine: 'firefox' };
+  assert.match(renderReportHtml(withEngine), /<div class="engine-badge">browser <code>firefox<\/code><\/div>/);
+  assert.doesNotMatch(renderReportHtml(baseReport), /<div class="engine-badge">/);
 });

@@ -116,7 +116,8 @@ export type Step =
   | CloseTabStmt
   | DownloadBlock
   | DragStmt
-  | DropFileStmt;
+  | DropFileStmt
+  | ScreenshotStmt;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */
 export interface GiveStmt extends Node {
@@ -382,17 +383,18 @@ export interface Matcher extends Node {
   readonly filePath?: StringLit;
 }
 
-// ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a/M3b) ---------------------
+// ---- UI / browser steps (P#8-9, P#26, SPEC §9, M3a/M3b/M3c) -----------------
 //
 // M3a shipped: open/click(+double/right)/fill/fill form/select/check/uncheck/press/hover/scroll/
 // within + the state/value/count UI expect subjects + dialogs. M3b adds: frame traversal (`within
 // frame <locator>`), tab/window switching (`switch to new tab`/`switch to tab N`/`close tab`),
 // download capture (`download as <name>`), drag-drop (`drag … to …`/`drop file … onto …`), and
-// `wait until <ui condition>`. Still deferred to later browser-arc milestones
-// (PLAN_BROWSER_PERF_SECURITY.md §1.12): the `report/` directory + screenshots/trace (M3c),
-// network observe/mock (M3d), the a11y subject (M3e), `element <name> = <locator>` aliases (§8, no
-// milestone owns them yet), and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick`
-// (M5).
+// `wait until <ui condition>`. M3c adds: `screenshot "<name>"`, automatic failure screenshots,
+// Playwright trace-on-failure/retry, the `report/assets/` directory, `--browser`/`--headed`, and
+// `viewport` config (D11, D12). Still deferred to later browser-arc milestones
+// (PLAN_BROWSER_PERF_SECURITY.md §1.12): network observe/mock (M3d), the a11y subject (M3e),
+// `element <name> = <locator>` aliases (§8, no milestone owns them yet), and the live-DOM "nearest
+// candidate" cold-start diagnosis + `tflw pick` (M5).
 
 /** Locator noun (D6, SPEC §9.3): the noun picks the resolution strategy — `button`/`text`/`list`
  * single-strategy, `field` a closed 3-step cascade (label → placeholder → role), `css`/`xpath`
@@ -413,6 +415,14 @@ export interface Locator extends Node {
 export interface OpenStmt extends Node {
   readonly type: 'OpenStmt';
   readonly path: StringLit;
+}
+
+/** `screenshot "checkout-step-2"` (M3c, SPEC §13) — captures the active page unconditionally
+ * (unlike the automatic failure screenshot, which only fires when a step fails). The name becomes
+ * the asset's display label in the report; not a file path. */
+export interface ScreenshotStmt extends Node {
+  readonly type: 'ScreenshotStmt';
+  readonly name: StringLit;
 }
 
 export type ClickKind = 'single' | 'double' | 'right';
@@ -901,7 +911,8 @@ export type ConfigEntry =
   | KeyDecl
   | AllowHostsDecl
   | EvidenceDecl
-  | RedactDecl;
+  | RedactDecl
+  | ViewportDecl;
 
 export interface HeaderDecl extends Node {
   readonly type: 'HeaderDecl';
@@ -975,6 +986,16 @@ export type EvidenceLevel = 'full' | 'headers-only' | 'none';
 export interface EvidenceDecl extends Node {
   readonly type: 'EvidenceDecl';
   readonly level: EvidenceLevel;
+}
+
+/** `viewport 1280 720` — browser window size in px, width then height (M3c, SPEC §9, D11). Same
+ * override semantics as `insecure`/`workers` (env wins over `defaults`), `defaults`-only (like
+ * `workers`/`report` — a run-level browser setting, not one that should vary per env). Omitted:
+ * Playwright's own default (1280×720) applies. */
+export interface ViewportDecl extends Node {
+  readonly type: 'ViewportDecl';
+  readonly width: number;
+  readonly height: number;
 }
 
 /** A single `redact` target: `body` followed by one or more `.prop`/`.* ` segments. Deliberately

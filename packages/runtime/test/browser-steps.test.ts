@@ -22,7 +22,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
-import { BrowserManager } from '../src/browser.js';
+import { BrowserManager, BrowserPageState } from '../src/browser.js';
 import { startFixtureServer, testConfig, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
 
@@ -131,6 +131,13 @@ const TAB2_HTML = `<!doctype html>
 </body>
 </html>`;
 
+// M3c: served on the *first* request only (a real deterministic "fails once, then passes" fixture
+// — same closure-counter technique M2.65's session-retry test used against a real HTTP handler,
+// not a mock) — the button `retry`'s two attempts are looking for isn't there until the second
+// `open "/flaky"` (a fresh `retry` attempt re-runs the whole test body, including `open`).
+let flakyRequests = 0;
+const FLAKY_HTML = (label: string) => `<!doctype html><html><body><button>${label}</button></body></html>`;
+
 let server: FixtureServer;
 let config: ResolvedConfig;
 let browserManager: BrowserManager;
@@ -142,6 +149,10 @@ before(async () => {
     '/tab2': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(TAB2_HTML),
     '/download': (_req, res) =>
       res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="report.csv"' }).end('a,b\n1,2\n'),
+    '/flaky': (_req, res) => {
+      flakyRequests++;
+      res.writeHead(200, { 'content-type': 'text/html' }).end(FLAKY_HTML(flakyRequests === 1 ? 'Missing Button' : 'Add to cart'));
+    },
   });
   config = { ...testConfig(server.baseUrl), webBaseUrl: server.baseUrl };
   browserManager = new BrowserManager();
@@ -407,4 +418,114 @@ test('`wait until <ui condition>` that never becomes true fails after the wait t
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   assert.match(report.tests[0]!.error ?? '', /expected .*to be enabled/);
+});
+
+// ---- M3c: screenshot step, failure screenshots, trace-on-failure/retry, engine/viewport --------
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // \x89PNG
+const ZIP_MAGIC = Buffer.from('PK'); // every Playwright trace is a real zip archive
+
+test('`screenshot "..."` captures the active page and attaches real PNG bytes to its own step', async () => {
+  const { report } = await run(`test "explicit screenshot"
+  open "/"
+  screenshot "landing page"
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const step = report.tests[0]!.steps[1]!;
+  assert.equal(step.kind, 'screenshot');
+  assert.match(step.detail ?? '', /landing page/);
+  assert.ok(step.screenshot, 'expected a screenshot asset on the step');
+  assert.ok(Buffer.from(step.screenshot!.base64, 'base64').subarray(0, 4).equals(PNG_MAGIC));
+});
+
+test('a failing UI step automatically attaches a failure screenshot, without masking the real error', async () => {
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 300 } };
+  const { program } = parseSource(`test "never enabled, screenshot on failure"
+  open "/"
+  wait until button "Disabled button" is enabled
+`);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const failedStep = report.tests[0]!.steps.at(-1)!;
+  assert.equal(failedStep.ok, false);
+  assert.ok(failedStep.screenshot, 'expected a best-effort failure screenshot');
+  assert.ok(Buffer.from(failedStep.screenshot!.base64, 'base64').subarray(0, 4).equals(PNG_MAGIC));
+});
+
+test('a clean, single-attempt passing test never captures a trace', async () => {
+  const { report } = await run(`test "clean pass"
+  open "/"
+  click button "Add to cart"
+`);
+  assert.equal(report.ok, true);
+  assert.equal(report.tests[0]!.trace, undefined);
+});
+
+test('a failing test captures a real Playwright trace archive', async () => {
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 300 } };
+  const { program } = parseSource(`test "fails with trace"
+  open "/"
+  wait until button "Disabled button" is enabled
+`);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.ok(report.tests[0]!.trace, 'expected a trace on the failing attempt');
+  assert.ok(Buffer.from(report.tests[0]!.trace!.base64, 'base64').subarray(0, 2).equals(ZIP_MAGIC));
+});
+
+test('a `retry` test that fails then passes captures a trace on both attempts (D12: failure + every retry)', async () => {
+  flakyRequests = 0; // this test owns `/flaky`'s request count — reset so no other test can skew it
+  // Short `step` timeout: attempt 1's click genuinely never finds "Add to cart" (not ambiguity, a
+  // real absence) — `resolveLocator` polls for the full `timeout step` budget before giving up.
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const source = `test "flaky then ok" retry 1
+  open "/flaky"
+  click button "Add to cart"
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, shortStepConfig, { source, browserManager });
+  const result = report.tests[0]!;
+  assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+  assert.equal(result.flaky, true);
+  assert.equal(result.attempts?.length, 2);
+  assert.equal(result.attempts![0]!.ok, false); // attempt 1: "Missing Button", no match yet
+  assert.ok(result.attempts![0]!.trace, 'expected a trace on the failing first attempt');
+  assert.ok(result.attempts![1]!.ok); // attempt 2: "Add to cart" now present
+  assert.ok(result.attempts![1]!.trace, 'expected a trace on the retry attempt, even though it passed');
+  // The kept (final) `TestResult.trace` mirrors the last attempt's, same as `steps` already does.
+  assert.equal(result.trace?.base64, result.attempts![1]!.trace?.base64);
+});
+
+test('engine selection: a `BrowserManager({ engine: "firefox" })` runs real Firefox end-to-end', async () => {
+  const firefoxManager = new BrowserManager({ engine: 'firefox' });
+  try {
+    const { program, diagnostics } = parseSource(`test "firefox smoke"
+  open "/"
+  click button "Add to cart"
+`);
+    assert.deepEqual(diagnostics, []);
+    const { report } = await runProgram(program, config, { source: 'x', browserManager: firefoxManager });
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    assert.equal(report.browserEngine, 'firefox');
+  } finally {
+    await firefoxManager.close();
+  }
+});
+
+test('`RunReport.browserEngine` defaults to chromium for the shared test manager', async () => {
+  const { report } = await run(`test "engine default"
+  open "/"
+`);
+  assert.equal(report.browserEngine, 'chromium');
+});
+
+test('`viewport` config sizes every new browser context', async () => {
+  const viewportManager = new BrowserManager({ viewport: { width: 500, height: 400 } });
+  try {
+    const page = await new BrowserPageState().ensurePage(viewportManager);
+    assert.deepEqual(page.viewportSize(), { width: 500, height: 400 });
+  } finally {
+    await viewportManager.close();
+  }
 });

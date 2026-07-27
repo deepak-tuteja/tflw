@@ -312,3 +312,16 @@ test('`wait until api …` still parses as WaitUntilApiStmt (unaffected by the `
   const step = firstStep('test "ok"\n  wait until api GET /orders/{orderId}\n    expect body.status equals "shipped"\n') as { type: string };
   assert.equal(step.type, 'WaitUntilApiStmt');
 });
+
+// ---- M3c: `screenshot "<name>"` --------------------------------------------
+
+test('`screenshot "..."` parses a ScreenshotStmt carrying a StringLit name', () => {
+  const step = firstStep('test "ok"\n  screenshot "checkout-step-2"\n') as { type: string; name: { value: string } };
+  assert.equal(step.type, 'ScreenshotStmt');
+  assert.equal(step.name.value, 'checkout-step-2');
+});
+
+test('`screenshot` with no name string is a diagnosed error, not a silent empty step', () => {
+  const { diagnostics } = parseSource('test "ok"\n  screenshot\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic for a bare `screenshot`');
+});

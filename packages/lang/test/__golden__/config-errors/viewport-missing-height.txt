@@ -1,0 +1,7 @@
+error[TF010]: expected a viewport height in px, e.g. `viewport 1280 720`, found end of line
+ --> tflw.config:2:16
+  |
+2 |   viewport 1280
+  |                ^
+  |
+  = help: expected a number

@@ -34,6 +34,7 @@ import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matc
 import { evalUiMatcherOnce } from './uiMatcher.js';
 import {
   BrowserPageState,
+  captureFailureScreenshot,
   describeLocator,
   performCheck,
   performClick,
@@ -44,6 +45,7 @@ import {
   performOpen,
   performPressOnLocator,
   performPressOnPage,
+  performScreenshot,
   performScrollIntoView,
   performSelect,
   performUncheck,
@@ -203,6 +205,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     seed: runSeed,
     now: runClock.toISOString(),
     insecure: config.insecure,
+    ...(opts.browserManager ? { browserEngine: opts.browserManager.engine } : {}),
   };
   // Final full-report redaction pass (decision 56, half 2): a secret registered late in this run
   // (or, when `redactor` is shared across files, by a file that ran concurrently/after this one)
@@ -602,7 +605,14 @@ async function runTest(
     attempts++;
     const attemptTc: TestCtx = { ...tc, rng: mulberry32(testSeed) };
     result = await runTestAttempt(test, config, attemptTc, registry, beforeEach, afterEach, cells, attempts === 1, resolvedSessionOwnership);
-    attemptResults.push({ attempt: attempts, ok: result.ok, durationMs: result.durationMs, steps: result.steps, ...(result.error !== undefined ? { error: result.error } : {}) });
+    attemptResults.push({
+      attempt: attempts,
+      ok: result.ok,
+      durationMs: result.durationMs,
+      steps: result.steps,
+      ...(result.error !== undefined ? { error: result.error } : {}),
+      ...(result.trace !== undefined ? { trace: result.trace } : {}),
+    });
     if (result.ok || attempts >= maxAttempts) break;
   }
   const durationMs = Math.round(performance.now() - runStart);
@@ -645,12 +655,20 @@ async function runTestAttempt(
 
   // Fresh browser context+page per test *attempt* (M3a, D13 — a retried test gets a clean slate,
   // never a failed attempt's leftover UI state). Cheap to create even for an API-only test: no
-  // real browser process/page exists until a browser step actually calls `ensurePage()`. Closed in
-  // the `finally` below on every exit path, including every early `return` already in this
-  // function (session failure, `before` hook failure, …).
+  // real browser process/page exists until a browser step actually calls `ensurePage()`. Ended via
+  // `finish()` below on every exit path, including every early `return` already in this function
+  // (session failure, `before` hook failure, …) — the `finally`'s plain `close()` is only a
+  // defensive fallback for the (never-expected) case that something threw before `finish()` ran;
+  // `close()` is a no-op once `finish()` already cleared `context` (both methods idempotent).
   const browserPageState = tc.browserManager ? new BrowserPageState() : undefined;
   try {
-    return await runTestAttemptBody(test, config, tc, registry, beforeEach, afterEach, sessionOwnership, name, nameCtx, testStart, steps, browserPageState);
+    const result = await runTestAttemptBody(test, config, tc, registry, beforeEach, afterEach, sessionOwnership, name, nameCtx, testStart, steps, browserPageState);
+    if (!browserPageState) return result;
+    // Trace on failure and on every retry attempt (M3c, D12) — a clean, single-attempt pass never
+    // captures one; a retry attempt does even if it ultimately passes (the flaky path is exactly
+    // the evidence worth keeping).
+    const trace = await browserPageState.finish(!isFirstAttempt || !result.ok);
+    return trace ? { ...result, trace } : result;
   } finally {
     if (browserPageState) await browserPageState.close();
   }
@@ -1104,6 +1122,22 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           result = await execWaitUntilUi(step, ctx, src, stepStart, config);
           break;
         }
+        case 'ScreenshotStmt': {
+          const name = String(evalValue(step.name, ctx));
+          const page = await ensurePageForStep(ctx);
+          const screenshot = await performScreenshot(page);
+          result = { ...mkStep('screenshot', src, step.span, true, stepStart, `screenshot ${JSON.stringify(name)} captured`), screenshot };
+          break;
+        }
+      }
+      // Best-effort failure evidence (M3c, D12's "failure-first capture") — attached to whichever
+      // step just failed, browser or API (a UI test's API step failing still benefits from seeing
+      // page state). `currentPageIfAny()` never creates a browser process for an API-only test that
+      // merely happens to share a `BrowserManager` (SPEC §9's "present regardless of whether this
+      // test uses a browser step" framing) — only a test that already opened a page gets a shot.
+      if (!result.ok && ctx.browser) {
+        const screenshot = await captureFailureScreenshot(ctx.browser.page.currentPageIfAny());
+        if (screenshot) result = { ...result, screenshot };
       }
       results.push(result);
       tc.emit({ type: 'step:end', test: testName, step: result });
@@ -1122,7 +1156,11 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
     } catch (err) {
       const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
       const redacted = tc.redactor.redact(message);
-      const failed = mkStep(stepKind(step), src, step.span, false, stepStart, redacted);
+      let failed = mkStep(stepKind(step), src, step.span, false, stepStart, redacted);
+      if (ctx.browser) {
+        const screenshot = await captureFailureScreenshot(ctx.browser.page.currentPageIfAny());
+        if (screenshot) failed = { ...failed, screenshot };
+      }
       results.push(failed);
       tc.emit({ type: 'step:end', test: testName, step: failed });
       return { steps: results, ok: false, error: redacted, giveValue };
@@ -1815,6 +1853,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'drag';
     case 'DropFileStmt':
       return 'dropFile';
+    case 'ScreenshotStmt':
+      return 'screenshot';
   }
 }
 

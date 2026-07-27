@@ -1,0 +1,7 @@
+error[TF025]: `viewport` is not allowed in env staging
+ --> tflw.config:3:3
+  |
+3 |   viewport 1280 720
+  |   ^^^^^^^^^^^^^^^^^
+  |
+  = help: move it to the `defaults` block
