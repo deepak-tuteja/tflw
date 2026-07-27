@@ -69,7 +69,7 @@ export const GENERATORS: readonly GeneratorEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'check' | 'pick' | 'watch' | 'global';
+  readonly command: 'run' | 'check' | 'pick' | 'watch' | 'migrate' | 'global';
   readonly effect: string;
 }
 
@@ -136,6 +136,8 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--seed <n>`', command: 'watch', effect: 'fixes the seed reused by every run for the whole watch session (else one is freshly minted at startup)' },
   { flag: '`--browser <engine>`', command: 'watch', effect: 'switches every browser step to one engine — chromium/firefox/webkit (default chromium)' },
   { flag: '`--no-color`', command: 'watch', effect: 'disables ANSI color in CLI output' },
+  { flag: '`--env <name>`', command: 'migrate', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one — deprecations are checker diagnostics, so this only affects which env-scoped checks run' },
+  { flag: '`--no-color`', command: 'migrate', effect: 'disables ANSI color in CLI output' },
   { flag: '`--version`, `-v`', command: 'global', effect: 'print the installed version' },
   { flag: '`--help`, `-h`', command: 'global', effect: 'print usage' },
 ] as const;

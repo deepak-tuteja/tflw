@@ -9,6 +9,7 @@ const runFlags = CLI_FLAGS.filter((f) => f.command === 'run');
 const checkFlags = CLI_FLAGS.filter((f) => f.command === 'check');
 const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
+const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
 const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
 </script>
 
@@ -80,6 +81,31 @@ window is closed or Ctrl+C. `<url>` must be absolute — no `tflw.config` involv
 `tflw watch [files] [--env E] [--seed S] [--browser engine] [--no-color]` re-runs headed on every
 save, one shared browser window for the whole session; saving `tflw.config` re-runs everything.
 Runs until Ctrl+C.
+
+## `tflw migrate [files]`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in migrateFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Mechanically rewrites checker-flagged deprecations (a warning-severity diagnostic carrying its own
+exact replacement text) in place, then prints which files changed. No live deprecation exists in
+the grammar yet — it's been additive-only since the first internal milestone — so today this
+always reports `no deprecated syntax found — nothing to migrate.` and touches no files.
+
+## `tflw refactor apply <id>`
+
+Extracts one reuse-pass hint (an `RF0xx` id from `tflw check`'s output) into a shared `action`,
+writing a new file and rewriting every matched call site. Takes exactly one positional argument —
+no flags — and always scans the whole default suite (no `[files]`/`--env` selection, since the
+hint ids it consumes come from that same whole-suite scan). Re-run `tflw check`/`tflw run`
+afterward to confirm the rewritten suite is still clean and green.
 
 ## Global
 

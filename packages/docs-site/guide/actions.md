@@ -50,5 +50,28 @@ A `check` failing *inside* an imported action propagates back to the caller as s
 caller's own later steps still run, and the whole test only fails at the end, exactly as if the
 `check` had been written inline.
 
+## Finding & extracting duplication automatically
+
+Writing steps by hand and only extracting an `action` once you've noticed the duplication yourself
+doesn't scale past a handful of files. `tflw check` also looks for near-identical step windows
+*across* the whole suite and surfaces them as advisory hints (never blocking, exit 0 regardless):
+
+```sh
+npx tflw check
+```
+
+```
+hint[RF001]: 3 tests share a near-identical 4-step sequence — extract into an action?
+ --> tests/checkout.tflw:12, tests/returns.tflw:8, tests/admin.tflw:21
+  = help: run `tflw refactor apply RF001` to extract it automatically
+```
+
+`tflw refactor apply <id>` then does the extraction for real — writes a new shared `action` file,
+rewrites every matched call site to call it, and only ever touches what it's certain is
+byte-identical or safely parameterizable (a literal that differs between occurrences becomes an
+action parameter; a step referencing a variable bound only in one caller's own scope is never
+pulled into the shared action, since that would break at runtime). Always re-run `tflw check`/
+`tflw run` after applying to confirm the rewritten suite still passes.
+
 Full reference: [SPEC.md §8](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#8-actions-imports-element-aliases-p2-p17-18-),
 [§11 (JS escape hatch)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#11-js-escape-hatch-p11-).

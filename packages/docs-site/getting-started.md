@@ -1,8 +1,9 @@
 # Getting started
 
-Install & quickstart takes under 5 minutes, no browser install required (`v0.1.0` is API-only —
-the browser half lands in `0.2.0`). Writing tests in VS Code? See [Editor support](/editor) for
-diagnostics, autocomplete, rename, and more, live as you type.
+Install & quickstart takes under 5 minutes — no browser install needed for an API-only suite; run
+`tflw install-browsers` once a suite adds UI steps (see [Browser testing](/guide/browser-basics)).
+Writing tests in VS Code? See [Editor support](/editor) for diagnostics, autocomplete, rename, and
+more, live as you type.
 
 ## Prerequisites
 

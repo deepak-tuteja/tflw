@@ -1,7 +1,9 @@
 # testFlow (`tflw`)
 
-A testing-only DSL for API tests — reports first, syntax second. `v0.1.0` is **API-only**; the
-browser half (Playwright) lands in `0.2.0`.
+A testing-only DSL for API tests — reports first, syntax second. API and browser testing (real
+Playwright automation) are both built; performance and security/pen-test testing are next — see
+[PLAN_BROWSER_PERF_SECURITY.md](PLAN_BROWSER_PERF_SECURITY.md). Pre-1.0, **not yet published to
+npm**.
 
 **Full docs: [the documentation site](https://deepak-tuteja.github.io/tflw/)** — a Guide, a
 generated Reference (matchers/generators/CLI flags), a formal [Grammar](packages/lang/GRAMMAR.md)
@@ -20,9 +22,9 @@ Three things tflw does that a general-purpose language + an HTTP client doesn't 
 - **Teaching-quality diagnostics.** Source line + caret + "did you mean", stable `TF0xx` codes
   (§17), a conservative unknown-variable checker pass — errors read like a compiler's, not a stack
   trace.
-- **One language, API today, browser next.** `0.2.0` adds UI steps to the same grammar, so a login
-  → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing
-  two tools together.
+- **One language for API, browser, and (soon) load & security testing.** UI steps share the same
+  grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one
+  readable file instead of gluing two tools together.
 
 Measured against raw `fetch` + `node:test` (the honest "no tool" baseline, `acceptance/README.md`):
 **2.8× fewer lines** overall (4–8× on retry/polling/generated-data scenarios), a categorical report
@@ -92,12 +94,18 @@ features.
 
 ## Status & roadmap
 
-`v0.1.0` is shipped: config-as-tflw, sessions, capture-chaining, hooks/retry/tags/data-tables,
-actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, parallel workers, CI
-ergonomics (`--failed`/`--bail`/`--format ndjson`), and a self-contained `report.html` + `junit.xml`
-+ `results.json`. **Next: `0.2.0`** adds the browser half (Playwright —
-`open`/`click`/`fill`, selectors, screenshots). See [SPEC.md](SPEC.md)'s per-section status badges
-for the full shipped-vs-planned breakdown, and [CHANGELOG.md](CHANGELOG.md) for released versions.
+Built so far (internal milestones, not yet published — see
+[PLAN_BROWSER_PERF_SECURITY.md](PLAN_BROWSER_PERF_SECURITY.md) decision D25 / PLAN.md decision
+112 for the versioning story): config-as-tflw, sessions, capture-chaining, hooks/retry/tags/
+data-tables, actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, parallel
+workers, CI ergonomics (`--failed`/`--bail`/`--format ndjson`), a self-contained `report.html` +
+`junit.xml` + `results.json`; the full browser half (Playwright — interaction steps, tiered
+locators, frames/tabs/downloads/drag-drop, network mocking, accessibility assertions, visual
+regression, `tflw watch`/`tflw pick`); a reuse pass (`tflw refactor apply`) and `tflw migrate`.
+**Next:** performance testing (`tflw load`, k6-style `scenario` blocks), then security/pen-test
+testing (`tflw scan`) — both dogfooded against the real app before anything publishes. See
+[SPEC.md](SPEC.md)'s per-section status badges for the full shipped-vs-planned breakdown, and
+[CHANGELOG.md](CHANGELOG.md) for what's built and pending release.
 
 ## Platform support
 

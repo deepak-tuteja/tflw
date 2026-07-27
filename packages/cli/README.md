@@ -1,7 +1,8 @@
 # tflw
 
-A testing-only DSL for API tests — reports first, syntax second. `v0.1.0` is **API-only**; the
-browser half (Playwright) lands in `0.2.0`.
+A testing-only DSL for API tests — reports first, syntax second. API and browser testing (real
+Playwright automation) are both built; performance and security/pen-test testing are next.
+Pre-1.0, not yet published to npm.
 
 ## Why tflw
 
@@ -13,9 +14,9 @@ Three things tflw does that a general-purpose language + an HTTP client doesn't 
   Nothing to wire up.
 - **Teaching-quality diagnostics.** Source line + caret + "did you mean", stable `TF0xx` codes, a
   conservative unknown-variable checker pass — errors read like a compiler's, not a stack trace.
-- **One language, API today, browser next.** `0.2.0` adds UI steps to the same grammar, so a login
-  → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing
-  two tools together.
+- **One language for API, browser, and (soon) load & security testing.** UI steps share the same
+  grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one
+  readable file instead of gluing two tools together.
 
 Measured against raw `fetch` + `node:test` (the honest "no tool" baseline): **2.8× fewer lines**
 overall (4–8× on retry/polling/generated-data scenarios), a categorical report quality gap, and

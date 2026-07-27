@@ -1,8 +1,9 @@
 import { defineConfig } from 'vitepress';
 import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type: 'json' };
 
-// Decision 16.3 (PLAN_ENTERPRISE.md): Home · Getting Started · Guide (10 sub-topics) · Reference ·
-// Grammar · Changelog. `appearance` is intentionally left unset — VitePress's default (`true`)
+// Decision 16.3 (PLAN_ENTERPRISE.md): Home · Getting Started · Guide (12 sub-topics, 2 added for
+// the browser arc — see PLAN.md decision 112) · Reference · Grammar · Changelog. `appearance` is
+// intentionally left unset — VitePress's default (`true`)
 // already shows a light/dark toggle that respects the reader's OS preference (decision 16.12);
 // overriding it would be the wrong direction.
 export default defineConfig({
@@ -48,10 +49,12 @@ export default defineConfig({
             { text: '4. Assertions in depth', link: '/guide/assertions' },
             { text: '5. Variables, generators & expressions', link: '/guide/variables' },
             { text: '6. Actions, imports & the JS escape hatch', link: '/guide/actions' },
-            { text: '7. Data-driven tests & hooks', link: '/guide/data-and-hooks' },
-            { text: '8. Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
-            { text: '9. CI, reporting & safety', link: '/guide/ci-and-reporting' },
-            { text: '10. Running & debugging tests', link: '/guide/debugging' },
+            { text: '7. Browser testing: interacting with a UI', link: '/guide/browser-basics' },
+            { text: '8. Browser testing: advanced scenarios', link: '/guide/browser-advanced' },
+            { text: '9. Data-driven tests & hooks', link: '/guide/data-and-hooks' },
+            { text: '10. Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
+            { text: '11. CI, reporting & safety', link: '/guide/ci-and-reporting' },
+            { text: '12. Running & debugging tests', link: '/guide/debugging' },
           ],
         },
       ],

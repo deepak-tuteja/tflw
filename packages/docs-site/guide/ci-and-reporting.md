@@ -1,4 +1,4 @@
-# 9. CI, reporting & safety
+# 11. CI, reporting & safety
 
 ## Reports
 
@@ -96,6 +96,25 @@ GitHub Actions (auto-detected via the `GITHUB_ACTIONS` env var), `--verbose`'s p
 fold into a collapsible `::group::`/`::endgroup::` block — normal mode is already one line per
 test, so grouping only kicks in under `--verbose`. `--log-file <path>` duplicates console output to
 a file, always plain text regardless of whether stdout itself has color.
+
+## Keeping a suite current — `tflw migrate`
+
+```sh
+npx tflw migrate
+```
+
+When a piece of syntax is deprecated, the checker flags it as a warning (never silently — a
+deprecation always spends at least one release as a visible warning before removal) and carries
+its exact mechanical replacement. `tflw migrate` reads those warnings and rewrites every affected
+file in place, then tells you to re-run `tflw check` to confirm the result is clean. Run it from
+CI or a pre-upgrade script the same way you'd run `check` — it's a normal exit-0/non-zero command,
+not interactive.
+
+The grammar has been additive-only since the very first internal milestone (no existing syntax has
+ever changed, only new syntax added), so today `tflw migrate` genuinely has nothing to do and
+reports exactly that — `no deprecated syntax found — nothing to migrate.` — rather than pretending
+there's work to review. It's real, tested machinery sitting ready for the day a deprecation
+actually ships, not a stub.
 
 Full reference: [SPEC.md §12](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#12-cli-),
 [§13 (events/report)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#13-events-report-ci-outputs-p4-5-p23-p30-).

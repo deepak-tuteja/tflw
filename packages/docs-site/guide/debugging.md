@@ -1,4 +1,4 @@
-# 10. Running & debugging tests
+# 12. Running & debugging tests
 
 ## What a run actually prints
 
@@ -78,6 +78,31 @@ npx tflw run --seed 868036364 --now 2026-07-20T19:09:56.501Z
 
 Handy for turning "it failed once in CI and I can't repro it" into a reliable local repro — copy
 the `seed`/`now` straight out of the CI log's summary line.
+
+## `tflw watch` — live headed re-run while you write a browser test
+
+```sh
+npx tflw watch checkout.tflw
+```
+
+Opens one real, visible browser window and re-runs `checkout.tflw` headed every time you save it —
+the same browser window stays open across re-runs (only its page navigates fresh), and the same
+seed is reused for the whole session so flakiness from generated-data drift doesn't creep in while
+you iterate. Saving `tflw.config` instead re-runs the whole suite. `Ctrl+C` closes the browser and
+stops. `--env`/`--seed`/`--browser`/`--no-color` all work the same as `run`'s.
+
+## `tflw pick` — a verified locator for a real element
+
+```sh
+npx tflw pick http://localhost:3000/checkout
+```
+
+Opens a real, visible browser at the given URL (absolute — no `tflw.config` involved) and prints
+one **verified** locator every time you click an element — not a best guess, the actual locator
+tflw's own resolver confirmed resolves to exactly that element, in the same `button "…"`/
+`field "…"`/`text "…"`/`css "…"` form a `.tflw` file uses. Clicking never navigates the page
+(picking is inert), so you can click around a real, already-logged-in app and paste locators
+straight into a test as you go. Runs until the window is closed or `Ctrl+C`.
 
 ## Lint before you run — `tflw check`
 

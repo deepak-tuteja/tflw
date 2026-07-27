@@ -1569,7 +1569,7 @@ function printUsage(): void {
       '  tflw refactor apply <id>                           apply a reuse-pass extraction (SPEC §8/§12, M6);',
       '                                                      `tflw check` prints available ids (RF001, RF002, …) alongside its diagnostics',
       '  tflw migrate [files...] [--env <name>] [--no-color]',
-      '                                                      mechanically rewrite past checker-flagged deprecations (decision 38/45, M7 1.0 gate);',
+      '                                                      mechanically rewrite past checker-flagged deprecations (decision 38/45);',
       '                                                      prints "nothing to migrate" when the suite has none (mutates source only when it does)',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',

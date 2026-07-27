@@ -1,9 +1,45 @@
 # Changelog
 
 All notable changes to this project are documented here. Format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning follows the public line:
-`0.1.0` (API-only) → `0.2.0` (browser half) → `1.0.0` (final). Pre-1.0, the shipped API grammar is
-frozen additive-only: no existing syntax changes, only new syntax.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Internal milestone labels track the
+arc order: `0.1` (API) → `0.2` (browser) → `0.3` (performance) → `0.4` (pen-test) → `1.0.0`. None
+of `0.1`–`0.4` is ever actually published — **the first `npm publish` is `1.0.0`**, gated on all
+four arcs plus one final integrated acceptance pass against the real dogfood app (`PLAN.md`
+decision 112). The shipped API grammar is frozen additive-only from `1.0.0` on: no existing syntax
+changes, only new syntax.
+
+## [Unreleased]
+
+Everything below is built and verified but not yet published — it ships as part of `1.0.0`
+alongside the performance and pen-test arcs, once those are also done (decision 112).
+
+### Added — browser arc (`0.2` internal milestone)
+
+- Browser interaction steps (`open`/`click`/`fill`/`fill form`/`select`/`check`/`uncheck`/`hover`/
+  `press`/`scroll`), a tiered locator model (`button`/`text`/`list`/`field` cascade, `css`/`xpath`
+  escapes, `within` scoping, strict-ambiguity errors), auto-retrying UI expects, and dialog
+  handling (`accept`/`dismiss`).
+- Frames (`within frame`), tabs, downloads, drag-drop, and `wait until <ui-locator>`.
+- The `report/` directory: failure-first screenshots + Playwright trace, `--browser`/`--headed`/
+  viewport flags.
+- Network observation (`expect request to "<url>" was made`) and `stub` route mocking.
+- Accessibility assertions (`expect page has no [<severity>] a11y violations`, axe-core).
+- Visual regression (`expect page matches snapshot "<name>" [mask <locator>]*`,
+  `--update-snapshots`).
+- `tflw watch` (headed re-run on every save, one shared browser, same seed) and `tflw pick`
+  (opens a real browser, prints a verified locator per click).
+
+### Added — reuse pass & acceptance
+
+- `tflw check` now surfaces advisory duplication hints (`RF0xx`) and `tflw refactor apply <id>`
+  mechanically extracts a flagged window into a shared `action`, rewriting every call site.
+- `tflw migrate`: a real rewrite engine (`Diagnostic.deprecation` + `collectMigrations`/
+  `applyMigrations`) for checker-flagged deprecations, wired end to end. Reports "nothing to
+  migrate" today since the grammar has had no deprecations to migrate yet — proven via synthetic
+  diagnostics, ready for the day a real one exists.
+- A 10-test mixed UI/API acceptance suite against a purpose-built dogfood target (webV2:
+  React/Vite SPA storefront + SSR admin console) plus a side-by-side comparison vs. raw
+  Playwright + `node:test` — found and fixed 4 real, previously-shipped bugs in the process.
 
 ## [0.1.0] — 2026-07-06
 

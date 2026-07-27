@@ -27,9 +27,11 @@ progress):** a shippable-public-tool review found the package would currently pu
 (`"private": true`, no README/LICENSE in the tarball) plus a missing public-tool surface. Done so
 far: `tflw --version`/`--check`, CHANGELOG, the un-`private` + README/LICENSE tarball fix, a
 highlight-only VS Code extension, the TF0xx diagnostics index, and the zero-dep proxy/TLS story
-(`insecure` key + teaching errors). The browser half (M3) is the public `0.2.0`; `1.0.0` follows
-the browser-era verdict. Build order is API-first: the API vertical slice builds and dogfoods
-before any Playwright/browser code.
+(`insecure` key + teaching errors). The browser half (M3, internal milestone label `0.2.0`) has
+since shipped in full (M3a–M4b) along with the reuse pass (M6) and acceptance (M7) — see §15 and
+`PLAN.md` decision 112 for the current versioning story: `1.0.0` is the actual first publish,
+gated on the perf and pentest arcs too, not on the browser-era verdict alone. Build order was
+API-first: the API vertical slice built and dogfooded before any Playwright/browser code.
 
 Every section below carries a status badge (decision 49): **✅ shipped** (built, tested, in
 `v0.1.0`), **🔮 planned** (spec'd, not built), or **🔧 mixed** (part shipped, part planned — read
@@ -1056,9 +1058,9 @@ trace-on-failure/retry, `report/assets/`, `--browser`/`--headed`/`viewport` — 
 shipped**: network observation (`request to "…"`, `of request to "…"`) and `stub` — see §9.7.
 **M3e ✅ shipped**: the `page` a11y subject (axe-core) — see §9.8. **M4a ✅ shipped**: LSP/VS Code
 tooling catch-up for M3a-M3e (no new grammar). **M4b ✅ shipped**: visual regression
-(`matches snapshot`) — see §9.9.
-**Still planned**: `element <name> = <locator>` aliases (§8 — no milestone
-owns them yet); and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick <url>` (M5).
+(`matches snapshot`) — see §9.9. **M5 ✅ shipped**: the live-DOM "nearest candidate" cold-start
+diagnosis (§9.3) and `tflw pick <url>` (§12).
+**Still planned**: `element <name> = <locator>` aliases (§8 — no milestone owns them yet).
 `tflw install-browsers [--browser chromium|firefox|webkit]` downloads the browser binary
 (`playwright` is an optional peer, D5 — installed and dynamically imported only once a suite
 actually runs a browser step).
@@ -1317,7 +1319,7 @@ expect page has no critical a11y violations       # a severity floor, not an exa
   the only file that knows axe-core exists, mapping its output onto `finding.ts`'s
   scanner-agnostic `Finding`/`Severity` model (id/severity/description/detail, plus
   `filterBySeverity`'s floor semantics above) — the "scan-and-assert machinery" the pentest scan
-  arc (v1.2.0, §3 below) is required to reuse rather than reimplementing its own severity
+  arc (`v0.4.0`, `PLAN_BROWSER_PERF_SECURITY.md` §3) is required to reuse rather than reimplementing its own severity
   vocabulary and filter/count logic. A future HTTP-scan finding source slots into `finding.ts`
   without touching this section's grammar or `a11y.ts`.
 - **Not supported (out of scope for M3e):** `capture page as x` (a clear runtime error, same
@@ -1431,7 +1433,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init --ui` | also scaffold a UI test + prompt for `tflw install-browsers` (M3) |
-| `tflw migrate` | mechanically rewrite a suite past grammar deprecations, P#38 (1.0 gate) |
+| `tflw migrate` | mechanically rewrite a suite past grammar deprecations, P#38/45 (this arc's deliverable — decision 112) |
 
 ## 13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧
 
@@ -1554,14 +1556,18 @@ tests/       dogfood .tflw suite (against automationTestPOC)
 ## 15. Distribution (P#35–39, amended by P#41–50) 🔧
 
 Describes the whole release plan; individual bullets below are already true (posture, packaging
-mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.0`/`1.0.0` publishes).
+mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.3.0`/`0.4.0` internal
+milestones and the eventual `1.0.0` publish — see decision 112).
 
 - **Posture:** public-grade from day one (public GitHub repo — own repo, MIT, CI, P#48 —
-  stranger-readable README, `npm pack`-clean layout). First npm publish is the **API-only
-  `0.1.0`**, gated by M2.7's acceptance (side-by-side vs raw fetch+node:test + external dogfood
-  on restful-booker, P#41) **and by M2.8 "public face"** (P#74–82: un-`private` the package,
-  README/LICENSE in the tarball, `--version`, `check`, CHANGELOG, positioning); the browser half
-  publishes as `0.2.0`; `1.0.0` follows the browser-era M7 verdict (P#50). Repo is public with
+  stranger-readable README, `npm pack`-clean layout). The mechanical publish-readiness bar
+  (un-`private` the package, README/LICENSE in the tarball, `--version`, `check`, CHANGELOG,
+  positioning — P#74–82, M2.8) and the acceptance methodology (side-by-side vs raw
+  fetch+node:test + external dogfood on restful-booker, P#41) were both proven out at the M2.7/
+  M2.8 stage — but **no `npm publish` actually happens until `1.0.0`** (PLAN.md decision 112):
+  browser (`0.2.0`, done), perf (`0.3.0`), and pentest (`0.4.0`) all land as internal milestones
+  first, then one final integrated acceptance pass verifies all four arcs together against the
+  real dogfood app before the first-ever publish. Repo is public with
   **contributions closed initially** — issues welcome, PRs not accepted yet, stated plainly in
   the README (P#80). Platform bar at 0.1: tested on Linux/macOS, Windows via WSL (P#79). A VS Code
   extension ships alongside 0.1 on its own Marketplace cadence (P#76): TextMate grammar, snippets,
@@ -1586,11 +1592,15 @@ mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.
   both the npm install and the browser download, so API-only projects stay small forever
   (P#44, P#36). VS Code extension → Marketplace separately, embedding `lang/` (P#37).
 - **Versioning:** single semver. The shipped API grammar is **frozen additive-only from the
-  first publish** (P#45); any pre-1.0 breaking change requires a checker deprecation warning one
-  full release ahead. `tflw migrate` is a 1.0-gate deliverable (P#45); grammar freezes
-  additive-only for good at 1.0 (P#38). TF0xx diagnostic codes fall under the same promise:
-  never renumbered or reused once shipped (P#77). A root `CHANGELOG.md` (Keep-a-Changelog style)
-  carries these promises release-by-release from `0.1.0` on (P#74, M2.8).
+  first publish** (P#45), i.e. from `1.0.0` — the only version that ever actually ships (decision
+  112); any pre-1.0 breaking change requires a checker deprecation warning one full release ahead.
+  `tflw migrate` was the browser arc's (`0.2.0`-equivalent) deliverable (P#45) and has already
+  shipped, proven against synthetic diagnostics since the grammar has had nothing to deprecate
+  yet; the additive-only freeze itself takes effect for good at `1.0.0` (P#38, decision 112).
+  TF0xx diagnostic codes fall under the same promise: never renumbered or reused once shipped
+  (P#77). A root `CHANGELOG.md` (Keep-a-Changelog style) tracks progress arc-by-arc under
+  `[Unreleased]` starting from `0.1.0`'s internal milestone label, becoming real release notes
+  only once `1.0.0` actually publishes (P#74, M2.8).
 - **CI:** plain `npx tflw run` anywhere; README ships a GitHub Actions snippet (browser cache,
   report.html uploaded as artifact). junit.xml + exit codes are the contract (§13).
 - **Onboarding:** README quickstart hits a green **API** test in <5 minutes (no browser download
@@ -1598,7 +1608,9 @@ mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.2.
 
 ## 16. Out of v1 (parking lot) 🔮
 
-Mobile/unit/perf testing, DB assertions, OpenAPI/contract (P#3); LSP, recorder, dashboards
+Mobile/unit testing, DB assertions (P#3) — **not** performance or security/pen-test testing,
+which are committed in-scope arcs per `PLAN_BROWSER_PERF_SECURITY.md` (decisions D1/D16–D22),
+gating `1.0.0` rather than parked; recorder, dashboards
 (P#6, v2 list); faker realism (P#22); `dataset` construct
 (P#24); binary/GraphQL/XML bodies (P#32); response downloads (P#33 — cookie subjects, P#33's other
 half, shipped: §3.3's automatic cookie jar); `dependsOn` stays rejected (P#10); standalone binary,
