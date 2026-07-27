@@ -41,7 +41,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -65,7 +66,8 @@
                 "kind": "prop",
                 "name": "name"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -94,7 +96,8 @@
                 "kind": "prop",
                 "name": "email"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -123,7 +126,8 @@
                 "kind": "prop",
                 "name": "active"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",

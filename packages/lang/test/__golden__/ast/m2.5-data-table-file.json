@@ -95,7 +95,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",

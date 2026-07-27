@@ -1,5 +1,5 @@
-// Playwright-backed browser step driver (M3a/M3b/M3c, SPEC §9). `playwright` is an optional peer
-// (D5, PLAN_BROWSER_PERF_SECURITY.md §1.1): dynamically imported on first use so `tflw run`
+// Playwright-backed browser step driver (M3a/M3b/M3c/M3d, SPEC §9). `playwright` is an optional
+// peer (D5, PLAN_BROWSER_PERF_SECURITY.md §1.1): dynamically imported on first use so `tflw run`
 // against an API-only suite never touches it, and a consumer who never installed the peer never
 // pays for it.
 //
@@ -10,7 +10,12 @@
 // "active" index — every existing single-page caller keeps working unchanged since `ensurePage`
 // always returns whichever page is currently active. M3c adds: engine selection + `--headed` +
 // `viewport` on `BrowserManager` (D11); screenshot capture; a Playwright trace started per context
-// and conditionally saved by `BrowserPageState.finish()` (D12).
+// and conditionally saved by `BrowserPageState.finish()` (D12). M3d adds passive network
+// observation (`page.on('response')` → `networkLog`, read by `request to "…"`/`of request to "…"`,
+// SPEC §9.7) and `stub` (`page.route()`-backed response mocking, `performStub`) — independently
+// implemented (`stub` never reads/writes `networkLog`), but a stubbed request still lands in
+// `networkLog` like any other, since Playwright fires `response` for a `route.fulfill()`ed request
+// exactly as it would for a real one — `request to "…" was made` sees a stubbed request too.
 //
 // Selector model (D6): the locator noun picks the resolution strategy — `button`/`text`/`list`/
 // `css`/`xpath` are single-strategy, `field` is a closed 3-step cascade (label → placeholder →
@@ -33,6 +38,22 @@ export type PWBrowserContext = import('playwright').BrowserContext;
 export type PWPage = import('playwright').Page;
 export type PWLocator = import('playwright').Locator;
 export type PWFrameLocator = import('playwright').FrameLocator;
+export type PWResponse = import('playwright').Response;
+
+/** One completed network round-trip observed on the active page during a test attempt (M3d, D14,
+ * SPEC §9.7) — captured passively via `page.on('response')`, never via interception (that's
+ * `stub`'s job). `responseJson`/`responseBodyText` are best-effort: a body that fails to read
+ * (opaque redirect, streamed/binary response) simply leaves both `null`/`undefined` rather than
+ * throwing — matches `request to "…" was made`'s existence-only fallback. */
+export interface CapturedNetworkRequest {
+  readonly url: string;
+  readonly method: string;
+  readonly status: number;
+  readonly requestBody: string | null;
+  readonly responseHeaders: Readonly<Record<string, string>>;
+  readonly responseBodyText: string | null;
+  readonly responseJson: unknown;
+}
 
 /** The three engines Playwright ships (D11) — `chromium` is the default everywhere (`tflw run`,
  * `tflw install-browsers`). A run switches its *whole* suite to one engine; no in-run matrix (D11:
@@ -119,6 +140,10 @@ export class BrowserPageState {
    * cleared (SPEC §9.1). */
   armedDialog: 'accept' | 'dismiss' | null = null;
   lastDialogMessage: string | null = null;
+  /** M3d, SPEC §9.7 — every completed network response observed across every page opened this
+   * attempt, in completion order. Resets naturally: a fresh `BrowserPageState` is created per test
+   * attempt (`runTestAttempt`, interpreter.ts), same as the trace/screenshot state. */
+  private networkLog: CapturedNetworkRequest[] = [];
 
   private wireDialogHandler(page: PWPage): void {
     page.on('dialog', (dialog) => {
@@ -127,6 +152,50 @@ export class BrowserPageState {
       this.lastDialogMessage = dialog.message();
       void (armed === 'accept' ? dialog.accept() : dialog.dismiss());
     });
+  }
+
+  /** M3d — passive observation only (never modifies the response, unlike `stub`'s `page.route`).
+   * Reading the body is best-effort: a response that can't be read as text (redirect with no body,
+   * an opaque/binary payload) still gets logged for `was made`, just with a null body. Errors here
+   * must never propagate — a network-capture bug can't be allowed to crash an otherwise-passing
+   * browser step. */
+  private wireNetworkCapture(page: PWPage): void {
+    page.on('response', (response) => {
+      void this.captureResponse(response).catch(() => {});
+    });
+  }
+
+  private async captureResponse(response: PWResponse): Promise<void> {
+    const request = response.request();
+    let responseBodyText: string | null = null;
+    let responseJson: unknown;
+    try {
+      responseBodyText = await response.text();
+      try {
+        responseJson = JSON.parse(responseBodyText);
+      } catch {
+        // not JSON — `responseJson` stays undefined, `body text of request to "…"` still works
+      }
+    } catch {
+      // opaque/binary/streamed response — `was made` and `status of request to "…"` still work
+    }
+    this.networkLog.push({
+      url: response.url(),
+      method: request.method(),
+      status: response.status(),
+      requestBody: request.postData(),
+      responseHeaders: await response.allHeaders().catch(() => ({})),
+      responseBodyText,
+      responseJson,
+    });
+  }
+
+  /** Every network request observed on this attempt's active page so far (M3d, SPEC §9.7) — read
+   * fresh on every poll by the interpreter's network-expect loop. An empty array before any browser
+   * step ran, or before any matching request has completed, is a normal, still-polling state, never
+   * an error. */
+  networkRequestsSoFar(): readonly CapturedNetworkRequest[] {
+    return this.networkLog;
   }
 
   async ensurePage(manager: BrowserManager): Promise<PWPage> {
@@ -144,6 +213,7 @@ export class BrowserPageState {
       await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();
       this.wireDialogHandler(page);
+      this.wireNetworkCapture(page);
       this.pages.push(page);
       this.activeIndex = 0;
     }
@@ -186,6 +256,7 @@ export class BrowserPageState {
     try {
       const newPage = await runAction('switch to new tab', () => pagePromise);
       this.wireDialogHandler(newPage);
+      this.wireNetworkCapture(newPage);
       this.pages.push(newPage);
       this.activeIndex = this.pages.length - 1;
       return { opened: true };
@@ -290,6 +361,39 @@ export async function captureFailureScreenshot(page: PWPage | undefined): Promis
   } catch {
     return undefined;
   }
+}
+
+/** A bare path (`/api/orders`) is auto-prefixed with Playwright's own `**` glob wildcard so it
+ * matches regardless of origin — the same origin-agnostic ergonomics `request to "…"`'s substring
+ * match already has, and consistent with `open "/path"` never asking for a scheme/host either.
+ * Left unchanged when it already looks like a full URL or already carries a glob wildcard, so an
+ * author who wants Playwright's own pattern language (`https://cdn.example.com/**`, a narrower
+ * `**\/api/orders/*`, …) always gets exactly what they wrote. */
+function toRoutePattern(urlPattern: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(urlPattern) || urlPattern.includes('*')) return urlPattern;
+  return `**${urlPattern}`;
+}
+
+/** `stub <METHOD> "<url-pattern>" respond status <code> [body {...}]` (M3d, D14, SPEC §9.7) —
+ * route-level response mocking for the active page. `urlPattern` is handed to Playwright's
+ * `page.route()` (via `toRoutePattern`), which accepts its own glob/regex matching syntax — no
+ * tflw-owned pattern language to reinvent. A request whose method doesn't match this stub calls
+ * `route.fallback()`, letting it (and any earlier-registered, still-matching route) continue
+ * untouched rather than being silently swallowed. Registered for the rest of the page's lifetime —
+ * like tracing/network capture, this naturally resets on the next test attempt's fresh page. */
+export async function performStub(page: PWPage, method: string, urlPattern: string, status: number, body: unknown): Promise<void> {
+  await runAction('stub', () =>
+    page.route(toRoutePattern(urlPattern), async (route) => {
+      if (route.request().method().toUpperCase() !== method.toUpperCase()) {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status,
+        ...(body !== null ? { contentType: 'application/json', body: JSON.stringify(body) } : {}),
+      });
+    }),
+  );
 }
 
 export interface ResolvedLocator {

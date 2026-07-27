@@ -94,7 +94,8 @@ export type StepKind =
   | 'download'
   | 'drag'
   | 'dropFile'
-  | 'screenshot';
+  | 'screenshot'
+  | 'stub';
 
 export interface RequestTrace {
   readonly method: string;

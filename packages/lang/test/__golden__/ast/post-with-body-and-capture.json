@@ -91,7 +91,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -113,7 +114,8 @@
                 "kind": "prop",
                 "name": "id"
               }
-            ]
+            ],
+            "of": null
           },
           "name": "orderId"
         },
@@ -142,7 +144,8 @@
                 "kind": "prop",
                 "name": "name"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -179,7 +182,8 @@
                 "kind": "prop",
                 "name": "price"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",

@@ -41,7 +41,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -87,7 +88,8 @@
                   "value": "content-type"
                 }
               ]
-            }
+            },
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -116,7 +118,8 @@
                 "kind": "prop",
                 "name": "items"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -140,7 +143,8 @@
                 "kind": "prop",
                 "name": "message"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -169,7 +173,8 @@
                 "kind": "prop",
                 "name": "error"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -193,7 +198,8 @@
           "quantifier": null,
           "subject": {
             "type": "BodySubject",
-            "path": []
+            "path": [],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",

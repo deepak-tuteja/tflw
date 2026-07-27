@@ -1,8 +1,8 @@
 # testFlow grammar
 
-The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **M3c**
-(`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — `screenshot`, failure/retry trace capture, `viewport`
-config; the browser-arc gap noted below is now closed for M3a/M3b/M3c together). This is a strict subset of the
+The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **M3d**
+(`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — network observation (`request to "…"`/`of request to
+"…"`) and `stub`; the browser-arc gap noted below is now closed for M3a–M3d together). This is a strict subset of the
 full language design in [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md); SPEC.md is the prose reference with rationale
 and examples, this file is the grammar shape only. Cross-references to SPEC decisions are `(P#n)`;
 cross-references to a SPEC section are `(§n)`.
@@ -120,17 +120,22 @@ ExpectStmt  := 'expect' Quantifier? Subject 'not'? MatcherCore NEWLINE
 CheckStmt   := 'check'  Quantifier? Subject 'not'? MatcherCore NEWLINE      # soft twin of expect
 
 Quantifier  := 'any' | 'all'                                    # only over a body.<path> or body csv subject
-Subject     := 'status'
+Subject     := 'status' NetworkRef?
              | 'duration'
-             | 'header' STRING
-             | 'body' 'text'                                     # raw response body as a string (§5.3, decision 51)
+             | 'header' STRING NetworkRef?
+             | 'body' 'text' NetworkRef?                          # raw response body as a string (§5.3, decision 51)
              | 'body' 'bytes'                                    # raw response body bytes (§6.2.1, gap #17)
              | 'body' 'csv' BodyPath?                            # body parsed as RFC 4180 CSV (gap #19)
              | 'body' 'pdf' 'text'                               # text extracted from a PDF body (gap #19)
-             | 'body' BodyPath?                                 # bare `body` = whole-body subject
+             | 'body' BodyPath? NetworkRef?                      # bare `body` = whole-body subject
              | 'request'                                        # (§6.2.2, PLAN decision 18) — the
                                                                   # connection attempt, not a response
+             | 'request' NetworkRef                              # (§9.7, M3d) — an *observed* network
+                                                                  # request; disambiguated from the bare
+                                                                  # form above by whether `to` follows
 BodyPath    := ('.' IDENT | '[' NUMBER ']')+                     # .items[0].price
+NetworkRef  := 'to' STRING ('with' 'method' STRING)?              # (§9.7, M3d)
+             | 'of' 'request' 'to' STRING ('with' 'method' STRING)?  # trailing clause on status/header/body/body text
 
 MatcherCore := 'equals' Value
              | 'contains' Value
@@ -145,6 +150,7 @@ MatcherCore := 'equals' Value
              | 'is' StateWord                                    # 🔮 UI subjects only
              | 'connects'                                        # `request` subject only (§6.2.2)
              | 'fails' ('matching' STRING)?                       # `request` subject only (§6.2.2)
+             | 'was' 'made'                                       # `request to "…"` subject only (§9.7, M3d)
 StateWord   := 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked'
 ```
 
@@ -152,7 +158,9 @@ A step combining a `request`-subject assertion with a `status`/`header`/`body`/`
 the same request, or a `request`-subject assertion inside `wait until api`, is a checker error
 (`TF031`, §6.2.2) — the grammar above accepts both shapes syntactically; the restriction is
 semantic, enforced by `checkRequestAssertions` (`packages/lang/src/checker.ts`), the same layer
-`checkServices`/`checkSessions` already live in.
+`checkServices`/`checkSessions` already live in. `request to "…"` (the M3d network-observation
+form) is exempt from this restriction — `checkRequestAssertions` recognizes it as an unrelated
+subject reading the browser's own network log, not this `api` step's response/connection state.
 
 See the generated [matcher table](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#62-matcher-table)
 (§6.2, from [`spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts))
@@ -165,6 +173,9 @@ LetStmt     := 'let' IDENT '=' Value NEWLINE
 CaptureStmt := 'capture' Subject 'as' IDENT NEWLINE
               # `request` parses here syntactically (it's the same Subject production) but is a
               # runtime error — it carries no value to capture (§6.2.2, PLAN decision 18).
+              # `request to "…"` and any `of request to "…"` clause parse here too (same Subject
+              # production) but are likewise runtime errors — no `capture` form exists for a
+              # network-observation subject, only `expect`/`check` (§9.7, M3d).
 GiveStmt    := 'give' Value NEWLINE                               # an action's return value (§8)
 
 Value       := AddSub
@@ -218,13 +229,14 @@ callable values (via the `CallName '(' ... ')'` production in `Atom`, above). Ne
 `use` calls nor `import`/`use` declarations are available inside a `session` block's body (§3.3)
 — a session runs with an empty call registry.
 
-## UI / browser steps (§9, M3a/M3b/M3c)
+## UI / browser steps (§9, M3a/M3b/M3c/M3d)
 
 ```
 UiStep      := OpenStmt | ClickStmt | FillStmt | FillFormStmt | SelectStmt
              | CheckStmt | UncheckStmt | PressStmt | HoverStmt | ScrollStmt
              | WithinBlock | DialogStmt | TabStmt | DownloadBlock
              | DragStmt | DropFileStmt | WaitUntilUiStmt | ScreenshotStmt
+             | StubStmt
 
 OpenStmt        := 'open' STRING                                   # relative to env's `web` (§3.1)
 ClickStmt       := ('double' | 'right')? 'click' Locator
@@ -266,6 +278,14 @@ WaitUntilUiStmt := 'wait' 'until' Subject 'not'? MatcherCore          # M3b — 
 
 ScreenshotStmt  := 'screenshot' STRING                                 # M3c — captures the active
                                                                         # page unconditionally
+
+StubStmt        := 'stub' Method STRING 'respond' 'status' NUMBER Object?   # M3d, §9.7 — route-level
+                                                                              # response mocking; Object
+                                                                              # is the same {...} literal
+                                                                              # `body {...}` (§5.2) uses
+Method          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'   # same method-
+                                                                                        # word recognition
+                                                                                        # as ApiStep (§5.1)
 ```
 
 - **Selector model (D6, §9.3):** the locator noun picks the resolution strategy —

@@ -71,6 +71,7 @@ import type {
   LocatorSubject,
   Matcher,
   MatcherName,
+  NetworkRequestRef,
   NumberLit,
   Oauth2SessionConfig,
   ObjectLit,
@@ -179,10 +180,11 @@ const STATEMENT_KEYWORDS = [
   'drag',
   'drop',
   'screenshot',
+  'stub',
 ] as const;
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
-const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'not'] as const;
+const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'was', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport'] as const;
@@ -1112,6 +1114,8 @@ class Parser {
           return this.parseDropFileStep();
         case 'screenshot':
           return this.parseScreenshotStep();
+        case 'stub':
+          return this.parseStubStep();
         default: {
           const hint = suggest(tok.value, STATEMENT_KEYWORDS);
           this.error(
@@ -1495,9 +1499,11 @@ class Parser {
     }
     const start = tok.span.start;
     switch (tok.value) {
-      case 'status':
+      case 'status': {
         this.advance();
-        return { type: 'StatusSubject', span: this.spanFrom(start) };
+        const of = this.tryParseNetworkRequestOf();
+        return { type: 'StatusSubject', of, span: this.spanFrom(start) };
+      }
       case 'duration':
         this.advance();
         return { type: 'DurationSubject', span: this.spanFrom(start) };
@@ -1505,13 +1511,15 @@ class Parser {
         this.advance();
         const name = this.expectString('a header name string, e.g. `header "content-type"`');
         if (!name) return null;
-        return { type: 'HeaderSubject', name, span: this.spanFrom(start) };
+        const of = this.tryParseNetworkRequestOf();
+        return { type: 'HeaderSubject', name, of, span: this.spanFrom(start) };
       }
       case 'body': {
         this.advance();
         if (this.isKw(this.peek(), 'text')) {
           this.advance();
-          const subj: BodyTextSubject = { type: 'BodyTextSubject', span: this.spanFrom(start) };
+          const of = this.tryParseNetworkRequestOf();
+          const subj: BodyTextSubject = { type: 'BodyTextSubject', of, span: this.spanFrom(start) };
           return subj;
         }
         if (this.isKw(this.peek(), 'bytes')) {
@@ -1532,12 +1540,21 @@ class Parser {
           return subj;
         }
         const path = this.parseBodyPath();
-        const subj: BodySubject = { type: 'BodySubject', path, span: this.spanFrom(start) };
+        const of = this.tryParseNetworkRequestOf();
+        const subj: BodySubject = { type: 'BodySubject', path, of, span: this.spanFrom(start) };
         return subj;
       }
-      case 'request':
+      case 'request': {
         this.advance();
+        // `request to "<url>"` (M3d) is lexically similar to but semantically distinct from a bare
+        // `request` (SPEC §6.2.2, `connects`/`fails`) — disambiguated on whether `to` follows.
+        if (this.isKw(this.peek(), 'to')) {
+          const ref = this.parseNetworkRequestRef();
+          if (!ref) return null;
+          return { type: 'NetworkRequestSubject', ref, span: this.spanFrom(start) };
+        }
         return { type: 'RequestSubject', span: this.spanFrom(start) };
+      }
       case 'button':
       case 'field':
       case 'text':
@@ -1581,6 +1598,38 @@ class Parser {
     return segs;
   }
 
+  /** `to "<url-pattern>" [with method "<M>"]` (M3d) — caller has already peeked `to`. Shared by the
+   * bare `request to "…"` subject and the `of request to "…"` clause below. */
+  private parseNetworkRequestRef(): NetworkRequestRef | null {
+    const start = this.peek().span.start;
+    this.advance(); // `to`
+    const urlPattern = this.expectString('a URL pattern string, e.g. `request to "/api/orders"`');
+    if (!urlPattern) return null;
+    let method: StringLit | null = null;
+    if (this.isKw(this.peek(), 'with')) {
+      this.advance();
+      if (!this.expectKw('method')) return null;
+      method = this.expectString('an HTTP method string, e.g. `with method "POST"`');
+      if (!method) return null;
+    }
+    return { type: 'NetworkRequestRef', urlPattern, method, span: this.spanFrom(start) };
+  }
+
+  /** `of request to "<url>" [with method "<M>"]` (M3d) — optional trailing clause on
+   * `status`/`header`/`body`/`body text`; absent (`null`) keeps today's unchanged
+   * last-`api`-step-response behavior. */
+  private tryParseNetworkRequestOf(): NetworkRequestRef | null {
+    if (!this.isKw(this.peek(), 'of')) return null;
+    this.advance(); // `of`
+    if (!this.expectKw('request')) return null;
+    if (!this.isKw(this.peek(), 'to')) {
+      const tok = this.peek();
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`to\` after \`of request\`, found ${describeToken(tok)}`, tok.span, 'e.g. `status of request to "/api/orders"`');
+      return null;
+    }
+    return this.parseNetworkRequestRef();
+  }
+
   private parseMatcher(): Matcher | null {
     const start = this.peek().span.start;
     let negated = false;
@@ -1612,6 +1661,11 @@ class Parser {
           return v ? mk('fails', v) : null;
         }
         return mk('fails', null);
+      }
+      case 'was': {
+        this.advance();
+        if (!this.expectKw('made')) return null;
+        return mk('wasMade', null);
       }
       case 'equals': {
         this.advance();
@@ -2015,6 +2069,40 @@ class Parser {
     if (!name) return null;
     this.endLine();
     return { type: 'ScreenshotStmt', name, span: this.spanFrom(start) };
+  }
+
+  /** `stub <METHOD> "<url-pattern>" respond status <code> [body {...}]` (M3d, SPEC §9.7). Reuses
+   * the same method-word recognition `api`'s request line already has (`isMethodWord`/`METHODS`). */
+  private parseStubStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `stub`
+    const methodTok = this.peek();
+    if (methodTok.type !== 'ident' || !this.isMethodWord(methodTok)) {
+      const hint = methodTok.type === 'ident' ? suggest(methodTok.value, METHODS as unknown as string[]) : undefined;
+      this.error(
+        Codes.UNKNOWN_METHOD,
+        `expected an HTTP method (${METHODS.join(', ')}), found ${describeToken(methodTok)}`,
+        methodTok.span,
+        hint ? `did you mean \`${hint}\`?` : undefined,
+      );
+      return null;
+    }
+    const method = this.advance().value.toUpperCase() as HttpMethod;
+    const urlPattern = this.expectString('a URL pattern, e.g. `stub GET "/api/orders/**"`');
+    if (!urlPattern) return null;
+    if (!this.expectKw('respond')) return null;
+    if (!this.expectKw('status')) return null;
+    const statusTok = this.expect('number', 'a status code, e.g. `respond status 200`');
+    if (!statusTok) return null;
+    const status: NumberLit = { type: 'NumberLit', value: Number(statusTok.value), raw: statusTok.raw, span: statusTok.span };
+    let body: ObjectLit | null = null;
+    if (this.isKw(this.peek(), 'body')) {
+      this.advance();
+      body = this.parseObject();
+      if (!body) return null;
+    }
+    this.endLine();
+    return { type: 'StubStmt', method, urlPattern, status, body, span: this.spanFrom(start) };
   }
 
   // -- let / capture ---------------------------------------------------------

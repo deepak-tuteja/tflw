@@ -680,6 +680,7 @@ them callable.
 | `is visible/hidden/enabled/disabled/checked` | UI locators | `expect button "Pay" is enabled` |
 | `connects` | `request` | `expect request connects` |
 | `fails` / `fails matching "<regex>"` | `request` | `expect request fails matching "certificate"` |
+| `was made` | `request to "<url>"` | `expect request to "/api/orders" was made` |
 <!-- GENERATED:matchers:end -->
 
 Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
@@ -1029,12 +1030,13 @@ Browser half, `0.2.0` (M3), landing in slices — see `PLAN_BROWSER_PERF_SECURIT
 scoping, and the state/value/count UI expect subjects. **M3b ✅ shipped**: frame traversal
 (`within frame`), tab/window switching, download capture, drag-drop, and `wait until <ui
 condition>` — see §9.5. **M3c ✅ shipped**: `screenshot`, failure screenshots, Playwright
-trace-on-failure/retry, `report/assets/`, `--browser`/`--headed`/`viewport` — see §9.6. **Still
-planned**: network observe/mock (M3d); the a11y subject (M3e); `element <name> = <locator>`
-aliases (§8 — no milestone owns them yet); and the live-DOM "nearest candidate" cold-start
-diagnosis + `tflw pick <url>` (M5). `tflw install-browsers
-[--browser chromium|firefox|webkit]` downloads the browser binary (`playwright` is an optional
-peer, D5 — installed and dynamically imported only once a suite actually runs a browser step).
+trace-on-failure/retry, `report/assets/`, `--browser`/`--headed`/`viewport` — see §9.6. **M3d ✅
+shipped**: network observation (`request to "…"`, `of request to "…"`) and `stub` — see §9.7.
+**Still planned**: the a11y subject (M3e); `element <name> = <locator>` aliases (§8 — no milestone
+owns them yet); and the live-DOM "nearest candidate" cold-start diagnosis + `tflw pick <url>` (M5).
+`tflw install-browsers [--browser chromium|firefox|webkit]` downloads the browser binary
+(`playwright` is an optional peer, D5 — installed and dynamically imported only once a suite
+actually runs a browser step).
 
 ### 9.1 Navigation & interaction ✅
 
@@ -1198,6 +1200,65 @@ expect text "Order confirmed" is visible
   (`defaults` only, §3.1) sizes every new browser context; omitted, Playwright's own default
   (1280×720) applies.
 
+### 9.7 Network observation & `stub` (M3d, D14) ✅
+
+```
+open "/checkout"
+click button "Pay"
+expect request to "/api/orders" was made
+expect status of request to "/api/orders" equals 201
+expect body.status of request to "/api/orders" equals "created"
+
+stub POST "/api/payments/**" respond status 500 body { error: "gateway down" }
+click button "Pay"
+expect text "gateway down" is visible
+```
+
+- **`request to "<url-pattern>" [with method "<M>"]`** — a subject targeting a network request
+  actually observed on the active page during this test attempt, distinct from §6.2.2's
+  `RequestSubject` (`expect request connects`/`fails`, scoped to the *last `api` step*) —
+  disambiguated by whether `to` follows `request`. `<url-pattern>` is a plain substring match
+  against the request's full URL (forgiving of query strings and cross-origin absolute URLs, the
+  same "just write the path" ergonomics `open "/path"` already has); `with method "<M>"` narrows
+  the match to that HTTP method. When several observed requests match, the **most recently
+  completed one** wins. Only meaningful with the `was made` matcher (existence) — a request that's
+  still in flight when the assertion runs is retried, polling to `timeout expect` (default 5s),
+  the same "not yet, not never" reasoning §9.4's UI expects already apply to a not-yet-rendered
+  element.
+- **`status`/`header "<name>"`/`body[.path]`/`body text` `of request to "<url>" […]`** — an
+  optional trailing clause on the ordinary response subjects (§5.3), reading the matched network
+  request's real response instead of the last `api` step's — the same subjects, the same matcher
+  set, just a different source. Omit the clause and nothing changes (§5.3's existing
+  last-`api`-step-response behavior). No matching request yet retries the same way `was made` does;
+  a genuinely non-JSON response still needs `body text` instead of `body.<path>`, exactly as §5.3
+  already requires.
+- **`stub <METHOD> "<url-pattern>" respond status <code> [body {...}]`** — route-level response
+  mocking for the active page (Playwright's `page.route()`), registered for the rest of the test. A
+  bare path like `/api/payments/**` is auto-prefixed with Playwright's own `**` glob wildcard so it
+  matches regardless of origin; an already-absolute URL or an already-wildcarded pattern passes
+  through unchanged, giving direct access to Playwright's own glob/regex matching when that's
+  actually wanted. A request whose method doesn't match falls through to the real network
+  untouched, rather than being silently swallowed — a `stub POST` never intercepts a `GET` to the
+  same path. A stubbed response still shows up in `request to "…"`/`of request to "…"` exactly like
+  a real one (the page genuinely receives it) — a `stub ... respond status 500` followed by `expect
+  status of request to "…" equals 500` observes its own mock, not a coincidence.
+- **House style: real fixtures by default.** `stub` exists for third-party/unavailable
+  dependencies — a payment gateway's sandbox that's flaky in CI, a webhook callback from a service
+  this suite doesn't own, an error response a real dependency won't reliably reproduce on demand —
+  not as a general substitute for a real fixture. tflw's own dogfood suites never mock the API
+  they're testing (P#1's "no transpile-to-Playwright, the interpreter's own event stream is the
+  reporting substrate" spirit extends here too: a suite that stubs its own backend is testing the
+  stub, not the app). Reach for `stub` when the real dependency is the *unreliable* or *out of
+  scope* part of the system under test, not when a real fixture would just be inconvenient to set
+  up.
+- **Not supported (out of scope for M3d):** `capture ... of request to "…"`/`capture request to
+  "…"` (a clear runtime error, not a silent wrong-data capture — SPEC §6.2.2's "not capturable"
+  precedent for the connection-attempt `request` subject); `any`/`all` quantifiers against a
+  network-observation subject; the `redact <path>`-driven field-path masking §6.6 already gives
+  `body.<path>` on an `api` step's own response (a captured network body still passes through the
+  universal secret-value redactor every step's report text already gets, just not that
+  more-targeted, path-declared masking).
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
@@ -1252,8 +1313,12 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 ✅ Everything API-side: the event stream, req/res panels, per-`check` rows, generated values
 inline, seed header, redaction, CLI summary, `junit.xml`/`results.json`, exit codes, `--failed`/
 `--bail`/`--format ndjson` CI ergonomics. ✅ Browser-side evidence since M3c: failure/explicit
-screenshots, Playwright trace on failure and every retry attempt (§9.6). 🔮 Visual regression
-baselines wait for M4b; network-mock/a11y evidence for M3d/M3e.
+screenshots, Playwright trace on failure and every retry attempt (§9.6). M3d's `request to "…"`/
+`of request to "…"`/`stub` steps report through the same generic step timeline as every other step
+(source line + pass/fail detail, e.g. `stub POST "/api/payments/**" → 500`) — no dedicated
+network-panel evidence was added; the full request/response is inspectable via the kept Playwright
+trace (§9.6) when one exists. 🔮 Visual regression baselines wait for M4b; the a11y subject's own
+evidence for M3e.
 
 - Interpreter emits `step:start` / `step:end` (timing + screenshot when one was captured for a
   browser step, full req/res trace for API steps); reporter is a pure consumer.

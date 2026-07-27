@@ -85,7 +85,8 @@
                 "kind": "prop",
                 "name": "token"
               }
-            ]
+            ],
+            "of": null
           },
           "name": "token"
         },

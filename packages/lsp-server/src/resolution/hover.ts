@@ -37,6 +37,7 @@ const MATCHER_SPEC_ID: Record<MatcherName, string> = {
   checked: 'state-word',
   connects: 'connects',
   fails: 'fails',
+  wasMade: 'was-made',
 };
 
 /** Generator AST node `type` → the matching `spec-data.ts` `GeneratorEntry.id`. Only generator

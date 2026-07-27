@@ -325,3 +325,116 @@ test('`screenshot` with no name string is a diagnosed error, not a silent empty 
   const { diagnostics } = parseSource('test "ok"\n  screenshot\n');
   assert.ok(diagnostics.length > 0, 'expected a diagnostic for a bare `screenshot`');
 });
+
+// ---- M3d: network observation + `stub` -------------------------------------
+
+test('`expect request to "..." was made` parses a NetworkRequestSubject with the wasMade matcher', () => {
+  const step = firstStep('test "ok"\n  expect request to "/api/orders" was made\n') as {
+    subject: { type: string; ref: { urlPattern: { value: string }; method: unknown } };
+    matcher: { name: string; negated: boolean };
+  };
+  assert.equal(step.subject.type, 'NetworkRequestSubject');
+  assert.equal(step.subject.ref.urlPattern.value, '/api/orders');
+  assert.equal(step.subject.ref.method, null);
+  assert.equal(step.matcher.name, 'wasMade');
+  assert.equal(step.matcher.negated, false);
+});
+
+test('`expect request to "..." with method "POST" was made` carries the method on the ref', () => {
+  const step = firstStep('test "ok"\n  expect request to "/api/orders" with method "POST" was made\n') as {
+    subject: { ref: { method: { value: string } | null } };
+  };
+  assert.equal(step.subject.ref.method?.value, 'POST');
+});
+
+test('`expect request to "..." not was made` negates via the ordinary `not` prefix', () => {
+  const step = firstStep('test "ok"\n  expect request to "/api/orders" not was made\n') as { matcher: { name: string; negated: boolean } };
+  assert.equal(step.matcher.name, 'wasMade');
+  assert.equal(step.matcher.negated, true);
+});
+
+test('bare `expect request connects`/`fails` (§6.2.2, no `to`) is unaffected — still RequestSubject', () => {
+  const { program, diagnostics } = parseSource('test "ok"\n  api GET /health\n  expect request connects\n');
+  assert.deepEqual(diagnostics, []);
+  const expectStep = program.tests[0]!.body[1] as { subject: { type: string } };
+  assert.equal(expectStep.subject.type, 'RequestSubject');
+});
+
+test('`status of request to "..."` parses a StatusSubject carrying the `of` ref', () => {
+  const step = firstStep('test "ok"\n  expect status of request to "/api/orders" equals 201\n') as {
+    subject: { type: string; of: { urlPattern: { value: string } } | null };
+  };
+  assert.equal(step.subject.type, 'StatusSubject');
+  assert.equal(step.subject.of?.urlPattern.value, '/api/orders');
+});
+
+test('`header "..." of request to "..."` parses a HeaderSubject carrying the `of` ref', () => {
+  const step = firstStep('test "ok"\n  expect header "content-type" of request to "/api/orders" contains "json"\n') as {
+    subject: { type: string; name: { value: string }; of: { urlPattern: { value: string } } | null };
+  };
+  assert.equal(step.subject.type, 'HeaderSubject');
+  assert.equal(step.subject.name.value, 'content-type');
+  assert.equal(step.subject.of?.urlPattern.value, '/api/orders');
+});
+
+test('`body.<path> of request to "..."` and `body text of request to "..."` carry the `of` ref', () => {
+  const body = firstStep('test "ok"\n  expect body.id of request to "/api/orders" equals "abc"\n') as {
+    subject: { type: string; path: { name: string }[]; of: { urlPattern: { value: string } } | null };
+  };
+  assert.equal(body.subject.type, 'BodySubject');
+  assert.deepEqual(body.subject.path, [{ kind: 'prop', name: 'id' }]);
+  assert.equal(body.subject.of?.urlPattern.value, '/api/orders');
+
+  const text = firstStep('test "ok"\n  expect body text of request to "/api/orders" contains "ok"\n') as {
+    subject: { type: string; of: { urlPattern: { value: string } } | null };
+  };
+  assert.equal(text.subject.type, 'BodyTextSubject');
+  assert.equal(text.subject.of?.urlPattern.value, '/api/orders');
+});
+
+test('an ordinary `expect status equals ...` (no `of` clause) keeps `of: null` — unchanged behavior', () => {
+  const { program } = parseSource('test "ok"\n  api GET /health\n  expect status equals 200\n');
+  const expectStep = program.tests[0]!.body[1] as { subject: { of: unknown } };
+  assert.equal(expectStep.subject.of, null);
+});
+
+test('`of request` with no `to` is a diagnosed error, not a silent parse', () => {
+  const { diagnostics } = parseSource('test "ok"\n  expect status of request equals 200\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic');
+});
+
+test('`stub <METHOD> "<url>" respond status <code>` parses a StubStmt with no body', () => {
+  const step = firstStep('test "ok"\n  stub GET "/api/orders/**" respond status 500\n') as {
+    type: string;
+    method: string;
+    urlPattern: { value: string };
+    status: { value: number };
+    body: unknown;
+  };
+  assert.equal(step.type, 'StubStmt');
+  assert.equal(step.method, 'GET');
+  assert.equal(step.urlPattern.value, '/api/orders/**');
+  assert.equal(step.status.value, 500);
+  assert.equal(step.body, null);
+});
+
+test('`stub` with `body {...}` parses the object literal onto StubStmt.body', () => {
+  const step = firstStep('test "ok"\n  stub POST "/api/payments/**" respond status 200 body { approved: true }\n') as {
+    type: string;
+    method: string;
+    body: { fields: { key: string }[] } | null;
+  };
+  assert.equal(step.type, 'StubStmt');
+  assert.equal(step.method, 'POST');
+  assert.equal(step.body?.fields[0]?.key, 'approved');
+});
+
+test('`stub` with an unknown HTTP method is a diagnosed error with a suggestion', () => {
+  const { diagnostics } = parseSource('test "ok"\n  stub GRAB "/api/x" respond status 200\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic for an unknown method');
+});
+
+test('`stub` missing `respond status` is a diagnosed error, not a silent parse', () => {
+  const { diagnostics } = parseSource('test "ok"\n  stub GET "/api/orders"\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic for a missing `respond status`');
+});

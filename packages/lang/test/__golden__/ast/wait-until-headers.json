@@ -101,7 +101,8 @@
                     "kind": "prop",
                     "name": "status"
                   }
-                ]
+                ],
+                "of": null
               },
               "matcher": {
                 "type": "Matcher",

@@ -324,6 +324,11 @@ test('checkRequestAssertions: two separate `api` calls each get their own clean 
   assert.deepEqual(checkRequestAssertions(program), []);
 });
 
+test('checkRequestAssertions: a `request to "…" was made` (M3d) is exempt from the connects/fails mixing rule — reads the browser network log, not this api step\'s response', () => {
+  const { program } = parseSource(`test "ok"\n  api GET /health\n  expect request fails\n  expect request to "/api/orders" was made\n`);
+  assert.deepEqual(checkRequestAssertions(program), []);
+});
+
 test('checkRequestAssertions: also validates inside `action`/`hook` bodies', () => {
   const { program: actionProgram } = parseSource(`action ping()\n  api GET /health\n  expect request fails\n  expect status equals 200\n  give true\n`);
   assert.equal(checkRequestAssertions(actionProgram).length, 1);

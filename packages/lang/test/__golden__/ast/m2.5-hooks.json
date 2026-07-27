@@ -28,7 +28,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -50,7 +51,8 @@
                 "kind": "prop",
                 "name": "token"
               }
-            ]
+            ],
+            "of": null
           },
           "name": "fileToken"
         }
@@ -104,7 +106,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -143,7 +146,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -216,7 +220,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",

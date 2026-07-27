@@ -17,6 +17,7 @@ import type {
   HookDecl,
   LetStmt,
   Locator as LocatorAst,
+  NetworkRequestRef,
   Oauth2SessionConfig,
   PathSegment,
   Program,
@@ -48,11 +49,13 @@ import {
   performScreenshot,
   performScrollIntoView,
   performSelect,
+  performStub,
   performUncheck,
   requireSingleMatch,
   resolveLocator,
   resolveLocatorSnapshot,
   type BrowserManager,
+  type CapturedNetworkRequest,
   type PWPage,
   type ResolvedLocator,
 } from './browser.js';
@@ -888,11 +891,14 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'ExpectStmt': {
-          // UI locator subjects (SPEC §9.4) get their own retry-until-timeout path — the exact
-          // opposite of an API expect's evaluate-once/fail-fast (P#15) — so they're intercepted
-          // here rather than inside `execExpect`.
-          result =
-            step.subject.type === 'LocatorSubject'
+          // UI locator subjects (SPEC §9.4) and network-observation subjects (`request to "…"`/`of
+          // request to "…"`, M3d, SPEC §9.7) each get their own retry-until-timeout path — the
+          // exact opposite of an API expect's evaluate-once/fail-fast (P#15) — so both are
+          // intercepted here rather than inside `execExpect`.
+          const networkRef = subjectNetworkRef(step.subject);
+          result = networkRef
+            ? await execNetworkExpect(step, networkRef, ctx, src, stepStart, config)
+            : step.subject.type === 'LocatorSubject'
               ? await execUiExpect(step, ctx, src, stepStart, config)
               : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
@@ -1127,6 +1133,15 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const page = await ensurePageForStep(ctx);
           const screenshot = await performScreenshot(page);
           result = { ...mkStep('screenshot', src, step.span, true, stepStart, `screenshot ${JSON.stringify(name)} captured`), screenshot };
+          break;
+        }
+        case 'StubStmt': {
+          const urlPattern = String(evalValue(step.urlPattern, ctx));
+          const status = step.status.value;
+          const body = step.body ? Object.fromEntries(step.body.fields.map((f) => [f.key, evalValue(f.value, ctx)])) : null;
+          const page = await ensurePageForStep(ctx);
+          await performStub(page, step.method, urlPattern, status, body);
+          result = mkStep('stub', src, step.span, true, stepStart, `stub ${step.method} ${JSON.stringify(urlPattern)} → ${status}`);
           break;
         }
       }
@@ -1464,6 +1479,123 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
   }
 }
 
+/** `expect`/`check request to "…" was made` and `status`/`header`/`body[...]`/`body text` `of
+ * request to "…"` (M3d, SPEC §9.7) — auto-retries to `timeout expect` like `execUiExpect`: a
+ * network request an earlier click just triggered may still be in flight when this assertion
+ * runs. Re-reads `networkRequestsSoFar()` fresh on every poll rather than resolving the match once,
+ * so a request that completes mid-poll is picked up on the very next iteration. Redaction here is
+ * limited to the universal `ctx.redactor.redact()` pass every step's message already gets — the
+ * `redact <path>` config's field-path-specific masking (`maskExpectDetail`, gap #15) stays scoped
+ * to API `body.<path>` subjects; extending it to observed network bodies is a separate, unscoped
+ * piece of work. */
+async function execNetworkExpect(step: ExpectStmt, ref: NetworkRequestRef, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
+  if (step.quantifier) {
+    throw new RuntimeError('`any`/`all` are not supported against a `request to "…"` subject (SPEC §9.7)');
+  }
+  const browser = requireBrowserCtx(ctx);
+  const urlPattern = String(evalValue(ref.urlPattern, ctx));
+  const method = ref.method ? String(evalValue(ref.method, ctx)).toUpperCase() : null;
+  const deadline = performance.now() + config.timeouts.expect;
+  for (;;) {
+    const matched = findLastMatchingRequest(browser.page.networkRequestsSoFar(), urlPattern, method);
+    const outcome = evaluateNetworkExpect(step, matched, urlPattern, ctx);
+    if (outcome.ok || performance.now() >= deadline) {
+      return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+    }
+    await sleep(WAIT_POLL_INTERVAL_MS);
+  }
+}
+
+/** Most-recently-completed match wins (SPEC §9.7) — a page can legitimately request the same
+ * endpoint more than once (a retry, a polling widget); the latest is the one a test author almost
+ * always means. `url.includes(urlPattern)` is a deliberately simple substring match, not
+ * Playwright's glob/regex route syntax (that's `stub`'s own, separate concern) — forgiving of
+ * query strings and cross-origin absolute URLs alike. */
+function findLastMatchingRequest(log: readonly CapturedNetworkRequest[], urlPattern: string, method: string | null): CapturedNetworkRequest | undefined {
+  for (let i = log.length - 1; i >= 0; i--) {
+    const r = log[i]!;
+    if (!r.url.includes(urlPattern)) continue;
+    if (method && r.method.toUpperCase() !== method) continue;
+    return r;
+  }
+  return undefined;
+}
+
+function evaluateNetworkExpect(step: ExpectStmt, matched: CapturedNetworkRequest | undefined, urlPattern: string, ctx: EvalCtx): MatchOutcome {
+  const subject = step.subject;
+  const label = networkSubjectLabel(subject, urlPattern);
+  if (subject.type === 'NetworkRequestSubject') {
+    // Existence-only; `wasMade` is the only matcher meaningful here. The checker doesn't statically
+    // enforce this (SPEC §1: matcher↔subject compatibility stays a runtime concern, mirroring every
+    // other subject) — a mismatched matcher gets a direct, clear error instead of nonsense output.
+    if (step.matcher.name !== 'wasMade') {
+      throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`request to "…"\` — only \`was made\` (SPEC §9.7)`);
+    }
+    const made = matched !== undefined;
+    const ok = step.matcher.negated ? !made : made;
+    const verb = made ? 'was made' : 'was not made';
+    return ok
+      ? { ok: true, message: `${label} ${verb} (as expected)` }
+      : { ok: false, message: `expected ${label} to ${step.matcher.negated ? 'not have been made' : 'have been made'}, but it ${made ? 'was' : "wasn't"}` };
+  }
+  if (!matched) {
+    return { ok: false, message: `expected ${label}, but no matching request has been observed yet` };
+  }
+  const { value } = resolveNetworkSubjectValue(subject, matched);
+  return evalMatcher(label, value, step.matcher, ctx);
+}
+
+function resolveNetworkSubjectValue(subject: Subject, matched: CapturedNetworkRequest): { value: unknown; label: string } {
+  switch (subject.type) {
+    case 'StatusSubject':
+      return { value: matched.status, label: 'status' };
+    case 'HeaderSubject':
+      return { value: matched.responseHeaders[subject.name.value.toLowerCase()], label: `header "${subject.name.value}"` };
+    case 'BodyTextSubject':
+      return { value: matched.responseBodyText, label: 'body text' };
+    case 'BodySubject': {
+      if (matched.responseJson === undefined) {
+        throw new RuntimeError('response body is not JSON — a `body.<path> of request to "…"` subject needs a JSON response (use `body text of request to "…"` for non-JSON)');
+      }
+      let value: unknown = matched.responseJson;
+      for (const seg of subject.path) value = navigate(value, seg, pathLabel(subject.path));
+      return { value, label: 'body' + pathLabel(subject.path) };
+    }
+    default:
+      // Unreachable: `execSteps` only routes here when `subjectNetworkRef` found a ref, which is
+      // only ever set on these four subject types (checker.ts's `checkSubject`, ast.ts).
+      throw new RuntimeError(`\`${subject.type}\` does not support \`of request to "…"\``);
+  }
+}
+
+function networkSubjectLabel(subject: Subject, urlPattern: string): string {
+  const base = `request to ${JSON.stringify(urlPattern)}`;
+  switch (subject.type) {
+    case 'StatusSubject':
+      return `status of ${base}`;
+    case 'HeaderSubject':
+      return `header ${JSON.stringify(subject.name.value)} of ${base}`;
+    case 'BodyTextSubject':
+      return `body text of ${base}`;
+    case 'BodySubject':
+      return `body${pathLabel(subject.path)} of ${base}`;
+    default:
+      return base;
+  }
+}
+
+/** Which subjects carry a network-observation ref (M3d, SPEC §9.7) — `NetworkRequestSubject`
+ * itself, or the `of request to "…"` clause on the four ordinary response subjects that support
+ * it. `null` means "unchanged, last-`api`-step-response-scoped behavior" — routes to
+ * `execExpect`/`execUiExpect` exactly as before M3d. */
+function subjectNetworkRef(subject: Subject): NetworkRequestRef | null {
+  if (subject.type === 'NetworkRequestSubject') return subject.ref;
+  if (subject.type === 'StatusSubject' || subject.type === 'HeaderSubject' || subject.type === 'BodySubject' || subject.type === 'BodyTextSubject') {
+    return subject.of;
+  }
+  return null;
+}
+
 /** Gap #15 (TFLW-GAPS.md): a plain (non-quantified) `body.<path>` assertion's own detail text can
  * expose a `redact`-covered field's real value — as the `actual` side of a failing comparison, or
  * (since a passing `equals` necessarily has `actual === expected`) as the literal shown even on
@@ -1657,6 +1789,15 @@ function pathLabel(path: readonly PathSegment[]): string {
 // ---- subjects --------------------------------------------------------------
 
 function resolveSubject(subject: Subject, response: ResponseTrace | null): { value: unknown; label: string } {
+  // A network-observation subject (`request to "…"`/`of request to "…"`, M3d) needs the browser's
+  // network log + a retry-until-timeout poll, neither of which this function has access to (it
+  // only ever sees the last `api` step's response) — `execSteps`'s `ExpectStmt` case routes those
+  // through `execNetworkExpect` instead, before ever reaching here. Reached only via `capture ...
+  // of request to "…" as x`, which isn't a defined operation — a clear error beats silently
+  // capturing the *unrelated* last-`api`-step response instead.
+  if (subjectNetworkRef(subject)) {
+    throw new RuntimeError('`capture` does not support a `request to "…"`/`of request to "…"` subject (SPEC §9.7) — only `expect`/`check` against it');
+  }
   if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion/capture');
   switch (subject.type) {
     case 'StatusSubject':
@@ -1697,6 +1838,10 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
       // button "…" as x`, which isn't a defined operation (SPEC §9.4: locators are asserted, not
       // captured as values).
       throw new RuntimeError('a UI locator is not a capturable value — only `expect`/`check` against it (SPEC §9.4)');
+    case 'NetworkRequestSubject':
+      // Unreachable in practice — the `subjectNetworkRef` guard above already throws before this
+      // switch runs for any network-observation subject. Kept for exhaustiveness.
+      throw new RuntimeError('`capture` does not support a `request to "…"` subject (SPEC §9.7) — only `expect`/`check` against it');
   }
 }
 
@@ -1855,6 +2000,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'dropFile';
     case 'ScreenshotStmt':
       return 'screenshot';
+    case 'StubStmt':
+      return 'stub';
   }
 }
 

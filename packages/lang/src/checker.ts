@@ -10,6 +10,7 @@ import type {
   ConfigEntry,
   ConfigFile,
   ExpectStmt,
+  NetworkRequestRef,
   PathSegment,
   Program,
   SessionDecl,
@@ -246,7 +247,13 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
       const otherExpects: ExpectStmt[] = [];
       while (j < steps.length && steps[j]!.type === 'ExpectStmt') {
         const expect = steps[j] as ExpectStmt;
-        (expect.subject.type === 'RequestSubject' ? requestExpects : otherExpects).push(expect);
+        // `NetworkRequestSubject` (M3d, `request to "…"`) reads the browser's observed network
+        // traffic, not this `api` step's own response/connection state — orthogonal to the
+        // connects/fails restriction below, so it's excluded from both buckets entirely rather than
+        // being misclassified as an incompatible response-based assertion.
+        if (expect.subject.type !== 'NetworkRequestSubject') {
+          (expect.subject.type === 'RequestSubject' ? requestExpects : otherExpects).push(expect);
+        }
         j++;
       }
       if (requestExpects.length > 0 && otherExpects.length > 0) {
@@ -283,6 +290,8 @@ function subjectKeyword(subject: Subject): string {
     case 'BodyPdfTextSubject':
       return 'body';
     case 'RequestSubject':
+      return 'request';
+    case 'NetworkRequestSubject':
       return 'request';
     case 'LocatorSubject':
       return subject.locator.kind;
@@ -448,6 +457,10 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'ScreenshotStmt':
         checkStringLit(step.name, bound, diags);
         break;
+      case 'StubStmt':
+        checkStringLit(step.urlPattern, bound, diags);
+        if (step.body) for (const field of step.body.fields) checkValue(field.value, bound, diags);
+        break;
     }
   }
 }
@@ -462,6 +475,17 @@ function checkSubject(subject: Subject, bound: Set<string>, diags: Diagnostic[])
   // only a header *name* can itself be interpolated.
   if (subject.type === 'HeaderSubject') checkStringLit(subject.name, bound, diags);
   if (subject.type === 'LocatorSubject') checkStringLit(subject.locator.value, bound, diags);
+  if (subject.type === 'NetworkRequestSubject') checkNetworkRequestRef(subject.ref, bound, diags);
+  // `of request to "…"` (M3d) — carried on the ordinary response subjects; check it the same way
+  // regardless of which subject it's attached to.
+  if ((subject.type === 'StatusSubject' || subject.type === 'HeaderSubject' || subject.type === 'BodySubject' || subject.type === 'BodyTextSubject') && subject.of) {
+    checkNetworkRequestRef(subject.of, bound, diags);
+  }
+}
+
+function checkNetworkRequestRef(ref: NetworkRequestRef, bound: Set<string>, diags: Diagnostic[]): void {
+  checkStringLit(ref.urlPattern, bound, diags);
+  if (ref.method) checkStringLit(ref.method, bound, diags);
 }
 
 function checkApiRequestSpec(spec: ApiRequestSpec, bound: Set<string>, diags: Diagnostic[]): void {

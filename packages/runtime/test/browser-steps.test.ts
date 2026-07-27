@@ -23,7 +23,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { BrowserManager, BrowserPageState } from '../src/browser.js';
-import { startFixtureServer, testConfig, type FixtureServer } from './support.js';
+import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
 
 const FIXTURE_HTML = `<!doctype html>
@@ -79,6 +79,12 @@ const FIXTURE_HTML = `<!doctype html>
 
   <div id="dropzone">Drop files here</div>
   <p id="dropzone-status">no file</p>
+
+  <button id="fetch-orders" onclick="fetch('/api/orders').then(function () { document.getElementById('fetch-status').textContent = 'done'; })">Fetch orders</button>
+  <p id="fetch-status">idle</p>
+
+  <button id="pay" onclick="fetch('/api/payments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ amount: 10 }) }).then(function (r) { return r.json(); }).then(function (j) { document.getElementById('pay-status').textContent = j.error ? ('error:' + j.error) : ('approved:' + j.approved); })">Pay</button>
+  <p id="pay-status">idle</p>
 
   <script>
     (function () {
@@ -153,6 +159,10 @@ before(async () => {
       flakyRequests++;
       res.writeHead(200, { 'content-type': 'text/html' }).end(FLAKY_HTML(flakyRequests === 1 ? 'Missing Button' : 'Add to cart'));
     },
+    // M3d: two real endpoints the fixture page's own buttons call via `fetch` — network
+    // observation reads the browser's real traffic, so there must be real traffic to observe.
+    '/api/orders': (_req, res) => json(res, 200, { status: 'created', items: [{ id: 1 }] }),
+    '/api/payments': (req, res) => json(res, 200, { approved: true, method: req.method }),
   });
   config = { ...testConfig(server.baseUrl), webBaseUrl: server.baseUrl };
   browserManager = new BrowserManager();
@@ -528,4 +538,116 @@ test('`viewport` config sizes every new browser context', async () => {
   } finally {
     await viewportManager.close();
   }
+});
+
+// ---- M3d: network observation + `stub` -------------------------------------
+
+test('`expect request to "..." was made` passes once a real `fetch` the page issued completes', async () => {
+  const { report } = await run(`test "network observed"
+  open "/"
+  click button "Fetch orders"
+  expect request to "/api/orders" was made
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('`expect request to "..." was made` fails (after the expect timeout) when no matching request ever happens', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  const { program } = parseSource(`test "no fetch"
+  open "/"
+  expect request to "/api/orders" was made
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /expected request to "\/api\/orders" to have been made/);
+});
+
+test('`expect request to "..." not was made` passes when nothing matching ever fires', async () => {
+  const { report } = await run(`test "not made"
+  open "/"
+  expect request to "/api/nonexistent" not was made
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('`with method "..."` narrows the match — a GET-only expect against a POST-only endpoint fails', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  const { program } = parseSource(`test "method mismatch"
+  open "/"
+  click button "Pay"
+  expect request to "/api/payments" with method "GET" was made
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('`with method "..."` matches the real method the browser actually sent', async () => {
+  const { report } = await run(`test "method match"
+  open "/"
+  click button "Pay"
+  expect request to "/api/payments" with method "POST" was made
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('`status`/`header`/`body[...]`/`body text` `of request to "..."` read the matched request\'s real response', async () => {
+  const { report } = await run(`test "of request subjects"
+  open "/"
+  click button "Fetch orders"
+  expect status of request to "/api/orders" equals 200
+  expect header "content-type" of request to "/api/orders" contains "json"
+  expect body.status of request to "/api/orders" equals "created"
+  expect body.items[0].id of request to "/api/orders" equals 1
+  expect body text of request to "/api/orders" contains "created"
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('an `of request to "..."` subject with no matching request yet fails cleanly, not a crash', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  const { program } = parseSource(`test "of request, no match"
+  open "/"
+  expect status of request to "/api/orders" equals 200
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /no matching request has been observed yet/);
+});
+
+test('`stub` replaces the real response — the page sees the stubbed body, and the real server never receives the request', async () => {
+  // `server` is shared across every test in this file (`before`/`after` are file-scoped) — other
+  // tests hit `/api/payments` for real, so `received` accumulates across the whole run; a
+  // before/after *count* is the only reliable way to prove this specific request never landed.
+  const before = server.received.get('/api/payments')?.length ?? 0;
+  const { report } = await run(`test "stub replaces response"
+  open "/"
+  stub POST "/api/payments" respond status 500 body { error: "boom" }
+  click button "Pay"
+  expect text "error:boom" is visible
+  expect status of request to "/api/payments" equals 500
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.equal(server.received.get('/api/payments')?.length ?? 0, before, 'the real backend must never see a fully-stubbed request');
+});
+
+test('`stub`\'s method filter falls through to the real network on a mismatch', async () => {
+  const before = server.received.get('/api/payments')?.length ?? 0;
+  const { report } = await run(`test "stub method mismatch falls through"
+  open "/"
+  stub GET "/api/payments" respond status 404
+  click button "Pay"
+  expect text "approved:true" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.equal(server.received.get('/api/payments')?.length ?? 0, before + 1, 'a POST should still reach the real backend past a GET-only stub');
+});
+
+test('`stub` with no `body` clause responds with just the status code', async () => {
+  const { report } = await run(`test "stub no body"
+  open "/"
+  stub GET "/api/orders" respond status 503
+  click button "Fetch orders"
+  expect status of request to "/api/orders" equals 503
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
 });

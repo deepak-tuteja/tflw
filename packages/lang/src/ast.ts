@@ -117,7 +117,8 @@ export type Step =
   | DownloadBlock
   | DragStmt
   | DropFileStmt
-  | ScreenshotStmt;
+  | ScreenshotStmt
+  | StubStmt;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */
 export interface GiveStmt extends Node {
@@ -269,6 +270,7 @@ export type Subject =
   | BodyCsvSubject
   | BodyPdfTextSubject
   | RequestSubject
+  | NetworkRequestSubject
   | LocatorSubject;
 
 /** A UI locator used as an `expect`/`check` subject (`expect button "Add to cart" is visible`,
@@ -283,13 +285,41 @@ export interface LocatorSubject extends Node {
 
 export interface StatusSubject extends Node {
   readonly type: 'StatusSubject';
+  /** `of request to "…"` (M3d) — read this from an observed network request instead of the last
+   * `api` step's response. `null` is today's unchanged behavior. */
+  readonly of: NetworkRequestRef | null;
 }
 
 /** `request` — the connection attempt itself, not the response (SPEC §5.3/§6.2.2, PLAN decision
  * 18, enterprise arc cluster 5.5). Only meaningful with the `connects`/`fails` matchers; carries
- * no data of its own to navigate (unlike every other subject, which reads the response). */
+ * no data of its own to navigate (unlike every other subject, which reads the response). Not to be
+ * confused with `NetworkRequestSubject` below (`request to "<url>"`, M3d) — a lexically similar but
+ * semantically distinct subject the parser disambiguates on whether `to` follows `request`. */
 export interface RequestSubject extends Node {
   readonly type: 'RequestSubject';
+}
+
+/** `request to "<url-pattern>" [with method "<M>"]` (M3d, D14, SPEC §9.7) — targets a network
+ * request observed on the active browser page during this test attempt, distinct from the
+ * `api`-step-scoped `RequestSubject` above. Only meaningful with the `wasMade` matcher (existence:
+ * has any matching request been observed so far). To read a matched request's status/body/header
+ * instead of just asking whether it happened, attach the same `ref` as an `of request to "…"`
+ * clause on `StatusSubject`/`HeaderSubject`/`BodySubject`/`BodyTextSubject` rather than duplicating
+ * their machinery here. */
+export interface NetworkRequestSubject extends Node {
+  readonly type: 'NetworkRequestSubject';
+  readonly ref: NetworkRequestRef;
+}
+
+/** Shared by `NetworkRequestSubject` and the `of request to "…"` clause (M3d, SPEC §9.7).
+ * `urlPattern` is substring-matched against a captured request's full URL — deliberately not
+ * Playwright's own glob syntax (that's `stub`'s job, StubStmt, which really does register a route
+ * matcher); when several observed requests match, the most recently completed one wins. `method`,
+ * when given, narrows the match to that HTTP method (case-insensitive). */
+export interface NetworkRequestRef extends Node {
+  readonly type: 'NetworkRequestRef';
+  readonly urlPattern: StringLit;
+  readonly method: StringLit | null;
 }
 
 export interface DurationSubject extends Node {
@@ -299,18 +329,24 @@ export interface DurationSubject extends Node {
 export interface HeaderSubject extends Node {
   readonly type: 'HeaderSubject';
   readonly name: StringLit;
+  /** `of request to "…"` (M3d) — see `StatusSubject.of`. */
+  readonly of: NetworkRequestRef | null;
 }
 
 export interface BodySubject extends Node {
   readonly type: 'BodySubject';
   /** Empty path = the whole body; otherwise dot/index segments (`body.items[0].price`). */
   readonly path: readonly PathSegment[];
+  /** `of request to "…"` (M3d) — see `StatusSubject.of`. */
+  readonly of: NetworkRequestRef | null;
 }
 
 /** `body text` — the raw response body as a string, for non-JSON (text/HTML/XML) responses
  * (SPEC §5.3, decision 51). Distinct from `BodySubject`, which requires a JSON response. */
 export interface BodyTextSubject extends Node {
   readonly type: 'BodyTextSubject';
+  /** `of request to "…"` (M3d) — see `StatusSubject.of`. */
+  readonly of: NetworkRequestRef | null;
 }
 
 /** `body bytes` — the raw, untouched response body (gap #17, TFLW-GAPS.md), for binary responses
@@ -359,7 +395,8 @@ export type MatcherName =
   | 'disabled'
   | 'checked'
   | 'connects'
-  | 'fails';
+  | 'fails'
+  | 'wasMade';
 
 export interface Matcher extends Node {
   readonly type: 'Matcher';
@@ -423,6 +460,21 @@ export interface OpenStmt extends Node {
 export interface ScreenshotStmt extends Node {
   readonly type: 'ScreenshotStmt';
   readonly name: StringLit;
+}
+
+/** `stub <METHOD> "<url-pattern>" respond status <code> [body {...}]` (M3d, D14, SPEC §9.7) —
+ * route-level response mocking for the active browser page's network traffic. `urlPattern` is
+ * Playwright's own glob/regex route-matching syntax, not a tflw-owned pattern language — no reason
+ * to reinvent one. Registered for the rest of the attempt from wherever it appears in the test; a
+ * request whose method doesn't match this stub falls through to the real network untouched. House
+ * style (SPEC §9.7): real fixtures by default — `stub` is for third-party/unavailable dependencies,
+ * not a general test-double substitute for a real fixture. */
+export interface StubStmt extends Node {
+  readonly type: 'StubStmt';
+  readonly method: HttpMethod;
+  readonly urlPattern: StringLit;
+  readonly status: NumberLit;
+  readonly body: ObjectLit | null;
 }
 
 export type ClickKind = 'single' | 'double' | 'right';

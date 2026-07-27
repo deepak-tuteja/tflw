@@ -41,7 +41,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "BodyTextSubject"
+            "type": "BodyTextSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -64,7 +65,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "BodyTextSubject"
+            "type": "BodyTextSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -85,7 +87,8 @@
         {
           "type": "CaptureStmt",
           "subject": {
-            "type": "BodyTextSubject"
+            "type": "BodyTextSubject",
+            "of": null
           },
           "name": "raw"
         }

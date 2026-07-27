@@ -260,7 +260,8 @@
           "soft": false,
           "quantifier": null,
           "subject": {
-            "type": "StatusSubject"
+            "type": "StatusSubject",
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -284,7 +285,8 @@
                 "kind": "prop",
                 "name": "total"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",

@@ -51,7 +51,8 @@
                 "kind": "prop",
                 "name": "name"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -84,7 +85,8 @@
                 "kind": "prop",
                 "name": "status"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
@@ -113,7 +115,8 @@
                 "kind": "prop",
                 "name": "tags"
               }
-            ]
+            ],
+            "of": null
           },
           "matcher": {
             "type": "Matcher",
