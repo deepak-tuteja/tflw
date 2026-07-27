@@ -17,8 +17,16 @@ export interface CompletionSources {
   readonly knownSessions?: readonly string[];
 }
 
-const STEP_KEYWORDS = ['api', 'expect', 'check', 'let', 'capture', 'wait', 'give'] as const;
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request'] as const;
+// Independent copies of parser.ts's `STATEMENT_KEYWORDS`/`SUBJECT_KEYWORDS` (kept local rather
+// than exported, same house-style tradeoff already accepted for tflw.tmLanguage.json/
+// semanticTokens.ts's own wordlists — M3e/M4a) — must be kept in sync with the browser-arc
+// (M3a-M3e) constructs those lists gained.
+const STEP_KEYWORDS = [
+  'api', 'expect', 'check', 'let', 'capture', 'wait', 'give',
+  'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll',
+  'within', 'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
+] as const;
+const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 
 /** Plain typeable matcher keyword → the `spec-data.ts` `MatcherEntry.id` supplying its detail
  * text. Not 1:1 with `MatcherEntry` rows (`is greater than`/`is less than` share one row; the five
@@ -32,6 +40,7 @@ const MATCHER_CANDIDATES: readonly { readonly label: string; readonly specId: st
   { label: 'matches', specId: 'matches-regex' },
   { label: 'matches subset', specId: 'matches-subset' },
   { label: 'matches schema', specId: 'matches-schema' },
+  { label: 'matches file', specId: 'matches-file' },
   { label: 'has count', specId: 'has-count' },
   { label: 'has value', specId: 'has-value' },
   { label: 'is greater than', specId: 'greater-less-than' },
@@ -43,6 +52,12 @@ const MATCHER_CANDIDATES: readonly { readonly label: string; readonly specId: st
   { label: 'is checked', specId: 'state-word' },
   { label: 'connects', specId: 'connects' },
   { label: 'fails', specId: 'fails' },
+  { label: 'was made', specId: 'was-made' },
+  { label: 'has no a11y violations', specId: 'has-no-a11y-violations' },
+  { label: 'has no minor a11y violations', specId: 'has-no-a11y-violations' },
+  { label: 'has no moderate a11y violations', specId: 'has-no-a11y-violations' },
+  { label: 'has no serious a11y violations', specId: 'has-no-a11y-violations' },
+  { label: 'has no critical a11y violations', specId: 'has-no-a11y-violations' },
   { label: 'not', specId: '' },
 ];
 

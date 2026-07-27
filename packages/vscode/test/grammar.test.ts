@@ -115,6 +115,48 @@ test('tokenizes `upload … type "…"` — `upload`/`as`/`type` all get stateme
   assert.ok(hasScope(findToken(lines, 'type'), 'keyword.control.tflw'), '`type` should get the same statement-keyword highlight class as `upload`/`as`/`form`');
 });
 
+test('tokenizes browser-arc step/locator/subject keywords (M3a-M3c, M4a catch-up)', () => {
+  const lines = tokenizeLines([
+    '  open "/checkout"',
+    '  click button "Pay"',
+    '  fill field "Email" with "a@b.c"',
+    '  within css "#cart"',
+    '    hover text "Menu"',
+    '  press "Enter" on field "Search"',
+    '  stub GET "/api/x" respond status 200',
+  ]);
+
+  assert.ok(hasScope(findToken(lines, 'open'), 'keyword.control.tflw'), '`open` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'click'), 'keyword.control.tflw'), '`click` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'button'), 'support.type.tflw'), '`button` is a locator-noun subject keyword');
+  assert.ok(hasScope(findToken(lines, 'fill'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'field'), 'support.type.tflw'), '`field` is a locator-noun subject keyword');
+  assert.ok(hasScope(findToken(lines, 'within'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'css'), 'support.type.tflw'), '`css` is a locator-noun subject keyword');
+  assert.ok(hasScope(findToken(lines, 'hover'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'on'), 'keyword.control.tflw'), '`on` (press … on field …) is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'stub'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'respond'), 'keyword.control.tflw'));
+});
+
+test('tokenizes `page` + `has no [<severity>] a11y violations` (M3e, M4a catch-up)', () => {
+  const lines = tokenizeLines(['  expect page has no critical a11y violations']);
+
+  assert.ok(hasScope(findToken(lines, 'page'), 'support.type.tflw'), '`page` is a subject keyword');
+  assert.ok(hasScope(findToken(lines, 'has'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(lines, 'no'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(lines, 'critical'), 'keyword.operator.word.tflw'), '`critical` is a severity-floor matcher word');
+  assert.ok(hasScope(findToken(lines, 'a11y'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(lines, 'violations'), 'keyword.operator.word.tflw'));
+});
+
+test('tokenizes `request to "…" was made` (M3d, M4a catch-up)', () => {
+  const lines = tokenizeLines(['  expect request to "/orders" was made']);
+
+  assert.ok(hasScope(findToken(lines, 'was'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(lines, 'made'), 'keyword.operator.word.tflw'));
+});
+
 test('tokenizes tflw.config keywords (env/defaults/require/session) and env(NAME) calls', () => {
   const lines = tokenizeLines(['env local default', '  api "http://localhost:3001"', '', 'require env ADMIN_TOKEN', '', 'session admin', '  header "Authorization" is env(ADMIN_TOKEN)']);
 

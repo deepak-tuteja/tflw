@@ -30,22 +30,32 @@ export interface SemanticToken {
   readonly type: SemanticTokenType;
 }
 
-/** Statement keywords + HTTP methods (tflw.tmLanguage.json's `keywords-statement` + `http-request`). */
+/** Statement keywords + HTTP methods (tflw.tmLanguage.json's `keywords-statement` + `http-request`),
+ * plus the M3a-M3e browser-step keywords (M4a catch-up — parser.ts's `STATEMENT_KEYWORDS` plus the
+ * handful of non-leading sub-clause words those steps' grammars also use: `on`/`to`/`onto`/`dialog`/
+ * `new`/`tab`/`frame`/`respond`). */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
   'with', 'each', 'from', 'as', 'without', 'redirects', 'upload', 'form', 'header', 'body', 'type',
   'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS',
+  'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll', 'within',
+  'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
+  'on', 'to', 'onto', 'dialog', 'new', 'tab', 'frame', 'respond',
 ]);
 
-/** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`). */
+/** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words
+ * `was`/`made` (`was made`) and `no`/`a11y`/`violations`/the severity floor words (`has no
+ * [<severity>] a11y violations`, M4a catch-up). */
 const OPERATORS = new Set([
   'equals', 'contains', 'matches', 'subset', 'file', 'has', 'is', 'not', 'count', 'value', 'greater', 'less', 'than',
   'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
+  'was', 'made', 'no', 'a11y', 'violations', 'minor', 'moderate', 'serious', 'critical',
 ]);
 
-/** Subject words (tflw.tmLanguage.json's `keywords-subject`). */
-const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request']);
+/** Subject words (tflw.tmLanguage.json's `keywords-subject`), plus the M3a/M3e locator-noun and
+ * `page` subjects (M4a catch-up — parser.ts's `LOCATOR_KEYWORDS` plus `page`). */
+const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request', 'button', 'field', 'list', 'css', 'xpath', 'page']);
 
 /** Generator words (tflw.tmLanguage.json's `keywords-generator`). */
 const FUNCTIONS = new Set([

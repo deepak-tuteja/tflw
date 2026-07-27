@@ -179,3 +179,114 @@ test('collectSymbols: an in-file action call resolves to the action def; args ar
   assert.ok(callRef, 'expected a `create order` call ref');
   assert.deepEqual(callRef!.defSpan, actionDef!.span);
 });
+
+// -- M4a: browser steps (M3a-M3e) must be walked for refs, same as api steps ---------------------
+// (walkSteps/walkSubject previously only handled the API-dialect step/subject types; a `{var}`
+// used inside any browser step was silently never recorded as a ref — see PROGRESS.md M4a).
+
+test('collectSymbols: a `{var}` inside `open "..."` and `fill field "..." with {var}` resolves to its `let` def', () => {
+  const source = `test "ok"\n  let email = unique email\n  open "/checkout/{email}"\n  fill field "Email" with {email}\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'email');
+  assert.ok(def, 'expected an `email` def');
+
+  const refs = table.refs.filter((r) => r.kind === 'variable' && r.name === 'email');
+  assert.equal(refs.length, 2, 'one ref from `open`, one from `fill field … with`');
+  for (const ref of refs) assert.deepEqual(ref.defSpan, def!.span);
+});
+
+test('collectSymbols: a `{var}` inside `click`/`hover`/`scroll`/`uncheck`/`check`/`select`/`press` locator text resolves', () => {
+  const source = [
+    'test "ok"',
+    '  let label = unique("Item")',
+    '  click button "{label}"',
+    '  hover text "{label}"',
+    '  scroll to list "{label}"',
+    '  uncheck field "{label}"',
+    '  check field "{label}"',
+    '  select "Widget" from field "{label}"',
+    '  press "Enter" on field "{label}"',
+    '',
+  ].join('\n');
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'label');
+  assert.ok(def, 'expected a `label` def');
+  const refs = table.refs.filter((r) => r.kind === 'variable' && r.name === 'label');
+  assert.equal(refs.length, 7, 'one ref per step referencing {label}');
+  for (const ref of refs) assert.deepEqual(ref.defSpan, def!.span);
+});
+
+test('collectSymbols: a `{var}` inside a `within` block locator/body shares the enclosing scope', () => {
+  const source = `test "ok"\n  let section = unique("Cart")\n  within css "#{section}"\n    click button "Checkout"\n    let inner = unique("x")\n  let after = inner\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const sectionDef = table.defs.find((d) => d.name === 'section');
+  const sectionRef = table.refs.find((r) => r.name === 'section');
+  assert.ok(sectionDef && sectionRef, 'expected `section` def + ref inside the `within` locator');
+  assert.deepEqual(sectionRef!.defSpan, sectionDef!.span);
+
+  const innerDef = table.defs.find((d) => d.name === 'inner');
+  const afterRef = table.refs.find((r) => r.name === 'inner');
+  assert.ok(innerDef, 'expected `inner` let def inside the within block');
+  assert.ok(afterRef, 'expected `inner` ref after the within block');
+  assert.deepEqual(afterRef!.defSpan, innerDef!.span, '`within` shares scope, not a new one, so `inner` is visible after the block');
+});
+
+test('collectSymbols: `download as <name>` binds `name` as a def, referenced after the block', () => {
+  const source = `test "ok"\n  download as file\n    click text "Download report"\n  let copy = file\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'file');
+  assert.ok(def, 'expected a `file` def from `download as file`');
+  assertSpanAt(def!.span, source, 'file', 1);
+
+  const ref = table.refs.find((r) => r.kind === 'variable' && r.name === 'file');
+  assert.ok(ref, 'expected a `file` ref from `let copy = file`');
+  assert.deepEqual(ref!.defSpan, def!.span);
+});
+
+test('collectSymbols: `{var}` inside a `stub` body object resolves', () => {
+  const source = `test "ok"\n  let token = unique("tok")\n  stub GET "/api/session" respond status 200 body { token: "{token}" }\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'token');
+  const ref = table.refs.find((r) => r.kind === 'variable' && r.name === 'token');
+  assert.ok(def && ref, 'expected `token` def + ref inside the stub body');
+  assert.deepEqual(ref!.defSpan, def!.span);
+});
+
+test('collectSymbols: `{var}` inside `request to "..."` (NetworkRequestSubject) and `of request to "..."` both resolve', () => {
+  const source = `test "ok"\n  let orderId = unique("ord")\n  api GET /health\n  expect request to "/orders/{orderId}" was made\n  expect status of request to "/orders/{orderId}" equals 200\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'orderId');
+  assert.ok(def, 'expected an `orderId` def');
+  const refs = table.refs.filter((r) => r.kind === 'variable' && r.name === 'orderId');
+  assert.equal(refs.length, 2, 'one ref from `request to "…"`, one from `of request to "…"`');
+  for (const ref of refs) assert.deepEqual(ref.defSpan, def!.span);
+});
+
+test('collectSymbols: `{var}` inside a `LocatorSubject` expect (`expect button "{var}" is visible`) resolves', () => {
+  const source = `test "ok"\n  let label = unique("Pay")\n  expect button "{label}" is visible\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'label');
+  const ref = table.refs.find((r) => r.kind === 'variable' && r.name === 'label');
+  assert.ok(def && ref, 'expected `label` def + ref from the LocatorSubject expect');
+  assert.deepEqual(ref!.defSpan, def!.span);
+});
+
+test('collectSymbols: `expect page has no a11y violations` (bare PageSubject) collects no spurious refs and does not throw', () => {
+  const source = `test "ok"\n  open "/checkout"\n  expect page has no critical a11y violations\n`;
+  const { program } = parseSource(source);
+  assert.doesNotThrow(() => collectSymbols(program, source));
+});

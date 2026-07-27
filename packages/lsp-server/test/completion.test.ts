@@ -95,6 +95,44 @@ test('getCompletions: transform kind attaches spec-data.ts detail text (decision
   assert.match(candidates[0]!.detail ?? '', /decision 98/);
 });
 
+// -- M4a: browser-arc (M3a-M3e) step/subject/matcher keywords, previously missing from these ------
+// independent-copy wordlists entirely (only API-dialect vocab was ever added here).
+
+test('getCompletions: step kind includes browser-arc step keywords (M3a-M3d)', () => {
+  const source = 'test "ok"\n  cl';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['click', 'close']);
+});
+
+test('getCompletions: subject kind includes UI locator + page subjects (M3a, M3e)', () => {
+  const source = 'test "ok"\n  expect pa';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['page']);
+});
+
+test('getCompletions: matcher kind includes `has no [<severity>] a11y violations` (M3e)', () => {
+  const source = 'test "ok"\n  expect page h';
+  const ctx = getCompletionContext(source, source.length)!;
+  const labels = getCompletions(ctx).map((c) => c.label);
+  assert.ok(labels.includes('has no a11y violations'));
+  for (const sev of ['minor', 'moderate', 'serious', 'critical']) {
+    assert.ok(labels.includes(`has no ${sev} a11y violations`), `missing severity floor: ${sev}`);
+  }
+});
+
+test('getCompletions: matcher kind includes `matches file` (gap #17) and `was made` (M3d)', () => {
+  const fileSource = 'test "ok"\n  expect body bytes m';
+  const fileCtx = getCompletionContext(fileSource, fileSource.length)!;
+  assert.deepEqual(
+    getCompletions(fileCtx).map((c) => c.label),
+    ['matches', 'matches subset', 'matches schema', 'matches file'],
+  );
+
+  const madeSource = 'test "ok"\n  expect request to "/x" w';
+  const madeCtx = getCompletionContext(madeSource, madeSource.length)!;
+  assert.deepEqual(getCompletions(madeCtx).map((c) => c.label), ['was made']);
+});
+
 test('getCompletions: transform kind after `hex`/`url` too, matching on `decode`', () => {
   const source = 'test "ok"\n  let x = hex d';
   const ctx = getCompletionContext(source, source.length)!;

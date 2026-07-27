@@ -95,6 +95,53 @@ test('collectSemanticTokens: a field literally named after a keyword word classi
   assertTypeAt(tokens, source, 'status', 'type', 2); // the real `expect status` subject keyword
 });
 
+// -- M4a: browser-arc (M3a-M3e) keyword/operator/type coverage, previously entirely unclassified ---
+
+test('collectSemanticTokens: browser-step keywords (open/click/fill/within/stub) classify as `keyword`', () => {
+  const source = `test "ok"\n  open "/checkout"\n  click button "Pay"\n  fill field "Email" with "a@b.c"\n  within css "#cart"\n    stub GET "/api/x" respond status 200\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'open', 'keyword');
+  assertTypeAt(tokens, source, 'click', 'keyword');
+  assertTypeAt(tokens, source, 'fill', 'keyword');
+  assertTypeAt(tokens, source, 'with', 'keyword');
+  assertTypeAt(tokens, source, 'within', 'keyword');
+  assertTypeAt(tokens, source, 'stub', 'keyword');
+  assertTypeAt(tokens, source, 'respond', 'keyword');
+});
+
+test('collectSemanticTokens: locator/page subject words (button/field/css/page) classify as `type`', () => {
+  const source = `test "ok"\n  click button "Pay"\n  fill field "Email" with "x"\n  click css "#go"\n  expect page has no critical a11y violations\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'button', 'type');
+  assertTypeAt(tokens, source, 'field', 'type');
+  assertTypeAt(tokens, source, 'css', 'type');
+  assertTypeAt(tokens, source, 'page', 'type');
+});
+
+test('collectSemanticTokens: `has no <severity> a11y violations` (M3e) words classify as `operator`', () => {
+  const source = `test "ok"\n  expect page has no critical a11y violations\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'has', 'operator');
+  assertTypeAt(tokens, source, 'no', 'operator');
+  assertTypeAt(tokens, source, 'critical', 'operator');
+  assertTypeAt(tokens, source, 'a11y', 'operator');
+  assertTypeAt(tokens, source, 'violations', 'operator');
+});
+
+test('collectSemanticTokens: `was made` (M3d) classifies as `operator`', () => {
+  const source = `test "ok"\n  expect request to "/orders" was made\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'was', 'operator');
+  assertTypeAt(tokens, source, 'made', 'operator');
+});
+
+test('collectSemanticTokens: a variable used inside a browser step (`fill … with {var}`) is colored `variable` (relies on symbols.ts walking browser steps, M4a)', () => {
+  const source = `test "ok"\n  let userEmail = unique email\n  fill field "Email" with {userEmail}\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'userEmail', 'variable', 1); // def
+  assertTypeAt(tokens, source, 'userEmail', 'variable', 2); // ref inside the FillStmt's braced value
+});
+
 test('collectSemanticTokens: returned tokens are sorted by start offset with no duplicate start offsets', () => {
   const source = `test "checkout"\n  api POST /products/{productIdA}/reviews body { rating: 5, comment: "e" }\n    header "Authorization" is "Bearer {shopperToken}"\n  expect status equals 201\n  expect duration is less than 5000ms\n`;
   const tokens = tokensOf(source);

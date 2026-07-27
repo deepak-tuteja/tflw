@@ -35,6 +35,121 @@ test('findNodeAtOffset: empty path when the offset falls outside the root span',
   assert.deepEqual(findNodeAtOffset(program, source.length + 1000), []);
 });
 
+// -- M4a: browser-arc steps/subjects (M3a-M3e) must be descendable, not stop dead at the step ----
+
+test('findNodeAtOffset: descends into a FillStmt\'s locator name string', () => {
+  const source = `test "ok"\n  fill field "Email" with "a@b.c"\n`;
+  const { program } = parseSource(source);
+  const path = findNodeAtOffset(program, source.indexOf('Email') + 1);
+  assert.deepEqual(path.map((n) => n.type), ['Program', 'TestDecl', 'FillStmt', 'Locator', 'StringLit']);
+});
+
+test('findNodeAtOffset: descends into a FillStmt\'s `{email}` value as an Interp, not a stray VarRef', () => {
+  // Unquoted `with {email}` is an `Interp` value (a bare braced interpolation), distinct from the
+  // `VarRef` a bare unquoted identifier (`let b = a`) parses as — `Interp` has no further Node
+  // child of its own (`ref` is a plain `PathSegment[]`, not AST nodes), so it's the leaf here.
+  const source = `test "ok"\n  let email = unique email\n  fill field "Email" with {email}\n`;
+  const { program } = parseSource(source);
+  const path = findNodeAtOffset(program, source.lastIndexOf('email') + 1);
+  assert.deepEqual(path.map((n) => n.type), ['Program', 'TestDecl', 'FillStmt', 'Interp']);
+});
+
+test('findNodeAtOffset: descends into a ClickStmt/HoverStmt/ScrollStmt/UncheckStmt/CheckStmt locator', () => {
+  const cases: readonly [string, string, string][] = [
+    [`test "ok"\n  click button "Pay"\n`, 'Pay', 'ClickStmt'],
+    [`test "ok"\n  hover text "Menu"\n`, 'Menu', 'HoverStmt'],
+    [`test "ok"\n  scroll to list "Cart"\n`, 'Cart', 'ScrollStmt'],
+    [`test "ok"\n  uncheck field "Terms"\n`, 'Terms', 'UncheckStmt'],
+    [`test "ok"\n  check field "Terms"\n`, 'Terms', 'CheckStmt'],
+  ];
+  for (const [source, needle, stepType] of cases) {
+    const { program } = parseSource(source);
+    const path = findNodeAtOffset(program, source.indexOf(needle) + 1);
+    assert.deepEqual(path.map((n) => n.type), ['Program', 'TestDecl', stepType, 'Locator', 'StringLit'], source);
+  }
+});
+
+test('findNodeAtOffset: descends into an OpenStmt path and a ScreenshotStmt name', () => {
+  const openSource = `test "ok"\n  open "/checkout"\n`;
+  const { program: openProgram } = parseSource(openSource);
+  assert.deepEqual(
+    findNodeAtOffset(openProgram, openSource.indexOf('/checkout') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'OpenStmt', 'StringLit'],
+  );
+
+  const shotSource = `test "ok"\n  screenshot "step-2"\n`;
+  const { program: shotProgram } = parseSource(shotSource);
+  assert.deepEqual(
+    findNodeAtOffset(shotProgram, shotSource.indexOf('step-2') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'ScreenshotStmt', 'StringLit'],
+  );
+});
+
+test('findNodeAtOffset: descends into a WithinBlock\'s locator and its nested body', () => {
+  const source = `test "ok"\n  within css "#cart"\n    click button "Checkout"\n`;
+  const { program } = parseSource(source);
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('#cart') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'WithinBlock', 'Locator', 'StringLit'],
+  );
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('Checkout') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'WithinBlock', 'ClickStmt', 'Locator', 'StringLit'],
+  );
+});
+
+test('findNodeAtOffset: descends into a StubStmt\'s urlPattern and body field value', () => {
+  const source = `test "ok"\n  stub GET "/api/orders/**" respond status 200 body { total: 3 }\n`;
+  const { program } = parseSource(source);
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('/api/orders') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'StubStmt', 'StringLit'],
+  );
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('3 }') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'StubStmt', 'ObjectLit', 'Field', 'NumberLit'],
+  );
+});
+
+test('findNodeAtOffset: descends into a LocatorSubject expect and a NetworkRequestSubject/ref', () => {
+  const uiSource = `test "ok"\n  expect button "Pay" is visible\n`;
+  const { program: uiProgram } = parseSource(uiSource);
+  assert.deepEqual(
+    findNodeAtOffset(uiProgram, uiSource.indexOf('Pay') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'ExpectStmt', 'LocatorSubject', 'Locator', 'StringLit'],
+  );
+
+  const netSource = `test "ok"\n  expect request to "/orders" was made\n`;
+  const { program: netProgram } = parseSource(netSource);
+  assert.deepEqual(
+    findNodeAtOffset(netProgram, netSource.indexOf('/orders') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'ExpectStmt', 'NetworkRequestSubject', 'NetworkRequestRef', 'StringLit'],
+  );
+});
+
+test('findNodeAtOffset: descends into the `of request to "…"` clause on a StatusSubject', () => {
+  const source = `test "ok"\n  api GET /health\n  expect status of request to "/orders" equals 200\n`;
+  const { program } = parseSource(source);
+  const path = findNodeAtOffset(program, source.indexOf('/orders') + 1);
+  assert.deepEqual(path.map((n) => n.type), ['Program', 'TestDecl', 'ExpectStmt', 'StatusSubject', 'NetworkRequestRef', 'StringLit']);
+});
+
+test('findNodeAtOffset: descends into a DragStmt\'s two locators and a DropFileStmt\'s filePath/locator', () => {
+  const dragSource = `test "ok"\n  drag text "First" to text "Second"\n`;
+  const { program: dragProgram } = parseSource(dragSource);
+  assert.deepEqual(
+    findNodeAtOffset(dragProgram, dragSource.indexOf('Second') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'DragStmt', 'Locator', 'StringLit'],
+  );
+
+  const dropSource = `test "ok"\n  drop file "./f.png" onto css "#zone"\n`;
+  const { program: dropProgram } = parseSource(dropSource);
+  assert.deepEqual(
+    findNodeAtOffset(dropProgram, dropSource.indexOf('./f.png') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'DropFileStmt', 'StringLit'],
+  );
+});
+
 test('spanContains: inclusive of both endpoints', () => {
   const span = { start: { offset: 5, line: 1, column: 6 }, end: { offset: 10, line: 1, column: 11 } };
   assert.equal(spanContains(span, 5), true);

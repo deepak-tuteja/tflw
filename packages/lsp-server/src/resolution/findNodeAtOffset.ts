@@ -13,16 +13,26 @@ import type {
   ApiStep,
   ArrayLit,
   BinaryExpr,
+  BodySubject,
+  BodyTextSubject,
   CallExpr,
   CaptureStmt,
   CertDecl,
+  CheckStmt,
+  ClickStmt,
   ConfigFile,
   DefaultsBlock,
+  DownloadBlock,
+  DragStmt,
+  DropFileStmt,
   EnvBlock,
   ExpectStmt,
   Field,
   FileBody,
   FileDataTable,
+  FillFormRow,
+  FillFormStmt,
+  FillStmt,
   FormBody,
   FormField,
   FormatExpr,
@@ -31,30 +41,46 @@ import type {
   HeaderStmt,
   HeaderSubject,
   HookDecl,
+  HoverStmt,
   ImportDecl,
   InlineBody,
   InlineDataTable,
   KeyDecl,
   LetStmt,
+  Locator,
+  LocatorSubject,
   Matcher,
+  NetworkRequestRef,
+  NetworkRequestSubject,
   ObjectLit,
   Oauth2SessionConfig,
+  OpenStmt,
+  PressStmt,
   Program,
   RandomLikeExpr,
   RandomNumberExpr,
   RandomOfExpr,
   RandomPasswordExpr,
   RandomStringExpr,
+  ScreenshotStmt,
+  ScrollStmt,
+  SelectStmt,
   SessionDecl,
+  StatusSubject,
+  StubStmt,
+  SwitchToNewTabBlock,
   TestDecl,
   TextBody,
   TransformExpr,
+  UncheckStmt,
   UniqueLikeExpr,
   UniquePrefixExpr,
   UploadBody,
   UseDecl,
   WaitUntilApiStmt,
+  WaitUntilUiStmt,
   WebDecl,
+  WithinBlock,
 } from '@tflw/lang';
 
 export function spanContains(span: Span, offset: number): boolean {
@@ -124,16 +150,92 @@ function children(node: Node): readonly Node[] {
       const n = node as ExpectStmt;
       return [n.subject, n.matcher];
     }
-    case 'StatusSubject':
     case 'DurationSubject':
-    case 'BodyTextSubject':
     case 'BodyBytesSubject':
     case 'BodyCsvSubject':
     case 'BodyPdfTextSubject':
-    case 'BodySubject':
+    case 'RequestSubject':
+    case 'PageSubject':
+    case 'AcceptDialogStmt':
+    case 'DismissDialogStmt':
+    case 'SwitchToTabStmt':
+    case 'CloseTabStmt':
       return [];
+    case 'StatusSubject':
+    case 'BodyTextSubject':
+    case 'BodySubject': {
+      // `of request to "…"` (M3d, SPEC §9.7) — carried on these three response-reading subjects.
+      const n = node as StatusSubject | BodyTextSubject | BodySubject;
+      return n.of ? [n.of] : [];
+    }
     case 'HeaderSubject':
       return [(node as HeaderSubject).name];
+    case 'LocatorSubject':
+      return [(node as LocatorSubject).locator];
+    case 'NetworkRequestSubject':
+      return [(node as NetworkRequestSubject).ref];
+    case 'NetworkRequestRef': {
+      const n = node as NetworkRequestRef;
+      return [n.urlPattern, ...(n.method ? [n.method] : [])];
+    }
+    case 'Locator':
+      return [(node as Locator).value];
+    // -- browser steps (M3a-M3e, SPEC §9) ----------------------------------
+    case 'OpenStmt':
+      return [(node as OpenStmt).path];
+    case 'ScreenshotStmt':
+      return [(node as ScreenshotStmt).name];
+    case 'StubStmt': {
+      const n = node as StubStmt;
+      return [n.urlPattern, n.status, ...(n.body ? [n.body] : [])];
+    }
+    case 'ClickStmt':
+    case 'HoverStmt':
+    case 'ScrollStmt':
+    case 'UncheckStmt':
+    case 'CheckStmt': {
+      const n = node as ClickStmt | HoverStmt | ScrollStmt | UncheckStmt | CheckStmt;
+      return [n.locator];
+    }
+    case 'FillStmt': {
+      const n = node as FillStmt;
+      return [n.locator, n.value];
+    }
+    case 'FillFormStmt':
+      return (node as FillFormStmt).rows;
+    case 'FillFormRow': {
+      const n = node as FillFormRow;
+      return [n.field, n.value];
+    }
+    case 'SelectStmt': {
+      const n = node as SelectStmt;
+      return [n.locator, n.value];
+    }
+    case 'PressStmt': {
+      const n = node as PressStmt;
+      return [n.keys, ...(n.locator ? [n.locator] : [])];
+    }
+    case 'WithinBlock': {
+      const n = node as WithinBlock;
+      return [n.locator, ...n.body];
+    }
+    case 'WaitUntilUiStmt': {
+      const n = node as WaitUntilUiStmt;
+      return [n.subject, n.matcher];
+    }
+    case 'SwitchToNewTabBlock':
+      return (node as SwitchToNewTabBlock).body;
+    case 'DownloadBlock':
+      // `name` is a plain `string` (findIdentifierSpans recovers its span), not a child Node.
+      return (node as DownloadBlock).body;
+    case 'DragStmt': {
+      const n = node as DragStmt;
+      return [n.from, n.to];
+    }
+    case 'DropFileStmt': {
+      const n = node as DropFileStmt;
+      return [n.filePath, n.locator];
+    }
     case 'Matcher': {
       const n = node as Matcher;
       return [

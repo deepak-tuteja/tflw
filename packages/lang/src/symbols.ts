@@ -22,6 +22,7 @@ import type {
   ApiRequestSpec,
   ConfigFile,
   ExpectStmt,
+  NetworkRequestRef,
   PathExpr,
   PathSegment,
   Program,
@@ -298,6 +299,78 @@ function walkSteps(
         walkStringLit(source, step.name, bound, scopeId, refs);
         walkValue(step.value, bound, scopeId, source, actionDefs, refs);
         break;
+      // -- browser steps (M3a-M3e) — mirrors checker.ts's checkStepSequence case-for-case --
+      case 'OpenStmt':
+        walkStringLit(source, step.path, bound, scopeId, refs);
+        break;
+      case 'ClickStmt':
+      case 'HoverStmt':
+      case 'ScrollStmt':
+      case 'UncheckStmt':
+      case 'CheckStmt':
+        walkStringLit(source, step.locator.value, bound, scopeId, refs);
+        break;
+      case 'FillStmt':
+        walkStringLit(source, step.locator.value, bound, scopeId, refs);
+        walkValue(step.value, bound, scopeId, source, actionDefs, refs);
+        break;
+      case 'FillFormStmt':
+        for (const row of step.rows) {
+          walkStringLit(source, row.field, bound, scopeId, refs);
+          walkValue(row.value, bound, scopeId, source, actionDefs, refs);
+        }
+        break;
+      case 'SelectStmt':
+        walkStringLit(source, step.locator.value, bound, scopeId, refs);
+        walkValue(step.value, bound, scopeId, source, actionDefs, refs);
+        break;
+      case 'PressStmt':
+        walkStringLit(source, step.keys, bound, scopeId, refs);
+        if (step.locator) walkStringLit(source, step.locator.value, bound, scopeId, refs);
+        break;
+      case 'WithinBlock':
+        walkStringLit(source, step.locator.value, bound, scopeId, refs);
+        // Shares the enclosing scope, same as checker.ts's WithinBlock case (a resolution-scoping
+        // construct, not a new variable scope) — `bound` threaded through, not copied.
+        walkSteps(step.body, bound, scopeId, source, actionDefs, pushDef, refs);
+        break;
+      case 'AcceptDialogStmt':
+      case 'DismissDialogStmt':
+        break;
+      case 'WaitUntilUiStmt':
+        walkSubject(source, step.subject, bound, scopeId, refs);
+        if (step.matcher.value) walkValue(step.matcher.value, bound, scopeId, source, actionDefs, refs);
+        break;
+      case 'SwitchToNewTabBlock':
+        walkSteps(step.body, bound, scopeId, source, actionDefs, pushDef, refs);
+        break;
+      case 'SwitchToTabStmt':
+      case 'CloseTabStmt':
+        break;
+      case 'DownloadBlock': {
+        walkSteps(step.body, bound, scopeId, source, actionDefs, pushDef, refs);
+        const window = { start: step.span.start, end: step.body[0]?.span.start ?? step.span.end };
+        const [nameSpan] = findIdentifierSpans(source, window, [step.name]);
+        const span = nameSpan ?? step.span;
+        pushDef({ name: step.name, kind: 'variable', span, scopeId });
+        bound.set(step.name, span);
+        break;
+      }
+      case 'DragStmt':
+        walkStringLit(source, step.from.value, bound, scopeId, refs);
+        walkStringLit(source, step.to.value, bound, scopeId, refs);
+        break;
+      case 'DropFileStmt':
+        walkStringLit(source, step.filePath, bound, scopeId, refs);
+        walkStringLit(source, step.locator.value, bound, scopeId, refs);
+        break;
+      case 'ScreenshotStmt':
+        walkStringLit(source, step.name, bound, scopeId, refs);
+        break;
+      case 'StubStmt':
+        walkStringLit(source, step.urlPattern, bound, scopeId, refs);
+        if (step.body) for (const field of step.body.fields) walkValue(field.value, bound, scopeId, source, actionDefs, refs);
+        break;
     }
   }
 }
@@ -309,6 +382,18 @@ function walkExpectStmt(step: ExpectStmt, bound: Map<string, Span>, scopeId: str
 
 function walkSubject(source: string, subject: Subject, bound: Map<string, Span>, scopeId: string, refs: SymbolRef[]): void {
   if (subject.type === 'HeaderSubject') walkStringLit(source, subject.name, bound, scopeId, refs);
+  if (subject.type === 'LocatorSubject') walkStringLit(source, subject.locator.value, bound, scopeId, refs);
+  if (subject.type === 'NetworkRequestSubject') walkNetworkRequestRef(source, subject.ref, bound, scopeId, refs);
+  // `of request to "…"` (M3d) — carried on the ordinary response subjects; walk it the same way
+  // regardless of which subject it's attached to (mirrors checker.ts's checkSubject).
+  if ((subject.type === 'StatusSubject' || subject.type === 'HeaderSubject' || subject.type === 'BodySubject' || subject.type === 'BodyTextSubject') && subject.of) {
+    walkNetworkRequestRef(source, subject.of, bound, scopeId, refs);
+  }
+}
+
+function walkNetworkRequestRef(source: string, ref: NetworkRequestRef, bound: Map<string, Span>, scopeId: string, refs: SymbolRef[]): void {
+  walkStringLit(source, ref.urlPattern, bound, scopeId, refs);
+  if (ref.method) walkStringLit(source, ref.method, bound, scopeId, refs);
 }
 
 function walkApiRequestSpec(spec: ApiRequestSpec, bound: Map<string, Span>, scopeId: string, source: string, actionDefs: Map<string, SymbolDef>, refs: SymbolRef[]): void {
