@@ -23,6 +23,15 @@ jobs:
 
       - run: npm ci
 
+      # The browser arc's tests launch real Chromium/Firefox (packages/runtime's browser-steps
+      # and pick-session tests, packages/cli's watch/e2e --browser firefox test) — `playwright`
+      # has no postinstall download hook, so without this every launch fails with "Executable
+      # doesn't exist" (confirmed on the first CI run after the browser arc landed, run 30316651481).
+      # Only the two engines the suite actually exercises; webkit is a documented `--browser`
+      # option but nothing launches it yet.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox
+
       - run: npm run build
 
       - run: npm run typecheck
