@@ -36,14 +36,21 @@ jobs:
 
       - run: npm run typecheck
 
-      - run: npm test
+      # packages/cli's watch.test.ts launches a real --headed browser window (the whole point of
+      # `tflw watch`), and ubuntu-latest has no X display — Playwright's own error names the fix:
+      # "use 'xvfb-run <your-playwright-app>'" (confirmed on run 30317696061, the first CI run
+      # after the Playwright-browser-install fix (978c4bb) got everything else passing: runtime
+      # 306/306, lang 381/381, reporter 38/38, lsp-server 90/90, cli 87/90 — only the 3 headed
+      # watch tests failed with "Missing X server or $DISPLAY").
+      - run: xvfb-run -a npm test
 
       # Coverage baseline (decision: M21) — informational only, no threshold gate yet (a
       # green-field target picked before a real baseline exists is unfair debt). Runs once (not
       # once per Node version in the matrix) since it's the same source regardless of runtime.
+      # Also needs xvfb-run: `c8 npm test` re-runs the same headed watch tests underneath.
       - name: Coverage
         if: matrix.node-version == 22
-        run: npm run coverage
+        run: xvfb-run -a npm run coverage
 
       - name: Upload coverage report
         if: matrix.node-version == 22
