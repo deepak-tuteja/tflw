@@ -881,8 +881,15 @@ function installPickClickCapture(marker: string): void {
         if (text) {
           buttonName = text;
         } else {
-          const value = (el as HTMLInputElement).value;
-          buttonName = value?.trim() ? value.trim() : null;
+          // `el` is only *cast* to HTMLInputElement — a custom element can genuinely define its own
+          // `value` property of any type (e.g. a shadow-DOM `<star-rating>` widget whose `value` is
+          // a number, testFlow-tests webV2 M42 dogfooding). `value?.trim` only guards against a
+          // nullish `value`, not a wrong-typed one — a non-nullish, non-string `value` (like a real
+          // `0`) still reaches `.trim()` and throws inside this page-injected click listener,
+          // silently killing the whole pick report for that click (uncaught in the page, invisible
+          // at the CLI).
+          const value: unknown = (el as HTMLInputElement).value;
+          buttonName = typeof value === 'string' && value.trim() ? value.trim() : null;
         }
       }
 

@@ -20,6 +20,26 @@ const PICK_HTML = `<!doctype html>
   <a href="/elsewhere">Go elsewhere</a>
 </body></html>`;
 
+// M42 (testFlow-tests webV2 dogfooding): a custom element can define its own `value` property of
+// any type — this one's is a number, like the real `<star-rating>` shadow-DOM widget that surfaced
+// the bug. No shadow DOM needed to reproduce it; the crash is purely about `el.value`'s runtime
+// type, not about shadow-root retargeting.
+const NUMERIC_VALUE_HTML = `<!doctype html>
+<html><body>
+  <numeric-value-widget id="widget"></numeric-value-widget>
+  <script>
+    class NumericValueWidget extends HTMLElement {
+      get value() { return 0; }
+      connectedCallback() {
+        this.style.display = 'inline-block';
+        this.style.width = '40px';
+        this.style.height = '40px';
+      }
+    }
+    customElements.define('numeric-value-widget', NumericValueWidget);
+  </script>
+</body></html>`;
+
 let server: FixtureServer;
 let browserManager: BrowserManager;
 
@@ -27,6 +47,7 @@ before(async () => {
   server = await startFixtureServer({
     '/pick': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(PICK_HTML),
     '/elsewhere': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><html><body>elsewhere</body></html>'),
+    '/numeric-value': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(NUMERIC_VALUE_HTML),
   });
   browserManager = new BrowserManager(); // headless — see file header
 });
@@ -36,7 +57,10 @@ after(async () => {
   await server.close();
 });
 
-async function withPickedPage(run: (pick: (selector: string) => Promise<void>, picks: PickedLocator[]) => Promise<void>): Promise<void> {
+async function withPickedPage(
+  run: (pick: (selector: string) => Promise<void>, picks: PickedLocator[]) => Promise<void>,
+  path = '/pick',
+): Promise<void> {
   const browser = await browserManager.getBrowser();
   const page = await browser.newPage();
   const picks: PickedLocator[] = [];
@@ -48,7 +72,7 @@ async function withPickedPage(run: (pick: (selector: string) => Promise<void>, p
       closedCount++;
     },
   );
-  await page.goto(`${server.baseUrl}/pick`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${server.baseUrl}${path}`, { waitUntil: 'domcontentloaded' });
   const pick = async (selector: string): Promise<void> => {
     const before = picks.length;
     await page.locator(selector).click({ force: true });
@@ -100,6 +124,18 @@ test('clicking a link never navigates the page (picking is inert) — the same p
     assert.equal(picks[0]!.via, 'text');
     assert.equal(picks[0]!.syntax, 'text "Go elsewhere"');
   });
+});
+
+test('clicking a custom element whose own `value` property is a number (not a string) still resolves — falls back to a generated css selector, doesn’t crash the click listener', async () => {
+  await withPickedPage(
+    async (pick, picks) => {
+      await pick('#widget');
+      assert.equal(picks.length, 1, 'the click listener must still report — a wrong-typed `value` must not throw and silently swallow the pick');
+      assert.equal(picks[0]!.via, 'css');
+      assert.match(picks[0]!.syntax, /^css "/);
+    },
+    '/numeric-value',
+  );
 });
 
 test('onClosed fires once when the picked page is closed', async () => {
