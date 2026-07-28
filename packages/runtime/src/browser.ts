@@ -83,6 +83,24 @@ async function loadPlaywright(): Promise<PWModule> {
   return pwModulePromise;
 }
 
+/** D15's own stated philosophy (`snapshot.ts`): "font hinting/subpixel AA between two OSes/engines
+ * never reconciles" — a mismatch is meant to be a hard platform-key error, never a fuzzy tolerance
+ * knob. That assumes a matching platform key actually renders byte-identically, which Chromium
+ * doesn't do by default: it defers glyph rasterization to the host's own FreeType/fontconfig, so
+ * even the exact same embedded `@font-face` file can come out subtly different on two Linux
+ * distros with different FreeType/fontconfig builds (surfaced via testFlow-tests M45's dogfood: a
+ * self-hosted webfont still didn't reconcile a real Fedora-dev-vs-ubuntu-latest-CI pixel diff,
+ * ~2% differed, purely from AA/hinting — same platform key, genuinely different renders).
+ * `--font-render-hinting=none`/`--disable-lcd-text` push Chromium onto its own internal rendering
+ * path instead of the host's hinting/subpixel-AA behavior, and `--force-color-profile=srgb` removes
+ * a similar ICC-profile source of drift — closing the gap D15 assumed platform-pinning alone
+ * already closed. Chromium-only: Firefox/WebKit don't take Chromium's CLI flag surface. */
+export function chromiumDeterministicRenderArgs(engine: BrowserEngine): string[] | undefined {
+  return engine === 'chromium'
+    ? ['--font-render-hinting=none', '--disable-lcd-text', '--force-color-profile=srgb']
+    : undefined;
+}
+
 export interface BrowserManagerOptions {
   /** D11: chromium default. */
   readonly engine?: BrowserEngine;
@@ -111,7 +129,9 @@ export class BrowserManager {
 
   async getBrowser(): Promise<PWBrowser> {
     if (!this.browserPromise) {
-      this.browserPromise = loadPlaywright().then((pw) => pw[this.engine].launch({ headless: this.headless }));
+      this.browserPromise = loadPlaywright().then((pw) =>
+        pw[this.engine].launch({ headless: this.headless, args: chromiumDeterministicRenderArgs(this.engine) }),
+      );
     }
     return this.browserPromise;
   }

@@ -22,7 +22,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
-import { BrowserManager, BrowserPageState } from '../src/browser.js';
+import { BrowserManager, BrowserPageState, chromiumDeterministicRenderArgs } from '../src/browser.js';
 import { snapshotPaths } from '../src/snapshot.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
@@ -1058,4 +1058,13 @@ test('a stray `mask <locator>` after a matcher other than `matches snapshot` is 
   const { report } = await runProgram(program, config, { source: 'x' });
   assert.equal(report.ok, false);
   assert.match(report.tests[0]!.error ?? '', /`mask <locator>` only applies alongside `matches snapshot "…"`/);
+});
+
+test('chromiumDeterministicRenderArgs: only chromium gets the deterministic-font-rendering flags, matching platformKey\'s own assumption that a same-platform-key render is byte-identical (D15)', () => {
+  const chromiumArgs = chromiumDeterministicRenderArgs('chromium');
+  assert.ok(chromiumArgs?.includes('--font-render-hinting=none'));
+  assert.ok(chromiumArgs?.includes('--disable-lcd-text'));
+  assert.ok(chromiumArgs?.includes('--force-color-profile=srgb'));
+  assert.equal(chromiumDeterministicRenderArgs('firefox'), undefined);
+  assert.equal(chromiumDeterministicRenderArgs('webkit'), undefined);
 });
