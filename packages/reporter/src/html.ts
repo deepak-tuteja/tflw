@@ -284,12 +284,12 @@ details.attempt[open] summary{border-bottom:1px solid var(--line)}
 .attempt-final-label{margin:6px 0 4px}
 details.attempt ol.steps{padding:4px 12px 4px 12px}
 .tms,.sms{color:var(--mut);font-weight:400;font-size:12px;margin-left:auto}
-.error{color:var(--fail);margin:4px 0 10px;white-space:pre-wrap}
+.error{color:var(--fail);margin:4px 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
 ol.steps{list-style:none;margin:0;padding:0}
 .step{padding:6px 0;border-top:1px solid var(--line)}
 .line{display:flex;align-items:center;gap:8px}.line code{background:transparent;padding:0}
 .mark{width:14px;text-align:center;font-weight:700}.step.ok .mark{color:var(--ok)}.step.fail .mark{color:var(--fail)}
-.detail{color:var(--mut);margin:2px 0 2px 22px;white-space:pre-wrap}
+.detail{color:var(--mut);margin:2px 0 2px 22px;white-space:pre-wrap;overflow-wrap:anywhere}
 .detail.baddetail{color:var(--fail)}
 .log-badge{display:inline-block;width:40px;flex:0 0 auto;padding:0 4px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.03em;text-align:center;color:#fff}
 .log-badge.log-debug{background:var(--mut)}
@@ -307,9 +307,9 @@ ol.steps{list-style:none;margin:0;padding:0}
 .trace-link{margin:4px 0 4px 22px;color:var(--mut);font-size:12px}
 .trace-link code{font-size:11px}
 .panel{background:var(--code);border:1px solid var(--line);border-radius:6px;overflow:hidden}
-.phead{padding:6px 10px;border-bottom:1px solid var(--line);color:var(--mut)}
+.phead{padding:6px 10px;border-bottom:1px solid var(--line);color:var(--mut);overflow-wrap:anywhere}
 table.headers{width:100%;border-collapse:collapse;font-size:12px}
-table.headers td{padding:3px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--mut)}
+table.headers td{padding:3px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--mut);overflow-wrap:anywhere}
 table.headers td:first-child{width:180px;color:var(--fg)}
 pre.body{margin:0;padding:8px 10px;overflow-x:auto;white-space:pre;font-size:12px}
 footer{padding:16px 24px;color:var(--mut);border-top:1px solid var(--line)}
