@@ -160,18 +160,20 @@
   }
 }
 
+/* PLAN_CODE_THEME.md decision 6: the hero sample is a code sample too — fixed dark surface and
+   fixed hex, same as everywhere else, not a fourth scheme. */
 .hero-code-panel {
   width: 100%;
   border: 1px solid var(--vp-c-divider);
   border-radius: 4px;
-  background: var(--vp-c-bg-elv);
+  background: #1e1e1e;
   padding: 16px 20px 20px;
   text-align: left;
 }
 
 .hero-code-label {
   margin: 0 0 10px;
-  color: var(--vp-c-text-3);
+  color: #9d9d9d;
   font-family: var(--vp-font-family-mono);
   font-size: 12px;
   letter-spacing: 0.04em;
@@ -181,7 +183,7 @@
 .hero-code {
   margin: 0;
   overflow-x: auto;
-  color: var(--vp-c-text-2);
+  color: #d4d4d4;
   font-family: var(--vp-font-family-mono);
   font-size: 13px;
   line-height: 1.7;
@@ -189,16 +191,16 @@
 }
 
 .hero-code .tok-kw {
-  color: var(--vp-c-brand-1);
+  color: #569cd6;
   font-weight: 600;
 }
 
 .hero-code .tok-str {
-  color: var(--vp-c-text-1);
+  color: #ce9178;
 }
 
 .hero-code .tok-cm {
-  color: var(--vp-c-text-3);
+  color: #6a9955;
   font-style: italic;
 }
 
