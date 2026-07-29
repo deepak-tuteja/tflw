@@ -380,6 +380,9 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'CaptureStmt':
         bound.add(step.name);
         break;
+      case 'LogStmt':
+        checkStringLit(step.message, bound, diags);
+        break;
       case 'WaitUntilApiStmt':
         checkApiRequestSpec(step.request, bound, diags);
         for (const expect of step.expects) checkExpectStmt(expect, bound, diags);
@@ -680,5 +683,9 @@ function keyName(entry: ConfigEntry): string {
       return 'redact';
     case 'ViewportDecl':
       return 'viewport';
+    case 'LogDestinationDecl':
+      return 'log destination';
+    case 'LogLevelDecl':
+      return 'log level';
   }
 }

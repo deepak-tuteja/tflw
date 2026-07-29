@@ -94,6 +94,7 @@ export type Step =
   | ExpectStmt
   | LetStmt
   | CaptureStmt
+  | LogStmt
   | WaitUntilApiStmt
   | WaitUntilUiStmt
   | GiveStmt
@@ -692,6 +693,32 @@ export interface CaptureStmt extends Node {
   readonly name: string;
 }
 
+// ---- Logging (M27, PLAN_LOG.md) --------------------------------------------
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** `to console|html|both` — where a `log` line ends up. Grammar-level only: `none` (a global
+ * kill-switch for bare calls, `--log-output none`) exists only as a CLI/`ResolvedConfig` value,
+ * never a valid `to` target here (PLAN_LOG.md decision 121). */
+export type LogDestination = 'console' | 'html' | 'both';
+
+/** `log [debug|info|warn|error] "message with {var}" [to console|html|both]` (M27, PLAN_LOG.md
+ * decisions 113-120). Unlike every other step, a `log` call is unconditional author signal, not
+ * step-execution plumbing (decision 118) — it always succeeds and always produces a report step,
+ * regardless of its `destination`/level (decision 119: renderers filter, execution never does).
+ * `level` defaults to `'info'` when omitted (decision 114); `destination` is `null` when the `to`
+ * clause is omitted, meaning "use `tflw.config`'s `logDestination` (itself defaulting to `both`,
+ * decision 116) at run time" — resolved by the interpreter, not the parser, since the config isn't
+ * in scope here. `message` is an ordinary `StringLit`, so `{var}` interpolation (decision 120) and
+ * unknown-variable checking (`checkStringLit`) both come for free, the same as every other
+ * string-bearing step. */
+export interface LogStmt extends Node {
+  readonly type: 'LogStmt';
+  readonly level: LogLevel;
+  readonly message: StringLit;
+  readonly destination: LogDestination | null;
+}
+
 // ---- Values & literals -----------------------------------------------------
 
 export type Value =
@@ -1009,7 +1036,9 @@ export type ConfigEntry =
   | AllowHostsDecl
   | EvidenceDecl
   | RedactDecl
-  | ViewportDecl;
+  | ViewportDecl
+  | LogDestinationDecl
+  | LogLevelDecl;
 
 export interface HeaderDecl extends Node {
   readonly type: 'HeaderDecl';
@@ -1083,6 +1112,23 @@ export type EvidenceLevel = 'full' | 'headers-only' | 'none';
 export interface EvidenceDecl extends Node {
   readonly type: 'EvidenceDecl';
   readonly level: EvidenceLevel;
+}
+
+/** `log destination "console"|"html"|"both"` (M27, PLAN_LOG.md decision 116) — the default a bare
+ * `log "…"` (no `to` clause) resolves to. Override semantics like `evidence`/`insecure` (env wins
+ * over `defaults`), default `'both'` when never declared. */
+export interface LogDestinationDecl extends Node {
+  readonly type: 'LogDestinationDecl';
+  readonly destination: LogDestination;
+}
+
+/** `log level "debug"|"info"|"warn"|"error"` (M27, PLAN_LOG.md decision 122) — the minimum level a
+ * `log` step must clear to be *rendered* (console text, `report.html`); never affects whether a
+ * step is *recorded* (`results.json`/ndjson always carry every log step, decision 119/122). Same
+ * override semantics as `evidence`, default `'debug'` (show everything) when never declared. */
+export interface LogLevelDecl extends Node {
+  readonly type: 'LogLevelDecl';
+  readonly level: LogLevel;
 }
 
 /** `viewport 1280 720` — browser window size in px, width then height (M3c, SPEC §9, D11). Same

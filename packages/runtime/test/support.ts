@@ -68,6 +68,8 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     evidenceLevel: 'full',
     redactPatterns: [],
     viewport: null,
+    logDestination: 'both',
+    logLevel: 'debug',
   };
 }
 

@@ -134,6 +134,75 @@ test('the built dist/cli.cjs exits non-zero on a failing test, and still writes 
   });
 });
 
+// M27, PLAN_LOG.md decision 118: a `log` step prints to the console unconditionally — regardless
+// of `--verbose` and regardless of the enclosing test's pass/fail — unlike every other step kind.
+test('a `log` step prints to the console without `--verbose`, on a passing test, with a level prefix', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'health.tflw'),
+        `test "health check"\n  api GET /health\n  expect status equals 200\n  log warn "stock running low"\n`,
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir, env: envWithout('GITHUB_ACTIONS') });
+
+      assert.match(stdout, /\[WARN\] stock running low/);
+
+      const resultsPath = join(dir, 'report', 'results.json');
+      const results = JSON.parse(await readFile(resultsPath, 'utf8')) as { tests: { steps: { kind: string; level?: string; destination?: string }[] }[] };
+      const logStep = results.tests[0]!.steps.find((s) => s.kind === 'log')!;
+      assert.equal(logStep.level, 'warn');
+      assert.equal(logStep.destination, 'both'); // no `to …` clause, tflw.config declares no `log destination` → default
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`--log-output console` keeps a bare `log` call\'s destination out of report.html, and `--log-level` filters low-severity console output', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-flags-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'health.tflw'),
+        `test "health check"\n  api GET /health\n  expect status equals 200\n  log debug "verbose detail"\n  log error "something bad"\n`,
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--log-output', 'console', '--log-level', 'error'], {
+        cwd: dir,
+        env: envWithout('GITHUB_ACTIONS'),
+      });
+
+      // `--log-level error` filters the debug-level line out of console display (never out of
+      // results.json — decision 122's "renderers filter, execution never does").
+      assert.doesNotMatch(stdout, /verbose detail/);
+      assert.match(stdout, /\[ERROR\] something bad/);
+
+      const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+      // Note: the embedded <style> block always defines `.kind-log`-shaped selectors regardless of
+      // whether any step used them — assert on the actual `<li>` markup, not a bare substring.
+      assert.doesNotMatch(html, /<li class="step ok kind-log/); // --log-output console → bare `log` calls never reach html
+
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as {
+        tests: { steps: { kind: string; level?: string; destination?: string; detail?: string }[] }[];
+      };
+      const logSteps = results.tests[0]!.steps.filter((s) => s.kind === 'log');
+      assert.equal(logSteps.length, 2, 'both log steps are still recorded regardless of --log-level');
+      assert.deepEqual(
+        logSteps.map((s) => s.destination),
+        ['console', 'console'],
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // PLAN decision 86: report.html now shows every `retry` attempt's evidence, not just the final
 // pass — full pipeline check (real interpreter → redact → write to disk), not just the in-memory
 // RunReport already covered by packages/runtime/test/retry.test.ts.
@@ -950,7 +1019,11 @@ test "checkout as bob"
     assert.match(stdout, /1 file checked, no problems found\./);
     assert.match(stdout, /1 reuse hint found \(P#2\) — apply with `tflw refactor apply <id>`:/);
     assert.match(stdout, /reuse\[RF001\]: 2 occurrences of a similar 5-step sequence/);
-    assert.match(stdout, /proposed: action log in\(username, password\) in shared\/log-in\.tflw/);
+    // M27 (PLAN_LOG.md): "log" is now a real statement keyword, so the reuse pass's own generic
+    // keyword-collision guard (reuse.ts:615-634) prefixes the generated action name with "the" —
+    // exactly the same defense that already covers "open"/"close"-prefixed names, working as
+    // designed, not a regression.
+    assert.match(stdout, /proposed: action the log in\(username, password\) in shared\/the-log-in\.tflw/);
     assert.match(stdout, /apply: tflw refactor apply RF001/);
   } finally {
     await rm(dir, { recursive: true, force: true });

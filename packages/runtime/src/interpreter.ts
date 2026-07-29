@@ -18,6 +18,7 @@ import type {
   HookDecl,
   LetStmt,
   Locator as LocatorAst,
+  LogStmt,
   NetworkRequestRef,
   Oauth2SessionConfig,
   PathSegment,
@@ -958,6 +959,10 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           result = execCapture(step, lastResponse, ctx, src, stepStart, tc.redactor, config);
           break;
         }
+        case 'LogStmt': {
+          result = execLog(step, ctx, src, stepStart, tc.redactor, config);
+          break;
+        }
         case 'WaitUntilApiStmt': {
           const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, src, stepStart);
           lastResponse = waited.response;
@@ -1751,6 +1756,22 @@ function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: Eva
   return mkStep('capture', src, step.span, true, start, redactor.redact(`${step.name} = ${rendered} (captured)`));
 }
 
+/** `log [level] "message" [to destination]` (M27, PLAN_LOG.md decisions 113-121) — unlike every
+ * other step, this always succeeds: a `log` call is deliberate author signal, not step-execution
+ * plumbing, so it can't itself assert anything (decision 118's console-unconditional treatment
+ * only makes sense if the step is never the thing that fails a test). `step.message` is an
+ * ordinary `StringLit`, so `evalValue` resolves its `{var}` interpolation the same way `let`/
+ * `capture`'s detail lines already do (decision 120) — redacted the same way too, in case an
+ * interpolated value is itself a secret. `destination` falls back to the resolved config's
+ * `logDestination` (itself already `--log-output`-overridden by the time it reaches here, decision
+ * 121) only when the statement omitted its own `to …` clause — an explicit per-statement
+ * destination always wins. */
+function execLog(step: LogStmt, ctx: EvalCtx, src: string, start: number, redactor: Redactor, config: ResolvedConfig): StepResult {
+  const message = String(evalValue(step.message, ctx));
+  const destination = step.destination ?? config.logDestination;
+  return { ...mkStep('log', src, step.span, true, start, redactor.redact(message)), level: step.level, destination };
+}
+
 async function execWaitUntilApi(
   step: WaitUntilApiStmt,
   config: ResolvedConfig,
@@ -2079,6 +2100,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'let';
     case 'CaptureStmt':
       return 'capture';
+    case 'LogStmt':
+      return 'log';
     case 'WaitUntilApiStmt':
     case 'WaitUntilUiStmt':
       return 'wait';

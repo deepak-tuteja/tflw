@@ -30,6 +30,8 @@ import {
   type Program,
   type Diagnostic,
   type EvidenceLevel,
+  type LogDestination,
+  type LogLevel,
   type SuiteEntry,
   type ReuseOccurrence,
 } from '@tflw/lang';
@@ -49,12 +51,14 @@ import {
   SessionCache,
   BrowserManager,
   SUPPORTED_BROWSER_ENGINES,
+  LOG_LEVEL_ORDER,
   startPickSession,
   type BrowserEngine,
   type RunReport,
   type TestResult,
   type EventSink,
   type RunEvent,
+  type StepResult,
   type ResolvedConfig,
   type PickSessionHandle,
 } from '@tflw/runtime';
@@ -441,9 +445,26 @@ interface RunArgs {
   /** `--update-snapshots` (M4b, D15) — writes/overwrites `matches snapshot` baselines instead of
    * just comparing against them. Off by default, same as every prior milestone's behavior. */
   readonly updateSnapshots: boolean;
+  /** Raw `--log-output` text (M27, PLAN_LOG.md decision 121), validated in `runCommand` against
+   * `LOG_OUTPUT_VALUES` — overrides `tflw.config`'s `log destination` key for this run's *bare*
+   * `log "…"` calls only; an explicit per-statement `to console`/`to html`/`to both` always wins.
+   * `none` is a CLI-only value (not a valid `to` target in the grammar) — a global kill-switch for
+   * bare calls. */
+  readonly logOutputRaw?: string | undefined;
+  /** Raw `--log-level` text (M27, PLAN_LOG.md decision 122), validated in `runCommand` against
+   * `LOG_LEVELS` — overrides `tflw.config`'s `log level` key (the minimum level a `log` step must
+   * clear to be rendered) for this run only. */
+  readonly logLevelRaw?: string | undefined;
 }
 
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
+/** M27, PLAN_LOG.md decisions 121/122 — `LOG_OUTPUT_VALUES` adds `none` (a CLI-only global
+ * kill-switch for bare `log` calls, decision 121) on top of the DSL grammar's own three `to`
+ * targets; `LOG_LEVELS` mirrors the DSL's four level keywords for `--log-level` validation. Small
+ * literal duplicates of `packages/lang/src/parser.ts`'s own arrays, matching how `EVIDENCE_LEVELS`
+ * above already duplicates rather than imports its parser-side counterpart. */
+const LOG_OUTPUT_VALUES = ['console', 'html', 'both', 'none'] as const;
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
 function parseRunArgs(argv: string[]): RunArgs {
   const files: string[] = [];
@@ -465,6 +486,8 @@ function parseRunArgs(argv: string[]): RunArgs {
   let browserRaw: string | undefined;
   let headed = false;
   let updateSnapshots = false;
+  let logOutputRaw: string | undefined;
+  let logLevelRaw: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = argv[++i];
@@ -495,6 +518,10 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
     else if (a === '--headed') headed = true;
     else if (a === '--update-snapshots') updateSnapshots = true;
+    else if (a === '--log-output') logOutputRaw = argv[++i];
+    else if (a.startsWith('--log-output=')) logOutputRaw = a.slice('--log-output='.length);
+    else if (a === '--log-level') logLevelRaw = argv[++i];
+    else if (a.startsWith('--log-level=')) logLevelRaw = a.slice('--log-level='.length);
     else files.push(a);
   }
   const tagList = tagRaw
@@ -522,6 +549,8 @@ function parseRunArgs(argv: string[]): RunArgs {
     browserRaw,
     headed,
     updateSnapshots,
+    logOutputRaw,
+    logLevelRaw,
   };
 }
 
@@ -695,6 +724,22 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
     }
     evidenceArg = args.evidenceRaw as EvidenceLevel;
   }
+  let logOutputArg: LogDestination | 'none' | undefined;
+  if (args.logOutputRaw !== undefined) {
+    if (!(LOG_OUTPUT_VALUES as readonly string[]).includes(args.logOutputRaw)) {
+      err(`--log-output expects one of ${LOG_OUTPUT_VALUES.join(', ')}, got "${args.logOutputRaw}"`);
+      return EXIT_USAGE;
+    }
+    logOutputArg = args.logOutputRaw as LogDestination | 'none';
+  }
+  let logLevelArg: LogLevel | undefined;
+  if (args.logLevelRaw !== undefined) {
+    if (!(LOG_LEVELS as readonly string[]).includes(args.logLevelRaw)) {
+      err(`--log-level expects one of ${LOG_LEVELS.join(', ')}, got "${args.logLevelRaw}"`);
+      return EXIT_USAGE;
+    }
+    logLevelArg = args.logLevelRaw as LogLevel;
+  }
   // `--format ndjson` (decision 111/M17) — a separate feature from `check --format json` (decision
   // 111.4), so `run` recognizes a different, single value.
   if (args.formatRaw !== undefined && args.formatRaw !== 'ndjson') {
@@ -717,10 +762,18 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   const loaded = await loadAndValidate(cwd, args.files, args.env, color);
   if (typeof loaded === 'number') return loaded;
   const { parsedFiles, environ } = loaded;
-  // `--evidence` overrides `tflw.config`'s `evidence` key for this run only (decision 101c);
-  // `resolved` shadows `loaded.resolved` from here down so every downstream use (the `runProgram`
-  // calls, the report write) sees the effective level with no separate threading needed.
-  const resolved: ResolvedConfig = evidenceArg !== undefined ? { ...loaded.resolved, evidenceLevel: evidenceArg } : loaded.resolved;
+  // `--evidence`/`--log-output`/`--log-level` each override one `tflw.config` key for this run
+  // only (decisions 101c/121/122); `resolved` shadows `loaded.resolved` from here down so every
+  // downstream use (the `runProgram` calls, the report write) sees the effective values with no
+  // separate threading needed. `--log-output` only ever reaches a bare `log "…"` call — `execLog`
+  // (`interpreter.ts`) only falls back to `config.logDestination` when the statement itself gave
+  // no `to …` clause, so an explicit per-statement destination is never touched here.
+  const resolved: ResolvedConfig = {
+    ...loaded.resolved,
+    ...(evidenceArg !== undefined ? { evidenceLevel: evidenceArg } : {}),
+    ...(logOutputArg !== undefined ? { logDestination: logOutputArg } : {}),
+    ...(logLevelArg !== undefined ? { logLevel: logLevelArg } : {}),
+  };
 
   // `--forbid-insecure` (decision 101b): a CI policy gate — fail before any test runs, not partway
   // through, if `insecure true` is active for the env actually running.
@@ -844,7 +897,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   // buffered sink instead, flushed as one contiguous block once that file finishes, and the
   // shared live sink is skipped entirely.
   const useBufferedVerbose = !ndjsonActive && args.verbose && workers > 1;
-  const sharedHumanEmit = !ndjsonActive && !useBufferedVerbose ? liveEmit(out, color, args.verbose, githubActions, timestamps) : undefined;
+  const sharedHumanEmit = !ndjsonActive && !useBufferedVerbose ? liveEmit(out, color, args.verbose, githubActions, timestamps, resolved.logLevel) : undefined;
   const ndjsonCollected: RunEvent[] = [];
   const sharedNdjsonEmit = ndjsonActive ? ndjsonEmit(out, ndjsonCollected) : undefined;
 
@@ -861,7 +914,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
     workers,
     async ({ file, source, program }, i) => {
       const fileLabel = relative(cwd, file);
-      const buffered = useBufferedVerbose ? bufferedEmit(out, color, args.verbose, githubActions, timestamps) : undefined;
+      const buffered = useBufferedVerbose ? bufferedEmit(out, color, args.verbose, githubActions, timestamps, resolved.logLevel) : undefined;
       const rawSink = buffered?.sink ?? sharedHumanEmit ?? sharedNdjsonEmit;
       const fileEmit = rawSink ? withFileTag(rawSink, fileLabel) : undefined;
       try {
@@ -927,7 +980,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   //    already-built report once everything is merged.
   const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine), redactor);
   const reportDir = join(cwd, resolved.reportDir);
-  const outPath = await writeReport(merged, reportDir);
+  const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
   await writeResultsJson(merged, reportDir);
   await writeLastRun(merged, reportDir);
@@ -1251,6 +1304,28 @@ function tick(color: boolean, ok: boolean): string {
   return ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
 }
 
+/** `debug` dim, `info` plain, `warn` yellow, `error` red — same ANSI palette `tick`'s ✓/✗ already
+ * uses (32 green / 31 red), extended with 2 (dim) and 33 (yellow) for the two levels that aren't
+ * pass/fail-shaped (M27, PLAN_LOG.md). */
+const LOG_LEVEL_ANSI: Readonly<Record<LogLevel, string>> = { debug: '\x1b[2m', info: '', warn: '\x1b[33m', error: '\x1b[31m' };
+
+/** A `log` step's console line (M27, PLAN_LOG.md decisions 118/119/122): unconditional whenever
+ * its effective destination includes console and its level clears `logLevelThreshold` — never
+ * gated on `--verbose` or the enclosing test's pass/fail, unlike every other step kind. Returns
+ * `undefined` when the destination excludes console (`'html'`/`'none'`) or the level falls below
+ * threshold, so `formatEvent` treats a filtered-out log step exactly like any other step that
+ * prints nothing this run — the step is still fully recorded in `results.json`/ndjson regardless
+ * (decision 119/122), only console *display* is skipped here. */
+function formatLogLine(step: StepResult, color: boolean, logLevelThreshold: LogLevel): string | undefined {
+  const destination = step.destination ?? 'both';
+  if (destination === 'html' || destination === 'none') return undefined;
+  const level = step.level ?? 'info';
+  if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[logLevelThreshold]) return undefined;
+  const label = level.toUpperCase();
+  const prefix = color && LOG_LEVEL_ANSI[level] ? `${LOG_LEVEL_ANSI[level]}[${label}]\x1b[0m` : `[${label}]`;
+  return `  ${prefix} ${step.detail ?? ''}`;
+}
+
 /** Maps one `RunEvent` to the text block it produces on the console, or `undefined` if this event
  * prints nothing — shared by the live ticker and the buffered-per-file collector below so both
  * stay in lockstep (the console consumes the same event stream the report is built from, per
@@ -1274,8 +1349,13 @@ function tick(color: boolean, ok: boolean): string {
  * a single line adds a click-to-expand around nothing worth folding (decision 111.8). Not a GitHub
  * annotation (`::error::`) — pure log folding, a different mechanism from the "no GitHub
  * annotations" scope boundary decision 7 already drew. */
-function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActions: boolean): string | undefined {
+function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActions: boolean, logLevelThreshold: LogLevel): string | undefined {
   const grouping = verbose && githubActions;
+  // A `log` step is unconditional author signal (M27, PLAN_LOG.md decision 118) — checked before
+  // the `--verbose`-gated branch below so it never double-prints under `--verbose` and never goes
+  // silent without it; `formatLogLine` itself returns `undefined` for a destination/level this
+  // step doesn't clear, same "print nothing this event" contract every other branch here follows.
+  if (ev.type === 'step:end' && ev.step.kind === 'log') return formatLogLine(ev.step, color, logLevelThreshold);
   if (verbose && ev.type === 'test:start') return grouping ? `::group::${ev.name}` : ev.name;
   if (verbose && ev.type === 'step:end') {
     const label = ev.step.detail ?? ev.step.kind;
@@ -1364,9 +1444,9 @@ function withFileTag(sink: EventSink, file: string): EventSink {
  * concurrently-running file when `--verbose` is off (only `test:end` prints, and today's existing
  * cross-file interleaving of those lines is pre-existing, unchanged behavior) — but never used for
  * verbose output under `--workers > 1`, see `bufferedEmit` below. */
-function liveEmit(out: { write: (text: string) => void }, color: boolean, verbose: boolean, githubActions: boolean, timestamps: boolean): EventSink {
+function liveEmit(out: { write: (text: string) => void }, color: boolean, verbose: boolean, githubActions: boolean, timestamps: boolean, logLevelThreshold: LogLevel): EventSink {
   return (ev) => {
-    const line = formatEvent(ev, color, verbose, githubActions);
+    const line = formatEvent(ev, color, verbose, githubActions, logLevelThreshold);
     if (line !== undefined) out.write(withTimestamps(line, timestamps) + '\n');
   };
 }
@@ -1380,10 +1460,11 @@ function bufferedEmit(
   verbose: boolean,
   githubActions: boolean,
   timestamps: boolean,
+  logLevelThreshold: LogLevel,
 ): { sink: EventSink; flush: () => void } {
   const lines: string[] = [];
   const sink: EventSink = (ev) => {
-    const line = formatEvent(ev, color, verbose, githubActions);
+    const line = formatEvent(ev, color, verbose, githubActions, logLevelThreshold);
     if (line !== undefined) lines.push(withTimestamps(line, timestamps));
   };
   return {

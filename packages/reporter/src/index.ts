@@ -3,7 +3,7 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import type { RunReport } from '@tflw/runtime';
+import type { LogLevel, RunReport } from '@tflw/runtime';
 import { resolveReportAssets } from './assets.js';
 import { renderReportHtml } from './html.js';
 import { renderJunitXml } from './junit.js';
@@ -19,7 +19,7 @@ export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile,
  * to — a screenshot over the inline budget, or a Playwright trace archive (always external).
  * Returns the absolute path written to report.html. A run with none of those writes no `assets/`
  * directory at all, keeping today's single-file UX for an API-only (or UI-but-all-green) run. */
-export async function writeReport(report: RunReport, dir: string): Promise<string> {
+export async function writeReport(report: RunReport, dir: string, logLevelThreshold: LogLevel = 'debug'): Promise<string> {
   const outDir = resolve(dir);
   await mkdir(outDir, { recursive: true });
   const { hrefs, files } = resolveReportAssets(report);
@@ -29,7 +29,7 @@ export async function writeReport(report: RunReport, dir: string): Promise<strin
     await writeFile(filePath, Buffer.from(file.base64, 'base64'));
   }
   const path = join(outDir, 'report.html');
-  await writeFile(path, renderReportHtml(report, hrefs), 'utf8');
+  await writeFile(path, renderReportHtml(report, hrefs, logLevelThreshold), 'utf8');
   return path;
 }
 

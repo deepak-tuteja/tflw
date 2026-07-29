@@ -39,8 +39,11 @@ test('finds a duplicated 5-step flow across two tests, parameterizing only the d
   assert.equal(hint.length, 5);
   assert.equal(hint.occurrences.length, 2);
   assert.deepEqual([...hint.params].sort(), ['password', 'username']);
-  assert.equal(hint.actionFile, 'shared/log-in.tflw');
-  assert.equal(hint.actionName, 'log in');
+  // M27 (PLAN_LOG.md): "log" is now a real statement keyword, so the generic collision guard
+  // (reuse.ts:615-634, already covering "open"/"close"-prefixed names) prefixes the generated
+  // name with "the" — working as designed, not a regression.
+  assert.equal(hint.actionFile, 'shared/the-log-in.tflw');
+  assert.equal(hint.actionName, 'the log in');
 
   // occurrence order follows source order; args follow param order (`username` then `password`,
   // matching the fixture's own field order).
@@ -51,7 +54,7 @@ test('finds a duplicated 5-step flow across two tests, parameterizing only the d
 
   // the extracted action keeps every identical literal verbatim and only replaces the two that
   // actually vary — with the interpolation matching the deduped param names above.
-  assert.match(hint.actionSource, /^action log in\(username, password\)$/m);
+  assert.match(hint.actionSource, /^action the log in\(username, password\)$/m);
   assert.match(hint.actionSource, /open "\/login"/);
   assert.match(hint.actionSource, /fill field "Username" with \{username\}/);
   assert.match(hint.actionSource, /fill field "Password" with \{password\}/);
@@ -60,7 +63,7 @@ test('finds a duplicated 5-step flow across two tests, parameterizing only the d
 
   assert.match(hint.diffPreview, /reuse\[RF001\]: 2 occurrences of a similar 5-step sequence/);
   assert.match(hint.diffPreview, /tests\/checkout\.tflw:2 \(test "checkout as alice"\)/);
-  assert.match(hint.diffPreview, /call site: log in\("alice", "secret1"\)/);
+  assert.match(hint.diffPreview, /call site: the log in\("alice", "secret1"\)/);
   assert.match(hint.diffPreview, /apply: tflw refactor apply RF001/);
 });
 
@@ -191,5 +194,6 @@ test('renderCallSiteReplacement preserves original indentation and produces a we
   const occ = hint.occurrences[0]!;
   const replacement = renderCallSiteReplacement(hint.actionName, occ, combined.source);
   assert.equal(combined.source.slice(replacement.start, replacement.end).startsWith('  open "/login"'), true);
-  assert.equal(replacement.text, `  log in("alice", "secret1")\n`);
+  // M27 (PLAN_LOG.md): "the" prefix, same collision guard as above.
+  assert.equal(replacement.text, `  the log in("alice", "secret1")\n`);
 });

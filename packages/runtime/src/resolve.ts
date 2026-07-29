@@ -1,7 +1,7 @@
 // Resolve a parsed tflw.config into the concrete settings the interpreter runs against:
 // active-env selection (P#28), defaults+env merge, per-service base URLs (P#29).
 
-import type { ConfigFile, EnvBlock, EvidenceLevel, RedactPattern } from '@tflw/lang';
+import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern } from '@tflw/lang';
 import { DEFAULT_TIMEOUTS, type ResolvedConfig, type ResolvedHeader, type ResolvedTimeouts } from './types.js';
 
 export class ConfigError extends Error {
@@ -57,6 +57,8 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   let evidenceLevel: EvidenceLevel = 'full';
   const redactPatterns: RedactPattern[] = [];
   let viewport: { width: number; height: number } | null = null;
+  let logDestination: LogDestination | 'none' = 'both';
+  let logLevel: LogLevel = 'debug';
 
   const applyEntries = (entries: EnvBlock['entries']): void => {
     for (const entry of entries) {
@@ -102,6 +104,12 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
         case 'ViewportDecl':
           viewport = { width: entry.width, height: entry.height };
           break;
+        case 'LogDestinationDecl':
+          logDestination = entry.destination;
+          break;
+        case 'LogLevelDecl':
+          logLevel = entry.level;
+          break;
       }
     }
   };
@@ -139,6 +147,8 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     evidenceLevel,
     redactPatterns,
     viewport,
+    logDestination,
+    logLevel,
   };
 }
 

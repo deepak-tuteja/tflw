@@ -70,6 +70,11 @@ import type {
   Locator,
   LocatorKind,
   LocatorSubject,
+  LogDestination,
+  LogDestinationDecl,
+  LogLevel,
+  LogLevelDecl,
+  LogStmt,
   Matcher,
   MatcherName,
   NetworkRequestRef,
@@ -160,6 +165,7 @@ export const STATEMENT_KEYWORDS = [
   'check',
   'let',
   'capture',
+  'log',
   'wait',
   'give',
   'open',
@@ -191,8 +197,14 @@ const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as c
  * own `impact` scale (`A11ySeverity`, ast.ts). */
 const A11Y_SEVERITY_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
-const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport'] as const;
+const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport', 'log'] as const;
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
+/** `log [<level>] "…" [to <destination>]` (M27, PLAN_LOG.md) — bare-keyword enums, same shape as
+ * `A11Y_SEVERITY_WORDS`/`LOCATOR_KEYWORDS`. Also reused (against a quoted string, not a bare
+ * keyword) by `log destination "…"`/`log level "…"` in the config dialect, mirroring how
+ * `EVIDENCE_LEVELS` validates `evidence "…"`. */
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
+const LOG_DESTINATIONS = ['console', 'html', 'both'] as const;
 const RETRY_AFTER_HEADERS = ['Retry-After'] as const;
 const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
 const DURATION_UNITS = ['ms', 's', 'm'] as const;
@@ -638,6 +650,8 @@ class Parser {
         return this.wrap(this.parseAllowHostsDecl());
       case 'evidence':
         return this.wrap(this.parseEvidenceDecl());
+      case 'log':
+        return this.wrap(this.parseLogConfigDecl());
       case 'redact':
         return this.wrap(this.parseRedactDecl());
       case 'viewport':
@@ -797,6 +811,41 @@ class Parser {
     }
     this.endLine();
     return { type: 'EvidenceDecl', level: tok.value as EvidenceLevel, span: this.spanFrom(start) };
+  }
+
+  /** `log destination "console"|"html"|"both"` / `log level "debug"|"info"|"warn"|"error"` (M27,
+   * PLAN_LOG.md decisions 116/122) — a compound key, same shape as `allow hosts`: `log` alone
+   * disambiguates on the next bare word. */
+  private parseLogConfigDecl(): ConfigEntry | null {
+    const start = this.peek().span.start;
+    this.advance(); // `log`
+    const sub = this.peek();
+    if (this.isKw(sub, 'destination')) {
+      this.advance();
+      const tok = this.expectString('a log destination string: `log destination "console"`, `"html"`, or `"both"`');
+      if (!tok) return null;
+      if (!(LOG_DESTINATIONS as readonly string[]).includes(tok.value)) {
+        const hint = suggest(tok.value, LOG_DESTINATIONS);
+        this.error(Codes.UNEXPECTED_TOKEN, `unknown log destination "${tok.value}"`, tok.span, hint ? `did you mean \`${hint}\`?` : `expected one of: ${LOG_DESTINATIONS.join(', ')}`);
+        return null;
+      }
+      this.endLine();
+      return { type: 'LogDestinationDecl', destination: tok.value as LogDestination, span: this.spanFrom(start) };
+    }
+    if (this.isKw(sub, 'level')) {
+      this.advance();
+      const tok = this.expectString('a log level string: `log level "debug"`, `"info"`, `"warn"`, or `"error"`');
+      if (!tok) return null;
+      if (!(LOG_LEVELS as readonly string[]).includes(tok.value)) {
+        const hint = suggest(tok.value, LOG_LEVELS);
+        this.error(Codes.UNEXPECTED_TOKEN, `unknown log level "${tok.value}"`, tok.span, hint ? `did you mean \`${hint}\`?` : `expected one of: ${LOG_LEVELS.join(', ')}`);
+        return null;
+      }
+      this.endLine();
+      return { type: 'LogLevelDecl', level: tok.value as LogLevel, span: this.spanFrom(start) };
+    }
+    this.error(Codes.UNEXPECTED_TOKEN, `expected \`destination\` or \`level\` after \`log\`, found ${describeToken(sub)}`, sub.span);
+    return null;
   }
 
   private parseRedactDecl(): RedactDecl | null {
@@ -1076,6 +1125,8 @@ class Parser {
           return this.parseLet();
         case 'capture':
           return this.parseCapture();
+        case 'log':
+          return this.parseLogStep();
         case 'wait':
           return this.parseWaitUntil();
         case 'give':
@@ -2201,6 +2252,43 @@ class Parser {
     if (!name) return null;
     this.endLine();
     const stmt: CaptureStmt = { type: 'CaptureStmt', subject, name: name.value, span: this.spanFrom(start) };
+    return stmt;
+  }
+
+  /** `log [debug|info|warn|error] "message with {var}" [to console|html|both]` (M27, PLAN_LOG.md
+   * decisions 113-121). Level and destination are both optional bare-keyword lookaheads (same
+   * shape as `parseA11yViolationsMatcher`'s optional severity word) — omitting the level defaults
+   * to `info` (decision 114); omitting `to` leaves `destination: null`, resolved against
+   * `tflw.config`'s `logDestination` (default `both`) at run time, not here (decision 116) — the
+   * parser has no config in scope. */
+  private parseLogStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `log`
+    let level: LogLevel = 'info';
+    const levelTok = this.peek();
+    if (levelTok.type === 'ident' && (LOG_LEVELS as readonly string[]).includes(levelTok.value)) {
+      level = this.advance().value as LogLevel;
+    }
+    const message = this.expectString('a log message, e.g. `log "order {orderId} created"`');
+    if (!message) return null;
+    let destination: LogDestination | null = null;
+    if (this.isKw(this.peek(), 'to')) {
+      this.advance();
+      const destTok = this.peek();
+      if (destTok.type !== 'ident' || !(LOG_DESTINATIONS as readonly string[]).includes(destTok.value)) {
+        const hint = destTok.type === 'ident' ? suggest(destTok.value, LOG_DESTINATIONS) : undefined;
+        this.error(
+          Codes.UNEXPECTED_TOKEN,
+          `expected a log destination, found ${describeToken(destTok)}`,
+          destTok.span,
+          hint ? `did you mean \`${hint}\`?` : `expected one of: ${LOG_DESTINATIONS.join(', ')}`,
+        );
+        return null;
+      }
+      destination = this.advance().value as LogDestination;
+    }
+    this.endLine();
+    const stmt: LogStmt = { type: 'LogStmt', level, message, destination, span: this.spanFrom(start) };
     return stmt;
   }
 

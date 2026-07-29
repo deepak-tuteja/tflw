@@ -413,6 +413,31 @@ env staging
   including the `oauth2` session sugar's (§3.3) client-credentials token request, not just
   ordinary `api` steps.
 
+### 3.8 Logging defaults — `log destination`/`log level` (M27, PLAN_LOG.md) ✅
+
+Defaults a bare `log "…"` statement (§7.7) resolves against, so most tests never need to name a
+destination/level explicitly.
+
+```
+defaults
+  log destination "console"
+  log level "warn"
+
+env ci
+  log destination "html"
+```
+
+- `log destination "console"|"html"|"both"` — where a `log` call with no `to …` clause ends up.
+  Default `"both"` when never declared.
+- `log level "debug"|"info"|"warn"|"error"` — the minimum level a `log` step must clear to be
+  *rendered* in console output/`report.html`; never affects whether it's *recorded* (`results.json`/
+  `--format ndjson` always carry every `log` step, regardless of level or destination — §13).
+  Default `"debug"` (show everything) when never declared.
+- Override semantics like `evidence`/`insecure` (env wins over `defaults`), not accumulating like
+  `header`/`allow hosts`.
+- `--log-output`/`--log-level` (§12) override these for one run; `--log-output` only ever reaches a
+  bare `log "…"` call, never a statement's own explicit `to …` clause.
+
 ## 4. Tests & structure ✅
 
 ### 4.1 `test`
@@ -994,6 +1019,34 @@ default (drops bad characters instead of throwing), so `decode` validates the in
 Transform values are shown inline like everything else, but **not** tagged `(random)`/`(unique)`
 in the report (§7.4) — same as `format`, they're not generators.
 
+### 7.7 `log` — user-defined logging (M27, PLAN_LOG.md) ✅
+
+```
+log "order {orderId} created"
+log warn "stock low: {qty} remaining"
+log error "checkout failed" to console
+log debug "raw payload: {body}" to html
+```
+
+`log [debug|info|warn|error] "<message>" [to console|html|both]` — narrates what a test is doing
+at a point in its flow, independent of whether the test passes or fails. `<message>` is an
+ordinary string: `{var}` interpolation works exactly like every other string-bearing step, and an
+unbound reference is the same `TF030` unknown-variable diagnostic `capture`/`check` already give.
+
+- **Level** (`debug`/`info`/`warn`/`error`, default `info` when omitted) is a semantic label — it
+  never affects whether a step runs or what it does, only how loud it is once `log level` (§3.8)/
+  `--log-level` (§12) set a rendering threshold.
+- **Destination** (`to console`/`to html`/`to both`) picks where this call ends up; omitted, it
+  falls back to `tflw.config`'s `log destination` (§3.8, itself defaulting to `both`).
+- A `log` step **always succeeds** — unlike every other step kind, it can't itself fail a test; a
+  bad `{var}` reference is caught by the checker (TF030) before the test ever runs, not at runtime.
+- **Structured output is always complete.** Every `log` step lands in `report/results.json`/
+  `--format ndjson` regardless of its destination or level — only the two human-facing renderers
+  (console text, `report.html`) filter what they actually display (§13). Console output for a
+  `log` step is unconditional whenever its destination includes `console` and its level clears the
+  threshold: unlike `--verbose`-gated step lines, it prints on a passing test too, since a `log`
+  call is deliberate author signal, not step-execution plumbing.
+
 ## 8. Actions, imports, element aliases (P#2, P#17–18) 🔧
 
 ✅ Actions, `give` returns, `import`, the bare-call `CallStmt` form, and the reuse pass itself
@@ -1419,7 +1472,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.8) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check. Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this (a per-file contract, not a suite-wide one) |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |

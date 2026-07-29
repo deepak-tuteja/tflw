@@ -1,7 +1,11 @@
 // Shared runtime types: the resolved config the interpreter runs against, the event stream it
 // emits (SPEC §13 — the reporter is a pure consumer of these), and the aggregated run report.
 
-import type { EvidenceLevel, RedactPattern, SessionDecl, Value } from '@tflw/lang';
+import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDecl, Value } from '@tflw/lang';
+// Re-exported so downstream packages that only depend on `@tflw/runtime` (e.g. `packages/reporter`,
+// which has no direct `@tflw/lang` dependency) can still type a `logLevelThreshold`/`logDestination`
+// parameter without adding one (M27, PLAN_LOG.md).
+export type { LogDestination, LogLevel } from '@tflw/lang';
 import type { BrowserEngine } from './browser.js';
 import type { SnapshotDiffAsset } from './snapshot.js';
 
@@ -63,7 +67,23 @@ export interface ResolvedConfig {
   /** `viewport <width> <height>` — browser window size in px (M3c, SPEC §9, D11). `null` = let
    * Playwright use its own default (1280×720). `defaults`-only, like `workers`/`report`. */
   readonly viewport: { readonly width: number; readonly height: number } | null;
+  /** `log destination "…"` — the default a bare `log "…"` (no `to` clause) resolves to (M27,
+   * PLAN_LOG.md decision 116). Override semantics like `evidence` (env wins over `defaults`),
+   * default `'both'`. `'none'` is reachable only via `--log-output none` overriding this for a
+   * whole run (decision 121) — never a value `LogDestinationDecl` itself can carry, since `'none'`
+   * isn't a valid `log … to <destination>` grammar target either (a global kill-switch for bare
+   * calls only, not a per-statement one). */
+  readonly logDestination: LogDestination | 'none';
+  /** `log level "…"` — the minimum level a `log` step must clear to be *rendered* (console text,
+   * `report.html`); never affects whether it's *recorded* (M27, PLAN_LOG.md decision 122).
+   * Default `'debug'` (show everything). */
+  readonly logLevel: LogLevel;
 }
+
+/** Ordinal ranking for `ResolvedConfig.logLevel` / `--log-level` threshold comparisons (M27,
+ * PLAN_LOG.md decision 122) — shared by the CLI console formatter and `report.html`'s renderer so
+ * both filter identically. */
+export const LOG_LEVEL_ORDER: Readonly<Record<LogLevel, number>> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 export const DEFAULT_TIMEOUTS: ResolvedTimeouts = { step: 30_000, expect: 5_000, wait: 30_000 };
 
@@ -75,6 +95,7 @@ export type StepKind =
   | 'check'
   | 'let'
   | 'capture'
+  | 'log'
   | 'wait'
   | 'call'
   | 'give'
@@ -152,6 +173,13 @@ export interface StepResult {
    * unchanged baseline (M4b, D15: the same "don't inflate the report on success" restraint D12
    * already applied to screenshot-per-step). */
   readonly snapshotDiff?: SnapshotDiffAsset;
+  /** Set only on a `kind: 'log'` step (M27, PLAN_LOG.md decision 117) — the statement's own level
+   * and its *effective* destination (per-statement `to …` if given, else the resolved
+   * `logDestination` config/CLI default at the time this step ran, decision 116/121). Always
+   * present on every `log` step regardless of that destination — a step whose destination excludes
+   * a given renderer is still recorded, only not displayed there (decision 119). */
+  readonly level?: LogLevel;
+  readonly destination?: LogDestination | 'none';
 }
 
 /** One `retry` attempt's outcome — captured so a flaky pass's earlier failing evidence survives
