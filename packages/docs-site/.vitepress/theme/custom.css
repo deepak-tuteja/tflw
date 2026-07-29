@@ -1,0 +1,220 @@
+/**
+ * "Systems Console" (PLAN_DOCS_REFRESH.md decision 4) — a token-level reskin of the default
+ * VitePress theme, not a rewrite. Every rule below either redefines a vp-c- or vp- token
+ * (cascades through the whole site automatically) or targets a specific default-theme class to
+ * fix a layout assumption (image slot sized for an avatar, feature-card radius/border, hero
+ * background) that doesn't fit this site's content. Both themes are real: dark is primary (the
+ * "Systems Console" identity), light keeps the same warm-amber accent on a warm paper ground so
+ * it reads as the same product, not an inverted afterthought — VitePress's own OS-respecting
+ * light/dark toggle (decision 16.12) is untouched.
+ */
+
+/* ---------- Light (default :root) ---------- */
+:root {
+  --vp-c-bg: #faf8f3;
+  --vp-c-bg-alt: #f2efe6;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f2efe6;
+
+  --vp-c-border: #ddd6c4;
+  --vp-c-divider: #e6e0d1;
+  --vp-c-gutter: #e6e0d1;
+
+  --vp-c-text-1: #1d1b16;
+  --vp-c-text-2: #665f50;
+  --vp-c-text-3: #928a78;
+
+  --vp-c-brand-1: #9c5f0c;
+  --vp-c-brand-2: #86500a;
+  --vp-c-brand-3: #714309;
+  --vp-c-brand-soft: rgba(156, 95, 12, 0.12);
+
+  --vp-button-brand-text: #fdf8ef;
+  --vp-button-brand-hover-text: #fdf8ef;
+  --vp-button-brand-active-text: #fdf8ef;
+
+  --hero-dot-color: rgba(29, 27, 22, 0.06);
+
+  --vp-font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui,
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+/* ---------- Dark (primary identity) ---------- */
+.dark {
+  --vp-c-bg: #0a0a0b;
+  --vp-c-bg-alt: #0a0a0b;
+  --vp-c-bg-elv: #141416;
+  --vp-c-bg-soft: #141416;
+
+  --vp-c-border: #34333b;
+  --vp-c-divider: #26262a;
+  --vp-c-gutter: #000000;
+
+  --vp-c-text-1: #f2f0ec;
+  --vp-c-text-2: #8d8b87;
+  --vp-c-text-3: #6f6d6a;
+
+  --vp-c-brand-1: #f2a93b;
+  --vp-c-brand-2: #e2982a;
+  --vp-c-brand-3: #cf8a1f;
+  --vp-c-brand-soft: rgba(242, 169, 59, 0.14);
+
+  --vp-button-brand-text: #0a0a0b;
+  --vp-button-brand-hover-text: #0a0a0b;
+  --vp-button-brand-active-text: #0a0a0b;
+
+  --hero-dot-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- Hero: eyebrow ---------- */
+.hero-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 0 16px;
+  padding: 4px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 999px;
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.VPHero.has-image .hero-eyebrow {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 960px) {
+  .VPHero.has-image .hero-eyebrow {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+/* ---------- Hero: headline accent underline ---------- */
+.hero-accent {
+  text-decoration: underline;
+  text-decoration-color: var(--vp-c-brand-1);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 6px;
+}
+
+/* !important throughout this section: overriding vitepress's own <style scoped> rules, whose
+   compiled [data-v-hash] attribute selector out-specifies a plain class here regardless of
+   load order. */
+.VPHero .name,
+.VPHero .text {
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+}
+
+/* ---------- Hero: dot-grid background ---------- */
+.VPHero {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.VPHero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(circle, var(--hero-dot-color) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse 60% 55% at 25% 15%, black 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 25% 15%, black 0%, transparent 75%);
+  pointer-events: none;
+}
+
+/* ---------- Hero: code panel (fills the default avatar-shaped image slot) ---------- */
+.VPHero .main {
+  order: 1 !important;
+}
+
+.VPHero .image {
+  order: 2 !important;
+}
+
+.VPHero .image,
+.VPHero .image-container {
+  width: 100% !important;
+  height: auto !important;
+  max-width: none !important;
+  margin: 32px 0 0 !important;
+  transform: none !important;
+}
+
+.VPHero .image-bg {
+  display: none !important;
+}
+
+@media (min-width: 960px) {
+  .VPHero .image,
+  .VPHero .image-container {
+    max-width: 440px !important;
+    margin: 0 !important;
+  }
+}
+
+.hero-code-panel {
+  width: 100%;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 4px;
+  background: var(--vp-c-bg-elv);
+  padding: 16px 20px 20px;
+  text-align: left;
+}
+
+.hero-code-label {
+  margin: 0 0 10px;
+  color: var(--vp-c-text-3);
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hero-code {
+  margin: 0;
+  overflow-x: auto;
+  color: var(--vp-c-text-2);
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.hero-code .tok-kw {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+
+.hero-code .tok-str {
+  color: var(--vp-c-text-1);
+}
+
+.hero-code .tok-cm {
+  color: var(--vp-c-text-3);
+  font-style: italic;
+}
+
+/* ---------- Feature grid: hairline 2x2, no shadow, minimal radius ---------- */
+.VPFeature {
+  border-radius: 4px !important;
+  border-color: var(--vp-c-divider) !important;
+  background-color: var(--vp-c-bg-elv) !important;
+}
+
+.VPFeature.link:hover {
+  border-color: var(--vp-c-brand-1) !important;
+}
+
+@media (min-width: 960px) {
+  .VPFeatures .item.grid-4 {
+    width: calc(100% / 2) !important;
+  }
+}

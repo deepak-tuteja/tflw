@@ -34,7 +34,7 @@ const chunks = computed(() => splitAtSpans(SOURCE, ranges));
 <style scoped>
 .diagnostics-demo {
   border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
 }
 .hint {

@@ -8,7 +8,7 @@ import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type
 // overriding it would be the wrong direction.
 export default defineConfig({
   title: 'tflw',
-  description: 'A testing-only DSL for API tests — reports first, syntax second.',
+  description: 'A testing DSL for API and browser tests — reports first, syntax second.',
   // Deployed to https://deepak-tuteja.github.io/tflw/ (a project subpath, not the domain root),
   // so asset/link URLs must be prefixed with /tflw/ or the built CSS/JS 404 on GitHub Pages.
   base: '/tflw/',
@@ -31,6 +31,7 @@ export default defineConfig({
       { text: 'Grammar', link: '/grammar' },
       { text: 'Editor', link: '/editor' },
       { text: 'Playground', link: '/playground' },
+      { text: "What's new", link: '/whats-new' },
       { text: 'Changelog', link: '/changelog' },
     ],
 
@@ -66,6 +67,24 @@ export default defineConfig({
             { text: 'Generators', link: '/reference/generators' },
             { text: 'CLI flags', link: '/reference/cli' },
             { text: 'Diagnostic codes', link: '/reference/diagnostics' },
+          ],
+        },
+      ],
+      // Fallback for every standalone page with no more-specific key above (grammar.md,
+      // editor.md, playground/index.md, whats-new.md, changelog.md) — without this, those pages
+      // render with no left sidebar at all (`hasSidebar` false), which reads as inconsistent
+      // chrome next to guide/reference's sidebar + "On this page" two-column layout. VitePress
+      // resolves the longest matching path prefix, so this never overrides the more specific keys
+      // above.
+      '/': [
+        {
+          text: 'More',
+          items: [
+            { text: 'Grammar', link: '/grammar' },
+            { text: 'Editor support', link: '/editor' },
+            { text: 'Playground', link: '/playground' },
+            { text: "What's new", link: '/whats-new' },
+            { text: 'Changelog', link: '/changelog' },
           ],
         },
       ],

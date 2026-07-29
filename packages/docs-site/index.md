@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: tflw
-  text: A testing-only DSL for API tests
-  tagline: Reports first, syntax second. API and browser testing are both built — performance and security testing are next. Pre-1.0, not yet published.
+  text: Test <span class="hero-accent">APIs and browsers</span> in one language.
+  tagline: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Performance and security testing are next. Pre-1.0, not yet published.
   actions:
     - theme: brand
       text: Get started
@@ -42,3 +42,8 @@ Compared to writing API tests by hand with `fetch` + a general-purpose test runn
 Compared to other dedicated tools: if you already have **Karate** working for your team, its
 Java/Gherkin ecosystem and maturity are a real reason to stay. **Hurl**'s single-file, no-runtime
 `.hurl` scripts are a better fit for simple curl-replacement smoke checks than a full DSL.
+
+On the browser side, **Playwright** and **Cypress** remain the right choice if browser automation
+is the whole job — tflw's browser steps run on Playwright under the hood, not instead of it. What
+tflw replaces is the glue: seeding state over the API, driving the UI, and asserting backend state
+afterward, without switching tools or writing a client by hand partway through a test.

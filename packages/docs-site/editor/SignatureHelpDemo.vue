@@ -64,7 +64,7 @@ const help = computed(() => {
 <style scoped>
 .sighelp-demo {
   border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 1rem;
 }
 .hint {
@@ -79,7 +79,7 @@ textarea {
   font-size: 0.9rem;
   padding: 0.75rem;
   border: 1px solid var(--vp-c-divider);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--vp-code-block-bg);
   color: var(--vp-c-text-1);
 }
