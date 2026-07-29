@@ -370,6 +370,11 @@ function walkSteps(
       case 'ScreenshotStmt':
         walkStringLit(source, step.name, bound, scopeId, refs);
         break;
+      // M28 (PLAN_LOG_LSP.md): M27 added `log` as a real Step but never caught this walker up —
+      // a `{var}` interpolation inside a log message was invisible to hover/go-to-def/rename.
+      case 'LogStmt':
+        walkStringLit(source, step.message, bound, scopeId, refs);
+        break;
       case 'StubStmt':
         walkStringLit(source, step.urlPattern, bound, scopeId, refs);
         if (step.body) for (const field of step.body.fields) walkValue(field.value, bound, scopeId, source, actionDefs, refs);

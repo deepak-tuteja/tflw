@@ -57,6 +57,23 @@ test('collectSymbols: capture def + a later VarRef resolve to the same span', ()
   assert.deepEqual(ref!.defSpan, def!.span);
 });
 
+// M28 (PLAN_LOG_LSP.md): `log`'s message (M27) had never been walked — a `{var}` referenced only
+// inside a `log` line was invisible to hover/go-to-def/rename, with no error (a checker-clean file
+// just produced an empty ref list for that span).
+test('collectSymbols: a `{var}` interpolated only inside a `log` message resolves to its `let` def', () => {
+  const source = `test "ok"\n  let orderId = unique("ord")\n  log "order {orderId} created"\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'orderId');
+  assert.ok(def, 'expected an `orderId` def');
+
+  const ref = table.refs.find((r) => r.kind === 'variable' && r.name === 'orderId');
+  assert.ok(ref, 'expected an `orderId` ref from the log message interpolation');
+  assertSpanAt(ref!.span, source, 'orderId', 2); // just the identifier inside `{...}`
+  assert.deepEqual(ref!.defSpan, def!.span);
+});
+
 test('collectSymbols: action params def + refs (interpolation + `give`), findIdentifierSpans round-trip', () => {
   const source = `action create order(customerName, amount)\n  api POST /orders body { customer: {customerName}, qty: {amount} }\n  give customerName\n`;
   const { program } = parseSource(source);

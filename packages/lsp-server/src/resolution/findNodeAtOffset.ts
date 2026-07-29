@@ -49,6 +49,7 @@ import type {
   LetStmt,
   Locator,
   LocatorSubject,
+  LogStmt,
   Matcher,
   NetworkRequestRef,
   NetworkRequestSubject,
@@ -250,6 +251,11 @@ function children(node: Node): readonly Node[] {
       return [(node as LetStmt).value];
     case 'CaptureStmt':
       return [(node as CaptureStmt).subject];
+    // M28 (PLAN_LOG_LSP.md): inert today — a `log` message is a plain `StringLit` with only
+    // `{var}` interpolation, never a Matcher/generator/CallExpr — but kept for consistency with
+    // this dispatch's own exhaustiveness invariant.
+    case 'LogStmt':
+      return [(node as LogStmt).message];
     case 'CallExpr':
       return (node as CallExpr).args;
     case 'DurationLit':

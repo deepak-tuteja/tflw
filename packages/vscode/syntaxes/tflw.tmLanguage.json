@@ -54,8 +54,8 @@
       "name": "support.function.env.tflw"
     },
     "keywords-statement": {
-      "comment": "M4a: includes the M3a-M3e browser-step keywords (open/click/.../stub) and their sub-clause words (on/to/onto/dialog/new/tab/frame/respond), catching up parser.ts's STATEMENT_KEYWORDS. M4b adds `mask` (the `mask <locator>` snapshot-masking clause).",
-      "match": "\\b(test|action|before|after|session|import|use|api|expect|check|let|capture|wait|until|give|require|env|default|defaults|workers|report|timeout|retry|with|each|from|as|without|redirects|upload|form|header|body|type|open|click|double|right|fill|select|uncheck|press|hover|scroll|within|accept|dismiss|switch|close|download|drag|drop|screenshot|stub|on|to|onto|dialog|new|tab|frame|respond|mask)\\b",
+      "comment": "M4a: includes the M3a-M3e browser-step keywords (open/click/.../stub) and their sub-clause words (on/to/onto/dialog/new/tab/frame/respond), catching up parser.ts's STATEMENT_KEYWORDS. M4b adds `mask` (the `mask <locator>` snapshot-masking clause). M28 adds `log` (M27 added it to STATEMENT_KEYWORDS but never caught this independent copy up — PLAN_LOG_LSP.md).",
+      "match": "\\b(test|action|before|after|session|import|use|api|expect|check|let|capture|log|wait|until|give|require|env|default|defaults|workers|report|timeout|retry|with|each|from|as|without|redirects|upload|form|header|body|type|open|click|double|right|fill|select|uncheck|press|hover|scroll|within|accept|dismiss|switch|close|download|drag|drop|screenshot|stub|on|to|onto|dialog|new|tab|frame|respond|mask)\\b",
       "name": "keyword.control.tflw"
     },
     "keywords-subject": {

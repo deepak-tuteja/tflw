@@ -107,6 +107,12 @@ test('tokenizes base64/hex/url transform keywords (decision 22/M18) as generator
   assert.ok(hasScope(findToken(lines, 'encode'), 'support.function.generator.tflw'), '`encode` should share the generator/transform highlight class');
 });
 
+// M28 (PLAN_LOG_LSP.md): `log` (M27) had never caught this independent-copy grammar keyword list up.
+test('tokenizes `log` (M27/M28) as a statement keyword', () => {
+  const lines = tokenizeLines(['  log warn "order {id} created" to console']);
+  assert.ok(hasScope(findToken(lines, 'log'), 'keyword.control.tflw'), '`log` is a statement keyword');
+});
+
 test('tokenizes `upload … type "…"` — `upload`/`as`/`type` all get statement-keyword highlighting (decision 22/M19)', () => {
   const lines = tokenizeLines(['  api POST /uploads upload "./img.png" as "avatar" type "image/png"']);
 

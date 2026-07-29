@@ -104,6 +104,13 @@ test('getCompletions: step kind includes browser-arc step keywords (M3a-M3d)', (
   assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['click', 'close']);
 });
 
+// M28 (PLAN_LOG_LSP.md): `log` (M27) had never caught this independent-copy wordlist up either.
+test('getCompletions: step kind includes `log` (M27/M28) — `lo` prefix matches only `log`', () => {
+  const source = 'test "ok"\n  lo';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['log']);
+});
+
 test('getCompletions: subject kind includes UI locator + page subjects (M3a, M3e)', () => {
   const source = 'test "ok"\n  expect pa';
   const ctx = getCompletionContext(source, source.length)!;

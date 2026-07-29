@@ -33,10 +33,11 @@ export interface SemanticToken {
 /** Statement keywords + HTTP methods (tflw.tmLanguage.json's `keywords-statement` + `http-request`),
  * plus the M3a-M3e browser-step keywords (M4a catch-up — parser.ts's `STATEMENT_KEYWORDS` plus the
  * handful of non-leading sub-clause words those steps' grammars also use: `on`/`to`/`onto`/`dialog`/
- * `new`/`tab`/`frame`/`respond`) and M4b's `mask <locator>` clause keyword. */
+ * `new`/`tab`/`frame`/`respond`), M4b's `mask <locator>` clause keyword, and M28's `log` (PLAN_LOG_LSP.md
+ * — M27 added `log` to `STATEMENT_KEYWORDS` but never caught this independent copy up). */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
-  'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
+  'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
   'with', 'each', 'from', 'as', 'without', 'redirects', 'upload', 'form', 'header', 'body', 'type',
   'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS',
   'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll', 'within',

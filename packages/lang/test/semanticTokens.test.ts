@@ -109,6 +109,14 @@ test('collectSemanticTokens: browser-step keywords (open/click/fill/within/stub)
   assertTypeAt(tokens, source, 'respond', 'keyword');
 });
 
+// -- M28 (PLAN_LOG_LSP.md): `log` (M27) had never caught up to this independent keyword copy ------
+
+test('collectSemanticTokens: `log` statement keyword classifies as `keyword`', () => {
+  const source = `test "ok"\n  let id = "1"\n  log warn "order {id} created" to console\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'log', 'keyword');
+});
+
 test('collectSemanticTokens: locator/page subject words (button/field/css/page) classify as `type`', () => {
   const source = `test "ok"\n  click button "Pay"\n  fill field "Email" with "x"\n  click css "#go"\n  expect page has no critical a11y violations\n`;
   const tokens = tokensOf(source);

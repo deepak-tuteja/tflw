@@ -20,9 +20,9 @@ export interface CompletionSources {
 // Independent copies of parser.ts's `STATEMENT_KEYWORDS`/`SUBJECT_KEYWORDS` (kept local rather
 // than exported, same house-style tradeoff already accepted for tflw.tmLanguage.json/
 // semanticTokens.ts's own wordlists — M3e/M4a) — must be kept in sync with the browser-arc
-// (M3a-M3e) constructs those lists gained.
+// (M3a-M3e) constructs those lists gained, plus `log` (M27/M28, PLAN_LOG_LSP.md).
 const STEP_KEYWORDS = [
-  'api', 'expect', 'check', 'let', 'capture', 'wait', 'give',
+  'api', 'expect', 'check', 'let', 'capture', 'log', 'wait', 'give',
   'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll',
   'within', 'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
 ] as const;
