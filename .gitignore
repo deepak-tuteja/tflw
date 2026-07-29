@@ -22,7 +22,4 @@ packages/cli/src/docs-data.generated.ts
 # Internal dev-tracking docs (decision log + build tracker) — not part of the public project
 PLAN.md
 PROGRESS.md
-PLAN_ENTERPRISE.md
-PLAN_M13_LSP.md
-PLAN_BROWSER_PERF_SECURITY.md
-PLAN_REPORTS_PERF_SECURITY.md
+PLAN_*.md
