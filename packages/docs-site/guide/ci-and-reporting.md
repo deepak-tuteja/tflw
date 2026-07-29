@@ -89,6 +89,32 @@ human text mixed in, safe to pipe into a log aggregator or `jq`. Always full ste
 independent of `--verbose`. Also always written to `report/events.ndjson`, so the stream survives
 even when the invoking process didn't capture stdout.
 
+## User-defined logging — the `log` statement
+
+```tflw
+test "checkout narrates what it's doing"
+  api POST /cart/checkout body { email: "shopper@example.com" }
+  expect status equals 201
+  capture body.orderId as orderId
+
+  log "order {orderId} placed"
+  log warn "stock for this order is running low"
+  log error "payment gateway retried once before succeeding" to html
+```
+
+`log [debug|info|warn|error] "message with {var}" [to console|html|both]` narrates what a test is
+doing, in the author's own words — level defaults to `info`, destination defaults to
+`tflw.config`'s `log destination` key (built-in default `both`). A `log` step always succeeds; it's
+author signal, never an assertion. An explicit `to …` clause always wins over both config and a
+`--log-output` override — only a bare `log "…"` (no `to`) resolves against config/CLI at all.
+
+Two `tflw.config` keys (`defaults`/`env`, override semantics like `evidence`): `log destination
+"console"|"html"|"both"` and `log level "debug"|"info"|"warn"|"error"` — the minimum level a step
+must clear to render. `results.json`/`--format ndjson` always record every `log` step regardless of
+level or destination; only console text and `report.html` filter what's actually displayed. See
+[CLI flags reference](/reference/cli#tflw-run) for `--log-output`/`--log-level`, which override
+both config keys for a single run.
+
 ## Console ergonomics — timestamps, GitHub Actions grouping, `--log-file`
 
 Every console line gets an `HH:MM:SS.mmm` prefix by default — `--no-timestamps` opts out. On

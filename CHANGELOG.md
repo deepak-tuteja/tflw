@@ -29,6 +29,16 @@ alongside the performance and pen-test arcs, once those are also done (decision 
 - `tflw watch` (headed re-run on every save, one shared browser, same seed) and `tflw pick`
   (opens a real browser, prints a verified locator per click).
 
+### Added — user-defined logging
+
+- The `log` statement: `log [debug|info|warn|error] "message with {var}" [to console|html|both]` —
+  narrates what a test is doing, in the author's own words; always succeeds, never an assertion.
+- Two `tflw.config` keys (`log destination`, `log level`, override semantics like `evidence`) plus
+  `--log-output`/`--log-level` CLI overrides for a single run — an explicit per-statement `to …`
+  clause always wins over both. Every log step is always recorded in `results.json`/`--format
+  ndjson` regardless of level/destination; only console text and `report.html` filter what renders.
+- Full LSP/VS Code support: hover, completion, and semantic highlighting for `log`.
+
 ### Added — reuse pass & acceptance
 
 - `tflw check` now surfaces advisory duplication hints (`RF0xx`) and `tflw refactor apply <id>`

@@ -72,7 +72,7 @@ DataTable   := 'with' 'each' ('from' STRING)? NEWLINE
 
 Block       := INDENT Step+ DEDENT
 Step        := ApiStep | WaitUntilApiStep | ExpectStmt | CheckStmt | LetStmt | CaptureStmt
-             | GiveStmt | HeaderStmt | UiStep                    # UiStep: see §9, below
+             | GiveStmt | HeaderStmt | LogStmt | UiStep          # UiStep: see §9, below
 ```
 
 - `TAG*` may sit on its own line(s) above `test` (and above its `with each` table, if present).
@@ -185,6 +185,15 @@ CaptureStmt := 'capture' Subject 'as' IDENT NEWLINE
               # network-observation subject, only `expect`/`check` (§9.7, M3d). Same for `page`
               # (§9.8, M3e) — a page's a11y findings are asserted, never captured as a value.
 GiveStmt    := 'give' Value NEWLINE                               # an action's return value (§8)
+LogStmt     := 'log' LogLevel? STRING ('to' LogDestination)? NEWLINE
+              # (§7.7, M27) — narrates what a test is doing, in the author's own words; always
+              # succeeds, never an assertion. STRING is an ordinary StringLit — `{var}` interpolation
+              # and unknown-variable checking come from the same `checkStringLit` every other string
+              # uses. An explicit `to …` clause always wins over `tflw.config`'s `log destination`
+              # key and any `--log-output` override (§12).
+LogLevel       := 'debug' | 'info' | 'warn' | 'error'              # default 'info' when omitted
+LogDestination := 'console' | 'html' | 'both'                      # default: `tflw.config`'s
+                                                                     # `log destination` key
 
 Value       := AddSub
 AddSub      := MulDiv (('+' | '-') MulDiv)*
