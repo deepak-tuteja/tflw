@@ -69,7 +69,7 @@ export const GENERATORS: readonly GeneratorEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'check' | 'pick' | 'watch' | 'migrate' | 'global';
+  readonly command: 'run' | 'load' | 'check' | 'pick' | 'watch' | 'migrate' | 'global';
   readonly effect: string;
 }
 
@@ -109,6 +109,7 @@ export const DIAGNOSTICS: readonly DiagnosticEntry[] = [
   { code: 'TF030', meaning: 'Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that\'s *definitely* unreachable, never one that merely might be.', example: '`capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId`' },
   { code: 'TF031', meaning: 'Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (decision 18).', example: '`expect request connects` followed by `expect status equals 200` on the same `api` step → `can\'t be combined with `request connects`/`fails` on the same request`' },
   { code: 'TF032', meaning: 'Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (decision 22/M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run.', example: '`upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"`' },
+  { code: 'TF033', meaning: 'Parser/checker (load, M29): a `scenario`\'s workload/threshold shape is invalid, a file declares more than one `scenario` (M29 restriction, lifted in M30), a browser step appears inside a `scenario` body (D19 — API-only in v1), or `think` appears outside a `scenario` (D18).', example: '`think 2s` inside a plain `test` → `\`think\` is only legal inside a \`scenario\` (SPEC §2)`' },
 ] as const;
 
 export const CLI_FLAGS: readonly CliFlagEntry[] = [
@@ -132,6 +133,10 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--update-snapshots`', command: 'run', effect: 'writes/overwrites `matches snapshot` baselines instead of just comparing against them' },
   { flag: '`--log-output <dest>`', command: 'run', effect: 'overrides `tflw.config`\'s `log destination` key (`console`/`html`/`both`/`none`) for this run\'s bare `log "…"` calls only — a `log … to …` statement\'s own destination always wins' },
   { flag: '`--log-level <level>`', command: 'run', effect: 'overrides `tflw.config`\'s `log level` key (`debug`/`info`/`warn`/`error`) — the minimum level a `log` step must clear to be rendered in console output/`report.html` (never affects whether it\'s recorded in `results.json`/ndjson)' },
+  { flag: '`--env <name>`', command: 'load', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },
+  { flag: '`--seed <n>`', command: 'load', effect: 'fixes every VU\'s generated values for the run, so a threshold breach is reproducible' },
+  { flag: '`--now <iso>`', command: 'load', effect: 'pins the run\'s notion of "now" to an exact instant (combine with `--seed`)' },
+  { flag: '`--no-color`', command: 'load', effect: 'disables ANSI color in CLI output' },
   { flag: '`--format json`', command: 'check', effect: 'prints the target file\'s `Diagnostic[]` as JSON instead of text — for editor integrations' },
   { flag: '`--browser <engine>`', command: 'pick', effect: 'launches chromium/firefox/webkit (default chromium) instead of chromium' },
   { flag: '`--env <name>`', command: 'watch', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },

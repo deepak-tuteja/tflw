@@ -45,7 +45,10 @@ export type TokenType =
   // '/' is context-sensitive: greedily a `path` right after an HTTP method, else arithmetic divide.
   | 'slash'
   // data-table row delimiter, `with each` (SPEC §4.3) — not used anywhere else in the grammar.
-  | 'pipe';
+  | 'pipe'
+  // `threshold error rate is less than 1%` (M29, perf arc D24a) — only meaningful directly after a
+  // `number` token, never used anywhere else in the grammar.
+  | 'percent';
 
 export interface Token {
   readonly type: TokenType;
@@ -111,6 +114,8 @@ export function describeTokenType(type: TokenType): string {
       return '`/`';
     case 'pipe':
       return '`|`';
+    case 'percent':
+      return '`%`';
   }
 }
 

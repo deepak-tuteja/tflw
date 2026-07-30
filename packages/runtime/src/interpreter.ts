@@ -24,11 +24,13 @@ import type {
   PathSegment,
   Program,
   RedactPattern,
+  ScenarioDecl,
   SessionDecl,
   Span,
   Step,
   Subject,
   TestDecl,
+  ThresholdDecl,
   WaitUntilApiStmt,
   WaitUntilUiStmt,
 } from '@tflw/lang';
@@ -79,7 +81,21 @@ import { sendRequest } from './http.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { inferContentType } from './mime.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
-import type { AttemptResult, EventSink, RequestTrace, ResolvedConfig, ResponseTrace, RunReport, StepResult, TestResult } from './types.js';
+import type {
+  AttemptResult,
+  EventSink,
+  LoadDurationStats,
+  LoadIterationResult,
+  LoadMetrics,
+  LoadReport,
+  LoadThresholdResult,
+  RequestTrace,
+  ResolvedConfig,
+  ResponseTrace,
+  RunReport,
+  StepResult,
+  TestResult,
+} from './types.js';
 
 /** A JS/TS helper export, called `(ctx, ...args)` — "test context in, values out" (P#11). */
 type HelperFn = (ctx: { readonly env: NodeJS.ProcessEnv }, ...args: unknown[]) => unknown;
@@ -235,6 +251,218 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const report = redactReport(rawReport, redactor);
   emit({ type: 'run:end', report });
   return { report, redactor };
+}
+
+// ---- Load testing (M29, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D30) --------------
+//
+// A second, dedicated execution model alongside `runProgram` above (D16) — no test cases, no
+// retry, no browser support (checker-enforced, `checkScenarios`/TF033); a per-VU loop around the
+// same `execSteps` every `test`/`action` body already reuses. Single-process, single-scenario
+// only (M29's own scope) — multi-scenario concurrent scheduling (M30, D29) and multi-process
+// scaling (M31, D19) are later milestones layered on top of this without changing its shape.
+
+export interface LoadOptions {
+  /** Source text of the file, for mirroring each step's line (mirrors `RunOptions.source`). */
+  readonly source: string;
+  readonly baseDir?: string;
+  readonly environ?: NodeJS.ProcessEnv;
+  readonly seed?: number;
+  readonly now?: string;
+  /** Fired once per completed iteration — the CLI's live console progress (M32 formalizes a real
+   * `LoadReport` live view; this is enough for a running iteration/error-rate counter). */
+  readonly onIteration?: (result: LoadIterationResult) => void;
+}
+
+/** Runs the file's single `scenario` (M29 restricts a file to exactly one — `checkScenarios`,
+ * TF033) as a load test: ramps VUs/arrival-rate per its workload (D17), runs its body once per
+ * iteration via `execSteps` (the same engine `test`/`action` bodies use, D16's reuse framing), and
+ * evaluates its `threshold`s once against the accumulated metrics (D24a). Never throws for an
+ * iteration failure (D18: an `expect` inside a scenario aborts *that iteration*, counted toward
+ * the error rate, never the run) — only a setup failure (bad session, zero scenarios) throws. */
+export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
+  if (program.scenarios.length !== 1) {
+    throw new RuntimeError(`\`tflw load\` needs exactly one \`scenario\` in this file, found ${program.scenarios.length}`);
+  }
+  const scenario = program.scenarios[0]!;
+  const environ = opts.environ ?? process.env;
+  const redactor = new Redactor();
+  for (const name of config.requiredEnv) {
+    const value = environ[name];
+    if (value !== undefined) redactor.register(name, value);
+  }
+  const baseDir = opts.baseDir ?? process.cwd();
+  const lines = opts.source.split('\n');
+  const runSeed = resolveRunSeed(opts.seed);
+  const runClock = resolveRunClock(opts.now);
+  const uniqueSeq = makeUniqueSeq();
+  const sessionCache = new SessionCache();
+  const registry = await buildRegistry(program, baseDir);
+  const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
+  const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
+  const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, filePath: baseDir, updateSnapshots: false };
+
+  // Sessions establish once, before the VU loop starts — never per iteration (same run-lifetime
+  // cache `test … as <session>` uses, SPEC §3.3) — and their headers/cookies seed every
+  // iteration's own starting state (cloned per iteration below so concurrent VUs can never race on
+  // one shared cookie jar).
+  const baseSessionHeaders: Record<string, string> = {};
+  const baseCookieJar = new CookieJar();
+  for (const sessionName of scenario.sessions) {
+    const decl = config.sessions.get(sessionName);
+    if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
+    const outcome = await sessionCache.ensure(sessionName, decl, config, tc, true);
+    if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
+    Object.assign(baseSessionHeaders, outcome.headers);
+    baseCookieJar.mergeFrom(outcome.cookieJar.clone());
+  }
+
+  const startedAt = new Date().toISOString();
+  const runStart = performance.now();
+  let iterationIndex = 0;
+  const durationsMs: number[] = [];
+  let failures = 0;
+
+  const runIteration = async (): Promise<void> => {
+    const index = iterationIndex++;
+    const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)) };
+    const scope = new Map<string, unknown>();
+    const ctx: EvalCtx = {
+      scope,
+      environ,
+      redactor,
+      rng: iterTc.rng,
+      runSeed,
+      runClock,
+      uniqueSeq,
+      sessionHeaders: { ...baseSessionHeaders },
+      sessionNames: scenario.sessions,
+      cookieJar: baseCookieJar.clone(),
+    };
+    const iterStart = performance.now();
+    let result: LoadIterationResult;
+    try {
+      for (const hook of beforeEach) {
+        const exec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
+        if (!exec.ok) throw new RuntimeError(exec.error ?? 'a `before` hook failed');
+      }
+      const exec = await execSteps(scenario.body, config, ctx, iterTc, scenario.name.value, registry);
+      if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
+      // D26: `after each` is skipped by default per iteration under load (running it every
+      // iteration would double request volume and pollute the very latency metrics this run
+      // exists to measure) — `cleanup` (ast.ts) opts a scenario back into it.
+      if (scenario.cleanup) {
+        for (const hook of afterEach) {
+          const afterExec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
+          if (!afterExec.ok) throw new RuntimeError(afterExec.error ?? 'an `after` hook failed');
+        }
+      }
+      const thinkMs = exec.steps.filter((s) => s.kind === 'think').reduce((sum, s) => sum + s.durationMs, 0);
+      result = { ok: true, durationMs: Math.max(0, Math.round(performance.now() - iterStart - thinkMs)) };
+    } catch (err) {
+      const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
+      // Think time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
+      // negligible skew: a failure that happens after a `think` still counts that pacing time as
+      // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
+      // duration. Only successful iterations feed the duration percentiles that thresholds read.
+      result = { ok: false, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
+    }
+    if (!result.ok) failures++;
+    durationsMs.push(result.durationMs);
+    opts.onIteration?.(result);
+  };
+
+  const vuPromises: Promise<void>[] = [];
+  if (scenario.workload.type === 'RampUsersWorkload') {
+    // Closed model (D17): VUs loop continuously once spawned. `users` VUs ramp in linearly over
+    // `overMs`; the run itself lasts exactly `overMs` (no separate "hold" stage in M29's grammar).
+    const { users, overMs } = scenario.workload;
+    const runEnd = runStart + overMs;
+    for (let i = 0; i < users; i++) {
+      const spawnAt = runStart + (i / users) * overMs;
+      vuPromises.push(
+        (async () => {
+          const waitMs = spawnAt - performance.now();
+          if (waitMs > 0) await sleep(waitMs);
+          while (performance.now() < runEnd) await runIteration();
+        })(),
+      );
+    }
+  } else {
+    // Open model (D17): arrivals are scheduled at a target rate that itself ramps linearly from 0
+    // to `rps` over `overMs`, independent of whether earlier iterations have finished — the
+    // schedule never waits on completion, so queueing under saturation is real, not smoothed away.
+    // Cumulative arrivals by time t (seconds) under a linear ramp: N(t) = rps·t²/(2·overS); solving
+    // for the k-th arrival's time inverts that: t_k = √(2k·overS / rps).
+    const { rps, overMs } = scenario.workload;
+    const overS = overMs / 1000;
+    const totalArrivals = Math.floor((rps * overS) / 2);
+    for (let k = 1; k <= totalArrivals; k++) {
+      const scheduledMs = Math.sqrt((2 * k * overS) / rps) * 1000;
+      const waitMs = runStart + scheduledMs - performance.now();
+      if (waitMs > 0) await sleep(waitMs);
+      // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion (that's
+      // the whole point of "open") — its promise is still collected so `runLoad` waits for every
+      // fired iteration before computing final metrics.
+      vuPromises.push(runIteration());
+    }
+  }
+  await Promise.all(vuPromises);
+
+  const sorted = [...durationsMs].sort((a, b) => a - b);
+  const metrics: LoadMetrics = {
+    iterations: durationsMs.length,
+    failures,
+    errorRate: durationsMs.length > 0 ? failures / durationsMs.length : 0,
+    durations: summarizeDurations(sorted),
+  };
+  const thresholds = evaluateThresholds(scenario.thresholds, metrics, sorted);
+
+  return {
+    ok: thresholds.every((t) => t.ok),
+    scenario: scenario.name.value,
+    workload:
+      scenario.workload.type === 'RampUsersWorkload'
+        ? { kind: 'users', target: scenario.workload.users, overMs: scenario.workload.overMs }
+        : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs },
+    startedAt,
+    durationMs: Math.round(performance.now() - runStart),
+    seed: runSeed,
+    now: runClock.toISOString(),
+    metrics,
+    thresholds,
+  };
+}
+
+/** Sorted ascending. Nearest-rank percentile (same simple method every other load tool starts
+ * with) — M31's multi-process histogram merge (R4) is where this gets replaced by an HDR
+ * histogram; single-process M29 just sorts the raw array. */
+function percentileOf(sorted: readonly number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx]!;
+}
+
+function summarizeDurations(sorted: readonly number[]): LoadDurationStats {
+  if (sorted.length === 0) return { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 };
+  const sum = sorted.reduce((a, b) => a + b, 0);
+  return {
+    min: sorted[0]!,
+    max: sorted[sorted.length - 1]!,
+    avg: sum / sorted.length,
+    p50: percentileOf(sorted, 50),
+    p90: percentileOf(sorted, 90),
+    p95: percentileOf(sorted, 95),
+    p99: percentileOf(sorted, 99),
+  };
+}
+
+function evaluateThresholds(thresholds: readonly ThresholdDecl[], metrics: LoadMetrics, sortedDurations: readonly number[]): LoadThresholdResult[] {
+  return thresholds.map((t) => {
+    const actual = t.metric.kind === 'errorRate' ? metrics.errorRate : percentileOf(sortedDurations, t.metric.percentile);
+    const label = t.metric.kind === 'errorRate' ? 'error rate' : `p${t.metric.percentile} duration`;
+    const ok = t.op === 'lessThan' ? actual < t.value : actual > t.value;
+    return { label, op: t.op, target: t.value, actual, ok };
+  });
 }
 
 export function makeUniqueSeq(): { next(): number } {
@@ -1186,6 +1414,16 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const page = await ensurePageForStep(ctx);
           await performStub(page, step.method, urlPattern, status, body);
           result = mkStep('stub', src, step.span, true, stepStart, `stub ${step.method} ${JSON.stringify(urlPattern)} → ${status}`);
+          break;
+        }
+        case 'ThinkStmt': {
+          // A fresh uniform draw per iteration for a ranged `think`, off `ctx.rng` — reproducible
+          // like every other generator (P#23), not `Math.random()`. Excluded from a scenario's own
+          // `duration` threshold metric by the load engine (`runLoad` below, D24a) via this exact
+          // step's own `durationMs` — think models pacing, not system latency.
+          const ms = step.maxMs !== null ? step.minMs + Math.floor(ctx.rng() * (step.maxMs - step.minMs + 1)) : step.minMs;
+          await sleep(ms);
+          result = mkStep('think', src, step.span, true, stepStart, `thought for ${ms}ms`);
           break;
         }
       }
@@ -2150,6 +2388,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'screenshot';
     case 'StubStmt':
       return 'stub';
+    case 'ThinkStmt':
+      return 'think';
   }
 }
 

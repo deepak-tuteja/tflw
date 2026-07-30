@@ -13,6 +13,7 @@ import type {
   NetworkRequestRef,
   PathSegment,
   Program,
+  ScenarioDecl,
   SessionDecl,
   Step,
   StringLit,
@@ -112,6 +113,19 @@ export function checkSessions(program: Program, knownSessions: readonly string[]
       });
     }
   }
+  for (const scenario of program.scenarios) {
+    for (const session of scenario.sessions) {
+      if (knownSessions.includes(session)) continue;
+      const hint = suggest(session, knownSessions);
+      diags.push({
+        code: Codes.UNKNOWN_SESSION,
+        severity: 'error',
+        message: `unknown session "${session}"`,
+        span: scenario.span,
+        hint: hint ? `did you mean \`${hint}\`?` : knownSessions.length ? `known sessions: ${knownSessions.join(', ')}` : 'tflw.config declares no `session` blocks',
+      });
+    }
+  }
   return diags;
 }
 
@@ -130,6 +144,9 @@ export function checkServices(program: Program, knownServices: readonly string[]
   }
   for (const hook of program.hooks) {
     for (const step of hook.body) checkStepService(step, knownServices, diags);
+  }
+  for (const scenario of program.scenarios) {
+    for (const step of scenario.body) checkStepService(step, knownServices, diags);
   }
   return diags;
 }
@@ -273,6 +290,95 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
   for (const test of program.tests) walk(test.body);
   for (const action of program.actions) walk(action.body);
   for (const hook of program.hooks) walk(hook.body);
+  for (const scenario of program.scenarios) walk(scenario.body);
+  return diags;
+}
+
+const BROWSER_STEP_TYPES = new Set<Step['type']>([
+  'OpenStmt',
+  'ClickStmt',
+  'FillStmt',
+  'FillFormStmt',
+  'SelectStmt',
+  'CheckStmt',
+  'UncheckStmt',
+  'PressStmt',
+  'HoverStmt',
+  'ScrollStmt',
+  'WithinBlock',
+  'AcceptDialogStmt',
+  'DismissDialogStmt',
+  'SwitchToNewTabBlock',
+  'SwitchToTabStmt',
+  'CloseTabStmt',
+  'DownloadBlock',
+  'DragStmt',
+  'DropFileStmt',
+  'ScreenshotStmt',
+  'StubStmt',
+  'WaitUntilUiStmt',
+]);
+
+/**
+ * Load-arc (M29) semantic checks: at most one `scenario` per file (D28/D29 — concurrent
+ * multi-scenario runs land in M30), `think` legal only inside a `scenario` (D18), and no browser
+ * step inside a `scenario` body (D19 — a browser VU is ~50-100MB, infeasible at load-test scale;
+ * checker-enforced rather than left to surface as a runtime crash). Both the `think` and
+ * browser-step checks only look at *directly* written steps — a `scenario` calling an `action`
+ * that itself contains one isn't traced interprocedurally (actions are the reuse unit shared with
+ * `test`, D16, and can't statically know their caller's context); such a call still fails loudly
+ * at runtime instead of silently doing the wrong thing.
+ */
+export function checkScenarios(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+
+  if (program.scenarios.length > 1) {
+    for (const extra of program.scenarios.slice(1)) {
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: 'a file may declare at most one `scenario` in this milestone',
+        span: extra.span,
+        hint: 'concurrent multi-scenario runs are a later milestone (PLAN_BROWSER_PERF_SECURITY.md D29) — split into separate files for now',
+      });
+    }
+  }
+
+  const walkForThink = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      if (step.type === 'ThinkStmt') {
+        diags.push({
+          code: Codes.LOAD_INVALID,
+          severity: 'error',
+          message: '`think` is only legal inside a `scenario`',
+          span: step.span,
+          hint: '`test`/`before`/`after` bodies use `wait until …` for eventual consistency, never a fixed sleep — move this into a `scenario` body',
+        });
+      } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+        walkForThink(step.body);
+      }
+    }
+  };
+  for (const test of program.tests) walkForThink(test.body);
+  for (const hook of program.hooks) walkForThink(hook.body);
+
+  for (const scenario of program.scenarios) {
+    for (const step of scenario.body) {
+      const isBrowserExpect =
+        step.type === 'ExpectStmt' &&
+        (step.subject.type === 'LocatorSubject' || step.subject.type === 'PageSubject' || step.subject.type === 'NetworkRequestSubject');
+      if (BROWSER_STEP_TYPES.has(step.type) || isBrowserExpect) {
+        diags.push({
+          code: Codes.LOAD_INVALID,
+          severity: 'error',
+          message: "browser steps aren't supported inside a `scenario` in this milestone (D19)",
+          span: step.span,
+          hint: 'load scenarios are API-only in v1 — a browser VU is ~50-100MB, infeasible at load-test scale',
+        });
+      }
+    }
+  }
+
   return diags;
 }
 
@@ -346,6 +452,14 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
   for (const action of program.actions) {
     const bound = new Set<string>(action.params);
     checkStepSequence(action.body, bound, diags);
+  }
+
+  // A scenario has no data table/session and doesn't share scope with `before`/`after each` hooks
+  // the way a test does (D26's `cleanup` flag governs whether those hooks *run* under load, not
+  // whether their bindings are statically visible here — a distinct, narrower concern deliberately
+  // left unaddressed in M29 rather than threading hook scope through a second execution model).
+  for (const scenario of program.scenarios) {
+    checkStepSequence(scenario.body, new Set<string>(), diags);
   }
 
   // Each-scope hooks are checked once per test (their bound-set can legitimately differ test to
@@ -469,6 +583,9 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'StubStmt':
         checkStringLit(step.urlPattern, bound, diags);
         if (step.body) for (const field of step.body.fields) checkValue(field.value, bound, diags);
+        break;
+      case 'ThinkStmt':
+        // `minMs`/`maxMs` are plain numbers (parser-level, ast.ts) — no `{var}` interpolation to check.
         break;
     }
   }

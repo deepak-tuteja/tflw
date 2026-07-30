@@ -56,6 +56,7 @@ export default defineConfig({
             { text: '10. Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
             { text: '11. CI, reporting & safety', link: '/guide/ci-and-reporting' },
             { text: '12. Running & debugging tests', link: '/guide/debugging' },
+            { text: '13. Load testing: scenarios & thresholds', link: '/guide/load-testing' },
           ],
         },
       ],

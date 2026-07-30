@@ -21,6 +21,7 @@ import {
   checkSessions,
   checkUnknownVariables,
   checkRequestAssertions,
+  checkScenarios,
   suggest,
   detectReuse,
   renderCallSiteReplacement,
@@ -37,6 +38,7 @@ import {
 } from '@tflw/lang';
 import {
   runProgram,
+  runLoad,
   resolveConfig,
   selectEnv,
   missingRequiredEnv,
@@ -61,6 +63,8 @@ import {
   type StepResult,
   type ResolvedConfig,
   type PickSessionHandle,
+  type LoadReport,
+  type LoadIterationResult,
 } from '@tflw/runtime';
 import { spawn } from 'node:child_process';
 import {
@@ -96,6 +100,8 @@ async function main(argv: string[]): Promise<number> {
   switch (command) {
     case 'run':
       return runCommand(rest);
+    case 'load':
+      return loadCommand(rest);
     case 'init':
       return initCommand(rest);
     case 'check':
@@ -126,7 +132,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw load\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
       );
       return EXIT_USAGE;
   }
@@ -645,7 +651,8 @@ async function loadAndValidate(
     const sessionDiags = checkSessions(parsed.program, knownSessions);
     const variableDiags = checkUnknownVariables(parsed.program);
     const requestDiags = checkRequestAssertions(parsed.program);
-    const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags, ...requestDiags];
+    const scenarioDiags = checkScenarios(parsed.program);
+    const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags, ...requestDiags, ...scenarioDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
     // deprecation notices, `tflw migrate`'s own input) is advisory: printed/handed to the caller,
     // but the file still runs. No diagnostic in the shipped checker uses `'warning'` yet (the
@@ -994,6 +1001,146 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   if (!watchOpts?.keepBrowserOpen) await browserManager.close(); // no-op if no test in this run ever used a browser step
 
   return merged.ok ? EXIT_OK : EXIT_FAIL;
+}
+
+// ---- tflw load (M29, PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a) -----------
+
+interface LoadArgs {
+  readonly file?: string;
+  readonly env?: string;
+  readonly seedRaw?: string;
+  readonly nowRaw?: string;
+  readonly noColor: boolean;
+}
+
+function parseLoadArgs(argv: string[]): LoadArgs {
+  let file: string | undefined;
+  let env: string | undefined;
+  let seedRaw: string | undefined;
+  let nowRaw: string | undefined;
+  let noColor = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--env') env = argv[++i];
+    else if (a.startsWith('--env=')) env = a.slice('--env='.length);
+    else if (a === '--seed') seedRaw = argv[++i];
+    else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
+    else if (a === '--now') nowRaw = argv[++i];
+    else if (a.startsWith('--now=')) nowRaw = a.slice('--now='.length);
+    else if (a === '--no-color') noColor = true;
+    else if (file === undefined) file = a;
+    else {
+      err(`unexpected argument \`${a}\`. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>]`);
+    }
+  }
+  return { file, env, seedRaw, nowRaw, noColor };
+}
+
+/** `tflw load <file.tflw>` — runs the file's single `scenario` (checker-enforced upstream,
+ * `checkScenarios`/TF033) as a load test via `@tflw/runtime`'s `runLoad` (M29's single-process,
+ * single-scenario engine). Deliberately a separate command from `tflw run`, not a flag on it — a
+ * load run has a different shape end to end (no per-test report, a workload/threshold verdict
+ * instead) and no reason to share `runCommand`'s much larger flag surface (`--workers`/`--tag`/
+ * `--browser`/…, most of which are meaningless here — scenarios are API-only, D19).
+ *
+ * Reporter stub (M29's own scope, not yet the full `LoadReport` design in
+ * `PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11): a live console counter, an end-of-run summary, and
+ * a `report/load-metrics.json` dump. No `load-report.html`, no junit mapping — those are M32.
+ */
+async function loadCommand(argv: string[]): Promise<number> {
+  const args = parseLoadArgs(argv);
+  const color = args.noColor ? false : process.stdout.isTTY === true;
+  const cwd = process.cwd();
+
+  if (!args.file) {
+    err('tflw load needs exactly one file. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>]');
+    return EXIT_USAGE;
+  }
+  let seedArg: number | undefined;
+  if (args.seedRaw !== undefined) {
+    seedArg = Number(args.seedRaw);
+    if (!Number.isFinite(seedArg)) {
+      err(`--seed expects a number, got "${args.seedRaw}"`);
+      return EXIT_USAGE;
+    }
+  }
+  if (args.nowRaw !== undefined && Number.isNaN(new Date(args.nowRaw).getTime())) {
+    err(`--now expects an ISO 8601 date/time, got "${args.nowRaw}"`);
+    return EXIT_USAGE;
+  }
+
+  const loaded = await loadAndValidate(cwd, [args.file], args.env, color);
+  if (typeof loaded === 'number') return loaded;
+  const { resolved, parsedFiles, environ } = loaded;
+  const { file, source, program } = parsedFiles[0]!;
+
+  if (program.scenarios.length !== 1) {
+    err(`tflw load needs a file with exactly one \`scenario\` — ${relative(cwd, file)} has ${program.scenarios.length}.`);
+    return EXIT_USAGE;
+  }
+  const scenario = program.scenarios[0]!;
+
+  const missing = missingRequiredEnv(resolved, environ);
+  if (missing.length > 0) {
+    err(`missing required environment ${missing.length > 1 ? 'variables' : 'variable'}: ${missing.join(', ')}\n  set ${missing.length > 1 ? 'them' : 'it'} in your environment or a local .env file (see \`require env\` in tflw.config).`);
+    return EXIT_USAGE;
+  }
+
+  const workloadLabel =
+    scenario.workload.type === 'RampUsersWorkload'
+      ? `ramp to ${scenario.workload.users} users over ${scenario.workload.overMs}ms (closed)`
+      : `ramp to ${scenario.workload.rps} rps over ${scenario.workload.overMs}ms (open)`;
+  process.stdout.write(`scenario "${scenario.name.value}" — ${workloadLabel}\n`);
+
+  let iterations = 0;
+  let failures = 0;
+  const onIteration = (r: LoadIterationResult): void => {
+    iterations++;
+    if (!r.ok) failures++;
+    if (process.stdout.isTTY) {
+      process.stdout.write(`\r${dim(color, `iterations: ${iterations}  failures: ${failures}`)}   `);
+    }
+  };
+
+  const report = await runLoad(program, resolved, {
+    source,
+    baseDir: dirname(file),
+    seed: seedArg,
+    now: args.nowRaw,
+    onIteration,
+  });
+  if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(60) + '\r');
+
+  process.stdout.write(renderLoadSummary(report, color));
+
+  const reportDir = join(cwd, resolved.reportDir);
+  await mkdir(reportDir, { recursive: true });
+  await writeFile(join(reportDir, 'load-metrics.json'), JSON.stringify(report, null, 2) + '\n', 'utf8');
+  process.stdout.write(`\n${dim(color, 'metrics:')} ${relative(cwd, join(reportDir, 'load-metrics.json'))}\n`);
+
+  return report.ok ? EXIT_OK : EXIT_FAIL;
+}
+
+function renderLoadSummary(report: LoadReport, color: boolean): string {
+  const lines: string[] = [];
+  const d = report.metrics.durations;
+  lines.push('');
+  lines.push(`iterations: ${report.metrics.iterations}  failures: ${report.metrics.failures}  error rate: ${(report.metrics.errorRate * 100).toFixed(2)}%`);
+  lines.push(`duration (ms, think-excluded): min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`);
+  if (report.thresholds.length === 0) {
+    lines.push(dim(color, 'no `threshold`s declared — nothing to gate on'));
+  } else {
+    lines.push('thresholds:');
+    for (const t of report.thresholds) {
+      const cmp = t.op === 'lessThan' ? '<' : '>';
+      const actual = t.label === 'error rate' ? `${(t.actual * 100).toFixed(2)}%` : `${Math.round(t.actual)}ms`;
+      const target = t.label === 'error rate' ? `${(t.target * 100).toFixed(2)}%` : `${t.target}ms`;
+      lines.push(`  ${tick(color, t.ok)} ${t.label} ${cmp} ${target}  (actual: ${actual})`);
+    }
+  }
+  lines.push('');
+  lines.push(report.ok ? 'load run passed' : 'load run failed — a threshold was breached');
+  return lines.join('\n') + '\n';
 }
 
 // ---- tflw check -------------------------------------------------------------
@@ -1510,11 +1657,16 @@ async function discoverTests(cwd: string): Promise<string[]> {
 
 // ---- tflw init -------------------------------------------------------------
 
-async function initCommand(_argv: string[]): Promise<number> {
+async function initCommand(argv: string[]): Promise<number> {
   const cwd = process.cwd();
   const configPath = join(cwd, 'tflw.config');
   const examplePath = join(cwd, 'example.tflw');
   const envExamplePath = join(cwd, '.env.example');
+  // `tflw init --load` (M29, D30) — bundled into the first grammar milestone rather than
+  // deferred: it only needs the `scenario`/`threshold` grammar this milestone already builds, and
+  // scaffolds the **open** (`ramp to N rps`) workload form, matching D17's "docs lead with it".
+  const load = argv.includes('--load');
+  const loadPath = join(cwd, 'load.tflw');
 
   if (await exists(configPath)) {
     err(`\`tflw.config\` already exists in ${cwd} — not overwriting.`);
@@ -1527,6 +1679,10 @@ async function initCommand(_argv: string[]): Promise<number> {
     await writeFile(examplePath, SCAFFOLD_TEST, 'utf8');
     created.push('example.tflw');
   }
+  if (load && !(await exists(loadPath))) {
+    await writeFile(loadPath, SCAFFOLD_LOAD, 'utf8');
+    created.push('load.tflw');
+  }
   // Secrets hygiene from day one (decision 82, restoring decision 36's original promise): a tool
   // whose flagship feature is "secrets never leak into reports" shouldn't leave `.env` committable
   // in its own quickstart.
@@ -1536,7 +1692,7 @@ async function initCommand(_argv: string[]): Promise<number> {
   }
   if (await ensureGitignore(cwd)) created.push('.gitignore');
 
-  process.stdout.write(`created ${created.join(', ')}\n\nnext:\n  tflw run\n`);
+  process.stdout.write(`created ${created.join(', ')}\n\nnext:\n  tflw run\n${load ? '  tflw load load.tflw\n' : ''}`);
   return EXIT_OK;
 }
 
@@ -1591,6 +1747,21 @@ test "health check"
   expect status equals 200
 `;
 
+// `tflw init --load` (M29, D30). The **open** (arrival-rate) workload form — D17's own reasoning
+// for leading with it: VUs loop in the closed form, so a slow system just makes VUs back off and
+// issue fewer requests (understating latency); the open form keeps arriving on schedule and lets
+// queueing show up honestly. Run it with \`tflw load load.tflw\`.
+const SCAFFOLD_LOAD = `# A load test. \`scenario\` is a second execution model alongside \`test\` — a per-VU loop, not a
+# single pass. Reuses ordinary steps, so anything an \`action\` already does works here too.
+
+scenario "health check under load"
+  ramp to 20 rps over 10s
+  api GET /health
+  expect status equals 200
+  threshold p95 duration is less than 500ms
+  threshold error rate is less than 1%
+`;
+
 // ---- helpers ---------------------------------------------------------------
 
 async function exists(path: string): Promise<boolean> {
@@ -1633,10 +1804,15 @@ function printUsage(): void {
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
       '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json}',
       '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
+      '  tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--no-color]',
+      '                                                      run the file\'s single `scenario` as a load test (M29, PLAN_BROWSER_PERF_SECURITY.md);',
+      '                                                      prints a metrics + threshold summary, writes report/load-metrics.json;',
+      '                                                      exit 0 = every `threshold` met (or none declared), exit 1 = a threshold breached',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',
-      '  tflw init                                          scaffold tflw.config + example.tflw',
+      '  tflw init [--load]                                 scaffold tflw.config + example.tflw',
+      '                                                      --load also scaffolds load.tflw (a `scenario`, M29)',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
       '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
       '  tflw install-browsers [--browser chromium|firefox|webkit]',

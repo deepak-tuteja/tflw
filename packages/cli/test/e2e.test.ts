@@ -1905,3 +1905,100 @@ test('`tflw run --browser <bogus>` is a usage error, not a silent fall-back to c
     }
   });
 });
+
+// ---- tflw load / tflw init --load (M29, PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D30) ------
+
+test('`tflw init --load` scaffolds load.tflw alongside the usual files', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-init-load-'));
+  try {
+    const { stdout } = await execFileAsync('node', [cliEntry, 'init', '--load'], { cwd: dir });
+    assert.match(stdout, /created tflw\.config, example\.tflw, load\.tflw, \.env\.example, \.gitignore/);
+    const loadSource = await readFile(join(dir, 'load.tflw'), 'utf8');
+    assert.match(loadSource, /^scenario "/m);
+    assert.match(loadSource, /ramp to \d+ rps over/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, writes report/load-metrics.json', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-pass-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'scenario "health burst"\n  ramp to 10 rps over 300ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 50%\n',
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir });
+      assert.match(stdout, /scenario "health burst"/);
+      assert.match(stdout, /iterations: \d+/);
+      assert.match(stdout, /load run passed/);
+
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as { ok: boolean; scenario: string; thresholds: { ok: boolean }[] };
+      assert.equal(metrics.ok, true);
+      assert.equal(metrics.scenario, 'health burst');
+      assert.equal(metrics.thresholds[0]!.ok, true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw load` exits 1 and reports a breached threshold without throwing', async () => {
+  const server: Server = createServer((_req, res) => res.writeHead(500).end());
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-fail-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    await writeFile(
+      join(dir, 'load.tflw'),
+      'scenario "always fails"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
+      'utf8',
+    );
+
+    const failure = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+    assert.equal(failure.code, 1);
+    assert.match(failure.stdout, /load run failed/);
+
+    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as { ok: boolean };
+    assert.equal(metrics.ok, false);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw load` on a file with no `scenario` is a usage error, not a silent no-op', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-noscenario-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'plain.tflw'), 'test "not a scenario"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+      const failure = await execFileAsync('node', [cliEntry, 'load', 'plain.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      assert.equal(failure.code, 2);
+      assert.match(failure.stderr, /needs a file with exactly one `scenario`/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw load` with no file argument is a usage error', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-nofile-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    const failure = await execFileAsync('node', [cliEntry, 'load', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+    assert.equal(failure.code, 2);
+    assert.match(failure.stderr, /tflw load needs exactly one file/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

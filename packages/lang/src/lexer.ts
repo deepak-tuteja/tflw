@@ -311,6 +311,7 @@ const PUNCT: Record<string, TokenType | undefined> = {
   '-': 'minus',
   '*': 'star',
   '|': 'pipe',
+  '%': 'percent',
 };
 
 const ESCAPES: Record<string, string> = {

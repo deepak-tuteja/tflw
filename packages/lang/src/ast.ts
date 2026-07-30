@@ -22,6 +22,10 @@ export interface Program extends Node {
   /** `before`/`after` (file + each) — setup/teardown around this file's tests (SPEC §4.2, P#10/19). */
   readonly hooks: readonly HookDecl[];
   readonly tests: readonly TestDecl[];
+  /** `scenario "…" ... ` — the load-arc's dedicated execution model (M29, PLAN_BROWSER_PERF_
+   * SECURITY.md D16). M29 restricts a file to at most one (checker-enforced); concurrent
+   * multi-scenario runs land in M30 (D29). */
+  readonly scenarios: readonly ScenarioDecl[];
 }
 
 /** `before`/`before file`/`after`/`after file` — file-scoped, no name, same body shape as a test
@@ -89,6 +93,91 @@ export interface FileDataTable extends Node {
   readonly path: StringLit;
 }
 
+// ---- Load testing (M29, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30) ----------
+//
+// `scenario` is a second, dedicated execution model alongside `test` (D16) — a per-VU loop
+// (workload + optional `think` pacing) around an ordinary `Step[]` body, so the same `action`s a
+// functional suite already wrote are the reuse unit under load too. M29 restricts a file to
+// **one** `scenario` (checker-enforced, `TF033`); M30 (D29) lifts that to concurrent multi-
+// scenario runs. Browser steps are rejected inside a scenario body (D19 — a browser VU is
+// ~50-100MB; 500 of them is infeasible) — checker-enforced, not merely a runtime gap.
+export interface ScenarioDecl extends Node {
+  readonly type: 'ScenarioDecl';
+  readonly name: StringLit;
+  /** `as admin, userA` — same shape and semantics as `TestDecl.sessions` (SPEC §3.3): established
+   * once before the VU loop starts (session establishment is itself a one-time, run-lifetime-
+   * cached cost, `SessionCache`), never per-iteration. Empty for an anonymous scenario. */
+  readonly sessions: readonly string[];
+  readonly workload: Workload;
+  /** `threshold …` lines (D24a) — aggregate pass/fail assertions evaluated once, after the whole
+   * run, against the run's accumulated metrics. Order in source is preserved for report display
+   * but has no semantic effect (each is independent). */
+  readonly thresholds: readonly ThresholdDecl[];
+  /** `cleanup` (D26) — opts back into running this file's `after each` hooks after *every*
+   * iteration. Default `false`: an `after` hook is skipped per iteration under `tflw load`,
+   * because running it every iteration would double request volume and pollute the very latency
+   * metrics the run exists to measure. `before each` hooks are unaffected by this flag — they
+   * always run every iteration (a VU's per-iteration setup, not teardown). */
+  readonly cleanup: boolean;
+  readonly body: readonly Step[];
+}
+
+export type Workload = RampUsersWorkload | RampRpsWorkload;
+
+/** `ramp to N users over <dur>` (D17) — **closed** model: VUs loop continuously once spawned:
+ * `users` ramps linearly from 0 to `users` over `overMs`, one VU roughly every `overMs/users`.
+ * When the target system slows down, in-flight VUs simply take longer per iteration and issue
+ * fewer of them — "coordinated omission": the load backs off exactly when it matters most, which
+ * understates measured latency. `tflw load`'s report flags this (D17's back-off diagnostic) when
+ * a closed run's VUs spent a large share of wall time waiting rather than iterating. */
+export interface RampUsersWorkload extends Node {
+  readonly type: 'RampUsersWorkload';
+  readonly users: number;
+  readonly overMs: number;
+}
+
+/** `ramp to N rps over <dur>` (D17) — **open** model: new iterations are scheduled at a target
+ * arrival rate that itself ramps linearly from 0 to `rps` over `overMs`, independent of whether
+ * earlier iterations have finished. Queues build under saturation instead of silently
+ * disappearing — the only model that honestly validates an SLA. `tflw init --load` scaffolds this
+ * form and the docs lead with it (D17). */
+export interface RampRpsWorkload extends Node {
+  readonly type: 'RampRpsWorkload';
+  readonly rps: number;
+  readonly overMs: number;
+}
+
+export type ThresholdMetric =
+  | { readonly kind: 'duration'; readonly percentile: number }
+  | { readonly kind: 'errorRate' };
+
+/** Reuses the existing `is less than`/`is greater than` comparator vocabulary (SPEC §6.2) rather
+ * than inventing symbolic operators — house style keeps the grammar spelled-out. */
+export type ThresholdOp = 'lessThan' | 'greaterThan';
+
+/** `threshold p95 duration is less than 800ms` / `threshold error rate is less than 1%` (D24a).
+ * `value` is milliseconds for a `duration` metric, a 0-1 fraction for `errorRate` (`1%` parses to
+ * `0.01`). Evaluated once, after the whole run, against accumulated metrics — never mid-run. */
+export interface ThresholdDecl extends Node {
+  readonly type: 'ThresholdDecl';
+  readonly metric: ThresholdMetric;
+  readonly op: ThresholdOp;
+  readonly value: number;
+}
+
+/** `think 2s` / `think 1s to 3s` (D18) — per-iteration pacing inside a `scenario` only; the
+ * checker rejects it inside `test`/`before`/`after` (`TF033`) so decision 8's `sleep` ban stays
+ * meaningful where it was aimed (functional sync hacks) while remaining a legitimate load-
+ * modeling primitive here. A range picks a fresh uniform duration each iteration (`maxMs: null`
+ * means a fixed `minMs`). Excluded from a scenario's own `duration` threshold metric — think
+ * models user pacing, not system latency; counting it would let a scenario satisfy a latency
+ * threshold merely by sleeping more. */
+export interface ThinkStmt extends Node {
+  readonly type: 'ThinkStmt';
+  readonly minMs: number;
+  readonly maxMs: number | null;
+}
+
 export type Step =
   | ApiStep
   | ExpectStmt
@@ -120,7 +209,8 @@ export type Step =
   | DragStmt
   | DropFileStmt
   | ScreenshotStmt
-  | StubStmt;
+  | StubStmt
+  | ThinkStmt;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */
 export interface GiveStmt extends Node {

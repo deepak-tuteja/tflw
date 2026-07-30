@@ -117,7 +117,8 @@ export type StepKind =
   | 'drag'
   | 'dropFile'
   | 'screenshot'
-  | 'stub';
+  | 'stub'
+  | 'think';
 
 export interface RequestTrace {
   readonly method: string;
@@ -261,3 +262,63 @@ export type RunEvent =
   | { readonly type: 'run:end'; readonly report: RunReport; readonly file?: string };
 
 export type EventSink = (event: RunEvent) => void;
+
+// ---- Load testing (M29, PLAN_BROWSER_PERF_SECURITY.md D24a) ---------------------------------
+//
+// Deliberately minimal — a "reporter stub" (M29's own scope), not the full `LoadReport` design
+// (`PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11: independent HTML view, HDR histogram, live
+// per-second buckets, partial-on-SIGINT) that M32 builds. This is enough to run a real load
+// scenario end to end and get a pass/fail verdict + a metrics JSON — no `report/load-report.html`,
+// no junit mapping yet.
+
+/** One completed VU iteration's outcome, as fed to `LoadOptions.onIteration` for live progress. */
+export interface LoadIterationResult {
+  readonly ok: boolean;
+  /** Wall-clock duration of this iteration's steps, **excluding** any `think` time (ast.ts's
+   * `ThinkStmt` doc: think models pacing, not system latency — including it would let a scenario
+   * satisfy a duration threshold merely by sleeping more). */
+  readonly durationMs: number;
+  readonly error?: string;
+}
+
+export interface LoadDurationStats {
+  readonly min: number;
+  readonly max: number;
+  readonly avg: number;
+  readonly p50: number;
+  readonly p90: number;
+  readonly p95: number;
+  readonly p99: number;
+}
+
+export interface LoadMetrics {
+  readonly iterations: number;
+  readonly failures: number;
+  /** `failures / iterations`, `0` when `iterations === 0`. */
+  readonly errorRate: number;
+  /** Active (think-excluded) iteration duration, ms — see `LoadIterationResult.durationMs`. */
+  readonly durations: LoadDurationStats;
+}
+
+export interface LoadThresholdResult {
+  /** Human-readable label, e.g. `p95 duration` / `error rate`, for console/report display. */
+  readonly label: string;
+  readonly op: 'lessThan' | 'greaterThan';
+  /** ms for a duration threshold, a 0-1 fraction for an error-rate threshold — same units as `actual`. */
+  readonly target: number;
+  readonly actual: number;
+  readonly ok: boolean;
+}
+
+export interface LoadReport {
+  /** Every declared threshold passed (vacuously `true` when a scenario declares none). */
+  readonly ok: boolean;
+  readonly scenario: string;
+  readonly workload: { readonly kind: 'users' | 'rps'; readonly target: number; readonly overMs: number };
+  readonly startedAt: string;
+  readonly durationMs: number;
+  readonly seed: number;
+  readonly now: string;
+  readonly metrics: LoadMetrics;
+  readonly thresholds: readonly LoadThresholdResult[];
+}

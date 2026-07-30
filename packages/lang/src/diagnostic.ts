@@ -67,6 +67,7 @@ export const Codes = {
   UNKNOWN_VARIABLE: 'TF030',
   REQUEST_ASSERTION_INVALID: 'TF031',
   INVALID_CONTENT_TYPE: 'TF032',
+  LOAD_INVALID: 'TF033',
 } as const;
 
 // ---------------------------------------------------------------------------

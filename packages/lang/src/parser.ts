@@ -101,7 +101,10 @@ import type {
   RedactPattern,
   ReportDecl,
   RequireDecl,
+  RampRpsWorkload,
+  RampUsersWorkload,
   RetryAfterClause,
+  ScenarioDecl,
   ScrollStmt,
   SelectStmt,
   SessionDecl,
@@ -113,6 +116,10 @@ import type {
   SwitchToTabStmt,
   TestDecl,
   TextBody,
+  ThinkStmt,
+  ThresholdDecl,
+  ThresholdMetric,
+  ThresholdOp,
   TimeoutDecl,
   TimeoutTarget,
   TransformExpr,
@@ -130,6 +137,7 @@ import type {
   WaitUntilUiStmt,
   WebDecl,
   WithinBlock,
+  Workload,
   WorkersDecl,
 } from './ast.js';
 
@@ -188,6 +196,7 @@ export const STATEMENT_KEYWORDS = [
   'drop',
   'screenshot',
   'stub',
+  'think',
 ] as const;
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
@@ -261,6 +270,7 @@ class Parser {
     const uses: UseDecl[] = [];
     const actions: ActionDecl[] = [];
     const hooks: HookDecl[] = [];
+    const scenarios: ScenarioDecl[] = [];
     const startPos = this.peek().span.start;
     this.skipNewlines();
     while (!this.atEof()) {
@@ -286,9 +296,13 @@ class Parser {
         const h = this.parseHookDecl(tok.value as 'before' | 'after');
         if (h) hooks.push(h);
         else this.synchronize();
+      } else if (this.isKw(tok, 'scenario')) {
+        const s = this.parseScenarioDecl();
+        if (s) scenarios.push(s);
+        else this.synchronize();
       } else {
-        const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
-        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
+        const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `scenario`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
+        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`scenario\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
         this.synchronize();
       }
       // `synchronize()` deliberately won't cross a `dedent` (nested blocks consume their own), so
@@ -297,7 +311,7 @@ class Parser {
       if (this.pos === before) this.advance();
       this.skipNewlines();
     }
-    const program: Program = { type: 'Program', imports, uses, actions, hooks, tests, span: this.spanFrom(startPos) };
+    const program: Program = { type: 'Program', imports, uses, actions, hooks, tests, scenarios, span: this.spanFrom(startPos) };
     return { program, diagnostics: this.diagnostics };
   }
 
@@ -375,6 +389,187 @@ class Parser {
     if (!value) return null;
     this.endLine();
     const stmt: GiveStmt = { type: 'GiveStmt', value, span: this.spanFrom(start) };
+    return stmt;
+  }
+
+  // -- load testing: scenario/workload/threshold/think (M29, D16-D19/D24a/D26) ----------------
+
+  /** `scenario "<name>"` + an indented block mixing a required `ramp to …` workload line, zero or
+   * more `threshold …` lines, an optional bare `cleanup` line (D26), and ordinary steps (the
+   * per-VU iteration body) — in any order, matching how `parseBlock` already tolerates any step
+   * order rather than imposing a rigid header/body split. */
+  private parseScenarioDecl(): ScenarioDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `scenario`
+    const name = this.expectString('a scenario name string, e.g. `scenario "Checkout burst"`');
+    if (!name) return null;
+    // `as admin, userA` — identical shape/semantics to `TestDecl`'s own `as` clause (parseTest).
+    const sessions: string[] = [];
+    if (this.isKw(this.peek(), 'as')) {
+      this.advance();
+      const first = this.expect('ident', 'a session name after `as`');
+      if (first) sessions.push(first.value);
+      while (this.check('comma')) {
+        this.advance();
+        const s = this.expect('ident', 'a session name');
+        if (s) sessions.push(s.value);
+      }
+    }
+    this.endLine();
+    if (!this.check('indent')) {
+      this.error(Codes.EMPTY_BLOCK, 'this `scenario` has no body', this.peek().span, 'indent a `ramp to …` workload line and at least one step under the `scenario` line');
+      return null;
+    }
+    this.advance(); // indent
+    let workload: Workload | null = null;
+    let cleanup = false;
+    const thresholds: ThresholdDecl[] = [];
+    const body: Step[] = [];
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const tok = this.peek();
+      if (this.isKw(tok, 'ramp')) {
+        const w = this.parseWorkload();
+        if (w) {
+          if (workload) {
+            this.error(Codes.LOAD_INVALID, 'a `scenario` has exactly one `ramp to …` workload line', w.span, `already declared at ${workload.span.start.line}:${workload.span.start.column}`);
+          } else {
+            workload = w;
+          }
+        } else {
+          this.synchronize();
+        }
+      } else if (this.isKw(tok, 'threshold')) {
+        const t = this.parseThresholdDecl();
+        if (t) thresholds.push(t);
+        else this.synchronize();
+      } else if (this.isKw(tok, 'cleanup')) {
+        this.advance();
+        this.endLine();
+        cleanup = true;
+      } else {
+        const step = this.parseStep();
+        if (step) body.push(step);
+        else this.synchronize();
+      }
+      if (this.pos === before) this.advance(); // guarantee progress
+    }
+    if (this.check('dedent')) this.advance();
+    if (!workload) {
+      this.error(Codes.LOAD_INVALID, 'this `scenario` declares no workload', this.spanFrom(start), 'add a `ramp to N users over <dur>` or `ramp to N rps over <dur>` line');
+      return null;
+    }
+    return { type: 'ScenarioDecl', name, sessions, workload, thresholds, cleanup, body, span: this.spanFrom(start) };
+  }
+
+  /** `ramp to N users over <dur>` (closed, D17) / `ramp to N rps over <dur>` (open, D17). */
+  private parseWorkload(): Workload | null {
+    const start = this.peek().span.start;
+    this.advance(); // `ramp`
+    if (!this.expectKw('to')) return null;
+    const num = this.expect('number', 'a target number, e.g. `ramp to 50 users over 30s`');
+    if (!num) return null;
+    const n = Number(num.value);
+    if (n <= 0) {
+      this.error(Codes.LOAD_INVALID, `a workload target must be positive, found ${num.value}`, num.span);
+      return null;
+    }
+    const unitTok = this.peek();
+    let kind: 'users' | 'rps';
+    if (this.isKw(unitTok, 'users')) {
+      this.advance();
+      kind = 'users';
+    } else if (this.isKw(unitTok, 'rps')) {
+      this.advance();
+      kind = 'rps';
+    } else {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`users\` or \`rps\`, found ${describeToken(unitTok)}`, unitTok.span);
+      return null;
+    }
+    if (!this.expectKw('over')) return null;
+    const overMs = this.parseDuration();
+    if (overMs === null) return null;
+    this.endLine();
+    const span = this.spanFrom(start);
+    return kind === 'users' ? { type: 'RampUsersWorkload', users: n, overMs, span } : { type: 'RampRpsWorkload', rps: n, overMs, span };
+  }
+
+  /** `threshold p95 duration is less than 800ms` / `threshold error rate is less than 1%` (D24a). */
+  private parseThresholdDecl(): ThresholdDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `threshold`
+    const metricTok = this.peek();
+    let metric: ThresholdMetric;
+    if (metricTok.type === 'ident' && /^p([1-9][0-9]?)$/.test(metricTok.value)) {
+      const percentile = Number(metricTok.value.slice(1));
+      this.advance();
+      if (!this.expectKw('duration')) return null;
+      metric = { kind: 'duration', percentile };
+    } else if (this.isKw(metricTok, 'error')) {
+      this.advance();
+      if (!this.expectKw('rate')) return null;
+      metric = { kind: 'errorRate' };
+    } else {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `expected a threshold metric (\`p50 duration\`, \`p90 duration\`, \`p95 duration\`, \`p99 duration\`, or \`error rate\`), found ${describeToken(metricTok)}`,
+        metricTok.span,
+      );
+      return null;
+    }
+    if (!this.expectKw('is')) return null;
+    let op: ThresholdOp;
+    if (this.isKw(this.peek(), 'less')) {
+      this.advance();
+      if (!this.expectKw('than')) return null;
+      op = 'lessThan';
+    } else if (this.isKw(this.peek(), 'greater')) {
+      this.advance();
+      if (!this.expectKw('than')) return null;
+      op = 'greaterThan';
+    } else {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`less than\` or \`greater than\`, found ${describeToken(this.peek())}`, this.peek().span);
+      return null;
+    }
+    let value: number;
+    if (metric.kind === 'duration') {
+      const ms = this.parseDuration();
+      if (ms === null) return null;
+      value = ms;
+    } else {
+      const num = this.expect('number', 'a percentage, e.g. `threshold error rate is less than 1%`');
+      if (!num) return null;
+      if (!this.expect('percent', 'a `%` sign after the number, e.g. `1%`')) return null;
+      value = Number(num.value) / 100;
+    }
+    this.endLine();
+    return { type: 'ThresholdDecl', metric, op, value, span: this.spanFrom(start) };
+  }
+
+  /** `think 2s` / `think 1s to 3s` (D18) — legal anywhere a step is (parser-level), restricted to
+   * `scenario` bodies by the checker (`TF033`) since only there does per-iteration pacing mean
+   * anything (SPEC's `sleep` ban is aimed at `test`/`before`/`after`). */
+  private parseThink(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `think`
+    const minMs = this.parseDuration();
+    if (minMs === null) return null;
+    let maxMs: number | null = null;
+    if (this.isKw(this.peek(), 'to')) {
+      this.advance();
+      maxMs = this.parseDuration();
+      if (maxMs === null) return null;
+      if (maxMs < minMs) {
+        this.error(Codes.LOAD_INVALID, `\`think\` range's upper bound (${maxMs}ms) is less than its lower bound (${minMs}ms)`, this.spanFrom(start));
+        return null;
+      }
+    }
+    this.endLine();
+    const stmt: ThinkStmt = { type: 'ThinkStmt', minMs, maxMs, span: this.spanFrom(start) };
     return stmt;
   }
 
@@ -1171,6 +1366,8 @@ class Parser {
           return this.parseScreenshotStep();
         case 'stub':
           return this.parseStubStep();
+        case 'think':
+          return this.parseThink();
         default: {
           if (this.looksLikeCallStart()) return this.parseCallStmt(tok);
           const hint = suggest(tok.value, STATEMENT_KEYWORDS);

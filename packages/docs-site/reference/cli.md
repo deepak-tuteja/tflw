@@ -6,6 +6,7 @@ title: CLI flags reference
 import { CLI_FLAGS } from '../../lang/src/spec-data.ts';
 const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
 const runFlags = CLI_FLAGS.filter((f) => f.command === 'run');
+const loadFlags = CLI_FLAGS.filter((f) => f.command === 'load');
 const checkFlags = CLI_FLAGS.filter((f) => f.command === 'check');
 const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
@@ -36,6 +37,21 @@ npx tflw run --env staging --workers 4 --seed 42 --now 2026-01-01T00:00:00.000Z 
     </tr>
   </tbody>
 </table>
+
+## `tflw load <file.tflw>`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in loadFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Runs the file's single `scenario` as a load test (see the [load testing guide](/guide/load-testing)).
+Exit `0` = every `threshold` met (or none declared), `1` = a threshold breached, `2` = usage error.
 
 ## `tflw check`
 
