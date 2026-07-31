@@ -1906,7 +1906,7 @@ test('`tflw run --browser <bogus>` is a usage error, not a silent fall-back to c
   });
 });
 
-// ---- tflw load / tflw init --load (M29, PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D30) ------
+// ---- tflw load / tflw init --load (M29/M30, PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D29/D30) ------
 
 test('`tflw init --load` scaffolds load.tflw alongside the usual files', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-init-load-'));
@@ -1937,10 +1937,62 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
       assert.match(stdout, /iterations: \d+/);
       assert.match(stdout, /load run passed/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as { ok: boolean; scenario: string; thresholds: { ok: boolean }[] };
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as {
+        ok: boolean;
+        scenarios: { name: string; ok: boolean; thresholds: { ok: boolean }[] }[];
+        combined: { iterations: number };
+      };
       assert.equal(metrics.ok, true);
-      assert.equal(metrics.scenario, 'health burst');
-      assert.equal(metrics.thresholds[0]!.ok, true);
+      assert.equal(metrics.scenarios.length, 1);
+      assert.equal(metrics.scenarios[0]!.name, 'health burst');
+      assert.equal(metrics.scenarios[0]!.ok, true);
+      assert.equal(metrics.scenarios[0]!.thresholds[0]!.ok, true);
+      assert.ok(metrics.combined.iterations > 0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw load` runs every `scenario` in a file concurrently: passes/fails independently, gates the overall exit code, and reports both combined and per-scenario metrics', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-multi-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'scenario "healthy"\n' +
+          '  ramp to 3 users over 150ms\n' +
+          '  api GET /health\n' +
+          '  expect status equals 200\n' +
+          '  threshold error rate is less than 1%\n' +
+          '\n' +
+          'scenario "unhealthy"\n' +
+          '  ramp to 3 users over 150ms\n' +
+          '  api GET /not-a-real-route\n' +
+          '  expect status equals 200\n' +
+          '  threshold error rate is less than 1%\n',
+        'utf8',
+      );
+
+      const failure = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+      assert.equal(failure.code, 1);
+      assert.match(failure.stdout, /scenario "healthy"/);
+      assert.match(failure.stdout, /scenario "unhealthy"/);
+      assert.match(failure.stdout, /combined:/);
+      assert.match(failure.stdout, /load run failed/);
+
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as {
+        ok: boolean;
+        scenarios: { name: string; ok: boolean }[];
+        combined: { iterations: number };
+      };
+      assert.equal(metrics.ok, false);
+      assert.equal(metrics.scenarios.length, 2);
+      const healthy = metrics.scenarios.find((s) => s.name === 'healthy')!;
+      const unhealthy = metrics.scenarios.find((s) => s.name === 'unhealthy')!;
+      assert.equal(healthy.ok, true);
+      assert.equal(unhealthy.ok, false);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1984,7 +2036,7 @@ test('`tflw load` on a file with no `scenario` is a usage error, not a silent no
 
       const failure = await execFileAsync('node', [cliEntry, 'load', 'plain.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
       assert.equal(failure.code, 2);
-      assert.match(failure.stderr, /needs a file with exactly one `scenario`/);
+      assert.match(failure.stderr, /needs a file with at least one `scenario`/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

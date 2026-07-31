@@ -320,27 +320,33 @@ const BROWSER_STEP_TYPES = new Set<Step['type']>([
 ]);
 
 /**
- * Load-arc (M29) semantic checks: at most one `scenario` per file (D28/D29 — concurrent
- * multi-scenario runs land in M30), `think` legal only inside a `scenario` (D18), and no browser
- * step inside a `scenario` body (D19 — a browser VU is ~50-100MB, infeasible at load-test scale;
- * checker-enforced rather than left to surface as a runtime crash). Both the `think` and
- * browser-step checks only look at *directly* written steps — a `scenario` calling an `action`
- * that itself contains one isn't traced interprocedurally (actions are the reuse unit shared with
- * `test`, D16, and can't statically know their caller's context); such a call still fails loudly
- * at runtime instead of silently doing the wrong thing.
+ * Load-arc (M29/M30) semantic checks: `scenario` names unique within a file (M30, D29 — a
+ * concurrent multi-scenario run keys each scenario's own metrics/threshold breakdown by name, so a
+ * collision would silently merge two distinct scenarios' results), `think` legal only inside a
+ * `scenario` (D18), and no browser step inside a `scenario` body (D19 — a browser VU is
+ * ~50-100MB, infeasible at load-test scale; checker-enforced rather than left to surface as a
+ * runtime crash). Both the `think` and browser-step checks only look at *directly* written steps
+ * — a `scenario` calling an `action` that itself contains one isn't traced interprocedurally
+ * (actions are the reuse unit shared with `test`, D16, and can't statically know their caller's
+ * context); such a call still fails loudly at runtime instead of silently doing the wrong thing.
  */
 export function checkScenarios(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
 
-  if (program.scenarios.length > 1) {
-    for (const extra of program.scenarios.slice(1)) {
+  const seenNames = new Map<string, ScenarioDecl>();
+  for (const scenario of program.scenarios) {
+    const name = scenario.name.value;
+    const first = seenNames.get(name);
+    if (first) {
       diags.push({
         code: Codes.LOAD_INVALID,
         severity: 'error',
-        message: 'a file may declare at most one `scenario` in this milestone',
-        span: extra.span,
-        hint: 'concurrent multi-scenario runs are a later milestone (PLAN_BROWSER_PERF_SECURITY.md D29) — split into separate files for now',
+        message: `duplicate scenario name "${name}"`,
+        span: scenario.span,
+        hint: `already declared at ${first.span.start.line}:${first.span.start.column} — scenario names must be unique within a file, they key its metrics/threshold breakdown in the report`,
       });
+    } else {
+      seenNames.set(name, scenario);
     }
   }
 

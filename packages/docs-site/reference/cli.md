@@ -50,8 +50,9 @@ npx tflw run --env staging --workers 4 --seed 42 --now 2026-01-01T00:00:00.000Z 
   </tbody>
 </table>
 
-Runs the file's single `scenario` as a load test (see the [load testing guide](/guide/load-testing)).
-Exit `0` = every `threshold` met (or none declared), `1` = a threshold breached, `2` = usage error.
+Runs every `scenario` declared in the file **concurrently** as a load test (see the
+[load testing guide](/guide/load-testing)). Exit `0` = every scenario's `threshold`s met (or none
+declared), `1` = a threshold breached in any scenario, `2` = usage error.
 
 ## `tflw check`
 

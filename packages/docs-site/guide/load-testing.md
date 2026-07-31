@@ -20,8 +20,7 @@ Run it with `tflw load`, not `tflw run`:
 tflw load checkout.tflw
 ```
 
-A file may declare at most one `scenario` today — concurrent multi-scenario runs are a later
-milestone. `tflw init --load` scaffolds a starter `load.tflw`.
+`tflw init --load` scaffolds a starter `load.tflw`.
 
 ## Reuse, not a second language
 
@@ -134,8 +133,38 @@ headers/cookies seed every iteration. For per-iteration identity (a fresh cart, 
 each time), reach for `unique(...)` inside the body, the same generator functional tests already
 use.
 
+## Multiple scenarios in one run
+
+A file may declare more than one `scenario` — `tflw load` runs all of them **concurrently**, each
+on its own workload schedule, in one process:
+
+```tflw
+scenario "browsing"
+  ramp to 100 rps over 30s
+  api GET /products
+  expect status equals 200
+  threshold p95 duration is less than 300ms
+
+scenario "checkout burst"
+  ramp to 10 users over 30s
+  api POST /cart/checkout body { productId: "widget-1", qty: 1 }
+  expect status equals 201
+  threshold p95 duration is less than 800ms
+```
+
+This is the mixed-workload shape a real load test usually wants: a steady background trickle of
+browsing traffic alongside a smaller, bursty checkout path, both hitting the system at once —
+closer to production than testing either path in isolation. Each scenario keeps its own identity
+(`as <session>`), its own workload model (open or closed, independently), and its own
+`threshold`s, evaluated only against *its own* iterations. Scenario names must be unique within a
+file — they key the report's per-scenario breakdown.
+
+The end-of-run summary and `report/load-metrics.json` report two layers: a **combined** view (every
+scenario's iterations pooled — the quotable run-wide numbers) and a **per-scenario** breakdown (each
+scenario's own metrics and threshold verdicts). The overall run passes only if every scenario's
+thresholds do.
+
 ## What's next
 
-This is the first load-testing milestone — single-process, single-scenario, a metrics-JSON
-summary. Concurrent multi-scenario runs, multi-process scaling, and the full `load-report.html`
-view with live charts are still ahead; see the changelog for what's landed.
+Multi-process scaling and the full `load-report.html` view with live charts are still ahead; see
+the changelog for what's landed.

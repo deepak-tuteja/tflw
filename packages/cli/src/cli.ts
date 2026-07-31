@@ -65,6 +65,7 @@ import {
   type PickSessionHandle,
   type LoadReport,
   type LoadIterationResult,
+  type LoadMetrics,
 } from '@tflw/runtime';
 import { spawn } from 'node:child_process';
 import {
@@ -1036,16 +1037,17 @@ function parseLoadArgs(argv: string[]): LoadArgs {
   return { file, env, seedRaw, nowRaw, noColor };
 }
 
-/** `tflw load <file.tflw>` — runs the file's single `scenario` (checker-enforced upstream,
- * `checkScenarios`/TF033) as a load test via `@tflw/runtime`'s `runLoad` (M29's single-process,
- * single-scenario engine). Deliberately a separate command from `tflw run`, not a flag on it — a
- * load run has a different shape end to end (no per-test report, a workload/threshold verdict
- * instead) and no reason to share `runCommand`'s much larger flag surface (`--workers`/`--tag`/
- * `--browser`/…, most of which are meaningless here — scenarios are API-only, D19).
+/** `tflw load <file.tflw>` — runs every `scenario` declared in the file (M30/D29 — checker-
+ * enforced unique names, `checkScenarios`/TF033) concurrently as a load test via `@tflw/runtime`'s
+ * `runLoad`. Deliberately a separate command from `tflw run`, not a flag on it — a load run has a
+ * different shape end to end (no per-test report, a workload/threshold verdict instead) and no
+ * reason to share `runCommand`'s much larger flag surface (`--workers`/`--tag`/`--browser`/…,
+ * most of which are meaningless here — scenarios are API-only, D19).
  *
- * Reporter stub (M29's own scope, not yet the full `LoadReport` design in
- * `PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11): a live console counter, an end-of-run summary, and
- * a `report/load-metrics.json` dump. No `load-report.html`, no junit mapping — those are M32.
+ * Reporter stub (M29/M30's own scope, not yet the full `LoadReport` design in
+ * `PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11): a live console counter (combined across every
+ * scenario), an end-of-run summary (combined + per-scenario, R6), and a `report/load-metrics.json`
+ * dump. No `load-report.html`, no junit mapping — those are M32.
  */
 async function loadCommand(argv: string[]): Promise<number> {
   const args = parseLoadArgs(argv);
@@ -1074,11 +1076,10 @@ async function loadCommand(argv: string[]): Promise<number> {
   const { resolved, parsedFiles, environ } = loaded;
   const { file, source, program } = parsedFiles[0]!;
 
-  if (program.scenarios.length !== 1) {
-    err(`tflw load needs a file with exactly one \`scenario\` — ${relative(cwd, file)} has ${program.scenarios.length}.`);
+  if (program.scenarios.length === 0) {
+    err(`tflw load needs a file with at least one \`scenario\` — ${relative(cwd, file)} has 0.`);
     return EXIT_USAGE;
   }
-  const scenario = program.scenarios[0]!;
 
   const missing = missingRequiredEnv(resolved, environ);
   if (missing.length > 0) {
@@ -1086,11 +1087,13 @@ async function loadCommand(argv: string[]): Promise<number> {
     return EXIT_USAGE;
   }
 
-  const workloadLabel =
-    scenario.workload.type === 'RampUsersWorkload'
-      ? `ramp to ${scenario.workload.users} users over ${scenario.workload.overMs}ms (closed)`
-      : `ramp to ${scenario.workload.rps} rps over ${scenario.workload.overMs}ms (open)`;
-  process.stdout.write(`scenario "${scenario.name.value}" — ${workloadLabel}\n`);
+  for (const scenario of program.scenarios) {
+    const workloadLabel =
+      scenario.workload.type === 'RampUsersWorkload'
+        ? `ramp to ${scenario.workload.users} users over ${scenario.workload.overMs}ms (closed)`
+        : `ramp to ${scenario.workload.rps} rps over ${scenario.workload.overMs}ms (open)`;
+    process.stdout.write(`scenario "${scenario.name.value}" — ${workloadLabel}\n`);
+  }
 
   let iterations = 0;
   let failures = 0;
@@ -1121,23 +1124,36 @@ async function loadCommand(argv: string[]): Promise<number> {
   return report.ok ? EXIT_OK : EXIT_FAIL;
 }
 
+function renderLoadMetricsLine(metrics: LoadMetrics): string {
+  const d = metrics.durations;
+  const iterLine = `iterations: ${metrics.iterations}  failures: ${metrics.failures}  error rate: ${(metrics.errorRate * 100).toFixed(2)}%`;
+  const durLine = `duration (ms, think-excluded): min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`;
+  return `${iterLine}\n${durLine}`;
+}
+
 function renderLoadSummary(report: LoadReport, color: boolean): string {
   const lines: string[] = [];
-  const d = report.metrics.durations;
   lines.push('');
-  lines.push(`iterations: ${report.metrics.iterations}  failures: ${report.metrics.failures}  error rate: ${(report.metrics.errorRate * 100).toFixed(2)}%`);
-  lines.push(`duration (ms, think-excluded): min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`);
-  if (report.thresholds.length === 0) {
-    lines.push(dim(color, 'no `threshold`s declared — nothing to gate on'));
-  } else {
-    lines.push('thresholds:');
-    for (const t of report.thresholds) {
-      const cmp = t.op === 'lessThan' ? '<' : '>';
-      const actual = t.label === 'error rate' ? `${(t.actual * 100).toFixed(2)}%` : `${Math.round(t.actual)}ms`;
-      const target = t.label === 'error rate' ? `${(t.target * 100).toFixed(2)}%` : `${t.target}ms`;
-      lines.push(`  ${tick(color, t.ok)} ${t.label} ${cmp} ${target}  (actual: ${actual})`);
+  lines.push('combined:');
+  lines.push(renderLoadMetricsLine(report.combined));
+
+  for (const s of report.scenarios) {
+    lines.push('');
+    lines.push(`scenario "${s.name}":`);
+    lines.push(renderLoadMetricsLine(s.metrics));
+    if (s.thresholds.length === 0) {
+      lines.push(dim(color, 'no `threshold`s declared — nothing to gate on'));
+    } else {
+      lines.push('thresholds:');
+      for (const t of s.thresholds) {
+        const cmp = t.op === 'lessThan' ? '<' : '>';
+        const actual = t.label === 'error rate' ? `${(t.actual * 100).toFixed(2)}%` : `${Math.round(t.actual)}ms`;
+        const target = t.label === 'error rate' ? `${(t.target * 100).toFixed(2)}%` : `${t.target}ms`;
+        lines.push(`  ${tick(color, t.ok)} ${t.label} ${cmp} ${target}  (actual: ${actual})`);
+      }
     }
   }
+
   lines.push('');
   lines.push(report.ok ? 'load run passed' : 'load run failed — a threshold was breached');
   return lines.join('\n') + '\n';

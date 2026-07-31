@@ -88,6 +88,7 @@ import type {
   LoadIterationResult,
   LoadMetrics,
   LoadReport,
+  LoadScenarioReport,
   LoadThresholdResult,
   RequestTrace,
   ResolvedConfig,
@@ -253,13 +254,14 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   return { report, redactor };
 }
 
-// ---- Load testing (M29, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D30) --------------
+// ---- Load testing (M29/M30, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30) -------
 //
 // A second, dedicated execution model alongside `runProgram` above (D16) — no test cases, no
 // retry, no browser support (checker-enforced, `checkScenarios`/TF033); a per-VU loop around the
-// same `execSteps` every `test`/`action` body already reuses. Single-process, single-scenario
-// only (M29's own scope) — multi-scenario concurrent scheduling (M30, D29) and multi-process
-// scaling (M31, D19) are later milestones layered on top of this without changing its shape.
+// same `execSteps` every `test`/`action` body already reuses. Single-process throughout — M30
+// (D29) runs every `scenario` in the file concurrently rather than just the file's one allowed
+// scenario (M29's restriction); multi-process scaling (M31, D19) is a later milestone layered on
+// top of this without changing this shape.
 
 export interface LoadOptions {
   /** Source text of the file, for mirroring each step's line (mirrors `RunOptions.source`). */
@@ -273,17 +275,22 @@ export interface LoadOptions {
   readonly onIteration?: (result: LoadIterationResult) => void;
 }
 
-/** Runs the file's single `scenario` (M29 restricts a file to exactly one — `checkScenarios`,
- * TF033) as a load test: ramps VUs/arrival-rate per its workload (D17), runs its body once per
- * iteration via `execSteps` (the same engine `test`/`action` bodies use, D16's reuse framing), and
- * evaluates its `threshold`s once against the accumulated metrics (D24a). Never throws for an
- * iteration failure (D18: an `expect` inside a scenario aborts *that iteration*, counted toward
- * the error rate, never the run) — only a setup failure (bad session, zero scenarios) throws. */
+/** Runs every `scenario` in the file (M30/D29 — names unique, checker-enforced, `checkScenarios`/
+ * TF033) as one concurrent load test: each ramps its own VUs/arrival-rate per its own workload
+ * (D17), runs its body once per iteration via `execSteps` (the same engine `test`/`action` bodies
+ * use, D16's reuse framing), and its `threshold`s are evaluated once against *its own*
+ * accumulated metrics (D24a) — never throws for an iteration failure (D18: an `expect` inside a
+ * scenario aborts *that iteration*, counted toward its error rate, never the run) — only a setup
+ * failure (bad session, zero scenarios) throws. All scenarios share one process, one `uniqueSeq`,
+ * and one `SessionCache` (a session named by two scenarios establishes once, reused by both —
+ * same run-lifetime cache `test … as <session>` uses); each keeps its own duration/failure
+ * accumulators so R6's combined-vs-per-scenario split falls out of how results are pooled at the
+ * end, not out of separate runs. */
 export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
-  if (program.scenarios.length !== 1) {
-    throw new RuntimeError(`\`tflw load\` needs exactly one \`scenario\` in this file, found ${program.scenarios.length}`);
+  if (program.scenarios.length === 0) {
+    throw new RuntimeError('`tflw load` needs at least one `scenario` in this file, found 0');
   }
-  const scenario = program.scenarios[0]!;
+  const scenarios = program.scenarios;
   const environ = opts.environ ?? process.env;
   const redactor = new Redactor();
   for (const name of config.requiredEnv) {
@@ -301,135 +308,174 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
   const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
   const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, filePath: baseDir, updateSnapshots: false };
 
-  // Sessions establish once, before the VU loop starts — never per iteration (same run-lifetime
-  // cache `test … as <session>` uses, SPEC §3.3) — and their headers/cookies seed every
-  // iteration's own starting state (cloned per iteration below so concurrent VUs can never race on
-  // one shared cookie jar).
-  const baseSessionHeaders: Record<string, string> = {};
-  const baseCookieJar = new CookieJar();
-  for (const sessionName of scenario.sessions) {
-    const decl = config.sessions.get(sessionName);
-    if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
-    const outcome = await sessionCache.ensure(sessionName, decl, config, tc, true);
-    if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
-    Object.assign(baseSessionHeaders, outcome.headers);
-    baseCookieJar.mergeFrom(outcome.cookieJar.clone());
-  }
-
   const startedAt = new Date().toISOString();
   const runStart = performance.now();
+  // Shared across every scenario's VUs so each iteration still gets its own reproducible sub-seed
+  // (P#23) regardless of which scenario spawned it — mirrors the single-scenario counter M29 used.
   let iterationIndex = 0;
-  const durationsMs: number[] = [];
-  let failures = 0;
 
-  const runIteration = async (): Promise<void> => {
-    const index = iterationIndex++;
-    const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)) };
-    const scope = new Map<string, unknown>();
-    const ctx: EvalCtx = {
-      scope,
-      environ,
-      redactor,
-      rng: iterTc.rng,
-      runSeed,
-      runClock,
-      uniqueSeq,
-      sessionHeaders: { ...baseSessionHeaders },
-      sessionNames: scenario.sessions,
-      cookieJar: baseCookieJar.clone(),
-    };
-    const iterStart = performance.now();
-    let result: LoadIterationResult;
-    try {
-      for (const hook of beforeEach) {
-        const exec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
-        if (!exec.ok) throw new RuntimeError(exec.error ?? 'a `before` hook failed');
-      }
-      const exec = await execSteps(scenario.body, config, ctx, iterTc, scenario.name.value, registry);
-      if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
-      // D26: `after each` is skipped by default per iteration under load (running it every
-      // iteration would double request volume and pollute the very latency metrics this run
-      // exists to measure) — `cleanup` (ast.ts) opts a scenario back into it.
-      if (scenario.cleanup) {
-        for (const hook of afterEach) {
-          const afterExec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
-          if (!afterExec.ok) throw new RuntimeError(afterExec.error ?? 'an `after` hook failed');
-        }
-      }
-      const thinkMs = exec.steps.filter((s) => s.kind === 'think').reduce((sum, s) => sum + s.durationMs, 0);
-      result = { ok: true, durationMs: Math.max(0, Math.round(performance.now() - iterStart - thinkMs)) };
-    } catch (err) {
-      const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
-      // Think time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
-      // negligible skew: a failure that happens after a `think` still counts that pacing time as
-      // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
-      // duration. Only successful iterations feed the duration percentiles that thresholds read.
-      result = { ok: false, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
-    }
-    if (!result.ok) failures++;
-    durationsMs.push(result.durationMs);
-    opts.onIteration?.(result);
-  };
-
-  const vuPromises: Promise<void>[] = [];
-  if (scenario.workload.type === 'RampUsersWorkload') {
-    // Closed model (D17): VUs loop continuously once spawned. `users` VUs ramp in linearly over
-    // `overMs`; the run itself lasts exactly `overMs` (no separate "hold" stage in M29's grammar).
-    const { users, overMs } = scenario.workload;
-    const runEnd = runStart + overMs;
-    for (let i = 0; i < users; i++) {
-      const spawnAt = runStart + (i / users) * overMs;
-      vuPromises.push(
-        (async () => {
-          const waitMs = spawnAt - performance.now();
-          if (waitMs > 0) await sleep(waitMs);
-          while (performance.now() < runEnd) await runIteration();
-        })(),
-      );
-    }
-  } else {
-    // Open model (D17): arrivals are scheduled at a target rate that itself ramps linearly from 0
-    // to `rps` over `overMs`, independent of whether earlier iterations have finished — the
-    // schedule never waits on completion, so queueing under saturation is real, not smoothed away.
-    // Cumulative arrivals by time t (seconds) under a linear ramp: N(t) = rps·t²/(2·overS); solving
-    // for the k-th arrival's time inverts that: t_k = √(2k·overS / rps).
-    const { rps, overMs } = scenario.workload;
-    const overS = overMs / 1000;
-    const totalArrivals = Math.floor((rps * overS) / 2);
-    for (let k = 1; k <= totalArrivals; k++) {
-      const scheduledMs = Math.sqrt((2 * k * overS) / rps) * 1000;
-      const waitMs = runStart + scheduledMs - performance.now();
-      if (waitMs > 0) await sleep(waitMs);
-      // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion (that's
-      // the whole point of "open") — its promise is still collected so `runLoad` waits for every
-      // fired iteration before computing final metrics.
-      vuPromises.push(runIteration());
-    }
+  // One mutable accumulator per scenario, filled in by that scenario's own `runIteration` closure
+  // (below) as its VUs run concurrently with every other scenario's, and read back into a
+  // `LoadScenarioReport` only once every scenario's task has finished.
+  interface ScenarioAccumulator {
+    readonly scenario: ScenarioDecl;
+    readonly durationsMs: number[];
+    failures: number;
   }
-  await Promise.all(vuPromises);
+  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, durationsMs: [], failures: 0 }));
+  const combinedDurationsMs: number[] = [];
+  let combinedFailures = 0;
 
-  const sorted = [...durationsMs].sort((a, b) => a - b);
-  const metrics: LoadMetrics = {
-    iterations: durationsMs.length,
-    failures,
-    errorRate: durationsMs.length > 0 ? failures / durationsMs.length : 0,
-    durations: summarizeDurations(sorted),
-  };
-  const thresholds = evaluateThresholds(scenario.thresholds, metrics, sorted);
+  // Each scenario's own session establishment + VU scheduling runs as one independent async task
+  // (`sessionCache` is safe under concurrent `ensure()` calls — it dedupes in-flight promises by
+  // name, so two scenarios opting into the same session never race a duplicate login). Scheduling
+  // an *open*-workload scenario's arrivals genuinely blocks its own task on real-time sleeps
+  // (below) — that must never block a *different* scenario's task, or two `scenario`s in one file
+  // wouldn't actually overlap in wall time, defeating D29's entire point.
+  const scenarioTasks = accumulators.map(async (acc) => {
+    const scenario = acc.scenario;
+    // Sessions establish once per scenario, before its VU loop starts — never per iteration (same
+    // run-lifetime cache `test … as <session>` uses, SPEC §3.3) — and their headers/cookies seed
+    // every iteration's own starting state (cloned per iteration below so concurrent VUs, even
+    // across different scenarios, can never race on one shared cookie jar).
+    const baseSessionHeaders: Record<string, string> = {};
+    const baseCookieJar = new CookieJar();
+    for (const sessionName of scenario.sessions) {
+      const decl = config.sessions.get(sessionName);
+      if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
+      const outcome = await sessionCache.ensure(sessionName, decl, config, tc, true);
+      if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
+      Object.assign(baseSessionHeaders, outcome.headers);
+      baseCookieJar.mergeFrom(outcome.cookieJar.clone());
+    }
 
-  return {
-    ok: thresholds.every((t) => t.ok),
-    scenario: scenario.name.value,
-    workload:
+    const runIteration = async (): Promise<void> => {
+      const index = iterationIndex++;
+      const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)) };
+      const scope = new Map<string, unknown>();
+      const ctx: EvalCtx = {
+        scope,
+        environ,
+        redactor,
+        rng: iterTc.rng,
+        runSeed,
+        runClock,
+        uniqueSeq,
+        sessionHeaders: { ...baseSessionHeaders },
+        sessionNames: scenario.sessions,
+        cookieJar: baseCookieJar.clone(),
+      };
+      const iterStart = performance.now();
+      let result: LoadIterationResult;
+      try {
+        for (const hook of beforeEach) {
+          const exec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
+          if (!exec.ok) throw new RuntimeError(exec.error ?? 'a `before` hook failed');
+        }
+        const exec = await execSteps(scenario.body, config, ctx, iterTc, scenario.name.value, registry);
+        if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
+        // D26: `after each` is skipped by default per iteration under load (running it every
+        // iteration would double request volume and pollute the very latency metrics this run
+        // exists to measure) — `cleanup` (ast.ts) opts a scenario back into it.
+        if (scenario.cleanup) {
+          for (const hook of afterEach) {
+            const afterExec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
+            if (!afterExec.ok) throw new RuntimeError(afterExec.error ?? 'an `after` hook failed');
+          }
+        }
+        const thinkMs = exec.steps.filter((s) => s.kind === 'think').reduce((sum, s) => sum + s.durationMs, 0);
+        result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, Math.round(performance.now() - iterStart - thinkMs)) };
+      } catch (err) {
+        const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
+        // Think time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
+        // negligible skew: a failure that happens after a `think` still counts that pacing time as
+        // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
+        // duration. Only successful iterations feed the duration percentiles that thresholds read.
+        result = { ok: false, scenario: scenario.name.value, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
+      }
+      if (!result.ok) {
+        acc.failures++;
+        combinedFailures++;
+      }
+      acc.durationsMs.push(result.durationMs);
+      combinedDurationsMs.push(result.durationMs);
+      opts.onIteration?.(result);
+    };
+
+    const vuPromises: Promise<void>[] = [];
+    if (scenario.workload.type === 'RampUsersWorkload') {
+      // Closed model (D17): VUs loop continuously once spawned. `users` VUs ramp in linearly over
+      // `overMs`; the scenario itself lasts exactly `overMs` (no separate "hold" stage in the
+      // grammar).
+      const { users, overMs } = scenario.workload;
+      const runEnd = runStart + overMs;
+      for (let i = 0; i < users; i++) {
+        const spawnAt = runStart + (i / users) * overMs;
+        vuPromises.push(
+          (async () => {
+            const waitMs = spawnAt - performance.now();
+            if (waitMs > 0) await sleep(waitMs);
+            while (performance.now() < runEnd) await runIteration();
+          })(),
+        );
+      }
+    } else {
+      // Open model (D17): arrivals are scheduled at a target rate that itself ramps linearly from
+      // 0 to `rps` over `overMs`, independent of whether earlier iterations have finished — the
+      // schedule never waits on completion, so queueing under saturation is real, not smoothed
+      // away. Cumulative arrivals by time t (seconds) under a linear ramp: N(t) = rps·t²/(2·overS);
+      // solving for the k-th arrival's time inverts that: t_k = √(2k·overS / rps).
+      const { rps, overMs } = scenario.workload;
+      const overS = overMs / 1000;
+      const totalArrivals = Math.floor((rps * overS) / 2);
+      for (let k = 1; k <= totalArrivals; k++) {
+        const scheduledMs = Math.sqrt((2 * k * overS) / rps) * 1000;
+        const waitMs = runStart + scheduledMs - performance.now();
+        if (waitMs > 0) await sleep(waitMs);
+        // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion
+        // (that's the whole point of "open") — its promise is still collected so this scenario's
+        // own task (and, transitively, `runLoad`) waits for every fired iteration.
+        vuPromises.push(runIteration());
+      }
+    }
+
+    await Promise.all(vuPromises);
+  });
+
+  await Promise.all(scenarioTasks);
+
+  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, durationsMs, failures }) => {
+    const sorted = [...durationsMs].sort((a, b) => a - b);
+    const metrics: LoadMetrics = {
+      iterations: durationsMs.length,
+      failures,
+      errorRate: durationsMs.length > 0 ? failures / durationsMs.length : 0,
+      durations: summarizeDurations(sorted),
+    };
+    const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, sorted);
+    const workload: LoadScenarioReport['workload'] =
       scenario.workload.type === 'RampUsersWorkload'
         ? { kind: 'users', target: scenario.workload.users, overMs: scenario.workload.overMs }
-        : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs },
+        : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs };
+    return { name: scenario.name.value, workload, metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
+  });
+
+  const combinedSorted = [...combinedDurationsMs].sort((a, b) => a - b);
+  const combined: LoadMetrics = {
+    iterations: combinedDurationsMs.length,
+    failures: combinedFailures,
+    errorRate: combinedDurationsMs.length > 0 ? combinedFailures / combinedDurationsMs.length : 0,
+    durations: summarizeDurations(combinedSorted),
+  };
+
+  return {
+    ok: scenarioReports.every((s) => s.ok),
+    scenarios: scenarioReports,
+    combined,
     startedAt,
     durationMs: Math.round(performance.now() - runStart),
     seed: runSeed,
     now: runClock.toISOString(),
-    metrics,
-    thresholds,
   };
 }
 

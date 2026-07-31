@@ -93,14 +93,17 @@ export interface FileDataTable extends Node {
   readonly path: StringLit;
 }
 
-// ---- Load testing (M29, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30) ----------
+// ---- Load testing (M29/M30, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30) ------
 //
 // `scenario` is a second, dedicated execution model alongside `test` (D16) — a per-VU loop
 // (workload + optional `think` pacing) around an ordinary `Step[]` body, so the same `action`s a
-// functional suite already wrote are the reuse unit under load too. M29 restricts a file to
-// **one** `scenario` (checker-enforced, `TF033`); M30 (D29) lifts that to concurrent multi-
-// scenario runs. Browser steps are rejected inside a scenario body (D19 — a browser VU is
-// ~50-100MB; 500 of them is infeasible) — checker-enforced, not merely a runtime gap.
+// functional suite already wrote are the reuse unit under load too. A file may declare any number
+// of `scenario`s (M29 restricted this to one; M30/D29 lifts that — `tflw load` now runs every
+// scenario in the file concurrently, still single-process, `runtime/src/interpreter.ts`'s
+// `runLoad`). Names must be unique within a file (checker-enforced, `TF033`) — they key each
+// scenario's own metrics/threshold breakdown in the report. Browser steps are rejected inside a
+// scenario body (D19 — a browser VU is ~50-100MB; 500 of them is infeasible) — checker-enforced,
+// not merely a runtime gap.
 export interface ScenarioDecl extends Node {
   readonly type: 'ScenarioDecl';
   readonly name: StringLit;

@@ -1,6 +1,7 @@
-// M29 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D28/D29): `scenario`/`threshold`/`ramp`/
-// `think` grammar plus the load-arc's semantic checks (`checkScenarios`, TF033) — at most one
-// `scenario` per file, `think` only legal inside one, no browser steps inside one.
+// M29/M30 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D28/D29): `scenario`/`threshold`/`ramp`/
+// `think` grammar plus the load-arc's semantic checks (`checkScenarios`, TF033) — a file may
+// declare any number of `scenario`s (M30 lifted M29's one-per-file restriction) but their names
+// must be unique, `think` only legal inside one, no browser steps inside one.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,16 +77,38 @@ test('a second `ramp to …` line in one scenario is a parse error (exactly one 
   assert.ok(diagnostics.some((d) => d.code === 'TF033'), JSON.stringify(diagnostics));
 });
 
-test('checkScenarios: a second `scenario` in one file is flagged (TF033), the first is not', () => {
+test('checkScenarios: a second, differently-named `scenario` in one file is not flagged (M30 lifts the one-per-file restriction)', () => {
   const { program, diagnostics } = parseSource(
     'scenario "First"\n  ramp to 1 users over 1s\n  api GET /health\n\nscenario "Second"\n  ramp to 1 users over 1s\n  api GET /health\n',
   );
   assert.deepEqual(diagnostics, []);
   assert.equal(program.scenarios.length, 2);
   const diags = checkScenarios(program);
+  assert.deepEqual(diags, []);
+});
+
+test('checkScenarios: two `scenario`s sharing a name is flagged (TF033, M30/D29) — the first is not, the second points back at it', () => {
+  const { program, diagnostics } = parseSource(
+    'scenario "Same"\n  ramp to 1 users over 1s\n  api GET /health\n\nscenario "Same"\n  ramp to 2 users over 1s\n  api GET /health\n',
+  );
+  assert.deepEqual(diagnostics, []);
+  assert.equal(program.scenarios.length, 2);
+  const diags = checkScenarios(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
+  assert.match(diags[0]!.message, /duplicate scenario name "Same"/);
   assert.deepEqual(diags[0]!.span, program.scenarios[1]!.span);
+});
+
+test('checkScenarios: three `scenario`s where only two share a name flags exactly one diagnostic', () => {
+  const { program } = parseSource(
+    'scenario "A"\n  ramp to 1 users over 1s\n  api GET /health\n\nscenario "B"\n  ramp to 1 users over 1s\n  api GET /health\n\nscenario "A"\n  ramp to 1 users over 1s\n  api GET /health\n',
+  );
+  assert.equal(program.scenarios.length, 3);
+  const diags = checkScenarios(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF033');
+  assert.deepEqual(diags[0]!.span, program.scenarios[2]!.span);
 });
 
 test('checkScenarios: `think` inside a plain `test` is flagged (TF033)', () => {

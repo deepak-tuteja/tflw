@@ -263,17 +263,20 @@ export type RunEvent =
 
 export type EventSink = (event: RunEvent) => void;
 
-// ---- Load testing (M29, PLAN_BROWSER_PERF_SECURITY.md D24a) ---------------------------------
+// ---- Load testing (M29/M30, PLAN_BROWSER_PERF_SECURITY.md D24a/D29, R6) -----------------------
 //
-// Deliberately minimal — a "reporter stub" (M29's own scope), not the full `LoadReport` design
+// Deliberately minimal — a "reporter stub" (M29/M30's own scope), not the full `LoadReport` design
 // (`PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11: independent HTML view, HDR histogram, live
-// per-second buckets, partial-on-SIGINT) that M32 builds. This is enough to run a real load
-// scenario end to end and get a pass/fail verdict + a metrics JSON — no `report/load-report.html`,
-// no junit mapping yet.
+// per-second buckets, partial-on-SIGINT) that M32 builds. This is enough to run every `scenario`
+// in a file concurrently and get a pass/fail verdict + a metrics JSON, combined and broken down
+// per scenario (R6) — no `report/load-report.html`, no junit mapping yet, and no per-endpoint
+// breakdown (R6's other axis — needs per-request endpoint tagging M32 adds).
 
 /** One completed VU iteration's outcome, as fed to `LoadOptions.onIteration` for live progress. */
 export interface LoadIterationResult {
   readonly ok: boolean;
+  /** Which `scenario` this iteration belongs to (M30 — a run may interleave several concurrently). */
+  readonly scenario: string;
   /** Wall-clock duration of this iteration's steps, **excluding** any `think` time (ast.ts's
    * `ThinkStmt` doc: think models pacing, not system latency — including it would let a scenario
    * satisfy a duration threshold merely by sleeping more). */
@@ -310,15 +313,28 @@ export interface LoadThresholdResult {
   readonly ok: boolean;
 }
 
-export interface LoadReport {
-  /** Every declared threshold passed (vacuously `true` when a scenario declares none). */
-  readonly ok: boolean;
-  readonly scenario: string;
+/** One scenario's own slice of a `tflw load` run (R6's "per-scenario" axis) — every field scoped
+ * to just this scenario's iterations, computed exactly the way a single-scenario M29 report was. */
+export interface LoadScenarioReport {
+  readonly name: string;
   readonly workload: { readonly kind: 'users' | 'rps'; readonly target: number; readonly overMs: number };
+  readonly metrics: LoadMetrics;
+  readonly thresholds: readonly LoadThresholdResult[];
+  /** Every threshold *this scenario* declared passed (vacuously `true` when it declares none). */
+  readonly ok: boolean;
+}
+
+export interface LoadReport {
+  /** Every scenario's `ok` (vacuously `true` for a scenario with no `threshold`s). */
+  readonly ok: boolean;
+  /** One entry per `scenario` in the file, source order, all run concurrently (M30, D29). */
+  readonly scenarios: readonly LoadScenarioReport[];
+  /** R6's "combined" axis — every scenario's iterations pooled into one set of metrics, the
+   * quotable run-wide numbers. Has no thresholds of its own: `threshold` is always declared, and
+   * evaluated, per scenario (a scenario's pass/fail must not depend on what else shares the run). */
+  readonly combined: LoadMetrics;
   readonly startedAt: string;
   readonly durationMs: number;
   readonly seed: number;
   readonly now: string;
-  readonly metrics: LoadMetrics;
-  readonly thresholds: readonly LoadThresholdResult[];
 }
