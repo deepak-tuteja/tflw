@@ -173,6 +173,56 @@ test('tokenizes `matches snapshot "<name>" mask <locator>` (M4b)', () => {
   assert.ok(hasScope(findToken(lines, 'css'), 'support.type.tflw'), '`css` is a locator-noun subject keyword');
 });
 
+// M33 (perf-arc LSP/VS Code catch-up, D24b): the M29-M32 load-testing grammar (`scenario`/`ramp`/
+// `threshold`/`cleanup`/`think`) had zero keyword coverage in this grammar before this milestone —
+// a `scenario` file rendered visually flat next to a `test`/browser file.
+
+test('tokenizes `scenario`/`ramp to … users|rps over …`/`cleanup`/`think` (M29-M32, M33 catch-up)', () => {
+  const lines = tokenizeLines([
+    'scenario "checkout burst"',
+    '  ramp to 10 users over 30s',
+    '  cleanup',
+    '  api GET /health',
+    '  think 1s to 3s',
+  ]);
+
+  assert.ok(hasScope(findToken(lines, 'scenario'), 'keyword.control.tflw'), '`scenario` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'ramp'), 'keyword.control.tflw'), '`ramp` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'over'), 'keyword.control.tflw'), '`over` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'users'), 'support.type.tflw'), '`users` is a workload-target subject keyword');
+  assert.ok(hasScope(findToken(lines, 'cleanup'), 'keyword.control.tflw'), '`cleanup` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'think'), 'keyword.control.tflw'), '`think` is a statement keyword');
+
+  const rpsLines = tokenizeLines(['  ramp to 100 rps over 30s']);
+  assert.ok(hasScope(findToken(rpsLines, 'rps'), 'support.type.tflw'), '`rps` is a workload-target subject keyword');
+});
+
+test('tokenizes `threshold p95 duration is less than 800ms` / `threshold error rate is less than 1%` (M29/D24a, M33 catch-up)', () => {
+  const lines = tokenizeLines(['  threshold p95 duration is less than 800ms', '  threshold error rate is less than 1%']);
+
+  assert.ok(hasScope(findToken(lines, 'threshold'), 'keyword.control.tflw'), '`threshold` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'p95'), 'support.type.tflw'), '`p95` is a percentile metric selector');
+  assert.ok(hasScope(findToken(lines, 'duration'), 'support.type.tflw'), '`duration` is a subject keyword');
+  assert.ok(hasScope(findToken(lines, 'less'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(lines, 'than'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(lines, 'error'), 'support.type.tflw'), '`error` (error rate) is a subject keyword');
+  assert.ok(hasScope(findToken(lines, 'rate'), 'support.type.tflw'), '`rate` (error rate) is a subject keyword');
+});
+
+test('tokenizes every p50/p90/p95/p99 percentile form, but leaves a similarly-shaped ordinary identifier alone (M33)', () => {
+  const lines = tokenizeLines(['  threshold p50 duration is less than 200ms', '  threshold p90 duration is less than 500ms', '  threshold p99 duration is less than 1500ms']);
+  assert.ok(hasScope(findToken(lines, 'p50'), 'support.type.tflw'));
+  assert.ok(hasScope(findToken(lines, 'p90'), 'support.type.tflw'));
+  assert.ok(hasScope(findToken(lines, 'p99'), 'support.type.tflw'));
+
+  // A user variable that merely starts with `p` and digits, but isn't a real 1-2-digit percentile
+  // shape, must not be swept up by the percentile regex.
+  const varLines = tokenizeLines(['  let p100x = 1']);
+  const varToken = varLines[0]!.find((t) => t.text.trim() === 'p100x');
+  assert.ok(varToken, 'expected a token for the `p100x` identifier');
+  assert.equal(hasScope(varToken!, 'support.type.tflw'), false, '`p100x` is not a valid percentile shape and should not be tagged as one');
+});
+
 test('tokenizes tflw.config keywords (env/defaults/require/session) and env(NAME) calls', () => {
   const lines = tokenizeLines(['env local default', '  api "http://localhost:3001"', '', 'require env ADMIN_TOKEN', '', 'session admin', '  header "Authorization" is env(ADMIN_TOKEN)']);
 

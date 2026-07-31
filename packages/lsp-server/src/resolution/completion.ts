@@ -21,10 +21,24 @@ export interface CompletionSources {
 // than exported, same house-style tradeoff already accepted for tflw.tmLanguage.json/
 // semanticTokens.ts's own wordlists — M3e/M4a) — must be kept in sync with the browser-arc
 // (M3a-M3e) constructs those lists gained, plus `log` (M27/M28, PLAN_LOG_LSP.md).
+//
+// M29-M32 (load testing, M33 catch-up): `think` is a real `Step` AST production reached through
+// `parseStep()`'s own switch like every other entry here — the checker (not the parser) is what
+// restricts it to `scenario` bodies (TF033), so it naturally participates in this same flat,
+// container-blind list, exactly like a browser step still being offered inside a `before`/`after`
+// hook even though it's really only meaningful there some of the time. `ramp`/`threshold`/
+// `cleanup` are structurally different — they're dispatched by `parseScenarioDecl`'s own loop
+// *before* `parseStep()` is ever reached, not `Step` productions at all — but a partial word typed
+// at that exact cursor position (not yet matching any of the three exactly) falls through to
+// `parseStep()`'s completion gate the same way, so the same `kind: 'step'` signal is what a user
+// typing inside a `scenario` body actually sees; bundled in here rather than left offering an
+// incomplete list at that position, accepting the same over-broad-but-harmless tradeoff already
+// baked into every other entry in this list.
 const STEP_KEYWORDS = [
   'api', 'expect', 'check', 'let', 'capture', 'log', 'wait', 'give',
   'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll',
   'within', 'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
+  'think', 'ramp', 'threshold', 'cleanup',
 ] as const;
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 

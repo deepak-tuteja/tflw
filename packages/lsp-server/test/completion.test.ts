@@ -101,7 +101,9 @@ test('getCompletions: transform kind attaches spec-data.ts detail text (decision
 test('getCompletions: step kind includes browser-arc step keywords (M3a-M3d)', () => {
   const source = 'test "ok"\n  cl';
   const ctx = getCompletionContext(source, source.length)!;
-  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['click', 'close']);
+  // `cleanup` (M29/M33) also starts with `cl`, alongside the two browser-arc step keywords this
+  // test originally targeted.
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['click', 'close', 'cleanup']);
 });
 
 // M28 (PLAN_LOG_LSP.md): `log` (M27) had never caught this independent-copy wordlist up either.
@@ -162,4 +164,47 @@ test('getCompletions: matcher kind includes `matches snapshot` once `matches` is
   );
   const snapshotCandidate = candidates.find((c) => c.label === 'matches snapshot');
   assert.match(snapshotCandidate?.detail ?? '', /page.*UI locators/);
+});
+
+// -- M33 (perf-arc LSP/VS Code catch-up, D24b): the M29-M32 load-testing keywords had never been
+// offered by completion at all — `STEP_KEYWORDS` predated the whole arc. ------------------------
+
+test('getCompletions (M33): step kind includes `think` inside a scenario body', () => {
+  // `th` alone would also match `threshold` (both real step-position keywords here) — narrow past
+  // where they diverge, same reasoning as the `cleanup`-vs-`click`/`close` case below.
+  const source = 'scenario "checkout burst"\n  ramp to 10 users over 30s\n  thi';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(ctx, { kind: 'step', prefix: 'thi' });
+  assert.deepEqual(
+    getCompletions(ctx).map((c) => c.label),
+    ['think'],
+  );
+});
+
+test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at the start of a scenario body line', () => {
+  const rampSource = 'scenario "checkout burst"\n  ra';
+  const rampCtx = getCompletionContext(rampSource, rampSource.length)!;
+  assert.deepEqual(rampCtx, { kind: 'step', prefix: 'ra' });
+  assert.deepEqual(
+    getCompletions(rampCtx).map((c) => c.label),
+    ['ramp'],
+  );
+
+  const thresholdSource = 'scenario "checkout burst"\n  ramp to 10 users over 30s\n  thr';
+  const thresholdCtx = getCompletionContext(thresholdSource, thresholdSource.length)!;
+  assert.deepEqual(thresholdCtx, { kind: 'step', prefix: 'thr' });
+  assert.deepEqual(
+    getCompletions(thresholdCtx).map((c) => c.label),
+    ['threshold'],
+  );
+
+  // `cl` alone would also match `click`/`close` (both real step keywords) — narrow the prefix past
+  // where they diverge so this assertion isn't coincidentally fragile to that unrelated list.
+  const cleanupSource = 'scenario "checkout burst"\n  ramp to 10 users over 30s\n  clea';
+  const cleanupCtx = getCompletionContext(cleanupSource, cleanupSource.length)!;
+  assert.deepEqual(cleanupCtx, { kind: 'step', prefix: 'clea' });
+  assert.deepEqual(
+    getCompletions(cleanupCtx).map((c) => c.label),
+    ['cleanup'],
+  );
 });

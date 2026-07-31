@@ -332,3 +332,76 @@ test('collectSymbols (M4b): `matches snapshot` against a LocatorSubject resolves
   assert.ok(table.refs.find((r) => r.name === 'name'), 'expected a `name` ref from the button locator');
   assert.ok(table.refs.find((r) => r.name === 'snap'), 'expected a `snap` ref from the snapshot name');
 });
+
+// M33 (perf-arc LSP/VS Code catch-up, D24b): `program.scenarios` was never walked at all before
+// this milestone — a `{var}` referenced only inside a `scenario` body, or a scenario's own `as`
+// clause, was invisible to hover/go-to-def/rename/rename, with no error (a checker-clean file just
+// produced an empty ref list, exactly the M4a-era browser-step gap for a different construct).
+test('collectSymbols (M33): `scenario "…" as admin, userA` sessions are refs with precise spans', () => {
+  const source = `scenario "checkout burst" as admin, userA\n  ramp to 10 users over 30s\n  api GET /health\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const refs = table.refs.filter((r) => r.kind === 'session');
+  assert.deepEqual(
+    refs.map((r) => r.name),
+    ['admin', 'userA'],
+  );
+  assertSpanAt(refs[0]!.span, source, 'admin', 1);
+  assertSpanAt(refs[1]!.span, source, 'userA', 1);
+});
+
+test('collectSymbols (M33): a `{var}` inside a `scenario` body (path interpolation) resolves to its own `let` def, scoped separately from a `test`', () => {
+  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n\ntest "ok"\n  api GET /health\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const def = table.defs.find((d) => d.kind === 'variable' && d.name === 'orderId');
+  assert.ok(def, 'expected an `orderId` def inside the scenario body');
+  assertSpanAt(def!.span, source, 'orderId', 1);
+
+  const ref = table.refs.find((r) => r.kind === 'variable' && r.name === 'orderId');
+  assert.ok(ref, 'expected an `orderId` ref from the interpolated path inside the scenario body');
+  assertSpanAt(ref!.span, source, 'orderId', 2);
+  assert.deepEqual(ref!.defSpan, def!.span);
+});
+
+test('collectSymbols (M33): a `think 1s to 3s` step is walked without throwing and produces no spurious refs', () => {
+  const source = `scenario "browsing"\n  ramp to 10 users over 30s\n  api GET /products\n  expect status equals 200\n  think 1s to 3s\n  api GET /products/1\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  let table: ReturnType<typeof collectSymbols> | undefined;
+  assert.doesNotThrow(() => {
+    table = collectSymbols(program, source);
+  });
+  assert.equal(table!.refs.length, 0, 'no `{var}` anywhere in this scenario, so no refs should be collected');
+});
+
+test('collectSymbols (M33): two scenarios in one file get independent scopes for identically-named `let`s', () => {
+  const source = [
+    `scenario "browsing"`,
+    `  ramp to 10 users over 30s`,
+    `  let id = unique("b")`,
+    `  api GET /products/{id}`,
+    ``,
+    `scenario "checkout"`,
+    `  ramp to 5 users over 30s`,
+    `  let id = unique("c")`,
+    `  api GET /orders/{id}`,
+    ``,
+  ].join('\n');
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+
+  const defs = table.defs.filter((d) => d.name === 'id');
+  assert.equal(defs.length, 2, 'each scenario should get its own `id` def');
+  assert.notEqual(defs[0]!.scopeId, defs[1]!.scopeId);
+
+  const refs = table.refs.filter((r) => r.name === 'id');
+  assert.equal(refs.length, 2);
+  // Each ref resolves to the def in its own scenario's scope, never the other scenario's.
+  const browsingRef = refs.find((r) => r.scopeId === defs[0]!.scopeId);
+  const checkoutRef = refs.find((r) => r.scopeId === defs[1]!.scopeId);
+  assert.ok(browsingRef && checkoutRef);
+  assert.deepEqual(browsingRef!.defSpan, defs[0]!.span);
+  assert.deepEqual(checkoutRef!.defSpan, defs[1]!.span);
+});

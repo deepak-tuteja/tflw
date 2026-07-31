@@ -33,8 +33,11 @@ export interface SemanticToken {
 /** Statement keywords + HTTP methods (tflw.tmLanguage.json's `keywords-statement` + `http-request`),
  * plus the M3a-M3e browser-step keywords (M4a catch-up — parser.ts's `STATEMENT_KEYWORDS` plus the
  * handful of non-leading sub-clause words those steps' grammars also use: `on`/`to`/`onto`/`dialog`/
- * `new`/`tab`/`frame`/`respond`), M4b's `mask <locator>` clause keyword, and M28's `log` (PLAN_LOG_LSP.md
- * — M27 added `log` to `STATEMENT_KEYWORDS` but never caught this independent copy up). */
+ * `new`/`tab`/`frame`/`respond`), M4b's `mask <locator>` clause keyword, M28's `log` (PLAN_LOG_LSP.md
+ * — M27 added `log` to `STATEMENT_KEYWORDS` but never caught this independent copy up), and the
+ * M29-M32 load-testing leading keywords (M33 catch-up — `scenario`/`ramp`/`over`/`threshold`/
+ * `cleanup`/`think`; `think` was already in parser.ts's `STATEMENT_KEYWORDS` since M29 but never
+ * caught up here either). */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
@@ -43,11 +46,15 @@ const KEYWORDS = new Set([
   'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll', 'within',
   'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
   'on', 'to', 'onto', 'dialog', 'new', 'tab', 'frame', 'respond', 'mask',
+  'scenario', 'ramp', 'over', 'threshold', 'cleanup', 'think',
 ]);
 
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words
  * `was`/`made` (`was made`) and `no`/`a11y`/`violations`/the severity floor words (`has no
- * [<severity>] a11y violations`, M4a catch-up), and M4b's `snapshot` (`matches snapshot "<name>"`). */
+ * [<severity>] a11y violations`, M4a catch-up), M4b's `snapshot` (`matches snapshot "<name>"`), and
+ * M29's threshold comparator words `greater`/`less`/`than`/`is` — already present here from the
+ * expect-matcher vocabulary, load thresholds just reuse the same words (M33 catch-up: nothing new
+ * to add, confirmed by audit). */
 const OPERATORS = new Set([
   'equals', 'contains', 'matches', 'subset', 'file', 'has', 'is', 'not', 'count', 'value', 'greater', 'less', 'than',
   'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
@@ -55,8 +62,16 @@ const OPERATORS = new Set([
 ]);
 
 /** Subject words (tflw.tmLanguage.json's `keywords-subject`), plus the M3a/M3e locator-noun and
- * `page` subjects (M4a catch-up — parser.ts's `LOCATOR_KEYWORDS` plus `page`). */
-const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request', 'button', 'field', 'list', 'css', 'xpath', 'page']);
+ * `page` subjects (M4a catch-up — parser.ts's `LOCATOR_KEYWORDS` plus `page`), and the M29 load-
+ * testing metric/target nouns `users`/`rps` (`ramp to N users|rps over …`) and `error`/`rate`
+ * (`threshold error rate is …`) — M33 catch-up, same "noun the value is measured in/against" role
+ * `duration`/`status` already play here. */
+const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request', 'button', 'field', 'list', 'css', 'xpath', 'page', 'users', 'rps', 'error', 'rate']);
+
+/** `p50`/`p90`/`p95`/`p99`/… (M29 `threshold p95 duration is less than 800ms`, D24a) — a dynamic
+ * ident, not fixed vocabulary (parser.ts's `parseThresholdDecl` accepts any `/^p([1-9][0-9]?)$/`),
+ * so it can't join `TYPES` as a literal wordlist entry; checked separately below (M33 catch-up). */
+const PERCENTILE_RE = /^p([1-9][0-9]?)$/;
 
 /** Generator words (tflw.tmLanguage.json's `keywords-generator`). */
 const FUNCTIONS = new Set([
@@ -137,6 +152,7 @@ export function collectSemanticTokens(source: string, symbols: SymbolTable): rea
     else if (OPERATORS.has(tok.value)) tokens.push({ span: tok.span, type: 'operator' });
     else if (TYPES.has(tok.value)) tokens.push({ span: tok.span, type: 'type' });
     else if (FUNCTIONS.has(tok.value)) tokens.push({ span: tok.span, type: 'function' });
+    else if (PERCENTILE_RE.test(tok.value)) tokens.push({ span: tok.span, type: 'type' });
   }
 
   tokens.sort((a, b) => a.span.start.offset - b.span.start.offset);

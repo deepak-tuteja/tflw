@@ -168,6 +168,59 @@ test('findNodeAtOffset (M4b): descends into a trailing `mask <locator>` clause o
   );
 });
 
+// -- M33 (perf-arc LSP/VS Code catch-up, D24b): `scenario`/`ramp`/`threshold`/`think` (M29-M32) had
+// never been reachable at all — the walker stopped dead at `Program`, since `children()`'s
+// `Program` case never listed `n.scenarios` and `ScenarioDecl` had no case of its own (silently
+// fell into `default: return []`). ------------------------------------------------------------
+
+test('findNodeAtOffset (M33): descends past Program into a ScenarioDecl, unlike before this milestone', () => {
+  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  api GET /health\n`;
+  const { program } = parseSource(source);
+  const path = findNodeAtOffset(program, source.indexOf('checkout burst') + 1);
+  assert.deepEqual(path.map((n) => n.type), ['Program', 'ScenarioDecl', 'StringLit']);
+});
+
+test('findNodeAtOffset (M33): descends into a scenario body step, exactly like a TestDecl body step', () => {
+  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api POST /orders body { id: {orderId} }\n  expect status equals 201\n`;
+  const { program } = parseSource(source);
+  const path = findNodeAtOffset(program, source.lastIndexOf('orderId') + 1);
+  assert.deepEqual(path.map((n) => n.type), ['Program', 'ScenarioDecl', 'ApiStep', 'InlineBody', 'Field', 'Interp']);
+});
+
+test('findNodeAtOffset (M33): a RampUsersWorkload/RampRpsWorkload node is reachable and is a leaf', () => {
+  const usersSource = `scenario "browsing"\n  ramp to 10 users over 30s\n  api GET /health\n`;
+  const { program: usersProgram } = parseSource(usersSource);
+  assert.deepEqual(
+    findNodeAtOffset(usersProgram, usersSource.indexOf('ramp') + 1).map((n) => n.type),
+    ['Program', 'ScenarioDecl', 'RampUsersWorkload'],
+  );
+
+  const rpsSource = `scenario "browsing"\n  ramp to 100 rps over 30s\n  api GET /health\n`;
+  const { program: rpsProgram } = parseSource(rpsSource);
+  assert.deepEqual(
+    findNodeAtOffset(rpsProgram, rpsSource.indexOf('ramp') + 1).map((n) => n.type),
+    ['Program', 'ScenarioDecl', 'RampRpsWorkload'],
+  );
+});
+
+test('findNodeAtOffset (M33): a ThresholdDecl node is reachable and is a leaf', () => {
+  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  threshold p95 duration is less than 800ms\n  api GET /health\n`;
+  const { program } = parseSource(source);
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('threshold') + 1).map((n) => n.type),
+    ['Program', 'ScenarioDecl', 'ThresholdDecl'],
+  );
+});
+
+test('findNodeAtOffset (M33): a ThinkStmt node is reachable and is a leaf, distinct from the surrounding body steps', () => {
+  const source = `scenario "browsing"\n  ramp to 10 users over 30s\n  api GET /health\n  think 1s to 3s\n  api GET /health\n`;
+  const { program } = parseSource(source);
+  assert.deepEqual(
+    findNodeAtOffset(program, source.indexOf('think') + 1).map((n) => n.type),
+    ['Program', 'ScenarioDecl', 'ThinkStmt'],
+  );
+});
+
 test('spanContains: inclusive of both endpoints', () => {
   const span = { start: { offset: 5, line: 1, column: 6 }, end: { offset: 10, line: 1, column: 11 } };
   assert.equal(spanContains(span, 5), true);

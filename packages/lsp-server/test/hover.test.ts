@@ -44,6 +44,22 @@ test('getHover: a variable ref shows its symbol kind', () => {
   assert.deepEqual(result, { contents: '**orderId**: variable', span: ref.span });
 });
 
+// M33 (perf-arc LSP/VS Code catch-up, D24b): confirms hover.ts itself needs no code change for
+// load-testing (its `MATCHER_SPEC_ID`/`GENERATOR_SPEC_ID`/`SYMBOL_KIND_LABEL` tables are unaffected
+// — no new Matcher/generator/SymbolKind shipped with `scenario`) — the gap was entirely upstream in
+// `findNodeAtOffset` (never reaching a ScenarioDecl at all) and `symbols.ts` (never walking
+// `program.scenarios`), both fixed earlier in this milestone. This is the end-to-end proof those
+// fixes actually compose through hover, the same way M4a's audit found hover.ts already exhaustive.
+test('getHover (M33): a variable ref inside a scenario body shows its symbol kind, exactly like inside a test', () => {
+  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+  const offset = source.indexOf('{orderId}') + 2;
+  const result = getHover(program, table, offset);
+  const ref = table.refs.find((r) => r.name === 'orderId')!;
+  assert.deepEqual(result, { contents: '**orderId**: variable', span: ref.span });
+});
+
 test('getHover: an action param def shows its symbol kind', () => {
   const source = `action create order(name)\n  give name\n`;
   const { program } = parseSource(source);

@@ -207,6 +207,26 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
     walkSteps(action.body, bound, scopeId, source, actionDefs, pushDef, refs);
   }
 
+  // `scenario` (M29-M32, load testing) — mirrors `TestDecl`'s own `as` handling above. Unlike a
+  // `test`, `body[0]` isn't a safe header-end boundary (a `scenario`'s `ramp to …`/`threshold`/
+  // `cleanup` lines interleave with its body in source order, all parsed out of the same indented
+  // block — parser.ts's `parseScenarioDecl`); `workload` is always present on a successfully
+  // parsed `ScenarioDecl` (a missing one is a parse error, never a valid node) and always follows
+  // the `as` clause, so its own span start is the exact header-end boundary instead.
+  for (const scenario of program.scenarios) {
+    const scopeId = `scenario:${scenario.span.start.offset}`;
+    const bound = new Map<string, Span>();
+
+    if (scenario.sessions.length > 0) {
+      const sessionSpans = findIdentifierSpans(source, { start: scenario.name.span.end, end: scenario.workload.span.start }, scenario.sessions);
+      scenario.sessions.forEach((s, i) => {
+        refs.push({ name: s, kind: 'session', span: sessionSpans[i] ?? scenario.span, scopeId });
+      });
+    }
+
+    walkSteps(scenario.body, bound, scopeId, source, actionDefs, pushDef, refs);
+  }
+
   return { defs, refs };
 }
 
@@ -378,6 +398,11 @@ function walkSteps(
       case 'StubStmt':
         walkStringLit(source, step.urlPattern, bound, scopeId, refs);
         if (step.body) for (const field of step.body.fields) walkValue(field.value, bound, scopeId, source, actionDefs, refs);
+        break;
+      // `think 2s` / `think 1s to 3s` (M29, D18) — `minMs`/`maxMs` are plain numbers, no name to
+      // resolve; listed explicitly (not left as a silent switch fallthrough) so a future field
+      // addition to `ThinkStmt` shows up as a deliberate no-op here, not a gap.
+      case 'ThinkStmt':
         break;
     }
   }
