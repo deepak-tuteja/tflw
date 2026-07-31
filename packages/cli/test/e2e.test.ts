@@ -7,7 +7,7 @@
 
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, execFile } from 'node:child_process';
+import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -1921,7 +1921,7 @@ test('`tflw init --load` scaffolds load.tflw alongside the usual files', async (
   }
 });
 
-test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, writes report/load-metrics.json', async () => {
+test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, writes report/load-results.json', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-pass-'));
     try {
@@ -1936,18 +1936,31 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
       assert.match(stdout, /scenario "health burst"/);
       assert.match(stdout, /iterations: \d+/);
       assert.match(stdout, /load run passed/);
+      assert.match(stdout, /results:.*load-results\.json/);
+      assert.match(stdout, /report:.*load-report\.html/);
+      assert.match(stdout, /junit:.*load-junit\.xml/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as {
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
         ok: boolean;
+        inconclusive: boolean;
         scenarios: { name: string; ok: boolean; thresholds: { ok: boolean }[] }[];
         combined: { iterations: number };
       };
       assert.equal(metrics.ok, true);
+      assert.equal(metrics.inconclusive, false);
       assert.equal(metrics.scenarios.length, 1);
       assert.equal(metrics.scenarios[0]!.name, 'health burst');
       assert.equal(metrics.scenarios[0]!.ok, true);
       assert.equal(metrics.scenarios[0]!.thresholds[0]!.ok, true);
       assert.ok(metrics.combined.iterations > 0);
+
+      const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
+      assert.match(html, /<title>tflw load report — PASS<\/title>/);
+      assert.match(html, /Scenario &quot;health burst&quot;/);
+
+      const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+      assert.match(junit, /<testsuite name="tflw load"/);
+      assert.match(junit, /health burst — error rate/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1982,7 +1995,7 @@ test('`tflw load` runs every `scenario` in a file concurrently: passes/fails ind
       assert.match(failure.stdout, /combined:/);
       assert.match(failure.stdout, /load run failed/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as {
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
         ok: boolean;
         scenarios: { name: string; ok: boolean }[];
         combined: { iterations: number };
@@ -2018,7 +2031,7 @@ test('`tflw load` exits 1 and reports a breached threshold without throwing', as
     assert.equal(failure.code, 1);
     assert.match(failure.stdout, /load run failed/);
 
-    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as { ok: boolean };
+    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { ok: boolean };
     assert.equal(metrics.ok, false);
   } finally {
     server.closeAllConnections();
@@ -2074,7 +2087,7 @@ test('`tflw load --workers 3` really forks 3 OS processes and merges their resul
       assert.match(stdout, /load run passed/);
       assert.match(stdout, /generator:/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as {
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
         ok: boolean;
         scenarios: { name: string; ok: boolean }[];
         combined: { iterations: number };
@@ -2113,7 +2126,7 @@ test('`tflw load --workers 2` still fails the run (exit 1) when the merged, pool
     assert.equal(failure.code, 1);
     assert.match(failure.stdout, /load run failed/);
 
-    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as { ok: boolean; combined: { iterations: number; failures: number } };
+    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { ok: boolean; combined: { iterations: number; failures: number } };
     assert.equal(metrics.ok, false);
     assert.ok(metrics.combined.iterations > 0);
     assert.equal(metrics.combined.failures, metrics.combined.iterations, 'every /health hit a 500, every iteration should be a recorded failure');
@@ -2138,4 +2151,112 @@ test('`tflw load --workers 0` (or any non-positive-integer) is a usage error, sa
       await rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+// ---- M32: full LoadReport design — load-report.html/load-junit.xml, Ctrl-C partial report,
+// inconclusive exit code (PLAN_REPORTS_PERF_SECURITY.md R1-R6/R11) --------------------------------
+
+/** Spawns `tflw load`, sends SIGINT after `killAfterMs`, and resolves once the process exits with
+ * everything it printed. `execFileAsync` can't do this — it has no way to deliver a signal partway
+ * through a run — so this is `spawn` + manual stdout/stderr collection instead. */
+function runLoadAndSigint(loadArgs: string[], cwd: string, killAfterMs: number): Promise<{ code: number | null; output: string }> {
+  return new Promise((resolvePromise) => {
+    const child = spawn('node', [cliEntry, 'load', ...loadArgs, '--no-color'], { cwd });
+    let output = '';
+    child.stdout.on('data', (d: Buffer) => (output += d.toString()));
+    child.stderr.on('data', (d: Buffer) => (output += d.toString()));
+    setTimeout(() => child.kill('SIGINT'), killAfterMs);
+    child.on('exit', (code) => resolvePromise({ code, output }));
+  });
+}
+
+test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing the run', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-sigint-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // A long planned duration (4s) so "aborted well before the end" isn't a race against natural
+      // completion — SIGINT fires at 300ms, under 1/10th of the plan.
+      await writeFile(join(dir, 'load.tflw'), 'scenario "long"\n  ramp to 5 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+      const { code, output } = await runLoadAndSigint(['load.tflw'], dir, 300);
+      assert.equal(code, 130);
+      assert.match(output, /aborting… flushing a partial report/);
+      assert.match(output, /aborted at \d+s of 4s planned/);
+      assert.match(output, /load run aborted \(partial\)/);
+
+      const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { aborted: boolean; abortedMessage: string; combined: { iterations: number } };
+      assert.equal(results.aborted, true);
+      assert.match(results.abortedMessage, /^aborted at \d+s of 4s planned$/);
+      assert.ok(results.combined.iterations > 0, 'iterations completed before Ctrl-C must still be counted, not discarded');
+
+      const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
+      assert.match(html, /aborted-banner/);
+
+      const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+      assert.match(junit, /<property name="aborted" value="aborted at \d+s of 4s planned"\/>/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw load --workers 2`: Ctrl-C propagates to forked workers and still merges a partial report', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-sigint-workers-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'scenario "long"\n  ramp to 6 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+      const { code, output } = await runLoadAndSigint(['load.tflw', '--workers', '2'], dir, 400);
+      assert.equal(code, 130);
+      assert.match(output, /running across 2 generator processes/);
+      assert.match(output, /load run aborted \(partial\)/);
+
+      const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { aborted: boolean; combined: { iterations: number } };
+      assert.equal(results.aborted, true);
+      assert.ok(results.combined.iterations > 0, 'at least one of the two workers must have completed real iterations before the abort');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and marks every threshold `skipped`, not passed/failed, in junit', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-inconclusive-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(
+      join(dir, 'helpers.ts'),
+      'export function burnCpu(): boolean {\n  const start = Date.now();\n  while (Date.now() - start < 20) {\n    // deliberate synchronous busy-work — real CPU saturation, not a timing race\n  }\n  return true;\n}\n',
+      'utf8',
+    );
+    // No `api` step at all — this scenario's entire body is synchronous CPU burn, deliberately
+    // saturating the one generator process for real (not simulated), the same way
+    // `selfDiagnosis.test.ts`'s own busy-block test proves saturation deterministically.
+    await writeFile(
+      join(dir, 'load.tflw'),
+      'use "./helpers.ts"\n\nscenario "cpu burn"\n  ramp to 8 users over 600ms\n  let burned = burnCpu()\n  threshold p95 duration is less than 100000ms\n',
+      'utf8',
+    );
+
+    const failure = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+    assert.equal(failure.code, 3);
+    assert.match(failure.stdout, /tflw itself is the bottleneck/);
+    assert.match(failure.stdout, /load run inconclusive/);
+
+    const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { inconclusive: boolean; selfDiagnosis: { saturated: boolean } };
+    assert.equal(results.inconclusive, true);
+    assert.equal(results.selfDiagnosis.saturated, true);
+
+    const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+    assert.match(junit, /skipped="1"/);
+    assert.doesNotMatch(junit, /<failure/);
+    assert.match(junit, /<skipped message="[^"]*saturated[^"]*"\/>/);
+
+    const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
+    assert.match(html, /<title>tflw load report — INCONCLUSIVE<\/title>/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

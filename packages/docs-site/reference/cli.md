@@ -54,8 +54,15 @@ Runs every `scenario` declared in the file **concurrently** as a load test (see 
 [load testing guide](/guide/load-testing)). `--workers N` (default 1) forks N generator
 *processes* instead of running in one — each an equal striped share of every scenario's workload
 target, merged back into one report; every run also self-diagnoses its own event-loop lag/CPU and
-warns if tflw's own generator process was the bottleneck. Exit `0` = every scenario's `threshold`s
-met (or none declared), `1` = a threshold breached in any scenario, `2` = usage error.
+warns if tflw's own generator process was the bottleneck. A live ~1Hz console line tracks
+iterations/rps/error-rate as the run goes (single-process or `--workers N>1`, forked workers relay
+their own progress back over IPC); Ctrl-C stops new iterations and flushes a **partial** report
+instead of losing the run. Writes `report/load-report.html` (charts, per-scenario breakdown),
+`report/load-junit.xml` (one `<testcase>` per `threshold`), and `report/load-results.json`. Exit
+`0` = every scenario's `threshold`s met (or none declared), `1` = a threshold breached in any
+scenario, `2` = usage error, `3` = **inconclusive** (the generator itself saturated — the numbers
+describe tflw contending with itself, not the system under test; every junit `<testcase>` is
+`skipped`, not passed/failed), `130` = aborted via Ctrl-C (the standard "died from SIGINT" code).
 
 ## `tflw check`
 

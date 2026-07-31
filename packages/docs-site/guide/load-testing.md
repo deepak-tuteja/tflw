@@ -102,6 +102,10 @@ same signal a CI gate reads. An `expect` failure inside a scenario body fails **
 only, counted toward the error rate — it never aborts the run the way a functional test's failure
 would.
 
+Every threshold also lands in `report/load-junit.xml` as its own `<testcase>` (`scenario name —
+label`), so an existing CI job already reading junit for `tflw run` gates a `tflw load` step the
+same way, no separate parsing path to build.
+
 ## Cleanup — `after each` is skipped by default
 
 If your file has `before`/`after each` hooks (shared with the functional suite), `before each`
@@ -159,10 +163,10 @@ closer to production than testing either path in isolation. Each scenario keeps 
 `threshold`s, evaluated only against *its own* iterations. Scenario names must be unique within a
 file — they key the report's per-scenario breakdown.
 
-The end-of-run summary and `report/load-metrics.json` report two layers: a **combined** view (every
-scenario's iterations pooled — the quotable run-wide numbers) and a **per-scenario** breakdown (each
-scenario's own metrics and threshold verdicts). The overall run passes only if every scenario's
-thresholds do.
+The end-of-run summary, `report/load-report.html`, and `report/load-results.json` all report two
+layers: a **combined** view (every scenario's iterations pooled — the quotable run-wide numbers)
+and a **per-scenario** breakdown (each scenario's own metrics, charts, and threshold verdicts). The
+overall run passes only if every scenario's thresholds do.
 
 ## Scaling across processes — `--workers N`
 
@@ -178,9 +182,10 @@ npx tflw load load.tflw --workers 4
 No coordination happens between the processes beyond each one knowing its own index — the target
 splits evenly up front, and every VU's generated values (`unique(...)`, `random ...`) stay
 reproducible under `--seed` regardless of how many workers ran, since each worker's share of the
-run draws from a disjoint, deterministic slice of the same seed. Results merge back into one
-report — `report/load-metrics.json` and the end-of-run summary look identical whether the run used
-1 worker or 8; nothing downstream needs to know.
+run draws from a disjoint, deterministic slice of the same seed. Results merge back into one report
+— `report/load-report.html`/`load-results.json`/`load-junit.xml` and the end-of-run summary look
+identical whether the run used 1 worker or 8; nothing downstream needs to know. The live console
+line (below) works the same way too — each worker relays its own progress back to the parent.
 
 **Generator self-diagnosis:** every run (1 worker or many) tracks its own event-loop lag and CPU
 usage. If tflw's own generator process saturates — no headroom left to generate more load even if
@@ -194,10 +199,30 @@ latency/throughput reflects tflw's own generator process, not your system under 
 unreliable.
 ```
 
-A healthy run just shows the numbers, dimmed, with no warning. If you see this warning, add more
-`--workers` before trusting the latency/throughput numbers you're looking at.
+A healthy run just shows the numbers, dimmed, with no warning. If you see this warning, `tflw load`
+exits `3` (**inconclusive**) instead of `0`/`1` — every junit `<testcase>` comes back `skipped`,
+never passed or failed, so a CI gate reading exit codes or junit can't mistake a saturated generator
+for "the system under test passed." Add more `--workers` before trusting the latency/throughput
+numbers you're looking at.
+
+## Live console, and stopping a run early
+
+While a run is in flight, a ~1Hz console line tracks progress — iterations, current rps (windowed,
+not averaged since the start), error rate, and elapsed vs. planned duration:
+
+```
+iterations: 1204  failures: 3  rps: 198.4  error rate: 0.25%  4.1s/30.0s planned
+```
+
+**Ctrl-C stops the run early.** No new iterations start (whatever's already in flight finishes
+naturally), and everything that completed is still written out — `report/load-report.html`,
+`load-results.json`, and `load-junit.xml` all carry `aborted: true` and a message like `aborted at
+4s of 30s planned`, and the process exits `130`. This is deliberate: the most common reason to hit
+Ctrl-C on a load test is "this is melting down, kill it" — the evidence from those seconds is
+exactly what you want to keep, not lose. A second Ctrl-C before the first finishes flushing
+force-quits immediately, for a run that's genuinely stuck.
 
 ## What's next
 
-The full `load-report.html` view with live charts, junit mapping, and live per-second console
-throughput are still ahead; see the changelog for what's landed.
+Per-endpoint metric breakdown (today's report covers combined + per-scenario, R6's third axis) and
+the security/pentest arc are still ahead; see the changelog for what's landed.

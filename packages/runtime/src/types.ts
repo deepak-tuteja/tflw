@@ -9,6 +9,9 @@ export type { LogDestination, LogLevel } from '@tflw/lang';
 import type { BrowserEngine } from './browser.js';
 import type { SnapshotDiffAsset } from './snapshot.js';
 import type { HistogramBucket } from './histogram.js';
+import type { SerializedTimelineBucket, TimelinePoint } from './timeline.js';
+export type { TimelinePoint, SerializedTimelineBucket } from './timeline.js';
+export type { HistogramBucket } from './histogram.js';
 
 // ---- Resolved config -------------------------------------------------------
 
@@ -264,15 +267,17 @@ export type RunEvent =
 
 export type EventSink = (event: RunEvent) => void;
 
-// ---- Load testing (M29/M30/M31, PLAN_BROWSER_PERF_SECURITY.md D24a/D29/D19/D28, R4/R6) --------
+// ---- Load testing (M29-M32, PLAN_BROWSER_PERF_SECURITY.md D24a/D29/D19/D28, R1-R6/R11) --------
 //
-// Deliberately minimal — a "reporter stub" (M29/M30/M31's own scope), not the full `LoadReport`
-// design (`PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11: independent HTML view, live per-second
-// buckets, partial-on-SIGINT) that M32 builds. This is enough to run every `scenario` in a file
-// concurrently, optionally across multiple processes (M31), and get a pass/fail verdict + a
-// metrics JSON, combined and broken down per scenario (R6) plus a generator self-diagnosis
-// (M31/D28) — no `report/load-report.html`, no junit mapping yet, and no per-endpoint breakdown
-// (R6's other axis — needs per-request endpoint tagging M32 adds).
+// M32 fills in the rest of `PLAN_REPORTS_PERF_SECURITY.md`'s design on top of M29-M31's engine:
+// every `LoadMetrics` now carries its own `histogram`/`timeline` (R3/R4 — what `load-report.html`'s
+// inline-SVG charts render from), `LoadReport` gains `inconclusive` (R11 — `selfDiagnosis.saturated`
+// lifted to a top-level verdict the CLI maps to a distinct exit code and junit maps to `skipped`)
+// and `aborted`/`abortedMessage` (R5 — a Ctrl-C'd run's partial results, flushed rather than lost).
+// **Not built**: per-endpoint breakdown (R6's third axis, alongside combined/per-scenario which
+// this milestone does cover) — it needs a normalized endpoint-template identity (the same problem
+// R8 solves for SARIF fingerprints) that's a genuinely separate design question, deliberately left
+// for a fast-follow rather than rushed into this milestone's scope.
 
 /** One completed VU iteration's outcome, as fed to `LoadOptions.onIteration` for live progress. */
 export interface LoadIterationResult {
@@ -303,6 +308,16 @@ export interface LoadMetrics {
   readonly errorRate: number;
   /** Active (think-excluded) iteration duration, ms — see `LoadIterationResult.durationMs`. */
   readonly durations: LoadDurationStats;
+  /** M32 (R4) — this metric's own duration distribution, bucketed (not raw samples) — small enough
+   * to inline into `load-report.html` for the response-time distribution histogram chart, and
+   * reused verbatim by `load-results.json` consumers that want the full distribution rather than
+   * just the five summary percentiles in `durations`. */
+  readonly histogram: readonly HistogramBucket[];
+  /** M32 (R3/R4) — one point per second of wall-clock run time this metric's iterations landed in
+   * (`durations`' scope: combined = every scenario, a scenario report = just that scenario's own
+   * iterations) — the timeline SVGs (latency-over-time, throughput, error-rate) are built from
+   * this, sorted ascending by `offsetSeconds`. Empty for a run with zero iterations. */
+  readonly timeline: readonly TimelinePoint[];
 }
 
 export interface LoadThresholdResult {
@@ -343,7 +358,9 @@ export interface SelfDiagnosis {
 }
 
 export interface LoadReport {
-  /** Every scenario's `ok` (vacuously `true` for a scenario with no `threshold`s). */
+  /** Every scenario's `ok` (vacuously `true` for a scenario with no `threshold`s). Independent of
+   * `inconclusive` below — a saturated generator doesn't flip passing thresholds to failing, it
+   * just means this verdict shouldn't be trusted (R11: CI reads `inconclusive` first). */
   readonly ok: boolean;
   /** One entry per `scenario` in the file, source order, all run concurrently (M30, D29). */
   readonly scenarios: readonly LoadScenarioReport[];
@@ -358,6 +375,17 @@ export interface LoadReport {
   /** M31/D28 — this run's own generator health (single-process: one process; `--workers N`: the
    * merge of all N, `mergeSelfDiagnosis`). */
   readonly selfDiagnosis: SelfDiagnosis;
+  /** M32 (R11) — `selfDiagnosis.saturated` lifted to the top level: the measured numbers reflect
+   * tflw's own generator process, not the system under test, so `ok` isn't a trustworthy verdict
+   * this run. The CLI maps this to a distinct exit code and junit marks every threshold `skipped`
+   * rather than passed/failed (R11: "CI must not read an unmeasurable run as 'system passed'"). */
+  readonly inconclusive: boolean;
+  /** M32 (R5) — set when Ctrl-C stopped the run before its planned duration elapsed; every metric
+   * above still reflects whatever iterations completed before the abort, not a full run. Absent
+   * (not merely `false`) on a run that reached its planned end normally. */
+  readonly aborted?: boolean;
+  /** Human-readable "aborted at Ns of Nm planned" — only present alongside `aborted: true`. */
+  readonly abortedMessage?: string;
 }
 
 // ---- Multi-process load generator (M31, D19/R4) ----------------------------------------------
@@ -382,11 +410,30 @@ export interface LoadShardScenarioResult {
   readonly min: number;
   readonly max: number;
   readonly histogram: readonly HistogramBucket[];
+  /** M32 (R3/R4) — this shard's own per-second buckets; `Timeline.merge` combines them across
+   * shards the same way the histogram merges, so the parent's timeline charts cover the whole run,
+   * not just one shard's slice of it. */
+  readonly timeline: readonly SerializedTimelineBucket[];
 }
 
 /** What one forked worker process sends back to the parent once its striped share of the run
  * finishes. */
 export interface LoadShardResult {
   readonly scenarios: readonly LoadShardScenarioResult[];
+  readonly selfDiagnosis: SelfDiagnosis;
+}
+
+/** M32 (R5) — a coarse, cheap-to-compute cumulative snapshot fired roughly once a second while a
+ * `runLoad`/`runLoadShard` call is in flight, for the CLI's live console line. Deliberately not the
+ * same shape as `LoadMetrics` (no percentiles here — computing one on every tick would defeat the
+ * point of a lightweight tick); the CLI derives `rps`/`error rate` itself by diffing consecutive
+ * snapshots. */
+export interface LoadProgressSnapshot {
+  readonly iterations: number;
+  readonly failures: number;
+  readonly elapsedMs: number;
+  /** A live `startSelfDiagnosis().peek()` read as of this tick (R5: "surfaces the D19 generator
+   * self-diagnosis live, so a saturating generator is visible mid-run" — not just in the final
+   * report). */
   readonly selfDiagnosis: SelfDiagnosis;
 }

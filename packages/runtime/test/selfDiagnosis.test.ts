@@ -32,11 +32,28 @@ test('a deliberately blocked event loop is detected as saturated', async () => {
   while (performance.now() - blockStart < 300) {
     // spin
   }
-  await sleep(50);
+  // M32: `startSelfDiagnosis` won't declare `saturated` for a run under `MIN_SATURATION_WINDOW_MS`
+  // (300ms) — a real, deliberate 300ms block plus this 150ms tail comfortably clears that floor
+  // with margin, rather than landing right on the boundary.
+  await sleep(150);
   const result = diag.stop();
   assert.equal(result.saturated, true, JSON.stringify(result));
   assert.ok(result.maxEventLoopLagMs > 100, `expected a large lag spike, got ${result.maxEventLoopLagMs}ms`);
   assert.ok(result.cpuPercent > 50, `expected high CPU from the busy-block, got ${result.cpuPercent}%`);
+});
+
+test('a very short run never reports saturated, even with an inflated CPU% reading (M32 fix)', async () => {
+  // Under ~300ms, one-time startup cost (module/regex/JIT warm-up) can read as a high `cpuMs /
+  // wallMs` percentage without any real sustained saturation — discovered via a genuinely short
+  // (150ms) two-scenario `tflw load` run reading 140% CPU from pure startup cost. A brief busy
+  // block reproduces the same shape deterministically: real CPU time, tiny wall-clock denominator.
+  const diag = startSelfDiagnosis(20);
+  const blockStart = performance.now();
+  while (performance.now() - blockStart < 50) {
+    // spin — inflates cpuPercent the same way a real short run's one-time costs do
+  }
+  const result = diag.stop();
+  assert.equal(result.saturated, false, JSON.stringify(result));
 });
 
 test('mergeSelfDiagnosis: saturated is the logical OR across shards, not an average', () => {

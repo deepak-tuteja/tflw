@@ -87,6 +87,7 @@ import type {
   LoadDurationStats,
   LoadIterationResult,
   LoadMetrics,
+  LoadProgressSnapshot,
   LoadReport,
   LoadScenarioReport,
   LoadShardResult,
@@ -101,6 +102,7 @@ import type {
   TestResult,
 } from './types.js';
 import { LatencyHistogram } from './histogram.js';
+import { Timeline } from './timeline.js';
 import { startSelfDiagnosis, mergeSelfDiagnosis } from './selfDiagnosis.js';
 
 /** A JS/TS helper export, called `(ctx, ...args)` — "test context in, values out" (P#11). */
@@ -281,9 +283,23 @@ export interface LoadOptions {
   readonly environ?: NodeJS.ProcessEnv;
   readonly seed?: number;
   readonly now?: string;
-  /** Fired once per completed iteration — the CLI's live console progress (M32 formalizes a real
-   * `LoadReport` live view; this is enough for a running iteration/error-rate counter). */
+  /** Fired once per completed iteration — fine-grained progress a consumer can aggregate itself
+   * (this file's own tests do). The CLI's live console line uses `onProgressTick` below instead,
+   * since that one works identically whether iterations are happening in this process or a forked
+   * worker reporting over IPC. */
   readonly onIteration?: (result: LoadIterationResult) => void;
+  /** M32 (R5) — fired roughly once a second while the run is in flight with a cumulative snapshot
+   * across every scenario this call is driving. The CLI's live console aggregate reads this; a
+   * forked `--workers N>1` worker relays each tick to the parent over IPC so the same ~1Hz line
+   * covers a multi-process run too, not just single-process. */
+  readonly onProgressTick?: (snapshot: LoadProgressSnapshot) => void;
+  /** M32 (R5) — when aborted, no *new* iterations start (closed-model VU loops stop looping, open-
+   * model arrival scheduling stops scheduling); iterations already in flight are allowed to finish
+   * naturally rather than being cut mid-request. `runLoad`/`runLoadShard` still return a full
+   * result built from whatever completed — `LoadReport.aborted`/`abortedMessage` (R5's "flush a
+   * partial report … stamped 'aborted at Ns of Nm planned'") is what the CLI's SIGINT handler
+   * relies on to hand back real evidence instead of nothing. */
+  readonly abortSignal?: AbortSignal;
   /** M31 (D19) — when set, this call runs only this shard's striped share of every scenario's
    * workload target (`shareOfWorkloadTarget`), and every iteration draws its reproducible sub-seed
    * (P#23) from a globally-unique index across every shard (`globalIterationIndex`) — the two
@@ -318,6 +334,9 @@ export function globalIterationIndex(localIndex: number, shard?: { readonly inde
 interface ScenarioAccumulator {
   readonly scenario: ScenarioDecl;
   readonly histogram: LatencyHistogram;
+  /** M32 (R3/R4) — this scenario's own per-second buckets, feeding `load-report.html`'s timeline
+   * charts once shaped into `LoadMetrics.timeline`. */
+  readonly timeline: Timeline;
   failures: number;
 }
 
@@ -328,6 +347,12 @@ interface LoadCoreResult {
   readonly runClock: Date;
   readonly startedAt: string;
   readonly runStart: number;
+  /** M32 (R5) — whether `opts.abortSignal` was aborted by the time every scenario's VUs finished
+   * (Ctrl-C stopped new iterations from starting, then in-flight ones were let finish). */
+  readonly aborted: boolean;
+  /** The longest scenario's planned `overMs` in this file — "Nm planned" in an aborted run's
+   * `abortedMessage`. */
+  readonly plannedMs: number;
 }
 
 /** The engine shared by `runLoad` and `runLoadShard` — everything through "every scenario's VUs
@@ -367,7 +392,21 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // `globalIterationIndex` (M31) turns this shard-local counter into a cross-shard-unique id.
   let iterationIndex = 0;
 
-  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, histogram: new LatencyHistogram(), failures: 0 }));
+  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 }));
+
+  // M32 (R5) — a cumulative snapshot roughly once a second, for the CLI's live console line.
+  // `unref()` so a tick left pending never keeps the process alive on its own (mirrors
+  // `startSelfDiagnosis`'s own timer, `selfDiagnosis.ts`).
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
+  if (opts.onProgressTick) {
+    const tick = (): void => {
+      const iterations = accumulators.reduce((n, acc) => n + acc.histogram.count, 0);
+      const failures = accumulators.reduce((n, acc) => n + acc.failures, 0);
+      opts.onProgressTick!({ iterations, failures, elapsedMs: Math.round(performance.now() - runStart), selfDiagnosis: selfDiag.peek() });
+    };
+    progressTimer = setInterval(tick, 1000);
+    progressTimer.unref?.();
+  }
 
   // Each scenario's own session establishment + VU scheduling runs as one independent async task
   // (`sessionCache` is safe under concurrent `ensure()` calls — it dedupes in-flight promises by
@@ -438,6 +477,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
       }
       if (!result.ok) acc.failures++;
       acc.histogram.record(result.durationMs);
+      acc.timeline.record((performance.now() - runStart) / 1000, result.durationMs, result.ok);
       opts.onIteration?.(result);
     };
 
@@ -456,8 +496,10 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
         vuPromises.push(
           (async () => {
             const waitMs = spawnAt - performance.now();
-            if (waitMs > 0) await sleep(waitMs);
-            while (performance.now() < runEnd) await runIteration();
+            if (waitMs > 0) await sleep(waitMs, opts.abortSignal);
+            // M32 (R5): Ctrl-C stops this VU from *starting* another iteration — whichever
+            // iteration it's mid-`runIteration()` on (if any) still runs to completion above.
+            while (performance.now() < runEnd && !opts.abortSignal?.aborted) await runIteration();
           })(),
         );
       }
@@ -473,10 +515,14 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
       const rps = shareOfWorkloadTarget(scenario.workload.rps, opts.shard);
       const overS = overMs / 1000;
       const totalArrivals = rps > 0 ? Math.floor((rps * overS) / 2) : 0;
-      for (let k = 1; k <= totalArrivals; k++) {
+      // M32 (R5): checked both before *and* after the wait — an abort that lands mid-sleep must
+      // stop this scenario from scheduling one more arrival once `sleep` returns early, not just
+      // catch the next iteration of the loop.
+      for (let k = 1; k <= totalArrivals && !opts.abortSignal?.aborted; k++) {
         const scheduledMs = Math.sqrt((2 * k * overS) / rps) * 1000;
         const waitMs = runStart + scheduledMs - performance.now();
-        if (waitMs > 0) await sleep(waitMs);
+        if (waitMs > 0) await sleep(waitMs, opts.abortSignal);
+        if (opts.abortSignal?.aborted) break;
         // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion
         // (that's the whole point of "open") — its promise is still collected so this scenario's
         // own task (and, transitively, `runLoad`) waits for every fired iteration.
@@ -488,13 +534,29 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   });
 
   await Promise.all(scenarioTasks);
+  if (progressTimer) clearInterval(progressTimer);
   const selfDiagnosis = selfDiag.stop();
+  const plannedMs = Math.max(...scenarios.map((s) => s.workload.overMs));
 
-  return { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart };
+  return { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted: opts.abortSignal?.aborted ?? false, plannedMs };
 }
 
 function summarizeHistogram(h: LatencyHistogram): LoadDurationStats {
   return { min: h.min, max: h.max, avg: h.avg, p50: h.percentile(50), p90: h.percentile(90), p95: h.percentile(95), p99: h.percentile(99) };
+}
+
+/** M32 (R3/R4) — shapes one accumulated histogram+timeline into a full `LoadMetrics`, used for
+ * every metrics-shaped view a `LoadReport` has (each scenario's own, and the combined pool) —
+ * exactly one place decides what a "metrics" object contains. */
+function buildLoadMetrics(histogram: LatencyHistogram, failures: number, timeline: Timeline): LoadMetrics {
+  return {
+    iterations: histogram.count,
+    failures,
+    errorRate: histogram.count > 0 ? failures / histogram.count : 0,
+    durations: summarizeHistogram(histogram),
+    histogram: histogram.toBuckets(),
+    timeline: timeline.toSeries(),
+  };
 }
 
 function evaluateThresholds(thresholds: readonly ThresholdDecl[], metrics: LoadMetrics, percentileAt: (p: number) => number): LoadThresholdResult[] {
@@ -512,47 +574,49 @@ function workloadOf(scenario: ScenarioDecl): LoadScenarioReport['workload'] {
     : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs };
 }
 
+/** "aborted at Ns of Nm planned" (R5) — `elapsedMs` is what actually ran, `plannedMs` the longest
+ * scenario's own `overMs` in the file (§2.3's model: a scenario "lasts exactly `overMs`," so the
+ * longest one governs how long the whole file's run was meant to take). */
+function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
+  return `aborted at ${Math.round(elapsedMs / 1000)}s of ${Math.round(plannedMs / 1000)}s planned`;
+}
+
 /** Runs every `scenario` in the file (M30/D29 — names unique, checker-enforced, `checkScenarios`/
  * TF033) as one concurrent, single-process load test — the whole file, in this one process (see
  * `runLoadShard` for the multi-process, `--workers N>1` path). Each scenario's `threshold`s are
  * evaluated once against *its own* accumulated metrics (D24a); R6's combined-vs-per-scenario split
  * falls out of how results are pooled at the end, not out of separate runs. */
 export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
-  const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart } = await runLoadCore(program, config, opts);
+  const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted, plannedMs } = await runLoadCore(program, config, opts);
 
-  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, failures }) => {
-    const metrics: LoadMetrics = {
-      iterations: histogram.count,
-      failures,
-      errorRate: histogram.count > 0 ? failures / histogram.count : 0,
-      durations: summarizeHistogram(histogram),
-    };
+  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, timeline, failures }) => {
+    const metrics = buildLoadMetrics(histogram, failures, timeline);
     const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
     return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
   });
 
   const combinedHistogram = new LatencyHistogram();
+  const combinedTimeline = new Timeline();
   let combinedFailures = 0;
   for (const acc of accumulators) {
     combinedHistogram.merge(acc.histogram);
+    combinedTimeline.merge(acc.timeline);
     combinedFailures += acc.failures;
   }
-  const combined: LoadMetrics = {
-    iterations: combinedHistogram.count,
-    failures: combinedFailures,
-    errorRate: combinedHistogram.count > 0 ? combinedFailures / combinedHistogram.count : 0,
-    durations: summarizeHistogram(combinedHistogram),
-  };
+  const combined = buildLoadMetrics(combinedHistogram, combinedFailures, combinedTimeline);
 
+  const durationMs = Math.round(performance.now() - runStart);
   return {
     ok: scenarioReports.every((s) => s.ok),
     scenarios: scenarioReports,
     combined,
     startedAt,
-    durationMs: Math.round(performance.now() - runStart),
+    durationMs,
     seed: runSeed,
     now: runClock.toISOString(),
     selfDiagnosis,
+    inconclusive: selfDiagnosis.saturated,
+    ...(aborted ? { aborted: true, abortedMessage: formatAbortedMessage(durationMs, plannedMs) } : {}),
   };
 }
 
@@ -563,7 +627,7 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
  * produces one. Invoked by the CLI's forked worker processes under `--workers N>1`. */
 export async function runLoadShard(program: Program, config: ResolvedConfig, opts: LoadOptions & { readonly shard: { readonly index: number; readonly count: number } }): Promise<LoadShardResult> {
   const { accumulators, selfDiagnosis } = await runLoadCore(program, config, opts);
-  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, failures }) => ({
+  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, timeline, failures }) => ({
     name: scenario.name.value,
     workload: workloadOf(scenario),
     iterations: histogram.count,
@@ -572,13 +636,14 @@ export async function runLoadShard(program: Program, config: ResolvedConfig, opt
     min: histogram.min,
     max: histogram.max,
     histogram: histogram.toBuckets(),
+    timeline: timeline.toBuckets(),
   }));
   return { scenarios, selfDiagnosis };
 }
 
 /** M31 (D19/R4) — combines every forked worker's `LoadShardResult` into the exact same
  * `LoadReport` shape `runLoad` itself returns, so nothing downstream (CLI rendering,
- * `load-metrics.json`) needs to know how many processes actually ran. Matches shards to `program`'s
+ * `load-results.json`) needs to know how many processes actually ran. Matches shards to `program`'s
  * scenarios by name (the parent parses the same file independently rather than shipping
  * `ThresholdDecl`s over IPC — cheap, and keeps threshold re-evaluation using the exact same
  * `evaluateThresholds` a single-process run does). A shard missing a given scenario entirely is
@@ -587,43 +652,44 @@ export async function runLoadShard(program: Program, config: ResolvedConfig, opt
 export function mergeLoadShardReports(
   program: Program,
   shardResults: readonly LoadShardResult[],
-  meta: { readonly startedAt: string; readonly durationMs: number; readonly seed: number; readonly now: string },
+  meta: { readonly startedAt: string; readonly durationMs: number; readonly seed: number; readonly now: string; readonly aborted?: boolean },
 ): LoadReport {
   if (shardResults.length === 0) throw new RuntimeError('`mergeLoadShardReports` needs at least one shard result');
 
   const perScenario = program.scenarios.map((scenario) => {
     const histogram = new LatencyHistogram();
+    const timeline = new Timeline();
     let iterations = 0;
     let failures = 0;
     for (const shard of shardResults) {
       const match = shard.scenarios.find((s) => s.name === scenario.name.value);
       if (!match) continue;
       histogram.merge(LatencyHistogram.fromBuckets(match.histogram, { count: match.iterations, sum: match.sum, min: match.min, max: match.max }));
+      timeline.merge(Timeline.fromBuckets(match.timeline));
       iterations += match.iterations;
       failures += match.failures;
     }
-    return { scenario, histogram, iterations, failures };
+    return { scenario, histogram, timeline, iterations, failures };
   });
 
-  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, iterations, failures }) => {
-    const metrics: LoadMetrics = { iterations, failures, errorRate: iterations > 0 ? failures / iterations : 0, durations: summarizeHistogram(histogram) };
+  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, timeline, iterations, failures }) => {
+    const metrics = buildLoadMetrics(histogram, failures, timeline);
     const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
     return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
   });
 
   const combinedHistogram = new LatencyHistogram();
+  const combinedTimeline = new Timeline();
   let combinedFailures = 0;
-  for (const { histogram, failures } of perScenario) {
+  for (const { histogram, timeline, failures } of perScenario) {
     combinedHistogram.merge(histogram);
+    combinedTimeline.merge(timeline);
     combinedFailures += failures;
   }
-  const combined: LoadMetrics = {
-    iterations: combinedHistogram.count,
-    failures: combinedFailures,
-    errorRate: combinedHistogram.count > 0 ? combinedFailures / combinedHistogram.count : 0,
-    durations: summarizeHistogram(combinedHistogram),
-  };
+  const combined = buildLoadMetrics(combinedHistogram, combinedFailures, combinedTimeline);
 
+  const selfDiagnosis = mergeSelfDiagnosis(shardResults.map((s) => s.selfDiagnosis));
+  const plannedMs = Math.max(...program.scenarios.map((s) => s.workload.overMs));
   return {
     ok: scenarioReports.every((s) => s.ok),
     scenarios: scenarioReports,
@@ -632,7 +698,9 @@ export function mergeLoadShardReports(
     durationMs: meta.durationMs,
     seed: meta.seed,
     now: meta.now,
-    selfDiagnosis: mergeSelfDiagnosis(shardResults.map((s) => s.selfDiagnosis)),
+    selfDiagnosis,
+    inconclusive: selfDiagnosis.saturated,
+    ...(meta.aborted ? { aborted: true, abortedMessage: formatAbortedMessage(meta.durationMs, plannedMs) } : {}),
   };
 }
 
@@ -2241,8 +2309,25 @@ async function execWaitUntilApi(
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+/** `signal` (M32, R5) races the timer against an abort — a scheduled sleep (VU spawn stagger,
+ * open-model arrival wait) returns immediately once Ctrl-C fires instead of finishing out its full
+ * delay, the difference between an abort taking effect this instant vs. up to the longest scheduled
+ * sleep in the file (which for a `ramp … over 30s` scenario could be the better part of 30s). Every
+ * other call site (think time, retry backoff, poll intervals) passes no signal and behaves exactly
+ * as before. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 // ---- expect evaluation (shared by `expect` and `wait until api`) ----------

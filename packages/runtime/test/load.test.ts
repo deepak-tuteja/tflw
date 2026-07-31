@@ -337,11 +337,11 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   for (const v of [500, 520, 510]) slowHistogram.record(v);
 
   const shardFast: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets() }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), timeline: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const shardSlow: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets() }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), timeline: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
 
@@ -364,7 +364,7 @@ test('mergeLoadShardReports: a shard missing a scenario entirely (its striped sh
   const hA = new LatencyHistogram();
   hA.record(5);
   const shardWithOnlyA: LoadShardResult = {
-    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets() }],
+    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), timeline: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const merged = mergeLoadShardReports(program, [shardWithOnlyA], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -382,7 +382,7 @@ test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard satura
   const empty = new LatencyHistogram();
   empty.record(1);
   const shard = (saturated: boolean): LoadShardResult => ({
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets() }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), timeline: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated },
   });
   const merged = mergeLoadShardReports(program, [shard(false), shard(true)], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -419,5 +419,93 @@ test('`runLoad` reports a plausible selfDiagnosis (single-process, unsharded)', 
   assert.equal(typeof report.selfDiagnosis.saturated, 'boolean');
   assert.ok(report.selfDiagnosis.avgEventLoopLagMs >= 0);
   assert.ok(report.selfDiagnosis.cpuPercent >= 0);
+  await server.close();
+});
+
+// ---- M32: metrics.histogram/timeline, inconclusive, partial-on-abort, progress ticks (R3-R5/R11) ----
+
+test('LoadMetrics carries its own histogram + timeline, both for a scenario and the combined view', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "S"\n  ramp to 3 users over 200ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  assert.ok(s.metrics.histogram.length > 0, 'a scenario with iterations must have a non-empty histogram');
+  assert.ok(s.metrics.timeline.length > 0, 'a scenario with iterations must have a non-empty timeline');
+  assert.equal(s.metrics.timeline[0]!.offsetSeconds, 0);
+  assert.ok(report.combined.histogram.length > 0);
+  assert.ok(report.combined.timeline.length > 0);
+  assert.equal(
+    report.combined.timeline.reduce((n, p) => n + p.count, 0),
+    report.combined.iterations,
+    'summing every timeline point\'s count must equal the total iteration count',
+  );
+  await server.close();
+});
+
+test('`runLoad`: inconclusive mirrors selfDiagnosis.saturated', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "S"\n  ramp to 1 users over 20ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.inconclusive, report.selfDiagnosis.saturated);
+  assert.equal(report.aborted, undefined, 'a run that reaches its planned end must not be flagged aborted');
+  await server.close();
+});
+
+test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.saturated', () => {
+  const source = 'scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n';
+  const { program } = parseSource(source);
+  const h = new LatencyHistogram();
+  h.record(1);
+  const shard: LoadShardResult = {
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), timeline: [] }],
+    selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
+  };
+  const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
+  assert.equal(merged.inconclusive, true);
+});
+
+test('`runLoad` with an already-aborted signal runs zero iterations and flags aborted/abortedMessage', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "S"\n  ramp to 5 users over 5000ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const controller = new AbortController();
+  controller.abort();
+  const report = await runLoad(program, testConfig(server.baseUrl), { source, abortSignal: controller.signal });
+  assert.equal(report.aborted, true);
+  assert.match(report.abortedMessage!, /^aborted at \d+s of 5s planned$/, report.abortedMessage);
+  assert.equal(report.combined.iterations, 0);
+  await server.close();
+});
+
+test('`runLoad`: aborting mid-run stops new iterations well short of the planned duration', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  // Long planned duration (5s) so "aborted well before the end" isn't a race against natural
+  // completion — the abort fires at 100ms, under 1/40th of the plan.
+  const source = 'scenario "S"\n  ramp to 20 users over 5000ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 100);
+  const start = Date.now();
+  const report = await runLoad(program, testConfig(server.baseUrl), { source, abortSignal: controller.signal });
+  const wallMs = Date.now() - start;
+  assert.equal(report.aborted, true);
+  assert.ok(wallMs < 2000, `abort should stop the run well under the 5s plan (took ${wallMs}ms)`);
+  assert.ok(report.combined.iterations > 0, 'iterations already in flight when the abort fired should still be counted');
+  await server.close();
+});
+
+test('onProgressTick fires roughly once a second with a cumulative, non-decreasing snapshot', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "S"\n  ramp to 5 users over 1300ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const ticks: { iterations: number; failures: number; elapsedMs: number }[] = [];
+  await runLoad(program, testConfig(server.baseUrl), { source, onProgressTick: (snapshot) => ticks.push(snapshot) });
+  assert.ok(ticks.length >= 1, `expected at least one tick over a 1.3s run, got ${ticks.length}`);
+  for (let i = 1; i < ticks.length; i++) {
+    assert.ok(ticks[i]!.iterations >= ticks[i - 1]!.iterations, 'iterations must never decrease tick to tick');
+    assert.ok(ticks[i]!.elapsedMs >= ticks[i - 1]!.elapsedMs, 'elapsedMs must never decrease tick to tick');
+  }
   await server.close();
 });

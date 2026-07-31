@@ -57,6 +57,7 @@ import {
   SUPPORTED_BROWSER_ENGINES,
   LOG_LEVEL_ORDER,
   startPickSession,
+  mergeSelfDiagnosis,
   type BrowserEngine,
   type RunReport,
   type TestResult,
@@ -66,9 +67,9 @@ import {
   type ResolvedConfig,
   type PickSessionHandle,
   type LoadReport,
-  type LoadIterationResult,
   type LoadMetrics,
   type LoadShardResult,
+  type LoadProgressSnapshot,
   type SelfDiagnosis,
 } from '@tflw/runtime';
 import { spawn, fork, type ChildProcess } from 'node:child_process';
@@ -80,6 +81,9 @@ import {
   readLastRun,
   writeEventsNdjson,
   renderCliSummary,
+  writeLoadReport,
+  writeLoadJunitXml,
+  writeLoadResultsJson,
 } from '@tflw/reporter';
 import { startServer } from '@tflw/lsp-server';
 import { buildEnviron } from './env.js';
@@ -88,6 +92,11 @@ import { DOCS_TOPICS } from './docs-data.generated.js';
 const EXIT_OK = 0;
 const EXIT_FAIL = 1; // a test failed
 const EXIT_USAGE = 2; // usage / config / parse error — could not run
+const EXIT_INCONCLUSIVE = 3; // M32/R11 — `tflw load` only: the generator itself saturated, so the
+// measured numbers don't describe the system under test. Takes priority over pass/fail — CI must
+// not read an unmeasurable run as "system passed" (or "system failed").
+const EXIT_ABORTED = 130; // M32/R5 — Ctrl-C during `tflw load`; the standard Unix "died from
+// SIGINT" code (128+2), same convention `tflw watch`'s own SIGINT handling documents.
 
 // Set via esbuild `--define` at bundle time (packages/cli/scripts/bundle.mjs, decision 74b) to the
 // real package.json version. Undefined under `npm run dev` (unbundled `tsx`), where `getVersion()`
@@ -1068,7 +1077,17 @@ interface LoadWorkerStartMessage {
   readonly shardCount: number;
 }
 
-type LoadWorkerToParentMessage = { readonly type: 'ready' } | { readonly type: 'done'; readonly result: LoadShardResult } | { readonly type: 'error'; readonly message: string };
+/** M32 (R5) — sent by the parent once its own `abortSignal` fires (Ctrl-C), so a running child
+ * stops spawning new iterations and reports back whatever it already has instead of the parent
+ * relying solely on the terminal's own SIGINT-to-process-group propagation (not guaranteed on every
+ * platform, and gives no chance to relay the partial result cleanly over IPC first). */
+type LoadWorkerFromParentMessage = LoadWorkerStartMessage | { readonly type: 'abort' };
+
+type LoadWorkerToParentMessage =
+  | { readonly type: 'ready' }
+  | { readonly type: 'progress'; readonly snapshot: LoadProgressSnapshot }
+  | { readonly type: 'done'; readonly result: LoadShardResult }
+  | { readonly type: 'error'; readonly message: string };
 
 /** The `--internal-load-worker` branch (M31, D19) — runs inside a process `loadCommand` forked via
  * `child_process.fork(process.argv[1], ['--internal-load-worker'], …)`. Never reads `argv`; every
@@ -1077,10 +1096,20 @@ type LoadWorkerToParentMessage = { readonly type: 'ready' } | { readonly type: '
  * `ready` — avoids any risk of the parent's `send()` racing ahead of this process installing its
  * `message` listener. stdout/stderr are suppressed here (`loadCommand` sets `stdio: ['ignore',
  * 'ignore', 'ignore', 'ipc']`) — the parent already printed the file's scenario listing once;
- * N workers doing it again would just be noise. */
+ * N workers doing it again would just be noise. `message` stays a persistent listener (not `once`,
+ * M32) so an `abort` message arriving after `start` is still handled — it flips the same
+ * `AbortController` `runLoadShard`'s own VU loops already check. */
 async function loadWorkerCommand(): Promise<number> {
   return new Promise<number>((resolvePromise) => {
-    process.once('message', (msg: LoadWorkerStartMessage) => {
+    const controller = new AbortController();
+    let started = false;
+    process.on('message', (msg: LoadWorkerFromParentMessage) => {
+      if (msg.type === 'abort') {
+        controller.abort();
+        return;
+      }
+      if (started) return;
+      started = true;
       void (async () => {
         try {
           let seedArg: number | undefined;
@@ -1099,6 +1128,8 @@ async function loadWorkerCommand(): Promise<number> {
             seed: seedArg,
             now: msg.nowRaw,
             shard: { index: msg.shardIndex, count: msg.shardCount },
+            abortSignal: controller.signal,
+            onProgressTick: (snapshot) => process.send?.({ type: 'progress', snapshot } satisfies LoadWorkerToParentMessage),
           });
           process.send?.({ type: 'done', result } satisfies LoadWorkerToParentMessage);
           resolvePromise(EXIT_OK);
@@ -1114,33 +1145,51 @@ async function loadWorkerCommand(): Promise<number> {
 
 /** Forks one `--internal-load-worker` child for shard `index` of `count` and resolves with its
  * `LoadShardResult` once it reports `done` (M31, D19) — rejects on `error`, a non-IPC-reporting
- * crash, or an unexpected exit before either. */
-function runShardInChildProcess(start: Omit<LoadWorkerStartMessage, 'type' | 'shardIndex' | 'shardCount'>, index: number, count: number): Promise<LoadShardResult> {
+ * crash, or an unexpected exit before either. M32: relays each `progress` tick to `onProgress`, and
+ * sends `{type:'abort'}` to the child the moment `abortSignal` fires so it can wind down and still
+ * report a partial `done` rather than being killed mid-flight. */
+function runShardInChildProcess(
+  start: Omit<LoadWorkerStartMessage, 'type' | 'shardIndex' | 'shardCount'>,
+  index: number,
+  count: number,
+  opts: { readonly onProgress?: (snapshot: LoadProgressSnapshot) => void; readonly abortSignal?: AbortSignal } = {},
+): Promise<LoadShardResult> {
   return new Promise((resolvePromise, reject) => {
     const child: ChildProcess = fork(process.argv[1]!, ['--internal-load-worker'], { execArgv: process.execArgv, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     let settled = false;
+    const onAbort = (): void => {
+      child.send({ type: 'abort' } satisfies LoadWorkerFromParentMessage);
+    };
+    opts.abortSignal?.addEventListener('abort', onAbort);
+    const cleanup = (): void => opts.abortSignal?.removeEventListener('abort', onAbort);
     child.once('message', (readyMsg: LoadWorkerToParentMessage) => {
       if (readyMsg.type !== 'ready') return;
       child.send({ type: 'start', ...start, shardIndex: index, shardCount: count } satisfies LoadWorkerStartMessage);
     });
     child.on('message', (msg: LoadWorkerToParentMessage) => {
-      if (msg.type === 'done') {
+      if (msg.type === 'progress') {
+        opts.onProgress?.(msg.snapshot);
+      } else if (msg.type === 'done') {
         settled = true;
+        cleanup();
         resolvePromise(msg.result);
       } else if (msg.type === 'error') {
         settled = true;
+        cleanup();
         reject(new Error(`load worker (shard ${index + 1}/${count}) failed: ${msg.message}`));
       }
     });
     child.once('error', (e) => {
       if (!settled) {
         settled = true;
+        cleanup();
         reject(e);
       }
     });
     child.once('exit', (code) => {
       if (!settled) {
         settled = true;
+        cleanup();
         reject(new Error(`load worker (shard ${index + 1}/${count}) exited unexpectedly (code ${code})`));
       }
     });
@@ -1156,11 +1205,11 @@ function runShardInChildProcess(start: Omit<LoadWorkerStartMessage, 'type' | 'sh
  * generator *processes* rather than scaling in-process — load generation is CPU-bound and Node
  * caps at one core per process.
  *
- * Reporter stub (M29/M30/M31's own scope, not yet the full `LoadReport` design in
- * `PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11): a live console counter (single-process only — M31's
- * forked workers report once at the end, not live, M32's own scope), an end-of-run summary
- * (combined + per-scenario, R6, plus a generator self-diagnosis line, D28), and a
- * `report/load-metrics.json` dump. No `load-report.html`, no junit mapping — those are M32.
+ * M32 fills in the rest of `PLAN_REPORTS_PERF_SECURITY.md`'s R1-R6/R11 design: a real ~1Hz live
+ * console line (single-process *and* multi-worker, via the forked workers' own `progress` IPC
+ * messages), `load-report.html`/`load-junit.xml`/`load-results.json` (R2/R3/R6), Ctrl-C flushing a
+ * partial report instead of losing the run (R5), and a distinct exit code when the generator itself
+ * saturated (R11) — see `EXIT_INCONCLUSIVE`/`EXIT_ABORTED` above.
  */
 async function loadCommand(argv: string[]): Promise<number> {
   const args = parseLoadArgs(argv);
@@ -1216,26 +1265,41 @@ async function loadCommand(argv: string[]): Promise<number> {
     process.stdout.write(`scenario "${scenario.name.value}" — ${workloadLabel}\n`);
   }
 
+  const plannedMs = Math.max(...program.scenarios.map((s) => s.workload.overMs));
+
+  // M32 (R5) — first Ctrl-C requests a graceful stop (no new iterations; `report.aborted` flushes
+  // whatever completed); a second one before that resolves force-quits immediately, the usual
+  // escape hatch for a run that's genuinely stuck.
+  const controller = new AbortController();
+  let interrupted = false;
+  const onSigint = (): void => {
+    if (interrupted) {
+      process.stdout.write('\n' + dim(color, 'second Ctrl-C — exiting immediately') + '\n');
+      process.exit(EXIT_ABORTED);
+    }
+    interrupted = true;
+    controller.abort();
+    process.stdout.write('\n' + dim(color, 'aborting… flushing a partial report (Ctrl-C again to force-quit)') + '\n');
+  };
+  process.on('SIGINT', onSigint);
+
+  let previousTick: LoadProgressSnapshot | undefined;
+  const printProgress = (snapshot: LoadProgressSnapshot): void => {
+    if (process.stdout.isTTY) process.stdout.write(`\r${renderLoadProgressLine(snapshot, previousTick, plannedMs, color)}   `);
+    previousTick = snapshot;
+  };
+
   let report: LoadReport;
   if (workers === 1) {
-    let iterations = 0;
-    let failures = 0;
-    const onIteration = (r: LoadIterationResult): void => {
-      iterations++;
-      if (!r.ok) failures++;
-      if (process.stdout.isTTY) {
-        process.stdout.write(`\r${dim(color, `iterations: ${iterations}  failures: ${failures}`)}   `);
-      }
-    };
-
     report = await runLoad(program, resolved, {
       source,
       baseDir: dirname(file),
       seed: seedArg,
       now: args.nowRaw,
-      onIteration,
+      abortSignal: controller.signal,
+      onProgressTick: printProgress,
     });
-    if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(60) + '\r');
+    if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(90) + '\r');
   } else {
     // M31 (D19): the parent resolves the seed/clock exactly once and hands the *concrete* values
     // to every forked worker — resolving them independently per worker (re-running
@@ -1246,22 +1310,68 @@ async function loadCommand(argv: string[]): Promise<number> {
     const startedAt = new Date().toISOString();
     const runStart = Date.now();
     process.stdout.write(`running across ${workers} generator processes…\n`);
+    // M32 (R5): each worker ticks independently (~1Hz, not synchronized across processes) — the
+    // live line always reflects the latest snapshot heard from every worker, not a lockstep round.
+    const latestByWorker = new Map<number, LoadProgressSnapshot>();
     const shardResults: LoadShardResult[] = await Promise.all(
       Array.from({ length: workers }, (_unused, index) =>
-        runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(runSeed), nowRaw: runClock.toISOString() }, index, workers),
+        runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(runSeed), nowRaw: runClock.toISOString() }, index, workers, {
+          abortSignal: controller.signal,
+          onProgress: (snapshot) => {
+            latestByWorker.set(index, snapshot);
+            printProgress(combineProgressSnapshots([...latestByWorker.values()]));
+          },
+        }),
       ),
     );
-    report = mergeLoadShardReports(program, shardResults, { startedAt, durationMs: Date.now() - runStart, seed: runSeed, now: runClock.toISOString() });
+    if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(90) + '\r');
+    report = mergeLoadShardReports(program, shardResults, { startedAt, durationMs: Date.now() - runStart, seed: runSeed, now: runClock.toISOString(), aborted: controller.signal.aborted });
   }
+  process.removeListener('SIGINT', onSigint);
 
   process.stdout.write(renderLoadSummary(report, color));
 
   const reportDir = join(cwd, resolved.reportDir);
-  await mkdir(reportDir, { recursive: true });
-  await writeFile(join(reportDir, 'load-metrics.json'), JSON.stringify(report, null, 2) + '\n', 'utf8');
-  process.stdout.write(`\n${dim(color, 'metrics:')} ${relative(cwd, join(reportDir, 'load-metrics.json'))}\n`);
+  const [resultsPath, htmlPath, junitPath] = await Promise.all([writeLoadResultsJson(report, reportDir), writeLoadReport(report, reportDir), writeLoadJunitXml(report, reportDir)]);
+  process.stdout.write(`\n${dim(color, 'results:')} ${relative(cwd, resultsPath)}\n`);
+  process.stdout.write(`${dim(color, 'report: ')} ${relative(cwd, htmlPath)}\n`);
+  process.stdout.write(`${dim(color, 'junit:  ')} ${relative(cwd, junitPath)}\n`);
 
+  if (report.aborted) return EXIT_ABORTED;
+  if (report.inconclusive) return EXIT_INCONCLUSIVE;
   return report.ok ? EXIT_OK : EXIT_FAIL;
+}
+
+/** M32 (R5) — pools every forked worker's latest progress tick into one snapshot for the live
+ * console line, the same shape `mergeLoadShardReports` uses for the final report: sum
+ * iterations/failures, take the furthest-along `elapsedMs`, OR/average the self-diagnoses
+ * (`mergeSelfDiagnosis` — a single saturated worker is reason enough to flag the whole run live,
+ * not just once at the end). */
+function combineProgressSnapshots(snapshots: readonly LoadProgressSnapshot[]): LoadProgressSnapshot {
+  return {
+    iterations: snapshots.reduce((n, s) => n + s.iterations, 0),
+    failures: snapshots.reduce((n, s) => n + s.failures, 0),
+    elapsedMs: Math.max(0, ...snapshots.map((s) => s.elapsedMs)),
+    selfDiagnosis: mergeSelfDiagnosis(snapshots.map((s) => s.selfDiagnosis)),
+  };
+}
+
+/** M32 (R5) — "active VUs / current rps, error rate, rolling p95, elapsed vs. planned phase" from
+ * the plan's own wording, minus rolling p95 (deliberately: `LoadProgressSnapshot` carries no
+ * percentile data — computing one on every ~1Hz tick would defeat the point of a lightweight tick,
+ * see its own doc comment). `rps` here is windowed (this tick vs. the last), not an average since
+ * start, so it actually reflects "current" load the way the plan asks. */
+function renderLoadProgressLine(current: LoadProgressSnapshot, previous: LoadProgressSnapshot | undefined, plannedMs: number, color: boolean): string {
+  const windowMs = previous && current.elapsedMs > previous.elapsedMs ? current.elapsedMs - previous.elapsedMs : current.elapsedMs;
+  const windowIterations = previous ? Math.max(0, current.iterations - previous.iterations) : current.iterations;
+  const rps = windowMs > 0 ? (windowIterations / windowMs) * 1000 : 0;
+  const errorRate = current.iterations > 0 ? (current.failures / current.iterations) * 100 : 0;
+  const elapsedS = (current.elapsedMs / 1000).toFixed(1);
+  const plannedS = (plannedMs / 1000).toFixed(1);
+  const stats = `iterations: ${current.iterations}  failures: ${current.failures}  rps: ${rps.toFixed(1)}  error rate: ${errorRate.toFixed(2)}%  ${elapsedS}s/${plannedS}s planned`;
+  if (!current.selfDiagnosis.saturated) return dim(color, stats);
+  const warning = `⚠ ${stats}  — generator saturated`;
+  return color ? `\x1b[33m${warning}\x1b[0m` : warning;
 }
 
 function renderLoadMetricsLine(metrics: LoadMetrics): string {
@@ -1273,6 +1383,10 @@ function renderLoadMetricsLine(metrics: LoadMetrics): string {
 
 function renderLoadSummary(report: LoadReport, color: boolean): string {
   const lines: string[] = [];
+  if (report.aborted) {
+    const banner = `⚠ ${report.abortedMessage ?? 'aborted before its planned duration elapsed'} — every number below reflects only what completed before Ctrl-C.`;
+    lines.push(color ? `\x1b[33m${banner}\x1b[0m` : banner);
+  }
   lines.push('');
   lines.push('combined:');
   lines.push(renderLoadMetricsLine(report.combined));
@@ -1299,7 +1413,13 @@ function renderLoadSummary(report: LoadReport, color: boolean): string {
   lines.push(renderSelfDiagnosisLine(report.selfDiagnosis, color));
 
   lines.push('');
-  lines.push(report.ok ? 'load run passed' : 'load run failed — a threshold was breached');
+  if (report.inconclusive) {
+    lines.push('load run inconclusive — the generator saturated, so this verdict cannot be trusted');
+  } else if (report.aborted) {
+    lines.push(report.ok ? 'load run aborted (partial) — thresholds passed on what completed' : 'load run aborted (partial) — a threshold was breached on what completed');
+  } else {
+    lines.push(report.ok ? 'load run passed' : 'load run failed — a threshold was breached');
+  }
   return lines.join('\n') + '\n';
 }
 
@@ -1975,10 +2095,10 @@ function printUsage(): void {
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
       '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json}',
       '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
-      '  tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--no-color]',
-      '                                                      run the file\'s single `scenario` as a load test (M29, PLAN_BROWSER_PERF_SECURITY.md);',
-      '                                                      prints a metrics + threshold summary, writes report/load-metrics.json;',
-      '                                                      exit 0 = every `threshold` met (or none declared), exit 1 = a threshold breached',
+      '  tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--workers <n>] [--no-color]',
+      '                                                      run every `scenario` in the file as a load test (PLAN_BROWSER_PERF_SECURITY.md);',
+      '                                                      live console + a metrics/threshold summary, writes report/{load-report.html,load-junit.xml,load-results.json};',
+      '                                                      Ctrl-C flushes a partial report; exit 0 = passed, 1 = a threshold breached, 3 = inconclusive (generator saturated), 130 = aborted',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',
