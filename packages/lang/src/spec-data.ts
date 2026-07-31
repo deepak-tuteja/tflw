@@ -136,6 +136,7 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--env <name>`', command: 'load', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },
   { flag: '`--seed <n>`', command: 'load', effect: 'fixes every VU\'s generated values for the run, so a threshold breach is reproducible' },
   { flag: '`--now <iso>`', command: 'load', effect: 'pins the run\'s notion of "now" to an exact instant (combine with `--seed`)' },
+  { flag: '`--workers <n>`', command: 'load', effect: 'runs the load test across N forked generator processes instead of one (D19) — each an equal striped share of every scenario\'s workload target, merged back into one report; default 1' },
   { flag: '`--no-color`', command: 'load', effect: 'disables ANSI color in CLI output' },
   { flag: '`--format json`', command: 'check', effect: 'prints the target file\'s `Diagnostic[]` as JSON instead of text — for editor integrations' },
   { flag: '`--browser <engine>`', command: 'pick', effect: 'launches chromium/firefox/webkit (default chromium) instead of chromium' },

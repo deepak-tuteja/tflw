@@ -39,6 +39,8 @@ import {
 import {
   runProgram,
   runLoad,
+  runLoadShard,
+  mergeLoadShardReports,
   resolveConfig,
   selectEnv,
   missingRequiredEnv,
@@ -66,8 +68,10 @@ import {
   type LoadReport,
   type LoadIterationResult,
   type LoadMetrics,
+  type LoadShardResult,
+  type SelfDiagnosis,
 } from '@tflw/runtime';
-import { spawn } from 'node:child_process';
+import { spawn, fork, type ChildProcess } from 'node:child_process';
 import {
   writeReport,
   writeJunitXml,
@@ -103,6 +107,12 @@ async function main(argv: string[]): Promise<number> {
       return runCommand(rest);
     case 'load':
       return loadCommand(rest);
+    case '--internal-load-worker':
+      // M31 (D19) — never invoked directly by a user; `loadCommand` forks this exact same script
+      // with this as its sole argv token when `--workers N>1`. Undocumented on purpose (no
+      // CLI_FLAGS entry, no --help mention) — it's a process-boundary implementation detail of
+      // `tflw load`, not user-facing surface.
+      return loadWorkerCommand();
     case 'init':
       return initCommand(rest);
     case 'check':
@@ -1004,13 +1014,17 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   return merged.ok ? EXIT_OK : EXIT_FAIL;
 }
 
-// ---- tflw load (M29, PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a) -----------
+// ---- tflw load (M29/M30/M31, PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D28/D29) --------------
 
 interface LoadArgs {
   readonly file?: string;
   readonly env?: string;
   readonly seedRaw?: string;
   readonly nowRaw?: string;
+  /** Raw `--workers` text, validated in `loadCommand` (mirrors `runCommand`'s own `workersRaw`,
+   * P#47) — M31/D19, a *process* count (forked generators), unrelated to `tflw run --workers`'s
+   * in-process file-parallelism count. */
+  readonly workersRaw?: string;
   readonly noColor: boolean;
 }
 
@@ -1019,6 +1033,7 @@ function parseLoadArgs(argv: string[]): LoadArgs {
   let env: string | undefined;
   let seedRaw: string | undefined;
   let nowRaw: string | undefined;
+  let workersRaw: string | undefined;
   let noColor = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -1028,26 +1043,124 @@ function parseLoadArgs(argv: string[]): LoadArgs {
     else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
     else if (a === '--now') nowRaw = argv[++i];
     else if (a.startsWith('--now=')) nowRaw = a.slice('--now='.length);
+    else if (a === '--workers') workersRaw = argv[++i];
+    else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
     else if (a === '--no-color') noColor = true;
     else if (file === undefined) file = a;
     else {
-      err(`unexpected argument \`${a}\`. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>]`);
+      err(`unexpected argument \`${a}\`. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--workers <n>]`);
     }
   }
-  return { file, env, seedRaw, nowRaw, noColor };
+  return { file, env, seedRaw, nowRaw, workersRaw, noColor };
+}
+
+/** What the parent sends a freshly-forked `--internal-load-worker` child once it signals `ready`
+ * (M31, D19) — everything the child needs to independently re-parse/re-validate the same file and
+ * run its own striped shard; no AST is ever serialized, only these plain strings/numbers. */
+interface LoadWorkerStartMessage {
+  readonly type: 'start';
+  readonly cwd: string;
+  readonly file: string;
+  readonly env?: string;
+  readonly seedRaw?: string;
+  readonly nowRaw?: string;
+  readonly shardIndex: number;
+  readonly shardCount: number;
+}
+
+type LoadWorkerToParentMessage = { readonly type: 'ready' } | { readonly type: 'done'; readonly result: LoadShardResult } | { readonly type: 'error'; readonly message: string };
+
+/** The `--internal-load-worker` branch (M31, D19) — runs inside a process `loadCommand` forked via
+ * `child_process.fork(process.argv[1], ['--internal-load-worker'], …)`. Never reads `argv`; every
+ * piece of run-specific data (file, env, seed, its own shard index/count) arrives over the fork's
+ * built-in IPC channel as one `LoadWorkerStartMessage`, once the parent hears this process's own
+ * `ready` — avoids any risk of the parent's `send()` racing ahead of this process installing its
+ * `message` listener. stdout/stderr are suppressed here (`loadCommand` sets `stdio: ['ignore',
+ * 'ignore', 'ignore', 'ipc']`) — the parent already printed the file's scenario listing once;
+ * N workers doing it again would just be noise. */
+async function loadWorkerCommand(): Promise<number> {
+  return new Promise<number>((resolvePromise) => {
+    process.once('message', (msg: LoadWorkerStartMessage) => {
+      void (async () => {
+        try {
+          let seedArg: number | undefined;
+          if (msg.seedRaw !== undefined) seedArg = Number(msg.seedRaw);
+          const loaded = await loadAndValidate(msg.cwd, [msg.file], msg.env, false);
+          if (typeof loaded === 'number') {
+            process.send?.({ type: 'error', message: `worker failed to load ${msg.file}` } satisfies LoadWorkerToParentMessage);
+            resolvePromise(EXIT_USAGE);
+            return;
+          }
+          const { resolved, parsedFiles } = loaded;
+          const { file, source, program } = parsedFiles[0]!;
+          const result = await runLoadShard(program, resolved, {
+            source,
+            baseDir: dirname(file),
+            seed: seedArg,
+            now: msg.nowRaw,
+            shard: { index: msg.shardIndex, count: msg.shardCount },
+          });
+          process.send?.({ type: 'done', result } satisfies LoadWorkerToParentMessage);
+          resolvePromise(EXIT_OK);
+        } catch (e) {
+          process.send?.({ type: 'error', message: e instanceof Error ? e.message : String(e) } satisfies LoadWorkerToParentMessage);
+          resolvePromise(EXIT_FAIL);
+        }
+      })();
+    });
+    process.send?.({ type: 'ready' } satisfies LoadWorkerToParentMessage);
+  });
+}
+
+/** Forks one `--internal-load-worker` child for shard `index` of `count` and resolves with its
+ * `LoadShardResult` once it reports `done` (M31, D19) — rejects on `error`, a non-IPC-reporting
+ * crash, or an unexpected exit before either. */
+function runShardInChildProcess(start: Omit<LoadWorkerStartMessage, 'type' | 'shardIndex' | 'shardCount'>, index: number, count: number): Promise<LoadShardResult> {
+  return new Promise((resolvePromise, reject) => {
+    const child: ChildProcess = fork(process.argv[1]!, ['--internal-load-worker'], { execArgv: process.execArgv, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    let settled = false;
+    child.once('message', (readyMsg: LoadWorkerToParentMessage) => {
+      if (readyMsg.type !== 'ready') return;
+      child.send({ type: 'start', ...start, shardIndex: index, shardCount: count } satisfies LoadWorkerStartMessage);
+    });
+    child.on('message', (msg: LoadWorkerToParentMessage) => {
+      if (msg.type === 'done') {
+        settled = true;
+        resolvePromise(msg.result);
+      } else if (msg.type === 'error') {
+        settled = true;
+        reject(new Error(`load worker (shard ${index + 1}/${count}) failed: ${msg.message}`));
+      }
+    });
+    child.once('error', (e) => {
+      if (!settled) {
+        settled = true;
+        reject(e);
+      }
+    });
+    child.once('exit', (code) => {
+      if (!settled) {
+        settled = true;
+        reject(new Error(`load worker (shard ${index + 1}/${count}) exited unexpectedly (code ${code})`));
+      }
+    });
+  });
 }
 
 /** `tflw load <file.tflw>` — runs every `scenario` declared in the file (M30/D29 — checker-
  * enforced unique names, `checkScenarios`/TF033) concurrently as a load test via `@tflw/runtime`'s
  * `runLoad`. Deliberately a separate command from `tflw run`, not a flag on it — a load run has a
  * different shape end to end (no per-test report, a workload/threshold verdict instead) and no
- * reason to share `runCommand`'s much larger flag surface (`--workers`/`--tag`/`--browser`/…,
- * most of which are meaningless here — scenarios are API-only, D19).
+ * reason to share most of `runCommand`'s flag surface (`--tag`/`--browser`/…, meaningless here —
+ * scenarios are API-only, D19). `--workers N>1` (M31) is the one flag it does gain, forking N
+ * generator *processes* rather than scaling in-process — load generation is CPU-bound and Node
+ * caps at one core per process.
  *
- * Reporter stub (M29/M30's own scope, not yet the full `LoadReport` design in
- * `PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11): a live console counter (combined across every
- * scenario), an end-of-run summary (combined + per-scenario, R6), and a `report/load-metrics.json`
- * dump. No `load-report.html`, no junit mapping — those are M32.
+ * Reporter stub (M29/M30/M31's own scope, not yet the full `LoadReport` design in
+ * `PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11): a live console counter (single-process only — M31's
+ * forked workers report once at the end, not live, M32's own scope), an end-of-run summary
+ * (combined + per-scenario, R6, plus a generator self-diagnosis line, D28), and a
+ * `report/load-metrics.json` dump. No `load-report.html`, no junit mapping — those are M32.
  */
 async function loadCommand(argv: string[]): Promise<number> {
   const args = parseLoadArgs(argv);
@@ -1055,7 +1168,7 @@ async function loadCommand(argv: string[]): Promise<number> {
   const cwd = process.cwd();
 
   if (!args.file) {
-    err('tflw load needs exactly one file. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>]');
+    err('tflw load needs exactly one file. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--workers <n>]');
     return EXIT_USAGE;
   }
   let seedArg: number | undefined;
@@ -1069,6 +1182,14 @@ async function loadCommand(argv: string[]): Promise<number> {
   if (args.nowRaw !== undefined && Number.isNaN(new Date(args.nowRaw).getTime())) {
     err(`--now expects an ISO 8601 date/time, got "${args.nowRaw}"`);
     return EXIT_USAGE;
+  }
+  let workers = 1;
+  if (args.workersRaw !== undefined) {
+    workers = Number(args.workersRaw);
+    if (!Number.isInteger(workers) || workers < 1) {
+      err(`--workers expects a positive integer, got "${args.workersRaw}"`);
+      return EXIT_USAGE;
+    }
   }
 
   const loaded = await loadAndValidate(cwd, [args.file], args.env, color);
@@ -1095,24 +1216,43 @@ async function loadCommand(argv: string[]): Promise<number> {
     process.stdout.write(`scenario "${scenario.name.value}" — ${workloadLabel}\n`);
   }
 
-  let iterations = 0;
-  let failures = 0;
-  const onIteration = (r: LoadIterationResult): void => {
-    iterations++;
-    if (!r.ok) failures++;
-    if (process.stdout.isTTY) {
-      process.stdout.write(`\r${dim(color, `iterations: ${iterations}  failures: ${failures}`)}   `);
-    }
-  };
+  let report: LoadReport;
+  if (workers === 1) {
+    let iterations = 0;
+    let failures = 0;
+    const onIteration = (r: LoadIterationResult): void => {
+      iterations++;
+      if (!r.ok) failures++;
+      if (process.stdout.isTTY) {
+        process.stdout.write(`\r${dim(color, `iterations: ${iterations}  failures: ${failures}`)}   `);
+      }
+    };
 
-  const report = await runLoad(program, resolved, {
-    source,
-    baseDir: dirname(file),
-    seed: seedArg,
-    now: args.nowRaw,
-    onIteration,
-  });
-  if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(60) + '\r');
+    report = await runLoad(program, resolved, {
+      source,
+      baseDir: dirname(file),
+      seed: seedArg,
+      now: args.nowRaw,
+      onIteration,
+    });
+    if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(60) + '\r');
+  } else {
+    // M31 (D19): the parent resolves the seed/clock exactly once and hands the *concrete* values
+    // to every forked worker — resolving them independently per worker (re-running
+    // `resolveRunSeed(undefined)`'s own randomness inside each child) would break `--seed`
+    // reproducibility and make "the run's seed" ambiguous across N different processes.
+    const runSeed = resolveRunSeed(seedArg);
+    const runClock = resolveRunClock(args.nowRaw);
+    const startedAt = new Date().toISOString();
+    const runStart = Date.now();
+    process.stdout.write(`running across ${workers} generator processes…\n`);
+    const shardResults: LoadShardResult[] = await Promise.all(
+      Array.from({ length: workers }, (_unused, index) =>
+        runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(runSeed), nowRaw: runClock.toISOString() }, index, workers),
+      ),
+    );
+    report = mergeLoadShardReports(program, shardResults, { startedAt, durationMs: Date.now() - runStart, seed: runSeed, now: runClock.toISOString() });
+  }
 
   process.stdout.write(renderLoadSummary(report, color));
 
@@ -1155,8 +1295,23 @@ function renderLoadSummary(report: LoadReport, color: boolean): string {
   }
 
   lines.push('');
+  lines.push('generator:');
+  lines.push(renderSelfDiagnosisLine(report.selfDiagnosis, color));
+
+  lines.push('');
   lines.push(report.ok ? 'load run passed' : 'load run failed — a threshold was breached');
   return lines.join('\n') + '\n';
+}
+
+/** M31 (D19/D28): the generator's own event-loop-lag/CPU reading. Healthy — dim, one line, same
+ * restraint as everything else in this summary that's just informational. Saturated — the actual
+ * "tflw itself is the bottleneck" warning D28 asks the report to say out loud, not just log a
+ * number a reader has to know to interpret. */
+function renderSelfDiagnosisLine(d: SelfDiagnosis, color: boolean): string {
+  const stats = `avg event-loop lag ${d.avgEventLoopLagMs.toFixed(1)}ms  max ${d.maxEventLoopLagMs.toFixed(1)}ms  cpu ${d.cpuPercent.toFixed(0)}%`;
+  if (!d.saturated) return dim(color, stats);
+  const warning = `⚠ tflw itself is the bottleneck (${stats}) — measured latency/throughput reflects tflw's own generator process, not your system under test. Results are unreliable.`;
+  return color ? `\x1b[33m${warning}\x1b[0m` : warning;
 }
 
 // ---- tflw check -------------------------------------------------------------

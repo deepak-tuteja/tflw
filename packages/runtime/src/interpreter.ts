@@ -89,14 +89,19 @@ import type {
   LoadMetrics,
   LoadReport,
   LoadScenarioReport,
+  LoadShardResult,
+  LoadShardScenarioResult,
   LoadThresholdResult,
   RequestTrace,
   ResolvedConfig,
   ResponseTrace,
   RunReport,
+  SelfDiagnosis,
   StepResult,
   TestResult,
 } from './types.js';
+import { LatencyHistogram } from './histogram.js';
+import { startSelfDiagnosis, mergeSelfDiagnosis } from './selfDiagnosis.js';
 
 /** A JS/TS helper export, called `(ctx, ...args)` — "test context in, values out" (P#11). */
 type HelperFn = (ctx: { readonly env: NodeJS.ProcessEnv }, ...args: unknown[]) => unknown;
@@ -254,14 +259,20 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   return { report, redactor };
 }
 
-// ---- Load testing (M29/M30, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30) -------
+// ---- Load testing (M29/M30/M31, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D28/D29/D30) -
 //
 // A second, dedicated execution model alongside `runProgram` above (D16) — no test cases, no
 // retry, no browser support (checker-enforced, `checkScenarios`/TF033); a per-VU loop around the
-// same `execSteps` every `test`/`action` body already reuses. Single-process throughout — M30
-// (D29) runs every `scenario` in the file concurrently rather than just the file's one allowed
-// scenario (M29's restriction); multi-process scaling (M31, D19) is a later milestone layered on
-// top of this without changing this shape.
+// same `execSteps` every `test`/`action` body already reuses. M30 (D29) runs every `scenario` in
+// the file concurrently rather than just the file's one allowed scenario (M29's restriction); M31
+// (D19) layers optional multi-process scaling on top without changing this shape — `runLoadCore`
+// (below) is the one shared engine `runLoad` (single-process convenience) and `runLoadShard`
+// (invoked once per forked worker under `--workers N>1`) both call, parameterized by an optional
+// `shard`. A scenario's own duration/failure accumulation always goes through a `LatencyHistogram`
+// (`histogram.ts`) rather than a raw array — cheap enough that single-process runs pay it too
+// (there's exactly one accumulation code path, not a single-process one and a sharded one), and
+// it's what lets `runLoadShard`'s results ship compactly across a fork's IPC channel for
+// `mergeLoadShardReports` to combine (R4).
 
 export interface LoadOptions {
   /** Source text of the file, for mirroring each step's line (mirrors `RunOptions.source`). */
@@ -273,23 +284,64 @@ export interface LoadOptions {
   /** Fired once per completed iteration — the CLI's live console progress (M32 formalizes a real
    * `LoadReport` live view; this is enough for a running iteration/error-rate counter). */
   readonly onIteration?: (result: LoadIterationResult) => void;
+  /** M31 (D19) — when set, this call runs only this shard's striped share of every scenario's
+   * workload target (`shareOfWorkloadTarget`), and every iteration draws its reproducible sub-seed
+   * (P#23) from a globally-unique index across every shard (`globalIterationIndex`) — the two
+   * pieces of "no message passing" coordination D19 asks for: each shard only needs its own
+   * `index`/`count`, never anything from its siblings. Set by the CLI's forked worker processes
+   * under `--workers N>1`; unset (the default) runs the whole file in this one process, unchanged
+   * from M29/M30. */
+  readonly shard?: { readonly index: number; readonly count: number };
 }
 
-/** Runs every `scenario` in the file (M30/D29 — names unique, checker-enforced, `checkScenarios`/
- * TF033) as one concurrent load test: each ramps its own VUs/arrival-rate per its own workload
- * (D17), runs its body once per iteration via `execSteps` (the same engine `test`/`action` bodies
- * use, D16's reuse framing), and its `threshold`s are evaluated once against *its own*
- * accumulated metrics (D24a) — never throws for an iteration failure (D18: an `expect` inside a
- * scenario aborts *that iteration*, counted toward its error rate, never the run) — only a setup
- * failure (bad session, zero scenarios) throws. All scenarios share one process, one `uniqueSeq`,
- * and one `SessionCache` (a session named by two scenarios establishes once, reused by both —
- * same run-lifetime cache `test … as <session>` uses); each keeps its own duration/failure
- * accumulators so R6's combined-vs-per-scenario split falls out of how results are pooled at the
- * end, not out of separate runs. */
-export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
+/** This shard's share of a workload `target` (a scenario's `users` or `rps`) — split as evenly as
+ * an integer split allows, remainder handed to the lowest-indexed shards first. Every shard's
+ * share summed back together always equals `target` exactly (D19: "processes stripe … by index").
+ * `shard` undefined (single-process) is the identity split — the whole target, one "shard". */
+export function shareOfWorkloadTarget(target: number, shard?: { readonly index: number; readonly count: number }): number {
+  if (!shard) return target;
+  const base = Math.floor(target / shard.count);
+  const remainder = target % shard.count;
+  return base + (shard.index < remainder ? 1 : 0);
+}
+
+/** The globally-unique iteration index a shard's `localIndex`-th iteration maps to — `id ≡
+ * shard.index mod shard.count` (D19) — so two different shards' sub-seeds (`subSeed(runSeed, …)`)
+ * never collide without either shard needing to know anything about the other beyond its own
+ * `index`/`count`. Single-process (`shard` undefined) is the identity map. */
+export function globalIterationIndex(localIndex: number, shard?: { readonly index: number; readonly count: number }): number {
+  return shard ? localIndex * shard.count + shard.index : localIndex;
+}
+
+/** One mutable accumulator per scenario, filled in by that scenario's own `runIteration` closure
+ * as its VUs run concurrently with every other scenario's. */
+interface ScenarioAccumulator {
+  readonly scenario: ScenarioDecl;
+  readonly histogram: LatencyHistogram;
+  failures: number;
+}
+
+interface LoadCoreResult {
+  readonly accumulators: readonly ScenarioAccumulator[];
+  readonly selfDiagnosis: SelfDiagnosis;
+  readonly runSeed: number;
+  readonly runClock: Date;
+  readonly startedAt: string;
+  readonly runStart: number;
+}
+
+/** The engine shared by `runLoad` and `runLoadShard` — everything through "every scenario's VUs
+ * have finished," before either caller shapes the result differently (a full `LoadReport` vs. a
+ * compact, IPC-ready `LoadShardResult`). Never throws for an iteration failure (D18: an `expect`
+ * inside a scenario aborts *that iteration*, counted toward its error rate, never the run) — only
+ * a setup failure (bad session, zero scenarios) throws. All scenarios in one call share one
+ * process, one `uniqueSeq`, and one `SessionCache` (a session named by two scenarios establishes
+ * once, reused by both — same run-lifetime cache `test … as <session>` uses). */
+async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadCoreResult> {
   if (program.scenarios.length === 0) {
     throw new RuntimeError('`tflw load` needs at least one `scenario` in this file, found 0');
   }
+  const selfDiag = startSelfDiagnosis();
   const scenarios = program.scenarios;
   const environ = opts.environ ?? process.env;
   const redactor = new Redactor();
@@ -311,20 +363,11 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
   const startedAt = new Date().toISOString();
   const runStart = performance.now();
   // Shared across every scenario's VUs so each iteration still gets its own reproducible sub-seed
-  // (P#23) regardless of which scenario spawned it — mirrors the single-scenario counter M29 used.
+  // (P#23) regardless of which scenario spawned it — mirrors the single-scenario counter M29 used;
+  // `globalIterationIndex` (M31) turns this shard-local counter into a cross-shard-unique id.
   let iterationIndex = 0;
 
-  // One mutable accumulator per scenario, filled in by that scenario's own `runIteration` closure
-  // (below) as its VUs run concurrently with every other scenario's, and read back into a
-  // `LoadScenarioReport` only once every scenario's task has finished.
-  interface ScenarioAccumulator {
-    readonly scenario: ScenarioDecl;
-    readonly durationsMs: number[];
-    failures: number;
-  }
-  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, durationsMs: [], failures: 0 }));
-  const combinedDurationsMs: number[] = [];
-  let combinedFailures = 0;
+  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, histogram: new LatencyHistogram(), failures: 0 }));
 
   // Each scenario's own session establishment + VU scheduling runs as one independent async task
   // (`sessionCache` is safe under concurrent `ensure()` calls — it dedupes in-flight promises by
@@ -350,7 +393,7 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
     }
 
     const runIteration = async (): Promise<void> => {
-      const index = iterationIndex++;
+      const index = globalIterationIndex(iterationIndex++, opts.shard);
       const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)) };
       const scope = new Map<string, unknown>();
       const ctx: EvalCtx = {
@@ -393,12 +436,8 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
         // duration. Only successful iterations feed the duration percentiles that thresholds read.
         result = { ok: false, scenario: scenario.name.value, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
       }
-      if (!result.ok) {
-        acc.failures++;
-        combinedFailures++;
-      }
-      acc.durationsMs.push(result.durationMs);
-      combinedDurationsMs.push(result.durationMs);
+      if (!result.ok) acc.failures++;
+      acc.histogram.record(result.durationMs);
       opts.onIteration?.(result);
     };
 
@@ -406,8 +445,11 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
     if (scenario.workload.type === 'RampUsersWorkload') {
       // Closed model (D17): VUs loop continuously once spawned. `users` VUs ramp in linearly over
       // `overMs`; the scenario itself lasts exactly `overMs` (no separate "hold" stage in the
-      // grammar).
-      const { users, overMs } = scenario.workload;
+      // grammar). M31: only this shard's striped share of `users` actually spawns here — the loop
+      // simply doesn't run when that share is 0 (a small target split across more shards than it
+      // has room for), no special-casing needed.
+      const { overMs } = scenario.workload;
+      const users = shareOfWorkloadTarget(scenario.workload.users, opts.shard);
       const runEnd = runStart + overMs;
       for (let i = 0; i < users; i++) {
         const spawnAt = runStart + (i / users) * overMs;
@@ -424,10 +466,13 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
       // 0 to `rps` over `overMs`, independent of whether earlier iterations have finished — the
       // schedule never waits on completion, so queueing under saturation is real, not smoothed
       // away. Cumulative arrivals by time t (seconds) under a linear ramp: N(t) = rps·t²/(2·overS);
-      // solving for the k-th arrival's time inverts that: t_k = √(2k·overS / rps).
-      const { rps, overMs } = scenario.workload;
+      // solving for the k-th arrival's time inverts that: t_k = √(2k·overS / rps). M31: `rps` here
+      // is already this shard's striped share (`shareOfWorkloadTarget`) — every shard schedules
+      // its own slice of the file's total arrival rate independently.
+      const { overMs } = scenario.workload;
+      const rps = shareOfWorkloadTarget(scenario.workload.rps, opts.shard);
       const overS = overMs / 1000;
-      const totalArrivals = Math.floor((rps * overS) / 2);
+      const totalArrivals = rps > 0 ? Math.floor((rps * overS) / 2) : 0;
       for (let k = 1; k <= totalArrivals; k++) {
         const scheduledMs = Math.sqrt((2 * k * overS) / rps) * 1000;
         const waitMs = runStart + scheduledMs - performance.now();
@@ -443,29 +488,60 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
   });
 
   await Promise.all(scenarioTasks);
+  const selfDiagnosis = selfDiag.stop();
 
-  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, durationsMs, failures }) => {
-    const sorted = [...durationsMs].sort((a, b) => a - b);
+  return { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart };
+}
+
+function summarizeHistogram(h: LatencyHistogram): LoadDurationStats {
+  return { min: h.min, max: h.max, avg: h.avg, p50: h.percentile(50), p90: h.percentile(90), p95: h.percentile(95), p99: h.percentile(99) };
+}
+
+function evaluateThresholds(thresholds: readonly ThresholdDecl[], metrics: LoadMetrics, percentileAt: (p: number) => number): LoadThresholdResult[] {
+  return thresholds.map((t) => {
+    const actual = t.metric.kind === 'errorRate' ? metrics.errorRate : percentileAt(t.metric.percentile);
+    const label = t.metric.kind === 'errorRate' ? 'error rate' : `p${t.metric.percentile} duration`;
+    const ok = t.op === 'lessThan' ? actual < t.value : actual > t.value;
+    return { label, op: t.op, target: t.value, actual, ok };
+  });
+}
+
+function workloadOf(scenario: ScenarioDecl): LoadScenarioReport['workload'] {
+  return scenario.workload.type === 'RampUsersWorkload'
+    ? { kind: 'users', target: scenario.workload.users, overMs: scenario.workload.overMs }
+    : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs };
+}
+
+/** Runs every `scenario` in the file (M30/D29 — names unique, checker-enforced, `checkScenarios`/
+ * TF033) as one concurrent, single-process load test — the whole file, in this one process (see
+ * `runLoadShard` for the multi-process, `--workers N>1` path). Each scenario's `threshold`s are
+ * evaluated once against *its own* accumulated metrics (D24a); R6's combined-vs-per-scenario split
+ * falls out of how results are pooled at the end, not out of separate runs. */
+export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
+  const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart } = await runLoadCore(program, config, opts);
+
+  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, failures }) => {
     const metrics: LoadMetrics = {
-      iterations: durationsMs.length,
+      iterations: histogram.count,
       failures,
-      errorRate: durationsMs.length > 0 ? failures / durationsMs.length : 0,
-      durations: summarizeDurations(sorted),
+      errorRate: histogram.count > 0 ? failures / histogram.count : 0,
+      durations: summarizeHistogram(histogram),
     };
-    const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, sorted);
-    const workload: LoadScenarioReport['workload'] =
-      scenario.workload.type === 'RampUsersWorkload'
-        ? { kind: 'users', target: scenario.workload.users, overMs: scenario.workload.overMs }
-        : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs };
-    return { name: scenario.name.value, workload, metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
+    const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
+    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
   });
 
-  const combinedSorted = [...combinedDurationsMs].sort((a, b) => a - b);
+  const combinedHistogram = new LatencyHistogram();
+  let combinedFailures = 0;
+  for (const acc of accumulators) {
+    combinedHistogram.merge(acc.histogram);
+    combinedFailures += acc.failures;
+  }
   const combined: LoadMetrics = {
-    iterations: combinedDurationsMs.length,
+    iterations: combinedHistogram.count,
     failures: combinedFailures,
-    errorRate: combinedDurationsMs.length > 0 ? combinedFailures / combinedDurationsMs.length : 0,
-    durations: summarizeDurations(combinedSorted),
+    errorRate: combinedHistogram.count > 0 ? combinedFailures / combinedHistogram.count : 0,
+    durations: summarizeHistogram(combinedHistogram),
   };
 
   return {
@@ -476,39 +552,88 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
     durationMs: Math.round(performance.now() - runStart),
     seed: runSeed,
     now: runClock.toISOString(),
+    selfDiagnosis,
   };
 }
 
-/** Sorted ascending. Nearest-rank percentile (same simple method every other load tool starts
- * with) — M31's multi-process histogram merge (R4) is where this gets replaced by an HDR
- * histogram; single-process M29 just sorts the raw array. */
-function percentileOf(sorted: readonly number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
-  return sorted[idx]!;
+/** M31 (D19) — runs one shard's striped share of every `scenario` in the file (`opts.shard`
+ * required) and returns a compact, IPC-safe summary instead of a full `LoadReport`: a shard on its
+ * own is not a meaningful pass/fail verdict (its thresholds would be evaluated against a fraction
+ * of the intended load), only the parent's `mergeLoadShardReports` — combining every shard —
+ * produces one. Invoked by the CLI's forked worker processes under `--workers N>1`. */
+export async function runLoadShard(program: Program, config: ResolvedConfig, opts: LoadOptions & { readonly shard: { readonly index: number; readonly count: number } }): Promise<LoadShardResult> {
+  const { accumulators, selfDiagnosis } = await runLoadCore(program, config, opts);
+  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, failures }) => ({
+    name: scenario.name.value,
+    workload: workloadOf(scenario),
+    iterations: histogram.count,
+    failures,
+    sum: histogram.sum,
+    min: histogram.min,
+    max: histogram.max,
+    histogram: histogram.toBuckets(),
+  }));
+  return { scenarios, selfDiagnosis };
 }
 
-function summarizeDurations(sorted: readonly number[]): LoadDurationStats {
-  if (sorted.length === 0) return { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 };
-  const sum = sorted.reduce((a, b) => a + b, 0);
-  return {
-    min: sorted[0]!,
-    max: sorted[sorted.length - 1]!,
-    avg: sum / sorted.length,
-    p50: percentileOf(sorted, 50),
-    p90: percentileOf(sorted, 90),
-    p95: percentileOf(sorted, 95),
-    p99: percentileOf(sorted, 99),
-  };
-}
+/** M31 (D19/R4) — combines every forked worker's `LoadShardResult` into the exact same
+ * `LoadReport` shape `runLoad` itself returns, so nothing downstream (CLI rendering,
+ * `load-metrics.json`) needs to know how many processes actually ran. Matches shards to `program`'s
+ * scenarios by name (the parent parses the same file independently rather than shipping
+ * `ThresholdDecl`s over IPC — cheap, and keeps threshold re-evaluation using the exact same
+ * `evaluateThresholds` a single-process run does). A shard missing a given scenario entirely is
+ * expected, not an error — its striped share of that scenario's workload target may have rounded
+ * to 0 (`shareOfWorkloadTarget`). */
+export function mergeLoadShardReports(
+  program: Program,
+  shardResults: readonly LoadShardResult[],
+  meta: { readonly startedAt: string; readonly durationMs: number; readonly seed: number; readonly now: string },
+): LoadReport {
+  if (shardResults.length === 0) throw new RuntimeError('`mergeLoadShardReports` needs at least one shard result');
 
-function evaluateThresholds(thresholds: readonly ThresholdDecl[], metrics: LoadMetrics, sortedDurations: readonly number[]): LoadThresholdResult[] {
-  return thresholds.map((t) => {
-    const actual = t.metric.kind === 'errorRate' ? metrics.errorRate : percentileOf(sortedDurations, t.metric.percentile);
-    const label = t.metric.kind === 'errorRate' ? 'error rate' : `p${t.metric.percentile} duration`;
-    const ok = t.op === 'lessThan' ? actual < t.value : actual > t.value;
-    return { label, op: t.op, target: t.value, actual, ok };
+  const perScenario = program.scenarios.map((scenario) => {
+    const histogram = new LatencyHistogram();
+    let iterations = 0;
+    let failures = 0;
+    for (const shard of shardResults) {
+      const match = shard.scenarios.find((s) => s.name === scenario.name.value);
+      if (!match) continue;
+      histogram.merge(LatencyHistogram.fromBuckets(match.histogram, { count: match.iterations, sum: match.sum, min: match.min, max: match.max }));
+      iterations += match.iterations;
+      failures += match.failures;
+    }
+    return { scenario, histogram, iterations, failures };
   });
+
+  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, iterations, failures }) => {
+    const metrics: LoadMetrics = { iterations, failures, errorRate: iterations > 0 ? failures / iterations : 0, durations: summarizeHistogram(histogram) };
+    const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
+    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
+  });
+
+  const combinedHistogram = new LatencyHistogram();
+  let combinedFailures = 0;
+  for (const { histogram, failures } of perScenario) {
+    combinedHistogram.merge(histogram);
+    combinedFailures += failures;
+  }
+  const combined: LoadMetrics = {
+    iterations: combinedHistogram.count,
+    failures: combinedFailures,
+    errorRate: combinedHistogram.count > 0 ? combinedFailures / combinedHistogram.count : 0,
+    durations: summarizeHistogram(combinedHistogram),
+  };
+
+  return {
+    ok: scenarioReports.every((s) => s.ok),
+    scenarios: scenarioReports,
+    combined,
+    startedAt: meta.startedAt,
+    durationMs: meta.durationMs,
+    seed: meta.seed,
+    now: meta.now,
+    selfDiagnosis: mergeSelfDiagnosis(shardResults.map((s) => s.selfDiagnosis)),
+  };
 }
 
 export function makeUniqueSeq(): { next(): number } {

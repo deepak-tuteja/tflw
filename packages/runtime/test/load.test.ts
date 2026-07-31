@@ -1,16 +1,21 @@
-// M29/M30 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D29): the `runLoad` engine — a
+// M29/M30/M31 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D28/D29): the `runLoad` engine — a
 // single-process VU loop over both workload models (D17), `think`-excluded duration metrics,
 // threshold evaluation (D24a), per-iteration error handling (D18: an iteration's `expect` failure
-// is counted, never thrown), session establishment once before the loop (not per iteration), and
-// M30's concurrent multi-scenario scheduling with combined-vs-per-scenario metrics (D29, R6).
+// is counted, never thrown), session establishment once before the loop (not per iteration), M30's
+// concurrent multi-scenario scheduling with combined-vs-per-scenario metrics (D29, R6), and M31's
+// multi-process building blocks: workload/sub-seed striping (`shareOfWorkloadTarget`/
+// `globalIterationIndex`), `runLoadShard`, and `mergeLoadShardReports` (D19, R4).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, parseConfigSource } from '@tflw/lang';
-import { runLoad } from '../src/interpreter.js';
+import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex } from '../src/interpreter.js';
+import { LatencyHistogram } from '../src/histogram.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
-import type { LoadIterationResult } from '../src/types.js';
+import type { LoadIterationResult, LoadShardResult, SelfDiagnosis } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+
+const HEALTHY_DIAGNOSIS: SelfDiagnosis = { avgEventLoopLagMs: 1, maxEventLoopLagMs: 2, cpuPercent: 5, saturated: false };
 
 test('a closed (`ramp to N users`) workload runs iterations and reports clean metrics', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
@@ -275,5 +280,144 @@ session admin
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.equal(logins, 1, 'a session shared by two concurrent scenarios should still establish exactly once');
 
+  await server.close();
+});
+
+// ---- M31: multi-process building blocks (D19, R4) --------------------------------------------
+
+test('shareOfWorkloadTarget: splits a target evenly, remainder to the lowest-indexed shards, and always sums back to the target', () => {
+  assert.equal(shareOfWorkloadTarget(10), 10, 'undefined shard is the identity split');
+  assert.equal(shareOfWorkloadTarget(10, { index: 0, count: 3 }), 4);
+  assert.equal(shareOfWorkloadTarget(10, { index: 1, count: 3 }), 3);
+  assert.equal(shareOfWorkloadTarget(10, { index: 2, count: 3 }), 3);
+  const shares = [0, 1, 2, 3].map((index) => shareOfWorkloadTarget(10, { index, count: 4 }));
+  assert.deepEqual(shares.reduce((a, b) => a + b, 0), 10);
+  // A target smaller than the shard count legitimately gives some shards 0 — not an error.
+  assert.equal(shareOfWorkloadTarget(2, { index: 2, count: 4 }), 0);
+  assert.equal(shareOfWorkloadTarget(2, { index: 0, count: 4 }), 1);
+});
+
+test('globalIterationIndex: id ≡ shard.index mod shard.count, so two shards never collide without coordinating', () => {
+  assert.equal(globalIterationIndex(5), 5, 'undefined shard is the identity map');
+  const shardACount3 = { index: 0, count: 3 };
+  const shardBCount3 = { index: 1, count: 3 };
+  const idsA = [0, 1, 2, 3].map((local) => globalIterationIndex(local, shardACount3));
+  const idsB = [0, 1, 2, 3].map((local) => globalIterationIndex(local, shardBCount3));
+  assert.deepEqual(idsA, [0, 3, 6, 9]);
+  assert.deepEqual(idsB, [1, 4, 7, 10]);
+  assert.ok(idsA.every((id) => id % 3 === shardACount3.index));
+  assert.ok(idsB.every((id) => id % 3 === shardBCount3.index));
+  assert.deepEqual(
+    idsA.filter((id) => idsB.includes(id)),
+    [],
+    'no id produced by shard A should ever be produced by shard B',
+  );
+});
+
+test('runLoadShard with shard {index:0, count:1} behaves like the whole run (a lone shard is the identity case)', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "S"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const shardResult = await runLoadShard(program, testConfig(server.baseUrl), { source, shard: { index: 0, count: 1 } });
+  assert.equal(shardResult.scenarios.length, 1);
+  assert.equal(shardResult.scenarios[0]!.name, 'S');
+  assert.ok(shardResult.scenarios[0]!.iterations > 0);
+  assert.equal(shardResult.scenarios[0]!.failures, 0);
+  assert.equal(typeof shardResult.selfDiagnosis.saturated, 'boolean');
+  await server.close();
+});
+
+test('mergeLoadShardReports: pools iterations/failures across shards and re-evaluates thresholds against the merged data', () => {
+  const source = 'scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n  threshold p95 duration is less than 100ms\n';
+  const { program } = parseSource(source);
+
+  const fastHistogram = new LatencyHistogram();
+  for (const v of [10, 12, 11, 13, 9]) fastHistogram.record(v);
+  const slowHistogram = new LatencyHistogram();
+  for (const v of [500, 520, 510]) slowHistogram.record(v);
+
+  const shardFast: LoadShardResult = {
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets() }],
+    selfDiagnosis: HEALTHY_DIAGNOSIS,
+  };
+  const shardSlow: LoadShardResult = {
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets() }],
+    selfDiagnosis: HEALTHY_DIAGNOSIS,
+  };
+
+  const merged = mergeLoadShardReports(program, [shardFast, shardSlow], { startedAt: new Date().toISOString(), durationMs: 1000, seed: 42, now: new Date().toISOString() });
+  assert.equal(merged.scenarios.length, 1);
+  const s = merged.scenarios[0]!;
+  assert.equal(s.metrics.iterations, 8, 'iterations from both shards must be pooled');
+  assert.equal(s.metrics.durations.min, 9);
+  assert.equal(s.metrics.durations.max, 520);
+  // p95 over the pooled 8 samples lands among the slow shard's values — well above the 100ms
+  // threshold, which only a genuinely merged (not per-shard) evaluation would catch.
+  assert.equal(s.thresholds[0]!.ok, false, JSON.stringify(s.thresholds[0]));
+  assert.equal(merged.ok, false);
+  assert.equal(merged.combined.iterations, 8);
+});
+
+test('mergeLoadShardReports: a shard missing a scenario entirely (its striped share rounded to 0) is tolerated, not an error', () => {
+  const source = 'scenario "A"\n  ramp to 1 users over 1s\n  api GET /health\n\nscenario "B"\n  ramp to 1 users over 1s\n  api GET /health\n';
+  const { program } = parseSource(source);
+  const hA = new LatencyHistogram();
+  hA.record(5);
+  const shardWithOnlyA: LoadShardResult = {
+    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets() }],
+    selfDiagnosis: HEALTHY_DIAGNOSIS,
+  };
+  const merged = mergeLoadShardReports(program, [shardWithOnlyA], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
+  assert.equal(merged.scenarios.length, 2);
+  const a = merged.scenarios.find((s) => s.name === 'A')!;
+  const b = merged.scenarios.find((s) => s.name === 'B')!;
+  assert.equal(a.metrics.iterations, 1);
+  assert.equal(b.metrics.iterations, 0);
+  assert.equal(b.metrics.errorRate, 0, 'zero iterations is a defined 0 error rate, not NaN');
+});
+
+test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard saturated', () => {
+  const source = 'scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n';
+  const { program } = parseSource(source);
+  const empty = new LatencyHistogram();
+  empty.record(1);
+  const shard = (saturated: boolean): LoadShardResult => ({
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets() }],
+    selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated },
+  });
+  const merged = mergeLoadShardReports(program, [shard(false), shard(true)], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
+  assert.equal(merged.selfDiagnosis.saturated, true);
+});
+
+test('mergeLoadShardReports throws on an empty shard-results array', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n');
+  assert.throws(() => mergeLoadShardReports(program, [], { startedAt: new Date().toISOString(), durationMs: 0, seed: 1, now: new Date().toISOString() }), /at least one shard/);
+});
+
+test('two real shards (runLoadShard against the same server) merge into a sane combined report', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "S"\n  ramp to 4 users over 200ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const config = testConfig(server.baseUrl);
+  const [shard0, shard1] = await Promise.all([
+    runLoadShard(program, config, { source, shard: { index: 0, count: 2 } }),
+    runLoadShard(program, config, { source, shard: { index: 1, count: 2 } }),
+  ]);
+  const merged = mergeLoadShardReports(program, [shard0, shard1], { startedAt: new Date().toISOString(), durationMs: 200, seed: 7, now: new Date().toISOString() });
+  assert.equal(merged.scenarios.length, 1);
+  assert.equal(merged.scenarios[0]!.name, 'S');
+  assert.ok(merged.combined.iterations > 0, 'both shards together should have run at least one iteration');
+  assert.equal(merged.combined.iterations, merged.scenarios[0]!.metrics.iterations);
+  await server.close();
+});
+
+test('`runLoad` reports a plausible selfDiagnosis (single-process, unsharded)', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "S"\n  ramp to 1 users over 50ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  assert.equal(typeof report.selfDiagnosis.saturated, 'boolean');
+  assert.ok(report.selfDiagnosis.avgEventLoopLagMs >= 0);
+  assert.ok(report.selfDiagnosis.cpuPercent >= 0);
   await server.close();
 });

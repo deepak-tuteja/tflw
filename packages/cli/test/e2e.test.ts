@@ -2054,3 +2054,88 @@ test('`tflw load` with no file argument is a usage error', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// ---- M31: multi-process generator scaling + self-diagnosis (D19/D28) -------------------------
+
+test('`tflw load --workers 3` really forks 3 OS processes and merges their results into one passing report', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-workers-pass-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'scenario "health burst"\n  ramp to 6 users over 200ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--workers', '3', '--no-color'], { cwd: dir });
+      assert.match(stdout, /running across 3 generator processes/);
+      assert.match(stdout, /scenario "health burst"/);
+      assert.match(stdout, /load run passed/);
+      assert.match(stdout, /generator:/);
+
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as {
+        ok: boolean;
+        scenarios: { name: string; ok: boolean }[];
+        combined: { iterations: number };
+        selfDiagnosis: { avgEventLoopLagMs: number; maxEventLoopLagMs: number; cpuPercent: number; saturated: boolean };
+      };
+      assert.equal(metrics.ok, true);
+      assert.equal(metrics.scenarios.length, 1);
+      assert.equal(metrics.scenarios[0]!.name, 'health burst');
+      assert.equal(metrics.scenarios[0]!.ok, true);
+      assert.ok(metrics.combined.iterations > 0, 'the 3 forked processes together should have produced real iterations');
+      assert.equal(typeof metrics.selfDiagnosis.saturated, 'boolean');
+      assert.ok(metrics.selfDiagnosis.avgEventLoopLagMs >= 0);
+      assert.ok(metrics.selfDiagnosis.cpuPercent >= 0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw load --workers 2` still fails the run (exit 1) when the merged, pooled error rate breaches a threshold', async () => {
+  const server: Server = createServer((_req, res) => res.writeHead(500).end());
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-workers-fail-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    await writeFile(
+      join(dir, 'load.tflw'),
+      'scenario "always fails"\n  ramp to 4 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
+      'utf8',
+    );
+
+    const failure = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--workers', '2', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+    assert.equal(failure.code, 1);
+    assert.match(failure.stdout, /load run failed/);
+
+    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-metrics.json'), 'utf8')) as { ok: boolean; combined: { iterations: number; failures: number } };
+    assert.equal(metrics.ok, false);
+    assert.ok(metrics.combined.iterations > 0);
+    assert.equal(metrics.combined.failures, metrics.combined.iterations, 'every /health hit a 500, every iteration should be a recorded failure');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw load --workers 0` (or any non-positive-integer) is a usage error, same shape as `tflw run --workers`', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-workers-usage-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'scenario "S"\n  ramp to 1 users over 50ms\n  api GET /health\n', 'utf8');
+
+      const failure = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--workers', '0', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      assert.equal(failure.code, 2);
+      assert.match(failure.stderr, /--workers expects a positive integer, got "0"/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

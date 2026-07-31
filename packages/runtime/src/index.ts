@@ -6,7 +6,7 @@ export { Redactor, redactReport } from './redact.js';
 export { RuntimeError } from './eval.js';
 export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSelection } from './resolve.js';
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
-export { runLoad, type LoadOptions } from './interpreter.js';
+export { runLoad, runLoadShard, mergeLoadShardReports, type LoadOptions } from './interpreter.js';
 export { resolveRunSeed, resolveRunClock } from './seed.js';
 export { BrowserManager, SUPPORTED_BROWSER_ENGINES, type BrowserEngine, type BrowserManagerOptions } from './browser.js';
 export { startPickSession, wirePickSession, type PickedLocator, type PickLocatorKind, type PickSessionHandle } from './browser.js';

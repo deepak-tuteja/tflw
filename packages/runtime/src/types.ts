@@ -8,6 +8,7 @@ import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDec
 export type { LogDestination, LogLevel } from '@tflw/lang';
 import type { BrowserEngine } from './browser.js';
 import type { SnapshotDiffAsset } from './snapshot.js';
+import type { HistogramBucket } from './histogram.js';
 
 // ---- Resolved config -------------------------------------------------------
 
@@ -263,14 +264,15 @@ export type RunEvent =
 
 export type EventSink = (event: RunEvent) => void;
 
-// ---- Load testing (M29/M30, PLAN_BROWSER_PERF_SECURITY.md D24a/D29, R6) -----------------------
+// ---- Load testing (M29/M30/M31, PLAN_BROWSER_PERF_SECURITY.md D24a/D29/D19/D28, R4/R6) --------
 //
-// Deliberately minimal — a "reporter stub" (M29/M30's own scope), not the full `LoadReport` design
-// (`PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11: independent HTML view, HDR histogram, live
-// per-second buckets, partial-on-SIGINT) that M32 builds. This is enough to run every `scenario`
-// in a file concurrently and get a pass/fail verdict + a metrics JSON, combined and broken down
-// per scenario (R6) — no `report/load-report.html`, no junit mapping yet, and no per-endpoint
-// breakdown (R6's other axis — needs per-request endpoint tagging M32 adds).
+// Deliberately minimal — a "reporter stub" (M29/M30/M31's own scope), not the full `LoadReport`
+// design (`PLAN_REPORTS_PERF_SECURITY.md` R1-R6/R11: independent HTML view, live per-second
+// buckets, partial-on-SIGINT) that M32 builds. This is enough to run every `scenario` in a file
+// concurrently, optionally across multiple processes (M31), and get a pass/fail verdict + a
+// metrics JSON, combined and broken down per scenario (R6) plus a generator self-diagnosis
+// (M31/D28) — no `report/load-report.html`, no junit mapping yet, and no per-endpoint breakdown
+// (R6's other axis — needs per-request endpoint tagging M32 adds).
 
 /** One completed VU iteration's outcome, as fed to `LoadOptions.onIteration` for live progress. */
 export interface LoadIterationResult {
@@ -324,6 +326,22 @@ export interface LoadScenarioReport {
   readonly ok: boolean;
 }
 
+/** A generator process's read on its own health while it drove a `load` run (M31,
+ * `PLAN_BROWSER_PERF_SECURITY.md` D19/D28's "generator self-diagnosis" — event-loop lag and CPU
+ * saturation tracked alongside the metrics the same worker loop already collects). `saturated` is
+ * the "tflw itself is the bottleneck" verdict: when true, the measured latency/throughput reflects
+ * tflw's own generator process contending with itself, not the system under test, and the report
+ * says so rather than silently reporting numbers that understate real load. */
+export interface SelfDiagnosis {
+  readonly avgEventLoopLagMs: number;
+  readonly maxEventLoopLagMs: number;
+  /** Percent of one CPU core consumed over the run's wall-clock duration — can exceed 100 on a
+   * multi-threaded workload (libuv's thread pool), though a single generator process's own
+   * JS-thread-bound work rarely does. */
+  readonly cpuPercent: number;
+  readonly saturated: boolean;
+}
+
 export interface LoadReport {
   /** Every scenario's `ok` (vacuously `true` for a scenario with no `threshold`s). */
   readonly ok: boolean;
@@ -337,4 +355,38 @@ export interface LoadReport {
   readonly durationMs: number;
   readonly seed: number;
   readonly now: string;
+  /** M31/D28 — this run's own generator health (single-process: one process; `--workers N`: the
+   * merge of all N, `mergeSelfDiagnosis`). */
+  readonly selfDiagnosis: SelfDiagnosis;
+}
+
+// ---- Multi-process load generator (M31, D19/R4) ----------------------------------------------
+//
+// `tflw load --workers N` (N>1) forks N OS processes rather than scaling in-process — load
+// generation is CPU-bound (TLS, JSON parse, ajv, redaction scanning) and Node caps at one core per
+// process. Each forked worker runs `runLoadShard` for an equal (±1) striped share of every
+// scenario's workload target and reports back a compact `LoadShardResult` (histograms, not raw
+// samples — R4) over the fork's built-in IPC channel; the parent merges every shard's result via
+// `mergeLoadShardReports` into the exact same `LoadReport` shape `runLoad` itself returns, so
+// nothing downstream (CLI rendering, `load-metrics.json`) needs to know how many processes ran.
+
+/** One `scenario`'s contribution from a single shard (worker process) — a compact, IPC-safe
+ * summary (a histogram's buckets are at most a few hundred entries regardless of how many
+ * iterations that shard ran, R4) rather than every raw duration. */
+export interface LoadShardScenarioResult {
+  readonly name: string;
+  readonly workload: LoadScenarioReport['workload'];
+  readonly iterations: number;
+  readonly failures: number;
+  readonly sum: number;
+  readonly min: number;
+  readonly max: number;
+  readonly histogram: readonly HistogramBucket[];
+}
+
+/** What one forked worker process sends back to the parent once its striped share of the run
+ * finishes. */
+export interface LoadShardResult {
+  readonly scenarios: readonly LoadShardScenarioResult[];
+  readonly selfDiagnosis: SelfDiagnosis;
 }

@@ -136,7 +136,7 @@ use.
 ## Multiple scenarios in one run
 
 A file may declare more than one `scenario` — `tflw load` runs all of them **concurrently**, each
-on its own workload schedule, in one process:
+on its own workload schedule:
 
 ```tflw
 scenario "browsing"
@@ -164,7 +164,40 @@ scenario's iterations pooled — the quotable run-wide numbers) and a **per-scen
 scenario's own metrics and threshold verdicts). The overall run passes only if every scenario's
 thresholds do.
 
+## Scaling across processes — `--workers N`
+
+By default `tflw load` runs entirely in one Node process. Load generation is CPU-bound (TLS, JSON
+parsing, redaction scanning) — one process caps out around one core, same reason k6 is written in
+Go. `--workers N` forks `N` generator processes instead, each running an equal (±1) striped share
+of every scenario's `users`/`rps` target:
+
+```sh
+npx tflw load load.tflw --workers 4
+```
+
+No coordination happens between the processes beyond each one knowing its own index — the target
+splits evenly up front, and every VU's generated values (`unique(...)`, `random ...`) stay
+reproducible under `--seed` regardless of how many workers ran, since each worker's share of the
+run draws from a disjoint, deterministic slice of the same seed. Results merge back into one
+report — `report/load-metrics.json` and the end-of-run summary look identical whether the run used
+1 worker or 8; nothing downstream needs to know.
+
+**Generator self-diagnosis:** every run (1 worker or many) tracks its own event-loop lag and CPU
+usage. If tflw's own generator process saturates — no headroom left to generate more load even if
+the system under test could take it — the summary's `generator:` line says so instead of silently
+handing back numbers that describe tflw contending with itself, not your system:
+
+```
+generator:
+⚠ tflw itself is the bottleneck (avg event-loop lag 340.2ms  max 890.1ms  cpu 97%) — measured
+latency/throughput reflects tflw's own generator process, not your system under test. Results are
+unreliable.
+```
+
+A healthy run just shows the numbers, dimmed, with no warning. If you see this warning, add more
+`--workers` before trusting the latency/throughput numbers you're looking at.
+
 ## What's next
 
-Multi-process scaling and the full `load-report.html` view with live charts are still ahead; see
-the changelog for what's landed.
+The full `load-report.html` view with live charts, junit mapping, and live per-second console
+throughput are still ahead; see the changelog for what's landed.
