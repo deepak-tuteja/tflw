@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, parseConfigSource } from '@tflw/lang';
-import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex } from '../src/interpreter.js';
+import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff } from '../src/interpreter.js';
 import { LatencyHistogram } from '../src/histogram.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import type { LoadIterationResult, LoadShardResult, SelfDiagnosis } from '../src/types.js';
@@ -337,11 +337,11 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   for (const v of [500, 520, 510]) slowHistogram.record(v);
 
   const shardFast: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), timeline: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const shardSlow: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), timeline: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
 
@@ -364,7 +364,7 @@ test('mergeLoadShardReports: a shard missing a scenario entirely (its striped sh
   const hA = new LatencyHistogram();
   hA.record(5);
   const shardWithOnlyA: LoadShardResult = {
-    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), timeline: [] }],
+    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const merged = mergeLoadShardReports(program, [shardWithOnlyA], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -382,7 +382,7 @@ test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard satura
   const empty = new LatencyHistogram();
   empty.record(1);
   const shard = (saturated: boolean): LoadShardResult => ({
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), timeline: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated },
   });
   const merged = mergeLoadShardReports(program, [shard(false), shard(true)], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -459,7 +459,7 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
   const h = new LatencyHistogram();
   h.record(1);
   const shard: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), timeline: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
   };
   const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -507,5 +507,133 @@ test('onProgressTick fires roughly once a second with a cumulative, non-decreasi
     assert.ok(ticks[i]!.iterations >= ticks[i - 1]!.iterations, 'iterations must never decrease tick to tick');
     assert.ok(ticks[i]!.elapsedMs >= ticks[i - 1]!.elapsedMs, 'elapsedMs must never decrease tick to tick');
   }
+  await server.close();
+});
+
+// -- M34 (D17, back-off/coordinated-omission diagnostic) — computeBackOff's pure logic gets ------
+// deterministic unit coverage (hand-built early/late totals, no real timing to flake on); a
+// handful of real end-to-end runs below confirm the wiring (runLoad/runLoadShard/
+// mergeLoadShardReports) all actually reach it, the same split M31's shareOfWorkloadTarget/
+// globalIterationIndex unit tests and their own real-shard integration test already use.
+//
+// The design landed here (early-half-mean vs. late-half-mean) replaced an earlier attempt that
+// compared achieved iterations against an "ideal" pace estimated from p10 (the fastest tenth of
+// observed durations) — that approach was systematically biased: p10 is *always* faster than a
+// run's typical iteration by construction, so it flagged "backing off" even against a genuinely
+// healthy, uniformly-fast server (caught by a real, non-simulated run during this diagnostic's own
+// development, not by inspection). Comparing two same-shape aggregates (mean vs. mean, each from a
+// representative half of the run) has no such structural bias.
+
+test('computeBackOff: undefined for an open-model (`ramp to N rps`) scenario — no "backing off" concept in that model (D17)', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 100 rps over 1s\n  api GET /health\n');
+  assert.equal(computeBackOff(program.scenarios[0]!, { count: 10, sum: 50 }, { count: 10, sum: 500 }), undefined);
+});
+
+test('computeBackOff: undefined when either half has fewer than MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF samples', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  assert.equal(computeBackOff(program.scenarios[0]!, { count: 2, sum: 20 }, { count: 10, sum: 2000 }), undefined, 'too few early samples');
+  assert.equal(computeBackOff(program.scenarios[0]!, { count: 10, sum: 100 }, { count: 2, sum: 400 }), undefined, 'too few late samples');
+});
+
+test('computeBackOff: undefined when a half has zero total duration — avoids dividing by zero', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  assert.equal(computeBackOff(program.scenarios[0]!, { count: 10, sum: 0 }, { count: 10, sum: 500 }), undefined);
+});
+
+test('computeBackOff: a healthy scenario (early and late means close together) reports a low ratio, no warning', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  // early mean 10ms, late mean 11ms — ordinary sample-to-sample variance, not a real slowdown.
+  const backOff = computeBackOff(program.scenarios[0]!, { count: 20, sum: 200 }, { count: 20, sum: 220 });
+  assert.ok(backOff, 'expected a defined BackOffDiagnosis');
+  assert.ok(backOff!.ratio < 0.2, `expected a low ratio, got ${backOff!.ratio}`);
+  assert.equal(backOff!.warning, false);
+});
+
+test('computeBackOff: a scenario whose late half ran far slower than its early half reports a high ratio and warns', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  // early mean 10ms, late mean 200ms — ratio = 1 - 10/200 = 0.95.
+  const backOff = computeBackOff(program.scenarios[0]!, { count: 20, sum: 200 }, { count: 10, sum: 2000 });
+  assert.ok(backOff, 'expected a defined BackOffDiagnosis');
+  assert.ok(backOff!.ratio > 0.2, `expected a high ratio, got ${backOff!.ratio}`);
+  assert.equal(backOff!.warning, true);
+});
+
+test('computeBackOff: a scenario that sped up (late half faster than early) reports ratio 0, not negative', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  const backOff = computeBackOff(program.scenarios[0]!, { count: 20, sum: 2000 }, { count: 20, sum: 200 });
+  assert.ok(backOff, 'expected a defined BackOffDiagnosis');
+  assert.equal(backOff!.ratio, 0);
+  assert.equal(backOff!.warning, false);
+});
+
+test('a real degrading server triggers a genuine backOff warning on a closed-model run', async () => {
+  // Fast for the scenario's own first half of wall-clock time (matching computeBackOff's own
+  // early/late split at `overMs / 2`), then deliberately slow — a time-based trigger, not a
+  // request-count one, so it lines up with exactly what the diagnostic actually measures.
+  const runStart = Date.now();
+  const server = await startFixtureServer({
+    '/slow': (_req, res) => {
+      if (Date.now() - runStart < 700) return json(res, 200, {});
+      setTimeout(() => json(res, 200, {}), 150);
+    },
+  });
+  // 1400ms/5 users comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves —
+  // the late half alone fits roughly (700ms / 150ms) × 5 users ≈ 23 iterations.
+  const source = 'scenario "Degrading"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  assert.ok(s.backOff, 'expected a defined backOff diagnosis on a closed-model scenario');
+  assert.equal(s.backOff!.warning, true, `expected the back-off warning to fire, ratio was ${s.backOff!.ratio}`);
+  assert.ok(s.backOff!.ratio > 0.2, `expected ratio > 0.2, got ${s.backOff!.ratio}`);
+  await server.close();
+});
+
+test('a uniformly fast server does not trigger a backOff warning', async () => {
+  // A small fixed delay (rather than a near-0ms instant response) keeps ordinary per-request
+  // jitter a small *relative* fraction of the mean instead of dominating it — a health-check
+  // response that's usually <1ms can swing 100%+ on jitter alone, which isn't a fair test of
+  // whether the diagnostic itself is stable against genuine health. A longer run (1500ms) also
+  // comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves with real margin.
+  const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 5) });
+  const source = 'scenario "Healthy"\n  ramp to 5 users over 1500ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  if (s.backOff) assert.equal(s.backOff.warning, false, `unexpected back-off warning against a healthy server, ratio ${s.backOff.ratio}`);
+  await server.close();
+});
+
+test('an open-model (`ramp to N rps`) real run never carries a backOff field', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'scenario "Open"\n  ramp to 40 rps over 400ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.scenarios[0]!.backOff, undefined);
+  await server.close();
+});
+
+test('two real shards each contribute their own early/late totals, and mergeLoadShardReports recomputes backOff from the merged data', async () => {
+  const runStart = Date.now();
+  const server = await startFixtureServer({
+    '/slow': (_req, res) => {
+      if (Date.now() - runStart < 700) return json(res, 200, {});
+      setTimeout(() => json(res, 200, {}), 150);
+    },
+  });
+  const source = 'scenario "Degrading"\n  ramp to 6 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const config = testConfig(server.baseUrl);
+  const [shardA, shardB] = await Promise.all([
+    runLoadShard(program, config, { source, shard: { index: 0, count: 2 } }),
+    runLoadShard(program, config, { source, shard: { index: 1, count: 2 } }),
+  ]);
+  assert.ok(shardA.scenarios[0]!.early.count > 0 || shardA.scenarios[0]!.late.count > 0, 'expected a real shard to report some iterations');
+  assert.ok(shardB.scenarios[0]!.early.count > 0 || shardB.scenarios[0]!.late.count > 0, 'expected a real shard to report some iterations');
+
+  const merged = mergeLoadShardReports(program, [shardA, shardB], { startedAt: new Date().toISOString(), durationMs: 1400, seed: 1, now: new Date().toISOString() });
+  const s = merged.scenarios[0]!;
+  assert.ok(s.backOff, 'expected a defined backOff diagnosis on the merged report');
+  assert.equal(s.backOff!.warning, true, `expected the merged back-off warning to fire, ratio was ${s.backOff!.ratio}`);
   await server.close();
 });

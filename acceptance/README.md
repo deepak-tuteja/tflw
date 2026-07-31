@@ -246,3 +246,168 @@ Combined with the two real, previously-latent runtime bugs this same acceptance 
 fixed at the source (see `testFlow-tests/PROGRESS.md`'s M7 entry — an action's own browser steps
 silently losing the caller's browser context, and `import.meta.resolve` breaking inside the
 packaged CJS CLI bundle), this is a clear win for the browser-arc scenarios in scope for `1.0.0`.
+
+---
+
+# perf leg: tflw vs. k6
+
+M34 (`PLAN_BROWSER_PERF_SECURITY.md` D31, the perf arc's own dogfood gate — `0.3.0`-equivalent,
+see D25): the same load scenario against testFlow-tests' `perf-0` contended checkout endpoint
+(`POST /orders`, real Postgres row-lock serialization on one hot product's stock row), hand-written
+once as `.tflw` (`acceptance/perf/tflw/checkout-burst.tflw`) and once for k6
+(`acceptance/perf/k6/checkout-burst.js`) — measured numbers compared, both novel diagnostics (D17's
+back-off warning, D19's generator self-saturation) demonstrated firing for real. Unlike the two legs
+above, this one's verdict is **not** a clean win — it surfaced a real, previously-undiscovered
+performance characteristic of tflw's own load engine, reported here in full rather than smoothed
+over, exactly what this gate exists to do.
+
+Run it yourself (needs testFlow-tests' Docker stack — `node cli.mjs start` in that repo — and its
+load target reset before each run, `POST /admin/load/reset` with bearer admin auth):
+
+```sh
+# tflw side
+cd acceptance/perf/tflw && node ../../../packages/cli/dist/cli.cjs load checkout-burst.tflw --no-color
+
+# k6 side (a static k6 binary is enough — no k6 Cloud account needed)
+cd acceptance/perf/k6 && k6 run checkout-burst.js
+```
+
+## Measured numbers (60 users ramping over 20s, closed model, both sides)
+
+| | tflw | k6 |
+|---|--:|--:|
+| Iterations | 3,908 | 12,485 |
+| Throughput | 195/s | 624/s |
+| Checkout p50 | 26ms | 33.6ms (med) |
+| Checkout p90 | 424ms | 60.6ms |
+| Checkout p95 | 476ms | 69.9ms |
+| Checkout max | 785ms | 241ms |
+| Error rate | 0.00% | 0.35% |
+| `p95 < 250ms` threshold | ✗ fails (exit 1) | ✓ passes |
+| `error rate < 1%` threshold | ✓ passes | ✓ passes |
+
+**Numbers do not agree within tolerance — a real gap, root-caused below, not a measurement
+artifact.** Both sides show the qualitatively correct story (real latency growth under load, low
+error rate, a genuinely degrading endpoint) and both thresholds mechanisms work exactly as
+designed — tflw's own p95 threshold correctly fails the run (exit 1) on the real number it
+measured. What doesn't match is the *magnitude*.
+
+## Root cause: tflw's own per-request overhead, not the endpoint
+
+Isolated by comparing tflw against a raw Node `fetch` script using the *same* HTTP stack (undici,
+via Node's global `fetch` — the same one `packages/runtime/src/http.ts` itself calls) and the same
+ramp shape, varying one thing at a time:
+
+| Workload | tflw | raw `fetch` | k6 |
+|---|--:|--:|--:|
+| `GET /health` only (with session auth) | 5,865/s | — | — |
+| `GET /products` + `GET /health` (capture, no POST) | 2,199/s | — | — |
+| `POST /cart/items` only, static body, uncontended | 643/s | 1,451/s (2.3×) | — |
+| `GET /products` + `POST /cart/items`, uncontended | 491/s | 919/s (1.9×) | — |
+| `GET /products` + `POST /orders`, **contended** (the acceptance scenario) | 195/s | 550-565/s (2.9×) | 624/s (3.2×) |
+
+Every GET-only path is fast and healthy. The moment a `POST`-with-body step enters the picture,
+tflw shows a real, reproducible ~2× latency overhead relative to a raw `fetch` script doing the
+identical request — present even against a completely *uncontended* endpoint (`POST /cart/items`,
+no shared row lock). That baseline ~2× gap then **compounds** with perf-0's genuine server-side
+row-lock queueing to produce the ~3× gap seen on the real acceptance target. Ruled out along the
+way, each with its own real-run evidence:
+- **Not CPU/event-loop saturation** — `selfDiagnosis.cpuPercent` stayed 14-37% throughout every
+  contended run, nowhere near the 90%+ that would explain a throughput ceiling.
+- **Not `--workers` scaling** — `--workers 4` moved throughput from 3,363 to 3,983 iterations (a
+  weak +18%, not the ~4× a CPU-bound bottleneck would show), confirming this isn't the kind of
+  problem D19's multi-process generator was designed to fix.
+- **Not `expect`, `capture`, or interpolation** — a scenario with the `expect status equals 201`
+  step removed showed the same throughput; a scenario with capture+interpolation but no `POST` was
+  fast (2,199/s); a scenario with a single **static**, non-interpolated POST body was still slow
+  (643/s) with no capture or multi-step chain involved at all.
+- **Not the specific contended row** — an uncontended `POST /cart/items` (no shared lock) still
+  showed the ~2× gap against raw `fetch`, isolating the overhead to "any POST with a body," not
+  "this particular row's lock."
+
+The exact mechanism inside tflw's per-iteration pipeline (`execApi`/`prepareBody`/`sendRequest` in
+`packages/runtime/src/interpreter.ts`) wasn't pinned down to a specific line this milestone — that's
+deliberately scoped out (a real optimization pass is a different, larger piece of work than an
+acceptance gate) and flagged here as a concrete, well-evidenced candidate for a dedicated
+load-engine hardening fast-follow, the same "measurement first, hardening gated on what it finds"
+pattern `PLAN_BROWSER_PERF_SECURITY.md` M4a already used for the browser arc's own worker
+hardening.
+
+## Two real bugs found and fixed at the source
+
+1. **`tflw load` never actually threaded its `.env`-merged environment through to a run.**
+   `loadCommand`'s calls to `runLoad` (single-process) and the `--internal-load-worker` branch's
+   call to `runLoadShard` both omitted `LoadOptions.environ` entirely — `env(NAME)` inside a load
+   `scenario`/`session` silently fell back to the raw `process.env` `runLoadCore` defaults to,
+   never the `.env`-merged one `loadAndValidate` already builds (the same one `tflw run` has always
+   passed correctly). Invisible until this milestone's own acceptance scenario tried a real
+   `.env`-only credential inside a `session` used by a `scenario` for the first time — no prior
+   `tflw load` test (M29-M33) ever exercised `env(...)` against anything but an already-exported
+   process env var. Fixed at both call sites (`packages/cli/src/cli.ts`); regression test covers
+   both the single-process and `--workers N>1` paths.
+2. **D17's back-off/coordinated-omission diagnostic itself had never been built.** Named in the
+   plan since M29 ("Novel diagnostic: report warns when a closed run's VUs spent >X% of wall time
+   waiting rather than iterating"), and the docs-site guide had already documented its exact console
+   output since M29 — but no M29-M32 milestone actually implemented it, only D19's generator
+   self-saturation was built (M31/M32). Designed and built as part of this milestone
+   (`BackOffDiagnosis`, `computeBackOff` — see `packages/runtime/src/types.ts`/`interpreter.ts` for
+   the full design writeup, including why an early-half-vs-late-half mean comparison was chosen
+   over an extremal-percentile baseline after a real run against a healthy server exposed a
+   structural bias in the first design attempt).
+
+## Both novel diagnostics, demonstrated firing for real
+
+**D17's back-off warning** fired on the acceptance scenario itself — a completely organic result
+of the workload's own linear VU ramp (0→60 over 20s), not a contrived trigger:
+
+```
+⚠ your load backed off — this scenario's VUs spent an estimated 85% of their available time unable
+to keep pace with the target system; results understate real latency
+```
+
+**D19's generator self-saturation** needs its own isolated demonstration
+(`acceptance/perf/tflw/generator-saturation-demo.tflw`) — a scenario with no real API target,
+deliberately CPU-bound (`ramp to 8 users over 3s`, each iteration synchronously busy-looping ~20ms
+via a JS action), the same real, non-simulated technique `packages/cli/test/e2e.test.ts`'s own
+inconclusive-exit-code test uses. No k6 counterpart is possible here by design — D19 is specific to
+tflw's own single-process Node generator being the bottleneck, a failure mode a compiled-Go
+generator doesn't have:
+
+```
+⚠ tflw itself is the bottleneck (avg event-loop lag 2927.3ms  max 2927.3ms  cpu 100%) — measured
+latency/throughput reflects tflw's own generator process, not your system under test. Results are
+unreliable.
+
+load run inconclusive — the generator saturated, so this verdict cannot be trusted
+```
+
+Exit code 3, junit `<skipped>` (never `<failure>` or a silent pass) — confirmed directly, not just
+asserted from the summary line.
+
+## A qualitative asymmetry worth its own line: session resilience
+
+Developing the k6 side surfaced a real environment detail that became its own finding: apiV2's
+`JWT_ACCESS_TTL` is a deliberately short 5s in this dev environment (it exercises other suites' own
+token-refresh coverage). A bearer token obtained once therefore expires mid-run for *any* load
+tool. tflw's session model re-establishes automatically on a 401
+(`packages/runtime/src/interpreter.ts`: "lets an `ApiStep` that gets a 401 know which session(s) to
+invalidate + re-establish") — completely free to a `.tflw` author, and exactly why the tflw side's
+error rate is a clean 0.00% above. k6 has no equivalent built in; the first draft of the k6 script
+(no reauth handling) failed 47% of checkouts on plain 401s the instant tokens started expiring.
+The fix was a hand-written ~10-line `authedRequest` wrapper (login-on-first-use, retry-once on
+401) — a small but real, measured amount of resilience code tflw gives away for free that a raw
+tool makes every author rebuild.
+
+## Verdict
+
+A genuine, mixed result — not a clean win, and reported as such. Both novel diagnostics work
+exactly as designed and were demonstrated firing on real, non-simulated runs; both threshold
+mechanisms correctly gate their own tool's exit code; tflw's session model measurably out-resilient
+a hand-written k6 script for free. But the core numeric comparison D31 asks for does **not** land
+within tolerance — tflw's own load-generation throughput trails k6's by roughly 3× on this real
+contended target, root-caused (not merely observed) to a ~2× per-POST-request overhead in tflw's
+own client pipeline that compounds under genuine server-side contention. Two real bugs were found
+and fixed at the source in the process (the `.env` wiring gap, and D17's diagnostic itself never
+having been built). The perf arc's dogfood gate passes on process and honesty, not on the headline
+number — the load-engine performance gap is now a concrete, well-evidenced, correctly-scoped-out
+item for a dedicated hardening milestone, not a surprise waiting to be found in production.

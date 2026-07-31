@@ -1120,7 +1120,7 @@ async function loadWorkerCommand(): Promise<number> {
             resolvePromise(EXIT_USAGE);
             return;
           }
-          const { resolved, parsedFiles } = loaded;
+          const { resolved, parsedFiles, environ } = loaded;
           const { file, source, program } = parsedFiles[0]!;
           const result = await runLoadShard(program, resolved, {
             source,
@@ -1130,6 +1130,12 @@ async function loadWorkerCommand(): Promise<number> {
             shard: { index: msg.shardIndex, count: msg.shardCount },
             abortSignal: controller.signal,
             onProgressTick: (snapshot) => process.send?.({ type: 'progress', snapshot } satisfies LoadWorkerToParentMessage),
+            // Same fix as the single-process path above (M34 acceptance-milestone finding) — each
+            // forked worker re-runs `loadAndValidate` independently (it never inherits the
+            // parent's already-built `environ`, by design: `msg.cwd` lets a worker be pointed at
+            // a different directory in principle), so it needs its own `.env`-merged environ
+            // passed through here too, not just the parent's single-process call site.
+            environ,
           });
           process.send?.({ type: 'done', result } satisfies LoadWorkerToParentMessage);
           resolvePromise(EXIT_OK);
@@ -1298,6 +1304,13 @@ async function loadCommand(argv: string[]): Promise<number> {
       now: args.nowRaw,
       abortSignal: controller.signal,
       onProgressTick: printProgress,
+      // M34 acceptance-milestone finding: this was missing — a `.env`-only `env(NAME)` value
+      // (the normal way SPEC §3.4 expects secrets to reach a run) silently fell back to the raw
+      // `process.env` `runLoadCore` defaults to when `opts.environ` is omitted, never the
+      // `.env`-merged environment `loadAndValidate` already built above. `tflw run`'s own call
+      // site (below, `environ,`) always passed this; `tflw load` never did, for either workload
+      // model, until a real authenticated scenario (this milestone's own acceptance run) hit it.
+      environ,
     });
     if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(90) + '\r');
   } else {
@@ -1405,6 +1418,13 @@ function renderLoadSummary(report: LoadReport, color: boolean): string {
         const target = t.label === 'error rate' ? `${(t.target * 100).toFixed(2)}%` : `${t.target}ms`;
         lines.push(`  ${tick(color, t.ok)} ${t.label} ${cmp} ${target}  (actual: ${actual})`);
       }
+    }
+    // M34 (D17): a closed-model scenario's coordinated-omission warning — see BackOffDiagnosis
+    // (types.ts). Report-only, same restraint as the generator line below: silent when healthy.
+    if (s.backOff?.warning) {
+      const pct = (s.backOff.ratio * 100).toFixed(0);
+      const warning = `⚠ your load backed off — this scenario's VUs spent an estimated ${pct}% of their available time unable to keep pace with the target system; results understate real latency`;
+      lines.push(color ? `\x1b[33m${warning}\x1b[0m` : warning);
     }
   }
 

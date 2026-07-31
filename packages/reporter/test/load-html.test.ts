@@ -94,6 +94,28 @@ test('the generator section reflects a saturated selfDiagnosis with a visible wa
   assert.match(html, /tflw itself was the bottleneck/);
 });
 
+// M34 (D17): the back-off/coordinated-omission warning — only rendered when `backOff.warning` is
+// true, never for an open-model scenario (no `backOff` field at all) or a healthy closed one.
+
+test('a scenario with backOff.warning shows the coordinated-omission banner with its ratio', () => {
+  const backedOff: LoadReport = { ...baseReport, scenarios: [{ ...baseReport.scenarios[0]!, backOff: { ratio: 0.41, warning: true } }] };
+  const html = renderLoadReportHtml(backedOff);
+  assert.match(html, /class="backoff-warning"/);
+  assert.match(html, /41%/);
+  assert.match(html, /coordinated omission, D17/);
+});
+
+test('a scenario with backOff present but warning:false renders no banner', () => {
+  const healthy: LoadReport = { ...baseReport, scenarios: [{ ...baseReport.scenarios[0]!, backOff: { ratio: 0.03, warning: false } }] };
+  const html = renderLoadReportHtml(healthy);
+  assert.doesNotMatch(html, /class="backoff-warning"/);
+});
+
+test('a scenario with no backOff field (open-model, or never computed) renders no banner', () => {
+  const html = renderLoadReportHtml(baseReport);
+  assert.doesNotMatch(html, /class="backoff-warning"/);
+});
+
 test('scenario/threshold text is escaped', () => {
   const weird: LoadReport = { ...baseReport, scenarios: [{ ...baseReport.scenarios[0]!, name: 'checkout <fast>' }] };
   const html = renderLoadReportHtml(weird);

@@ -1,0 +1,15 @@
+# D31's second novel-diagnostic demonstration: D19's generator self-diagnosis
+# (SelfDiagnosis.saturated / LoadReport.inconclusive, R11). Unlike the back-off warning
+# (checkout-burst.tflw), this one is deliberately **not** a comparison against k6 — it's specific
+# to tflw's own single-process Node generator being the bottleneck, a concept k6's compiled Go
+# generator doesn't have an equivalent failure mode for (D19's own framing: "almost no load tool
+# tells you this"). No real API target needed either: this isolates D19 on its own rather than
+# diluting it with perf-0's network variability, the same reasoning
+# packages/cli/test/e2e.test.ts's own inconclusive-exit-code test uses.
+
+use "./helpers.ts"
+
+scenario "generator self-saturation demo"
+  ramp to 8 users over 3s
+  let burned = burnCpu()
+  threshold p95 duration is less than 100000ms

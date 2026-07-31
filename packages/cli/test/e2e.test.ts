@@ -1967,6 +1967,110 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
   });
 });
 
+// M34 acceptance-milestone finding: `tflw load` built its `LoadOptions` for both `runLoad`
+// (single-process) and `runLoadShard` (each `--workers N>1` forked child) without ever passing
+// `environ` through — `env(NAME)` inside a load scenario/session silently fell back to the raw
+// `process.env` `runLoadCore` defaults to, never the `.env`-merged environment `loadAndValidate`
+// already builds (the same one `tflw run` has always passed correctly). Invisible until this
+// milestone's own acceptance run tried a real `.env`-only credential inside a `session` used by a
+// `scenario` for the first time — no prior `tflw load` test (M29-M33) ever exercised `env(...)`
+// against anything but a real, already-exported process env var. Fixed by passing `environ`
+// through both call sites (cli.ts's `loadCommand` and its `--internal-load-worker` branch).
+test('`tflw load`: an `env(NAME)` value from a `.env` file (not a real process env var) resolves inside a scenario, both single-process and under `--workers`', async () => {
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/secret' && req.headers['x-api-key'] === 'from-dotenv-only') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    } else {
+      res.writeHead(403).end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-dotenv-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n\nrequire env API_KEY\n`, 'utf8');
+    // Deliberately *not* set as a real process env var — `envWithout` below also strips it from
+    // whatever the test runner's own environment might have, so a pass here can only mean the
+    // `.env` file itself was actually read and threaded through to the running scenario.
+    await writeFile(join(dir, '.env'), 'API_KEY=from-dotenv-only\n', 'utf8');
+    await writeFile(
+      join(dir, 'load.tflw'),
+      'scenario "dotenv-only credential"\n  ramp to 3 users over 150ms\n  api GET /secret\n    header "X-Api-Key" is env(API_KEY)\n  expect status equals 200\n',
+      'utf8',
+    );
+
+    const single = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir, env: envWithout('API_KEY') });
+    assert.match(single.stdout, /load run passed/);
+    const singleResults = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { combined: { failures: number; iterations: number } };
+    assert.equal(singleResults.combined.failures, 0);
+    assert.ok(singleResults.combined.iterations > 0);
+
+    const workers = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color', '--workers', '2'], { cwd: dir, env: envWithout('API_KEY') });
+    assert.match(workers.stdout, /load run passed/);
+    const workersResults = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { combined: { failures: number; iterations: number } };
+    assert.equal(workersResults.combined.failures, 0);
+    assert.ok(workersResults.combined.iterations > 0);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// M34 (D17, back-off/coordinated-omission diagnostic — designed and built in this milestone, never
+// shipped by M29-M32 despite D17 naming it). Real, non-simulated proof: a closed-model scenario
+// against a server that's fast for the first couple of requests then deliberately slow demonstrates
+// the exact warning D31's acceptance bar asks for.
+test('`tflw load`: a closed-model scenario against a degrading server prints and reports a real back-off warning', async () => {
+  // Fast for the scenario's own first half of wall-clock time (matching computeBackOff's own
+  // early/late split at `overMs / 2`), then deliberately slow — a time-based trigger, not a
+  // request-count one, so it lines up with exactly what the diagnostic actually measures.
+  const runStart = Date.now();
+  const server: Server = createServer((req, res) => {
+    if (req.url !== '/slow') return void res.writeHead(404).end();
+    if (Date.now() - runStart < 700) return void res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    setTimeout(() => res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}'), 150);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-backoff-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    // 1400ms/5 users comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves —
+    // runtime's load.test.ts has the full derivation of this margin.
+    await writeFile(join(dir, 'load.tflw'), 'scenario "degrading checkout"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n', 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir });
+    assert.match(stdout, /⚠ your load backed off/);
+    assert.match(stdout, /results understate real latency/);
+
+    const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
+      scenarios: { backOff?: { ratio: number; warning: boolean } }[];
+    };
+    const backOff = results.scenarios[0]!.backOff;
+    assert.ok(backOff, 'expected the JSON report to carry a backOff diagnosis');
+    assert.equal(backOff!.warning, true);
+    assert.ok(backOff!.ratio > 0.2, `expected ratio > 0.2, got ${backOff!.ratio}`);
+
+    const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
+    assert.match(html, /class="backoff-warning"/);
+    assert.match(html, /coordinated omission, D17/);
+
+    // Report-only: a back-off warning must never touch the exit code or gate CI on its own — only
+    // `threshold`s (this scenario declares none) and `inconclusive` do that.
+    const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+    assert.match(junit, /tests="0"/);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`tflw load` runs every `scenario` in a file concurrently: passes/fails independently, gates the overall exit code, and reports both combined and per-scenario metrics', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-multi-'));

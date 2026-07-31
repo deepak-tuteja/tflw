@@ -56,7 +56,21 @@ long as the run lasts. The trap: if the system under test slows down, a VU's ite
 take longer, so it completes *fewer* of them — the load backs off exactly when you'd want it to
 push harder. This understates latency ("coordinated omission"). `tflw load`'s console/report flags
 a run whose VUs spent a large share of wall time waiting rather than iterating, so this doesn't
-silently distort your numbers.
+silently distort your numbers:
+
+```
+scenario "checkout under load":
+  iterations 812  failures 3  error rate 0.37%  p50 210ms  p95 640ms  p99 910ms
+⚠ your load backed off — this scenario's VUs spent an estimated 41% of their available time unable
+to keep pace with the target system; results understate real latency
+```
+
+A healthy run just shows the numbers, no warning line. The percentage compares how many iterations
+actually completed against how many the scenario's own fastest-observed pace would have allowed —
+unlike a saturated generator (below), this doesn't change `tflw load`'s exit code or a threshold's
+pass/fail: it's a warning about how to *read* the numbers, not a verdict on whether they're
+trustworthy. Switch to the open model if you want to measure the true degradation curve instead of
+being warned about it after the fact.
 
 ```
 ramp to 200 rps over 30s

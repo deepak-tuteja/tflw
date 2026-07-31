@@ -330,6 +330,40 @@ export interface LoadThresholdResult {
   readonly ok: boolean;
 }
 
+/** D17's back-off / coordinated-omission diagnostic (M34, acceptance milestone — designed and
+ * built here; D17 named it but no M29-M32 milestone actually implemented it). Only meaningful for
+ * a **closed**-model (`ramp to N users`) scenario: its VUs loop continuously, so when the system
+ * under test slows down they don't report degraded throughput directly — they simply complete
+ * fewer iterations, silently. This is exactly "coordinated omission" (ast.ts's `RampUsersWorkload`
+ * doc): the load backs off precisely when it matters most, and a percentile computed only from the
+ * iterations that *did* complete understates how bad things really got.
+ *
+ * `ratio` compares the scenario's own mean iteration duration in the **first half** of its run
+ * against the **second half**: `1 - earlyMeanMs / lateMeanMs`, clamped to `[0, ∞)`. Near 0 when a
+ * scenario's pace stayed roughly constant throughout (healthy); climbs toward 1 as the second
+ * half's iterations run much longer than the first half's — direct evidence the target system
+ * slowed down partway through the run, not just ordinary sample-to-sample noise. This was chosen
+ * over comparing against an extremal percentile (e.g. p10) as an "ideal pace" baseline — that
+ * approach is systematically biased: p10 is *always* faster than a run's typical iteration by
+ * construction, so it flags "backing off" even on a perfectly healthy target (caught by a real,
+ * non-simulated test against a uniformly-fast fixture server during this diagnostic's own
+ * development). Comparing two same-shape aggregates (mean vs. mean, each drawn from a
+ * representative half of the run) has no such structural bias. `warning` is `ratio` past
+ * `BACK_OFF_WARNING_THRESHOLD` (interpreter.ts), gated on a minimum iteration count in *each* half
+ * so a handful of samples can't manufacture a spurious warning either way.
+ *
+ * Deliberately **not** an open-model (`ramp to N rps`) field — arrival-rate scheduling doesn't
+ * "back off": queues build under saturation instead of iterations silently disappearing, which is
+ * D17's whole reason the open model "honestly validates an SLA." `undefined` there, not `false` /
+ * a zeroed-out ratio, so a report never implies "we checked and it's fine" for a model where the
+ * question doesn't apply. Report-only (like a saturated generator's warning): unlike `inconclusive`
+ * (R11), a back-off warning never flips `LoadThresholdResult.ok` or a junit verdict — D17 only
+ * asks the report to warn, not to invalidate a scenario's own threshold verdicts. */
+export interface BackOffDiagnosis {
+  readonly ratio: number;
+  readonly warning: boolean;
+}
+
 /** One scenario's own slice of a `tflw load` run (R6's "per-scenario" axis) — every field scoped
  * to just this scenario's iterations, computed exactly the way a single-scenario M29 report was. */
 export interface LoadScenarioReport {
@@ -339,6 +373,8 @@ export interface LoadScenarioReport {
   readonly thresholds: readonly LoadThresholdResult[];
   /** Every threshold *this scenario* declared passed (vacuously `true` when it declares none). */
   readonly ok: boolean;
+  /** M34 (D17) — present only for a `RampUsersWorkload` scenario; see `BackOffDiagnosis`. */
+  readonly backOff?: BackOffDiagnosis;
 }
 
 /** A generator process's read on its own health while it drove a `load` run (M31,
@@ -414,6 +450,15 @@ export interface LoadShardScenarioResult {
    * shards the same way the histogram merges, so the parent's timeline charts cover the whole run,
    * not just one shard's slice of it. */
   readonly timeline: readonly SerializedTimelineBucket[];
+  /** M34 (D17) — this shard's own contribution to `BackOffDiagnosis`: iteration count and summed
+   * duration for this scenario's first half of wall-clock time vs. its second half (split at the
+   * scenario's own `overMs / 2`). The parent sums every shard's `early`/`late` before recomputing
+   * `ratio` from the *merged* totals, the same "merge first, derive second" order every other
+   * aggregate field in this file already follows. Both stay `{ count: 0, sum: 0 }` for an
+   * open-model scenario — nothing populates them, mirroring `BackOffDiagnosis` itself being absent
+   * there. */
+  readonly early: { readonly count: number; readonly sum: number };
+  readonly late: { readonly count: number; readonly sum: number };
 }
 
 /** What one forked worker process sends back to the parent once its striped share of the run

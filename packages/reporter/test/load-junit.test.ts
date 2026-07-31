@@ -75,6 +75,14 @@ test('renderLoadJunitXml: an aborted run records the abortedMessage as a propert
   assert.match(xml, /<property name="aborted" value="aborted at 12s of 30s planned"\/>/);
 });
 
+// M34 (D17): a back-off warning is report-only (types.ts's BackOffDiagnosis doc) — it must never
+// change a threshold's pass/fail verdict or turn a passing testcase into a failure/skip.
+test('renderLoadJunitXml: a scenario\'s backOff.warning has no effect on testcase pass/fail/skip', () => {
+  const withWarning: LoadReport = { ...baseReport, ok: true, scenarios: [{ ...baseReport.scenarios[0]!, ok: true, thresholds: [{ label: 'error rate', op: 'lessThan', target: 0.01, actual: 0, ok: true }], backOff: { ratio: 0.55, warning: true } }] };
+  const withoutWarning: LoadReport = { ...baseReport, ok: true, scenarios: [{ ...baseReport.scenarios[0]!, ok: true, thresholds: [{ label: 'error rate', op: 'lessThan', target: 0.01, actual: 0, ok: true }] }] };
+  assert.equal(renderLoadJunitXml(withWarning), renderLoadJunitXml(withoutWarning));
+});
+
 test('renderLoadJunitXml escapes XML-special characters in a scenario name', () => {
   const weird: LoadReport = {
     ...baseReport,

@@ -83,6 +83,7 @@ import { inferContentType } from './mime.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
 import type {
   AttemptResult,
+  BackOffDiagnosis,
   EventSink,
   LoadDurationStats,
   LoadIterationResult,
@@ -338,6 +339,12 @@ interface ScenarioAccumulator {
    * charts once shaped into `LoadMetrics.timeline`. */
   readonly timeline: Timeline;
   failures: number;
+  /** M34 (D17) — split by which half of the scenario's own wall-clock window (`overMs / 2`) an
+   * iteration's *start* landed in, regardless of workload model (only consumed by `computeBackOff`
+   * for a closed-model scenario, but cheap enough to track unconditionally rather than branching
+   * the recording code on workload type). */
+  early: { count: number; sum: number };
+  late: { count: number; sum: number };
 }
 
 interface LoadCoreResult {
@@ -392,7 +399,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // `globalIterationIndex` (M31) turns this shard-local counter into a cross-shard-unique id.
   let iterationIndex = 0;
 
-  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 }));
+  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0, early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }));
 
   // M32 (R5) — a cumulative snapshot roughly once a second, for the CLI's live console line.
   // `unref()` so a tick left pending never keeps the process alive on its own (mirrors
@@ -478,6 +485,14 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
       if (!result.ok) acc.failures++;
       acc.histogram.record(result.durationMs);
       acc.timeline.record((performance.now() - runStart) / 1000, result.durationMs, result.ok);
+      // M34 (D17) — which half of the scenario's own wall-clock window this iteration *started*
+      // in, by real elapsed time (not request order — see `computeBackOff`'s doc for why an
+      // elapsed-time split is the robust choice here). Only ever read back for a closed-model
+      // scenario, but recorded unconditionally: cheap, and one fewer branch to keep in sync with
+      // `scenario.workload.type` elsewhere.
+      const half = iterStart - runStart < scenario.workload.overMs / 2 ? acc.early : acc.late;
+      half.count++;
+      half.sum += result.durationMs;
       opts.onIteration?.(result);
     };
 
@@ -568,6 +583,38 @@ function evaluateThresholds(thresholds: readonly ThresholdDecl[], metrics: LoadM
   });
 }
 
+/** M34 (D17) — a closed-model scenario's `ratio` must clear this before it's worth calling out as
+ * a warning: below it, "the system backed off" isn't distinguishable from ordinary latency
+ * variance. 20% mirrors `selfDiagnosis.ts`'s own house style of a single documented round-number
+ * threshold rather than a tunable — same reasoning: a v1 diagnostic needs *a* line, and a round
+ * number beats false precision an untuned constant can't actually justify. */
+const BACK_OFF_WARNING_THRESHOLD = 0.2;
+
+/** Each half needs enough of its own samples for a mean to mean anything — mirrors
+ * `selfDiagnosis.ts`'s `MIN_SATURATION_WINDOW_MS` guard, same reasoning: a diagnostic that can
+ * fire (or fail to) on statistically meaningless data is worse than one that stays quiet. Checked
+ * per half, not as a combined total — an 8-and-1 split shouldn't count as "enough data" just
+ * because the sum clears a bar. 10 (not a smaller round number) because a real, non-simulated run
+ * against a genuinely healthy localhost fixture during this diagnostic's own development still
+ * false-positived at low sample counts (3-5 per half) — ordinary per-request jitter alone was
+ * enough to swing a small sample's mean past the warning threshold. 10 gave a stable, repeatable
+ * "no warning" result across multiple real runs against the same healthy fixture. */
+const MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF = 10;
+
+/** M34 (D17) — see `BackOffDiagnosis`'s doc (types.ts) for the full design and why an early-half
+ * vs. late-half mean comparison was chosen over an extremal-percentile "ideal pace" baseline.
+ * `undefined` for an open-model (`RampRpsWorkload`) scenario, or when either half has too few
+ * iterations to trust its own mean. */
+export function computeBackOff(scenario: ScenarioDecl, early: { readonly count: number; readonly sum: number }, late: { readonly count: number; readonly sum: number }): BackOffDiagnosis | undefined {
+  if (scenario.workload.type !== 'RampUsersWorkload') return undefined;
+  if (early.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF || late.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF) return undefined;
+  const earlyMean = early.sum / early.count;
+  const lateMean = late.sum / late.count;
+  if (earlyMean <= 0 || lateMean <= 0) return undefined;
+  const ratio = Math.max(0, 1 - earlyMean / lateMean);
+  return { ratio, warning: ratio > BACK_OFF_WARNING_THRESHOLD };
+}
+
 function workloadOf(scenario: ScenarioDecl): LoadScenarioReport['workload'] {
   return scenario.workload.type === 'RampUsersWorkload'
     ? { kind: 'users', target: scenario.workload.users, overMs: scenario.workload.overMs }
@@ -589,10 +636,11 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
 export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
   const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted, plannedMs } = await runLoadCore(program, config, opts);
 
-  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, timeline, failures }) => {
+  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late }) => {
     const metrics = buildLoadMetrics(histogram, failures, timeline);
     const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
-    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
+    const backOff = computeBackOff(scenario, early, late);
+    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), ...(backOff ? { backOff } : {}) };
   });
 
   const combinedHistogram = new LatencyHistogram();
@@ -627,7 +675,7 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
  * produces one. Invoked by the CLI's forked worker processes under `--workers N>1`. */
 export async function runLoadShard(program: Program, config: ResolvedConfig, opts: LoadOptions & { readonly shard: { readonly index: number; readonly count: number } }): Promise<LoadShardResult> {
   const { accumulators, selfDiagnosis } = await runLoadCore(program, config, opts);
-  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, timeline, failures }) => ({
+  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late }) => ({
     name: scenario.name.value,
     workload: workloadOf(scenario),
     iterations: histogram.count,
@@ -637,6 +685,8 @@ export async function runLoadShard(program: Program, config: ResolvedConfig, opt
     max: histogram.max,
     histogram: histogram.toBuckets(),
     timeline: timeline.toBuckets(),
+    early,
+    late,
   }));
   return { scenarios, selfDiagnosis };
 }
@@ -661,6 +711,8 @@ export function mergeLoadShardReports(
     const timeline = new Timeline();
     let iterations = 0;
     let failures = 0;
+    const early = { count: 0, sum: 0 };
+    const late = { count: 0, sum: 0 };
     for (const shard of shardResults) {
       const match = shard.scenarios.find((s) => s.name === scenario.name.value);
       if (!match) continue;
@@ -668,14 +720,21 @@ export function mergeLoadShardReports(
       timeline.merge(Timeline.fromBuckets(match.timeline));
       iterations += match.iterations;
       failures += match.failures;
+      early.count += match.early.count;
+      early.sum += match.early.sum;
+      late.count += match.late.count;
+      late.sum += match.late.sum;
     }
-    return { scenario, histogram, timeline, iterations, failures };
+    return { scenario, histogram, timeline, iterations, failures, early, late };
   });
 
-  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, timeline, iterations, failures }) => {
+  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, timeline, failures, early, late }) => {
     const metrics = buildLoadMetrics(histogram, failures, timeline);
     const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
-    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok) };
+    // M34 (D17): recomputed from the *merged* early/late totals, not shard-by-shard then averaged
+    // — same "merge first, derive second" order R4's histogram/percentile design already established.
+    const backOff = computeBackOff(scenario, early, late);
+    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), ...(backOff ? { backOff } : {}) };
   });
 
   const combinedHistogram = new LatencyHistogram();

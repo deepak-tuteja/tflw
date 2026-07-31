@@ -1,0 +1,20 @@
+# D31's acceptance scenario: hand-written against testFlow-tests' perf-0 contended checkout
+# endpoint (POST /orders, real Postgres row-lock serialization on one hot product's stock row).
+# Every VU looks up the hot product then checks out one unit of it — the product lookup is a
+# fast, uncontended request; the checkout is the contended one. tflw's `scenario` has no
+# once-per-run setup phase (unlike k6's `setup()`), so both sides of this comparison resolve the
+# product id every iteration for a fair, apples-to-apples comparison — see acceptance/README.md's
+# perf leg for that finding written up in full.
+#
+# Run `POST /admin/load/reset` (bearer admin auth) against http://localhost:4001 before each run
+# for a clean baseline (fresh stock, no leftover orders from a prior run).
+
+scenario "checkout burst on the contended product" as load
+  ramp to 60 users over 20s
+  api GET /products?q=Load%20Test%20Widget
+  expect status equals 200
+  capture body[0].id as productId
+  api POST /orders body { items: [{ productId: {productId}, quantity: 1 }] }
+  expect status equals 201
+  threshold error rate is less than 1%
+  threshold p95 duration is less than 250ms
