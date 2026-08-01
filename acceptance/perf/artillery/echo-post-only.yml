@@ -1,0 +1,27 @@
+# M47's Artillery counterpart to ../profile/echo-post-only.tflw and ../k6/echo-post-only.js —
+# isolated, static-body POST-only rung against the zero-latency echo-server harness. No auth, no
+# processor needed. Same D81 caveat as echo-get-only.yml's own comment: tflw self-saturates here
+# (D19), and matching k6's sub-ms p95 is impossible for Artillery's own whole-ms histogram
+# resolution + EADDRNOTAVAIL port-exhaustion ceiling above ~5000/s — 4500/s (this rung's own
+# zero-failure ceiling, same as the GET-only rung) is reported for completeness only.
+config:
+  target: "http://127.0.0.1:4099"
+  phases:
+    - duration: 8
+      arrivalRate: 4500
+      name: "flat"
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: "M47 echo POST-only"
+    flow:
+      - post:
+          url: "/orders"
+          name: "orders"
+          json:
+            items:
+              - productId: "prod_1"
+                quantity: 1
+          expect:
+            - statusCode: 201

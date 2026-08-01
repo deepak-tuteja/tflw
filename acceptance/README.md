@@ -1189,3 +1189,135 @@ Config in `acceptance/perf/artillery/` (`checkout-burst.yml`, `dogfood-post-unco
 `processor.cjs`, committed — `npx artillery` is used ephemerally, same as `k6`'s standalone
 binary, no `package.json` dependency added). Raw run logs/JSON in `/tmp/m46d-artillery/` (not
 committed).
+
+## M47 — final acceptance round: the full rung ladder, three ways (tflw / k6 / Artillery) (2026-08-01)
+
+The arc's closing measurement, mirroring M34's own role as its opening one. Re-runs every rung of
+M39's own ladder — echo GET-only, echo POST-only, dogfood GET-only, dogfood-post-uncontended,
+checkout-burst — fresh (not reusing any prior milestone's numbers), 3 runs per rung per side, load
+target reset before every dogfood run. Extended at the user's explicit direction (D81,
+`PLAN_BROWSER_PERF_SECURITY.md` §2.18) to a full **three-way comparison**: tflw, k6, and Artillery
+on every rung, not just the two contention-relevant rungs M46d covered.
+
+**Rungs A-C (echo GET/POST, dogfood GET-only) keep M39's own exclusion from any tflw-vs-other
+conclusion** — tflw's generator self-saturates on these near-zero-latency targets (D19), a
+separately-diagnosed phenomenon. Artillery turned out to have its own version of the same problem
+on these rungs, for different reasons (see below) — reported for completeness, not used for D33a's
+tolerance check. **Rungs D and E are the trustworthy three-way comparison** and are what D33a's
+final tolerance is set against.
+
+### Rung-by-rung numbers (3 runs each, averages shown; full per-run numbers below each table)
+
+**A. echo GET-only** (`/products`, zero-latency target, no auth):
+
+| | tflw | k6 | Artillery |
+|---|--:|--:|--:|
+| Throughput | 32,348/s | 81,300/s | 4,500/s (own ceiling) |
+| p95 | 1ms | 0.365ms | 4.7ms |
+| Saturated / capped? | yes (D19) | no | yes (own limits, see below) |
+
+Per-run: tflw iterations 253,857 / 262,690 / 259,805 (p95 1/1/1ms). k6 81,541 / 81,246 / 81,112 per
+s (p95 0.358/0.370/0.366ms). Artillery locked at its offered 4,500/s all 3 runs, 0 failures (p95
+5/5/4ms).
+
+**B. echo POST-only** (`/orders`, static body):
+
+| | tflw | k6 | Artillery |
+|---|--:|--:|--:|
+| Throughput | 30,073/s | 81,426/s | 4,500/s (own ceiling) |
+| p95 | 1ms | 0.367ms | 4.7ms |
+| Saturated / capped? | yes (D19) | no | yes (own limits) |
+
+Per-run: tflw iterations 235,523 / 244,105 / 242,124 (p95 1/1/1ms). k6 81,995 / 81,682 / 80,601 per
+s (p95 0.360/0.372/0.369ms). Artillery locked at 4,500/s all 3 runs, 0 failures (p95 5/4/5ms).
+
+**C. dogfood GET-only** (`GET /health`, session-authed, real Postgres-backed target):
+
+| | tflw | k6 | Artillery |
+|---|--:|--:|--:|
+| Throughput | 11,398/s | 10,967/s | 300/s (own ceiling) |
+| p95 | 5ms | 5.21ms | 5ms |
+| Saturated / capped? | yes (D19) | no | yes (own limits) |
+
+Per-run: tflw iterations 229,058 / 226,996 / 227,802 (p95 5/5/5ms). k6 10,878 / 11,063 / 10,959 per
+s (p95 5.24/5.15/5.23ms). Artillery locked at 300/s all 3 runs, 0 failures (p95 4/4/7ms) — closest
+Artillery ever tracked k6 in this whole arc, but at ~2.7% of k6's achieved throughput.
+
+**D. dogfood-post-uncontended** (`POST /cart/items`, per-user row, no shared lock) — **authoritative**:
+
+| | tflw | k6 |
+|---|--:|--:|
+| Throughput | 1,827.7/s | 1,820.1/s |
+| p95 | 29.67ms | 30.47ms |
+
+**tflw leads k6 on both metrics this round** — throughput +0.42%, p95 **-2.6%** (tflw faster).
+Per-run: tflw iterations 35,547 / 36,707 / 37,406 (p95 30/30/29ms). k6 1,823.7 / 1,819.7 / 1,817.0
+per s (p95 29.78/30.92/30.71ms). Sign-flip from M46's 2.90% (tflw trailing) to -2.6% (tflw leading)
+this round — both readings are noise around a genuinely-closed gap, not a regression.
+
+Artillery (600/s, same config M46d calibrated): run 1 clean (12,000/12,000, p95=106.7ms), run 2
+clean but much worse (12,000/12,000, p95=194.4ms), run 3 collapsed (5,502/12,000 completed, **6,498
+failed** — 3,659 `ECONNRESET` + 2,839 client-side `fetch failed`, p95=308ms over survivors). This
+is the same failure signature M46d found independently — a fresh, independent reproduction of
+Artillery's own instability under sustained load against this exact target, not a fluke of that
+milestone's specific run.
+
+**E. checkout-burst / dogfood-post-contended** (real row-lock contention) — **authoritative**:
+
+| | tflw | k6 |
+|---|--:|--:|
+| Throughput | 661.5/s | 658.7/s |
+| Checkout-scoped p95 | 71.0ms | 66.45ms |
+
+**tflw leads k6 on throughput** (+0.44%) **and trails on checkout p95 by 6.85%** — consistent with
+M46's own 5.86% (both readings sit inside the same noise band this arc has repeatedly characterized
+for this specific rung; this is not a regression, it's the same accepted ceiling measured again).
+Per-run: tflw iterations 12,851 / 13,486 / 13,355 (checkout p95 73/70/70ms). k6 iterations 648.2 /
+662.1 / 665.7 per s (checkout p95 67.32/65.96/66.08ms).
+
+Artillery (310/s, same config M46d calibrated): all 3 runs completed cleanly (6,200/6,200, 0
+failures) — checkout p95 102.5ms / 24.8ms / 26.8ms. Near-identical to M46d's own independent
+numbers (106.7 / 24.8 / 23.8ms) — a striking, unprompted reproduction that strengthens M46d's
+"directionally supportive" reading of the Node-vs-Go hypothesis: two separate measurement sessions,
+same tool, same target, landed on almost the same numbers.
+
+### What A-C add, honestly
+
+Artillery's own numbers on the self-saturating rungs surfaced two mechanisms distinct from tflw's
+D19 generator-saturation, but in the same spirit — **a second Node-based tool also cannot get
+anywhere near k6's raw throughput/latency ceiling on a near-zero-latency target, just for different
+reasons than tflw's**:
+
+- **Whole-millisecond histogram floor.** Even at a offered rate as low as 1,000/s (nowhere close to
+  saturated), Artillery's own `p95` read 2-3ms — it cannot resolve k6's sub-millisecond numbers at
+  all, an instrumentation-precision ceiling, not a server-side one.
+- **`EADDRNOTAVAIL` (local ephemeral port exhaustion)** above ~5,000/s on the echo rungs — the open
+  model's per-arrival fresh outbound connection churns through the OS ephemeral port range faster
+  than the OS can recycle it. 4,500/s (echo) and 300/s (dogfood GET, where the real network+DB
+  round trip makes each connection live longer, hitting the same wall at a far lower rate) are each
+  rung's own zero-failure ceiling, not a k6-matched number.
+
+Rung C is the one exception worth flagging: at its own 300/s ceiling, Artillery's p95 (4/4/7ms)
+tracked k6's (5.24/5.15/5.23ms) closely — the closest any Artillery reading came to k6 anywhere in
+this arc, just at roughly 1/36th of k6's throughput. Not used for D33a's tolerance check (per D81),
+but a genuinely interesting three-way data point.
+
+### D33a's final tolerance (set for good)
+
+Both authoritative rungs land comfortably inside D33a's ~20% contended-p95 tolerance (re-scoped in
+M44): rung D at -2.6% (tflw ahead), rung E at 6.85% (tflw behind, matching M46's own accepted
+ceiling). Throughput leads k6 on both rungs, both rounds. **D33a's tolerance is met, with large
+headroom, on the arc's final, real, post-M45-pinning numbers — no further re-scoping.** This closes
+the perf arc (v0.3.0).
+
+### Pentest arc (v0.4.0) unblock
+
+**Unblocked, for good.** D33d/D52/D56/D64 pushed this decision six times over the arc's life,
+always conditionally ("once M-whatever lands"). M47 is that final condition — D33a's tolerance is
+met on real numbers, not provisionally, and the perf arc's own milestone ladder (M34-M47) is
+complete. The security/pen-test arc (§3) may start next; no further perf-arc work blocks it.
+
+Config for the 3 new rungs in `acceptance/perf/artillery/` (`echo-get-only.yml`,
+`echo-post-only.yml`, `dogfood-get-only.yml`, committed — the existing `checkout-burst.yml` /
+`dogfood-post-uncontended.yml` were re-run unchanged). Raw run logs in `/tmp/m47-results/` (not
+committed).

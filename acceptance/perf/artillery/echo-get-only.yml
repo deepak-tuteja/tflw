@@ -1,0 +1,32 @@
+# M47's Artillery counterpart to ../profile/echo-get-only.tflw and ../k6/echo-get-only.js —
+# isolated GET-only rung against the zero-latency echo-server harness (no auth, no processor
+# needed). Per D81 (PLAN_BROWSER_PERF_SECURITY.md §2.18): tflw's own numbers on this rung are
+# excluded from any tflw-vs-other conclusion (M39's D19 generator-self-saturation finding).
+#
+# Calibrating against k6's p95 (~0.35ms) turned out to be structurally impossible: Artillery's own
+# response-time histogram only resolves to whole milliseconds (p95 read as 2-3ms even at a mere
+# 1000/s, nowhere close to saturated) — a real, separate instrumentation-precision ceiling, not a
+# server-side one. Worse, above ~5000/s offered Artillery itself starts throwing EADDRNOTAVAIL
+# (ephemeral local port exhaustion from its own per-arrival connection churn — the open model opens
+# a fresh outbound socket per virtual user, unlike k6/tflw's persistent per-VU connections). So this
+# rung reports **Artillery's own zero-failure ceiling** instead of a k6-matched number: 4500/s was
+# found by bisection as the highest flat rate with 0 failed vusers (6000/s already drops ~4% to
+# EADDRNOTAVAIL). Reported for completeness only — not used for D33a-tolerance conclusions, and not
+# a fair p95 comparison against k6 for the reason above.
+config:
+  target: "http://127.0.0.1:4099"
+  phases:
+    - duration: 8
+      arrivalRate: 4500
+      name: "flat"
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: "M47 echo GET-only"
+    flow:
+      - get:
+          url: "/products"
+          name: "products"
+          expect:
+            - statusCode: 200

@@ -1,0 +1,36 @@
+# M47's Artillery counterpart to ../tflw/dogfood-get-only.tflw and ../k6/dogfood-get-only.js —
+# isolated GET-only rung against the real dogfood target (`GET /health`, session-authed). Reuses
+# the shared token-cache processor (see processor.cjs's own comment for why: bcrypt-cost-10 login +
+# 5s JWT TTL make a per-arrival login an unrelated confound). Per D81: tflw self-saturates on this
+# rung too (M39's D19 finding), so Artillery's rate is calibrated for its own zero-failure ceiling
+# instead of matching k6's throughput/p95 directly — reported for completeness only, not used for
+# D33a-tolerance conclusions.
+#
+# Bisection: 3000/s collapsed catastrophically (86% ECONNRESET, p95=2143ms); 1500/s and 1200/s both
+# still showed double-digit-percent failure rates (non-monotonically — 1200/s failed *worse* than
+# 1500/s, itself informative: this instability isn't a simple linear overload curve); 600/s still
+# dropped 6.8%. **300/s** was the first rate with 0 failures (p95=7ms, close to k6's own 5.32ms on
+# this rung). Same open-model per-arrival-connection-churn story as checkout-burst.yml/M46d, just
+# hitting its failure floor at a much lower rate here — this target's `GET /health` round trip is
+# cheap enough that Artillery's own connection churn becomes the bottleneck before the server does.
+config:
+  target: "http://localhost:4001/v1"
+  phases:
+    - duration: 20
+      arrivalRate: 300
+      name: "flat"
+  plugins:
+    metrics-by-endpoint: {}
+  processor: "./processor.cjs"
+
+scenarios:
+  - name: "M47 dogfood GET-only"
+    flow:
+      - function: "ensureToken"
+      - get:
+          url: "/health"
+          name: "health"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200
