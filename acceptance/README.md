@@ -1321,3 +1321,149 @@ Config for the 3 new rungs in `acceptance/perf/artillery/` (`echo-get-only.yml`,
 `echo-post-only.yml`, `dogfood-get-only.yml`, committed — the existing `checkout-burst.yml` /
 `dogfood-post-uncontended.yml` were re-run unchanged). Raw run logs in `/tmp/m47-results/` (not
 committed).
+
+## M48 — two new dogfood rungs (search-read, ticket-write) + p50/p99 visibility (2026-08-02)
+
+At the user's request: widens the acceptance ladder past the 5-rung A-E set with two new dogfood
+rungs the existing ladder never exercised, and adds p50/p99 alongside every rung's existing p95
+metric — tflw already computes the full percentile set for free; k6's default summary needed
+`summaryTrendStats` extended to include `p(50)`/`p(99)`. tflw-vs-k6 only (no new Artillery configs,
+diverging from M47's three-way default — an explicit user call this round). Report-only: no new
+D33a-style tolerance is set on p50/p99 or on the two new rungs. Full scope in
+`PLAN_BROWSER_PERF_SECURITY.md` §2.20 (D82-D85).
+
+### Rung F — search-read (`GET /products?q=gadgetronic`, public, real full-text-search cost)
+
+A genuine Postgres `to_tsvector`/`plainto_tsquery` query cost, distinct from rung C's simple
+indexed `GET /health` — and the first dogfood rung needing no session at all (the endpoint is
+public). 3 runs each, no reset needed (read-only, nothing mutates):
+
+| | tflw | k6 |
+|---|--:|--:|
+| Throughput | 4,332.4/s | 4,256.4/s |
+| p50 | 7ms | 6.77ms |
+| p95 | 12.33ms | 12.62ms |
+| p99 | 14.33ms | 14.01ms |
+
+**Extremely close on every metric** — throughput +1.8% (tflw ahead), p95 -2.3% (tflw ahead), p99
++2.3% (tflw behind), all within noise. Per-run: tflw iterations 85,936 / 89,306 / 84,704 (p50
+7/7/7ms, p95 12/12/13ms, p99 14/14/15ms). k6 4,233.4 / 4,277.8 / 4,258.0 per s (p50 6.79/6.66/6.86ms,
+p95 12.57/12.73/12.57ms, p99 13.99/14.24/13.80ms). Both sides 0 failures, all 3 runs. tflw's own
+backoff diagnostic fired (~60% "unable to keep pace with the target system") on all 3 runs — a real
+signal about the target's own latency drifting up as the 0→60 VU ramp progresses, not client
+self-saturation (D19's own signature is wildly divergent tflw-vs-k6 numbers; here they match to
+within a few percent, cross-validating that the underlying data is trustworthy despite the warning).
+
+### Rung G — ticket-write (`POST /tickets`, authed, uncontended, two-row write)
+
+Writes a `Ticket` row *and* a companion `TicketEvent` row synchronously
+(`TicketsService.create` → `logEvent(CREATED)`) — a second uncontended write shape, distinct from
+rung D's single-row cart-add. `POST /products/:id/reviews` was considered and rejected as this
+rung's target first: it's both rate-limited (`RateLimitGuard`, 3/window per user+product) *and*
+`@Unique(['userId','productId'])` at the DB level, so a fixed load-user/product pool 409s
+permanently after each pair's first success — it would measure the uniqueness wall, not throughput.
+
+**Two real bugs found and fixed building this rung, both kept regardless of the numbers below:**
+
+1. **A process-crashing race.** `LoadAdminService.reset()` was extended (this milestone) to delete
+   the load user's tickets between runs, same pattern as its existing orders cleanup. The very first
+   real run crashed the entire `api` container: `TicketSlaSweepService.sweep()` (a background timer,
+   `setInterval(() => { void this.sweep() }, ...)`) scans overdue tickets and stamps a `TicketEvent`
+   for each; if `reset()` deletes a ticket the sweep already selected but hasn't reached yet, the
+   event insert throws an uncaught `FK_ticket_events_ticket_id` violation — and since `sweep()`'s
+   caller never awaits or catches it, that one exception took the whole Node process down. Fixed in
+   `ticket-sla-sweep.service.ts`: the per-ticket update+event-insert is now wrapped in a try/catch,
+   `isForeignKeyViolation` (already existed in `db-errors.ts`, just never wired in here) skips a
+   concurrently-deleted ticket instead of crashing, any other error is logged and the sweep continues
+   to the next ticket. A background sweep racing a deletion should never take the whole app down —
+   this bug existed before M48 (any future ticket-deleting code would have hit it identically); this
+   rung's write volume was just the first thing that ever triggered it.
+2. **Missing indexes.** Neither `sweep()`'s own query (`tickets` filtered on
+   `status, sla_breached, sla_deadline`) nor the reset's cascade-delete lookup
+   (`ticket_events.ticket_id`) had any supporting index beyond each table's primary key — both were
+   full sequential scans. Added via migration `1785200200000-AddTicketSlaSweepIndexes`. Real and
+   worth keeping at any scale, though — see below — it turned out *not* to be the driver of this
+   rung's own run-over-run degradation.
+
+**A genuine, reproducible finding, not smoothed over:** back-to-back 20s runs against this rung
+degrade substantially, and — critically — **both tools degrade together, on a freshly-reset stack,
+runs interleaved tflw/k6/tflw/k6/tflw/k6 to rule out ordering bias**:
+
+| Run | tflw throughput | tflw p50/p95/p99 | k6 throughput | k6 p50/p95/p99 |
+|---|--:|--:|--:|--:|
+| 1 (freshest) | 1,038.5/s | 24 / 78 / 110ms | 570.1/s | 49.4 / 88.5 / 106.0ms |
+| 2 | 471.6/s | 63 / 100 / 114ms | 362.7/s | 77.8 / 113.6 / 120.5ms |
+| 3 | 337.7/s | 89 / 123 / 135ms | 287.1/s | 99.8 / 129.8 / 140.4ms |
+
+0 failures on tflw all 3 runs; k6 shows a small, consistent 0.8-1.6% `http_req_failed` rate each run
+(login-path requests, not the checked ticket-create ones — `checks_succeeded` stays 100%) — the same
+class of asymmetry `checkout-burst.js`'s own header comment already documents (tflw's session model
+re-establishes on a 401 automatically; k6's hand-rolled `authedRequest` retry is thinner). Not chased
+further here, consistent with that existing finding.
+
+Root cause investigated one bounded pass (mirroring this arc's own discipline): confirmed via
+`pg_stat_user_tables` that `ticket_events` accumulates dead-tuple bloat (35,725 dead vs 146,279 live
+rows after just 3 runs) faster than Postgres's default autovacuum cadence (`autovacuum_naptime =
+1min`, `autovacuum_vacuum_scale_factor = 0.2`) can reclaim it under this rung's sustained
+create+cascade-delete churn (~20k rows/run). The index migration above did **not** fix this (re-run
+identically before/after). Forcing a `VACUUM ANALYZE` before every run made it *worse*, not better
+(cold cache immediately following a heavy vacuum). **Not chased further** — this is a shared-target,
+Postgres-autovacuum-tuning characteristic under sustained write bursts, not a tflw-vs-k6
+characteristic (both tools track the same degradation curve in lockstep) and out of this milestone's
+scope (D82 was "widen load-test surface," not "tune Postgres"). Reported honestly as a real
+environmental finding rather than averaged away or hidden behind a single misleading throughput
+number.
+
+### p50/p99 added to the authoritative rungs (D, E)
+
+k6's `summaryTrendStats` extended on `dogfood-post-uncontended.js`/`checkout-burst.js` to include
+`p(50)`/`p(99)`; tflw's numbers reused from M47's own raw logs (`/tmp/m47-results/{D,E}-tflw.log`)
+since tflw already reported the full percentile set, just not extracted into M47's write-up. k6's
+side re-run fresh (3× each, back-to-back on a freshly-reset stack, nothing else run in between to
+avoid the cross-rung contamination rung G's own churn caused earlier in this session — see below).
+
+**D. dogfood-post-uncontended:**
+
+| | tflw (M47's runs) | k6 (fresh) |
+|---|--:|--:|
+| p50 | 16.3ms | 16.6ms |
+| p95 | 29.67ms | 30.70ms |
+| p99 | 39.67ms | 37.27ms |
+
+p50 nearly tied (-1.6%), p95 tflw slightly ahead (matches M47's -2.6% within noise), **p99 flips to
+tflw +6.4% behind** — the tail gap that isn't visible at p95.
+
+**E. checkout-burst (checkout-scoped):**
+
+| | tflw (M47's runs) | k6 (fresh) |
+|---|--:|--:|
+| p50 | 33.0ms | 32.5ms |
+| p95 | 71.0ms | 67.2ms |
+| p99 | 103.0ms | 90.4ms |
+
+p50 essentially tied (+1.6%), p95 matches M47's own +6.85% (tflw behind), and **p99 widens further
+to +14.0%** — on the contended rung specifically, the tflw-vs-k6 gap grows monotonically with the
+percentile: nearly nothing at the median, a modest and already-accepted gap at p95, meaningfully
+larger at p99. Consistent with a lock-queueing-tail mechanism (M39-M41's own root-causing) that bites
+harder the further out on the tail you look — exactly the kind of signal this milestone's p99
+addition was added to surface. **Report-only, per D84**: this does not reopen D33a's already-closed
+p95 tolerance (M47's verdict stands), but is worth remembering if a future milestone ever considers
+gating p99 specifically.
+
+**A methodology note on why k6's D/E re-run needed a full stack reset partway through:** the first
+attempt (run immediately after rung G's ~61k-ticket churn) showed k6's own throughput collapse to
+~200/s with a 98% `http_req_failed` rate — not a D-rung finding at all, but rung G's write burst
+still settling (WAL/checkpoint pressure) plus a stale hardcoded product id (the load target's UUID
+changes on every reseed — the fixture's own header comment already warns of this; a full stack reset
+for a clean rung-G baseline regenerated it and the two dogfood-post-uncontended fixtures weren't
+updated first). Both `dogfood-post-uncontended.tflw`/`.js` and `artillery/dogfood-post-uncontended.yml`
+were updated to the current id and the k6 side re-run cleanly, back-to-back with nothing else run in
+between — the numbers above are from that clean pass.
+
+### Files
+
+New: `acceptance/perf/tflw/search-read.tflw`, `ticket-write.tflw`; `acceptance/perf/k6/search-read.js`,
+`ticket-write.js` (all committed). Modified: `dogfood-post-uncontended.js`/`checkout-burst.js`
+(`summaryTrendStats`), `dogfood-post-uncontended.tflw`/`.js` and `artillery/dogfood-post-uncontended.yml`
+(current product id). testFlow-tests: `LoadAdminService`/`.module.ts` (tickets cleanup),
+`ticket-sla-sweep.service.ts` (crash fix), migration `1785200200000-AddTicketSlaSweepIndexes`.

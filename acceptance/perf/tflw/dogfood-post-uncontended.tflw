@@ -12,5 +12,5 @@
 
 scenario "M39 dogfood POST-uncontended" as load
   ramp to 60 users over 20s
-  api POST /cart/items body { productId: "9649e53f-e0ad-4413-a05e-e302728b72cc", quantity: 1 }
+  api POST /cart/items body { productId: "6c0b2198-a3c4-4fe0-8aae-64a6714fff3c", quantity: 1 }
   expect status equals 201

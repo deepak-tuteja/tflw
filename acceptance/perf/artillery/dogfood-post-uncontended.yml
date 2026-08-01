@@ -28,7 +28,7 @@ scenarios:
           headers:
             Authorization: "Bearer {{ token }}"
           json:
-            productId: "9649e53f-e0ad-4413-a05e-e302728b72cc"
+            productId: "6c0b2198-a3c4-4fe0-8aae-64a6714fff3c"
             quantity: 1
           expect:
             - statusCode: 201

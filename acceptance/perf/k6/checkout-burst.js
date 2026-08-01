@@ -41,6 +41,10 @@ export const options = {
     'http_req_failed': ['rate<0.01'],
     'http_req_duration{name:checkout}': ['p(95)<250'],
   },
+  // M48 (PLAN_BROWSER_PERF_SECURITY.md §2.20, D84) — extended past k6's own default
+  // (avg/min/med/max/p90/p95) to include p99: tflw already reports p50/p90/p95/p99 for free,
+  // this is the k6-side change needed to match. Report-only, no new threshold.
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
 };
 
 function login() {
