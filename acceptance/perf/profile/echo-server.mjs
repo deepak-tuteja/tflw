@@ -27,6 +27,14 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({ id: 'order_1', status: 'created' }));
       return;
     }
+    // M37 sanity check (PLAN_BROWSER_PERF_SECURITY.md §2.8, D46) — a zero-latency login endpoint so
+    // bench-session.tflw can exercise the added per-iteration `sessionCache.ensure()` call
+    // (D44) on a real (if trivial) session, isolated from any real network/DB latency of its own.
+    if (req.method === 'POST' && req.url === '/login') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ token: 'bench-tok' }));
+      return;
+    }
     res.writeHead(404).end();
   });
 });

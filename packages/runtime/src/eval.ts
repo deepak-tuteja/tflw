@@ -7,6 +7,7 @@ import type { Redactor } from './redact.js';
 import { subSeed, mulberry32 } from './seed.js';
 import type { CookieJar } from './cookieJar.js';
 import type { BrowserManager, BrowserPageState, LocatorScope } from './browser.js';
+import type { SessionRef } from './interpreter.js';
 
 /** This test attempt's browser state (M3a) — present whenever the run was given a
  * `BrowserManager` (SPEC §9), regardless of whether this particular test ends up using a browser
@@ -52,6 +53,13 @@ export interface EvalCtx {
    * before retrying once — the general auto-refresh-on-401 mechanism every session gets "for
    * free", not just `oauth2` ones. */
   readonly sessionNames: readonly string[];
+  /** Opaque `SessionCache` handles (M37, D45) for the sessions named in `sessionNames`, as of when
+   * `sessionHeaders`/`cookieJar` were last read from the cache — undefined outside a load
+   * iteration (a regular `tflw run`/`test` attempt never populates this). Lets a 401-triggered
+   * `refreshSessions` call ask the cache "am I still looking at the live entry, or has another
+   * concurrent VU already refreshed this session since I read it" and skip a redundant re-login
+   * when the answer is the latter. */
+  readonly sessionRefs?: ReadonlyMap<string, SessionRef>;
   /** Present only while executing a `session` block's own steps: a `HeaderStmt` writes into this
    * instead of the (nonexistent) response/report subject it would otherwise need (P#42). */
   readonly headerSink?: Record<string, string>;

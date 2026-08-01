@@ -423,25 +423,46 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // wouldn't actually overlap in wall time, defeating D29's entire point.
   const scenarioTasks = accumulators.map(async (acc) => {
     const scenario = acc.scenario;
-    // Sessions establish once per scenario, before its VU loop starts — never per iteration (same
-    // run-lifetime cache `test … as <session>` uses, SPEC §3.3) — and their headers/cookies seed
-    // every iteration's own starting state (cloned per iteration below so concurrent VUs, even
-    // across different scenarios, can never race on one shared cookie jar).
-    const baseSessionHeaders: Record<string, string> = {};
-    const baseCookieJar = new CookieJar();
+    // Sessions establish once per scenario, before its VU loop starts — never re-run *from
+    // scratch* per iteration (same run-lifetime cache `test … as <session>` uses, SPEC §3.3) —
+    // purely for its fail-fast value: a broken `session` block errors the whole run immediately,
+    // before any VU spawns, rather than every VU independently discovering it on its own first
+    // iteration. Each iteration still re-reads the cache fresh (below, D44) rather than cloning
+    // this call's own result — on the overwhelmingly common cache-hit path that's a `Map.get` plus
+    // awaiting an already-resolved promise, not a real re-establish.
     for (const sessionName of scenario.sessions) {
       const decl = config.sessions.get(sessionName);
       if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
       const outcome = await sessionCache.ensure(sessionName, decl, config, tc, true);
       if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
-      Object.assign(baseSessionHeaders, outcome.headers);
-      baseCookieJar.mergeFrom(outcome.cookieJar.clone());
     }
 
     const runIteration = async (): Promise<void> => {
       const index = globalIterationIndex(iterationIndex++, opts.shard);
       const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)) };
       const scope = new Map<string, unknown>();
+      // D44 (M37, PLAN_BROWSER_PERF_SECURITY.md §2.8): every iteration reads each session fresh
+      // from the shared cache, instead of cloning a snapshot frozen before the VU loop started.
+      // This is the fix for the bug D43 found: `refreshSessions` (below) only ever wrote a
+      // reactive 401 refresh into *its own* iteration's headers, never back into a shared
+      // snapshot every other iteration cloned from — so once a session's credential first went
+      // stale mid-run, every subsequent iteration paid for its own re-login, forever. Reading the
+      // cache fresh here means any VU's refresh becomes immediately visible to every other VU's
+      // next iteration, and an `oauth2` session's proactive TTL re-check (`ensure()`'s own logic)
+      // applies here too, which the old snapshot design never benefited from either.
+      const sessionHeaders: Record<string, string> = {};
+      const cookieJar = new CookieJar();
+      const sessionRefs = new Map<string, SessionRef>();
+      for (const sessionName of scenario.sessions) {
+        const decl = config.sessions.get(sessionName);
+        if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
+        const outcome = await sessionCache.ensure(sessionName, decl, config, iterTc, false);
+        if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
+        Object.assign(sessionHeaders, outcome.headers);
+        cookieJar.mergeFrom(outcome.cookieJar.clone());
+        const ref = sessionCache.currentRef(sessionName);
+        if (ref !== undefined) sessionRefs.set(sessionName, ref);
+      }
       const ctx: EvalCtx = {
         scope,
         environ,
@@ -450,9 +471,10 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
         runSeed,
         runClock,
         uniqueSeq,
-        sessionHeaders: { ...baseSessionHeaders },
+        sessionHeaders,
         sessionNames: scenario.sessions,
-        cookieJar: baseCookieJar.clone(),
+        sessionRefs,
+        cookieJar,
       };
       const iterStart = performance.now();
       let result: LoadIterationResult;
@@ -878,7 +900,7 @@ interface TestCtx {
   readonly updateSnapshots: boolean;
 }
 
-interface SessionOutcome {
+export interface SessionOutcome {
   /** Headers this session's `header` steps captured, already evaluated + stringified. */
   readonly headers: Readonly<Record<string, string>>;
   /** Cookies accumulated from every response this session's own steps saw (SPEC §3.3, P#33) — a
@@ -894,6 +916,12 @@ interface SessionOutcome {
    * session (which has no built-in expiry concept; it still gets *reactive* refresh-on-401). */
   readonly expiresAt?: number;
 }
+
+/** Opaque handle to a `SessionCache` entry (M37, D45) — compared only by `===` identity, never
+ * inspected. Lets a caller that read a session's headers at one point in time (a load iteration's
+ * per-iteration `ensure()` call) later ask "is what I read still the cache's live entry, or has
+ * someone else already refreshed it since" without a separate staleness-tracking mechanism. */
+export type SessionRef = Promise<SessionOutcome>;
 
 /**
  * Runs each `session` block's steps at most once for the lifetime of the cache — shared across
@@ -952,6 +980,27 @@ export class SessionCache {
    * safe no-op, not a lost update, since we always evict by name, never overwrite by identity. */
   invalidate(name: string): void {
     this.promises.delete(name);
+  }
+
+  /** The cache's current live entry for a name, as an opaque `SessionRef` handle — `undefined` if
+   * nothing has ever been cached for it. Synchronous: a caller doesn't await this to *read* the
+   * cache's current state, only to remember it for a later `reestablish()` identity check (M37,
+   * D45). */
+  currentRef(name: string): SessionRef | undefined {
+    return this.promises.get(name);
+  }
+
+  /** Guarded re-establish (M37, D45): re-runs `runSession` only if the cache's live entry for
+   * `name` is still exactly `staleRef` (or `staleRef` is `undefined`, meaning the caller has no
+   * fresher-reference tracking at all — the regular `tflw run` path, where this degrades to
+   * `invalidate()`+`ensure()`'s old unconditional behavior). If another caller already refreshed
+   * this session since `staleRef` was read, `this.promises.get(name)` no longer matches it, so the
+   * invalidate is skipped entirely and `ensure()` just returns that already-fresh result — several
+   * VUs racing a 401 on the same stale token pay for at most one real re-login between them, not
+   * one each. Same identity-guard pattern `ensure()`'s own TTL-eviction (above) already uses. */
+  async reestablish(name: string, staleRef: SessionRef | undefined, decl: SessionDecl, config: ResolvedConfig, tc: TestCtx): Promise<SessionOutcome> {
+    if (staleRef === undefined || this.promises.get(name) === staleRef) this.invalidate(name);
+    return this.ensure(name, decl, config, tc, false);
   }
 
   /** First-caller-wins claim of "shown" status for a session name, resolved once per test (not
@@ -1055,8 +1104,13 @@ interface SessionRefreshResult {
   readonly steps: readonly StepResult[];
 }
 
-/** Invalidate + re-establish every named session, in declared order, folding fresh
- * headers/cookies into `ctx` in place (SPEC §3.3, decision 3a, enterprise arc). Safe to mutate:
+/** Re-establish every named session, in declared order, folding fresh headers/cookies into `ctx`
+ * in place (SPEC §3.3, decision 3a, enterprise arc). Goes through `SessionCache.reestablish`
+ * (M37, D45) rather than an unconditional `invalidate()`+`ensure()`: `ctx.sessionRefs`, when
+ * present (populated only by a load iteration's per-iteration session read, `runLoadCore` below),
+ * lets several VUs racing a 401 on the same stale token dedupe to at most one real re-login
+ * between them — a caller with no such tracking (`ctx.sessionRefs` undefined, the regular
+ * `tflw run` path) gets today's unconditional-reestablish behavior unchanged. Safe to mutate:
  * `ctx.sessionHeaders`/`ctx.cookieJar` are fresh objects built once per test attempt
  * (`runTestAttempt`), never the session cache's own — mutating them here can't leak into a
  * concurrently-running sibling test or the shared cache. Stops at the first session that fails to
@@ -1079,8 +1133,7 @@ async function refreshSessions(
       steps.push(mkStep('header', src, span, false, start, `401 response → can't re-establish unknown session "${name}"`));
       return { ok: false, steps };
     }
-    tc.sessionCache.invalidate(name);
-    const outcome = await tc.sessionCache.ensure(name, decl, config, tc, false);
+    const outcome = await tc.sessionCache.reestablish(name, ctx.sessionRefs?.get(name), decl, config, tc);
     if (!outcome.ok) {
       steps.push(mkStep('header', src, span, false, start, `401 response → re-establishing session "${name}" failed: ${outcome.error ?? 'a step failed'}`));
       return { ok: false, steps };

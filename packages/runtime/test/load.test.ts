@@ -170,6 +170,105 @@ session admin
   await server.close();
 });
 
+// ---- M37: session-refresh regression tests (D43 found the bug, D44/D45 fixed it) --------------
+
+test('a session token that goes stale mid-run re-establishes a small, bounded number of times — not once per remaining iteration (D43/D44)', async () => {
+  let loginCount = 0;
+  let validToken = '';
+  let healthCalls = 0;
+  const ROTATE_AT = 4;
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => {
+      loginCount++;
+      validToken = `tok-${loginCount}`;
+      json(res, 200, { token: validToken });
+    },
+    '/health': (req, res) => {
+      healthCalls++;
+      // Simulate a credential going stale out from under the client mid-run (D43's real trigger
+      // was a short JWT TTL) — the server unilaterally stops accepting whatever token was valid a
+      // moment ago, independent of anything the client does.
+      if (healthCalls === ROTATE_AT) validToken = 'rotated-away';
+      json(res, req.headers['authorization'] === `Bearer ${validToken}` ? 200 : 401, {});
+    },
+  });
+  const configSource = `env test default
+  api "${server.baseUrl}"
+
+session admin
+  api POST /auth/login
+  capture body.token as tok
+  header "Authorization" is "Bearer {tok}"
+`;
+  const parsedConfig = parseConfigSource(configSource);
+  assert.deepEqual(parsedConfig.diagnostics, []);
+  const envBlock = selectEnv(parsedConfig.config, {});
+  const config = resolveConfig(parsedConfig.config, envBlock);
+
+  // Long enough, with enough VUs, to run many iterations past ROTATE_AT — the whole point is
+  // proving those later iterations don't each pay for their own re-login.
+  const source = 'scenario "Auth burst" as admin\n  ramp to 3 users over 300ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.ok(healthCalls > ROTATE_AT + 10, `expected many iterations after the rotation, got ${healthCalls} total health calls`);
+  // Before the fix: every iteration after the rotation cloned the same frozen (now-stale) headers,
+  // so every single one of them 401'd and paid for its own re-login — loginCount would track
+  // healthCalls, not stay bounded. After the fix: the one real refresh becomes visible to every
+  // other iteration immediately via the shared cache, so only a couple of logins happen in total
+  // (the initial establish, the one the rotation triggers, and — since a couple of VUs may already
+  // have a request in flight against the old token at the exact rotation instant — possibly one
+  // storm-guard-bounded extra, never one per iteration).
+  assert.ok(loginCount <= 3, `expected a small, bounded number of re-logins, got ${loginCount} across ${healthCalls} health calls`);
+  await server.close();
+});
+
+test('several concurrent VUs hitting a 401 on the same stale token near-simultaneously trigger exactly one real re-login, not one each (D45)', async () => {
+  let loginCount = 0;
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => {
+      loginCount++;
+      // An artificial delay widens the race window to tens of milliseconds — every VU's first
+      // request is guaranteed to discover the stale token and start racing
+      // `SessionCache.reestablish` *before* this (the one real re-login) resolves, deterministically,
+      // rather than depending on sub-millisecond real-time VU-spawn scheduling to line them up.
+      setTimeout(() => json(res, 200, { token: `tok-${loginCount}` }), 30);
+    },
+    // Only the *second* login's token is ever accepted — the upfront fail-fast establish (which
+    // always produces the first login) is deliberately already-stale, so every VU's very first
+    // request 401s.
+    '/health': (req, res) => json(res, req.headers['authorization'] === 'Bearer tok-2' ? 200 : 401, {}),
+  });
+  const configSource = `env test default
+  api "${server.baseUrl}"
+
+session admin
+  api POST /auth/login
+  capture body.token as tok
+  header "Authorization" is "Bearer {tok}"
+`;
+  const parsedConfig = parseConfigSource(configSource);
+  assert.deepEqual(parsedConfig.diagnostics, []);
+  const envBlock = selectEnv(parsedConfig.config, {});
+  const config = resolveConfig(parsedConfig.config, envBlock);
+
+  // The ramp window is anchored to the run's global start time, which precedes the upfront
+  // fail-fast session establishment above — so `overMs` needs enough headroom past that initial
+  // establish's own 30ms delay for any VU to spawn at all, plus enough further room for several
+  // VUs' first iterations to land within the *second* login's own 30ms delay and genuinely race
+  // `SessionCache.reestablish` on the same stale ref, not just queue up one after another.
+  const source = 'scenario "Auth storm" as admin\n  ramp to 20 users over 250ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(loginCount, 2, `expected exactly one real re-login beyond the initial (already-stale) establish, got ${loginCount}`);
+  await server.close();
+});
+
 // ---- M30: concurrent multi-scenario runs (D29, R6) -------------------------------------------
 
 test('two scenarios in one file run concurrently — a fast scenario is not blocked behind a slower one scheduling its arrivals', async () => {

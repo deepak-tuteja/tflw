@@ -1,0 +1,14 @@
+# M37 sanity check (PLAN_BROWSER_PERF_SECURITY.md §2.8, D46) — identical shape to bench.tflw, but
+# opted into the trivial `bench` session (tflw.config), so every iteration pays for one extra
+# per-iteration `sessionCache.ensure()` cache-hit call (D44) that bench.tflw's sessionless scenario
+# never does. Compared against bench.tflw on the same echo-server.mjs harness to confirm that added
+# call doesn't measurably regress throughput — the "cheap cache hit" claim in D44, checked, not
+# just assumed.
+
+scenario "profile bench (session)" as bench
+  ramp to 30 users over 8s
+  api GET /products
+  expect status equals 200
+  capture body[0].id as productId
+  api POST /orders body { items: [{ productId: {productId}, quantity: 1 }] }
+  expect status equals 201
