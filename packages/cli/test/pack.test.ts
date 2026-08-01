@@ -32,14 +32,18 @@ before(async () => {
   tarballPath = join(scratchDir, tgz);
 });
 
-test('the published tarball contains dist/cli.cjs + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
+test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
   const { stdout } = await execFileAsync('tar', ['-tzf', tarballPath]);
   const files = stdout
     .trim()
     .split('\n')
     .map((f) => f.replace(/^package\//, ''))
     .sort();
-  assert.deepEqual(files, ['LICENSE', 'README.md', 'dist/cli.cjs', 'package.json']);
+  // `dist/mtls-worker.cjs` (M35c) — the isolated mTLS-dispatch child process, its own separate
+  // esbuild output (bundle.mjs) specifically so `undici` (needed for its client-cert `Agent`) is
+  // never imported by `dist/cli.cjs` itself (M35b: importing it, even unused, cripples this
+  // process's own global `fetch()` by ~20x).
+  assert.deepEqual(files, ['LICENSE', 'README.md', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
 
   const { stdout: pkgText } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/package.json']);
   const pkg = JSON.parse(pkgText) as { dependencies?: Record<string, string>; private?: boolean };

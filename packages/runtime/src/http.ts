@@ -4,10 +4,8 @@
 // `FormData` for multipart uploads, SPEC §5.2) — decoupled from `RequestTrace.body`, which is
 // purely the human-readable trace text shown in the report.
 
-import { readFileSync } from 'node:fs';
-import { rootCertificates } from 'node:tls';
-import { Agent, fetch as undiciFetch } from 'undici';
 import { RuntimeError } from './eval.js';
+import { sendMtlsRequest } from './mtlsWorker.js';
 import type { ResponseTrace } from './types.js';
 
 export interface SendRequestOptions {
@@ -74,56 +72,32 @@ export function fetchErrorHint(err: unknown): string {
   }
 }
 
-/** Node's global `fetch` reads `NODE_EXTRA_CA_CERTS`/`NODE_TLS_REJECT_UNAUTHORIZED` only once, at
- * whichever moment its default TLS context first gets built — setting either mid-process (as a
- * test does, or as a config-driven CLI run effectively does relative to Node's own startup) can
- * silently miss it. Read fresh on every mTLS connection instead of relying on that cached default,
- * so `insecure true` and a private `NODE_EXTRA_CA_CERTS` bundle both compose correctly with
- * `cert`/`key` even when set after the process has already made an earlier TLS connection. */
-function mtlsConnectOptions(mtls: { readonly cert: string; readonly key: string }): { cert: string; key: string; ca: string[]; rejectUnauthorized: boolean } {
-  const ca = [...rootCertificates];
-  const extra = process.env.NODE_EXTRA_CA_CERTS;
-  if (extra) {
+export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTrace> {
+  // `mtls` routes through a dedicated child process (`mtlsWorker.ts`, M35c) carrying the client
+  // cert/key over a one-off `undici.Agent` — isolated there specifically so the `undici` npm
+  // package (needed for that `Agent` class) is never imported in *this* process: merely importing
+  // it, even without calling it, was found to cripple this global `fetch()` below by ~20x (M35b,
+  // `acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md`) — every other request keeps using the
+  // global `fetch` unchanged.
+  if (opts.mtls) {
     try {
-      ca.push(readFileSync(extra, 'utf8'));
-    } catch {
-      // Same lenient behavior as Node's own handling of a bad NODE_EXTRA_CA_CERTS path: the
-      // request still goes out, just without that extra bundle, rather than crashing the run.
+      return await sendMtlsRequest({ ...opts, mtls: opts.mtls });
+    } catch (err) {
+      if ((err as { timedOut?: boolean }).timedOut) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
+      throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
     }
   }
-  return { cert: mtls.cert, key: mtls.key, ca, rejectUnauthorized: process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0' };
-}
-
-export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTrace> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
   const start = performance.now();
-  // `mtls` routes through a one-off undici `Agent` carrying the client cert/key, dispatched via
-  // undici's own `fetch` (Node's *global* `fetch` accepts no `dispatcher` option) — every other
-  // request keeps using the global `fetch` unchanged, so this dependency's blast radius is limited
-  // to the new mTLS path (decision 3b, enterprise arc).
-  const agent = opts.mtls ? new Agent({ connect: mtlsConnectOptions(opts.mtls) }) : undefined;
   try {
-    const res = opts.mtls
-      ? await undiciFetch(opts.url, {
-          method: opts.method,
-          headers: opts.headers,
-          // Node's global `FormData`/`Blob`/`ReadableStream` (what `opts.body` is built from,
-          // interpreter.ts's `prepareBody`) *are* undici's own implementations under the hood —
-          // this cast bridges a type-declaration mismatch between lib.dom.d.ts and undici's
-          // hand-rolled types, not a real runtime one.
-          body: opts.body as unknown as string,
-          signal: controller.signal,
-          redirect: opts.followRedirects ? 'follow' : 'manual',
-          dispatcher: agent,
-        })
-      : await fetch(opts.url, {
-          method: opts.method,
-          headers: opts.headers,
-          body: opts.body,
-          signal: controller.signal,
-          redirect: opts.followRedirects ? 'follow' : 'manual',
-        });
+    const res = await fetch(opts.url, {
+      method: opts.method,
+      headers: opts.headers,
+      body: opts.body,
+      signal: controller.signal,
+      redirect: opts.followRedirects ? 'follow' : 'manual',
+    });
     // Single read (gap #17): the body stream can only be consumed once, so `bodyText` is derived
     // from `bodyBytes` rather than a separate `res.text()` call — confirmed behavior-preserving,
     // `Buffer.from(bytes).toString('utf8')` matches `res.text()`'s own `TextDecoder` byte-for-byte,
@@ -144,6 +118,5 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
   } finally {
     clearTimeout(timer);
-    if (agent) await agent.close();
   }
 }

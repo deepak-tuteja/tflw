@@ -398,16 +398,83 @@ The fix was a hand-written ~10-line `authedRequest` wrapper (login-on-first-use,
 401) — a small but real, measured amount of resilience code tflw gives away for free that a raw
 tool makes every author rebuild.
 
+## M35d — re-measured after the M35b/M35c fix (2026-07-31)
+
+M35 (`PLAN_BROWSER_PERF_SECURITY.md` §2.7, D32) root-caused and fixed a real, large bug found via
+direct instrumentation of the real request pipeline (`FINDINGS_M35B_ROOT_CAUSE.md`): a
+module-scope, unconditional `import ... from 'undici'` in `http.ts` (needed only for the mTLS
+client-cert path) was cheaply poisoning Node's separate, built-in global `fetch()` for the entire
+process — present the instant the module loaded, on *every* `tflw` invocation, whether or not any
+test actually used mTLS. Fixed by isolating the entire mTLS dispatch path (including the `undici`
+import) into a dedicated, lazily-spawned child process, so `http.ts` no longer imports `undici` at
+all. Verified in isolation on a zero-latency echo-server harness: **~12.8× throughput**
+(349 → 4,470 iter/s). This re-run repeats M34's own real, contended acceptance scenario unchanged
+to see whether that isolated win carries over.
+
+**checkout-burst, same methodology as M34 (60 users ramping over 20s, closed model), reset between
+runs:**
+
+| | M34 (before fix) | M35d (after fix) — run 1 | M35d (after fix) — run 2 | k6 (M35d) |
+|---|--:|--:|--:|--:|
+| Iterations | 3,908 | 3,518 | 3,852 | 12,400 |
+| Throughput | 195/s | 172.6/s | 191.1/s | 620/s |
+| Checkout p95 | 476ms | 507ms | 521ms | 70.9ms |
+| Error rate | 0.00% | 0.00% | 0.00% | 0.34% |
+| Back-off ratio | (not measured) | 84% | 86% | — |
+
+k6's own numbers here (620/s, p95 70.9ms, 0.34% errors) essentially reproduce M34's original k6
+baseline (624/s, p95 69.9ms, 0.35%) — confirms the target/harness itself is stable and this is a
+fair re-run, not a noisier environment. **tflw's throughput on the real contended target is
+unchanged within run-to-run noise (~173–191/s both before and after, avg ~182/s) — the fix does
+not close the gap here.** tflw still trails k6 by **~3.2–3.4×**, statistically the same gap M34
+found, not narrower.
+
+**Why the isolated 12.8× win doesn't show up here:** the real-code instrumentation behind M35b
+found the poisoned `fetch()` cost ~1.4ms/call more than it should (`FINDINGS_M35B_ROOT_CAUSE.md`).
+Against a zero-latency echo server that's the *entire* per-call cost, hence the 12.8-26× swing.
+Against this real target, both back-off diagnostics above show VUs spending 84-86% of their time
+genuinely blocked waiting on the contended server (real network + Postgres row-lock queueing,
+tens to hundreds of ms per call) — a ~1.4ms client-side tax is noise against that, not the
+bottleneck. Quick isolation re-checks on the two GET-only rows from M34's own root-cause table
+(no writes, no shared state, so unaffected by any contention confound) *do* show a small, real
+gain, consistent with this explanation — both were unknowingly running under the same poisoned
+`fetch()` throughout M34's original run too:
+
+| Workload | M34 (before fix) | M35d (after fix) |
+|---|--:|--:|
+| `GET /health` only (session auth) | 5,865/s | 6,490/s (+10.6%) |
+| `GET /products` + `GET /health` | 2,199/s | 2,273/s (+3.4%) |
+
+The two POST-uncontended rows from M34's table were **not** re-measured as a clean comparison:
+reproducing them hit a real environment constraint this acceptance harness has — a single shared
+`LOAD_USER_EMAIL` credential for all 60 VUs, so any write scoped to "the current user" (e.g.
+`POST /cart/items` against a fixed product) lands on the exact same `cart_item` row across every
+VU (`cart.service.ts`'s atomic `increment`), which is genuinely contended (94% measured back-off)
+regardless of client speed. Whatever methodology M34 used to call that row "uncontended" wasn't
+reproduced here, so no number is reported rather than an apples-to-oranges one — flagged, not
+chased further, per this arc's own bounded-effort convention (D33c/D35/D38).
+
+**Conclusion: the M35b/M35c fix is real, verified, and worth keeping** — it eliminates a genuine
+process-wide bug (not just a load-test artifact: it silently taxed *every* `tflw run`/`tflw load`
+invocation, mTLS or not) and gives a small, real improvement on fast GET-heavy workloads. But it
+does **not** explain M34's ~3× gap on a real, contended target — that gap's dominant driver is
+still unidentified. D33a's ~10% tolerance is not met, and after M35b+M35c+M35d this workload's
+residual gap should be treated as an open, unexplained item rather than assumed closed.
+
 ## Verdict
 
-A genuine, mixed result — not a clean win, and reported as such. Both novel diagnostics work
-exactly as designed and were demonstrated firing on real, non-simulated runs; both threshold
-mechanisms correctly gate their own tool's exit code; tflw's session model measurably out-resilient
-a hand-written k6 script for free. But the core numeric comparison D31 asks for does **not** land
-within tolerance — tflw's own load-generation throughput trails k6's by roughly 3× on this real
-contended target, root-caused (not merely observed) to a ~2× per-POST-request overhead in tflw's
-own client pipeline that compounds under genuine server-side contention. Two real bugs were found
-and fixed at the source in the process (the `.env` wiring gap, and D17's diagnostic itself never
-having been built). The perf arc's dogfood gate passes on process and honesty, not on the headline
-number — the load-engine performance gap is now a concrete, well-evidenced, correctly-scoped-out
-item for a dedicated hardening milestone, not a surprise waiting to be found in production.
+A genuine, mixed result — not a clean win, and reported as such, across both M34 and this M35
+fast-follow. Both novel diagnostics work exactly as designed and were demonstrated firing on real,
+non-simulated runs; both threshold mechanisms correctly gate their own tool's exit code; tflw's
+session model measurably out-resilient a hand-written k6 script for free. The core numeric
+comparison D31 asks for still does **not** land within tolerance after a real, verified fix
+(M35b/c) — tflw's own load-generation throughput still trails k6's by roughly 3× on this real
+contended target. M34's original hypothesis (a client-pipeline overhead that compounds under
+contention) turned out to be only partially right: a real, large client-side bug existed and is
+now fixed, but M35d shows it isn't the dominant driver of the gap on *this* contended workload
+shape — back-off-dominated real latency swamps the difference. Three real bugs were found and
+fixed at the source across M34/M35 (the `.env` wiring gap, D17's diagnostic itself never having
+been built, and the `undici`-import `fetch()` poisoning). The perf arc's dogfood gate passes on
+process and honesty, not on the headline number — the residual load-engine gap on contended
+targets is now a well-evidenced, still-open item, not a surprise waiting to be found in
+production.

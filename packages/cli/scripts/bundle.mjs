@@ -43,3 +43,20 @@ await build({
   // `node_modules` — exactly the optional-peer behavior `browser.ts`'s `loadPlaywright()` expects.
   external: ['playwright'],
 });
+
+// M35c — a genuinely separate bundle for the mTLS worker (`mtlsWorkerEntry.ts`, in
+// `@tflw/runtime`, not this package's own `src/`), forked as its own child process specifically so
+// the `undici` npm package it needs (for its client-cert-carrying `Agent`) is never imported by
+// `dist/cli.cjs` itself — M35b found that merely importing `undici`, even unused, cripples Node's
+// separate built-in global `fetch()` by ~20x. `mtlsWorker.ts`'s `getChild()` resolves this file by
+// path at runtime (sibling of `dist/cli.cjs`), falling back to the `.ts` source sibling when this
+// bundled file doesn't exist (`@tflw/runtime`'s own unit tests, run unbundled via `tsx`).
+await build({
+  absWorkingDir: pkgRoot,
+  entryPoints: ['../runtime/src/mtlsWorkerEntry.ts'],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  target: 'node22',
+  outfile: 'dist/mtls-worker.cjs',
+});

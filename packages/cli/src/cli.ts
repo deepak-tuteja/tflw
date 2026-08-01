@@ -58,6 +58,7 @@ import {
   LOG_LEVEL_ORDER,
   startPickSession,
   mergeSelfDiagnosis,
+  shutdownMtlsWorker,
   type BrowserEngine,
   type RunReport,
   type TestResult,
@@ -2147,8 +2148,14 @@ function printUsage(): void {
 }
 
 main(process.argv.slice(2))
-  .then((code) => process.exit(code))
-  .catch((e) => {
+  .then(async (code) => {
+    // M35c — a no-op if this run never used mTLS (the worker child is only ever spawned lazily,
+    // on the first request that needs it); otherwise stops it from outliving the run.
+    await shutdownMtlsWorker();
+    process.exit(code);
+  })
+  .catch(async (e) => {
     err(e instanceof Error ? e.message : String(e));
+    await shutdownMtlsWorker();
     process.exit(EXIT_USAGE);
   });
