@@ -1054,3 +1054,40 @@ scenarios. Proceed to M47 using these numbers as the arc's final baseline.
 Per-run logs/JSON and the diagnostic script in `/tmp/m46-nagle/` — not committed, regenerable via
 the same commands M44's/M45's sections document, run against `dist/cli.cjs` rebuilt from this
 milestone's source (`npm run bundle` in `packages/cli`).
+
+**Addendum — D80 reopened at the user's explicit direction (2026-08-01): event-loop/GC jitter
+checked, ruled out.** After the verdict above, the user chose to spend a further bounded pass
+(explicitly overriding D79's own "accept the ceiling" close) on the second D80 candidate:
+event-loop/GC jitter under sustained load. Temporary instrumentation (`node:perf_hooks`'
+`monitorEventLoopDelay()` + a `PerformanceObserver({entryTypes: ['gc']})`) was added around the
+`workers === 1` `runLoad` call site in `packages/cli/src/cli.ts`, mirroring M40's own
+"instrument-then-revert" technique — no code shipped, reverted immediately after the readings below
+(`git checkout -- packages/cli/src/cli.ts`; typecheck + full test suite reconfirmed green
+post-revert).
+
+Three runs, load target reset before each: two on `checkout-burst` (the scenario with the residual
+gap), one on `dogfood-post-uncontended` (the scenario D77 already closed) as a control —
+
+| | checkout-burst run 1 | run 2 | dogfood run 1 (control) |
+|---|--:|--:|--:|
+| event-loop delay: min/mean/p50 (ms) | 4.02 / 5.03 / 5.03 | 4.03 / 5.03 / 5.03 | 4.05 / 5.01 / 5.02 |
+| event-loop delay: p95/p99/max (ms) | 5.74 / 5.93 / 8.4 | 5.71 / 5.89 / 8.72 | 5.55 / 5.79 / 7.21 |
+| GC: count / totalMs / maxSingleMs | 152 / 58.17 / 2.76 | 155 / 60.53 / 4.95 | 207 / 77.91 / 6.05 |
+
+The `min`/`mean`/`p50` clustering at ~4-5ms across all three runs regardless of scenario is
+`monitorEventLoopDelay`'s own sampling-resolution floor (`resolution: 5` was used), not real
+application stalling — the informative numbers are the spread above that floor and the GC
+readings. Both are flat: checkout-burst's worst single event-loop delay (8.4-8.72ms) and worst
+single GC pause (2.76-4.95ms) are **not larger** than the uncontended control's (7.21ms / 6.05ms)
+— if anything the control shows a heavier GC max, since it processes ~2.7x more iterations in the
+same 20s window. No mechanism here scales with contention the way the residual gap does, and
+nothing in either run comes close to a magnitude (tens of ms, recurring often enough to move a few
+hundred iterations' worth of tail) that could plausibly produce a systematic ~4ms p95 shift across
+checkout-burst's ~13,000 iterations. **Refuted, cleanly — same shape as M40's own refutation of the
+bookkeeping-compounding hypothesis.**
+
+All three named D80 candidates are now checked: server-side Nagle (not applicable, nginx-fronted),
+event-loop/GC jitter (refuted, this addendum), leaving only `AbortSignal.timeout()` per-request
+allocation overhead untested. D79's cap is now spent twice over by explicit user choice, not by the
+plan's own default; the practical-ceiling verdict above stands. `checkout-burst`'s 5.86% residual
+checkout-scoped p95 gap remains the accepted ceiling. Proceeding to M47.
