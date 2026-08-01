@@ -989,3 +989,68 @@ scenario under load still passes cleanly via the documented fallback.
 Per-run logs/JSON in `/tmp/m45-pinned/` — not committed, regenerable via the same commands M44's
 section documents, run against `dist/cli.cjs` rebuilt from this milestone's source (`npm run
 bundle` in `packages/cli`).
+
+## M46 — root-causing the residual p95 gap: Nagle fix + percentile-bias quantification (2026-08-01)
+
+M45 left a 4.9%/3.6% checkout-scoped p95 gap, short of D74's strict ~1-2% bar. Rather than accept
+that as a real performance ceiling on the numbers alone, this milestone compared tflw's p95
+*measurement logic* against k6's directly (D76-D80, `PLAN_BROWSER_PERF_SECURITY.md` §2.17), found
+two candidate mechanisms, fixed the stronger one, quantified the weaker one, and took one bounded
+follow-up pass per D79's precommitted stop condition.
+
+**D77 — the fix.** `httpPinned.ts`'s pinned send path never called `req.setNoDelay(true)`; Node's
+raw `http`/`https` leaves Nagle's algorithm on unless the caller opts out, while `undici` (`fetch()`,
+tflw's own unpinned path) and Go (k6) both disable it by default. Landed as a one-line change right
+after `lib.request(...)` is called. Full suite (390 runtime + 107 CLI tests, typecheck, build)
+stayed green.
+
+**Remeasured (3 runs per side, load target reset before every run, fresh k6 baseline same window):**
+
+| | tflw run 1 | run 2 | run 3 | avg | k6 run 1 | run 2 | run 3 | avg |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| **checkout-burst** iterations | 12,611 | 13,450 | 13,229 | — | 12,850 | 12,855 | 12,804 | — |
+| Throughput | 630.6/s | 672.5/s | 661.5/s | **654.8/s** | 642.5/s | 642.8/s | 640.2/s | **641.8/s** |
+| Checkout p95 (scoped) | 76ms | 70ms | 69ms | **71.7ms** | 68.05ms | 67.56ms | 67.48ms | **67.7ms** |
+| **dogfood-post-uncontended** iterations | 36,330 | 36,155 | 36,928 | — | 36,197 | 36,582 | 36,162 | — |
+| Throughput | 1,816.5/s | 1,807.8/s | 1,846.4/s | **1,823.6/s** | 1,809.8/s | 1,829.0/s | 1,808.1/s | **1,815.7/s** |
+| p95 | 31ms | 31ms | 31ms | **31.0ms** | 30.04ms | 30.16ms | 30.18ms | **30.1ms** |
+
+**Result: mixed, and honestly asymmetric.** `dogfood-post-uncontended`'s p95 gap improved from
+M45's 3.6% to **2.90%** — under D79's <3% stop threshold, and its throughput lead shrank from 2.05%
+to a noise-level 0.43%. `checkout-burst`'s p95 gap did **not** improve — 4.9% → **5.86%**,
+essentially unchanged/within this arc's own established run-to-run noise band (M45's three prior
+checkout-burst p95 readings alone spanned 70-75ms); throughput's lead actually grew slightly (1.3%
+→ 2.03%). The Nagle fix is real, correct, and zero-downside regardless (it brings the pinned path in
+line with `undici`'s and Go's own defaults) — it just isn't the dominant contributor to
+checkout-burst's residual, only to dogfood's.
+
+**D78 — percentile-bias quantification.** A throwaway script (`percentile-bias-diag.mjs`, not
+committed) expanded a fresh checkout-burst run's own bucketed histogram (`{value, count}` pairs,
+already using tflw's shipped 3-sig-fig rounding) into a sorted array and ran both algorithms over
+the *identical* underlying values: tflw's nearest-rank vs. k6's linear interpolation. Result on a
+12,662-iteration checkout sample: **0.00ms / 0.00% bias.** At this sample size the two algorithms
+land on the same bucket almost every time — the bucketing/rounding itself (D19's tradeoff) is not
+meaningfully inflating this comparison. Candidate B is confirmed real in principle but negligible in
+practice; `LatencyHistogram.percentile()` is unchanged, as planned.
+
+**D79/D80 — stop condition applied.** `dogfood-post-uncontended`'s residual closed (<3%).
+`checkout-burst`'s residual (5.86%) remained meaningful, so D79 permitted one further bounded pass
+into D80's reserved candidates. Checked the strongest of the three: **server-side Nagle on
+testFlow-tests' actual client-facing socket.** Found it doesn't apply to this topology — the load
+client never connects to the NestJS/Node process directly; `nginx` (`testflow-tests-nginx-1`) fronts
+port 4001 and proxies to the `api` container, and nginx's own `tcp_nodelay` directive defaults to
+`on` and is not overridden anywhere in this stack's `nginx/nginx.conf`. The server-side leg was
+never contributing a Nagle-related stall. Per D79's precommitted cap ("at most one further bounded
+pass"), the two remaining D80 candidates (`AbortSignal.timeout()` allocation overhead, event-loop/GC
+jitter) are **not** chased further this milestone — the pass is spent.
+
+**Verdict: checkout-burst's 5.86% checkout-scoped p95 gap is accepted as the practical ceiling**,
+per D79's own precommitted rule, and this closes M46's investigation. `dogfood-post-uncontended`'s
+gap is closed (2.90% < 3%). The Nagle fix stays shipped regardless of its mixed empirical effect —
+it is a correct, zero-downside best practice that measurably helped one of the two scenarios and
+regressed neither. D33a's ~20% tolerance (M44-set) remains met with large headroom on both
+scenarios. Proceed to M47 using these numbers as the arc's final baseline.
+
+Per-run logs/JSON and the diagnostic script in `/tmp/m46-nagle/` — not committed, regenerable via
+the same commands M44's/M45's sections document, run against `dist/cli.cjs` rebuilt from this
+milestone's source (`npm run bundle` in `packages/cli`).

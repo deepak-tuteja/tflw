@@ -105,6 +105,13 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
     try {
       res = await new Promise<http.IncomingMessage>((resolve, reject) => {
         const req = lib.request(url, { method: current.method, headers, agent, signal: AbortSignal.timeout(opts.timeoutMs) }, resolve);
+        // D76/D77 (PLAN_BROWSER_PERF_SECURITY.md §2.17) — unlike undici (fetch's own connect.js
+        // calls socket.setNoDelay(true) unconditionally) and unlike Go's net.Dial (k6, TCP_NODELAY
+        // on by default), node:http/https leaves Nagle's algorithm ON unless the caller opts out.
+        // Nagle + a peer's delayed-ACK timer (~40ms) is a well-documented cause of intermittent
+        // head-of-line stalls when headers and a small body are written in separate socket.write()
+        // calls — exactly this path's shape, and exactly a p95-tail symptom, not a throughput one.
+        req.setNoDelay(true);
         req.on('error', reject);
         if (bodyBuffer !== undefined) req.end(bodyBuffer);
         else req.end();
