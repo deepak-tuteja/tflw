@@ -1,0 +1,9 @@
+# M39 (PLAN_BROWSER_PERF_SECURITY.md §2.10, D49) — isolated GET-only rung on the echo-server
+# harness, split out of bench.tflw's combined GET+POST shape so this run's numbers reflect only
+# the GET request, not an average across both steps. Zero-latency target (echo-server.mjs), same
+# ramp shape as bench.tflw for consistency with the existing echo-server harness convention.
+
+scenario "M39 echo GET-only"
+  ramp to 30 users over 8s
+  api GET /products
+  expect status equals 200

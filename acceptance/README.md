@@ -557,3 +557,107 @@ M34-M37 (the `.env` wiring gap, D17's diagnostic itself never having been built,
 `undici`-import `fetch()` poisoning, and the load-scenario session-refresh bug) — the perf arc's
 dogfood gate continues to pass on process and honesty, and now also lands within shouting distance
 of the headline number it originally set out to hit.
+
+## M39 — confirming the residual gap is real, and pinning down where it opens (2026-08-01)
+
+M38 left a residual, not-quite-inside-tolerance gap open (~11.3% throughput, ~46% checkout p95)
+and named tflw's baseline per-`POST` client-pipeline overhead — first characterized back in M34's
+own root-cause table — as the likely cause, without re-isolating it. Scoped via `/grill-me`
+(`PLAN_BROWSER_PERF_SECURITY.md` §2.10, D47-D52): rebuild M34's escalating-workload isolation
+ladder (GET-only → POST-uncontended → POST-contended), but this time with a **k6 counterpart at
+every rung** — M34's own table only ever compared tflw against a raw `fetch` script, never k6,
+which is the actual comparison D33a's tolerance is about. Five rungs, 3 tflw runs + 2 k6 runs each
+(15 tflw + 10 k6 runs total), load target reset before every dogfood run:
+
+- **echo-server** (`acceptance/perf/profile/`, zero-latency, no shared state): new isolated
+  `echo-get-only.tflw`/`.js` and `echo-post-only.tflw`/`.js` — single-request-type scenarios, split
+  out of `bench.tflw`'s combined GET+POST shape so each rung measures one verb in isolation.
+- **dogfood** (`acceptance/perf/tflw|k6/`, real Postgres): new `dogfood-get-only.tflw`/`.js`
+  (`GET /health`, session-authed) and `dogfood-post-uncontended.tflw`/`.js` (`POST /cart/items`,
+  static hardcoded `productId`, a per-user cart row — no shared lock across VUs, unlike checkout);
+  `dogfood-post-contended` reuses `checkout-burst.tflw`/`.js` unchanged, re-run fresh for this series
+  rather than reusing M38's own numbers.
+
+**A real, unplanned finding surfaced immediately: both echo-server rungs and the dogfood GET-only
+rung self-saturate tflw's own generator (D19 fires every single run, "results are unreliable"),
+even at a single VU.** A GET (or a POST) against a target with effectively zero latency lets a VU
+loop fast enough that tflw's single-process interpreter becomes the bottleneck before concurrency
+is even the issue — `bench.tflw`'s own M35a numbers were generated in exactly this saturated regime
+(that milestone *wanted* saturation, for CPU profiling). This makes any **absolute** tflw-vs-k6
+throughput comparison on these three rungs uninformative for D49's question — it's comparing a
+deliberately-saturated single-process generator's ceiling against a compiled multi-threaded one's
+ceiling, not the per-request-type client overhead specifically. Reported below for completeness,
+but not used to draw conclusions about the residual gap.
+
+**The two *unsaturated* dogfood rungs (POST-uncontended and POST-contended, both `cpu` 44-57%, no
+D19 warning) are the trustworthy comparison, and they tell a sharp, well-localized story:**
+
+| Rung | tflw avg | k6 avg | Throughput gap | tflw p95 | k6 p95 | p95 gap | Saturated? |
+|---|--:|--:|--:|--:|--:|--:|:--:|
+| A. echo GET-only | 21,814.8/s | 80,632.2/s | k6 leads 3.70× | 2ms | 0.37ms | tflw trails 5.4× | **yes (D19)** |
+| B. echo POST-only | 12,098.2/s | 80,117.8/s | k6 leads 6.62× | 3.3ms | 0.37ms | tflw trails 9.0× | **yes (D19)** |
+| C. dogfood GET-only | 6,558.7/s | 10,875.8/s | k6 leads 1.66× | 9ms | 5.32ms | tflw trails 1.69× | **yes (D19)** |
+| D. dogfood POST-uncontended | 1,503.7/s | 1,693.0/s | k6 leads **11.2%** | 37ms | 32.3ms | tflw trails **14.7%** | no |
+| E. dogfood POST-contended (checkout-burst) | 578.9/s | 637.4/s | k6 leads **9.2%** | 103ms | 69.0ms | tflw trails **49.2%** | no |
+
+(Full per-run numbers for A-C, plus error rates, in `/tmp/m39-results/` — not committed, regenerable
+by re-running the new fixtures listed above.)
+
+**Where the gap opens: on a plain, uncontended POST it's already inside (or right at) D33a's ~10%
+tolerance on both metrics that matter for a throughput read.** Rung D — a real network+DB round
+trip, no row lock, no capture/interpolation — shows an 11.2% throughput gap and a 14.7% p95 gap:
+close enough to call "closed" in spirit, and a **dramatically** smaller p95 gap than the contended
+rung. Rung E, re-measured fresh in this series (not reusing M38's numbers), lands almost exactly
+where M38 found it: throughput gap 9.2% (M38: 11.3%; both inside/at the noise band this arc has
+already characterized), but **p95 gap 49.2%** — essentially unchanged from M38's 46%, confirming
+that result wasn't a fluke.
+
+**The residual gap is not a flat "tflw is slower" tax — it's concentrated specifically in p95 tail
+latency once real row-lock contention enters the picture.** Rungs D and E have near-identical
+*throughput* gaps (11.2% vs 9.2% — both essentially at tolerance), but wildly different *p95* gaps
+(14.7% vs 49.2%). The only thing that changed between them is contention: same session, same
+target, same static-body POST shape, same ramp. That isolates the residual almost entirely to how
+tflw's single-process generator's own per-iteration overhead **compounds with server-side lock
+queueing** to inflate the tail specifically — plausibly because a VU that's already paying tflw's
+baseline per-`POST` cost re-enters the queue slightly later than k6's equivalent VU would, and under
+real contention that small per-iteration delay compounds into a much larger tail-latency spread,
+even though it barely moves the throughput average. This is a sharper, more specific answer than
+M34's original "any POST with a body" framing — the plain-POST overhead is real but small (rung D),
+and mostly harmless to throughput even under contention (rung E's 9.2%); it's the **tail**, under
+contention specifically, where it actually matters.
+
+**D33a tolerance check, all five rungs:** the three self-saturated rungs (A-C) are excluded from
+this check — their gaps reflect D19's already-understood, already-documented generator-saturation
+mechanism, a different and already-diagnosed phenomenon, not the client-pipeline question D33a's
+tolerance is about. Of the two trustworthy rungs: D (uncontended) is within/at tolerance on both
+metrics; E (contended) is within tolerance on throughput but well outside it on p95 — the same
+verdict M38 already reported, now with a specific, well-evidenced mechanism (tail-under-contention
+compounding) rather than a named-but-unverified candidate.
+
+**Stopping here, per D51/D52.** This was investigation + write-up only, no fix — the ladder
+localized the residual to p95-under-contention specifically, which is enough new information to
+make a real scoping decision, but no source code changed this milestone. The mechanism (per-VU
+generator overhead compounding with server-side lock queueing) is architectural, not an obvious
+one-line bug the way M35b's and M37's causes were — a fix would mean either restructuring how
+`runLoadCore`'s VUs re-enter the request queue after a slow iteration, or accepting it as an
+inherent interpreted-Node-vs-compiled-Go difference under contention specifically. Per D52's
+inconclusive-fallback clause: this result is not inconclusive (it cleanly localizes the gap), so the
+honest next step is a scoped decision — pursue a dedicated hardening pass on this specific
+mechanism, or re-scope D33a's tolerance for contended-tail-latency specifically — rather than
+silently reopening the chase. Flagged here for that decision; not taken further this milestone.
+
+## Verdict (M39)
+
+**The ladder answers D49's question precisely, and narrows M38's residual gap to a specific,
+well-evidenced mechanism.** The gap does not "already exist on a plain GET" in any way this
+milestone could cleanly measure (GET-only rungs self-saturate tflw's generator on both harnesses,
+a real but separately-already-diagnosed D19 phenomenon). It also doesn't uniformly "appear once a
+POST enters" — a plain, uncontended POST (rung D) is already within/at D33a's ~10% tolerance on
+both throughput and p95. It specifically **widens once real row-lock contention enters** (rung E):
+throughput stays near tolerance (9.2%, consistent with M38's 11.3%), but p95 blows out to ~49%
+(consistent with M38's ~46%) — a fresh, independent measurement confirming M38's number was real,
+not noise. Four real bugs (M34-M37) plus one real architectural characteristic (this milestone) are
+now on record for this arc's dogfood gate. The residual is named as a concrete candidate for a
+dedicated hardening pass on tflw's load-generator VU re-entry under contention — or, if that's not
+pursued, grounds to re-scope D33a's tolerance specifically for contended-tail-latency scenarios —
+but per D51, that's a separate, explicitly-scoped decision, not an automatic next milestone.

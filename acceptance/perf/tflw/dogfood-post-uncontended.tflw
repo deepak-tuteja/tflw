@@ -1,0 +1,16 @@
+# M39 (PLAN_BROWSER_PERF_SECURITY.md §2.10, D49) — isolated POST-uncontended rung against the real
+# dogfood target: `POST /cart/items`, a static (non-interpolated, no capture) body against a
+# per-user cart row (no shared row lock across VUs — unlike the acceptance scenario's checkout,
+# every VU only ever touches its own cart), matching M34's own "POST /cart/items only, static body,
+# uncontended" row. `productId` below is the real "Load Test Widget" product's id, resolved once by
+# hand before writing this fixture (`GET /products?q=Load%20Test%20Widget`) — hardcoded rather than
+# captured so the load run itself pays for zero capture/interpolation overhead, isolating the raw
+# POST-with-body cost the same way M34's original row did. Re-resolve and update this id if the
+# stack's DB is ever reseeded (a fresh `node cli.mjs start` after `stop` gets a new random UUID —
+# perf-0's product row has no pinned id, see testFlow-tests apiV2/src/seed/seed.ts). Same ramp shape
+# as checkout-burst.tflw for apples-to-apples comparison against the contended rung.
+
+scenario "M39 dogfood POST-uncontended" as load
+  ramp to 60 users over 20s
+  api POST /cart/items body { productId: "77a0540f-c608-433c-82f3-dc821ed5e515", quantity: 1 }
+  expect status equals 201

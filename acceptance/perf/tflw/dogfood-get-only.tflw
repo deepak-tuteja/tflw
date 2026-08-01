@@ -1,0 +1,10 @@
+# M39 (PLAN_BROWSER_PERF_SECURITY.md §2.10, D49) — isolated GET-only rung against the real dogfood
+# target: `GET /health` (the endpoint itself needs no auth, but the `load` session below still
+# establishes one, matching M34's own "GET /health only (with session auth)" row so this is a clean
+# re-run of that original row, now with a k6 counterpart). Same ramp shape as checkout-burst.tflw
+# for apples-to-apples comparison against the contended rung.
+
+scenario "M39 dogfood GET-only" as load
+  ramp to 60 users over 20s
+  api GET /health
+  expect status equals 200
