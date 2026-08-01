@@ -820,3 +820,43 @@ D33a's ~50% contended-p95 tolerance (amended M40) is re-confirmed, not loosened 
 tightened toward the user's original ~1-2% target — that target is not achievable without an
 HTTP-client-level change this arc has now decided, twice (D55, D59), not to pursue speculatively.
 No M42. The pentest arc (v0.4.0) may now start.
+
+## M42 — testing a pinned-per-VU connection, canonical baseline recorded (2026-08-01)
+
+Reopened M41's own "no M42" close the same day, at the user's explicit direction, to test whether
+**pinning one persistent connection per VU** — Artillery's and k6's own default behavior; Node's
+`fetch()`/undici's default `Pool` never does this (`connections: null`, a new on-demand `Client` per
+concurrent dispatch, confirmed via undici's own docs) — closes the gap M41 isolated to Node's HTTP
+stack. Scoped via `/grill-me` (D60-D66, `PLAN_BROWSER_PERF_SECURITY.md` §2.13). Extended
+`raw-fetch-bench-dogfood.mjs` with a `pinned` client mode: each VU constructs its own `undici.Client`
+once at spawn and reuses it for its full lifetime, instead of calling global `fetch()`.
+
+**First measurement round** (fetch-mode baseline + pinned, 3 runs each, this session): pinned-Client
+cut the p95 gap from 48.3% to 32.0% and flipped throughput to lead k6 by 2.4% — the largest, most
+repeatable movement of any mechanism tested in this arc (M36, M40, and M41's own unpinned raw-fetch
+all moved the number by roughly nothing). Per D62's strict ~1-2% bar this doesn't qualify as
+"confirmed," so the user asked for one final, coordinated measurement — **all four variants
+(tflw itself, k6, raw-fetch unpinned, raw-fetch pinned) run back-to-back in one quiet-machine sweep**,
+3 runs each, load target reset before every run, 0% errors throughout — to serve as the canonical
+baseline for all future gap-closing work in this arc, superseding the scattered, session-drifted
+numbers M38-M41 accumulated across different days:
+
+| Variant | throughput/s | p95 (ms) | throughput vs k6 | p95 gap vs k6 |
+|---|--:|--:|--:|--:|
+| **k6 (Go)** — reference | 648.0 | 68.28 | — | — |
+| tflw (real interpreter) | 590.8 | 101.67 | k6 leads 8.8% | tflw trails **48.9%** |
+| raw-fetch, unpinned | 586.2 | 103.55 | k6 leads 9.5% | trails **51.7%** |
+| raw-fetch, pinned-Client | 660.3 | 90.15 | pinned leads **1.9%** | trails **32.0%** |
+
+**This baseline cleanly confirms two things at once.** tflw's real interpreter and unpinned raw-fetch
+are statistically indistinguishable (48.9% vs. 51.7% — both inside this arc's established
+run-to-run noise band), reproducing M41's isolation-to-Node's-HTTP-stack finding exactly, one more
+time, from a fully independent coordinated run. And connection pinning is a real, substantial,
+repeatable effect, not noise: throughput flips from trailing k6 to leading it, and the p95 gap drops
+by roughly a third in relative terms (48.9% → 32.0%).
+
+**Recorded as data only — the D62 verdict (does 32.0% count as "confirmed" despite missing the
+strict ~1-2% bar, triggering a from-scratch M43) is deliberately left open here, pending a separate
+decision.** No conclusion drawn yet on whether D33a's tolerance stands as re-confirmed or whether M43
+gets scoped; this section exists purely as the canonical reference table for whatever gets decided
+next. Per-run JSON/logs in `/tmp/m42-baseline/` — not committed, regenerable via the commands above.
