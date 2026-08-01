@@ -1967,6 +1967,58 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
   });
 });
 
+// M43 (PLAN_BROWSER_PERF_SECURITY.md §2.14, D67-D70): the per-endpoint breakdown fixing R6's
+// deferred axis — a scenario with an untagged lookup and a `as "checkout"`-tagged request should
+// surface both identities separately across all three report surfaces, and a `for "checkout"`-
+// scoped threshold should gate on the tagged request's own p95, not the whole iteration's.
+test('`tflw load`: a scenario with an untagged step and an `as "label"`-tagged step reports a per-endpoint breakdown across console, JSON, HTML, and a scoped threshold', async () => {
+  await withOrdersServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-endpoints-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'scenario "checkout burst"\n' +
+          '  ramp to 5 users over 200ms\n' +
+          '  threshold p95 duration for "checkout" is less than 5000ms\n' +
+          '  api GET /health\n' +
+          '  expect status equals 200\n' +
+          '  api POST /orders as "checkout"\n' +
+          '  expect status equals 201\n',
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir });
+      assert.match(stdout, /endpoints:/);
+      assert.match(stdout, /GET \/health: iterations \d+/);
+      assert.match(stdout, /checkout: iterations \d+/);
+      assert.match(stdout, /load run passed/);
+
+      const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
+        scenarios: { name: string; thresholds: { label: string; ok: boolean }[]; endpoints: { identity: string; metrics: { iterations: number } }[] }[];
+      };
+      const scenario = results.scenarios[0]!;
+      assert.deepEqual(
+        scenario.endpoints.map((e) => e.identity),
+        ['GET /health', 'checkout'],
+      );
+      assert.ok(scenario.endpoints.every((e) => e.metrics.iterations > 0));
+      const scoped = scenario.thresholds.find((t) => t.label === 'p95 duration for "checkout"');
+      assert.ok(scoped, `expected a scoped threshold, got ${JSON.stringify(scenario.thresholds)}`);
+      assert.equal(scoped!.ok, true);
+
+      const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
+      assert.match(html, /class="endpoints"/);
+      assert.match(html, /<details class="endpoint"><summary>checkout/);
+
+      const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+      assert.match(junit, /p95 duration for &quot;checkout&quot;/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // M34 acceptance-milestone finding: `tflw load` built its `LoadOptions` for both `runLoad`
 // (single-process) and `runLoadShard` (each `--workers N>1` forked child) without ever passing
 // `environ` through — `env(NAME)` inside a load scenario/session silently fell back to the raw

@@ -166,6 +166,12 @@ export interface ThresholdDecl extends Node {
   readonly metric: ThresholdMetric;
   readonly op: ThresholdOp;
   readonly value: number;
+  /** `threshold p95 duration for "checkout" is less than 250ms` (M43, D70) — scopes this
+   * threshold to one endpoint's own histogram instead of the whole scenario's. Matches either an
+   * explicit `ApiRequestSpec.tag` or an automatically-derived `METHOD path.raw` identity string.
+   * Null (the default) keeps today's whole-iteration-scoped meaning unchanged. Checker-enforced
+   * (`TF034`) to resolve to at least one step's identity within the same scenario. */
+  readonly scope: StringLit | null;
 }
 
 /** `think 2s` / `think 1s to 3s` (D18) — per-iteration pacing inside a `scenario` only; the
@@ -264,6 +270,13 @@ export interface ApiRequestSpec {
    * retry mechanism and never parses this clause (`parseWaitUntilBody` doesn't call
    * `parseApiHeaders`), so it stays null there. */
   readonly retryAfter: RetryAfterClause | null;
+  /** `as "checkout"` (M43, D67/D68) — an explicit, k6-style opt-in label. When present it
+   * *replaces* the automatic `(service, method, path.raw)` endpoint identity for load-report
+   * aggregation and `threshold … for "label"` scoping, rather than merely relabeling it — this is
+   * what lets a tflw scenario share an identity with a k6 script's own `{name: 'checkout'}` tag.
+   * Only meaningful under `tflw load`; ignored by `test`/`action` execution. Null means the step
+   * falls back to the automatic identity. */
+  readonly tag: StringLit | null;
 }
 
 export interface ApiStep extends Node, ApiRequestSpec {

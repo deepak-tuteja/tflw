@@ -68,6 +68,7 @@ export const Codes = {
   REQUEST_ASSERTION_INVALID: 'TF031',
   INVALID_CONTENT_TYPE: 'TF032',
   LOAD_INVALID: 'TF033',
+  THRESHOLD_SCOPE_UNKNOWN: 'TF034',
 } as const;
 
 // ---------------------------------------------------------------------------

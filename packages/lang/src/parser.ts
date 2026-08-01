@@ -521,6 +521,14 @@ class Parser {
       );
       return null;
     }
+    // `for "checkout"` (M43, D70) — scopes this threshold to one endpoint's own histogram
+    // instead of the whole scenario's. Optional; absence keeps today's whole-iteration meaning.
+    let scope: StringLit | null = null;
+    if (this.isKw(this.peek(), 'for')) {
+      this.advance();
+      scope = this.expectString('a label string after `for`, e.g. `threshold p95 duration for "checkout" is less than 250ms`');
+      if (!scope) return null;
+    }
     if (!this.expectKw('is')) return null;
     let op: ThresholdOp;
     if (this.isKw(this.peek(), 'less')) {
@@ -547,7 +555,7 @@ class Parser {
       value = Number(num.value) / 100;
     }
     this.endLine();
-    return { type: 'ThresholdDecl', metric, op, value, span: this.spanFrom(start) };
+    return { type: 'ThresholdDecl', metric, op, value, scope, span: this.spanFrom(start) };
   }
 
   /** `think 2s` / `think 1s to 3s` (D18) — legal anywhere a step is (parser-level), restricted to
@@ -1413,9 +1421,18 @@ class Parser {
     this.advance(); // `api`
     const spec = this.parseApiRequestLine();
     if (!spec) return null;
+    // `as "checkout"` (M43, D67/D68) — trailing on the request line itself, only ever parsed for
+    // a plain `api` step (not `wait until api`, which calls `parseApiRequestLine` directly and
+    // never reaches here) — mirrors how `retryAfter` is likewise only ever set here.
+    let tag: StringLit | null = null;
+    if (this.isKw(this.peek(), 'as')) {
+      this.advance();
+      tag = this.expectString('a label string after `as`, e.g. `api POST /orders as "checkout"`');
+      if (!tag) return null;
+    }
     this.endLine();
     const { headers, retryAfter } = this.parseApiHeaders();
-    return { type: 'ApiStep', ...spec, headers: [...spec.headers, ...headers], retryAfter, span: this.spanFrom(start) };
+    return { type: 'ApiStep', ...spec, tag, headers: [...spec.headers, ...headers], retryAfter, span: this.spanFrom(start) };
   }
 
   /** The shared `[<service>] METHOD PATH [body-form] [timeout <dur>] [without redirects]` line,
@@ -1469,7 +1486,7 @@ class Parser {
       followRedirects = false;
     }
 
-    return { service, method: method!, path, body, headers: [], timeoutMs, followRedirects, retryAfter: null };
+    return { service, method: method!, path, body, headers: [], timeoutMs, followRedirects, retryAfter: null, tag: null };
   }
 
   private parseApiBody(): ApiBody | null {

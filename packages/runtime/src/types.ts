@@ -170,6 +170,13 @@ export interface StepResult {
   readonly detail?: string;
   readonly request?: RequestTrace;
   readonly response?: ResponseTrace;
+  /** Set only on a `kind: 'api'` result (M43, D67/D68) — this request's stable endpoint identity:
+   * its `ApiStep.tag` (`as "label"`) when present, else the automatic `METHOD path.raw` derived
+   * from the *source template*, not `request.url` (which is the resolved, interpolated URL and
+   * would fragment identity across otherwise-identical requests, the exact normalization problem
+   * this field exists to avoid). Read by `runLoad`'s per-scenario endpoint accumulator to build
+   * `LoadScenarioReport.endpoints`; unused (but harmless, negligible size) outside a load run. */
+  readonly endpoint?: string;
   /** Set on an explicit `screenshot "<name>"` step, or best-effort on any step that failed while a
    * browser page existed for this test attempt (M3c, D12's "failure-first capture"). */
   readonly screenshot?: ScreenshotAsset;
@@ -274,10 +281,12 @@ export type EventSink = (event: RunEvent) => void;
 // inline-SVG charts render from), `LoadReport` gains `inconclusive` (R11 — `selfDiagnosis.saturated`
 // lifted to a top-level verdict the CLI maps to a distinct exit code and junit maps to `skipped`)
 // and `aborted`/`abortedMessage` (R5 — a Ctrl-C'd run's partial results, flushed rather than lost).
-// **Not built**: per-endpoint breakdown (R6's third axis, alongside combined/per-scenario which
-// this milestone does cover) — it needs a normalized endpoint-template identity (the same problem
-// R8 solves for SARIF fingerprints) that's a genuinely separate design question, deliberately left
-// for a fast-follow rather than rushed into this milestone's scope.
+// M43 (`PLAN_BROWSER_PERF_SECURITY.md` §2.14, D67-D72) finally fills in R6's third axis:
+// `LoadScenarioReport.endpoints` below. The normalized-identity blocker this comment used to cite
+// turned out to already be solved for free — `PathExpr.raw` (`lang/src/ast.ts`) is the literal,
+// un-interpolated path template as written in source, stable at parse time, no SARIF-style
+// runtime-value normalization needed. Identity is `(service, method, path.raw)`, or an explicit
+// `ApiStep.tag` (`as "label"`) when present, which *replaces* rather than merely relabels it.
 
 /** One completed VU iteration's outcome, as fed to `LoadOptions.onIteration` for live progress. */
 export interface LoadIterationResult {
@@ -375,6 +384,13 @@ export interface LoadScenarioReport {
   readonly ok: boolean;
   /** M34 (D17) — present only for a `RampUsersWorkload` scenario; see `BackOffDiagnosis`. */
   readonly backOff?: BackOffDiagnosis;
+  /** M43 (R6's per-endpoint axis, D67-D69) — this scenario's iterations broken down by `api` step
+   * identity (explicit `as "label"` tag, or automatic `METHOD path.raw`). Each entry's `metrics`
+   * covers only that one step's own `durationMs` across every iteration, e.g. `checkout-burst`'s
+   * `for "checkout"` scoped threshold reads from the `"checkout"` entry here, not the scenario's
+   * whole-iteration `metrics` above (which still sums every `api` step, unchanged). Additive field
+   * — existing `load-results.json` consumers are unaffected. Ordered by first appearance in source. */
+  readonly endpoints: readonly { readonly identity: string; readonly metrics: LoadMetrics }[];
 }
 
 /** A generator process's read on its own health while it drove a `load` run (M31,
@@ -459,6 +475,19 @@ export interface LoadShardScenarioResult {
    * there. */
   readonly early: { readonly count: number; readonly sum: number };
   readonly late: { readonly count: number; readonly sum: number };
+  /** M43 (D67-D69) — this shard's own per-endpoint contribution, same IPC-safe bucket shape as the
+   * scenario-level fields above; `mergeLoadShardReports` merges each identity's histogram/timeline
+   * across shards the same way it already merges the scenario-level ones. */
+  readonly endpoints: readonly {
+    readonly identity: string;
+    readonly iterations: number;
+    readonly failures: number;
+    readonly sum: number;
+    readonly min: number;
+    readonly max: number;
+    readonly histogram: readonly HistogramBucket[];
+    readonly timeline: readonly SerializedTimelineBucket[];
+  }[];
 }
 
 /** What one forked worker process sends back to the parent once its striped share of the run

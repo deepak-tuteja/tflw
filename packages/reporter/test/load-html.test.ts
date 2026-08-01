@@ -35,6 +35,7 @@ const baseReport: LoadReport = {
       metrics: metricsWithData,
       thresholds: [{ label: 'p95 duration', op: 'lessThan', target: 800, actual: 300, ok: true }],
       ok: true,
+      endpoints: [],
     },
   ],
   combined: metricsWithData,
@@ -114,6 +115,46 @@ test('a scenario with backOff present but warning:false renders no banner', () =
 test('a scenario with no backOff field (open-model, or never computed) renders no banner', () => {
   const html = renderLoadReportHtml(baseReport);
   assert.doesNotMatch(html, /class="backoff-warning"/);
+});
+
+// -- M43 (D69, R6's per-endpoint axis) ---------------------------------------------------------
+
+test('a scenario with zero endpoints renders no "Endpoints" block', () => {
+  const html = renderLoadReportHtml(baseReport);
+  assert.doesNotMatch(html, /class="endpoints"/);
+});
+
+test('a scenario with endpoints renders one collapsed <details> per identity, reusing the same metrics-block shape', () => {
+  const withEndpoints: LoadReport = {
+    ...baseReport,
+    scenarios: [
+      {
+        ...baseReport.scenarios[0]!,
+        endpoints: [
+          { identity: 'GET /products', metrics: emptyMetrics },
+          { identity: 'checkout', metrics: metricsWithData },
+        ],
+      },
+    ],
+  };
+  const html = renderLoadReportHtml(withEndpoints);
+  assert.match(html, /class="endpoints"/);
+  assert.match(html, /<h3>Endpoints<\/h3>/);
+  assert.match(html, /<details class="endpoint"><summary>GET \/products/);
+  assert.match(html, /<details class="endpoint"><summary>checkout — 10 iterations, p95 300ms, 10\.00% errors/);
+  // Each endpoint's own metrics-block (heading = its identity) is nested inside its <details>.
+  assert.match(html, /<h2>checkout<\/h2>/);
+  assert.match(html, /<h2>GET \/products<\/h2>/);
+});
+
+test('an endpoint identity containing HTML-significant characters is escaped in both the summary and the nested heading', () => {
+  const withTag: LoadReport = {
+    ...baseReport,
+    scenarios: [{ ...baseReport.scenarios[0]!, endpoints: [{ identity: 'GET /search?q=<x> & "y"', metrics: emptyMetrics }] }],
+  };
+  const html = renderLoadReportHtml(withTag);
+  assert.doesNotMatch(html, /<x>/);
+  assert.match(html, /GET \/search\?q=&lt;x&gt; &amp; &quot;y&quot;/);
 });
 
 test('scenario/threshold text is escaped', () => {

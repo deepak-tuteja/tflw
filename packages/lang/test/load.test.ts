@@ -59,6 +59,57 @@ test('`threshold … is greater than …` parses ThresholdOp `greaterThan`', () 
   assert.equal(scenario.thresholds[0]!.op, 'greaterThan');
 });
 
+// -- M43 (D67/D68/D70): `api … as "label"` tag, `threshold … for "label"` scope -------------
+
+test('an `api` step with no `as` clause has a null tag', () => {
+  const scenario = parseScenario('scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const step = scenario.body[0] as { type: string; tag: unknown };
+  assert.equal(step.type, 'ApiStep');
+  assert.equal(step.tag, null);
+});
+
+test('`api … as "label"` parses a StringLit tag', () => {
+  const scenario = parseScenario('scenario "S"\n  ramp to 1 users over 1s\n  api POST /orders as "checkout"\n');
+  const step = scenario.body[0] as { type: string; tag: { type: string; value: string } | null };
+  assert.equal(step.tag?.type, 'StringLit');
+  assert.equal(step.tag?.value, 'checkout');
+});
+
+test('`api … as "label"` still parses correctly when a body/timeout/without-redirects clause precedes it', () => {
+  const scenario = parseScenario('scenario "S"\n  ramp to 1 users over 1s\n  api POST /orders body { x: 1 } timeout 5s without redirects as "checkout"\n');
+  const step = scenario.body[0] as { type: string; tag: { value: string } | null; timeoutMs: number; followRedirects: boolean };
+  assert.equal(step.tag?.value, 'checkout');
+  assert.equal(step.timeoutMs, 5000);
+  assert.equal(step.followRedirects, false);
+});
+
+test('`wait until api` never parses a tag — `as "label"` there is a syntax error, not silently ignored', () => {
+  const { diagnostics } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  wait until api GET /health as "label"\n    expect status equals 200\n');
+  assert.ok(diagnostics.length > 0, 'expected a parse diagnostic');
+});
+
+test('a threshold with no `for` clause has a null scope', () => {
+  const scenario = parseScenario('scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n  threshold p95 duration is less than 250ms\n');
+  assert.equal(scenario.thresholds[0]!.scope, null);
+});
+
+test('`threshold … for "label"` parses a StringLit scope, positioned between the metric and `is`', () => {
+  const scenario = parseScenario('scenario "S"\n  ramp to 1 users over 1s\n  api POST /orders as "checkout"\n  threshold p95 duration for "checkout" is less than 250ms\n');
+  const threshold = scenario.thresholds[0]!;
+  assert.equal(threshold.scope?.type, 'StringLit');
+  assert.equal(threshold.scope?.value, 'checkout');
+  assert.deepEqual(threshold.metric, { kind: 'duration', percentile: 95 });
+  assert.equal(threshold.op, 'lessThan');
+  assert.equal(threshold.value, 250);
+});
+
+test('`threshold error rate for "label" is less than N%` also parses a scope on an errorRate metric', () => {
+  const scenario = parseScenario('scenario "S"\n  ramp to 1 users over 1s\n  api POST /orders as "checkout"\n  threshold error rate for "checkout" is less than 1%\n');
+  const threshold = scenario.thresholds[0]!;
+  assert.equal(threshold.scope?.value, 'checkout');
+  assert.deepEqual(threshold.metric, { kind: 'errorRate' });
+});
+
 test('a bare `cleanup` line sets ScenarioDecl.cleanup; omitted defaults to false', () => {
   const withCleanup = parseScenario('scenario "S"\n  ramp to 1 users over 1s\n  cleanup\n  api GET /health\n');
   assert.equal(withCleanup.cleanup, true);
@@ -150,6 +201,44 @@ test('checkScenarios: a UI-locator `expect` inside a `scenario` body is flagged 
 
 test('checkScenarios: an ordinary API `expect`/`check` inside a `scenario` body is not flagged', () => {
   const { program } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n  expect status equals 200\n  check status equals 200\n');
+  const diags = checkScenarios(program);
+  assert.deepEqual(diags, []);
+});
+
+// -- M43 (D70/D72): `threshold … for "label"` scoping, TF034 --------------------------------
+
+test('checkScenarios: `threshold … for "label"` matching an explicit `as "label"` tag is not flagged (TF034)', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkout" is less than 250ms\n  api POST /orders as "checkout"\n');
+  const diags = checkScenarios(program);
+  assert.deepEqual(diags, []);
+});
+
+test('checkScenarios: `threshold … for "label"` matching an automatic `METHOD path.raw` identity is not flagged (TF034)', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  threshold p95 duration for "GET /health" is less than 250ms\n  api GET /health\n');
+  const diags = checkScenarios(program);
+  assert.deepEqual(diags, []);
+});
+
+test('checkScenarios: `threshold … for "label"` matching no step in the scenario is flagged (TF034)', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkotu" is less than 250ms\n  api POST /orders as "checkout"\n');
+  const diags = checkScenarios(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF034');
+  assert.match(diags[0]!.message, /for "checkotu"/);
+  assert.match(diags[0]!.hint ?? '', /"checkout"/, 'the hint should list the scenario\'s own known identities');
+});
+
+test('checkScenarios: a `for "label"` on one scenario does not see another scenario\'s identities (TF034 is per-scenario)', () => {
+  const { program } = parseSource(
+    'scenario "A"\n  ramp to 1 users over 1s\n  api POST /orders as "checkout"\n\nscenario "B"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkout" is less than 250ms\n  api GET /health\n',
+  );
+  const diags = checkScenarios(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF034');
+});
+
+test('checkScenarios: an unscoped threshold (no `for` clause) is never flagged by TF034', () => {
+  const { program } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n');
   const diags = checkScenarios(program);
   assert.deepEqual(diags, []);
 });

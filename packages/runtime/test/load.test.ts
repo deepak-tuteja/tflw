@@ -436,11 +436,11 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   for (const v of [500, 520, 510]) slowHistogram.record(v);
 
   const shardFast: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const shardSlow: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
 
@@ -463,7 +463,7 @@ test('mergeLoadShardReports: a shard missing a scenario entirely (its striped sh
   const hA = new LatencyHistogram();
   hA.record(5);
   const shardWithOnlyA: LoadShardResult = {
-    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
+    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const merged = mergeLoadShardReports(program, [shardWithOnlyA], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -481,7 +481,7 @@ test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard satura
   const empty = new LatencyHistogram();
   empty.record(1);
   const shard = (saturated: boolean): LoadShardResult => ({
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated },
   });
   const merged = mergeLoadShardReports(program, [shard(false), shard(true)], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -558,7 +558,7 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
   const h = new LatencyHistogram();
   h.record(1);
   const shard: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
   };
   const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -734,5 +734,108 @@ test('two real shards each contribute their own early/late totals, and mergeLoad
   const s = merged.scenarios[0]!;
   assert.ok(s.backOff, 'expected a defined backOff diagnosis on the merged report');
   assert.equal(s.backOff!.warning, true, `expected the merged back-off warning to fire, ratio was ${s.backOff!.ratio}`);
+  await server.close();
+});
+
+// -- M43 (PLAN_BROWSER_PERF_SECURITY.md §2.14, D67-D70): per-endpoint breakdown --------------
+
+test('a scenario with two untagged `api` steps gets two automatic-identity endpoints, each scoped to just its own requests', async () => {
+  const server = await startFixtureServer({
+    '/lookup': (_req, res) => setTimeout(() => json(res, 200, {}), 5),
+    '/checkout': (_req, res) => setTimeout(() => json(res, 200, {}), 40),
+  });
+  const source = 'scenario "S"\n  ramp to 3 users over 200ms\n  api GET /lookup\n  api POST /checkout\n';
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  assert.equal(s.endpoints.length, 2);
+  assert.equal(s.endpoints[0]!.identity, 'GET /lookup');
+  assert.equal(s.endpoints[1]!.identity, 'POST /checkout');
+  assert.ok(s.endpoints[0]!.metrics.iterations > 0);
+  assert.equal(s.endpoints[0]!.metrics.iterations, s.endpoints[1]!.metrics.iterations, 'both steps run once per iteration');
+  // The whole-iteration metrics sum both legs; the /checkout leg alone should read slower on its
+  // own than the fast /lookup leg — the exact asymmetry M43 exists to make visible.
+  assert.ok(s.endpoints[1]!.metrics.durations.avg > s.endpoints[0]!.metrics.durations.avg, 'the slower leg should read slower in its own bucket');
+  await server.close();
+});
+
+test('an `as "label"` tag replaces the automatic identity entirely (k6-style)', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, {}) });
+  const source = 'scenario "S"\n  ramp to 2 users over 100ms\n  api POST /orders as "checkout"\n';
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  assert.equal(s.endpoints.length, 1);
+  assert.equal(s.endpoints[0]!.identity, 'checkout');
+});
+
+test('an identity declared in source but never reached (every iteration fails first) still reports a zero-sample entry, not a missing one', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 500, {}) });
+  const source = 'scenario "S"\n  ramp to 2 users over 100ms\n  api GET /health\n  expect status equals 200\n  api GET /never-reached\n';
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  assert.equal(s.ok, true, 'no thresholds declared, so a scenario with only failed iterations is still vacuously ok');
+  assert.equal(s.metrics.failures, s.metrics.iterations, 'every iteration should have failed at the expect');
+  assert.deepEqual(
+    s.endpoints.map((e) => e.identity),
+    ['GET /health', 'GET /never-reached'],
+  );
+  const neverReached = s.endpoints.find((e) => e.identity === 'GET /never-reached')!;
+  assert.equal(neverReached.metrics.iterations, 0);
+  assert.equal(neverReached.metrics.errorRate, 0, 'zero samples is a defined 0 error rate, not NaN');
+  const health = s.endpoints.find((e) => e.identity === 'GET /health')!;
+  assert.ok(health.metrics.iterations > 0);
+  assert.equal(health.metrics.failures, health.metrics.iterations, 'the failing expect should attribute to the endpoint it followed');
+  await server.close();
+});
+
+test('`threshold … for "label"` evaluates against only that endpoint, independent of an unscoped threshold on the same metric', async () => {
+  const server = await startFixtureServer({
+    '/lookup': (_req, res) => setTimeout(() => json(res, 200, {}), 1),
+    '/checkout': (_req, res) => setTimeout(() => json(res, 200, {}), 60),
+  });
+  const source =
+    'scenario "S"\n  ramp to 3 users over 200ms\n  threshold p95 duration is less than 40ms\n  threshold p95 duration for "checkout" is less than 40ms\n  api GET /lookup\n  api POST /checkout as "checkout"\n';
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  assert.equal(s.thresholds.length, 2);
+  const whole = s.thresholds.find((t) => t.label === 'p95 duration')!;
+  const scoped = s.thresholds.find((t) => t.label === 'p95 duration for "checkout"')!;
+  // The whole-iteration threshold sums the fast lookup + slow checkout, so its own p95 is even
+  // higher than the checkout-only threshold's — both fail here, but the scoped one's `actual`
+  // should read close to the checkout leg alone, not the combined iteration.
+  assert.ok(scoped.actual < whole.actual, `scoped p95 (${scoped.actual}) should read below the combined p95 (${whole.actual})`);
+  assert.equal(scoped.ok, false);
+});
+
+test('`mergeLoadShardReports` pools per-endpoint histograms across shards by identity', async () => {
+  const server = await startFixtureServer({
+    '/lookup': (_req, res) => json(res, 200, {}),
+    '/checkout': (_req, res) => json(res, 200, {}),
+  });
+  const source = 'scenario "S"\n  ramp to 4 users over 200ms\n  api GET /lookup\n  api POST /checkout\n';
+  const { program } = parseSource(source);
+  const config = testConfig(server.baseUrl);
+  const [shardA, shardB] = await Promise.all([
+    runLoadShard(program, config, { source, shard: { index: 0, count: 2 } }),
+    runLoadShard(program, config, { source, shard: { index: 1, count: 2 } }),
+  ]);
+  const merged = mergeLoadShardReports(program, [shardA, shardB], { startedAt: new Date().toISOString(), durationMs: 200, seed: 1, now: new Date().toISOString() });
+  const s = merged.scenarios[0]!;
+  assert.equal(s.endpoints.length, 2);
+  const lookup = s.endpoints.find((e) => e.identity === 'GET /lookup')!;
+  const checkout = s.endpoints.find((e) => e.identity === 'POST /checkout')!;
+  assert.equal(lookup.metrics.iterations, s.metrics.iterations, 'every iteration hits /lookup once');
+  assert.equal(checkout.metrics.iterations, s.metrics.iterations, 'every iteration hits /checkout once');
   await server.close();
 });

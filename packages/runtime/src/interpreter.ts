@@ -13,6 +13,7 @@ import type {
   A11ySeverity,
   ApiBody,
   ApiRequestSpec,
+  ApiStep,
   CaptureStmt,
   ExpectStmt,
   HookDecl,
@@ -345,6 +346,12 @@ interface ScenarioAccumulator {
    * the recording code on workload type). */
   early: { count: number; sum: number };
   late: { count: number; sum: number };
+  /** M43 (D67-D69, R6's per-endpoint axis) — keyed by `apiStepIdentity` (explicit tag or automatic
+   * `METHOD path.raw`); filled in as identities are first seen during the run, not pre-seeded from
+   * `scenario.body` (a scenario can end every iteration early on a failure before reaching a later
+   * step, and that's real data, not a gap to paper over). `buildLoadReportEndpoints` re-orders this
+   * into source order and fills in a zero-sample entry for any declared identity never reached. */
+  readonly endpoints: Map<string, { histogram: LatencyHistogram; timeline: Timeline; failures: number }>;
 }
 
 interface LoadCoreResult {
@@ -399,7 +406,15 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // `globalIterationIndex` (M31) turns this shard-local counter into a cross-shard-unique id.
   let iterationIndex = 0;
 
-  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({ scenario, histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0, early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 } }));
+  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({
+    scenario,
+    histogram: new LatencyHistogram(),
+    timeline: new Timeline(),
+    failures: 0,
+    early: { count: 0, sum: 0 },
+    late: { count: 0, sum: 0 },
+    endpoints: new Map(),
+  }));
 
   // M32 (R5) — a cumulative snapshot roughly once a second, for the CLI's live console line.
   // `unref()` so a tick left pending never keeps the process alive on its own (mirrors
@@ -478,12 +493,19 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
       };
       const iterStart = performance.now();
       let result: LoadIterationResult;
+      // M43 (D67-D69) — the scenario body's own `exec.steps`, captured regardless of whether the
+      // iteration goes on to pass or fail (a failed iteration's completed `api` steps are still
+      // real per-endpoint samples). Stays `undefined` only when the failure happened before
+      // `scenario.body` ever ran (a `before each` hook or session-establishment error) — nothing to
+      // attribute in that case.
+      let iterSteps: readonly StepResult[] | undefined;
       try {
         for (const hook of beforeEach) {
           const exec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
           if (!exec.ok) throw new RuntimeError(exec.error ?? 'a `before` hook failed');
         }
         const exec = await execSteps(scenario.body, config, ctx, iterTc, scenario.name.value, registry);
+        iterSteps = exec.steps;
         if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
         // D26: `after each` is skipped by default per iteration under load (running it every
         // iteration would double request volume and pollute the very latency metrics this run
@@ -506,6 +528,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
       }
       if (!result.ok) acc.failures++;
       acc.histogram.record(result.durationMs);
+      recordEndpointMetrics(acc, iterSteps, result.ok, runStart);
       acc.timeline.record((performance.now() - runStart) / 1000, result.durationMs, result.ok);
       // M34 (D17) — which half of the scenario's own wall-clock window this iteration *started*
       // in, by real elapsed time (not request order — see `computeBackOff`'s doc for why an
@@ -596,13 +619,91 @@ function buildLoadMetrics(histogram: LatencyHistogram, failures: number, timelin
   };
 }
 
-function evaluateThresholds(thresholds: readonly ThresholdDecl[], metrics: LoadMetrics, percentileAt: (p: number) => number): LoadThresholdResult[] {
+/** M43 (D70) — `threshold … for "label"` reads from that one endpoint's own histogram/failures
+ * instead of the scenario's whole-iteration ones. An unknown scope (shouldn't happen — TF034
+ * catches it at check time) falls back to an empty histogram (`percentile`/`errorRate` both read
+ * as 0 on zero samples), never a crash. */
+function evaluateThresholds(
+  thresholds: readonly ThresholdDecl[],
+  whole: { readonly histogram: LatencyHistogram; readonly failures: number },
+  endpoints: ReadonlyMap<string, { readonly histogram: LatencyHistogram; readonly failures: number }>,
+): LoadThresholdResult[] {
+  const empty = new LatencyHistogram();
   return thresholds.map((t) => {
-    const actual = t.metric.kind === 'errorRate' ? metrics.errorRate : percentileAt(t.metric.percentile);
-    const label = t.metric.kind === 'errorRate' ? 'error rate' : `p${t.metric.percentile} duration`;
+    const scope = t.scope?.value;
+    const source = scope === undefined ? whole : (endpoints.get(scope) ?? { histogram: empty, failures: 0 });
+    const actual = t.metric.kind === 'errorRate' ? (source.histogram.count > 0 ? source.failures / source.histogram.count : 0) : source.histogram.percentile(t.metric.percentile);
+    const baseLabel = t.metric.kind === 'errorRate' ? 'error rate' : `p${t.metric.percentile} duration`;
+    const label = scope !== undefined ? `${baseLabel} for "${scope}"` : baseLabel;
     const ok = t.op === 'lessThan' ? actual < t.value : actual > t.value;
     return { label, op: t.op, target: t.value, actual, ok };
   });
+}
+
+/** M43 (D67/D68) — every `api` step's own endpoint identity within a scenario, in first-appearance
+ * source order (not run-time discovery order, which would vary run to run under concurrent VUs).
+ * Only walks `scenario.body` itself (plus `within`/`switch to new tab`/`download` sub-blocks) — a
+ * `call` into an `action` isn't resolved, the same conservative limit `checkThresholdScopes`
+ * (lang's checker, TF034) already accepts. */
+function scenarioEndpointIdentities(scenario: ScenarioDecl): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  const walk = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      if (step.type === 'ApiStep') {
+        const identity = apiStepIdentity(step);
+        if (!seen.has(identity)) {
+          seen.add(identity);
+          ordered.push(identity);
+        }
+      } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+        walk(step.body);
+      }
+    }
+  };
+  walk(scenario.body);
+  return ordered;
+}
+
+/** M43 (D67-D69) — `LoadScenarioReport.endpoints`, one entry per identity declared anywhere in
+ * `scenario.body`, in source order. An identity the run never actually reached (every iteration
+ * failed before getting there) still gets a zero-sample entry rather than being silently absent —
+ * `load-report.html`/`load-results.json` consumers can render "0 iterations" instead of needing to
+ * special-case a missing row. */
+function buildLoadReportEndpoints(
+  scenario: ScenarioDecl,
+  endpoints: ReadonlyMap<string, { readonly histogram: LatencyHistogram; readonly timeline: Timeline; readonly failures: number }>,
+): readonly { readonly identity: string; readonly metrics: LoadMetrics }[] {
+  return scenarioEndpointIdentities(scenario).map((identity) => {
+    const bucket = endpoints.get(identity);
+    return { identity, metrics: bucket ? buildLoadMetrics(bucket.histogram, bucket.failures, bucket.timeline) : buildLoadMetrics(new LatencyHistogram(), 0, new Timeline()) };
+  });
+}
+
+/** M43 (D67-D69) — records one iteration's own `api`-kind step durations into this scenario's
+ * per-endpoint accumulators. Runs on both a successful *and* a failed iteration (`steps` is the
+ * scenario body's partial trace either way, see the `iterSteps` doc at its call site) — a failed
+ * iteration's completed requests are still real samples. On failure, the *last* endpoint reached
+ * absorbs the failure count: the most defensible single attribution without deeper call-graph
+ * analysis of which assertion actually failed, and it's exactly the endpoint whose response the
+ * failing `expect` was most likely judging. */
+function recordEndpointMetrics(acc: ScenarioAccumulator, steps: readonly StepResult[] | undefined, iterationOk: boolean, runStart: number): void {
+  if (!steps) return;
+  let lastEndpoint: string | undefined;
+  for (const step of steps) {
+    if (step.kind !== 'api' || !step.endpoint) continue;
+    lastEndpoint = step.endpoint;
+    let bucket = acc.endpoints.get(step.endpoint);
+    if (!bucket) {
+      bucket = { histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 };
+      acc.endpoints.set(step.endpoint, bucket);
+    }
+    bucket.histogram.record(step.durationMs);
+    bucket.timeline.record((performance.now() - runStart) / 1000, step.durationMs, true);
+  }
+  if (!iterationOk && lastEndpoint) {
+    acc.endpoints.get(lastEndpoint)!.failures++;
+  }
 }
 
 /** M34 (D17) — a closed-model scenario's `ratio` must clear this before it's worth calling out as
@@ -658,11 +759,12 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
 export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
   const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted, plannedMs } = await runLoadCore(program, config, opts);
 
-  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late }) => {
+  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => {
     const metrics = buildLoadMetrics(histogram, failures, timeline);
-    const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
+    const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, failures }, endpoints);
     const backOff = computeBackOff(scenario, early, late);
-    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), ...(backOff ? { backOff } : {}) };
+    const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
+    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
   });
 
   const combinedHistogram = new LatencyHistogram();
@@ -697,7 +799,7 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
  * produces one. Invoked by the CLI's forked worker processes under `--workers N>1`. */
 export async function runLoadShard(program: Program, config: ResolvedConfig, opts: LoadOptions & { readonly shard: { readonly index: number; readonly count: number } }): Promise<LoadShardResult> {
   const { accumulators, selfDiagnosis } = await runLoadCore(program, config, opts);
-  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late }) => ({
+  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => ({
     name: scenario.name.value,
     workload: workloadOf(scenario),
     iterations: histogram.count,
@@ -709,6 +811,16 @@ export async function runLoadShard(program: Program, config: ResolvedConfig, opt
     timeline: timeline.toBuckets(),
     early,
     late,
+    endpoints: [...endpoints.entries()].map(([identity, e]) => ({
+      identity,
+      iterations: e.histogram.count,
+      failures: e.failures,
+      sum: e.histogram.sum,
+      min: e.histogram.min,
+      max: e.histogram.max,
+      histogram: e.histogram.toBuckets(),
+      timeline: e.timeline.toBuckets(),
+    })),
   }));
   return { scenarios, selfDiagnosis };
 }
@@ -735,6 +847,7 @@ export function mergeLoadShardReports(
     let failures = 0;
     const early = { count: 0, sum: 0 };
     const late = { count: 0, sum: 0 };
+    const endpoints = new Map<string, { histogram: LatencyHistogram; timeline: Timeline; failures: number }>();
     for (const shard of shardResults) {
       const match = shard.scenarios.find((s) => s.name === scenario.name.value);
       if (!match) continue;
@@ -746,17 +859,30 @@ export function mergeLoadShardReports(
       early.sum += match.early.sum;
       late.count += match.late.count;
       late.sum += match.late.sum;
+      // M43 (D67-D69) — merges each shard's own per-endpoint buckets by identity, same shape as
+      // the scenario-level merge just above.
+      for (const e of match.endpoints) {
+        let bucket = endpoints.get(e.identity);
+        if (!bucket) {
+          bucket = { histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 };
+          endpoints.set(e.identity, bucket);
+        }
+        bucket.histogram.merge(LatencyHistogram.fromBuckets(e.histogram, { count: e.iterations, sum: e.sum, min: e.min, max: e.max }));
+        bucket.timeline.merge(Timeline.fromBuckets(e.timeline));
+        bucket.failures += e.failures;
+      }
     }
-    return { scenario, histogram, timeline, iterations, failures, early, late };
+    return { scenario, histogram, timeline, iterations, failures, early, late, endpoints };
   });
 
-  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, timeline, failures, early, late }) => {
+  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => {
     const metrics = buildLoadMetrics(histogram, failures, timeline);
-    const thresholdResults = evaluateThresholds(scenario.thresholds, metrics, (p) => histogram.percentile(p));
+    const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, failures }, endpoints);
     // M34 (D17): recomputed from the *merged* early/late totals, not shard-by-shard then averaged
     // — same "merge first, derive second" order R4's histogram/percentile design already established.
     const backOff = computeBackOff(scenario, early, late);
-    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), ...(backOff ? { backOff } : {}) };
+    const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
+    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
   });
 
   const combinedHistogram = new LatencyHistogram();
@@ -1472,7 +1598,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // actually retried says so right in its own report line, not just silently in the
             // final status.
             const retrySuffix = retryAfterAttempts > 0 ? `, retried ${retryAfterAttempts}x honoring Retry-After (waited ${retryAfterWaitedMs}ms total)` : '';
-            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}`, redacted.request, redacted.response);
+            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}`, redacted.request, redacted.response, apiStepIdentity(step));
           } catch (err) {
             // Not opted in (no `request connects`/`fails` assertion follows this request, decision
             // 18.2) — rethrow unchanged, caught by this function's own outer `catch` below exactly
@@ -1486,7 +1612,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // Reported `ok: true` on the `api` line itself (like every other request, whatever
             // status code it got back) — this step's job is just to attempt the request; the
             // following `expect`/`check request connects`/`fails` step is what judges the outcome.
-            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${step.path.raw} → connection failed: ${redactedMessage}`);
+            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${step.path.raw} → connection failed: ${redactedMessage}`, undefined, undefined, apiStepIdentity(step));
           }
           break;
         }
@@ -2683,6 +2809,7 @@ function mkStep(
   detail?: string,
   request?: RequestTrace,
   response?: ResponseTrace,
+  endpoint?: string,
 ): StepResult {
   return {
     kind,
@@ -2693,7 +2820,14 @@ function mkStep(
     ...(detail ? { detail } : {}),
     ...(request ? { request } : {}),
     ...(response ? { response } : {}),
+    ...(endpoint ? { endpoint } : {}),
   };
+}
+
+/** M43 (D67/D68) — an `ApiStep`'s stable endpoint identity: its explicit `as "label"` tag when
+ * present (replaces the identity entirely, k6-style), else the automatic `METHOD path.raw`. */
+function apiStepIdentity(step: ApiStep): string {
+  return step.tag ? step.tag.value : `${step.method} ${step.path.raw}`;
 }
 
 function stepKind(step: Step): StepResult['kind'] {

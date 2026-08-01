@@ -385,7 +385,46 @@ export function checkScenarios(program: Program): Diagnostic[] {
     }
   }
 
+  for (const scenario of program.scenarios) checkThresholdScopes(scenario, diags);
+
   return diags;
+}
+
+/** M43 (D70/D72), TF034: a `threshold … for "label"` clause must resolve to at least one `api`
+ * step's own identity within the same scenario — either that step's explicit `as "label"` tag, or
+ * its automatically-derived `METHOD path.raw` identity when untagged (mirrors the interpreter's
+ * own fallback, `interpreter.ts`'s per-endpoint accumulator). Only walks the scenario's own body
+ * (including into `within`/`switch to new tab`/`download` sub-blocks, same recursion `walkForThink`
+ * uses) — a `call` into an `action` isn't resolved, a known, accepted conservative limit shared
+ * with `checkUnknownVariables`'s own scope model, since actions aren't required to appear at most
+ * once and their own api steps aren't statically visible here without call-graph analysis. */
+function checkThresholdScopes(scenario: ScenarioDecl, diags: Diagnostic[]): void {
+  const identities = new Set<string>();
+  const collect = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      if (step.type === 'ApiStep') {
+        identities.add(step.tag ? step.tag.value : `${step.method} ${step.path.raw}`);
+      } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+        collect(step.body);
+      }
+    }
+  };
+  collect(scenario.body);
+
+  for (const threshold of scenario.thresholds) {
+    if (!threshold.scope) continue;
+    if (!identities.has(threshold.scope.value)) {
+      diags.push({
+        code: Codes.THRESHOLD_SCOPE_UNKNOWN,
+        severity: 'error',
+        message: `threshold \`for "${threshold.scope.value}"\` matches no step in this scenario`,
+        span: threshold.scope.span,
+        hint: identities.size
+          ? `known identities in "${scenario.name.value}": ${[...identities].map((id) => `"${id}"`).join(', ')}`
+          : `"${scenario.name.value}" has no \`api\` steps to scope a threshold to`,
+      });
+    }
+  }
 }
 
 function subjectKeyword(subject: Subject): string {

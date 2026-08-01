@@ -1420,6 +1420,16 @@ function renderLoadSummary(report: LoadReport, color: boolean): string {
         lines.push(`  ${tick(color, t.ok)} ${t.label} ${cmp} ${target}  (actual: ${actual})`);
       }
     }
+    // M43 (D69, R6's per-endpoint axis) — a compact one-line-per-endpoint table, only when there's
+    // more than one identity to break down (a single-endpoint scenario would just repeat the
+    // scenario-level line above verbatim).
+    if (s.endpoints.length > 1) {
+      lines.push('endpoints:');
+      for (const e of s.endpoints) {
+        const d = e.metrics.durations;
+        lines.push(`  ${e.identity}: iterations ${e.metrics.iterations}  error rate ${(e.metrics.errorRate * 100).toFixed(2)}%  p50 ${d.p50}ms  p95 ${d.p95}ms  p99 ${d.p99}ms`);
+      }
+    }
     // M34 (D17): a closed-model scenario's coordinated-omission warning — see BackOffDiagnosis
     // (types.ts). Report-only, same restraint as the generator line below: silent when healthy.
     if (s.backOff?.warning) {
