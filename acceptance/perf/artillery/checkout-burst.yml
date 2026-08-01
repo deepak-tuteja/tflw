@@ -1,0 +1,54 @@
+# M46d's Artillery counterpart to ../tflw/checkout-burst.tflw and ../k6/checkout-burst.js — same
+# target, same steps (product lookup, checkout POST). Structural asymmetries vs. the tflw/k6 sides,
+# both real and documented in acceptance/README.md's M46d section rather than hidden:
+#
+# 1. Artillery's core engine is arrival-rate (open model) — every arrival is a fresh, isolated
+#    virtual user that runs the flow once and exits, not a persistent VU that loops continuously
+#    the way k6's `ramping-vus` executor and tflw's `ramp to N users` both do. There is no built-in
+#    closed-model "N VUs loop forever" executor in Artillery core. `rampTo` below is calibrated to
+#    approximate the *achieved* throughput tflw/k6 reported, not identical workload mechanics.
+# 2. Login uses a shared, proactively-refreshed token cache (`processor.js`) rather than a fresh
+#    login per arrival — see that file's own comment for why (apiV2's bcrypt-backed /auth/login
+#    would otherwise become the actual bottleneck at this throughput, not the DB-lock contention
+#    this comparison exists to measure).
+config:
+  target: "http://localhost:4001/v1"
+  # Flat, not ramped: a ramp that overshoots what an open-loop model can sustain compounds an
+  # unrecoverable backlog within a 20s window (unlike closed-model VU-count backpressure). 310/s
+  # was found by bisection to be a flat rate whose achieved checkout p95 lands in the same
+  # ballpark as tflw/k6's closed-model p95 (~68-72ms) on a cold/first run — note this required
+  # roughly HALF tflw/k6's own achieved throughput (~650/s). On repeated back-to-back runs this
+  # rate showed real instability (p95 spread 24-107ms across 3 runs, vs. tflw/k6's own ~2-8ms
+  # spread) — a genuine finding, not a calibration failure, see acceptance/README.md's M46d
+  # section for the full write-up and honest interpretation.
+  phases:
+    - duration: 20
+      arrivalRate: 310
+      name: "flat"
+  plugins:
+    metrics-by-endpoint: {}
+  processor: "./processor.cjs"
+
+scenarios:
+  - name: "checkout burst on the contended product"
+    flow:
+      - function: "ensureToken"
+      - get:
+          url: "/products?q=Load%20Test%20Widget"
+          name: "lookup"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          capture:
+            - json: "$[0].id"
+              as: "productId"
+      - post:
+          url: "/orders"
+          name: "checkout"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            items:
+              - productId: "{{ productId }}"
+                quantity: 1
+          expect:
+            - statusCode: 201

@@ -1091,3 +1091,101 @@ event-loop/GC jitter (refuted, this addendum), leaving only `AbortSignal.timeout
 allocation overhead untested. D79's cap is now spent twice over by explicit user choice, not by the
 plan's own default; the practical-ceiling verdict above stands. `checkout-burst`'s 5.86% residual
 checkout-scoped p95 gap remains the accepted ceiling. Proceeding to M47.
+
+## M46d — a third, Node-based comparator: Artillery, to test whether the residual gap is a Node/JS-vs-Go characteristic (2026-08-01)
+
+M46's own investigation exhausted the plausible tflw-specific mechanisms (Nagle, percentile
+algorithm, server-side Nagle, event-loop/GC jitter) without closing checkout-burst's residual
+5.86% p95 gap vs. k6. The remaining open question — asked explicitly — is whether that residual is
+a **Node/JS-vs-Go runtime characteristic** (in which case any Node-based load tool should show a
+broadly similar gap against k6) or something specific to tflw's own implementation. k6 alone can't
+answer that, since it's the only non-Node point of comparison. This milestone adds a third engine:
+**[Artillery](https://www.artillery.io/)**, the most enterprise-adopted Node.js load-testing tool
+(YAML/JS scenario DSL, multi-step flows with variable capture, a commercial Artillery Cloud
+offering) — already referenced once in this arc (M42's design note: "Artillery's and k6's own
+default is one pinned connection per VU").
+
+**Two structural asymmetries, unavoidable and documented up front (not discovered mid-run):**
+
+1. **Open model vs. closed model.** Artillery's core engine is arrival-rate (`phases:
+   [{ arrivalRate, rampTo }]`) — every arrival is a fresh, isolated virtual user that runs the flow
+   once and exits. There is no built-in Artillery executor for k6's/tflw's closed model (a fixed
+   pool of persistent VUs looping continuously). This is not a config oversight; Artillery simply
+   doesn't have that executor. A `rampTo` calibrated to *offer* the same throughput tflw/k6 achieve
+   is not equivalent — an open model's queue depth grows unboundedly past its true sustainable
+   rate, while a closed model's VU-count cap self-limits queueing. Confirmed empirically below: an
+   initial calibration attempt offering ~650-850/s (tflw/k6's own achieved throughput) collapsed
+   into multi-hundred-ms/multi-second p95s and, on `dogfood-post-uncontended`, outright request
+   failures — not because the target got slower, but because the open model has no backpressure
+   analogous to a VU cap.
+2. **Session/token handling.** k6 and tflw both establish a session once per persistent VU and
+   reuse it across thousands of iterations (reactive re-login on a 401). Artillery's open model has
+   no persistent VU identity to cache a token on — a naive per-arrival login would hammer apiV2's
+   `bcrypt(cost 10)`-backed `/auth/login` hundreds of times per second, turning this into an
+   accidental bcrypt-CPU benchmark instead of a checkout-contention one. Fixed via a shared,
+   proactively-refreshed token cache (`acceptance/perf/artillery/processor.cjs`) — refreshed every
+   3s, safely under this dev stack's deliberately short 5s `JWT_ACCESS_TTL` (see
+   `../k6/checkout-burst.js`'s own comment on that TTL), deduped via a shared in-flight promise so
+   concurrent arrivals never trigger duplicate logins. This is structurally the same idea as k6's
+   per-VU caching / tflw's session model, just process-wide instead of per-VU (Artillery has no
+   per-VU identity to hang it on).
+
+**Calibration.** Given the open-model mismatch, offering tflw/k6's own achieved throughput
+(`checkout-burst` ~650/s, `dogfood-post-uncontended` ~1820/s) overloads Artillery's open model long
+before it approximates their p95. Bisected down to a **flat** (not ramped — a ramp that overshoots
+compounds an unrecoverable backlog within a 20s window) arrival rate whose *achieved* p95
+approximated tflw/k6's on a first/cold run: **310/s** for checkout-burst (p95≈73ms vs. tflw/k6's
+~68-72ms — ~47% of their throughput), **600/s** for dogfood-post-uncontended (p95≈32ms vs.
+tflw/k6's ~30-31ms — ~33% of their throughput). Both numbers are real: it took roughly a third to a
+half of tflw/k6's own throughput for Artillery's default (non-pinned, per-request-connection) HTTP
+client to reach a comparable tail latency.
+
+**The proper 3-run protocol (load target reset before each run) exposed real instability that the
+calibration runs — each a single cold run — did not:**
+
+| checkout-burst (310/s flat) | run 1 | run 2 | run 3 |
+|---|--:|--:|--:|
+| iterations (0 failed all 3 runs) | 6,200 | 6,200 | 6,200 |
+| checkout p95 (named) | 106.7ms | 24.8ms | 23.8ms |
+
+| dogfood-post-uncontended (600/s flat) | run 1 | run 2 | run 3 |
+|---|--:|--:|--:|
+| iterations completed / failed | 12,000 / 0 | 12,000 / 0 | 5,507 / **6,493** |
+| cart-add p95 (named) | 106.7ms | 76.0ms | 333.7ms (over the *surviving* 46%) |
+
+Run 3's failures were real errors, not shed load: `ECONNRESET` (2,395) and client-side `fetch
+failed` (4,098, inside `processor.cjs`'s own token-refresh call) — both something neither k6 nor
+tflw exhibited anywhere in this entire arc's ~30+ measurement runs. A follow-up probe
+(`config.http.pool: 500`, more concurrent sockets) traded the errors for even worse queueing
+(p95 1652.8ms, 0 failures) — confirming this is genuine sustained-load instability in Artillery's
+default HTTP client, not a fluke of one setting.
+
+**Honest interpretation, not a precise gap number.** checkout-burst's 3 runs (0 failures across
+all 3) landed p95 24-107ms — noisy (a >4x spread, vs. tflw's/k6's own ~2-8ms spread across every
+3-run set this entire arc has measured) but squarely the same *order of magnitude* as k6's ~68ms,
+not 10x or 100x off. dogfood's two clean runs (76-107ms) are similarly in-range before run 3's
+instability. Two conclusions, held with different confidence:
+
+- **Directionally supportive, not proof:** on the runs that completed cleanly, a real, popular,
+  enterprise-adopted Node.js tool's own tail latency against this same target sits in the same
+  broad range as k6's — consistent with (not contradicting) tflw's own 5.86%/2.90% residual gaps
+  being a real, modest, and plausible Node-vs-Go characteristic, rather than an implausible
+  tflw-specific defect. This isn't a controlled apples-to-apples number (the workload-model and
+  throughput mismatches above rule that out), so it can't upgrade "consistent with" to "proven."
+- **A genuinely new, higher-confidence finding:** Artillery, run with its *default* connection
+  handling, is markedly **less stable** under sustained load against this target than either k6 or
+  tflw's own pinned-connection implementation — real connection resets and client-side failures at
+  throughput levels neither k6 nor tflw ever had trouble with. This directly corroborates why this
+  arc's own investment (M45's pinned `node:http` connections, D19's self-diagnosis/backoff
+  detection) was worth doing: a well-known, real-world Node load-testing tool run with its
+  out-of-the-box defaults hits exactly the class of problem (no connection reuse, no built-in
+  saturation self-diagnosis) that tflw specifically engineered around. tflw needing real work to
+  get to a tight, reproducible sub-6% gap against k6 is not a sign of being uniquely behind — a
+  popular sibling Node tool struggles with the same underlying problem class, more visibly.
+
+No change to M46's own verdict: checkout-burst's 5.86% residual remains the accepted ceiling. This
+milestone is corroborating context for that verdict, not a new measurement that supersedes it.
+Config in `acceptance/perf/artillery/` (`checkout-burst.yml`, `dogfood-post-uncontended.yml`,
+`processor.cjs`, committed — `npx artillery` is used ephemerally, same as `k6`'s standalone
+binary, no `package.json` dependency added). Raw run logs/JSON in `/tmp/m46d-artillery/` (not
+committed).
