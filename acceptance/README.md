@@ -661,3 +661,89 @@ now on record for this arc's dogfood gate. The residual is named as a concrete c
 dedicated hardening pass on tflw's load-generator VU re-entry under contention — or, if that's not
 pursued, grounds to re-scope D33a's tolerance specifically for contended-tail-latency scenarios —
 but per D51, that's a separate, explicitly-scoped decision, not an automatic next milestone.
+
+## M40 — root-causing the p95-under-contention mechanism (2026-08-01)
+
+M39 localized the residual gap to p95 tail latency specifically under real row-lock contention, and
+named a hypothesis: tflw's own per-VU generator overhead (session-cache reads, header building,
+`execSteps` dispatch, trace/redact construction — everything in the real iteration loop that isn't
+waiting inside `sendRequest`'s `fetch()` call) compounds with server-side lock queueing to inflate
+the tail without much moving the average. Scoped via `/grill-me` (`PLAN_BROWSER_PERF_SECURITY.md`
+§2.11, D53-D56) to test this directly, mirroring M35b's decisive technique: temporary
+`performance.now()`-based instrumentation of the real `runIteration`/`execSteps`/`execApi`/
+`sendRequest` call chain (not a reimplementation — the actual `interpreter.ts` source, rebuilt into
+`dist/cli.cjs`, run for real, then fully reverted).
+
+**Method.** `sendRequest` (`http.ts`) already computes and returns a real, per-request
+`response.durationMs` (the `fetch()` call plus body read — this is what M35b's own root-cause table
+called "the dominant cost," ~92% of iteration time on an uncontended target). The only gap was that
+`runLoadCore`'s load path discarded this value instead of recording it. A single, minimal,
+env-gated addition (`TFLW_PERF_TRACE_FILE`) captured it per iteration: total iteration wall time,
+the sum of every `ApiStep`'s own `response.durationMs` ("network" — real `fetch()` wait, which under
+contention includes the genuine server-side row-lock queueing time), and the difference between the
+two ("bookkeeping" — tflw's own client-side overhead, with nothing else in it). Ran
+`checkout-burst.tflw` once at 1 VU (an intra-process baseline with no contention) and once at the
+full 60-VU ramp (real contention), load target reset before each, first 5 iterations of each
+discarded as JIT/connection warm-up (same convention M35b used):
+
+| | 1 VU (n=3,820) | 60 VU (n=11,488) | Change |
+|---|--:|--:|--:|
+| avg iteration total | 5.25ms | 52.93ms | 10.1× |
+| avg network (`fetch()` + real lock wait) | 5.00ms | 52.74ms | **10.55×** |
+| avg bookkeeping (everything else) | 0.248ms | 0.195ms | **0.78×** |
+| bookkeeping's share of iteration time | 4.72% | **0.37%** | **shrinks**, not grows |
+
+**The compounding-bookkeeping hypothesis is refuted, cleanly and in the wrong direction.** If
+tflw's own per-iteration overhead were compounding under contention, its *share* of iteration time
+should grow at 60 VU relative to 1 VU. Instead it shrinks by more than 10×, and its *absolute*
+value doesn't grow at all — if anything it's marginally smaller at 60 VU (0.195ms vs. 0.248ms, well
+within this measurement's own precision at sub-millisecond scale, but certainly not evidence of
+growth). Every millisecond of the 10.1× growth in iteration time between the two runs is inside
+`networkMs` — real `fetch()`-plus-body-read time, which under contention is dominated by genuine
+server-side Postgres row-lock queueing, not tflw's own processing.
+
+This also closes a natural follow-up question before it needed its own milestone: could the
+"network" time itself include *client-side* queueing — e.g. Node's global `fetch()`/`undici`
+capping concurrent connections below 60, so some of that 52.74ms is tflw's own connection pool
+making VUs wait their turn? **No** — this was already checked, and refuted, in M36 (D40): direct
+server-side ground-truth instrumentation confirmed tflw's real generator holds its full configured
+60/60 VU count genuinely concurrent in-flight, on both the isolated harness and the real dogfood
+target. Combined with M36's D42 (per-iteration VU-dispatch overhead stays flat, <1ms, at 60 VUs vs.
+1 VU) and this milestone's own bookkeeping-share result, **three separate, well-instrumented client-
+side mechanisms have now been checked and refuted**: a connection-concurrency ceiling (M36), VU-loop
+dispatch overhead (M36), and per-iteration bookkeeping compounding under contention (M40). None of
+them explain the residual p95 gap.
+
+**Per D55, this refutation triggers the fallback: re-scope D33a's tolerance for contended-tail-
+latency specifically, rather than open an M41.** With the concrete client-side candidates
+systematically eliminated across two milestones, the most honest reading of the remaining ~46-49%
+p95 gap (M38: 46%, M39: 49.2%, two independent measurements clustering tightly) is that it reflects
+something more diffuse than a single fixable line of code — plausibly fine-grained differences in
+exactly *when* each VU's request is dispatched (Node's single-threaded event-loop/promise
+scheduling vs. Go's goroutine scheduler), which would shape the server-side lock queue's own
+ordering and wait-time distribution without showing up as extra client-side processing time in any
+way this instrumentation (or M36's) could isolate. That is consistent with D52's own anticipated
+outcome for a systematic-refutation result: "an inherent interpreted-Node-vs-compiled-Go
+architecture difference, not a fixable bug."
+
+**Proposed re-scoped tolerance:** keep D33a's existing ~10% tolerance for throughput and for p95 on
+uncontended/light-contention targets (both were already met or within noise on every clean rung this
+arc measured — M38, M39's rung D). Add a separate, explicit tolerance for p95 specifically on a
+real-row-lock-contended target: **~50%**, comfortably covering the two independent measurements this
+arc produced (46%, 49.2%) with a small margin, rather than chasing a number that would require
+re-litigating this same investigation again for a few more percentage points of headroom.
+
+## Verdict (M40)
+
+**A clean, decisive negative result — the specific hypothesis M39 raised does not hold, and by
+systematic elimination across M36 and M40, no concrete client-side mechanism explains the residual
+p95-under-contention gap.** Direct instrumentation of the real request pipeline (mirroring M35b's
+own decisive technique) shows tflw's own per-iteration bookkeeping shrinks as a share of iteration
+time under contention, not grows — the opposite of what the compounding hypothesis predicted.
+Combined with M36's already-refuted concurrency-ceiling and dispatch-overhead hypotheses, this
+closes out the arc's investigation into the residual gap: three real, well-evidenced negative
+results, no fix code needed or written (per D51's investigation-only scope, cleanly reverted —
+374/374 runtime + 106/106 CLI tests green after revert), and a concrete, evidence-based
+recommendation to re-scope D33a's tolerance for contended-tail-latency specifically (~50%) rather
+than open an M41 chasing a mechanism that isn't there. This is the arc's honest stopping point per
+D52/D55's own anticipated fallback.
