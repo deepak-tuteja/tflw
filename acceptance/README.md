@@ -478,3 +478,82 @@ been built, and the `undici`-import `fetch()` poisoning). The perf arc's dogfood
 process and honesty, not on the headline number — the residual load-engine gap on contended
 targets is now a well-evidenced, still-open item, not a surprise waiting to be found in
 production.
+
+## M38 — re-measured after the M37 fix (2026-08-01)
+
+M35d left the ~3.2-3.4× gap open and unexplained. M36 (`PLAN_BROWSER_PERF_SECURITY.md` §2.7,
+D39-D43) reopened the investigation and found the real cause: `runLoadCore` froze a one-time
+session-header snapshot shared by every VU, and `refreshSessions` only ever patched the *current
+iteration's own copy* on a 401 — never the shared snapshot — so once this dev environment's
+deliberately short `JWT_ACCESS_TTL=5s` token first expired (~5s into the 20s scenario), **every
+subsequent iteration re-authenticated, forever** (40-42% of a full run's iterations). An
+environment-only A/B (raising the TTL, no source touched) took throughput from ~172-219/s to
+528.4/s and made the p95 threshold pass outright for the first time in this arc — strong evidence,
+but not a fix. M37 (`PLAN_BROWSER_PERF_SECURITY.md` §2.8, D44-D46) fixed it at the source:
+per-iteration session state now re-derives from `sessionCache.ensure()` instead of a frozen
+snapshot (D44), and `refreshSessions`'s unconditional `invalidate()` became a guarded, identity-
+checked `SessionCache.reestablish` so concurrent VUs hitting the same stale token near-simultaneously
+pay for at most one real re-login between them (D45). This re-run repeats M34/M35d's own real,
+contended acceptance scenario unchanged, with a freshly rebuilt CLI bundle including the M37 fix,
+to see whether the diagnosed cause was in fact the dominant one.
+
+**checkout-burst, same methodology as M34/M35d (60 users ramping over 20s, closed model), load
+target reset between every run:**
+
+| | M34 | M35d (M35b/c fix) | **M38 (M37 fix) — run 1** | **M38 — run 2** | k6 (M38) |
+|---|--:|--:|--:|--:|--:|
+| Iterations | 3,908 | ~3,685 (avg) | 10,896 | 11,806 | 12,805 |
+| Throughput | 195/s | ~182/s (avg) | 544.8/s | 590.3/s | 640.2/s |
+| Checkout p95 | 476ms | ~514ms (avg) | 102ms | 98ms | 68.5ms |
+| Error rate | 0.00% | 0.00% | 0.00% | 0.00% | 0.35% |
+| Back-off ratio | (not measured) | 84-86% | 58% | 63% | — |
+| `p95 < 250ms` threshold | ✗ fails | ✗ fails | **✓ passes** | **✓ passes** | ✓ passes |
+
+k6's own numbers (640.2/s, checkout p95 68.5ms, 0.35% error rate) are close to M35d's k6 baseline
+(620/s, p95 70.9ms, 0.34%) — a ~3% throughput/p95 difference, the same order of run-to-run noise
+M35d's own k6 re-run showed against M34's original baseline (620 vs. 624, ~0.7%), so this remains a
+fair, non-noisy comparison. tflw's two runs (544.8/s, 590.3/s — avg 567.6/s) show a similar ~8%
+run-to-run spread to M35d's own two runs (172.6/s, 191.1/s — ~10% spread), consistent with this
+workload's inherent noise band, not a new source of variance.
+
+**The gap closed from ~3.2-3.4× to ~1.13×.** tflw's throughput went from averaging ~182/s (M35d)
+to averaging ~567.6/s — a **~3.1× improvement**, matching (and slightly exceeding) M36's own
+environment-only A/B upper bound of 528.4/s, which cross-confirms D43's diagnosis was correct and
+M37's fix captures the same effect the A/B predicted, in real shipped code rather than a dev-only
+environment tweak. **For the first time in this arc, tflw's own p95 threshold passes on the real
+contended acceptance target** (102ms and 98ms, both `< 250ms`) — M34 failed it at 476ms, M35d
+failed it at 507-521ms. Back-off ratio dropped from 84-86% to 58-63%: VUs are still genuinely
+blocked on the server's real Postgres row-lock contention for the checkout endpoint (that part was
+never the bug), but they're no longer *also* burning a large share of every iteration on redundant
+login round-trips.
+
+**D33a's ~10% tolerance is close but, read strictly, not quite met.** Throughput: tflw trails k6 by
+(640.2 − 567.6) / 640.2 ≈ **11.3%** (equivalently, k6 leads tflw by ~12.8%) — just outside the 10%
+line. Checkout p95: tflw trails by (100 − 68.5) / 68.5 ≈ **46%** (tflw's two runs average ~100ms
+vs. k6's 68.5ms) — clearly outside tolerance, even though both numbers are now comfortably inside
+the scenario's own 250ms bar. The residual is almost certainly the same baseline client-pipeline
+overhead M34's own root-cause table first characterized (a real, reproducible ~2× per-`POST`
+latency tax on tflw's interpreted single-process Node generator vs. a raw `fetch` script, before
+any contention) — now the dominant remaining factor since the much larger session-refresh bug is
+gone, but not re-isolated or re-measured directly in this milestone. Flagged as the honest next
+candidate, not chased further here, per this arc's own bounded-effort convention (D33c/D35/D38).
+
+## Verdict (M38, supersedes M35d's numeric verdict)
+
+**A clear, decisive win, unlike M35d's own mixed result.** D43/M36's diagnosis — a load-scenario
+session bug causing 40-42% of iterations to needlessly re-authenticate — was in fact the dominant
+driver of M34's original ~3× gap, not (as M35b/c's fix addressed) the process-wide `fetch()`
+poisoning, and not (as M36's D40/D42 hypotheses first suspected, then refuted) a client-side
+concurrency ceiling. M37's fix closes the gap from ~3.2-3.4× down to ~1.13× on throughput, and
+makes tflw's own p95 threshold pass on this real contended target for the first time in the arc's
+history — a **~3.1× real throughput improvement** over M35d's post-M35c baseline. D33a's strict
+~10% tolerance is not quite met on either metric (~11.3% throughput gap, ~46% p95 gap), so this is
+reported as "very close, not fully closed" rather than "closed" — consistent with this arc's
+own report-what-was-measured discipline. The likely remaining cause (tflw's baseline
+per-`POST` client-pipeline overhead, first characterized in M34's own isolation table) is named as
+the probable next candidate but not chased further this milestone, per D33c/D35/D38's
+bounded-effort convention. Four real bugs have now been found and fixed at the source across
+M34-M37 (the `.env` wiring gap, D17's diagnostic itself never having been built, the
+`undici`-import `fetch()` poisoning, and the load-scenario session-refresh bug) — the perf arc's
+dogfood gate continues to pass on process and honesty, and now also lands within shouting distance
+of the headline number it originally set out to hit.
