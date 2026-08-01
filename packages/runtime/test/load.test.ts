@@ -8,6 +8,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parseSource, parseConfigSource } from '@tflw/lang';
 import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff } from '../src/interpreter.js';
 import { LatencyHistogram } from '../src/histogram.js';
@@ -838,4 +841,47 @@ test('`mergeLoadShardReports` pools per-endpoint histograms across shards by ide
   assert.equal(lookup.metrics.iterations, s.metrics.iterations, 'every iteration hits /lookup once');
   assert.equal(checkout.metrics.iterations, s.metrics.iterations, 'every iteration hits /checkout once');
   await server.close();
+});
+
+// M45 (PLAN_BROWSER_PERF_SECURITY.md §2.16, D75) — the closed-model (`RampUsersWorkload`) VU loop
+// now pins one `node:http` connection per VU for that VU's whole lifetime instead of letting
+// `sendRequest`'s unpinned `fetch()` open (and, without keep-alive reuse, often re-open) one per
+// request. `httpPinned.test.ts` covers `sendPinnedRequest`/`createPinnedAgents` directly; these two
+// exercise the real wiring end to end through `runLoad` itself.
+
+test('a closed-model scenario pins one connection per VU, reused across every iteration that VU runs', async () => {
+  const ports: number[] = [];
+  const server = await startFixtureServer({
+    '/ping': (req, res) => {
+      ports.push(req.socket.remotePort!);
+      json(res, 200, { ok: true });
+    },
+  });
+  const source = 'scenario "Pinned"\n  ramp to 2 users over 300ms\n  api GET /ping\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.ok(ports.length > 2, `expected more than one iteration per VU to actually run, got ${ports.length} total`);
+  const distinctPorts = new Set(ports);
+  assert.equal(distinctPorts.size, 2, `expected exactly 2 users' worth of distinct connections, saw ${distinctPorts.size} across ${ports.length} requests`);
+
+  await server.close();
+});
+
+test('an `upload` body under a closed-model load still passes — falls back to the unpinned client for that request', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-load-upload-'));
+  await writeFile(join(dir, 'img.png'), 'fake-png-bytes');
+  const server = await startFixtureServer({ '/uploads': (_req, res) => json(res, 201, { ok: true }) });
+  const source = 'scenario "Upload burst"\n  ramp to 2 users over 200ms\n  api POST /uploads upload "./img.png" as "avatar"\n  expect status equals 201\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source, baseDir: dir });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.combined.failures, 0);
+
+  await server.close();
+  await rm(dir, { recursive: true, force: true });
 });

@@ -921,3 +921,71 @@ anchored to this milestone's 17.5%/80.3ms figure rather than M42's superseded nu
 
 Per-run JSON/logs in `/tmp/m44-baseline/` — not committed, regenerable via the commands above
 (`checkout-burst.tflw` now needs no extra flags; the `as`/`for` tags are already in the fixture).
+
+## M45 — pinned-per-VU connections, real runtime implementation (2026-08-01)
+
+M42 only prototyped a pinned connection in a disposable script (`raw-fetch-bench-dogfood.mjs`,
+`undici.Client`, isolation-only). This milestone builds the real thing inside `packages/runtime`:
+a new load-only send path (`packages/runtime/src/httpPinned.ts`) on Node's native `node:http`/
+`node:https`, one `Agent({keepAlive: true})` pair created per VU (the closed-model, `ramp to N
+users` spawn block in `interpreter.ts`'s `runLoadCore`) and reused for that VU's whole lifetime —
+never `undici`, per D75, so `sendRequest`'s `fetch()` path for `tflw run` stays completely
+untouched (the exact isolation `mtlsWorker.ts` already established for the same reason). Wired
+through `TestCtx.pinnedAgents` → `execApi`'s new `sendOnce()` branch, which picks the pinned path
+whenever a request's shape supports it (string-or-absent body, no mTLS) and falls back to the
+unpinned `fetch()` path — with a one-time console warning — for the two acknowledged gaps
+(`FormData`/upload bodies, mTLS-under-load). An open-model (`ramp to N rps`) scenario has no
+persistent "VU" to pin a connection to, so it's unaffected, unchanged from before this milestone.
+
+**checkout-burst, checkout-scoped p95 (3 runs pinned tflw, 3 runs k6, load target reset before
+every run):**
+
+| | tflw pinned run 1 | run 2 | run 3 | avg | k6 run 1 | run 2 | run 3 | avg |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| Iterations | 12,829 | 13,324 | 13,401 | — | 12,985 | 12,989 | 13,058 | — |
+| Throughput | 641.5/s | 666.2/s | 670.1/s | **659.2/s** | 649.3/s | 649.5/s | 652.9/s | **650.5/s** |
+| Checkout p95 (scoped) | 75ms | 70ms | 70ms | **71.7ms** | 69.05ms | 67.71ms | 68.23ms | **68.3ms** |
+| Error rate | 0.00% | 0.00% | 0.00% | 0.00% | 0.37% | 0.36% | 0.34% | 0.36% |
+
+**Regression check — `dogfood-post-uncontended` (also closed-model, so it now runs pinned too;
+same 3-run protocol):**
+
+| | tflw pinned avg | k6 avg | gap |
+|---|--:|--:|--:|
+| Throughput | **1,803.9/s** (35,645 / 35,838 / 36,754 iterations) | 1,767.7/s (35,348 / 35,073 / 35,641 iterations) | **tflw leads 2.05%** |
+| p95 | 32.0ms (33 / 32 / 31ms) | 30.89ms (31.01 / 30.84 / 30.82ms) | tflw trails **3.59%** |
+
+**The result: pinning closed the throughput gap entirely and flipped it — tflw now *leads* k6 by
+1.3% (checkout-burst) and 2.1% (dogfood-post-uncontended) — and collapsed the p95 gap from M44's
+17.5%/12.8% down to 4.9%/3.6%.** This closely matches the earlier throwaway diagnostic script's own
+pinned-mode estimate from the `/grill-me` session that scoped M43-M46 (~4.6-7.4% checkout-scoped,
+unpinned-vs-pinned comparison against a proxy target) — real shipped code landed almost exactly
+where that informal instrumentation predicted.
+
+**Verdict against D74's strict ~1-2% bar.** Throughput meets and exceeds it in both scenarios (a
+lead, not just a shrunk deficit). Checkout-burst's p95 (4.9%) and dogfood's p95 (3.6%) are both
+short of the literal "~1-2%" target, so by the letter of D62/D74 this doesn't count as a clean pass
+— it's the fourth data point in that ladder (M36 concurrency ceiling, M40 bookkeeping-share, M41
+raw-fetch reproduction were the first three refutations at the old scale; this is the first at the
+corrected scale, and it's a near-miss rather than a wide one). Unlike those three, though, this is
+real, shipped, production code with zero regression risk: every measured number (throughput and
+p95, both scenarios) is strictly better than the unpinned baseline, the full existing suite (390
+runtime + 107 CLI tests, plus this milestone's own new coverage) stays green, and D33a's own
+tolerance (~20%, M44-set) is now met with enormous headroom (4.9%/3.6% actual vs. 20% allowed).
+**Recommendation: keep the implementation, treat this as the practical ceiling for a JS/V8 load
+generator vs. k6's Go client, and proceed to M46 using these numbers as the arc's final baseline** —
+a call left for explicit user confirmation at this milestone's checkpoint, not assumed silently,
+given D62/D74's bar was reaffirmed explicitly as recently as this same day's `/grill-me` session.
+
+**New test coverage** (`packages/runtime/test/httpPinned.test.ts`, new; `load.test.ts`, extended):
+direct `sendPinnedRequest`/`createPinnedAgents` coverage (connection reuse across requests on one
+Agent pair, two VUs get two distinct connections, JSON body + computed `content-length`, redirect
+following incl. 301/302/303 downgrade-to-GET and 307/308 preserve-method-and-body, timeout error
+shape matching `sendRequest`'s own, multi-`Set-Cookie` header survival) plus two `runLoad`-level
+integration tests: a closed-model scenario's iterations land on exactly as many distinct TCP
+connections as VUs (proves the real wiring, not just the isolated function), and an `upload`-body
+scenario under load still passes cleanly via the documented fallback.
+
+Per-run logs/JSON in `/tmp/m45-pinned/` — not committed, regenerable via the same commands M44's
+section documents, run against `dist/cli.cjs` rebuilt from this milestone's source (`npm run
+bundle` in `packages/cli`).

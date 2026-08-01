@@ -79,6 +79,7 @@ import { parseCsv } from './csv-parse.js';
 import { extractPdfText } from './pdf-text.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
+import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest, warnPinnedFallback, type PinnedAgents } from './httpPinned.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { inferContentType } from './mime.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
@@ -452,9 +453,14 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
       if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
     }
 
-    const runIteration = async (): Promise<void> => {
+    // M45 (D75) — `pinnedAgents` is set only by the closed-model (`RampUsersWorkload`) VU spawn
+    // loop below, one pair created per VU and reused across every iteration that VU runs; an
+    // open-model (rate-based) arrival has no persistent "VU" to pin a connection to (each arrival
+    // is its own fire-and-forget iteration, D75's design sketch cites only the closed-model spawn
+    // block), so it stays on `sendRequest`'s unpinned path exactly as before.
+    const runIteration = async (pinnedAgents?: PinnedAgents): Promise<void> => {
       const index = globalIterationIndex(iterationIndex++, opts.shard);
-      const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)) };
+      const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)), pinnedAgents };
       const scope = new Map<string, unknown>();
       // D44 (M37, PLAN_BROWSER_PERF_SECURITY.md §2.8): every iteration reads each session fresh
       // from the shared cache, instead of cloning a snapshot frozen before the VU loop started.
@@ -557,9 +563,17 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
           (async () => {
             const waitMs = spawnAt - performance.now();
             if (waitMs > 0) await sleep(waitMs, opts.abortSignal);
-            // M32 (R5): Ctrl-C stops this VU from *starting* another iteration — whichever
-            // iteration it's mid-`runIteration()` on (if any) still runs to completion above.
-            while (performance.now() < runEnd && !opts.abortSignal?.aborted) await runIteration();
+            // M45 (D75): one pinned connection pair for this VU's whole lifetime, created after its
+            // ramp-in wait (so an idle-waiting VU holds no open socket) and torn down once its loop
+            // exits — Ctrl-C or `runEnd`, either way, never left open for the rest of the process.
+            const pinnedAgents = createPinnedAgents();
+            try {
+              // M32 (R5): Ctrl-C stops this VU from *starting* another iteration — whichever
+              // iteration it's mid-`runIteration()` on (if any) still runs to completion above.
+              while (performance.now() < runEnd && !opts.abortSignal?.aborted) await runIteration(pinnedAgents);
+            } finally {
+              destroyPinnedAgents(pinnedAgents);
+            }
           })(),
         );
       }
@@ -1024,6 +1038,11 @@ interface TestCtx {
   /** M4b, D15 — see `RunOptions.filePath`/`updateSnapshots`. */
   readonly filePath: string;
   readonly updateSnapshots: boolean;
+  /** M45 (D75) — this VU's pinned `node:http`/`node:https` connections, set only on a load
+   * iteration's own `iterTc` (`runLoadCore` below). Undefined everywhere else (a plain `tflw run`
+   * attempt, a session's own establishment run, `wait until api` outside a load context) — those
+   * keep using `sendRequest`'s unpinned `fetch()` exactly as before, unaffected by this milestone. */
+  readonly pinnedAgents?: PinnedAgents;
 }
 
 export interface SessionOutcome {
@@ -1578,7 +1597,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'ApiStep': {
           const catchConnectionError = requestAssertionApiIndices.has(stepIndex);
           try {
-            let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir);
+            let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents);
             // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
             // just `oauth2`) gets this: a revoked/expired-early credential shouldn't fail every
             // remaining step of a test that's otherwise unrelated to auth. Retried at most once per
@@ -1588,7 +1607,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
               const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
               results.push(...refresh.steps);
               if (refresh.ok) {
-                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir));
+                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents));
               }
             }
             lastResponse = trace.response;
@@ -1669,7 +1688,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'WaitUntilApiStmt': {
-          const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, src, stepStart);
+          const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, src, stepStart, tc.pinnedAgents);
           lastResponse = waited.response;
           // `wait until api` never opts into catching a connection failure (checker-enforced,
           // decision 18) — reaching here always means a real response came back (a genuine
@@ -2053,7 +2072,7 @@ async function loadMtlsCreds(config: ResolvedConfig, baseDir: string): Promise<{
   return p;
 }
 
-async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string): Promise<ApiExec> {
+async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string, pinnedAgents?: PinnedAgents): Promise<ApiExec> {
   const baseUrl = resolveBaseUrl(spec.service, config);
   const path = interpolatePath(spec.path.raw, ctx, true);
   const url = baseUrl + ensureLeadingSlash(path);
@@ -2082,7 +2101,16 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   const request: RequestTrace = { method: spec.method, url, headers, ...(traceBody !== undefined ? { body: traceBody } : {}) };
   const timeoutMs = spec.timeoutMs ?? config.timeouts.step;
   const mtls = await loadMtlsCreds(config, baseDir);
-  let response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
+  // M45 (D75) — a load iteration's own VU-pinned connection is used whenever this request's shape
+  // supports it (a string or absent body, no mTLS); `tflw run` never passes `pinnedAgents`, so this
+  // is dead code there and `sendRequest`'s `fetch()` path is exactly what it always was.
+  const canPin = pinnedAgents !== undefined && !mtls && (sendBody === undefined || typeof sendBody === 'string');
+  if (pinnedAgents !== undefined && !canPin) warnPinnedFallback(mtls ? 'mtls' : 'formdata');
+  const sendOnce = (): Promise<ResponseTrace> =>
+    canPin
+      ? sendPinnedRequest({ method: spec.method, url, headers, body: sendBody as string | undefined, timeoutMs, followRedirects: spec.followRedirects }, pinnedAgents!)
+      : sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
+  let response = await sendOnce();
 
   // `retry honoring "Retry-After" up to N` (SPEC §5.1, PLAN decision 102b, enterprise arc
   // cluster 3, closes TFLW-GAPS.md gap #5) — re-issues *this one request*, not the whole test
@@ -2100,7 +2128,7 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
       await sleep(waitMs);
       retryAfterWaitedMs += waitMs;
       retryAfterAttempts++;
-      response = await sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
+      response = await sendOnce();
     }
   }
 
@@ -2495,6 +2523,7 @@ async function execWaitUntilApi(
   baseDir: string,
   src: string,
   start: number,
+  pinnedAgents?: PinnedAgents,
 ): Promise<{ result: StepResult; response: ResponseTrace | null }> {
   const deadline = performance.now() + config.timeouts.wait;
   let attempt = 0;
@@ -2519,7 +2548,7 @@ async function execWaitUntilApi(
     // way past a short `wait <N>ms` budget.
     const requestTimeout = Math.max(1, Math.min(step.request.timeoutMs ?? config.timeouts.step, remainingMs));
     const request = { ...step.request, timeoutMs: requestTimeout };
-    const { trace, redacted } = await execApi(request, config, ctx, redactor, baseDir);
+    const { trace, redacted } = await execApi(request, config, ctx, redactor, baseDir, pinnedAgents);
     // `wait until api` never opts into catching a connection failure (`checkRequestAssertions`
     // statically forbids a `request` assertion here, decision 18) — `connectionError` is always
     // null; a real connection failure still throws out of `execApi` above and crashes the poll
