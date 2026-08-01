@@ -101,10 +101,29 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
       headers['content-length'] = String(bodyBuffer.length);
     }
 
+    // D81 (PLAN_BROWSER_PERF_SECURITY.md §2.2x) — a plain setTimeout/clearTimeout hard deadline
+    // replaces AbortSignal.timeout(opts.timeoutMs). An isolated diagnostic (60k requests/side
+    // against a zero-work local server, 7 interleaved rounds) found AbortSignal.timeout()
+    // attached a real, reproducible tail cost — a 7-18ms single-request stall in 5/7 rounds,
+    // absent in 0/7 no-signal rounds — with avg/p50/p95/p99 unaffected either way (a rare,
+    // per-request-object/timer-bookkeeping event, not a systemic cost). AbortController/
+    // AbortSignal wraps EventTarget + internal listener bookkeeping that plain setTimeout doesn't
+    // pay for; a manual timer reproduced in the same isolated test showed no such spike (max
+    // stayed in the ~1ms no-signal band across 5/5 rounds). `req.destroy()` (no argument) on an
+    // in-flight request surfaces as a generic ECONNRESET/"socket hang up" on `error` — not a
+    // distinguishable code — so timeout detection here uses a closure flag (`timedOut`), not the
+    // caught error's shape (confirmed via the same diagnostic, not assumed).
     let res: http.IncomingMessage;
+    let timedOut = false;
+    // Hoisted above the Promise executor — the deadline must span both the request AND the body
+    // read below (matching AbortSignal.timeout()'s original scope: it stays attached to `req`
+    // until destroyed, so a slow body drip past `timeoutMs` was aborted too, not just a slow
+    // time-to-first-byte). Cleared exactly once, in whichever of the two try/catch blocks below
+    // finishes the operation (success or error), never on the `response` event alone.
+    let timer: NodeJS.Timeout | undefined;
     try {
       res = await new Promise<http.IncomingMessage>((resolve, reject) => {
-        const req = lib.request(url, { method: current.method, headers, agent, signal: AbortSignal.timeout(opts.timeoutMs) }, resolve);
+        const req = lib.request(url, { method: current.method, headers, agent }, resolve);
         // D76/D77 (PLAN_BROWSER_PERF_SECURITY.md §2.17) — unlike undici (fetch's own connect.js
         // calls socket.setNoDelay(true) unconditionally) and unlike Go's net.Dial (k6, TCP_NODELAY
         // on by default), node:http/https leaves Nagle's algorithm ON unless the caller opts out.
@@ -112,20 +131,27 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
         // head-of-line stalls when headers and a small body are written in separate socket.write()
         // calls — exactly this path's shape, and exactly a p95-tail symptom, not a throughput one.
         req.setNoDelay(true);
+        timer = setTimeout(() => {
+          timedOut = true;
+          req.destroy();
+        }, opts.timeoutMs);
         req.on('error', reject);
         if (bodyBuffer !== undefined) req.end(bodyBuffer);
         else req.end();
       });
     } catch (err) {
-      if (isTimeoutError(err)) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
+      clearTimeout(timer);
+      if (timedOut || isTimeoutError(err)) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
       throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
     }
 
     const chunks: Buffer[] = [];
     try {
       for await (const chunk of res) chunks.push(chunk as Buffer);
+      clearTimeout(timer);
     } catch (err) {
-      if (isTimeoutError(err)) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
+      clearTimeout(timer);
+      if (timedOut || isTimeoutError(err)) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
       throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
     }
     const bodyBytes = Buffer.concat(chunks);

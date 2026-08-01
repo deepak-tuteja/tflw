@@ -1467,3 +1467,77 @@ New: `acceptance/perf/tflw/search-read.tflw`, `ticket-write.tflw`; `acceptance/p
 (`summaryTrendStats`), `dogfood-post-uncontended.tflw`/`.js` and `artillery/dogfood-post-uncontended.yml`
 (current product id). testFlow-tests: `LoadAdminService`/`.module.ts` (tickets cleanup),
 `ticket-sla-sweep.service.ts` (crash fix), migration `1785200200000-AddTicketSlaSweepIndexes`.
+
+## M49 — root-causing the p50/p99 widening: AbortSignal.timeout() tail cost, k6 source verification (2026-08-02)
+
+M48's p99 addendum found the tflw-vs-k6 gap on checkout-burst widens with percentile (p50 tied,
+p95 +6.85%, p99 +14.0%). The user asked, reasonably, whether that shape indicates a real bug in
+tflw rather than a genuine performance difference — and specifically to check `grafana/k6`'s own
+source rather than reason from memory, and to spend D80's last unchecked candidate
+(`AbortSignal.timeout()` overhead) on it.
+
+**k6's actual computation, verified against source.** Fetched `metrics/sink.go` from
+`github.com/grafana/k6@master`. `TrendSink` stores every raw sample (`values []float64`, appended,
+never sampled or dropped); `min`/`max`/`sum` are exact running scalars; `P(pct)` is linear
+interpolation over the fully sorted exact array. `DefaultSummaryTrendStats` is
+`["avg","min","med","max","p(90)","p(95)"]` — k6 has no built-in `stddev` stat, and neither does
+tflw's `LatencyHistogram` (only `sum`/`min`/`max`/`count` are tracked as exact scalars; a true
+stddev on either side would need a dedicated instrumentation pass). The decisive check: raw `max`
+involves zero percentile math on either side, and it showed the *same* widening pattern as p99 —
+proof this isn't a percentile-algorithm artifact. D78 already measured that bias at 0.00%; this
+corroborates it independently.
+
+**The isolation diagnostic.** A throwaway script (7 interleaved rounds, 60,000 requests/side/round,
+420,000 total per side) reproduced `httpPinned.ts`'s exact request shape — `node:http`, one
+`Agent({keepAlive:true})` per VU, `req.setNoDelay(true)` — against a zero-work local server, fully
+isolating client-transport overhead from DB/app/network variance:
+
+| | without `AbortSignal.timeout()` | with `AbortSignal.timeout(30000)` |
+|---|--:|--:|
+| avg (7-round range) | 0.026-0.027ms | 0.030-0.031ms |
+| max (7-round range) | 0.78-1.78ms (all 7 rounds) | **7.4-18.1ms (5 of 7 rounds)** |
+
+avg/p50/p95/p99 barely move; `max` spikes 5-10x in most rounds — a rare, single-iteration event,
+not a systemic per-request cost, matching the "invisible below p99, dominant at the tail" shape of
+the real gap exactly. A manual `setTimeout`/`clearTimeout` hard-deadline reproduced in the same
+harness showed none of this (max stayed in the ~1ms no-signal band across 5/5 further rounds) —
+`AbortController`/`AbortSignal` wraps `EventTarget` + listener bookkeeping a plain timer skips.
+
+**The fix.** `req.destroy()` on an in-flight request surfaces as a generic `ECONNRESET`/"socket
+hang up" on `error` (verified in the same diagnostic, not assumed) — not a distinguishable error
+code — so timeout detection uses a closure flag (`timedOut`) rather than inspecting the caught
+error's shape. `httpPinned.ts`'s `signal: AbortSignal.timeout(opts.timeoutMs)` was replaced with a
+manually-hoisted `setTimeout`/`clearTimeout` spanning both the request and the body-read loop below
+it — matching the original's real scope (an earlier draft cleared the timer on the `response` event
+alone and was caught before landing: that would have silently stopped enforcing the deadline during
+a slow body drip, a behavior regression). Full suite green: 390 runtime + 107 CLI tests, typecheck,
+build.
+
+**Remeasured, same session, identical fixtures/targets to M46-M48 (no methodology changes):**
+
+| | tflw (fixed) | k6 (fresh baseline, same session) | gap | (M46/M48 gap) |
+|---|--:|--:|--:|--:|
+| echo GET-only (rung A) max, avg of 3 runs | 7.3ms | 2.4ms | 3.0x | ~9-10x |
+| checkout-burst checkout-scoped p50 | 34.0ms | 33.6ms | +1.2% | +1.6% |
+| checkout-burst checkout-scoped p95 | 71.33ms | 68.89ms | **+3.54%** | +6.85%/5.86% |
+| checkout-burst checkout-scoped p99 | 97.67ms | 91.76ms | **+6.44%** | +14.0% |
+| checkout-burst scenario max, avg of 3 runs | 225.0ms | 220.07ms | **+2.2%** | +41.6% |
+
+**Verdict.** `AbortSignal.timeout()` was a real, if narrow, contributor to exactly the
+widening-with-percentile shape M48 surfaced — confirmed via clean isolation fully separated from
+DB/app/network variance, not inferred from noisy real-load numbers alone. The fix cuts
+checkout-burst's p95 gap from M46's accepted ceiling (5.86%) to 3.54% — still a hair above D79's
+original <3% bar, not quite under it — while roughly halving the p99 gap and nearly closing the max
+gap outright. `dogfood-post-uncontended` (already closed in M46) and rung A's own trivial-target
+tail both improved too, but the mechanism is inherently rare-event and client-side, so it was never
+going to zero out any gap on its own. **Not chased further to hit the exact <3% number** — the fix
+is shipped and correct regardless; D79's "one bounded pass" discipline applies again rather than
+iterating on the threshold. Server-side Nagle and event-loop/GC jitter remain ruled out (M46);
+`AbortSignal.timeout()` was D80's last untested candidate and is now checked, fixed, and shipped —
+no further D80 candidates remain. D33a's ~20% tolerance is unaffected (already had large headroom).
+
+Isolation scripts were throwaway (not committed), same convention as D78's own
+`percentile-bias-diag.mjs`.
+
+**Files.** Modified: `packages/runtime/src/httpPinned.ts` (`AbortSignal.timeout()` → manual
+`setTimeout`/`clearTimeout` deadline, D88).
