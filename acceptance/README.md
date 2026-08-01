@@ -747,3 +747,76 @@ results, no fix code needed or written (per D51's investigation-only scope, clea
 recommendation to re-scope D33a's tolerance for contended-tail-latency specifically (~50%) rather
 than open an M41 chasing a mechanism that isn't there. This is the arc's honest stopping point per
 D52/D55's own anticipated fallback.
+
+## M41 — isolating the gap to Node's HTTP stack, at the user's direction to reopen D55 (2026-08-01)
+
+The user explicitly reopened M40's D55 tolerance-amendment resolution: "we can not proceed with pen
+test arc until we close the gap ... very closely ~1-2 percent to k6." Two rounds of ad hoc
+re-investigation before any formal scoping reconfirmed the gap is real and stable (three independent
+measurements — M38: 46%, M39: 49.2%, this session's re-run: 48.1% — clustering tightly) and
+decisively refuted the leading remaining hypothesis: `--workers 4`/`--workers 8` (M31's existing
+real-OS-process VU sharding, zero new code) showed **no p95 improvement** (108ms/111ms vs. 102ms
+single-process), ruling out a single-thread-vs-multi-core scheduling mechanism. Scoped via
+`/grill-me` (`PLAN_BROWSER_PERF_SECURITY.md` §2.12, D57-D59): one more bounded root-cause pass aimed
+at the HTTP-client/protocol layer itself, method = adapt `raw-fetch-bench.mjs` (M35a) into
+`raw-fetch-bench-dogfood.mjs` — a bare Node `fetch()` loop with **zero** tflw interpreter, session,
+capture, redaction, or `execSteps`/`execApi` machinery — hitting the real dogfood target with the
+same hand-rolled per-VU login+retry-on-401 pattern k6's own scripts use, same 60-VU/20s ramp shape,
+against both rung D (uncontended) and rung E (contended). If the raw loop's gap matches tflw's own:
+isolated to Node's fetch()/undici stack itself. If it collapses toward k6's: isolated to tflw's own
+code, and a scoped M42 gets proposed.
+
+**Method.** Reused this session's already-fresh k6 numbers (D58) rather than re-measuring an
+unchanged baseline. Ran `raw-fetch-bench-dogfood.mjs` 3× per rung, load target reset before every
+run (`POST /v1/admin/load/reset`), 0% error rate on all 6 runs:
+
+| Rung | tflw avg | k6 avg | raw-fetch avg | tflw vs k6 gap | raw-fetch vs k6 gap | raw-fetch vs tflw |
+|---|--:|--:|--:|--:|--:|--:|
+| D. uncontended (throughput) | 1,520.3/s | 1,806.2/s | 1,529.3/s | k6 leads 18.8% | k6 leads 18.1% | raw leads tflw by 0.6% |
+| D. uncontended (p95) | 36.7ms | 30.4ms | 36.9ms | tflw trails 20.5% | raw trails 21.2% | raw is 0.5% higher (noise) |
+| E. contended (throughput) | 582.7/s | 636.0/s | 596.7/s | k6 leads 9.1% | k6 leads 6.6% | raw leads tflw by 2.4% |
+| E. contended (p95) | 102.0ms | 68.9ms | 100.3ms | tflw trails 48.1% | raw trails 45.7% | raw is 1.6% lower (noise) |
+
+(Per-run JSON in `/tmp/m41-results/` — not committed, regenerable via
+`node acceptance/perf/profile/raw-fetch-bench-dogfood.mjs <uncontended|contended> 60 20000` against a
+freshly reset target.)
+
+**A bare `fetch()` loop with zero tflw code reproduces tflw's own gap almost exactly, on both
+rungs.** On rung E — the rung that actually matters, where M39 localized the residual — the raw
+loop's p95 gap vs. k6 (45.7%) lands inside the same 46-49.2% band this arc has now measured four
+independent times, and its absolute p95 (100.3ms) and throughput (596.7/s) differ from tflw's own
+numbers (102.0ms, 582.7/s) by only 1.6-2.4% — well within this measurement's own run-to-run noise,
+and nowhere close to collapsing toward k6's 68.9ms/636.0/s. Rung D shows the identical pattern: the
+raw loop's throughput and p95 are statistically indistinguishable from tflw's own (0.5-0.6%
+difference), both trailing k6 by essentially the same ~18-21% either way.
+
+**This is a positive isolation, not an elimination-by-exhaustion** — unlike M36/M40's negative
+results (ruling candidate mechanisms out one at a time), M41 directly constructs the simplest
+possible Node HTTP client, with none of tflw's own machinery in the loop at all, and it exhibits the
+same gap. That leaves Node's `fetch()`/undici implementation itself, measured against Go's
+`net/http` client (k6), as the standing explanation — consistent with M40's own "inherent
+interpreted-Node-vs-compiled-Go" framing, now confirmed by direct construction rather than inferred
+by elimination.
+
+**Per D59: isolated to Node's HTTP stack.** D33a's tolerance is re-confirmed as amended in M40: ~10%
+for throughput and for p95 on uncontended/light-contention targets, ~50% for p95 specifically on a
+real-row-lock-contended target (now covering four independent measurements: 46%, 49.2%, 48.1%,
+45.7%). No M42 — an HTTP-client swap (tuning undici's `Pool`/`Client` API directly, or an alternate
+library) remains a real but high-effort, uncertain-payoff bet against a runtime-level
+characteristic, and per this arc's D51/D52/D55/D59 bounded-effort convention, that bet stays closed
+unless a future milestone finds new evidence changing the picture. The pentest arc (v0.4.0) is
+unblocked.
+
+## Verdict (M41)
+
+**The gap is isolated to Node's `fetch()`/undici HTTP stack itself, not to any tflw-specific code.**
+A bare Node `fetch()` loop with zero interpreter/session/redaction/execSteps machinery, hitting the
+same real contended target with the same ramp shape and the same k6-equivalent auth handling,
+reproduces tflw's own p95 gap almost exactly (45.7% vs. tflw's 48.1%, both against the same k6
+baseline) — this is now four independent measurements (M38, M39, this session's ad hoc re-run, and
+this milestone's own tflw/raw-fetch pair) clustering in a tight 46-49% band, plus a fifth
+(raw-fetch's own 45.7%) landing in the same band from a completely different, machinery-free client.
+D33a's ~50% contended-p95 tolerance (amended M40) is re-confirmed, not loosened further and not
+tightened toward the user's original ~1-2% target — that target is not achievable without an
+HTTP-client-level change this arc has now decided, twice (D55, D59), not to pursue speculatively.
+No M42. The pentest arc (v0.4.0) may now start.

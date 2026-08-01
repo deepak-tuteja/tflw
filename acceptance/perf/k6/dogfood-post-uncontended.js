@@ -12,7 +12,7 @@ import { check } from 'k6';
 const BASE_URL = 'http://localhost:4001/v1';
 const LOAD_USER_EMAIL = __ENV.LOAD_USER_EMAIL || 'load@example.com';
 const LOAD_USER_PW = __ENV.LOAD_USER_PW || 'load-pw-123';
-const BODY = JSON.stringify({ productId: '77a0540f-c608-433c-82f3-dc821ed5e515', quantity: 1 });
+const BODY = JSON.stringify({ productId: '9649e53f-e0ad-4413-a05e-e302728b72cc', quantity: 1 });
 
 export const options = {
   scenarios: {
