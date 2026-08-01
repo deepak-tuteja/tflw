@@ -1,0 +1,13 @@
+# M36 (D41) — same ramp shape as acceptance/perf/tflw/checkout-burst.tflw (60 users over 20s), same
+# GET-then-POST pattern as bench.tflw, against the slow local target (echo-server-delayed-connlog.mjs)
+# instead of the real contended endpoint or the zero-latency profiling target — isolates the
+# concurrency question (does tflw's own generator keep ~60 requests in flight against a slow
+# server?) from both real DB contention and the "fast target makes overlap trivially ~1" artifact.
+
+scenario "concurrency ground truth"
+  ramp to 60 users over 8s
+  api GET /products
+  expect status equals 200
+  capture body[0].id as productId
+  api POST /orders body { items: [{ productId: {productId}, quantity: 1 }] }
+  expect status equals 201
