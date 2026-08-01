@@ -860,3 +860,64 @@ strict ~1-2% bar, triggering a from-scratch M43) is deliberately left open here,
 decision.** No conclusion drawn yet on whether D33a's tolerance stands as re-confirmed or whether M43
 gets scoped; this section exists purely as the canonical reference table for whatever gets decided
 next. Per-run JSON/logs in `/tmp/m42-baseline/` — not committed, regenerable via the commands above.
+
+## M44 — unpinned re-test through the corrected reporter, D33a re-scoped (2026-08-01)
+
+M42's own 32.0%/48.9%-scale numbers, and every contended-p95 figure this arc has reported since M38
+(46%, 49.2%, 48.1%, 32.0%), turned out to be measuring the wrong thing: tflw's load report summed
+the scenario's uncontended `GET /products` lookup and the contended `POST /orders` checkout into one
+per-iteration duration, while k6's own `checkout-burst.js` tags and thresholds the checkout leg
+alone (`{name: 'checkout'}`). M43 (`PLAN_BROWSER_PERF_SECURITY.md` §2.14, D67-D72) built a real
+per-endpoint identity into tflw's reporter — `api ... as "checkout"` plus a `threshold ... for
+"checkout"` scope — closing that asymmetry at the source rather than patching around it in a
+throwaway script. This milestone re-runs the acceptance scenario through the shipped fix, on today's
+real, unpinned `fetch()`-based client, to get the true apples-to-apples number inside tflw's own
+report for the first time, and to re-scope D33a's tolerance to match it directly.
+
+**checkout-burst, checkout-scoped p95 (3 runs each side, load target reset before every run):**
+
+| | tflw run 1 | tflw run 2 | tflw run 3 | tflw avg | k6 run 1 | k6 run 2 | k6 run 3 | k6 avg |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| Iterations | 11,516 | 11,839 | 11,881 | — | 12,924 | 12,990 | 13,012 | — |
+| Throughput | 575.8/s | 592.0/s | 594.1/s | **587.3/s** | 646.2/s | 649.5/s | 650.6/s | **648.8/s** |
+| Checkout p95 (scoped) | 83ms | 79ms | 79ms | **80.3ms** | 68.77ms | 68.31ms | 68.10ms | **68.4ms** |
+| Combined p95 (old metric, for reference) | 106ms | 101ms | 103ms | 103.3ms | — | — | — | — |
+| Error rate | 0.00% | 0.00% | 0.00% | 0.00% | 0.33% | 0.34% | 0.34% | 0.34% |
+
+**The corrected gap: throughput trails k6 by 9.5%, checkout-scoped p95 trails by 17.5%** — both a
+completely different scale from every combined-metric number this arc reported M38-M42 (46-51%
+throughput-adjacent, 32-49% p95). tflw's own report shows the old, inflated number directly: the
+same three runs' *combined* p95 (106/101/103ms, avg 103.3ms) is 51% above the checkout-scoped number
+(80.3ms) — almost entirely the uncontended GET leg's own ~28-29ms p95 riding along inside the old
+undifferentiated total. This confirms the throwaway diagnostic script's (`leg-split-diag.mjs`,
+not committed) ~18% estimate from the `/grill-me` session that scoped M43, this time from tflw's
+real, shipped report rather than a hand-rolled instrumentation pass.
+
+**Regression check — `dogfood-post-uncontended` (single-endpoint scenario, no `as`/`for` tags,
+expected to be numerically unaffected by M43 since there's nothing to scope):**
+
+| | tflw avg | k6 avg | gap |
+|---|--:|--:|--:|
+| Throughput | 1,531.9/s (30,412 / 30,689 / 30,813 iterations) | 1,771.5/s (35,828 / 35,719 / 34,743 iterations) | k6 leads **13.5%** |
+| p95 | 36ms (flat across all 3 runs) | 31.9ms (31.16 / 30.96 / 33.64ms) | tflw trails **12.8%** |
+
+Matches M39's own rung D for this exact scenario (11.2% throughput / 14.7% p95) within this arc's
+established run-to-run noise band — confirms M43's reporter change is measurement-only and didn't
+disturb an already-passing case.
+
+**D73 — D33a's contended-p95 tolerance is re-scoped now, from ~50% down to ~20%.** The ~50% bar M40
+set (`PLAN_BROWSER_PERF_SECURITY.md` §2.7) was calibrated against the inflated combined-duration
+metric (46-49%); it was never measuring the checkout leg alone. Against the true, checkout-scoped
+number (17.5%, this milestone), ~20% keeps the same design intent D33a's original ~10% bar had —
+headroom above the measured value, not a bar already failing on day one. Throughput's existing ~10%
+tolerance is unaffected (9.5% measured here, consistent with every clean throughput reading this arc
+has produced). Full amendment text in `PLAN_BROWSER_PERF_SECURITY.md` §2.7.
+
+**What this means for M45.** The pinned-per-VU connection work is no longer chasing a ~32-49%
+gap down toward ~1-2% — it's chasing ~17.5% down toward ~1-2%, roughly a third the distance M42's
+own pinned-Client prototype already covered in one isolated measurement (32.0%, on the old inflated
+metric; not yet re-measured checkout-scoped). D74 in §2.16 keeps the strict bar, now explicitly
+anchored to this milestone's 17.5%/80.3ms figure rather than M42's superseded number.
+
+Per-run JSON/logs in `/tmp/m44-baseline/` — not committed, regenerable via the commands above
+(`checkout-burst.tflw` now needs no extra flags; the `as`/`for` tags are already in the fixture).
