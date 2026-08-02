@@ -6,7 +6,6 @@ title: CLI flags reference
 import { CLI_FLAGS } from '../../lang/src/spec-data.ts';
 const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
 const runFlags = CLI_FLAGS.filter((f) => f.command === 'run');
-const loadFlags = CLI_FLAGS.filter((f) => f.command === 'load');
 const checkFlags = CLI_FLAGS.filter((f) => f.command === 'check');
 const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
@@ -38,32 +37,23 @@ npx tflw run --env staging --workers 4 --seed 42 --now 2026-01-01T00:00:00.000Z 
   </tbody>
 </table>
 
-## `tflw load <file.tflw>`
-
-<table>
-  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
-  <tbody>
-    <tr v-for="f in loadFlags" :key="f.flag">
-      <td v-html="code(f.flag)" />
-      <td v-html="code(f.effect)" />
-    </tr>
-  </tbody>
-</table>
-
-Runs every workload-bearing `test` (a `test` containing a `ramp to …` line) declared in the file
-**concurrently** as a load test (see the
-[load testing guide](/guide/load-testing)). `--workers N` (default 1) forks N generator
-*processes* instead of running in one — each an equal striped share of every scenario's workload
-target, merged back into one report; every run also self-diagnoses its own event-loop lag/CPU and
-warns if tflw's own generator process was the bottleneck. A live ~1Hz console line tracks
-iterations/rps/error-rate as the run goes (single-process or `--workers N>1`, forked workers relay
-their own progress back over IPC); Ctrl-C stops new iterations and flushes a **partial** report
-instead of losing the run. Writes `report/load-report.html` (charts, per-scenario breakdown),
-`report/load-junit.xml` (one `<testcase>` per `threshold`), and `report/load-results.json`. Exit
-`0` = every scenario's `threshold`s met (or none declared), `1` = a threshold breached in any
-scenario, `2` = usage error, `3` = **inconclusive** (the generator itself saturated — the numbers
-describe tflw contending with itself, not the system under test; every junit `<testcase>` is
-`skipped`, not passed/failed), `130` = aborted via Ctrl-C (the standard "died from SIGINT" code).
+`tflw run` drives functional and workload-bearing `test`s alike in one pass — a `test` becomes
+workload-bearing the moment it contains a `ramp`/`hold`/`step`/`spike`/`run … iterations` line (see
+the [load testing guide](/guide/load-testing)); there's no separate `load` command (folded into
+`run` in M53). `parallel`/`sequential` (a test-header modifier, not a flag) controls which tests in
+a file run concurrently with each other; `--workers N` is the unrelated, workload-only axis above —
+it scales *one* workload-bearing test's own generated load across `N` forked processes, never files.
+Every run with at least one workload-bearing test also self-diagnoses its own generator process's
+event-loop lag/CPU and warns if tflw itself was the bottleneck. A live ~1Hz console line tracks
+iterations/rps/error-rate for the workload-bearing tests currently in flight; Ctrl-C stops new
+iterations and flushes a **partial** report instead of losing the run. Everything — functional and
+workload-bearing test results alike — renders into the one `report/report.html`/`junit.xml`/
+`results.json` (M56), in file-declaration order; there are no separate `load-*` artifacts. Exit `0`
+= every test passed and every `threshold` was met (or none declared), `1` = a test failed or a
+threshold was breached, `2` = usage error, `3` = **inconclusive** (a workload-bearing test ran and
+tflw's own generator process saturated — the numbers describe tflw contending with itself, not the
+system under test; every threshold's junit `<testcase>` comes back `skipped`, not passed/failed),
+`130` = aborted via Ctrl-C (the standard "died from SIGINT" code).
 
 ## `tflw check`
 

@@ -64,17 +64,15 @@ a run whose VUs spent a large share of wall time waiting rather than iterating, 
 silently distort your numbers:
 
 ```
-scenario "checkout under load":
-  iterations 812  failures 3  error rate 0.37%  p50 210ms  p95 640ms  p99 910ms
-⚠ your load backed off — this scenario's VUs spent an estimated 41% of their available time unable
-to keep pace with the target system; results understate real latency
+✓ checkout under load (workload — ramp to 50 users over 30000ms)
+    iterations: 812  failures: 3  error rate: 0.37%
+    duration (ms, think-excluded): min 40  avg 210  p50 210  p90 480  p95 640  p99 910  max 1200
+⚠ your load backed off — an estimated 41% of this test's available VU time was lost to the target
+system slowing down; results understate real latency
 ```
 
-(The console/report still labels a workload-bearing test's own line "scenario" — a human-readable
-name for "the load-test entry this is," independent of the `test` keyword it's written with.)
-
 A healthy run just shows the numbers, no warning line. The percentage compares how many iterations
-actually completed against how many the scenario's own fastest-observed pace would have allowed —
+actually completed against how many the test's own fastest-observed pace would have allowed —
 unlike a saturated generator (below), this doesn't change `tflw run`'s exit code or a threshold's
 pass/fail: it's a warning about how to *read* the numbers, not a verdict on whether they're
 trustworthy. Switch to the open model if you want to measure the true degradation curve instead of
@@ -174,10 +172,11 @@ same signal a CI gate reads. An `expect` failure inside a workload-bearing test'
 **that iteration** only, counted toward the error rate — it never aborts the run the way a
 functional test's failure would.
 
-Every threshold also lands in `report/load-junit.xml` as its own `<testcase>` (`scenario name —
-label`), alongside the ordinary functional suite's own `report/junit.xml` — one `tflw run`
-invocation writes both, so an existing CI job already reading the functional junit gates the
-workload-bearing tests the same way, no separate command or parsing path to build.
+Every threshold also lands in the one `report/junit.xml` as its own `<testcase>` (named `test name
+— label op target`), interleaved with the functional suite's own `<testcase>`s in file-declaration
+order — no separate junit file to point CI at. A workload-bearing test with zero declared
+thresholds still contributes one bare, always-passing `<testcase>` (its bare name, no verdict to
+gate on) so it shows up in CI output rather than silently contributing nothing.
 
 ## Cleanup — `after each` is skipped by default
 
@@ -246,14 +245,16 @@ of browsing traffic alongside a smaller, bursty checkout path, both hitting the 
 closer to production than testing either path in isolation. Each one keeps its own identity
 (`as <session>`), its own workload model (open or closed, independently), and its own
 `threshold`s, evaluated only against *its own* iterations. Workload-bearing test names must be
-unique within a file — they key the report's per-scenario breakdown (a plain functional test's
+unique within a file — the name keys this test's own entry in the report (a plain functional test's
 name may repeat freely, as always).
 
-The end-of-run summary, `report/load-report.html`, and `report/load-results.json` all report two
-layers: a **combined** view (every scenario's iterations pooled — the quotable run-wide numbers)
-and a **per-scenario** breakdown (each scenario's own metrics, charts, and threshold verdicts). The
-overall run passes only if every scenario's thresholds do — independent of which other tests, if
-any, happened to share its `parallel` batch.
+Each workload-bearing test renders standalone in the one `report.html`/`results.json` — its own
+metrics, charts, and threshold verdicts — the same way a `parallel` batch's functional tests each
+get their own entry, no shared container. There's deliberately no pooled "combined" view across
+tests: two tests hitting different endpoints (or the same endpoint under different conditions)
+rarely want their percentiles blended into one number anyway; a run that genuinely wants a
+run-wide figure sums the per-test tables itself. The overall run passes only if every test's
+thresholds do — independent of which other tests, if any, happened to share its `parallel` batch.
 
 ## Scaling across processes — `--workers N`
 
@@ -276,9 +277,8 @@ which batch that test happens to be in. No coordination happens between the proc
 one knowing its own index — the target splits evenly up front, and every VU's generated values
 (`unique(...)`, `random ...`) stay reproducible under `--seed` regardless of how many workers ran,
 since each worker's share of the run draws from a disjoint, deterministic slice of the same seed.
-Results merge back into one report — `report/load-report.html`/`load-results.json`/`load-junit.xml`
-and the end-of-run summary look identical whether the run used 1 worker or 8; nothing downstream
-needs to know. The live console line (below) works the same way too — each worker relays its own
+Results merge back into the one `report.html`/`results.json`/`junit.xml` — the end-of-run summary
+looks identical whether the run used 1 worker or 8; nothing downstream needs to know. The live console line (below) works the same way too — each worker relays its own
 progress back to the main process.
 
 **Generator self-diagnosis:** every run (1 worker or many) tracks its own event-loop lag and CPU
@@ -320,14 +320,13 @@ iterations: 1204  failures: 3  rps: 198.4  error rate: 0.25%  4.1s/30.0s planned
 ```
 
 **Ctrl-C stops the run early.** No new iterations start (whatever's already in flight finishes
-naturally), and everything that completed is still written out — `report/load-report.html`,
-`load-results.json`, and `load-junit.xml` all carry `aborted: true` and a message like `aborted at
-4s of 30s planned`, and the process exits `130`. This is deliberate: the most common reason to hit
+naturally), and everything that completed is still written out — the run-level `report.html`/
+`results.json`/`junit.xml` all carry `aborted: true` and a message like `aborted at 4s of 30s
+planned`, and the process exits `130`. This is deliberate: the most common reason to hit
 Ctrl-C on a load test is "this is melting down, kill it" — the evidence from those seconds is
 exactly what you want to keep, not lose. A second Ctrl-C before the first finishes flushing
 force-quits immediately, for a run that's genuinely stuck.
 
 ## What's next
 
-Per-endpoint metric breakdown (today's report covers combined + per-scenario, R6's third axis) and
-the security/pentest arc are still ahead; see the changelog for what's landed.
+The security/pentest arc is next; see the changelog for what's landed.

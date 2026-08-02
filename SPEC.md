@@ -517,6 +517,73 @@ trail one click away (PLAN.md decision 86, closing decision 46's deferred gap). 
 summary-only by design — its `<testcase>` carries a `flaky` `<system-out>` note with the attempt
 count, not step-level detail; that detail lives in report.html.
 
+### 4.5 Load testing — workload-bearing tests (M29/M30, M50-M56, D16-D19/D24a/D26/D70/D93-D122)
+
+A `test` becomes **workload-bearing** the moment its body contains one workload line — no separate
+keyword (`scenario` existed through M30, removed in M50, D93-D96): kind is inferred purely from
+whether a workload clause is present. A workload-bearing test runs as a per-VU loop instead of one
+single-shot pass, with pass/fail decided once, after the run, by its `threshold` lines against the
+run's aggregate metrics — not by any single iteration's outcome.
+
+```tflw
+test "checkout under load"
+  ramp to 50 users over 30s
+  api POST /cart/checkout body { productId: "widget-1", qty: 1 }
+  expect status equals 201
+  threshold p95 duration is less than 800ms
+  threshold error rate is less than 1%
+```
+
+- **5 workload kinds**, each with a closed (`users`) and open (`rps`) variant (D97/D98):
+  - `ramp to N users|rps over <dur>` — linear ramp from 0 to the target over `<dur>` (D17).
+  - `hold N users|rps for <dur>` — a flat target for the whole duration, no ramp-in.
+  - `step users|rps` / `spike users|rps` — an indented block of stage lines: `step`'s `to N for
+    <dur>` lines are a staircase of instant jumps, each held for its own duration; `spike`'s `hold
+    N for <dur>` (flat) and `to N over <dur>` (ramped) lines can mix in any order, for a
+    baseline → burst → recovery shape.
+  - `run N iterations across M users` / `run N iterations per user across M users` — count-bounded,
+    no duration: a shared pool of `N` total iterations, or each of `M` VUs running its own fixed `N`.
+- **Closed (`users`) vs. open (`rps`).** Closed loops VUs continuously — under saturation a VU
+  simply completes fewer iterations, which understates latency ("coordinated omission"); tflw's own
+  back-off diagnostic (D17) flags a run whose VUs spent a large share of wall time waiting instead
+  of iterating. Open schedules new iterations at a target arrival rate regardless of whether earlier
+  ones have finished — queues build under saturation instead of silently disappearing, the only
+  model that honestly validates an SLA. The 2 iteration-count kinds skip the back-off diagnostic
+  entirely (D102) — there's no duration to divide by, so it's structurally undefined, not withheld.
+- **`threshold <metric> [for "<label>"] is less than|greater than <value>`** — `p50`/`p90`/`p95`/
+  `p99 duration` (a duration value) or `error rate` (a percentage). `for "<label>"` scopes the
+  threshold to one `api` step's identity within the same test (its explicit `as "<label>"` tag, or
+  its automatic `METHOD path.raw` identity when untagged) instead of the whole test's iterations
+  (M43, D70; checker-enforced resolution — `TF034`).
+- **`cleanup`** — a bare line opting this workload-bearing test back into running the file's
+  `after each` hook on *every* iteration. Default: skipped — running teardown thousands of times
+  would double request volume and pollute the very latency numbers the run exists to measure (D26).
+- **`parallel`/`sequential`** — a header modifier (`test "name" [as <session>...] [retry N]
+  [parallel|sequential]`, the same fixed slot as `retry N`) controlling this test's execution
+  relation to its file-siblings, functional or workload-bearing alike (D105) — not a
+  workload-specific concept. Default `sequential`: blocks whatever comes before and after it. A
+  maximal run of *consecutive* `parallel`-marked tests forms one concurrently-executed batch
+  (D109): `A, B(parallel), C(parallel), D` executes as `A -> (B and C together) -> D`. Display order
+  in the report is always declaration order, independent of completion order (D112). See the
+  [load testing guide](/guide/load-testing) for the worked multi-test example and how this
+  interacts with `--workers`/`--skip-workload` (§12).
+- **Checker-enforced exclusivity (D96, `TF033`).** `retry`/`with each` can't coexist with a workload
+  on the same test — a load test's own iterations already provide repetition, and it has no
+  per-row cases, only per-VU ones. `think <dur>` / `think <dur> to <dur>` (per-iteration pacing,
+  excluded from a `duration` threshold) is legal only inside a workload-bearing body; a browser
+  step is rejected inside one (a browser VU is ~50-100MB, infeasible at load-test scale). Two
+  workload-bearing tests in one file can't share a name — the name keys the report's per-test
+  metrics/threshold breakdown (M30, D29).
+- **The removed `scenario` keyword (D103, `TF033`).** `scenario "…" { … }` is now a hard parser
+  error naming its replacement directly: write `test "…" { ramp to … }` instead — a one-line
+  mechanical rewrite, no migration flag needed.
+
+Reporting (M56, D116-D122): a workload-bearing test's result renders inline in the same
+`report.html`/`junit.xml`/`results.json` as every functional test, in file-declaration order —
+there is no separate `load-*` report artifact. See §17 for `TF033`/`TF034`'s full diagnostic text,
+and the [load testing guide](/guide/load-testing) for the console/report shape, `--workers`, the
+generator self-diagnosis warning, and Ctrl-C/abort behavior.
+
 ## 5. API steps (P#3, P#7, P#29, P#32, P#33) ✅
 
 ### 5.1 Request line
@@ -1472,7 +1539,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | Command | Purpose |
 |---|---|
 | `tflw init` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) — decision 82; API-only, `--ui` is M3 |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--workers N] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--workers > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.8) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.8) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkServices`/`checkSessionServices`/`checkDataTables`/`checkSessions`/`checkUnknownVariables`), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints the target file's `Diagnostic[]` as JSON instead, for editor integrations — a config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout, out of scope for a per-file editor check. Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this (a per-file contract, not a suite-wide one) |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |

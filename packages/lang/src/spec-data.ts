@@ -69,7 +69,7 @@ export const GENERATORS: readonly GeneratorEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'load' | 'check' | 'pick' | 'watch' | 'migrate' | 'global';
+  readonly command: 'run' | 'check' | 'pick' | 'watch' | 'migrate' | 'global';
   readonly effect: string;
 }
 
@@ -117,7 +117,9 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--env <name>`', command: 'run', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one — e.g. run the same suite against `staging`' },
   { flag: '`--tag <name>[,<name>...]`', command: 'run', effect: 'only runs tests carrying any of the listed `@name`s (comma-separated OR; combines with `--only` as AND)' },
   { flag: '`--only <name>`', command: 'run', effect: 'runs a single test by its exact declared name (composes with `--tag`\'s OR-list as AND)' },
-  { flag: '`--workers <n>`', command: 'run', effect: 'runs test files concurrently across `n` workers (default 1)' },
+  { flag: '`--parallel <n>`', command: 'run', effect: 'runs up to `n` *files* concurrently in this process (default: `tflw.config`\'s `workers` key) — distinct from `--workers` below, which scales one workload-bearing test\'s own load generation across processes, not files' },
+  { flag: '`--workers <n>`', command: 'run', effect: 'forks `n` generator *processes* to produce one file\'s workload-bearing test(s)\' load (M50/D111) — each an equal striped share of the target population/rate, merged back into one report; a no-op warning on a file with no workload-bearing tests (D113); default 1, no forking' },
+  { flag: '`--skip-workload`', command: 'run', effect: 'skips every workload-bearing test (any `test` containing a `ramp`/`hold`/`step`/`spike`/`run … iterations` line), regardless of which `parallel`/`sequential` batch it\'s in — for fast iteration on the functional tests alone (M53/D110, renamed from `--skip-load`)' },
   { flag: '`--seed <n>`', command: 'run', effect: 'fixes every `random`-family value for the run, so a failure is reproducible byte-for-byte' },
   { flag: '`--now <iso>`', command: 'run', effect: 'pins the run\'s notion of "now" to an exact instant (combine with `--seed` to reproduce a run\'s exact absolute generated values)' },
   { flag: '`--no-color`', command: 'run', effect: 'disables ANSI color in CLI output — useful for CI logs or piping to a file' },
@@ -134,11 +136,6 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--update-snapshots`', command: 'run', effect: 'writes/overwrites `matches snapshot` baselines instead of just comparing against them' },
   { flag: '`--log-output <dest>`', command: 'run', effect: 'overrides `tflw.config`\'s `log destination` key (`console`/`html`/`both`/`none`) for this run\'s bare `log "…"` calls only — a `log … to …` statement\'s own destination always wins' },
   { flag: '`--log-level <level>`', command: 'run', effect: 'overrides `tflw.config`\'s `log level` key (`debug`/`info`/`warn`/`error`) — the minimum level a `log` step must clear to be rendered in console output/`report.html` (never affects whether it\'s recorded in `results.json`/ndjson)' },
-  { flag: '`--env <name>`', command: 'load', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },
-  { flag: '`--seed <n>`', command: 'load', effect: 'fixes every VU\'s generated values for the run, so a threshold breach is reproducible' },
-  { flag: '`--now <iso>`', command: 'load', effect: 'pins the run\'s notion of "now" to an exact instant (combine with `--seed`)' },
-  { flag: '`--workers <n>`', command: 'load', effect: 'runs the load test across N forked generator processes instead of one (D19) — each an equal striped share of every scenario\'s workload target, merged back into one report; default 1' },
-  { flag: '`--no-color`', command: 'load', effect: 'disables ANSI color in CLI output' },
   { flag: '`--format json`', command: 'check', effect: 'prints the target file\'s `Diagnostic[]` as JSON instead of text — for editor integrations' },
   { flag: '`--browser <engine>`', command: 'pick', effect: 'launches chromium/firefox/webkit (default chromium) instead of chromium' },
   { flag: '`--env <name>`', command: 'watch', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },
