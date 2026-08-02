@@ -201,6 +201,48 @@ test('a `with each` test\'s own row-cases stay internally sequential even inside
   await server.close();
 });
 
+test('a default-`sequential` `with each` group fully finishes (all rows) before its neighbor starts — no overlap either way', async () => {
+  let inFlight = 0;
+  let sawOverlap = false;
+  const server = await startFixtureServer({
+    '/slow': (_req, res) => {
+      inFlight++;
+      if (inFlight > 1) sawOverlap = true;
+      setTimeout(() => {
+        inFlight--;
+        json(res, 200, { ok: true });
+      }, 40);
+    },
+  });
+  const source = [
+    'with each',
+    '  | n |',
+    '  | 1 |',
+    '  | 2 |',
+    'test "rows"',
+    '  api GET /slow',
+    '  expect status equals 200',
+    '',
+    'test "solo"',
+    '  api GET /slow',
+    '  expect status equals 200',
+  ].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true);
+  assert.deepEqual(
+    report.tests.map((t) => t.name),
+    ['rows', 'rows', 'solo'],
+  );
+  // Unlike the `parallel` counterpart above, "rows" and "solo" here are both default `sequential` —
+  // each is its own singleton batch (D109), so "rows" (both its cases) must fully finish before
+  // "solo" starts, on top of "rows"' own cases already never overlapping each other internally.
+  assert.equal(sawOverlap, false, 'a default-`sequential` `with each` group must not overlap its own rows, nor its sequential neighbor');
+  await server.close();
+});
+
 test('D114: a `parallel` batch buffers each test\'s events and flushes them as one atomic block', async () => {
   const server = await startFixtureServer({
     '/a1': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 30),

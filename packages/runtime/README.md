@@ -108,3 +108,24 @@ file-global `runStart` shared across every batch. Regression tests:
 `packages/runtime/test/unified-dispatch.test.ts` (`"a `sequential` workload test in the second batch
 still gets its own full iteration count, not 0 (regression)"` and two neighboring tests). See
 `PROGRESS.md` for the full changelog entry.
+
+## `with each` (data-driven) tests
+
+A `with each` test is one `TestDecl` — `table` (its row data) and `concurrency`
+(`parallel`/`sequential`) are independent fields on the same node (D112's last paragraph: `parallel`
+is legal on a `with each` test regardless of `table`/`retry`). Two rules, both verified:
+
+- **Batching happens at the whole-test level, never per row.** `partitionIntoBatches` walks
+  `program.tests` — one entry per `test` block — so a 50-row `with each` test is a single item in
+  the batch array, exactly like a plain test.
+- **A `with each` test's own rows always run strictly sequentially**, regardless of its own
+  `parallel`/`sequential` keyword — there is no way to make one test's rows race each other. The
+  keyword only ever controls that *whole row sequence's* relation to its neighbors: `parallel` lets
+  the entire (still internally sequential) row sequence overlap with a batch neighbor;
+  `sequential` (default) makes the entire row sequence finish before the next batch starts.
+
+Covered by `packages/runtime/test/unified-dispatch.test.ts`: `` "a `with each` test's own row-cases
+stay internally sequential even inside a `parallel` batch"`` (rows never overlap each other, but the
+whole group overlaps a `parallel` neighbor) and `"a default-`sequential` `with each` group fully
+finishes (all rows) before its neighbor starts — no overlap either way"` (the group's own rows,
+*and* its `sequential` neighbor, both stay non-overlapping).
