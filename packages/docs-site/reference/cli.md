@@ -50,7 +50,8 @@ npx tflw run --env staging --workers 4 --seed 42 --now 2026-01-01T00:00:00.000Z 
   </tbody>
 </table>
 
-Runs every `scenario` declared in the file **concurrently** as a load test (see the
+Runs every workload-bearing `test` (a `test` containing a `ramp to …` line) declared in the file
+**concurrently** as a load test (see the
 [load testing guide](/guide/load-testing)). `--workers N` (default 1) forks N generator
 *processes* instead of running in one — each an equal striped share of every scenario's workload
 target, merged back into one report; every run also self-diagnoses its own event-loop lag/CPU and

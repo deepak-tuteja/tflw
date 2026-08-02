@@ -1,12 +1,14 @@
 # 13. Load testing: scenarios & thresholds
 
-Everything so far — `test`, `action`, hooks — is the **functional** execution model: one pass
-through a body, pass or fail. Load testing needs a second, genuinely different model: many
+Everything so far — `test`, `action`, hooks — has been the **functional** execution model: one
+pass through a body, pass or fail. Load testing needs a second, genuinely different model: many
 virtual users (VUs) looping the same body concurrently, for a while, with pass/fail decided on
-*aggregate* numbers (percentiles, error rate) rather than a single outcome. That's `scenario`.
+*aggregate* numbers (percentiles, error rate) rather than a single outcome. There's no separate
+keyword for it — a `test` becomes a load test the moment it contains a workload line (`ramp
+to …`); the same `test "…" { … }` block covers both.
 
 ```tflw
-scenario "checkout under load"
+test "checkout under load"
   ramp to 50 users over 30s
   api POST /cart/checkout body { productId: "widget-1", qty: 1 }
   expect status equals 201
@@ -24,9 +26,9 @@ tflw load checkout.tflw
 
 ## Reuse, not a second language
 
-A `scenario` body is ordinary steps — `api`, `expect`, `check`, `let`, `capture`, action calls,
-all of it. There's no separate load-testing DSL to learn, and no drifting second implementation of
-logic you already wrote for the functional suite:
+A workload-bearing test's body is ordinary steps — `api`, `expect`, `check`, `let`, `capture`,
+action calls, all of it. There's no separate load-testing DSL to learn, and no drifting second
+implementation of logic you already wrote for the functional suite:
 
 ```tflw
 action checkout(productId)
@@ -35,15 +37,17 @@ action checkout(productId)
   capture body.orderId as orderId
   give orderId
 
-scenario "checkout under load"
+test "checkout under load"
   ramp to 50 users over 30s
   checkout("widget-1")
 ```
 
-**Not supported inside a `scenario` (v1):** browser steps (`open`/`click`/`fill`/…) and UI/network
-expect subjects. A browser VU is 50-100MB of memory each — running hundreds of them for a load
-test is infeasible. Load scenarios are API-only; the checker rejects a browser step here rather
-than letting it surface as a confusing runtime error.
+**Not supported inside a workload-bearing `test` (v1):** browser steps (`open`/`click`/`fill`/…)
+and UI/network expect subjects. A browser VU is 50-100MB of memory each — running hundreds of them
+for a load test is infeasible. Load tests are API-only; the checker rejects a browser step here
+rather than letting it surface as a confusing runtime error. `retry`/`with each` are also rejected
+alongside a workload — a load test's own iterations already provide repetition, and it has no
+per-row cases, only per-VU ones.
 
 ## Two workload models — pick deliberately
 
@@ -64,6 +68,9 @@ scenario "checkout under load":
 ⚠ your load backed off — this scenario's VUs spent an estimated 41% of their available time unable
 to keep pace with the target system; results understate real latency
 ```
+
+(The console/report still labels a workload-bearing test's own line "scenario" — a human-readable
+name for "the load-test entry this is," independent of the `test` keyword it's written with.)
 
 A healthy run just shows the numbers, no warning line. The percentage compares how many iterations
 actually completed against how many the scenario's own fastest-observed pace would have allowed —
@@ -86,7 +93,7 @@ the closed model actually represents.
 ## `think` — pacing, not a hack
 
 ```tflw
-scenario "browsing"
+test "browsing"
   ramp to 30 users over 20s
   api GET /products
   expect status equals 200
@@ -96,11 +103,11 @@ scenario "browsing"
 ```
 
 `think <duration>` (fixed) or `think <duration> to <duration>` (a fresh random draw per
-iteration) models a real user pausing between actions. It's legal **only** inside a `scenario` —
-the checker rejects it inside `test`/`before`/`after`, where a fixed sleep is exactly the sync
-hack `sleep` itself was banned for. Think time is excluded from a scenario's own `duration`
-threshold: it models pacing, not system latency, so sleeping more should never help a scenario
-pass a latency threshold.
+iteration) models a real user pausing between actions. It's legal **only** inside a
+workload-bearing `test` — the checker rejects it inside a plain functional `test`/`before`/
+`after`, where a fixed sleep is exactly the sync hack `sleep` itself was banned for. Think time is
+excluded from a load test's own `duration` threshold: it models pacing, not system latency, so
+sleeping more should never help a load test pass a latency threshold.
 
 ## Thresholds — the pass/fail gate
 
@@ -111,10 +118,10 @@ threshold error rate is less than 1%
 ```
 
 Evaluated once, after the whole run, against every iteration's outcome. `tflw load` exits `0` when
-every declared threshold passes (or the scenario declares none), `1` when any is breached — the
-same signal a CI gate reads. An `expect` failure inside a scenario body fails **that iteration**
-only, counted toward the error rate — it never aborts the run the way a functional test's failure
-would.
+every declared threshold passes (or the test declares none), `1` when any is breached — the
+same signal a CI gate reads. An `expect` failure inside a workload-bearing test's body fails
+**that iteration** only, counted toward the error rate — it never aborts the run the way a
+functional test's failure would.
 
 Every threshold also lands in `report/load-junit.xml` as its own `<testcase>` (`scenario name —
 label`), so an existing CI job already reading junit for `tflw run` gates a `tflw load` step the
@@ -125,11 +132,11 @@ same way, no separate parsing path to build.
 If your file has `before`/`after each` hooks (shared with the functional suite), `before each`
 runs on every iteration as normal setup. `after each` does **not** run per iteration by default —
 running teardown on every one of thousands of iterations would double request volume and pollute
-the very latency numbers the run exists to measure. A scenario that genuinely needs teardown
+the very latency numbers the run exists to measure. A load test that genuinely needs teardown
 (releasing a held resource, a seat lock) opts back in:
 
 ```tflw
-scenario "reserve and release"
+test "reserve and release"
   ramp to 10 users over 10s
   cleanup
   api POST /reservations body { seat: "12A" }
@@ -138,10 +145,10 @@ scenario "reserve and release"
 
 ## Identity per VU — `as <session>` and `unique(...)`
 
-A scenario can opt into a session exactly like a test does:
+A workload-bearing test can opt into a session exactly like a functional one does:
 
 ```tflw
-scenario "checkout under load" as customer
+test "checkout under load" as customer
   ramp to 50 users over 30s
   api POST /cart/checkout body { productId: "widget-1" }
 ```
@@ -153,17 +160,17 @@ use.
 
 ## Multiple scenarios in one run
 
-A file may declare more than one `scenario` — `tflw load` runs all of them **concurrently**, each
-on its own workload schedule:
+A file may declare more than one workload-bearing `test` — `tflw load` runs all of them
+**concurrently**, each on its own workload schedule:
 
 ```tflw
-scenario "browsing"
+test "browsing"
   ramp to 100 rps over 30s
   api GET /products
   expect status equals 200
   threshold p95 duration is less than 300ms
 
-scenario "checkout burst"
+test "checkout burst"
   ramp to 10 users over 30s
   api POST /cart/checkout body { productId: "widget-1", qty: 1 }
   expect status equals 201
@@ -172,10 +179,11 @@ scenario "checkout burst"
 
 This is the mixed-workload shape a real load test usually wants: a steady background trickle of
 browsing traffic alongside a smaller, bursty checkout path, both hitting the system at once —
-closer to production than testing either path in isolation. Each scenario keeps its own identity
+closer to production than testing either path in isolation. Each one keeps its own identity
 (`as <session>`), its own workload model (open or closed, independently), and its own
-`threshold`s, evaluated only against *its own* iterations. Scenario names must be unique within a
-file — they key the report's per-scenario breakdown.
+`threshold`s, evaluated only against *its own* iterations. Workload-bearing test names must be
+unique within a file — they key the report's per-scenario breakdown (a plain functional test's
+name may repeat freely, as always).
 
 The end-of-run summary, `report/load-report.html`, and `report/load-results.json` all report two
 layers: a **combined** view (every scenario's iterations pooled — the quotable run-wide numbers)

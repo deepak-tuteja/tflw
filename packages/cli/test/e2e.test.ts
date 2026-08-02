@@ -1914,7 +1914,7 @@ test('`tflw init --load` scaffolds load.tflw alongside the usual files', async (
     const { stdout } = await execFileAsync('node', [cliEntry, 'init', '--load'], { cwd: dir });
     assert.match(stdout, /created tflw\.config, example\.tflw, load\.tflw, \.env\.example, \.gitignore/);
     const loadSource = await readFile(join(dir, 'load.tflw'), 'utf8');
-    assert.match(loadSource, /^scenario "/m);
+    assert.match(loadSource, /^test "/m);
     assert.match(loadSource, /ramp to \d+ rps over/);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -1928,7 +1928,7 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(
         join(dir, 'load.tflw'),
-        'scenario "health burst"\n  ramp to 10 rps over 300ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 50%\n',
+        'test "health burst"\n  ramp to 10 rps over 300ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 50%\n',
         'utf8',
       );
 
@@ -1978,7 +1978,7 @@ test('`tflw load`: a scenario with an untagged step and an `as "label"`-tagged s
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(
         join(dir, 'load.tflw'),
-        'scenario "checkout burst"\n' +
+        'test "checkout burst"\n' +
           '  ramp to 5 users over 200ms\n' +
           '  threshold p95 duration for "checkout" is less than 5000ms\n' +
           '  api GET /health\n' +
@@ -2049,7 +2049,7 @@ test('`tflw load`: an `env(NAME)` value from a `.env` file (not a real process e
     await writeFile(join(dir, '.env'), 'API_KEY=from-dotenv-only\n', 'utf8');
     await writeFile(
       join(dir, 'load.tflw'),
-      'scenario "dotenv-only credential"\n  ramp to 3 users over 150ms\n  api GET /secret\n    header "X-Api-Key" is env(API_KEY)\n  expect status equals 200\n',
+      'test "dotenv-only credential"\n  ramp to 3 users over 150ms\n  api GET /secret\n    header "X-Api-Key" is env(API_KEY)\n  expect status equals 200\n',
       'utf8',
     );
 
@@ -2094,7 +2094,7 @@ test('`tflw load`: a closed-model scenario against a degrading server prints and
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
     // 1400ms/5 users comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves —
     // runtime's load.test.ts has the full derivation of this margin.
-    await writeFile(join(dir, 'load.tflw'), 'scenario "degrading checkout"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n', 'utf8');
+    await writeFile(join(dir, 'load.tflw'), 'test "degrading checkout"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n', 'utf8');
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir });
     assert.match(stdout, /⚠ your load backed off/);
@@ -2130,13 +2130,13 @@ test('`tflw load` runs every `scenario` in a file concurrently: passes/fails ind
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(
         join(dir, 'load.tflw'),
-        'scenario "healthy"\n' +
+        'test "healthy"\n' +
           '  ramp to 3 users over 150ms\n' +
           '  api GET /health\n' +
           '  expect status equals 200\n' +
           '  threshold error rate is less than 1%\n' +
           '\n' +
-          'scenario "unhealthy"\n' +
+          'test "unhealthy"\n' +
           '  ramp to 3 users over 150ms\n' +
           '  api GET /not-a-real-route\n' +
           '  expect status equals 200\n' +
@@ -2179,7 +2179,7 @@ test('`tflw load` exits 1 and reports a breached threshold without throwing', as
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
     await writeFile(
       join(dir, 'load.tflw'),
-      'scenario "always fails"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
+      'test "always fails"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
       'utf8',
     );
 
@@ -2196,16 +2196,16 @@ test('`tflw load` exits 1 and reports a breached threshold without throwing', as
   }
 });
 
-test('`tflw load` on a file with no `scenario` is a usage error, not a silent no-op', async () => {
+test('`tflw load` on a file with no workload-bearing `test` is a usage error, not a silent no-op', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-noscenario-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
-      await writeFile(join(dir, 'plain.tflw'), 'test "not a scenario"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'plain.tflw'), 'test "not a load test"\n  api GET /health\n  expect status equals 200\n', 'utf8');
 
       const failure = await execFileAsync('node', [cliEntry, 'load', 'plain.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
       assert.equal(failure.code, 2);
-      assert.match(failure.stderr, /needs a file with at least one `scenario`/);
+      assert.match(failure.stderr, /needs a file with at least one workload-bearing `test`/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2233,7 +2233,7 @@ test('`tflw load --workers 3` really forks 3 OS processes and merges their resul
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(
         join(dir, 'load.tflw'),
-        'scenario "health burst"\n  ramp to 6 users over 200ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
+        'test "health burst"\n  ramp to 6 users over 200ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
         'utf8',
       );
 
@@ -2274,7 +2274,7 @@ test('`tflw load --workers 2` still fails the run (exit 1) when the merged, pool
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
     await writeFile(
       join(dir, 'load.tflw'),
-      'scenario "always fails"\n  ramp to 4 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
+      'test "always fails"\n  ramp to 4 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
       'utf8',
     );
 
@@ -2298,7 +2298,7 @@ test('`tflw load --workers 0` (or any non-positive-integer) is a usage error, sa
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-workers-usage-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
-      await writeFile(join(dir, 'load.tflw'), 'scenario "S"\n  ramp to 1 users over 50ms\n  api GET /health\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "S"\n  ramp to 1 users over 50ms\n  api GET /health\n', 'utf8');
 
       const failure = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--workers', '0', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
       assert.equal(failure.code, 2);
@@ -2333,7 +2333,7 @@ test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing 
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       // A long planned duration (4s) so "aborted well before the end" isn't a race against natural
       // completion — SIGINT fires at 300ms, under 1/10th of the plan.
-      await writeFile(join(dir, 'load.tflw'), 'scenario "long"\n  ramp to 5 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "long"\n  ramp to 5 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
 
       const { code, output } = await runLoadAndSigint(['load.tflw'], dir, 300);
       assert.equal(code, 130);
@@ -2362,7 +2362,7 @@ test('`tflw load --workers 2`: Ctrl-C propagates to forked workers and still mer
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-sigint-workers-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
-      await writeFile(join(dir, 'load.tflw'), 'scenario "long"\n  ramp to 6 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "long"\n  ramp to 6 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
 
       const { code, output } = await runLoadAndSigint(['load.tflw', '--workers', '2'], dir, 400);
       assert.equal(code, 130);
@@ -2392,7 +2392,7 @@ test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and ma
     // `selfDiagnosis.test.ts`'s own busy-block test proves saturation deterministically.
     await writeFile(
       join(dir, 'load.tflw'),
-      'use "./helpers.ts"\n\nscenario "cpu burn"\n  ramp to 8 users over 600ms\n  let burned = burnCpu()\n  threshold p95 duration is less than 100000ms\n',
+      'use "./helpers.ts"\n\ntest "cpu burn"\n  ramp to 8 users over 600ms\n  let burned = burnCpu()\n  threshold p95 duration is less than 100000ms\n',
       'utf8',
     );
 

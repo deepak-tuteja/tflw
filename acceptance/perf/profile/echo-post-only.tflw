@@ -4,7 +4,7 @@
 # so this rung measures tflw's raw POST-with-body overhead alone, not entangled with a preceding
 # GET or a captured/interpolated field.
 
-scenario "M39 echo POST-only"
+test "M39 echo POST-only"
   ramp to 30 users over 8s
   api POST /orders body { items: [{ productId: "prod_1", quantity: 1 }] }
   expect status equals 201

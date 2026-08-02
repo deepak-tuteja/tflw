@@ -13,12 +13,12 @@ import type {
   NetworkRequestRef,
   PathSegment,
   Program,
-  ScenarioDecl,
   SessionDecl,
   Step,
   StringLit,
   StringPart,
   Subject,
+  TestDecl,
   Value,
 } from './ast.js';
 import type { Span } from './token.js';
@@ -113,19 +113,6 @@ export function checkSessions(program: Program, knownSessions: readonly string[]
       });
     }
   }
-  for (const scenario of program.scenarios) {
-    for (const session of scenario.sessions) {
-      if (knownSessions.includes(session)) continue;
-      const hint = suggest(session, knownSessions);
-      diags.push({
-        code: Codes.UNKNOWN_SESSION,
-        severity: 'error',
-        message: `unknown session "${session}"`,
-        span: scenario.span,
-        hint: hint ? `did you mean \`${hint}\`?` : knownSessions.length ? `known sessions: ${knownSessions.join(', ')}` : 'tflw.config declares no `session` blocks',
-      });
-    }
-  }
   return diags;
 }
 
@@ -144,9 +131,6 @@ export function checkServices(program: Program, knownServices: readonly string[]
   }
   for (const hook of program.hooks) {
     for (const step of hook.body) checkStepService(step, knownServices, diags);
-  }
-  for (const scenario of program.scenarios) {
-    for (const step of scenario.body) checkStepService(step, knownServices, diags);
   }
   return diags;
 }
@@ -290,7 +274,6 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
   for (const test of program.tests) walk(test.body);
   for (const action of program.actions) walk(action.body);
   for (const hook of program.hooks) walk(hook.body);
-  for (const scenario of program.scenarios) walk(scenario.body);
   return diags;
 }
 
@@ -320,33 +303,58 @@ const BROWSER_STEP_TYPES = new Set<Step['type']>([
 ]);
 
 /**
- * Load-arc (M29/M30) semantic checks: `scenario` names unique within a file (M30, D29 — a
- * concurrent multi-scenario run keys each scenario's own metrics/threshold breakdown by name, so a
- * collision would silently merge two distinct scenarios' results), `think` legal only inside a
- * `scenario` (D18), and no browser step inside a `scenario` body (D19 — a browser VU is
- * ~50-100MB, infeasible at load-test scale; checker-enforced rather than left to surface as a
- * runtime crash). Both the `think` and browser-step checks only look at *directly* written steps
- * — a `scenario` calling an `action` that itself contains one isn't traced interprocedurally
- * (actions are the reuse unit shared with `test`, D16, and can't statically know their caller's
+ * Load-arc (M29/M30/M50) semantic checks, now phrased against workload-bearing `test` blocks
+ * (`test.workload !== null`) rather than a separate `scenario` node (M50, D93-D96,
+ * PLAN_UNIFIED_TEST_WORKLOAD.md): workload-bearing test names unique within a file (M30, D29 — a
+ * concurrent multi-load-test run keys each one's own metrics/threshold breakdown by name, so a
+ * collision would silently merge two distinct runs' results — this rule is scoped to
+ * workload-bearing tests only, since two functional tests have always been allowed to share a
+ * name), `think` legal only inside a workload-bearing body (D18), no browser step inside one
+ * (D19 — a browser VU is ~50-100MB, infeasible at load-test scale; checker-enforced rather than
+ * left to surface as a runtime crash), and `retry`/`with each` rejected alongside a workload
+ * (D96 — a load test's own iterations already provide repetition; it has no per-row cases, only
+ * per-VU ones). The `think`/browser-step checks only look at *directly* written steps — a test
+ * calling an `action` that itself contains one isn't traced interprocedurally (actions are the
+ * reuse unit shared by every kind of test, D16, and can't statically know their caller's
  * context); such a call still fails loudly at runtime instead of silently doing the wrong thing.
  */
-export function checkScenarios(program: Program): Diagnostic[] {
+export function checkWorkloadTests(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
 
-  const seenNames = new Map<string, ScenarioDecl>();
-  for (const scenario of program.scenarios) {
-    const name = scenario.name.value;
+  const seenNames = new Map<string, TestDecl>();
+  for (const test of program.tests) {
+    if (!test.workload) continue;
+    const name = test.name.value;
     const first = seenNames.get(name);
     if (first) {
       diags.push({
         code: Codes.LOAD_INVALID,
         severity: 'error',
-        message: `duplicate scenario name "${name}"`,
-        span: scenario.span,
-        hint: `already declared at ${first.span.start.line}:${first.span.start.column} — scenario names must be unique within a file, they key its metrics/threshold breakdown in the report`,
+        message: `duplicate load test name "${name}"`,
+        span: test.span,
+        hint: `already declared at ${first.span.start.line}:${first.span.start.column} — workload-bearing test names must be unique within a file, they key its metrics/threshold breakdown in the report`,
       });
     } else {
-      seenNames.set(name, scenario);
+      seenNames.set(name, test);
+    }
+
+    if (test.retry > 0) {
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: "`retry` can't be combined with a workload (D96)",
+        span: test.span,
+        hint: "a load test's own iterations already provide repetition — drop `retry`",
+      });
+    }
+    if (test.table) {
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: "`with each` can't be combined with a workload (D96)",
+        span: test.span,
+        hint: 'a load test has no per-row cases, only per-VU iterations — drop `with each`',
+      });
     }
   }
 
@@ -356,20 +364,23 @@ export function checkScenarios(program: Program): Diagnostic[] {
         diags.push({
           code: Codes.LOAD_INVALID,
           severity: 'error',
-          message: '`think` is only legal inside a `scenario`',
+          message: '`think` is only legal inside a workload-bearing `test`',
           span: step.span,
-          hint: '`test`/`before`/`after` bodies use `wait until …` for eventual consistency, never a fixed sleep — move this into a `scenario` body',
+          hint: 'a functional `test`/`before`/`after` body uses `wait until …` for eventual consistency, never a fixed sleep — this `test` needs a `ramp to …` workload line for `think` to be meaningful',
         });
       } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
         walkForThink(step.body);
       }
     }
   };
-  for (const test of program.tests) walkForThink(test.body);
+  for (const test of program.tests) {
+    if (!test.workload) walkForThink(test.body);
+  }
   for (const hook of program.hooks) walkForThink(hook.body);
 
-  for (const scenario of program.scenarios) {
-    for (const step of scenario.body) {
+  for (const test of program.tests) {
+    if (!test.workload) continue;
+    for (const step of test.body) {
       const isBrowserExpect =
         step.type === 'ExpectStmt' &&
         (step.subject.type === 'LocatorSubject' || step.subject.type === 'PageSubject' || step.subject.type === 'NetworkRequestSubject');
@@ -377,28 +388,28 @@ export function checkScenarios(program: Program): Diagnostic[] {
         diags.push({
           code: Codes.LOAD_INVALID,
           severity: 'error',
-          message: "browser steps aren't supported inside a `scenario` in this milestone (D19)",
+          message: "browser steps aren't supported inside a workload-bearing `test` in this milestone (D19)",
           span: step.span,
-          hint: 'load scenarios are API-only in v1 — a browser VU is ~50-100MB, infeasible at load-test scale',
+          hint: 'load tests are API-only in v1 — a browser VU is ~50-100MB, infeasible at load-test scale',
         });
       }
     }
+    checkThresholdScopes(test, diags);
   }
-
-  for (const scenario of program.scenarios) checkThresholdScopes(scenario, diags);
 
   return diags;
 }
 
 /** M43 (D70/D72), TF034: a `threshold … for "label"` clause must resolve to at least one `api`
- * step's own identity within the same scenario — either that step's explicit `as "label"` tag, or
- * its automatically-derived `METHOD path.raw` identity when untagged (mirrors the interpreter's
- * own fallback, `interpreter.ts`'s per-endpoint accumulator). Only walks the scenario's own body
- * (including into `within`/`switch to new tab`/`download` sub-blocks, same recursion `walkForThink`
- * uses) — a `call` into an `action` isn't resolved, a known, accepted conservative limit shared
- * with `checkUnknownVariables`'s own scope model, since actions aren't required to appear at most
- * once and their own api steps aren't statically visible here without call-graph analysis. */
-function checkThresholdScopes(scenario: ScenarioDecl, diags: Diagnostic[]): void {
+ * step's own identity within the same workload-bearing test — either that step's explicit `as
+ * "label"` tag, or its automatically-derived `METHOD path.raw` identity when untagged (mirrors
+ * the interpreter's own fallback, `interpreter.ts`'s per-endpoint accumulator). Only walks the
+ * test's own body (including into `within`/`switch to new tab`/`download` sub-blocks, same
+ * recursion `walkForThink` uses) — a `call` into an `action` isn't resolved, a known, accepted
+ * conservative limit shared with `checkUnknownVariables`'s own scope model, since actions aren't
+ * required to appear at most once and their own api steps aren't statically visible here without
+ * call-graph analysis. */
+function checkThresholdScopes(test: TestDecl, diags: Diagnostic[]): void {
   const identities = new Set<string>();
   const collect = (steps: readonly Step[]): void => {
     for (const step of steps) {
@@ -409,19 +420,19 @@ function checkThresholdScopes(scenario: ScenarioDecl, diags: Diagnostic[]): void
       }
     }
   };
-  collect(scenario.body);
+  collect(test.body);
 
-  for (const threshold of scenario.thresholds) {
+  for (const threshold of test.thresholds) {
     if (!threshold.scope) continue;
     if (!identities.has(threshold.scope.value)) {
       diags.push({
         code: Codes.THRESHOLD_SCOPE_UNKNOWN,
         severity: 'error',
-        message: `threshold \`for "${threshold.scope.value}"\` matches no step in this scenario`,
+        message: `threshold \`for "${threshold.scope.value}"\` matches no step in this test`,
         span: threshold.scope.span,
         hint: identities.size
-          ? `known identities in "${scenario.name.value}": ${[...identities].map((id) => `"${id}"`).join(', ')}`
-          : `"${scenario.name.value}" has no \`api\` steps to scope a threshold to`,
+          ? `known identities in "${test.name.value}": ${[...identities].map((id) => `"${id}"`).join(', ')}`
+          : `"${test.name.value}" has no \`api\` steps to scope a threshold to`,
       });
     }
   }
@@ -487,6 +498,17 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
     // each-hooks, which share its scope) entirely rather than risk flagging a legitimate column
     // reference as unknown.
     if (test.table && test.table.type === 'FileDataTable') continue;
+    // A workload-bearing test (D96 already forbids `table` alongside `workload`, so this branch
+    // is mutually exclusive with the table check above) has no data table/session and doesn't
+    // share scope with `before`/`after each` hooks the way a functional test does (D26's
+    // `cleanup` flag governs whether those hooks *run* under load, not whether their bindings are
+    // statically visible here — a distinct, narrower concern deliberately left unaddressed in
+    // M29 rather than threading hook scope through a second execution model; carried over
+    // unchanged by M50's collapse).
+    if (test.workload) {
+      checkStepSequence(test.body, new Set<string>(), diags);
+      continue;
+    }
     const bound = new Set<string>();
     if (test.table) for (const col of test.table.columns) bound.add(col);
     for (const hook of beforeEachHooks) checkStepSequence(hook.body, bound, diags);
@@ -497,14 +519,6 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
   for (const action of program.actions) {
     const bound = new Set<string>(action.params);
     checkStepSequence(action.body, bound, diags);
-  }
-
-  // A scenario has no data table/session and doesn't share scope with `before`/`after each` hooks
-  // the way a test does (D26's `cleanup` flag governs whether those hooks *run* under load, not
-  // whether their bindings are statically visible here — a distinct, narrower concern deliberately
-  // left unaddressed in M29 rather than threading hook scope through a second execution model).
-  for (const scenario of program.scenarios) {
-    checkStepSequence(scenario.body, new Set<string>(), diags);
   }
 
   // Each-scope hooks are checked once per test (their bound-set can legitimately differ test to

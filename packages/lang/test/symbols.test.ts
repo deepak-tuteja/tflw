@@ -337,8 +337,8 @@ test('collectSymbols (M4b): `matches snapshot` against a LocatorSubject resolves
 // this milestone — a `{var}` referenced only inside a `scenario` body, or a scenario's own `as`
 // clause, was invisible to hover/go-to-def/rename/rename, with no error (a checker-clean file just
 // produced an empty ref list, exactly the M4a-era browser-step gap for a different construct).
-test('collectSymbols (M33): `scenario "…" as admin, userA` sessions are refs with precise spans', () => {
-  const source = `scenario "checkout burst" as admin, userA\n  ramp to 10 users over 30s\n  api GET /health\n`;
+test('collectSymbols (M33): `test "…" as admin, userA` sessions are refs with precise spans', () => {
+  const source = `test "checkout burst" as admin, userA\n  ramp to 10 users over 30s\n  api GET /health\n`;
   const { program } = parseSource(source);
   const table = collectSymbols(program, source);
 
@@ -352,7 +352,7 @@ test('collectSymbols (M33): `scenario "…" as admin, userA` sessions are refs w
 });
 
 test('collectSymbols (M33): a `{var}` inside a `scenario` body (path interpolation) resolves to its own `let` def, scoped separately from a `test`', () => {
-  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n\ntest "ok"\n  api GET /health\n`;
+  const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n\ntest "ok"\n  api GET /health\n`;
   const { program } = parseSource(source);
   const table = collectSymbols(program, source);
 
@@ -367,7 +367,7 @@ test('collectSymbols (M33): a `{var}` inside a `scenario` body (path interpolati
 });
 
 test('collectSymbols (M33): a `think 1s to 3s` step is walked without throwing and produces no spurious refs', () => {
-  const source = `scenario "browsing"\n  ramp to 10 users over 30s\n  api GET /products\n  expect status equals 200\n  think 1s to 3s\n  api GET /products/1\n  expect status equals 200\n`;
+  const source = `test "browsing"\n  ramp to 10 users over 30s\n  api GET /products\n  expect status equals 200\n  think 1s to 3s\n  api GET /products/1\n  expect status equals 200\n`;
   const { program } = parseSource(source);
   let table: ReturnType<typeof collectSymbols> | undefined;
   assert.doesNotThrow(() => {
@@ -378,12 +378,12 @@ test('collectSymbols (M33): a `think 1s to 3s` step is walked without throwing a
 
 test('collectSymbols (M33): two scenarios in one file get independent scopes for identically-named `let`s', () => {
   const source = [
-    `scenario "browsing"`,
+    `test "browsing"`,
     `  ramp to 10 users over 30s`,
     `  let id = unique("b")`,
     `  api GET /products/{id}`,
     ``,
-    `scenario "checkout"`,
+    `test "checkout"`,
     `  ramp to 5 users over 30s`,
     `  let id = unique("c")`,
     `  api GET /orders/{id}`,

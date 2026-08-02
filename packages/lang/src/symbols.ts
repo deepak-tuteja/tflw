@@ -180,16 +180,30 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
     }
 
     if (test.sessions.length > 0) {
-      const headerEnd = test.body[0]?.span.start ?? test.span.end;
+      // M50 (D93-D95): a workload-bearing test's `ramp to …`/`threshold`/`cleanup` lines
+      // interleave with its body in source order, all parsed out of the same indented block
+      // (`parser.ts`'s `parseTestBody`, formerly `parseScenarioDecl`'s own loop) — so
+      // `body[0]` isn't a safe header-end boundary there the way it is for a functional test.
+      // `workload` always follows the `as` clause directly, so its own span start is the exact
+      // boundary instead (mirrors the pre-M50 `scenario` branch this loop absorbed).
+      const headerEnd = test.workload ? test.workload.span.start : test.body[0]?.span.start ?? test.span.end;
       const sessionSpans = findIdentifierSpans(source, { start: test.name.span.end, end: headerEnd }, test.sessions);
       test.sessions.forEach((s, i) => {
         refs.push({ name: s, kind: 'session', span: sessionSpans[i] ?? test.span, scopeId });
       });
     }
 
-    for (const hook of beforeEachHooks) walkSteps(hook.body, bound, scopeId, source, actionDefs, pushDef, refs);
+    // A workload-bearing test doesn't share scope with `before`/`after each` hooks the way a
+    // functional test does (mirrors `checkUnknownVariables`'s identical split, checker.ts) —
+    // carried over from the pre-M50 `scenario` branch this loop absorbed, which never walked
+    // hooks against a scenario body either.
+    if (!test.workload) {
+      for (const hook of beforeEachHooks) walkSteps(hook.body, bound, scopeId, source, actionDefs, pushDef, refs);
+    }
     walkSteps(test.body, bound, scopeId, source, actionDefs, pushDef, refs);
-    for (const hook of afterEachHooks) walkSteps(hook.body, bound, scopeId, source, actionDefs, pushDef, refs);
+    if (!test.workload) {
+      for (const hook of afterEachHooks) walkSteps(hook.body, bound, scopeId, source, actionDefs, pushDef, refs);
+    }
   }
 
   for (const action of program.actions) {
@@ -205,26 +219,6 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
       pushDef({ name: p, kind: 'param', span, scopeId });
     });
     walkSteps(action.body, bound, scopeId, source, actionDefs, pushDef, refs);
-  }
-
-  // `scenario` (M29-M32, load testing) — mirrors `TestDecl`'s own `as` handling above. Unlike a
-  // `test`, `body[0]` isn't a safe header-end boundary (a `scenario`'s `ramp to …`/`threshold`/
-  // `cleanup` lines interleave with its body in source order, all parsed out of the same indented
-  // block — parser.ts's `parseScenarioDecl`); `workload` is always present on a successfully
-  // parsed `ScenarioDecl` (a missing one is a parse error, never a valid node) and always follows
-  // the `as` clause, so its own span start is the exact header-end boundary instead.
-  for (const scenario of program.scenarios) {
-    const scopeId = `scenario:${scenario.span.start.offset}`;
-    const bound = new Map<string, Span>();
-
-    if (scenario.sessions.length > 0) {
-      const sessionSpans = findIdentifierSpans(source, { start: scenario.name.span.end, end: scenario.workload.span.start }, scenario.sessions);
-      scenario.sessions.forEach((s, i) => {
-        refs.push({ name: s, kind: 'session', span: sessionSpans[i] ?? scenario.span, scopeId });
-      });
-    }
-
-    walkSteps(scenario.body, bound, scopeId, source, actionDefs, pushDef, refs);
   }
 
   return { defs, refs };

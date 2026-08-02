@@ -31,7 +31,7 @@ export {
   checkSessions,
   checkUnknownVariables,
   checkRequestAssertions,
-  checkScenarios,
+  checkWorkloadTests,
 } from './checker.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
 export { getCompletionContext } from './completion.js';

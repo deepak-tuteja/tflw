@@ -21,7 +21,7 @@ import {
   checkSessions,
   checkUnknownVariables,
   checkRequestAssertions,
-  checkScenarios,
+  checkWorkloadTests,
   suggest,
   detectReuse,
   renderCallSiteReplacement,
@@ -35,6 +35,8 @@ import {
   type LogLevel,
   type SuiteEntry,
   type ReuseOccurrence,
+  type TestDecl,
+  type Workload,
 } from '@tflw/lang';
 import {
   runProgram,
@@ -672,8 +674,8 @@ async function loadAndValidate(
     const sessionDiags = checkSessions(parsed.program, knownSessions);
     const variableDiags = checkUnknownVariables(parsed.program);
     const requestDiags = checkRequestAssertions(parsed.program);
-    const scenarioDiags = checkScenarios(parsed.program);
-    const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags, ...requestDiags, ...scenarioDiags];
+    const workloadDiags = checkWorkloadTests(parsed.program);
+    const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags, ...requestDiags, ...workloadDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
     // deprecation notices, `tflw migrate`'s own input) is advisory: printed/handed to the caller,
     // but the file still runs. No diagnostic in the shipped checker uses `'warning'` yet (the
@@ -1203,14 +1205,15 @@ function runShardInChildProcess(
   });
 }
 
-/** `tflw load <file.tflw>` — runs every `scenario` declared in the file (M30/D29 — checker-
- * enforced unique names, `checkScenarios`/TF033) concurrently as a load test via `@tflw/runtime`'s
- * `runLoad`. Deliberately a separate command from `tflw run`, not a flag on it — a load run has a
- * different shape end to end (no per-test report, a workload/threshold verdict instead) and no
- * reason to share most of `runCommand`'s flag surface (`--tag`/`--browser`/…, meaningless here —
- * scenarios are API-only, D19). `--workers N>1` (M31) is the one flag it does gain, forking N
- * generator *processes* rather than scaling in-process — load generation is CPU-bound and Node
- * caps at one core per process.
+/** `tflw load <file.tflw>` — runs every workload-bearing `test` declared in the file (a `test`
+ * with a `ramp to …` line; M30/D29 — checker-enforced unique names among those,
+ * `checkWorkloadTests`/TF033; M50/D93-D95 collapsed what used to be a separate `scenario` keyword
+ * into this) concurrently as a load test via `@tflw/runtime`'s `runLoad`. Deliberately a separate
+ * command from `tflw run`, not a flag on it — a load run has a different shape end to end (no
+ * per-test report, a workload/threshold verdict instead) and no reason to share most of
+ * `runCommand`'s flag surface (`--tag`/`--browser`/…, meaningless here — load tests are API-only,
+ * D19). `--workers N>1` (M31) is the one flag it does gain, forking N generator *processes* rather
+ * than scaling in-process — load generation is CPU-bound and Node caps at one core per process.
  *
  * M32 fills in the rest of `PLAN_REPORTS_PERF_SECURITY.md`'s R1-R6/R11 design: a real ~1Hz live
  * console line (single-process *and* multi-worker, via the forked workers' own `progress` IPC
@@ -1252,9 +1255,12 @@ async function loadCommand(argv: string[]): Promise<number> {
   if (typeof loaded === 'number') return loaded;
   const { resolved, parsedFiles, environ } = loaded;
   const { file, source, program } = parsedFiles[0]!;
+  // M50 (D93-D95): a "scenario" is any `test` block whose `workload` is non-null — `scenario` no
+  // longer exists as its own keyword/array.
+  const scenarios = program.tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
 
-  if (program.scenarios.length === 0) {
-    err(`tflw load needs a file with at least one \`scenario\` — ${relative(cwd, file)} has 0.`);
+  if (scenarios.length === 0) {
+    err(`tflw load needs a file with at least one workload-bearing \`test\` (a \`ramp to …\` line) — ${relative(cwd, file)} has 0.`);
     return EXIT_USAGE;
   }
 
@@ -1264,7 +1270,7 @@ async function loadCommand(argv: string[]): Promise<number> {
     return EXIT_USAGE;
   }
 
-  for (const scenario of program.scenarios) {
+  for (const scenario of scenarios) {
     const workloadLabel =
       scenario.workload.type === 'RampUsersWorkload'
         ? `ramp to ${scenario.workload.users} users over ${scenario.workload.overMs}ms (closed)`
@@ -1272,7 +1278,7 @@ async function loadCommand(argv: string[]): Promise<number> {
     process.stdout.write(`scenario "${scenario.name.value}" — ${workloadLabel}\n`);
   }
 
-  const plannedMs = Math.max(...program.scenarios.map((s) => s.workload.overMs));
+  const plannedMs = Math.max(...scenarios.map((s) => s.workload.overMs));
 
   // M32 (R5) — first Ctrl-C requests a graceful stop (no new iterations; `report.aborted` flushes
   // whatever completed); a second one before that resolves force-quits immediately, the usual
@@ -1985,7 +1991,8 @@ async function initCommand(argv: string[]): Promise<number> {
   const examplePath = join(cwd, 'example.tflw');
   const envExamplePath = join(cwd, '.env.example');
   // `tflw init --load` (M29, D30) — bundled into the first grammar milestone rather than
-  // deferred: it only needs the `scenario`/`threshold` grammar this milestone already builds, and
+  // deferred: it only needs the `ramp`/`threshold` grammar this milestone already builds (M50,
+  // D93-D95: written inside an ordinary `test` body, not a separate `scenario` keyword), and
   // scaffolds the **open** (`ramp to N rps`) workload form, matching D17's "docs lead with it".
   const load = argv.includes('--load');
   const loadPath = join(cwd, 'load.tflw');
@@ -2073,10 +2080,11 @@ test "health check"
 // for leading with it: VUs loop in the closed form, so a slow system just makes VUs back off and
 // issue fewer requests (understating latency); the open form keeps arriving on schedule and lets
 // queueing show up honestly. Run it with \`tflw load load.tflw\`.
-const SCAFFOLD_LOAD = `# A load test. \`scenario\` is a second execution model alongside \`test\` — a per-VU loop, not a
-# single pass. Reuses ordinary steps, so anything an \`action\` already does works here too.
+const SCAFFOLD_LOAD = `# A load test. A \`test\` becomes a per-VU loop instead of a single pass as soon as it has a
+# \`ramp to …\` workload line — reuses ordinary steps, so anything an \`action\` already does works
+# here too.
 
-scenario "health check under load"
+test "health check under load"
   ramp to 20 rps over 10s
   api GET /health
   expect status equals 200
@@ -2127,14 +2135,14 @@ function printUsage(): void {
       '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json}',
       '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
       '  tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--workers <n>] [--no-color]',
-      '                                                      run every `scenario` in the file as a load test (PLAN_BROWSER_PERF_SECURITY.md);',
+      '                                                      run every workload-bearing `test` (a `ramp to …` line) in the file as a load test;',
       '                                                      live console + a metrics/threshold summary, writes report/{load-report.html,load-junit.xml,load-results.json};',
       '                                                      Ctrl-C flushes a partial report; exit 0 = passed, 1 = a threshold breached, 3 = inconclusive (generator saturated), 130 = aborted',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',
       '  tflw init [--load]                                 scaffold tflw.config + example.tflw',
-      '                                                      --load also scaffolds load.tflw (a `scenario`, M29)',
+      '                                                      --load also scaffolds load.tflw (a workload-bearing `test`, M29/M50)',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
       '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
       '  tflw install-browsers [--browser chromium|firefox|webkit]',

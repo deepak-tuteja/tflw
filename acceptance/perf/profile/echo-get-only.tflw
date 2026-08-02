@@ -3,7 +3,7 @@
 # the GET request, not an average across both steps. Zero-latency target (echo-server.mjs), same
 # ramp shape as bench.tflw for consistency with the existing echo-server harness convention.
 
-scenario "M39 echo GET-only"
+test "M39 echo GET-only"
   ramp to 30 users over 8s
   api GET /products
   expect status equals 200

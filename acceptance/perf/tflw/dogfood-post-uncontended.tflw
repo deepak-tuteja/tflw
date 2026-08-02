@@ -10,7 +10,7 @@
 # perf-0's product row has no pinned id, see testFlow-tests apiV2/src/seed/seed.ts). Same ramp shape
 # as checkout-burst.tflw for apples-to-apples comparison against the contended rung.
 
-scenario "M39 dogfood POST-uncontended" as load
+test "M39 dogfood POST-uncontended" as load
   ramp to 60 users over 20s
   api POST /cart/items body { productId: "6c0b2198-a3c4-4fe0-8aae-64a6714fff3c", quantity: 1 }
   expect status equals 201

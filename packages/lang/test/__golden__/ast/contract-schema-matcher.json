@@ -21,6 +21,9 @@
       "sessions": [],
       "retry": 0,
       "table": null,
+      "workload": null,
+      "thresholds": [],
+      "cleanup": false,
       "body": [
         {
           "type": "ApiStep",
@@ -113,6 +116,5 @@
         }
       ]
     }
-  ],
-  "scenarios": []
+  ]
 }

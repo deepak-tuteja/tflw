@@ -63,7 +63,6 @@ import type {
   RandomOfExpr,
   RandomPasswordExpr,
   RandomStringExpr,
-  ScenarioDecl,
   ScreenshotStmt,
   ScrollStmt,
   SelectStmt,
@@ -96,10 +95,7 @@ function children(node: Node): readonly Node[] {
   switch (node.type) {
     case 'Program': {
       const n = node as Program;
-      // M33: `scenarios` (M29-M32 load testing) was missing here entirely — offset resolution
-      // could never descend past the `Program` root into a `scenario` at all, unlike every other
-      // top-level decl kind.
-      return [...n.imports, ...n.uses, ...n.actions, ...n.hooks, ...n.tests, ...n.scenarios];
+      return [...n.imports, ...n.uses, ...n.actions, ...n.hooks, ...n.tests];
     }
     case 'HookDecl':
       return (node as HookDecl).body;
@@ -109,16 +105,12 @@ function children(node: Node): readonly Node[] {
       return [(node as UseDecl).path];
     case 'ActionDecl':
       return (node as ActionDecl).body;
+    // `sessions` is a plain `string[]` (not a child `Node`), deliberately omitted, same as
+    // always. `workload`/`thresholds` (M50, formerly `ScenarioDecl`-only) are now optional —
+    // `workload` null for a functional test, present for a workload-bearing one.
     case 'TestDecl': {
       const n = node as TestDecl;
-      return [n.name, ...(n.table ? [n.table] : []), ...n.body];
-    }
-    // `scenario` (M29-M32 load testing, M33 catch-up) — `sessions` is a plain `string[]` (like
-    // `TestDecl.sessions`), not a child `Node`, so it's deliberately omitted here too. `workload`
-    // is always present on a valid `ScenarioDecl` (a missing one is a parse error).
-    case 'ScenarioDecl': {
-      const n = node as ScenarioDecl;
-      return [n.name, n.workload, ...n.thresholds, ...n.body];
+      return [n.name, ...(n.table ? [n.table] : []), ...(n.workload ? [n.workload] : []), ...n.thresholds, ...n.body];
     }
     case 'RampUsersWorkload':
     case 'RampRpsWorkload':

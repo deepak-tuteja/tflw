@@ -12,7 +12,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseSource, parseConfigSource } from '@tflw/lang';
-import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff } from '../src/interpreter.js';
+import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff, type LoadTest } from '../src/interpreter.js';
 import { LatencyHistogram } from '../src/histogram.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import type { LoadIterationResult, LoadShardResult, SelfDiagnosis } from '../src/types.js';
@@ -22,7 +22,7 @@ const HEALTHY_DIAGNOSIS: SelfDiagnosis = { avgEventLoopLagMs: 1, maxEventLoopLag
 
 test('a closed (`ramp to N users`) workload runs iterations and reports clean metrics', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "Health burst"\n  ramp to 3 users over 200ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Health burst"\n  ramp to 3 users over 200ms\n  api GET /health\n  expect status equals 200\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -46,7 +46,7 @@ test('a closed (`ramp to N users`) workload runs iterations and reports clean me
 
 test('an open (`ramp to N rps`) workload schedules arrivals independent of completion', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "Ramp"\n  ramp to 40 rps over 400ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Ramp"\n  ramp to 40 rps over 400ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
@@ -70,7 +70,7 @@ test('a failing `expect` inside a scenario fails that iteration and counts towar
       json(res, n % 2 === 0 ? 500 : 200, { n });
     },
   });
-  const source = 'scenario "Flaky"\n  ramp to 4 users over 200ms\n  api GET /flaky\n  expect status equals 200\n';
+  const source = 'test "Flaky"\n  ramp to 4 users over 200ms\n  api GET /flaky\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
@@ -85,7 +85,7 @@ test('a failing `expect` inside a scenario fails that iteration and counts towar
 
 test('an `error rate` threshold fails the run when breached, passes when met', async () => {
   const alwaysFail = await startFixtureServer({ '/fail': (_req, res) => res.writeHead(500).end() });
-  const failSource = 'scenario "AllFail"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n  threshold error rate is less than 50%\n';
+  const failSource = 'test "AllFail"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n  threshold error rate is less than 50%\n';
   const { program: failProgram } = parseSource(failSource);
   const failReport = await runLoad(failProgram, testConfig(alwaysFail.baseUrl), { source: failSource });
   assert.equal(failReport.ok, false);
@@ -95,7 +95,7 @@ test('an `error rate` threshold fails the run when breached, passes when met', a
   await alwaysFail.close();
 
   const alwaysOk = await startFixtureServer({ '/ok': (_req, res) => json(res, 200, { ok: true }) });
-  const okSource = 'scenario "AllOk"\n  ramp to 3 users over 150ms\n  api GET /ok\n  expect status equals 200\n  threshold error rate is less than 50%\n';
+  const okSource = 'test "AllOk"\n  ramp to 3 users over 150ms\n  api GET /ok\n  expect status equals 200\n  threshold error rate is less than 50%\n';
   const { program: okProgram } = parseSource(okSource);
   const okReport = await runLoad(okProgram, testConfig(alwaysOk.baseUrl), { source: okSource });
   assert.equal(okReport.ok, true);
@@ -108,7 +108,7 @@ test('a `pNN duration` threshold reads the exact requested percentile, not just 
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   // p1 is trivially satisfied by any real latency floor; asserts the machinery accepts and
   // evaluates an arbitrary percentile (not just the four baked into LoadDurationStats).
-  const source = 'scenario "S"\n  ramp to 2 users over 100ms\n  api GET /health\n  expect status equals 200\n  threshold p1 duration is less than 5000ms\n';
+  const source = 'test "S"\n  ramp to 2 users over 100ms\n  api GET /health\n  expect status equals 200\n  threshold p1 duration is less than 5000ms\n';
   const { program } = parseSource(source);
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
   assert.equal(report.scenarios[0]!.thresholds[0]!.label, 'p1 duration');
@@ -118,7 +118,7 @@ test('a `pNN duration` threshold reads the exact requested percentile, not just 
 
 test('`think` time is excluded from the reported iteration duration', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 1 users over 50ms\n  think 300ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 1 users over 50ms\n  think 300ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const seen: LoadIterationResult[] = [];
   const report = await runLoad(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
@@ -133,9 +133,9 @@ test('`think` time is excluded from the reported iteration duration', async () =
   await server.close();
 });
 
-test('`runLoad` throws when the file declares no `scenario`', async () => {
-  const { program } = parseSource('test "not a scenario"\n  api GET /health\n');
-  await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /at least one `scenario`/);
+test('`runLoad` throws when the file declares no workload-bearing `test`', async () => {
+  const { program } = parseSource('test "not a load test"\n  api GET /health\n');
+  await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /at least one workload-bearing `test`/);
 });
 
 test('a session opted into via `as <name>` establishes once before the loop, not once per iteration', async () => {
@@ -160,7 +160,7 @@ session admin
   const envBlock = selectEnv(parsedConfig.config, {});
   const config = resolveConfig(parsedConfig.config, envBlock);
 
-  const source = 'scenario "Auth burst" as admin\n  ramp to 5 users over 200ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Auth burst" as admin\n  ramp to 5 users over 200ms\n  api GET /health\n  expect status equals 200\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -210,7 +210,7 @@ session admin
 
   // Long enough, with enough VUs, to run many iterations past ROTATE_AT — the whole point is
   // proving those later iterations don't each pay for their own re-login.
-  const source = 'scenario "Auth burst" as admin\n  ramp to 3 users over 300ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Auth burst" as admin\n  ramp to 3 users over 300ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, config, { source });
@@ -262,7 +262,7 @@ session admin
   // establish's own 30ms delay for any VU to spawn at all, plus enough further room for several
   // VUs' first iterations to land within the *second* login's own 30ms delay and genuinely race
   // `SessionCache.reestablish` on the same stale ref, not just queue up one after another.
-  const source = 'scenario "Auth storm" as admin\n  ramp to 20 users over 250ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Auth storm" as admin\n  ramp to 20 users over 250ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, config, { source });
@@ -284,8 +284,8 @@ test('two scenarios in one file run concurrently — a fast scenario is not bloc
   // a truly concurrent "Fast" (near-zero spawn delay) lands among "Slow"'s iterations, not strictly
   // after every one of them.
   const source =
-    'scenario "Slow"\n  ramp to 20 rps over 500ms\n  api GET /health\n  expect status equals 200\n\n' +
-    'scenario "Fast"\n  ramp to 1 users over 10ms\n  api GET /health\n  expect status equals 200\n';
+    'test "Slow"\n  ramp to 20 rps over 500ms\n  api GET /health\n  expect status equals 200\n\n' +
+    'test "Fast"\n  ramp to 1 users over 10ms\n  api GET /health\n  expect status equals 200\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -310,8 +310,8 @@ test('combined metrics pool every scenario\'s iterations; each scenario\'s own m
     '/fail': (_req, res) => res.writeHead(500).end(),
   });
   const source =
-    'scenario "Good"\n  ramp to 3 users over 150ms\n  api GET /ok\n  expect status equals 200\n\n' +
-    'scenario "Bad"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n';
+    'test "Good"\n  ramp to 3 users over 150ms\n  api GET /ok\n  expect status equals 200\n\n' +
+    'test "Bad"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
@@ -335,8 +335,8 @@ test('each scenario\'s thresholds evaluate only against its own metrics — one 
     '/fail': (_req, res) => res.writeHead(500).end(),
   });
   const source =
-    'scenario "Passing"\n  ramp to 3 users over 150ms\n  api GET /ok\n  expect status equals 200\n  threshold error rate is less than 1%\n\n' +
-    'scenario "Failing"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n  threshold error rate is less than 1%\n';
+    'test "Passing"\n  ramp to 3 users over 150ms\n  api GET /ok\n  expect status equals 200\n  threshold error rate is less than 1%\n\n' +
+    'test "Failing"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n  threshold error rate is less than 1%\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
@@ -372,8 +372,8 @@ session admin
   const config = resolveConfig(parsedConfig.config, envBlock);
 
   const source =
-    'scenario "One" as admin\n  ramp to 3 users over 100ms\n  api GET /health\n  expect status equals 200\n\n' +
-    'scenario "Two" as admin\n  ramp to 3 users over 100ms\n  api GET /health\n  expect status equals 200\n';
+    'test "One" as admin\n  ramp to 3 users over 100ms\n  api GET /health\n  expect status equals 200\n\n' +
+    'test "Two" as admin\n  ramp to 3 users over 100ms\n  api GET /health\n  expect status equals 200\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -418,7 +418,7 @@ test('globalIterationIndex: id ≡ shard.index mod shard.count, so two shards ne
 
 test('runLoadShard with shard {index:0, count:1} behaves like the whole run (a lone shard is the identity case)', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const shardResult = await runLoadShard(program, testConfig(server.baseUrl), { source, shard: { index: 0, count: 1 } });
   assert.equal(shardResult.scenarios.length, 1);
@@ -430,7 +430,7 @@ test('runLoadShard with shard {index:0, count:1} behaves like the whole run (a l
 });
 
 test('mergeLoadShardReports: pools iterations/failures across shards and re-evaluates thresholds against the merged data', () => {
-  const source = 'scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n  threshold p95 duration is less than 100ms\n';
+  const source = 'test "S"\n  ramp to 1 users over 1s\n  api GET /health\n  threshold p95 duration is less than 100ms\n';
   const { program } = parseSource(source);
 
   const fastHistogram = new LatencyHistogram();
@@ -461,7 +461,7 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
 });
 
 test('mergeLoadShardReports: a shard missing a scenario entirely (its striped share rounded to 0) is tolerated, not an error', () => {
-  const source = 'scenario "A"\n  ramp to 1 users over 1s\n  api GET /health\n\nscenario "B"\n  ramp to 1 users over 1s\n  api GET /health\n';
+  const source = 'test "A"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "B"\n  ramp to 1 users over 1s\n  api GET /health\n';
   const { program } = parseSource(source);
   const hA = new LatencyHistogram();
   hA.record(5);
@@ -479,7 +479,7 @@ test('mergeLoadShardReports: a shard missing a scenario entirely (its striped sh
 });
 
 test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard saturated', () => {
-  const source = 'scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n';
+  const source = 'test "S"\n  ramp to 1 users over 1s\n  api GET /health\n';
   const { program } = parseSource(source);
   const empty = new LatencyHistogram();
   empty.record(1);
@@ -492,13 +492,13 @@ test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard satura
 });
 
 test('mergeLoadShardReports throws on an empty shard-results array', () => {
-  const { program } = parseSource('scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  api GET /health\n');
   assert.throws(() => mergeLoadShardReports(program, [], { startedAt: new Date().toISOString(), durationMs: 0, seed: 1, now: new Date().toISOString() }), /at least one shard/);
 });
 
 test('two real shards (runLoadShard against the same server) merge into a sane combined report', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 4 users over 200ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 4 users over 200ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const config = testConfig(server.baseUrl);
   const [shard0, shard1] = await Promise.all([
@@ -515,7 +515,7 @@ test('two real shards (runLoadShard against the same server) merge into a sane c
 
 test('`runLoad` reports a plausible selfDiagnosis (single-process, unsharded)', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 1 users over 50ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 1 users over 50ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
   assert.equal(typeof report.selfDiagnosis.saturated, 'boolean');
@@ -528,7 +528,7 @@ test('`runLoad` reports a plausible selfDiagnosis (single-process, unsharded)', 
 
 test('LoadMetrics carries its own histogram + timeline, both for a scenario and the combined view', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 3 users over 200ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 3 users over 200ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
@@ -547,7 +547,7 @@ test('LoadMetrics carries its own histogram + timeline, both for a scenario and 
 
 test('`runLoad`: inconclusive mirrors selfDiagnosis.saturated', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 1 users over 20ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 1 users over 20ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
   assert.equal(report.inconclusive, report.selfDiagnosis.saturated);
@@ -556,7 +556,7 @@ test('`runLoad`: inconclusive mirrors selfDiagnosis.saturated', async () => {
 });
 
 test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.saturated', () => {
-  const source = 'scenario "S"\n  ramp to 1 users over 1s\n  api GET /health\n';
+  const source = 'test "S"\n  ramp to 1 users over 1s\n  api GET /health\n';
   const { program } = parseSource(source);
   const h = new LatencyHistogram();
   h.record(1);
@@ -570,7 +570,7 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
 
 test('`runLoad` with an already-aborted signal runs zero iterations and flags aborted/abortedMessage', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 5 users over 5000ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 5 users over 5000ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const controller = new AbortController();
   controller.abort();
@@ -585,7 +585,7 @@ test('`runLoad`: aborting mid-run stops new iterations well short of the planned
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   // Long planned duration (5s) so "aborted well before the end" isn't a race against natural
   // completion — the abort fires at 100ms, under 1/40th of the plan.
-  const source = 'scenario "S"\n  ramp to 20 users over 5000ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 20 users over 5000ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 100);
@@ -600,7 +600,7 @@ test('`runLoad`: aborting mid-run stops new iterations well short of the planned
 
 test('onProgressTick fires roughly once a second with a cumulative, non-decreasing snapshot', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "S"\n  ramp to 5 users over 1300ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "S"\n  ramp to 5 users over 1300ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const ticks: { iterations: number; failures: number; elapsedMs: number }[] = [];
   await runLoad(program, testConfig(server.baseUrl), { source, onProgressTick: (snapshot) => ticks.push(snapshot) });
@@ -627,42 +627,42 @@ test('onProgressTick fires roughly once a second with a cumulative, non-decreasi
 // representative half of the run) has no such structural bias.
 
 test('computeBackOff: undefined for an open-model (`ramp to N rps`) scenario — no "backing off" concept in that model (D17)', () => {
-  const { program } = parseSource('scenario "S"\n  ramp to 100 rps over 1s\n  api GET /health\n');
-  assert.equal(computeBackOff(program.scenarios[0]!, { count: 10, sum: 50 }, { count: 10, sum: 500 }), undefined);
+  const { program } = parseSource('test "S"\n  ramp to 100 rps over 1s\n  api GET /health\n');
+  assert.equal(computeBackOff((program.tests[0]! as LoadTest), { count: 10, sum: 50 }, { count: 10, sum: 500 }), undefined);
 });
 
 test('computeBackOff: undefined when either half has fewer than MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF samples', () => {
-  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
-  assert.equal(computeBackOff(program.scenarios[0]!, { count: 2, sum: 20 }, { count: 10, sum: 2000 }), undefined, 'too few early samples');
-  assert.equal(computeBackOff(program.scenarios[0]!, { count: 10, sum: 100 }, { count: 2, sum: 400 }), undefined, 'too few late samples');
+  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  assert.equal(computeBackOff((program.tests[0]! as LoadTest), { count: 2, sum: 20 }, { count: 10, sum: 2000 }), undefined, 'too few early samples');
+  assert.equal(computeBackOff((program.tests[0]! as LoadTest), { count: 10, sum: 100 }, { count: 2, sum: 400 }), undefined, 'too few late samples');
 });
 
 test('computeBackOff: undefined when a half has zero total duration — avoids dividing by zero', () => {
-  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
-  assert.equal(computeBackOff(program.scenarios[0]!, { count: 10, sum: 0 }, { count: 10, sum: 500 }), undefined);
+  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  assert.equal(computeBackOff((program.tests[0]! as LoadTest), { count: 10, sum: 0 }, { count: 10, sum: 500 }), undefined);
 });
 
 test('computeBackOff: a healthy scenario (early and late means close together) reports a low ratio, no warning', () => {
-  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
   // early mean 10ms, late mean 11ms — ordinary sample-to-sample variance, not a real slowdown.
-  const backOff = computeBackOff(program.scenarios[0]!, { count: 20, sum: 200 }, { count: 20, sum: 220 });
+  const backOff = computeBackOff((program.tests[0]! as LoadTest), { count: 20, sum: 200 }, { count: 20, sum: 220 });
   assert.ok(backOff, 'expected a defined BackOffDiagnosis');
   assert.ok(backOff!.ratio < 0.2, `expected a low ratio, got ${backOff!.ratio}`);
   assert.equal(backOff!.warning, false);
 });
 
 test('computeBackOff: a scenario whose late half ran far slower than its early half reports a high ratio and warns', () => {
-  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
   // early mean 10ms, late mean 200ms — ratio = 1 - 10/200 = 0.95.
-  const backOff = computeBackOff(program.scenarios[0]!, { count: 20, sum: 200 }, { count: 10, sum: 2000 });
+  const backOff = computeBackOff((program.tests[0]! as LoadTest), { count: 20, sum: 200 }, { count: 10, sum: 2000 });
   assert.ok(backOff, 'expected a defined BackOffDiagnosis');
   assert.ok(backOff!.ratio > 0.2, `expected a high ratio, got ${backOff!.ratio}`);
   assert.equal(backOff!.warning, true);
 });
 
 test('computeBackOff: a scenario that sped up (late half faster than early) reports ratio 0, not negative', () => {
-  const { program } = parseSource('scenario "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
-  const backOff = computeBackOff(program.scenarios[0]!, { count: 20, sum: 2000 }, { count: 20, sum: 200 });
+  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  const backOff = computeBackOff((program.tests[0]! as LoadTest), { count: 20, sum: 2000 }, { count: 20, sum: 200 });
   assert.ok(backOff, 'expected a defined BackOffDiagnosis');
   assert.equal(backOff!.ratio, 0);
   assert.equal(backOff!.warning, false);
@@ -681,7 +681,7 @@ test('a real degrading server triggers a genuine backOff warning on a closed-mod
   });
   // 1400ms/5 users comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves —
   // the late half alone fits roughly (700ms / 150ms) × 5 users ≈ 23 iterations.
-  const source = 'scenario "Degrading"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
+  const source = 'test "Degrading"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
@@ -698,7 +698,7 @@ test('a uniformly fast server does not trigger a backOff warning', async () => {
   // whether the diagnostic itself is stable against genuine health. A longer run (1500ms) also
   // comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves with real margin.
   const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 5) });
-  const source = 'scenario "Healthy"\n  ramp to 5 users over 1500ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Healthy"\n  ramp to 5 users over 1500ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
@@ -708,7 +708,7 @@ test('a uniformly fast server does not trigger a backOff warning', async () => {
 
 test('an open-model (`ramp to N rps`) real run never carries a backOff field', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'scenario "Open"\n  ramp to 40 rps over 400ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Open"\n  ramp to 40 rps over 400ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
   assert.equal(report.scenarios[0]!.backOff, undefined);
@@ -723,7 +723,7 @@ test('two real shards each contribute their own early/late totals, and mergeLoad
       setTimeout(() => json(res, 200, {}), 150);
     },
   });
-  const source = 'scenario "Degrading"\n  ramp to 6 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
+  const source = 'test "Degrading"\n  ramp to 6 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const config = testConfig(server.baseUrl);
   const [shardA, shardB] = await Promise.all([
@@ -747,7 +747,7 @@ test('a scenario with two untagged `api` steps gets two automatic-identity endpo
     '/lookup': (_req, res) => setTimeout(() => json(res, 200, {}), 5),
     '/checkout': (_req, res) => setTimeout(() => json(res, 200, {}), 40),
   });
-  const source = 'scenario "S"\n  ramp to 3 users over 200ms\n  api GET /lookup\n  api POST /checkout\n';
+  const source = 'test "S"\n  ramp to 3 users over 200ms\n  api GET /lookup\n  api POST /checkout\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -766,7 +766,7 @@ test('a scenario with two untagged `api` steps gets two automatic-identity endpo
 
 test('an `as "label"` tag replaces the automatic identity entirely (k6-style)', async () => {
   const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, {}) });
-  const source = 'scenario "S"\n  ramp to 2 users over 100ms\n  api POST /orders as "checkout"\n';
+  const source = 'test "S"\n  ramp to 2 users over 100ms\n  api POST /orders as "checkout"\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -778,7 +778,7 @@ test('an `as "label"` tag replaces the automatic identity entirely (k6-style)', 
 
 test('an identity declared in source but never reached (every iteration fails first) still reports a zero-sample entry, not a missing one', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 500, {}) });
-  const source = 'scenario "S"\n  ramp to 2 users over 100ms\n  api GET /health\n  expect status equals 200\n  api GET /never-reached\n';
+  const source = 'test "S"\n  ramp to 2 users over 100ms\n  api GET /health\n  expect status equals 200\n  api GET /never-reached\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -805,7 +805,7 @@ test('`threshold … for "label"` evaluates against only that endpoint, independ
     '/checkout': (_req, res) => setTimeout(() => json(res, 200, {}), 60),
   });
   const source =
-    'scenario "S"\n  ramp to 3 users over 200ms\n  threshold p95 duration is less than 40ms\n  threshold p95 duration for "checkout" is less than 40ms\n  api GET /lookup\n  api POST /checkout as "checkout"\n';
+    'test "S"\n  ramp to 3 users over 200ms\n  threshold p95 duration is less than 40ms\n  threshold p95 duration for "checkout" is less than 40ms\n  api GET /lookup\n  api POST /checkout as "checkout"\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
@@ -826,7 +826,7 @@ test('`mergeLoadShardReports` pools per-endpoint histograms across shards by ide
     '/lookup': (_req, res) => json(res, 200, {}),
     '/checkout': (_req, res) => json(res, 200, {}),
   });
-  const source = 'scenario "S"\n  ramp to 4 users over 200ms\n  api GET /lookup\n  api POST /checkout\n';
+  const source = 'test "S"\n  ramp to 4 users over 200ms\n  api GET /lookup\n  api POST /checkout\n';
   const { program } = parseSource(source);
   const config = testConfig(server.baseUrl);
   const [shardA, shardB] = await Promise.all([
@@ -857,7 +857,7 @@ test('a closed-model scenario pins one connection per VU, reused across every it
       json(res, 200, { ok: true });
     },
   });
-  const source = 'scenario "Pinned"\n  ramp to 2 users over 300ms\n  api GET /ping\n  expect status equals 200\n';
+  const source = 'test "Pinned"\n  ramp to 2 users over 300ms\n  api GET /ping\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
@@ -874,7 +874,7 @@ test('an `upload` body under a closed-model load still passes — falls back to 
   const dir = await mkdtemp(join(tmpdir(), 'tflw-load-upload-'));
   await writeFile(join(dir, 'img.png'), 'fake-png-bytes');
   const server = await startFixtureServer({ '/uploads': (_req, res) => json(res, 201, { ok: true }) });
-  const source = 'scenario "Upload burst"\n  ramp to 2 users over 200ms\n  api POST /uploads upload "./img.png" as "avatar"\n  expect status equals 201\n';
+  const source = 'test "Upload burst"\n  ramp to 2 users over 200ms\n  api POST /uploads upload "./img.png" as "avatar"\n  expect status equals 201\n';
   const { program } = parseSource(source);
 
   const report = await runLoad(program, testConfig(server.baseUrl), { source, baseDir: dir });

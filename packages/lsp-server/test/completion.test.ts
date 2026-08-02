@@ -172,7 +172,7 @@ test('getCompletions: matcher kind includes `matches snapshot` once `matches` is
 test('getCompletions (M33): step kind includes `think` inside a scenario body', () => {
   // `th` alone would also match `threshold` (both real step-position keywords here) — narrow past
   // where they diverge, same reasoning as the `cleanup`-vs-`click`/`close` case below.
-  const source = 'scenario "checkout burst"\n  ramp to 10 users over 30s\n  thi';
+  const source = 'test "checkout burst"\n  ramp to 10 users over 30s\n  thi';
   const ctx = getCompletionContext(source, source.length)!;
   assert.deepEqual(ctx, { kind: 'step', prefix: 'thi' });
   assert.deepEqual(
@@ -182,7 +182,7 @@ test('getCompletions (M33): step kind includes `think` inside a scenario body', 
 });
 
 test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at the start of a scenario body line', () => {
-  const rampSource = 'scenario "checkout burst"\n  ra';
+  const rampSource = 'test "checkout burst"\n  ra';
   const rampCtx = getCompletionContext(rampSource, rampSource.length)!;
   assert.deepEqual(rampCtx, { kind: 'step', prefix: 'ra' });
   assert.deepEqual(
@@ -190,7 +190,7 @@ test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at t
     ['ramp'],
   );
 
-  const thresholdSource = 'scenario "checkout burst"\n  ramp to 10 users over 30s\n  thr';
+  const thresholdSource = 'test "checkout burst"\n  ramp to 10 users over 30s\n  thr';
   const thresholdCtx = getCompletionContext(thresholdSource, thresholdSource.length)!;
   assert.deepEqual(thresholdCtx, { kind: 'step', prefix: 'thr' });
   assert.deepEqual(
@@ -200,7 +200,7 @@ test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at t
 
   // `cl` alone would also match `click`/`close` (both real step keywords) — narrow the prefix past
   // where they diverge so this assertion isn't coincidentally fragile to that unrelated list.
-  const cleanupSource = 'scenario "checkout burst"\n  ramp to 10 users over 30s\n  clea';
+  const cleanupSource = 'test "checkout burst"\n  ramp to 10 users over 30s\n  clea';
   const cleanupCtx = getCompletionContext(cleanupSource, cleanupSource.length)!;
   assert.deepEqual(cleanupCtx, { kind: 'step', prefix: 'clea' });
   assert.deepEqual(

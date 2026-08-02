@@ -46,12 +46,14 @@ test('getHover: a variable ref shows its symbol kind', () => {
 
 // M33 (perf-arc LSP/VS Code catch-up, D24b): confirms hover.ts itself needs no code change for
 // load-testing (its `MATCHER_SPEC_ID`/`GENERATOR_SPEC_ID`/`SYMBOL_KIND_LABEL` tables are unaffected
-// — no new Matcher/generator/SymbolKind shipped with `scenario`) — the gap was entirely upstream in
-// `findNodeAtOffset` (never reaching a ScenarioDecl at all) and `symbols.ts` (never walking
-// `program.scenarios`), both fixed earlier in this milestone. This is the end-to-end proof those
+// — no new Matcher/generator/SymbolKind shipped with load testing) — the gap was entirely upstream
+// in `findNodeAtOffset` (never reaching a workload-bearing decl at all) and `symbols.ts` (never
+// walking its body), both fixed earlier in this milestone. This is the end-to-end proof those
 // fixes actually compose through hover, the same way M4a's audit found hover.ts already exhaustive.
-test('getHover (M33): a variable ref inside a scenario body shows its symbol kind, exactly like inside a test', () => {
-  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n`;
+// M50 (D93-D95) later collapsed `scenario` into a workload-bearing `test`; this test still exists
+// to prove the same thing about that unified path.
+test('getHover (M33/M50): a variable ref inside a workload-bearing test body shows its symbol kind, exactly like inside a functional test', () => {
+  const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n`;
   const { program } = parseSource(source);
   const table = collectSymbols(program, source);
   const offset = source.indexOf('{orderId}') + 2;

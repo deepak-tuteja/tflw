@@ -70,6 +70,9 @@
           ]
         ]
       },
+      "workload": null,
+      "thresholds": [],
+      "cleanup": false,
       "body": [
         {
           "type": "ApiStep",
@@ -141,6 +144,5 @@
         }
       ]
     }
-  ],
-  "scenarios": []
+  ]
 }

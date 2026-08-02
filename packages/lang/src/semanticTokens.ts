@@ -35,9 +35,10 @@ export interface SemanticToken {
  * handful of non-leading sub-clause words those steps' grammars also use: `on`/`to`/`onto`/`dialog`/
  * `new`/`tab`/`frame`/`respond`), M4b's `mask <locator>` clause keyword, M28's `log` (PLAN_LOG_LSP.md
  * — M27 added `log` to `STATEMENT_KEYWORDS` but never caught this independent copy up), and the
- * M29-M32 load-testing leading keywords (M33 catch-up — `scenario`/`ramp`/`over`/`threshold`/
- * `cleanup`/`think`; `think` was already in parser.ts's `STATEMENT_KEYWORDS` since M29 but never
- * caught up here either). */
+ * M29-M32 load-testing leading keywords (M33 catch-up — `ramp`/`over`/`threshold`/`cleanup`/
+ * `think`; `think` was already in parser.ts's `STATEMENT_KEYWORDS` since M29 but never caught up
+ * here either). M50 (D93) removed `scenario` itself — every load-testing keyword now lives
+ * inside an ordinary `test` body, so there's no separate leading keyword to list here for it. */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
@@ -46,7 +47,7 @@ const KEYWORDS = new Set([
   'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll', 'within',
   'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
   'on', 'to', 'onto', 'dialog', 'new', 'tab', 'frame', 'respond', 'mask',
-  'scenario', 'ramp', 'over', 'threshold', 'cleanup', 'think',
+  'ramp', 'over', 'threshold', 'cleanup', 'think',
 ]);
 
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words

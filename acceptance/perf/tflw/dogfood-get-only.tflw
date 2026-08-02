@@ -4,7 +4,7 @@
 # re-run of that original row, now with a k6 counterpart). Same ramp shape as checkout-burst.tflw
 # for apples-to-apples comparison against the contended rung.
 
-scenario "M39 dogfood GET-only" as load
+test "M39 dogfood GET-only" as load
   ramp to 60 users over 20s
   api GET /health
   expect status equals 200

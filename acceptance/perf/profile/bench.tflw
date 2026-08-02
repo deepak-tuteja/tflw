@@ -2,7 +2,7 @@
 # against echo-server.mjs instead of the real contended endpoint, so a CPU profile isolates the
 # generator's own per-request overhead from real network/DB latency.
 
-scenario "profile bench"
+test "profile bench"
   ramp to 30 users over 8s
   api GET /products
   expect status equals 200

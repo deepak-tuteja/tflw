@@ -9,7 +9,7 @@
 
 use "./helpers.ts"
 
-scenario "generator self-saturation demo"
+test "generator self-saturation demo"
   ramp to 8 users over 3s
   let burned = burnCpu()
   threshold p95 duration is less than 100000ms

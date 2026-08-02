@@ -5,7 +5,7 @@
 # call doesn't measurably regress throughput — the "cheap cache hit" claim in D44, checked, not
 # just assumed.
 
-scenario "profile bench (session)" as bench
+test "profile bench (session)" as bench
   ramp to 30 users over 8s
   api GET /products
   expect status equals 200

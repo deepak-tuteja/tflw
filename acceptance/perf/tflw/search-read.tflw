@@ -9,7 +9,7 @@
 # the `as load` session tflw pays for elsewhere, to measure the endpoint's real unauthenticated cost.
 # Same ramp shape as the rest of the ladder for apples-to-apples comparison.
 
-scenario "M48 search-read"
+test "M48 search-read"
   ramp to 60 users over 20s
   api GET /products?q=gadgetronic
   expect status equals 200

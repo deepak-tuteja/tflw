@@ -159,13 +159,13 @@ test('collectSemanticTokens: a variable used inside a browser step (`fill … wi
 });
 
 // -- M33 (perf-arc LSP/VS Code catch-up, D24b): the M29-M32 load-testing grammar had never been
-// classified — a `scenario` file rendered visually flat next to a `test`/browser file, exactly the
-// M4a-era browser-arc gap for a different construct. --------------------------------------------
+// classified — a load-testing file rendered visually flat next to an ordinary `test`/browser file,
+// exactly the M4a-era browser-arc gap for a different construct. M50 (D93-D95) later collapsed
+// `scenario` into a workload-bearing `test` — these now use `test "…" { ramp to … }` instead. ---
 
-test('collectSemanticTokens (M33): `scenario`/`ramp`/`over`/`threshold`/`cleanup`/`think` classify as `keyword`', () => {
-  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  threshold p95 duration is less than 800ms\n  cleanup\n  api GET /health\n  think 1s to 3s\n`;
+test('collectSemanticTokens (M33/M50): `ramp`/`over`/`threshold`/`cleanup`/`think` classify as `keyword`', () => {
+  const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  threshold p95 duration is less than 800ms\n  cleanup\n  api GET /health\n  think 1s to 3s\n`;
   const tokens = tokensOf(source);
-  assertTypeAt(tokens, source, 'scenario', 'keyword');
   assertTypeAt(tokens, source, 'ramp', 'keyword');
   assertTypeAt(tokens, source, 'over', 'keyword');
   assertTypeAt(tokens, source, 'threshold', 'keyword');
@@ -173,8 +173,8 @@ test('collectSemanticTokens (M33): `scenario`/`ramp`/`over`/`threshold`/`cleanup
   assertTypeAt(tokens, source, 'think', 'keyword');
 });
 
-test('collectSemanticTokens (M33): `users`/`rps`/`error`/`rate` workload+threshold nouns classify as `type`', () => {
-  const source = `scenario "browsing"\n  ramp to 100 rps over 30s\n  threshold error rate is less than 1%\n  api GET /health\n\nscenario "checkout"\n  ramp to 10 users over 30s\n  api GET /health\n`;
+test('collectSemanticTokens (M33/M50): `users`/`rps`/`error`/`rate` workload+threshold nouns classify as `type`', () => {
+  const source = `test "browsing"\n  ramp to 100 rps over 30s\n  threshold error rate is less than 1%\n  api GET /health\n\ntest "checkout"\n  ramp to 10 users over 30s\n  api GET /health\n`;
   const tokens = tokensOf(source);
   assertTypeAt(tokens, source, 'rps', 'type');
   assertTypeAt(tokens, source, 'error', 'type');
@@ -182,8 +182,8 @@ test('collectSemanticTokens (M33): `users`/`rps`/`error`/`rate` workload+thresho
   assertTypeAt(tokens, source, 'users', 'type');
 });
 
-test('collectSemanticTokens (M33): a `p50`/`p95`/`p99` threshold percentile classifies as `type`', () => {
-  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  threshold p50 duration is less than 200ms\n  threshold p95 duration is less than 800ms\n  threshold p99 duration is less than 1500ms\n  api GET /health\n`;
+test('collectSemanticTokens (M33/M50): a `p50`/`p95`/`p99` threshold percentile classifies as `type`', () => {
+  const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  threshold p50 duration is less than 200ms\n  threshold p95 duration is less than 800ms\n  threshold p99 duration is less than 1500ms\n  api GET /health\n`;
   const tokens = tokensOf(source);
   assertTypeAt(tokens, source, 'p50', 'type');
   assertTypeAt(tokens, source, 'p95', 'type');
@@ -192,19 +192,19 @@ test('collectSemanticTokens (M33): a `p50`/`p95`/`p99` threshold percentile clas
   assertTypeAt(tokens, source, 'duration', 'type', 1);
 });
 
-test('collectSemanticTokens (M33): `as admin, userA` session refs on a `scenario` header classify like on a `test` header (session refs carry no token, by design)', () => {
-  const source = `scenario "checkout burst" as admin, userA\n  ramp to 10 users over 30s\n  api GET /health\n`;
+test('collectSemanticTokens (M33/M50): `as admin, userA` session refs on a workload-bearing `test` header classify like on a functional `test` header (session refs carry no token, by design)', () => {
+  const source = `test "checkout burst" as admin, userA\n  ramp to 10 users over 30s\n  api GET /health\n`;
   const tokens = tokensOf(source);
   // Sessions deliberately get no semantic token (symbolKindToTokenType returns null for 'session') —
-  // this asserts the scenario-header case doesn't crash and doesn't spuriously tag them some other way.
+  // this asserts the workload-header case doesn't crash and doesn't spuriously tag them some other way.
   const adminTok = findToken(tokens, source, 'admin');
   const userATok = findToken(tokens, source, 'userA');
   assert.equal(adminTok, undefined);
   assert.equal(userATok, undefined);
 });
 
-test('collectSemanticTokens (M33): a variable used inside a scenario body is colored `variable` (relies on symbols.ts walking scenario bodies)', () => {
-  const source = `scenario "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n`;
+test('collectSemanticTokens (M33/M50): a variable used inside a workload-bearing test body is colored `variable` (relies on symbols.ts walking its body)', () => {
+  const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n  expect status equals 200\n`;
   const tokens = tokensOf(source);
   assertTypeAt(tokens, source, 'orderId', 'variable', 1); // def
   assertTypeAt(tokens, source, 'orderId', 'variable', 2); // ref inside the interpolated path

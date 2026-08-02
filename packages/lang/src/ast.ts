@@ -21,11 +21,11 @@ export interface Program extends Node {
   readonly actions: readonly ActionDecl[];
   /** `before`/`after` (file + each) — setup/teardown around this file's tests (SPEC §4.2, P#10/19). */
   readonly hooks: readonly HookDecl[];
+  /** Every top-level block, functional and workload-bearing alike, in file declaration order
+   * (M50, D93-D95, PLAN_UNIFIED_TEST_WORKLOAD.md). Kind is inferred per-block from
+   * `TestDecl.workload`, not carried in a separate array — `scenario` no longer exists as its own
+   * keyword or AST node; `tflw run` walks this single array in order (D100). */
   readonly tests: readonly TestDecl[];
-  /** `scenario "…" ... ` — the load-arc's dedicated execution model (M29, PLAN_BROWSER_PERF_
-   * SECURITY.md D16). M29 restricts a file to at most one (checker-enforced); concurrent
-   * multi-scenario runs land in M30 (D29). */
-  readonly scenarios: readonly ScenarioDecl[];
 }
 
 /** `before`/`before file`/`after`/`after file` — file-scoped, no name, same body shape as a test
@@ -57,6 +57,13 @@ export interface ActionDecl extends Node {
   readonly body: readonly Step[];
 }
 
+/** A `test "…" { … }` block — functional or workload-bearing, distinguished only by
+ * `workload !== null` (M50, D93-D95). Before M50 these were two separate keywords/AST node
+ * types (`test`/`TestDecl` vs `scenario`/`ScenarioDecl`); `scenario` carried a mandatory
+ * `workload` plus its own `thresholds`/`cleanup`, and forbade `retry`/`table` (checker-enforced,
+ * D96). Collapsing them removed an entire keyword and AST node type — nothing else in the
+ * grammar distinguished a load test from a functional one, so the workload clause's presence is
+ * now the only signal (D94). */
 export interface TestDecl extends Node {
   readonly type: 'TestDecl';
   readonly name: StringLit;
@@ -67,11 +74,25 @@ export interface TestDecl extends Node {
    * rule the whole precedence chain already follows). */
   readonly sessions: readonly string[];
   /** `retry N` — up to N re-runs on failure; a pass on any attempt is reported `flaky`, never
-   * silently green (SPEC §4.4, P#10). `0` (the default) means no retry. */
+   * silently green (SPEC §4.4, P#10). `0` (the default) means no retry. Checker-rejected
+   * (D96) alongside a non-null `workload`. */
   readonly retry: number;
   /** `with each` — one reported case per row, or null for an ordinary single-case test
-   * (SPEC §4.3, P#10/24). */
+   * (SPEC §4.3, P#10/24). Checker-rejected (D96) alongside a non-null `workload`. */
   readonly table: DataTable | null;
+  /** Non-null makes this a workload-bearing (load) test — a per-VU loop (workload + optional
+   * `think` pacing) around `body`, instead of the ordinary single-shot functional execution
+   * (M50, formerly `ScenarioDecl.workload`, mandatory there). Null (the default) is today's
+   * unchanged functional test. */
+  readonly workload: Workload | null;
+  /** `threshold …` lines (D24a) — aggregate pass/fail assertions evaluated once, after the whole
+   * run, against the run's accumulated metrics. Order in source is preserved for report display
+   * but has no semantic effect. Empty unless `workload` is set (formerly `ScenarioDecl.thresholds`). */
+  readonly thresholds: readonly ThresholdDecl[];
+  /** `cleanup` (D26) — opts back into running this file's `after each` hooks after *every*
+   * iteration of a workload-bearing test. Default `false`; meaningless when `workload` is null
+   * (formerly `ScenarioDecl.cleanup`). */
+  readonly cleanup: boolean;
   readonly body: readonly Step[];
 }
 
@@ -93,38 +114,18 @@ export interface FileDataTable extends Node {
   readonly path: StringLit;
 }
 
-// ---- Load testing (M29/M30, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30) ------
+// ---- Load testing (M29/M30/M50, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30,
+// PLAN_UNIFIED_TEST_WORKLOAD.md D93-D104) ------------------------------------------------------
 //
-// `scenario` is a second, dedicated execution model alongside `test` (D16) — a per-VU loop
-// (workload + optional `think` pacing) around an ordinary `Step[]` body, so the same `action`s a
-// functional suite already wrote are the reuse unit under load too. A file may declare any number
-// of `scenario`s (M29 restricted this to one; M30/D29 lifts that — `tflw load` now runs every
-// scenario in the file concurrently, still single-process, `runtime/src/interpreter.ts`'s
-// `runLoad`). Names must be unique within a file (checker-enforced, `TF033`) — they key each
-// scenario's own metrics/threshold breakdown in the report. Browser steps are rejected inside a
-// scenario body (D19 — a browser VU is ~50-100MB; 500 of them is infeasible) — checker-enforced,
-// not merely a runtime gap.
-export interface ScenarioDecl extends Node {
-  readonly type: 'ScenarioDecl';
-  readonly name: StringLit;
-  /** `as admin, userA` — same shape and semantics as `TestDecl.sessions` (SPEC §3.3): established
-   * once before the VU loop starts (session establishment is itself a one-time, run-lifetime-
-   * cached cost, `SessionCache`), never per-iteration. Empty for an anonymous scenario. */
-  readonly sessions: readonly string[];
-  readonly workload: Workload;
-  /** `threshold …` lines (D24a) — aggregate pass/fail assertions evaluated once, after the whole
-   * run, against the run's accumulated metrics. Order in source is preserved for report display
-   * but has no semantic effect (each is independent). */
-  readonly thresholds: readonly ThresholdDecl[];
-  /** `cleanup` (D26) — opts back into running this file's `after each` hooks after *every*
-   * iteration. Default `false`: an `after` hook is skipped per iteration under `tflw load`,
-   * because running it every iteration would double request volume and pollute the very latency
-   * metrics the run exists to measure. `before each` hooks are unaffected by this flag — they
-   * always run every iteration (a VU's per-iteration setup, not teardown). */
-  readonly cleanup: boolean;
-  readonly body: readonly Step[];
-}
-
+// Through M30, `scenario` was a second, dedicated top-level keyword/AST node alongside `test` —
+// a per-VU loop (workload + optional `think` pacing) around an ordinary `Step[]` body, so the
+// same `action`s a functional suite already wrote are the reuse unit under load too. M50 removed
+// `scenario`/`ScenarioDecl` entirely (D93): a `TestDecl` with `workload !== null` is exactly what
+// a `ScenarioDecl` used to be (D94/D95) — nothing else in the grammar ever distinguished the two.
+// Everything below this note (unique-name-within-a-file via `TF033`, `think` legality via D18,
+// browser steps rejected inside a workload-bearing body via D19) still applies, just phrased
+// against `TestDecl.workload` instead of a separate node type (`checker.ts`'s `checkWorkloadTests`,
+// formerly `checkScenarios`).
 export type Workload = RampUsersWorkload | RampRpsWorkload;
 
 /** `ramp to N users over <dur>` (D17) — **closed** model: VUs loop continuously once spawned:

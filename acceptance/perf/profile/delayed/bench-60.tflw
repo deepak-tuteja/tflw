@@ -4,7 +4,7 @@
 # concurrency question (does tflw's own generator keep ~60 requests in flight against a slow
 # server?) from both real DB contention and the "fast target makes overlap trivially ~1" artifact.
 
-scenario "concurrency ground truth"
+test "concurrency ground truth"
   ramp to 60 users over 8s
   api GET /products
   expect status equals 200

@@ -104,7 +104,6 @@ import type {
   RampRpsWorkload,
   RampUsersWorkload,
   RetryAfterClause,
-  ScenarioDecl,
   ScrollStmt,
   SelectStmt,
   SessionDecl,
@@ -270,7 +269,6 @@ class Parser {
     const uses: UseDecl[] = [];
     const actions: ActionDecl[] = [];
     const hooks: HookDecl[] = [];
-    const scenarios: ScenarioDecl[] = [];
     const startPos = this.peek().span.start;
     this.skipNewlines();
     while (!this.atEof()) {
@@ -297,12 +295,18 @@ class Parser {
         if (h) hooks.push(h);
         else this.synchronize();
       } else if (this.isKw(tok, 'scenario')) {
-        const s = this.parseScenarioDecl();
-        if (s) scenarios.push(s);
-        else this.synchronize();
+        // D103 migration diagnostic: `scenario` was removed in M50 (D93) — a workload-bearing
+        // block is now just `test "…" { ramp to … }`, kind inferred from the workload clause.
+        this.error(
+          Codes.LOAD_INVALID,
+          '`scenario` was removed — write `test "…" { ramp to … }` instead',
+          tok.span,
+          'a `test` block is a load test whenever it contains a workload line (`ramp to …`); there is no longer a separate keyword',
+        );
+        this.synchronize();
       } else {
-        const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `scenario`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
-        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`scenario\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
+        const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
+        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
         this.synchronize();
       }
       // `synchronize()` deliberately won't cross a `dedent` (nested blocks consume their own), so
@@ -311,7 +315,7 @@ class Parser {
       if (this.pos === before) this.advance();
       this.skipNewlines();
     }
-    const program: Program = { type: 'Program', imports, uses, actions, hooks, tests, scenarios, span: this.spanFrom(startPos) };
+    const program: Program = { type: 'Program', imports, uses, actions, hooks, tests, span: this.spanFrom(startPos) };
     return { program, diagnostics: this.diagnostics };
   }
 
@@ -392,33 +396,19 @@ class Parser {
     return stmt;
   }
 
-  // -- load testing: scenario/workload/threshold/think (M29, D16-D19/D24a/D26) ----------------
+  // -- load testing: workload/threshold/think (M29, M50, D16-D19/D24a/D26/D93-D96) -------------
 
-  /** `scenario "<name>"` + an indented block mixing a required `ramp to …` workload line, zero or
-   * more `threshold …` lines, an optional bare `cleanup` line (D26), and ordinary steps (the
-   * per-VU iteration body) — in any order, matching how `parseBlock` already tolerates any step
-   * order rather than imposing a rigid header/body split. */
-  private parseScenarioDecl(): ScenarioDecl | null {
-    const start = this.peek().span.start;
-    this.advance(); // `scenario`
-    const name = this.expectString('a scenario name string, e.g. `scenario "Checkout burst"`');
-    if (!name) return null;
-    // `as admin, userA` — identical shape/semantics to `TestDecl`'s own `as` clause (parseTest).
-    const sessions: string[] = [];
-    if (this.isKw(this.peek(), 'as')) {
-      this.advance();
-      const first = this.expect('ident', 'a session name after `as`');
-      if (first) sessions.push(first.value);
-      while (this.check('comma')) {
-        this.advance();
-        const s = this.expect('ident', 'a session name');
-        if (s) sessions.push(s.value);
-      }
-    }
-    this.endLine();
+  /** A `test` body: an indented block mixing zero-or-one `ramp to …` workload line, zero or more
+   * `threshold …` lines, an optional bare `cleanup` line (D26), and ordinary steps — in any order
+   * (M50: this used to be `parseScenarioDecl`'s own body loop, since only `scenario` recognized
+   * these clauses; now every `test` body does, and `workload === null` at the end is what makes
+   * it an ordinary functional test rather than a load test, D94). Checker-enforced (D96): a
+   * non-null workload can't coexist with `retry`/`with each` (`parseTest` reports those before
+   * calling this). */
+  private parseTestBody(context: string): { workload: Workload | null; thresholds: ThresholdDecl[]; cleanup: boolean; body: Step[] } {
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `scenario` has no body', this.peek().span, 'indent a `ramp to …` workload line and at least one step under the `scenario` line');
-      return null;
+      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, this.peek().span, `indent at least one step under the \`${context}\` line`);
+      return { workload: null, thresholds: [], cleanup: false, body: [] };
     }
     this.advance(); // indent
     let workload: Workload | null = null;
@@ -436,7 +426,7 @@ class Parser {
         const w = this.parseWorkload();
         if (w) {
           if (workload) {
-            this.error(Codes.LOAD_INVALID, 'a `scenario` has exactly one `ramp to …` workload line', w.span, `already declared at ${workload.span.start.line}:${workload.span.start.column}`);
+            this.error(Codes.LOAD_INVALID, 'a `test` has at most one `ramp to …` workload line', w.span, `already declared at ${workload.span.start.line}:${workload.span.start.column}`);
           } else {
             workload = w;
           }
@@ -459,11 +449,7 @@ class Parser {
       if (this.pos === before) this.advance(); // guarantee progress
     }
     if (this.check('dedent')) this.advance();
-    if (!workload) {
-      this.error(Codes.LOAD_INVALID, 'this `scenario` declares no workload', this.spanFrom(start), 'add a `ramp to N users over <dur>` or `ramp to N rps over <dur>` line');
-      return null;
-    }
-    return { type: 'ScenarioDecl', name, sessions, workload, thresholds, cleanup, body, span: this.spanFrom(start) };
+    return { workload, thresholds, cleanup, body };
   }
 
   /** `ramp to N users over <dur>` (closed, D17) / `ramp to N rps over <dur>` (open, D17). */
@@ -1204,8 +1190,11 @@ class Parser {
       if (n) retry = Number(n.value);
     }
     this.endLine();
-    const body = this.parseBlock();
-    return { type: 'TestDecl', name, tags, sessions, retry, table, body, span: this.spanFrom(start) };
+    // D96 (`retry`/`with each` vs. a workload clause) is checker-enforced, not parser-enforced —
+    // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
+    // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
+    const { workload, thresholds, cleanup, body } = this.parseTestBody('test');
+    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, body, span: this.spanFrom(start) };
   }
 
   private tagsContinue(): boolean {

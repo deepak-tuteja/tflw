@@ -25,7 +25,6 @@ import type {
   PathSegment,
   Program,
   RedactPattern,
-  ScenarioDecl,
   SessionDecl,
   Span,
   Step,
@@ -34,6 +33,7 @@ import type {
   ThresholdDecl,
   WaitUntilApiStmt,
   WaitUntilUiStmt,
+  Workload,
 } from '@tflw/lang';
 import { evalValue, interpolatePath, navigate, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
@@ -332,10 +332,18 @@ export function globalIterationIndex(localIndex: number, shard?: { readonly inde
   return shard ? localIndex * shard.count + shard.index : localIndex;
 }
 
+/** A `test` block with a non-null `workload` — what used to be a standalone `ScenarioDecl` before
+ * M50 (D93-D95) collapsed `scenario` into `test`, kind inferred from this field's presence. Kept
+ * as a local narrowed alias (rather than threading `TestDecl['workload'] | null` checks through
+ * every function below) since every load-engine function here only ever receives one that's
+ * already been filtered by `test.workload !== null` (`runLoadCore`'s `scenarios` derivation).
+ * Exported for tests that build a `LoadTest` directly rather than filtering a parsed `Program`. */
+export type LoadTest = TestDecl & { readonly workload: Workload };
+
 /** One mutable accumulator per scenario, filled in by that scenario's own `runIteration` closure
  * as its VUs run concurrently with every other scenario's. */
 interface ScenarioAccumulator {
-  readonly scenario: ScenarioDecl;
+  readonly scenario: LoadTest;
   readonly histogram: LatencyHistogram;
   /** M32 (R3/R4) — this scenario's own per-second buckets, feeding `load-report.html`'s timeline
    * charts once shaped into `LoadMetrics.timeline`. */
@@ -378,11 +386,14 @@ interface LoadCoreResult {
  * process, one `uniqueSeq`, and one `SessionCache` (a session named by two scenarios establishes
  * once, reused by both — same run-lifetime cache `test … as <session>` uses). */
 async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadCoreResult> {
-  if (program.scenarios.length === 0) {
-    throw new RuntimeError('`tflw load` needs at least one `scenario` in this file, found 0');
+  // M50 (D93-D95): a "scenario" is now any `test` block whose `workload` is non-null — `scenario`
+  // no longer exists as its own keyword/array. `tflw load` (this function's caller) only ever
+  // wants the workload-bearing subset of a file's `program.tests`.
+  const scenarios: LoadTest[] = program.tests.filter((t): t is LoadTest => t.workload !== null);
+  if (scenarios.length === 0) {
+    throw new RuntimeError('`tflw load` needs at least one workload-bearing `test` (a `ramp to …` line) in this file, found 0');
   }
   const selfDiag = startSelfDiagnosis();
-  const scenarios = program.scenarios;
   const environ = opts.environ ?? process.env;
   const redactor = new Redactor();
   for (const name of config.requiredEnv) {
@@ -659,7 +670,7 @@ function evaluateThresholds(
  * Only walks `scenario.body` itself (plus `within`/`switch to new tab`/`download` sub-blocks) — a
  * `call` into an `action` isn't resolved, the same conservative limit `checkThresholdScopes`
  * (lang's checker, TF034) already accepts. */
-function scenarioEndpointIdentities(scenario: ScenarioDecl): string[] {
+function scenarioEndpointIdentities(scenario: LoadTest): string[] {
   const seen = new Set<string>();
   const ordered: string[] = [];
   const walk = (steps: readonly Step[]): void => {
@@ -685,7 +696,7 @@ function scenarioEndpointIdentities(scenario: ScenarioDecl): string[] {
  * `load-report.html`/`load-results.json` consumers can render "0 iterations" instead of needing to
  * special-case a missing row. */
 function buildLoadReportEndpoints(
-  scenario: ScenarioDecl,
+  scenario: LoadTest,
   endpoints: ReadonlyMap<string, { readonly histogram: LatencyHistogram; readonly timeline: Timeline; readonly failures: number }>,
 ): readonly { readonly identity: string; readonly metrics: LoadMetrics }[] {
   return scenarioEndpointIdentities(scenario).map((identity) => {
@@ -742,7 +753,7 @@ const MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF = 10;
  * vs. late-half mean comparison was chosen over an extremal-percentile "ideal pace" baseline.
  * `undefined` for an open-model (`RampRpsWorkload`) scenario, or when either half has too few
  * iterations to trust its own mean. */
-export function computeBackOff(scenario: ScenarioDecl, early: { readonly count: number; readonly sum: number }, late: { readonly count: number; readonly sum: number }): BackOffDiagnosis | undefined {
+export function computeBackOff(scenario: LoadTest, early: { readonly count: number; readonly sum: number }, late: { readonly count: number; readonly sum: number }): BackOffDiagnosis | undefined {
   if (scenario.workload.type !== 'RampUsersWorkload') return undefined;
   if (early.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF || late.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF) return undefined;
   const earlyMean = early.sum / early.count;
@@ -752,7 +763,7 @@ export function computeBackOff(scenario: ScenarioDecl, early: { readonly count: 
   return { ratio, warning: ratio > BACK_OFF_WARNING_THRESHOLD };
 }
 
-function workloadOf(scenario: ScenarioDecl): LoadScenarioReport['workload'] {
+function workloadOf(scenario: LoadTest): LoadScenarioReport['workload'] {
   return scenario.workload.type === 'RampUsersWorkload'
     ? { kind: 'users', target: scenario.workload.users, overMs: scenario.workload.overMs }
     : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs };
@@ -854,7 +865,8 @@ export function mergeLoadShardReports(
 ): LoadReport {
   if (shardResults.length === 0) throw new RuntimeError('`mergeLoadShardReports` needs at least one shard result');
 
-  const perScenario = program.scenarios.map((scenario) => {
+  const scenarios: LoadTest[] = program.tests.filter((t): t is LoadTest => t.workload !== null);
+  const perScenario = scenarios.map((scenario) => {
     const histogram = new LatencyHistogram();
     const timeline = new Timeline();
     let iterations = 0;
@@ -910,7 +922,7 @@ export function mergeLoadShardReports(
   const combined = buildLoadMetrics(combinedHistogram, combinedFailures, combinedTimeline);
 
   const selfDiagnosis = mergeSelfDiagnosis(shardResults.map((s) => s.selfDiagnosis));
-  const plannedMs = Math.max(...program.scenarios.map((s) => s.workload.overMs));
+  const plannedMs = Math.max(...scenarios.map((s) => s.workload.overMs));
   return {
     ok: scenarioReports.every((s) => s.ok),
     scenarios: scenarioReports,
@@ -970,6 +982,10 @@ export async function findSessionUsages(program: Program, baseDir: string): Prom
 async function expandTestCases(program: Program, baseDir: string): Promise<TestCase[]> {
   const cases: TestCase[] = [];
   for (const test of program.tests) {
+    // M50 (D93-D95): `program.tests` now also holds workload-bearing blocks (formerly a separate
+    // `program.scenarios` array `tflw run`'s functional path never saw at all). Those run only
+    // under `tflw load`'s per-VU loop (`runLoadCore`), never here as a single-shot case.
+    if (test.workload) continue;
     if (!test.table) {
       cases.push({ test, cells: null });
       continue;
