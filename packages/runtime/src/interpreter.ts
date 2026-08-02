@@ -26,6 +26,7 @@ import type {
   Program,
   RampRpsWorkload,
   RampUsersWorkload,
+  Stage,
   RedactPattern,
   SessionDecl,
   Span,
@@ -334,37 +335,155 @@ export function globalIterationIndex(localIndex: number, shard?: { readonly inde
   return shard ? localIndex * shard.count + shard.index : localIndex;
 }
 
+/** M52 (Phase 2, PLAN_UNIFIED_TEST_WORKLOAD.md) — this workload's total planned wall-clock span,
+ * or `null` for the 2 count-based kinds (D102 — there's no duration to speak of, the VU loop runs
+ * until its iteration budget is spent, not a clock). `Ramp`/`Hold` have one duration field each;
+ * `Step`/`Spike` sum every stage's own `durationMs`. */
+function totalDurationMs(workload: Workload): number | null {
+  switch (workload.type) {
+    case 'RampUsersWorkload':
+    case 'RampRpsWorkload':
+      return workload.overMs;
+    case 'HoldUsersWorkload':
+    case 'HoldRpsWorkload':
+      return workload.forMs;
+    case 'StepUsersWorkload':
+    case 'StepRpsWorkload':
+    case 'SpikeUsersWorkload':
+    case 'SpikeRpsWorkload':
+      return workload.stages.reduce((sum, s) => sum + s.durationMs, 0);
+    case 'SharedIterationsWorkload':
+    case 'PerVuIterationsWorkload':
+      return null;
+  }
+}
+
+/** M52 — the live target population (VU count or arrival rate, same unit `stages` was declared in)
+ * at `elapsedMs` into a `step`/`spike` workload's stage list. A `mode: 'jump'` stage (`step`'s only
+ * kind; `spike`'s `hold N for …`) is flat at its own `target` for its whole span. A `mode: 'ramp'`
+ * stage (`spike`'s `to N over …`) linearly interpolates from the *previous* stage's ending target
+ * (0 before the first stage) to its own `target` across its own span — this is what lets a `spike`
+ * ramp back down, not just up: interpolating toward a lower target shrinks the live population
+ * exactly like ramping toward a higher one grows it, no separate "ramp down" case needed. Each
+ * stage's own `target` is striped by `shard` independently (not just the schedule's overall max),
+ * so every shard runs its own even share of *every* stage, not just the busiest one. Fractional
+ * (interpolation mid-ramp) — callers compare a 0-based VU index against it, so `i < target` is the
+ * right comparison, same as an integer target. */
+function stageTargetAt(stages: readonly Stage[], elapsedMs: number, shard?: { readonly index: number; readonly count: number }): number {
+  let cursor = 0;
+  let prevTarget = 0;
+  for (const stage of stages) {
+    const stageTarget = shareOfWorkloadTarget(stage.target, shard);
+    const stageEnd = cursor + stage.durationMs;
+    if (elapsedMs < stageEnd) {
+      if (stage.mode === 'jump') return stageTarget;
+      const frac = stage.durationMs > 0 ? (elapsedMs - cursor) / stage.durationMs : 1;
+      return prevTarget + (stageTarget - prevTarget) * Math.max(0, Math.min(1, frac));
+    }
+    cursor = stageEnd;
+    prevTarget = stageTarget;
+  }
+  return prevTarget;
+}
+
+/** M52 — how often an idle VU (closed) or an idle arrival scheduler (open, target rate 0)
+ * re-checks whether it should start working again. Small enough that `hold`/`step`/`spike`'s
+ * stage transitions feel responsive in a report's timeline, large enough not to busy-loop. */
+const POPULATION_POLL_INTERVAL_MS = 100;
+
+/** M52 — the shared VU engine for `hold`/`step`/`spike`'s closed (users) variants: `maxVus` VU
+ * slots each independently loop, for as long as the schedule runs, doing one of two things every
+ * tick: if their own 0-based index is currently below `targetUsersAt(elapsedMs)`, run an iteration
+ * back-to-back; otherwise idle-poll. This handles a flat target (`hold`), a staircase (`step`), and
+ * a mixed jump/ramp schedule in either direction (`spike`, including ramping *down*) uniformly,
+ * unlike the fixed spawn-time math `ramp to … users …` uses (D17) — that closed-form schedule only
+ * ever grows monotonically once a VU spawns, which a `spike`'s ramp-down leg can't be. A VU that's
+ * never active for the whole run (e.g. this shard's share rounded a stage's target below its index)
+ * never opens a pinned connection pair at all. */
+async function runClosedPopulationVus(
+  runStart: number,
+  scheduleMs: number,
+  maxVus: number,
+  targetUsersAt: (elapsedMs: number) => number,
+  runIteration: (pinnedAgents?: PinnedAgents) => Promise<void>,
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  const scheduleEnd = runStart + scheduleMs;
+  const vuPromises: Promise<void>[] = [];
+  for (let i = 0; i < maxVus; i++) {
+    vuPromises.push(
+      (async () => {
+        let pinnedAgents: PinnedAgents | undefined;
+        try {
+          while (performance.now() < scheduleEnd && !abortSignal?.aborted) {
+            if (i < targetUsersAt(performance.now() - runStart)) {
+              if (!pinnedAgents) pinnedAgents = createPinnedAgents();
+              await runIteration(pinnedAgents);
+            } else {
+              await sleep(POPULATION_POLL_INTERVAL_MS, abortSignal);
+            }
+          }
+        } finally {
+          if (pinnedAgents) destroyPinnedAgents(pinnedAgents);
+        }
+      })(),
+    );
+  }
+  await Promise.all(vuPromises);
+}
+
+/** M52 — the shared arrival scheduler for `hold`/`step`/`spike`'s open (rps) variants: repeatedly
+ * re-samples the *current* target rate (`targetRpsAt`) and schedules the next arrival `1000/rate`
+ * ms later — a self-adjusting approximation of a time-varying-rate arrival process. Unlike `ramp to
+ * … rps …`'s closed-form inverse-CDF schedule (D17, exact for one linear ramp from a standing
+ * start), this generalizes to a flat rate, a staircase, or a mixed jump/ramp schedule (including a
+ * rate that drops) without a different formula per shape, converging to the same aggregate
+ * behavior. A rate of 0 (e.g. between a `spike`'s stages, if one is ever written that way) idle-
+ * polls rather than dividing by zero. */
+async function runOpenPopulationArrivals(
+  runStart: number,
+  scheduleMs: number,
+  targetRpsAt: (elapsedMs: number) => number,
+  runIteration: () => Promise<void>,
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  const scheduleEnd = runStart + scheduleMs;
+  const vuPromises: Promise<void>[] = [];
+  let cursor = runStart;
+  while (cursor < scheduleEnd && !abortSignal?.aborted) {
+    const rps = targetRpsAt(cursor - runStart);
+    if (rps <= 0) {
+      cursor += POPULATION_POLL_INTERVAL_MS;
+      const waitMs = cursor - performance.now();
+      if (waitMs > 0) await sleep(waitMs, abortSignal);
+      continue;
+    }
+    cursor += 1000 / rps;
+    const waitMs = cursor - performance.now();
+    if (waitMs > 0) await sleep(waitMs, abortSignal);
+    if (abortSignal?.aborted) break;
+    // Fire-and-forget, same reasoning as `RampRpsWorkload`'s own loop: the arrival schedule doesn't
+    // wait on an iteration's completion, but its promise is still collected so this scenario's task
+    // waits for every fired iteration before returning.
+    vuPromises.push(runIteration());
+  }
+  await Promise.all(vuPromises);
+}
+
 /** A `test` block with a non-null `workload` — what used to be a standalone `ScenarioDecl` before
  * M50 (D93-D95) collapsed `scenario` into `test`, kind inferred from this field's presence. Kept
  * as a local narrowed alias (rather than threading `TestDecl['workload'] | null` checks through
  * every function below) since every load-engine function here only ever receives one that's
  * already been filtered by `test.workload !== null` (`runLoadCore`'s `scenarios` derivation).
- * Narrowed to the 2 `ramp` variants specifically (not the full `Workload` union) because that's
- * still the only kind this engine knows how to run — Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97)
- * added grammar/AST for `hold`/`step`/`spike`/the 2 iteration forms, but their VU-loop semantics
- * are Phase 2's job, still ahead. `assertRampOnly` below is what actually enforces this at the
- * `program.tests` boundary. Exported for tests that build a `LoadTest` directly rather than
- * filtering a parsed `Program`. */
-export type LoadTest = TestDecl & { readonly workload: RampUsersWorkload | RampRpsWorkload };
+ * Covers every workload kind (M52, PLAN_UNIFIED_TEST_WORKLOAD.md Phase 2) — Phase 1b (D97) added
+ * grammar/AST for `hold`/`step`/`spike`/the 2 iteration forms; M52 taught this engine to actually
+ * run them. Exported for tests that build a `LoadTest` directly rather than filtering a parsed
+ * `Program`. */
+export type LoadTest = TestDecl & { readonly workload: Workload };
 
 /** Every workload-bearing `test` in `tests`, any kind. */
-function filterWorkloadTests(tests: readonly TestDecl[]): (TestDecl & { workload: Workload })[] {
-  return tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
-}
-
-/** Fails fast — before any VU work starts — if any of `workloadTests` uses a Phase 1b workload
- * kind this engine can't execute yet (Phase 2, not shipped). Without this, `scenario.workload.
- * overMs` etc. would simply be `undefined` deep inside the VU loop for a `hold`/`step`/`spike`/
- * `run …` test, a far more confusing failure than naming the unsupported test(s) up front. */
-function assertRampOnly(workloadTests: readonly (TestDecl & { workload: Workload })[]): LoadTest[] {
-  const unsupported = workloadTests.filter((t) => t.workload.type !== 'RampUsersWorkload' && t.workload.type !== 'RampRpsWorkload');
-  if (unsupported.length > 0) {
-    const names = unsupported.map((t) => `"${t.name.value}"`).join(', ');
-    throw new RuntimeError(
-      `\`tflw load\` doesn't execute \`hold\`/\`step\`/\`spike\`/\`run …\` workloads yet (Phase 2 of PLAN_UNIFIED_TEST_WORKLOAD.md, not shipped) — found ${unsupported.length} such test(s): ${names}. Only \`ramp to …\` workloads run today.`,
-    );
-  }
-  return workloadTests as LoadTest[];
+function filterWorkloadTests(tests: readonly TestDecl[]): LoadTest[] {
+  return tests.filter((t): t is LoadTest => t.workload !== null);
 }
 
 /** One mutable accumulator per scenario, filled in by that scenario's own `runIteration` closure
@@ -416,11 +535,10 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // M50 (D93-D95): a "scenario" is now any `test` block whose `workload` is non-null — `scenario`
   // no longer exists as its own keyword/array. `tflw load` (this function's caller) only ever
   // wants the workload-bearing subset of a file's `program.tests`.
-  const workloadTests = filterWorkloadTests(program.tests);
-  if (workloadTests.length === 0) {
+  const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
+  if (scenarios.length === 0) {
     throw new RuntimeError('`tflw load` needs at least one workload-bearing `test` (a `ramp to …` line) in this file, found 0');
   }
-  const scenarios: LoadTest[] = assertRampOnly(workloadTests);
   const selfDiag = startSelfDiagnosis();
   const environ = opts.environ ?? process.env;
   const redactor = new Redactor();
@@ -579,8 +697,11 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
       // in, by real elapsed time (not request order — see `computeBackOff`'s doc for why an
       // elapsed-time split is the robust choice here). Only ever read back for a closed-model
       // scenario, but recorded unconditionally: cheap, and one fewer branch to keep in sync with
-      // `scenario.workload.type` elsewhere.
-      const half = iterStart - runStart < scenario.workload.overMs / 2 ? acc.early : acc.late;
+      // `scenario.workload.type` elsewhere. M52: `null` for the 2 count-based kinds (no duration to
+      // halve) — the split still has to land somewhere, and `computeBackOff` never reads it back
+      // for those kinds anyway (D102), so an all-"early" split is harmless, not just unused.
+      const scheduleMs = totalDurationMs(scenario.workload);
+      const half = scheduleMs === null || iterStart - runStart < scheduleMs / 2 ? acc.early : acc.late;
       half.count++;
       half.sum += result.durationMs;
       opts.onIteration?.(result);
@@ -616,7 +737,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
           })(),
         );
       }
-    } else {
+    } else if (scenario.workload.type === 'RampRpsWorkload') {
       // Open model (D17): arrivals are scheduled at a target rate that itself ramps linearly from
       // 0 to `rps` over `overMs`, independent of whether earlier iterations have finished — the
       // schedule never waits on completion, so queueing under saturation is real, not smoothed
@@ -641,6 +762,71 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
         // own task (and, transitively, `runLoad`) waits for every fired iteration.
         vuPromises.push(runIteration());
       }
+    } else if (scenario.workload.type === 'HoldUsersWorkload') {
+      // D97: a flat target for the whole duration, no ramp-in — every VU is live from t=0, so the
+      // generic population engine's "am I below the live target" check is trivially true for every
+      // spawned VU the whole time (no idle polling actually happens).
+      const { users, forMs } = scenario.workload;
+      const targetVus = shareOfWorkloadTarget(users, opts.shard);
+      vuPromises.push(runClosedPopulationVus(runStart, forMs, targetVus, () => targetVus, runIteration, opts.abortSignal));
+    } else if (scenario.workload.type === 'HoldRpsWorkload') {
+      // D97: a constant target arrival rate for the whole duration — every inter-arrival gap is
+      // `1000/rps`, no ramp.
+      const { rps, forMs } = scenario.workload;
+      const targetRps = shareOfWorkloadTarget(rps, opts.shard);
+      vuPromises.push(runOpenPopulationArrivals(runStart, forMs, () => targetRps, () => runIteration(), opts.abortSignal));
+    } else if (scenario.workload.type === 'StepUsersWorkload' || scenario.workload.type === 'SpikeUsersWorkload') {
+      // D97: a staircase (`step`, every stage `mode: 'jump'`) or a mixed jump/ramp schedule
+      // (`spike`) — `stageTargetAt` handles both uniformly, ramp legs included (up or down).
+      const { stages } = scenario.workload;
+      const scheduleMs2 = stages.reduce((sum, s) => sum + s.durationMs, 0);
+      const maxVus = shareOfWorkloadTarget(Math.max(...stages.map((s) => s.target)), opts.shard);
+      vuPromises.push(runClosedPopulationVus(runStart, scheduleMs2, maxVus, (elapsedMs) => stageTargetAt(stages, elapsedMs, opts.shard), runIteration, opts.abortSignal));
+    } else if (scenario.workload.type === 'StepRpsWorkload' || scenario.workload.type === 'SpikeRpsWorkload') {
+      const { stages } = scenario.workload;
+      const scheduleMs2 = stages.reduce((sum, s) => sum + s.durationMs, 0);
+      vuPromises.push(runOpenPopulationArrivals(runStart, scheduleMs2, (elapsedMs) => stageTargetAt(stages, elapsedMs, opts.shard), () => runIteration(), opts.abortSignal));
+    } else if (scenario.workload.type === 'SharedIterationsWorkload') {
+      // D97: `vus` VUs pull from one shared pool of `iterations` total iterations until it's
+      // exhausted — no duration, no ramp. Decrementing `remaining` synchronously before the
+      // `await runIteration()` below is race-free: Node is single-threaded, so nothing else can
+      // observe `remaining` between the check and the decrement.
+      const { iterations, vus } = scenario.workload;
+      const targetVus = shareOfWorkloadTarget(vus, opts.shard);
+      const targetIterations = shareOfWorkloadTarget(iterations, opts.shard);
+      let remaining = targetIterations;
+      for (let i = 0; i < targetVus; i++) {
+        vuPromises.push(
+          (async () => {
+            const pinnedAgents = createPinnedAgents();
+            try {
+              while (remaining > 0 && !opts.abortSignal?.aborted) {
+                remaining--;
+                await runIteration(pinnedAgents);
+              }
+            } finally {
+              destroyPinnedAgents(pinnedAgents);
+            }
+          })(),
+        );
+      }
+    } else {
+      // PerVuIterationsWorkload (D97): each of `vus` VUs runs exactly `iterationsPerVu` iterations,
+      // independently of every other VU — no shared pool, no duration.
+      const { iterationsPerVu, vus } = scenario.workload;
+      const targetVus = shareOfWorkloadTarget(vus, opts.shard);
+      for (let i = 0; i < targetVus; i++) {
+        vuPromises.push(
+          (async () => {
+            const pinnedAgents = createPinnedAgents();
+            try {
+              for (let n = 0; n < iterationsPerVu && !opts.abortSignal?.aborted; n++) await runIteration(pinnedAgents);
+            } finally {
+              destroyPinnedAgents(pinnedAgents);
+            }
+          })(),
+        );
+      }
     }
 
     await Promise.all(vuPromises);
@@ -649,7 +835,9 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   await Promise.all(scenarioTasks);
   if (progressTimer) clearInterval(progressTimer);
   const selfDiagnosis = selfDiag.stop();
-  const plannedMs = Math.max(...scenarios.map((s) => s.workload.overMs));
+  // M52: a count-based scenario contributes 0 — there's no way to predict its wall-clock length in
+  // advance (D102), so it simply doesn't influence "how long the file's run was meant to take."
+  const plannedMs = Math.max(0, ...scenarios.map((s) => totalDurationMs(s.workload) ?? 0));
 
   return { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted: opts.abortSignal?.aborted ?? false, plannedMs };
 }
@@ -777,12 +965,16 @@ const BACK_OFF_WARNING_THRESHOLD = 0.2;
  * "no warning" result across multiple real runs against the same healthy fixture. */
 const MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF = 10;
 
-/** M34 (D17) — see `BackOffDiagnosis`'s doc (types.ts) for the full design and why an early-half
- * vs. late-half mean comparison was chosen over an extremal-percentile "ideal pace" baseline.
- * `undefined` for an open-model (`RampRpsWorkload`) scenario, or when either half has too few
- * iterations to trust its own mean. */
+/** Every closed (`users`) workload kind D98 says the D17 back-off diagnostic applies to — every
+ * closed kind *except* the 2 count-based ones (D102, no duration to back off against). */
+const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'HoldUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);
+
+/** M34 (D17), extended by M52/D98 to every closed (`users`) kind — see `BackOffDiagnosis`'s doc
+ * (types.ts) for the full design and why an early-half vs. late-half mean comparison was chosen
+ * over an extremal-percentile "ideal pace" baseline. `undefined` for an open-model (`…RpsWorkload`)
+ * or count-based scenario, or when either half has too few iterations to trust its own mean. */
 export function computeBackOff(scenario: LoadTest, early: { readonly count: number; readonly sum: number }, late: { readonly count: number; readonly sum: number }): BackOffDiagnosis | undefined {
-  if (scenario.workload.type !== 'RampUsersWorkload') return undefined;
+  if (!CLOSED_USERS_KINDS.has(scenario.workload.type)) return undefined;
   if (early.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF || late.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF) return undefined;
   const earlyMean = early.sum / early.count;
   const lateMean = late.sum / late.count;
@@ -791,10 +983,35 @@ export function computeBackOff(scenario: LoadTest, early: { readonly count: numb
   return { ratio, warning: ratio > BACK_OFF_WARNING_THRESHOLD };
 }
 
+/** M52 — `LoadReport`'s `workload` field still assumes one flat `{ kind, target, overMs }` shape
+ * (a single number, a single duration): faithful for `ramp`/`hold`, but a lossy summary for
+ * `step`/`spike` (their own per-stage schedule collapses to just the *peak* stage's target and the
+ * *total* span) and for the 2 count-based kinds (no duration at all, reported as `overMs: 0`). A
+ * real per-stage report breakdown is D101/Phase 3's job, not this milestone's — this is a
+ * deliberately interim shape so today's report still renders *something* sensible for every kind
+ * rather than crashing on a field that doesn't exist. */
 function workloadOf(scenario: LoadTest): LoadScenarioReport['workload'] {
-  return scenario.workload.type === 'RampUsersWorkload'
-    ? { kind: 'users', target: scenario.workload.users, overMs: scenario.workload.overMs }
-    : { kind: 'rps', target: scenario.workload.rps, overMs: scenario.workload.overMs };
+  const w = scenario.workload;
+  switch (w.type) {
+    case 'RampUsersWorkload':
+      return { kind: 'users', target: w.users, overMs: w.overMs };
+    case 'RampRpsWorkload':
+      return { kind: 'rps', target: w.rps, overMs: w.overMs };
+    case 'HoldUsersWorkload':
+      return { kind: 'users', target: w.users, overMs: w.forMs };
+    case 'HoldRpsWorkload':
+      return { kind: 'rps', target: w.rps, overMs: w.forMs };
+    case 'StepUsersWorkload':
+    case 'SpikeUsersWorkload':
+      return { kind: 'users', target: Math.max(...w.stages.map((s) => s.target)), overMs: w.stages.reduce((sum, s) => sum + s.durationMs, 0) };
+    case 'StepRpsWorkload':
+    case 'SpikeRpsWorkload':
+      return { kind: 'rps', target: Math.max(...w.stages.map((s) => s.target)), overMs: w.stages.reduce((sum, s) => sum + s.durationMs, 0) };
+    case 'SharedIterationsWorkload':
+      return { kind: 'users', target: w.vus, overMs: 0 };
+    case 'PerVuIterationsWorkload':
+      return { kind: 'users', target: w.vus, overMs: 0 };
+  }
 }
 
 /** "aborted at Ns of Nm planned" (R5) — `elapsedMs` is what actually ran, `plannedMs` the longest
@@ -893,7 +1110,7 @@ export function mergeLoadShardReports(
 ): LoadReport {
   if (shardResults.length === 0) throw new RuntimeError('`mergeLoadShardReports` needs at least one shard result');
 
-  const scenarios: LoadTest[] = assertRampOnly(filterWorkloadTests(program.tests));
+  const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
   const perScenario = scenarios.map((scenario) => {
     const histogram = new LatencyHistogram();
     const timeline = new Timeline();
@@ -950,7 +1167,9 @@ export function mergeLoadShardReports(
   const combined = buildLoadMetrics(combinedHistogram, combinedFailures, combinedTimeline);
 
   const selfDiagnosis = mergeSelfDiagnosis(shardResults.map((s) => s.selfDiagnosis));
-  const plannedMs = Math.max(...scenarios.map((s) => s.workload.overMs));
+  // M52: a count-based scenario contributes 0 — there's no way to predict its wall-clock length in
+  // advance (D102), so it simply doesn't influence "how long the file's run was meant to take."
+  const plannedMs = Math.max(0, ...scenarios.map((s) => totalDurationMs(s.workload) ?? 0));
   return {
     ok: scenarioReports.every((s) => s.ok),
     scenarios: scenarioReports,

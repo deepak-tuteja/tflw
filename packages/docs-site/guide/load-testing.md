@@ -5,7 +5,7 @@ pass through a body, pass or fail. Load testing needs a second, genuinely differ
 virtual users (VUs) looping the same body concurrently, for a while, with pass/fail decided on
 *aggregate* numbers (percentiles, error rate) rather than a single outcome. There's no separate
 keyword for it — a `test` becomes a load test the moment it contains a workload line (`ramp
-to …`); the same `test "…" { … }` block covers both.
+to …`, or one of the other 4 shapes below); the same `test "…" { … }` block covers both.
 
 ```tflw
 test "checkout under load"
@@ -89,6 +89,56 @@ saturation, iterations queue up instead of quietly disappearing. This is the onl
 honestly validates an SLA, which is why `tflw init --load` scaffolds this form. Default to it
 unless you specifically want to model "N concurrent users clicking through the UI," which is what
 the closed model actually represents.
+
+## Beyond `ramp` — steady, staircase, spike, and fixed-count workloads
+
+`ramp` covers the two most common shapes, but a workload line is any of 5 keywords — every one
+supports both a closed (`users`) and open (`rps`) variant, the same choice `ramp` offers:
+
+```
+hold 50 users for 2m
+```
+
+**`hold`** — a flat target for the whole duration, no ramp-in. Use it to measure steady-state
+behavior once the system's already warmed up, or to follow a `ramp` you write yourself as a second,
+separate `test` block for the warm-up phase.
+
+```
+step users
+  to 20 for 1m
+  to 50 for 1m
+  to 100 for 1m
+```
+
+**`step`** — a staircase: each `to N for <dur>` line is an instant jump to a new level, held there
+for its own duration. Unlike `ramp`'s continuous linear increase, `step` holds each level long
+enough to read a stable percentile at that level before moving on — the shape you want when the
+question is "at what concurrency does p95 start climbing," not just "does it survive the peak."
+
+```
+spike users
+  hold 10 for 30s
+  to 200 over 10s
+  hold 200 for 20s
+  to 10 over 10s
+```
+
+**`spike`** — a mixed schedule: `hold N for <dur>` (flat, same instant-jump semantics as `step`)
+and `to N over <dur>` (a gradual ramp, in either direction — up or back down) can appear in any
+order. This is the shape for "baseline load, sudden burst, recovery" — a flash-sale or breaking-news
+traffic pattern that `ramp`'s one-directional linear increase can't express on its own.
+
+```
+run 5000 iterations across 50 users
+run 100 iterations per user across 50 users
+```
+
+**The 2 iteration-count forms** — no duration at all, just a fixed amount of work. `run N
+iterations across M users` pulls from one shared pool of `N` total iterations until it's exhausted
+(faster VUs simply do more). `run N iterations per user across M users` gives each of the `M` VUs
+its own fixed `N`. Reach for these when you want a reproducible, fixed-size run for a benchmark or
+regression comparison — "exactly how long does 5,000 checkouts take today" — rather than a
+time-boxed one where the iteration count varies run to run.
 
 ## `think` — pacing, not a hack
 

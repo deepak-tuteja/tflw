@@ -138,22 +138,129 @@ test('`runLoad` throws when the file declares no workload-bearing `test`', async
   await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /at least one workload-bearing `test`/);
 });
 
-// Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97) added grammar/checker support for `hold`/`step`/
-// `spike`/the 2 iteration forms, but their VU-loop semantics are Phase 2's job — `runLoad` should
-// fail fast, by name, rather than crash on an `undefined` `overMs` deep in the VU loop.
-test('`runLoad` throws a clear "not implemented yet" error for a `hold` workload (Phase 2 not shipped)', async () => {
-  const { program } = parseSource('test "steady"\n  hold 5 users for 5s\n  api GET /health\n');
-  await assert.rejects(
-    () => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }),
-    /doesn't execute `hold`\/`step`\/`spike`\/`run …` workloads yet.*"steady"/,
-  );
+// M52 (Phase 2, PLAN_UNIFIED_TEST_WORKLOAD.md): the 4 new workload kinds Phase 1b (D97) only
+// parsed/checked now actually execute — a real VU/arrival loop per kind, not just accepted syntax.
+
+test('a `hold N users for <dur>` workload runs a flat population for the whole duration, no ramp-in', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "Steady"\n  hold 4 users for 300ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  const s = report.scenarios[0]!;
+  assert.deepEqual(s.workload, { kind: 'users', target: 4, overMs: 300 });
+  assert.ok(s.metrics.iterations >= 4, `expected several iterations from 4 flat VUs over 300ms, got ${s.metrics.iterations}`);
+  assert.equal(s.metrics.failures, 0);
+  await server.close();
 });
 
-test('`runLoad` names every unsupported-kind test when several are present, alongside a supported `ramp` one', async () => {
-  const { program } = parseSource(
-    'test "ramped"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "stepped"\n  step users\n    to 1 for 1s\n  api GET /health\n\ntest "counted"\n  run 5 iterations across 1 users\n  api GET /health\n',
-  );
-  await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /"stepped".*"counted"/);
+test('a `hold N rps for <dur>` workload schedules a constant arrival rate', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "Steady RPS"\n  hold 20 rps for 400ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  const s = report.scenarios[0]!;
+  assert.deepEqual(s.workload, { kind: 'rps', target: 20, overMs: 400 });
+  // a constant 20rps for 0.4s should land close to 8 arrivals (poll-interval jitter at these small
+  // scales, unlike `ramp`'s exact closed-form schedule — see `runOpenPopulationArrivals`'s doc).
+  assert.ok(s.metrics.iterations >= 4 && s.metrics.iterations <= 12, `expected ~8 iterations, got ${s.metrics.iterations}`);
+  await server.close();
+});
+
+test('a `step users` staircase runs more iterations at its higher stages than a flat run at the lowest level would', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "Staircase"\n  step users\n    to 1 for 150ms\n    to 6 for 150ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  const s = report.scenarios[0]!;
+  assert.deepEqual(s.workload, { kind: 'users', target: 6, overMs: 300 });
+  assert.ok(s.metrics.iterations >= 6, `expected the 6-VU second stage to contribute several iterations, got ${s.metrics.iterations}`);
+  await server.close();
+});
+
+test('a `spike users` schedule ramps up, holds, and ramps back down without erroring', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source =
+    'test "Spike"\n  spike users\n    hold 1 for 100ms\n    to 5 over 150ms\n    hold 5 for 150ms\n    to 1 over 150ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  const s = report.scenarios[0]!;
+  assert.deepEqual(s.workload, { kind: 'users', target: 5, overMs: 550 });
+  assert.ok(s.metrics.iterations > 0);
+  assert.equal(s.metrics.failures, 0);
+  await server.close();
+});
+
+test('`run N iterations across M users` (shared pool) runs exactly N iterations total, never more', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "SharedPool"\n  run 17 iterations across 4 users\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  const s = report.scenarios[0]!;
+  assert.deepEqual(s.workload, { kind: 'users', target: 4, overMs: 0 });
+  assert.equal(s.metrics.iterations, 17);
+  await server.close();
+});
+
+test('`run N iterations per user across M users` runs exactly M*N iterations total', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "PerVu"\n  run 5 iterations per user across 3 users\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  const s = report.scenarios[0]!;
+  assert.equal(s.metrics.iterations, 15);
+  await server.close();
+});
+
+test('`think` paces a `run … iterations …` body without being excluded from the iteration budget (D102)', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "PacedIterations"\n  run 3 iterations per user across 1 users\n  think 10ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.scenarios[0]!.metrics.iterations, 3);
+});
+
+// M52/D98: the D17 back-off diagnostic extends to every closed (`users`) kind, not just `ramp`.
+test('computeBackOff: a `hold`/`step`/`spike` (closed/users) workload is eligible for the diagnostic, same as `ramp` (D98)', () => {
+  const hold = parseSource('test "S"\n  hold 5 users for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const step = parseSource('test "S"\n  step users\n    to 5 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const spike = parseSource('test "S"\n  spike users\n    hold 5 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  for (const scenario of [hold, step, spike]) {
+    const backOff = computeBackOff(scenario, { count: 20, sum: 200 }, { count: 10, sum: 2000 });
+    assert.ok(backOff, `expected ${scenario.workload.type} to be eligible for the back-off diagnostic`);
+    assert.equal(backOff!.warning, true);
+  }
+});
+
+test('computeBackOff: undefined for every open (`rps`) or count-based kind — no "backing off" concept there (D17/D102)', () => {
+  const holdRps = parseSource('test "S"\n  hold 100 rps for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const stepRps = parseSource('test "S"\n  step rps\n    to 100 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const spikeRps = parseSource('test "S"\n  spike rps\n    hold 100 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const shared = parseSource('test "S"\n  run 10 iterations across 5 users\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const perVu = parseSource('test "S"\n  run 2 iterations per user across 5 users\n  api GET /health\n').program.tests[0]! as LoadTest;
+  for (const scenario of [holdRps, stepRps, spikeRps, shared, perVu]) {
+    assert.equal(computeBackOff(scenario, { count: 20, sum: 200 }, { count: 10, sum: 2000 }), undefined, `expected ${scenario.workload.type} to be ineligible`);
+  }
 });
 
 test('a session opted into via `as <name>` establishes once before the loop, not once per iteration', async () => {

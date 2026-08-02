@@ -37,8 +37,6 @@ import {
   type ReuseOccurrence,
   type TestDecl,
   type Workload,
-  type RampRpsWorkload,
-  type RampUsersWorkload,
 } from '@tflw/lang';
 import {
   runProgram,
@@ -1207,6 +1205,55 @@ function runShardInChildProcess(
   });
 }
 
+/** M52 — a one-line human description of any workload kind, for `tflw load`'s pre-run console
+ * preview (`scenario "name" — <this>`). Mirrors `@tflw/runtime`'s own `totalDurationMs`/
+ * `stageTargetAt` shape without importing runtime internals — this is display text, not execution. */
+function describeWorkload(workload: Workload): string {
+  switch (workload.type) {
+    case 'RampUsersWorkload':
+      return `ramp to ${workload.users} users over ${workload.overMs}ms (closed)`;
+    case 'RampRpsWorkload':
+      return `ramp to ${workload.rps} rps over ${workload.overMs}ms (open)`;
+    case 'HoldUsersWorkload':
+      return `hold ${workload.users} users for ${workload.forMs}ms (closed)`;
+    case 'HoldRpsWorkload':
+      return `hold ${workload.rps} rps for ${workload.forMs}ms (open)`;
+    case 'StepUsersWorkload':
+      return `step ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} users over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (closed)`;
+    case 'StepRpsWorkload':
+      return `step ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} rps over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (open)`;
+    case 'SpikeUsersWorkload':
+      return `spike ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} users over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (closed)`;
+    case 'SpikeRpsWorkload':
+      return `spike ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} rps over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (open)`;
+    case 'SharedIterationsWorkload':
+      return `run ${workload.iterations} iterations across ${workload.vus} users`;
+    case 'PerVuIterationsWorkload':
+      return `run ${workload.iterationsPerVu} iterations per user across ${workload.vus} users`;
+  }
+}
+
+/** M52 — this workload's planned wall-clock span for the "aborted at Ns of Nm planned" message, or
+ * `0` for the 2 count-based kinds (D102 — no duration to predict in advance). */
+function workloadPlannedMs(workload: Workload): number {
+  switch (workload.type) {
+    case 'RampUsersWorkload':
+    case 'RampRpsWorkload':
+      return workload.overMs;
+    case 'HoldUsersWorkload':
+    case 'HoldRpsWorkload':
+      return workload.forMs;
+    case 'StepUsersWorkload':
+    case 'StepRpsWorkload':
+    case 'SpikeUsersWorkload':
+    case 'SpikeRpsWorkload':
+      return workload.stages.reduce((sum, s) => sum + s.durationMs, 0);
+    case 'SharedIterationsWorkload':
+    case 'PerVuIterationsWorkload':
+      return 0;
+  }
+}
+
 /** `tflw load <file.tflw>` — runs every workload-bearing `test` declared in the file (a `test`
  * with a `ramp to …` line; M30/D29 — checker-enforced unique names among those,
  * `checkWorkloadTests`/TF033; M50/D93-D95 collapsed what used to be a separate `scenario` keyword
@@ -1258,26 +1305,14 @@ async function loadCommand(argv: string[]): Promise<number> {
   const { resolved, parsedFiles, environ } = loaded;
   const { file, source, program } = parsedFiles[0]!;
   // M50 (D93-D95): a "scenario" is any `test` block whose `workload` is non-null — `scenario` no
-  // longer exists as its own keyword/array.
-  const workloadTests = program.tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
+  // longer exists as its own keyword/array. M52: every workload kind (Phase 1b's 4 new ones
+  // included) runs today, not just `ramp` — see `describeWorkload`/`workloadPlannedMs` below.
+  const scenarios = program.tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
 
-  if (workloadTests.length === 0) {
+  if (scenarios.length === 0) {
     err(`tflw load needs a file with at least one workload-bearing \`test\` (a \`ramp to …\` line) — ${relative(cwd, file)} has 0.`);
     return EXIT_USAGE;
   }
-
-  // Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97) added grammar for `hold`/`step`/`spike`/the 2
-  // iteration forms, but their VU-loop semantics are Phase 2's job, still ahead — fail fast here
-  // with a clear message rather than letting the interpreter throw a less specific one downstream.
-  const unsupported = workloadTests.filter((t) => t.workload.type !== 'RampUsersWorkload' && t.workload.type !== 'RampRpsWorkload');
-  if (unsupported.length > 0) {
-    const names = unsupported.map((t) => `"${t.name.value}"`).join(', ');
-    err(
-      `tflw load doesn't execute \`hold\`/\`step\`/\`spike\`/\`run …\` workloads yet (Phase 2 of PLAN_UNIFIED_TEST_WORKLOAD.md, not shipped) — ${relative(cwd, file)} has ${unsupported.length}: ${names}. Only \`ramp to …\` workloads run today.`,
-    );
-    return EXIT_USAGE;
-  }
-  const scenarios = workloadTests as (TestDecl & { workload: RampUsersWorkload | RampRpsWorkload })[];
 
   const missing = missingRequiredEnv(resolved, environ);
   if (missing.length > 0) {
@@ -1286,14 +1321,10 @@ async function loadCommand(argv: string[]): Promise<number> {
   }
 
   for (const scenario of scenarios) {
-    const workloadLabel =
-      scenario.workload.type === 'RampUsersWorkload'
-        ? `ramp to ${scenario.workload.users} users over ${scenario.workload.overMs}ms (closed)`
-        : `ramp to ${scenario.workload.rps} rps over ${scenario.workload.overMs}ms (open)`;
-    process.stdout.write(`scenario "${scenario.name.value}" — ${workloadLabel}\n`);
+    process.stdout.write(`scenario "${scenario.name.value}" — ${describeWorkload(scenario.workload)}\n`);
   }
 
-  const plannedMs = Math.max(...scenarios.map((s) => s.workload.overMs));
+  const plannedMs = Math.max(0, ...scenarios.map((s) => workloadPlannedMs(s.workload)));
 
   // M32 (R5) — first Ctrl-C requests a graceful stop (no new iterations; `report.aborted` flushes
   // whatever completed); a second one before that resolves force-quits immediately, the usual

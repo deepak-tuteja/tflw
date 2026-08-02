@@ -2212,22 +2212,56 @@ test('`tflw load` on a file with no workload-bearing `test` is a usage error, no
   });
 });
 
-// Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97): `hold`/`step`/`spike`/the 2 iteration forms parse
-// and check today but have no interpreter loop semantics yet (Phase 2, not shipped) — `tflw load`
-// should reject them with a clear usage error rather than crashing mid-run.
-test('`tflw load` on a `hold` workload (not yet executable, Phase 2) is a usage error naming the test', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-unsupported-kind-'));
-  try {
-    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
-    await writeFile(join(dir, 'steady.tflw'), 'test "steady load"\n  hold 5 users for 5s\n  api GET /health\n', 'utf8');
+// M52 (Phase 2, PLAN_UNIFIED_TEST_WORKLOAD.md): Phase 1b's 4 new workload kinds now actually
+// execute end-to-end via the real CLI, not just under `@tflw/runtime`'s own unit tests.
+test('`tflw load` runs a `hold` workload end-to-end: passes, prints a summary, writes reports', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-hold-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // Below selfDiagnosis.ts's MIN_SATURATION_WINDOW_MS (300ms) so this stays a plain pass on a
+      // busy CI box — a `hold` this tight and this short is a legitimately heavy generator load
+      // (this local fixture returns in ~1ms, so 4 always-on VUs issue thousands of iterations),
+      // exactly as it would be for an equivalent `ramp to N users over <dur>` at this scale too.
+      await writeFile(join(dir, 'load.tflw'), 'test "steady load"\n  hold 4 users for 200ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
 
-    const failure = await execFileAsync('node', [cliEntry, 'load', 'steady.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
-    assert.equal(failure.code, 2);
-    assert.match(failure.stderr, /doesn't execute `hold`\/`step`\/`spike`\/`run …` workloads yet/);
-    assert.match(failure.stderr, /"steady load"/);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+      const { stdout } = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir });
+      assert.match(stdout, /scenario "steady load" — hold 4 users for 200ms \(closed\)/);
+      assert.match(stdout, /load run passed/);
+
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
+        ok: boolean;
+        scenarios: { name: string; ok: boolean; workload: { kind: string; target: number; overMs: number } }[];
+      };
+      assert.equal(metrics.ok, true);
+      assert.deepEqual(metrics.scenarios[0]!.workload, { kind: 'users', target: 4, overMs: 200 });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw load` runs a `run N iterations across M users` workload end-to-end, exactly N iterations', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-iterations-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "fixed batch"\n  run 12 iterations across 3 users\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'load', 'load.tflw', '--no-color'], { cwd: dir });
+      assert.match(stdout, /scenario "fixed batch" — run 12 iterations across 3 users/);
+      assert.match(stdout, /load run passed/);
+
+      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
+        ok: boolean;
+        combined: { iterations: number };
+      };
+      assert.equal(metrics.ok, true);
+      assert.equal(metrics.combined.iterations, 12);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 test('`tflw load` with no file argument is a usage error', async () => {
