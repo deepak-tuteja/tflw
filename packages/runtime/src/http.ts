@@ -77,7 +77,8 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
   // cert/key over a one-off `undici.Agent` — isolated there specifically so the `undici` npm
   // package (needed for that `Agent` class) is never imported in *this* process: merely importing
   // it, even without calling it, was found to cripple this global `fetch()` below by ~20x (M35b,
-  // `acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md`) — every other request keeps using the
+  // `tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md` in testFlow-tests, moved there in
+  // reorg Phase 2) — every other request keeps using the
   // global `fetch` unchanged.
   if (opts.mtls) {
     try {

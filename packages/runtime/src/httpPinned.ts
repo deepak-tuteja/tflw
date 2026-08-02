@@ -1,7 +1,8 @@
 // M45 (PLAN_BROWSER_PERF_SECURITY.md §2.16, D75) — a load-only send path on Node's native
 // `node:http`/`node:https` with a per-VU `Agent({keepAlive: true})`, structurally separate from
 // `http.ts`'s `sendRequest` (`fetch()`). Never imports `undici` — the M35b root-cause finding
-// (`acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md`) is specific to that package; importing
+// (`tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md` in testFlow-tests, moved there in
+// reorg Phase 2) is specific to that package; importing
 // it anywhere in this shared process would re-cripple `sendRequest`'s `fetch()` for the non-load
 // `tflw run` path, which is exactly why `mtlsWorker.ts` isolates its own `undici.Agent` usage in a
 // dedicated child process. `node:http`'s own `Agent` was never implicated and needs no such

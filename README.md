@@ -26,7 +26,7 @@ Three things tflw does that a general-purpose language + an HTTP client doesn't 
   grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one
   readable file instead of gluing two tools together.
 
-Measured against raw `fetch` + `node:test` (the honest "no tool" baseline, `acceptance/README.md`):
+Measured against raw `fetch` + `node:test` (the honest "no tool" baseline, [`tflw-acceptance/README.md`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tflw-acceptance/README.md)):
 **2.8× fewer lines** overall (4–8× on retry/polling/generated-data scenarios), a categorical report
 quality gap (raw's default output has no request/response capture or redaction without hand-building
 it), and **~3× faster runs** purely from session reuse (a cached login vs. re-authenticating per
@@ -47,7 +47,6 @@ the rest is the implementation and the evidence behind the numbers above.
 | `packages/cli` | The `tflw` command itself — what `npm i -D tflw` installs. Own [README](packages/cli/README.md) (what ships in the npm package) |
 | `packages/vscode` | VS Code extension: `.tflw` syntax highlighting |
 | `packages/docs-site` | [The documentation site](https://deepak-tuteja.github.io/tflw/) (VitePress), deployed to GitHub Pages |
-| `acceptance/` | tflw vs. raw `fetch`+`node:test` head-to-head, plus an external dogfood run against a live public API (restful-booker) — the source of the "2.8× fewer lines" numbers above. [Own README](acceptance/README.md) |
 | `examples/dogfood` | Worked `.tflw` files exercising the full grammar together (sessions, hooks, actions, data tables) — used as regression fixtures, and a good place to see real, larger examples beyond this README |
 
 See [CHANGELOG.md](CHANGELOG.md) for released versions.
