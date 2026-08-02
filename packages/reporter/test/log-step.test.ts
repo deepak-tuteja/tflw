@@ -20,7 +20,7 @@ function reportWithStep(step: StepResult): RunReport {
     seed: 1,
     now: '2026-07-29T00:00:00.000Z',
     insecure: false,
-    tests: [{ name: 'a test', ok: true, durationMs: 5, steps: [step] }],
+    tests: [{ kind: 'functional', name: 'a test', ok: true, durationMs: 5, steps: [step] }],
   };
 }
 

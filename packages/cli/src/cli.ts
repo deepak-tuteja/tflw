@@ -42,6 +42,7 @@ import {
   runProgram,
   runLoadShard,
   mergeLoadShardReports,
+  spliceLoadReportIntoRunReport,
   resolveConfig,
   selectEnv,
   missingRequiredEnv,
@@ -62,14 +63,12 @@ import {
   shutdownMtlsWorker,
   type BrowserEngine,
   type RunReport,
-  type TestResult,
+  type ReportEntry,
   type EventSink,
   type RunEvent,
   type StepResult,
   type ResolvedConfig,
   type PickSessionHandle,
-  type LoadReport,
-  type LoadMetrics,
   type LoadShardResult,
   type LoadProgressSnapshot,
   type SelfDiagnosis,
@@ -83,9 +82,6 @@ import {
   readLastRun,
   writeEventsNdjson,
   renderCliSummary,
-  writeLoadReport,
-  writeLoadJunitXml,
-  writeLoadResultsJson,
 } from '@tflw/reporter';
 import { startServer } from '@tflw/lsp-server';
 import { buildEnviron } from './env.js';
@@ -1023,7 +1019,6 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
 
   interface FileRunResult {
     readonly report: RunReport;
-    readonly loadReport?: LoadReport;
   }
 
   const fileResults = await runWithConcurrency(
@@ -1047,7 +1042,6 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
         // the exact same unified `runProgram` call that already runs this file's functional tests
         // — a functional test never runs inside a forked shard worker (D113).
         let report: RunReport;
-        let loadReport: LoadReport | undefined;
         if (hasWorkload && loadWorkers > 1) {
           if (!ndjsonActive) out.write(withTimestamps(`running across ${loadWorkers} generator processes…`, timestamps) + '\n');
           // M32 (R5), carried over from `tflw load`: each shard (the main process's own shard-0,
@@ -1085,14 +1079,17 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
               }),
             ),
           ]);
-          report = main.report;
-          loadReport = mergeLoadShardReports(program, [main.loadShardResult!, ...children], {
+          // M56 (Phase 3, D117): `main.report`'s own workload entries are only shard-0's partial
+          // share (`runProgramInner`'s own doc comment) — splice in the real, merged result (and
+          // hoist the merged selfDiagnosis/inconclusive/aborted) once every shard is combined.
+          const mergedLoadReport = mergeLoadShardReports(program, [main.loadShardResult!, ...children], {
             startedAt: main.report.startedAt,
             durationMs: main.report.durationMs,
             seed,
             now,
             aborted: abortController.signal.aborted,
           });
+          report = spliceLoadReportIntoRunReport(main.report, mergedLoadReport);
         } else {
           const out2 = await runProgram(program, resolved, {
             source,
@@ -1113,7 +1110,6 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
             ...(fileEmit ? { emit: fileEmit } : {}),
           });
           report = out2.report;
-          loadReport = out2.loadReport;
         }
         if (hasWorkload && process.stdout.isTTY && !ndjsonActive) process.stdout.write('\r' + ' '.repeat(90) + '\r');
         buffered?.flush();
@@ -1123,7 +1119,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
         // `matches snapshot` step's `snapshots/<file>/…` path (M4b) — this stamp remains the
         // display-only one `report.tests[].file` has always been, kept as its own assignment rather
         // than merged into the two so neither concern's rationale gets confused for the other's.
-        return { report: { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) }, ...(loadReport ? { loadReport } : {}) };
+        return { report: { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) } };
       } catch (e) {
         buffered?.flush();
         // A runtime throw in this file (e.g. a bad `import`/`use` path) must never sink the whole
@@ -1138,7 +1134,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
           total: 1,
           passed: 0,
           failed: 1,
-          tests: [{ name: `${fileLabel} (crashed)`, ok: false, durationMs: 0, steps: [], error: redactor.redact(message), file: fileLabel }],
+          tests: [{ kind: 'functional', name: `${fileLabel} (crashed)`, ok: false, durationMs: 0, steps: [], error: redactor.redact(message), file: fileLabel }],
           seed,
           now,
           insecure: resolved.insecure,
@@ -1153,16 +1149,19 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   );
   process.removeListener('SIGINT', onSigint);
   const reports = fileResults.map((r) => r.report);
-  const loadReports = fileResults.map((r) => r.loadReport).filter((r): r is LoadReport => r !== undefined);
 
-  // 6. Merge reports, write report.html + junit.xml + results.json (decision 111.1) +
-  //    .last-run.json (decision 111.2, always overwritten — unconditional, not just under
-  //    --failed) + events.ndjson (decision 111.4, only under --format ndjson), print the summary.
-  //    A second full-report redaction pass (decision 56) here — on top of the one each
-  //    `runProgram` call already did on its own file's report — closes the *cross-file* half of
-  //    the ordering window: a secret first registered by one file (e.g. running later, or
-  //    concurrently under `--workers`) can still retroactively mask an earlier file's
-  //    already-built report once everything is merged.
+  // 6. Merge reports — M56 (Phase 3, D117/D118): a workload test's result now lives inline in
+  //    `RunReport.tests` and `selfDiagnosis`/`inconclusive`/`aborted` are top-level `RunReport`
+  //    fields, so merging across files (`mergeReports`) already covers the load side too — no more
+  //    separate `LoadReport` artifact, and no more "only the first file's load results are kept"
+  //    limitation. Write report.html + junit.xml + results.json (decision 111.1) + .last-run.json
+  //    (decision 111.2, always overwritten — unconditional, not just under --failed) +
+  //    events.ndjson (decision 111.4, only under --format ndjson), print the summary. A second
+  //    full-report redaction pass (decision 56) here — on top of the one each `runProgram` call
+  //    already did on its own file's report — closes the *cross-file* half of the ordering window:
+  //    a secret first registered by one file (e.g. running later, or concurrently under
+  //    `--workers`) can still retroactively mask an earlier file's already-built report once
+  //    everything is merged.
   const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine), redactor);
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
@@ -1171,45 +1170,20 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   await writeLastRun(merged, reportDir);
   if (ndjsonActive) await writeEventsNdjson(ndjsonCollected, reportDir);
 
-  // A file made up entirely of workload-bearing tests contributes 0 functional results — printing
-  // a "0/0 passed" functional summary ahead of the real load summary below would be pure noise
-  // (report.html/junit.xml/etc. are still always written, unconditionally, for any tooling that
-  // expects them to exist regardless of what actually ran).
-  if (!ndjsonActive && (merged.total > 0 || loadReports.length === 0)) {
+  if (!ndjsonActive) {
     out.write(withTimestamps('\n' + renderCliSummary(merged, color), timestamps) + '\n');
     out.write(withTimestamps(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}`, timestamps) + '\n');
-  }
-
-  // D99: `load-report.html`/`load-junit.xml`/`load-results.json` — same artifacts `tflw load`
-  // always wrote, now from this same `tflw run` invocation. The overwhelmingly common case (one
-  // file with workload-bearing tests, matching every fixture migrated off `tflw load` so far,
-  // D108) writes them exactly as before. Phase 3 (D101) is what actually unifies load reporting
-  // into the one combined `report.html` — merging *several* files' own `LoadReport`s into one
-  // numerically-correct combined view needs each file's raw per-scenario histograms, not just
-  // their already-finalized `LoadReport.combined`, so that's deliberately not attempted here: if
-  // more than one file produced one, only the first is written, with a visible warning instead of
-  // silently discarding the rest.
-  if (loadReports.length > 0) {
-    if (loadReports.length > 1) {
-      out.write(withTimestamps(`\`load-report.html\`/\`load-junit.xml\`/\`load-results.json\` only cover the first of ${loadReports.length} files with workload-bearing tests in this run — combining several files' load reports isn't supported yet.`, timestamps) + '\n');
-    }
-    const loadReport = loadReports[0]!;
-    out.write(renderLoadSummary(loadReport, color));
-    const [resultsPath, htmlPath, junitPath] = await Promise.all([writeLoadResultsJson(loadReport, reportDir), writeLoadReport(loadReport, reportDir), writeLoadJunitXml(loadReport, reportDir)]);
-    out.write(withTimestamps(`\n${dim(color, 'load results:')} ${relative(cwd, resultsPath)}`, timestamps) + '\n');
-    out.write(withTimestamps(`${dim(color, 'load report: ')} ${relative(cwd, htmlPath)}`, timestamps) + '\n');
-    out.write(withTimestamps(`${dim(color, 'load junit:  ')} ${relative(cwd, junitPath)}`, timestamps) + '\n');
   }
 
   await out.save();
   if (!watchOpts?.keepBrowserOpen) await browserManager.close(); // no-op if no test in this run ever used a browser step
 
-  // Exit-code priority mirrors `tflw load`'s own (aborted > inconclusive > ok), now combined with
-  // the functional side's verdict — an aborted or inconclusive load run outranks a merely-failing
-  // functional report, same as it always outranked a load run's own thresholds.
-  if (loadReports.some((r) => r.aborted)) return EXIT_ABORTED;
-  if (loadReports.some((r) => r.inconclusive)) return EXIT_INCONCLUSIVE;
-  return merged.ok && loadReports.every((r) => r.ok) ? EXIT_OK : EXIT_FAIL;
+  // Exit-code priority mirrors `tflw load`'s own (aborted > inconclusive > ok), now read straight
+  // off the merged `RunReport` (D117) — an aborted or inconclusive run outranks a merely-failing
+  // report, same as it always outranked a load run's own thresholds.
+  if (merged.aborted) return EXIT_ABORTED;
+  if (merged.inconclusive) return EXIT_INCONCLUSIVE;
+  return merged.ok ? EXIT_OK : EXIT_FAIL;
 }
 
 // ---- Load-generation process forking (M29-M32/D16-D19/D24a/D28/D29, unified into `tflw run`'s
@@ -1445,82 +1419,11 @@ function renderLoadProgressLine(current: LoadProgressSnapshot, previous: LoadPro
   return color ? `\x1b[33m${warning}\x1b[0m` : warning;
 }
 
-function renderLoadMetricsLine(metrics: LoadMetrics): string {
-  const d = metrics.durations;
-  const iterLine = `iterations: ${metrics.iterations}  failures: ${metrics.failures}  error rate: ${(metrics.errorRate * 100).toFixed(2)}%`;
-  const durLine = `duration (ms, think-excluded): min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`;
-  return `${iterLine}\n${durLine}`;
-}
-
-function renderLoadSummary(report: LoadReport, color: boolean): string {
-  const lines: string[] = [];
-  if (report.aborted) {
-    const banner = `⚠ ${report.abortedMessage ?? 'aborted before its planned duration elapsed'} — every number below reflects only what completed before Ctrl-C.`;
-    lines.push(color ? `\x1b[33m${banner}\x1b[0m` : banner);
-  }
-  lines.push('');
-  lines.push('combined:');
-  lines.push(renderLoadMetricsLine(report.combined));
-
-  for (const s of report.scenarios) {
-    lines.push('');
-    lines.push(`scenario "${s.name}":`);
-    lines.push(renderLoadMetricsLine(s.metrics));
-    if (s.thresholds.length === 0) {
-      lines.push(dim(color, 'no `threshold`s declared — nothing to gate on'));
-    } else {
-      lines.push('thresholds:');
-      for (const t of s.thresholds) {
-        const cmp = t.op === 'lessThan' ? '<' : '>';
-        const actual = t.label === 'error rate' ? `${(t.actual * 100).toFixed(2)}%` : `${Math.round(t.actual)}ms`;
-        const target = t.label === 'error rate' ? `${(t.target * 100).toFixed(2)}%` : `${t.target}ms`;
-        lines.push(`  ${tick(color, t.ok)} ${t.label} ${cmp} ${target}  (actual: ${actual})`);
-      }
-    }
-    // M43 (D69, R6's per-endpoint axis) — a compact one-line-per-endpoint table, only when there's
-    // more than one identity to break down (a single-endpoint scenario would just repeat the
-    // scenario-level line above verbatim).
-    if (s.endpoints.length > 1) {
-      lines.push('endpoints:');
-      for (const e of s.endpoints) {
-        const d = e.metrics.durations;
-        lines.push(`  ${e.identity}: iterations ${e.metrics.iterations}  error rate ${(e.metrics.errorRate * 100).toFixed(2)}%  p50 ${d.p50}ms  p95 ${d.p95}ms  p99 ${d.p99}ms`);
-      }
-    }
-    // M34 (D17): a closed-model scenario's coordinated-omission warning — see BackOffDiagnosis
-    // (types.ts). Report-only, same restraint as the generator line below: silent when healthy.
-    if (s.backOff?.warning) {
-      const pct = (s.backOff.ratio * 100).toFixed(0);
-      const warning = `⚠ your load backed off — this scenario's VUs spent an estimated ${pct}% of their available time unable to keep pace with the target system; results understate real latency`;
-      lines.push(color ? `\x1b[33m${warning}\x1b[0m` : warning);
-    }
-  }
-
-  lines.push('');
-  lines.push('generator:');
-  lines.push(renderSelfDiagnosisLine(report.selfDiagnosis, color));
-
-  lines.push('');
-  if (report.inconclusive) {
-    lines.push('load run inconclusive — the generator saturated, so this verdict cannot be trusted');
-  } else if (report.aborted) {
-    lines.push(report.ok ? 'load run aborted (partial) — thresholds passed on what completed' : 'load run aborted (partial) — a threshold was breached on what completed');
-  } else {
-    lines.push(report.ok ? 'load run passed' : 'load run failed — a threshold was breached');
-  }
-  return lines.join('\n') + '\n';
-}
-
-/** M31 (D19/D28): the generator's own event-loop-lag/CPU reading. Healthy — dim, one line, same
- * restraint as everything else in this summary that's just informational. Saturated — the actual
- * "tflw itself is the bottleneck" warning D28 asks the report to say out loud, not just log a
- * number a reader has to know to interpret. */
-function renderSelfDiagnosisLine(d: SelfDiagnosis, color: boolean): string {
-  const stats = `avg event-loop lag ${d.avgEventLoopLagMs.toFixed(1)}ms  max ${d.maxEventLoopLagMs.toFixed(1)}ms  cpu ${d.cpuPercent.toFixed(0)}%`;
-  if (!d.saturated) return dim(color, stats);
-  const warning = `⚠ tflw itself is the bottleneck (${stats}) — measured latency/throughput reflects tflw's own generator process, not your system under test. Results are unreliable.`;
-  return color ? `\x1b[33m${warning}\x1b[0m` : warning;
-}
+// M56 (Phase 3, D121/D122): the old `renderLoadSummary`/`renderLoadMetricsLine`/
+// `renderSelfDiagnosisLine` final-summary trio is gone — a workload test's console lines now come
+// from `renderCliSummary` itself (reporter package), folded in alongside functional ones. The
+// *live*, mid-run ticker just above (`renderLoadProgressLine`) is unchanged; only the final
+// summary unified.
 
 // ---- tflw check -------------------------------------------------------------
 
@@ -1805,10 +1708,15 @@ async function runWithConcurrency<T, R>(
 }
 
 /** Combine per-file reports into one run report, in original file order regardless of the
- * per-file worker concurrency that produced them (P#47). */
+ * per-file worker concurrency that produced them (P#47). M56 (Phase 3, D118): also merges each
+ * file's own `selfDiagnosis`/`inconclusive`/`aborted` (present only for a file that had a
+ * workload-bearing test) — `inconclusive`/`aborted` become "true if any contributing file's was,"
+ * `selfDiagnosis` merges via the same N-way `mergeSelfDiagnosis` already used for shard merging. */
 function mergeReports(reports: readonly RunReport[], envName: string, seed: number, now: string, insecure: boolean, browserEngine: BrowserEngine): RunReport {
-  const tests: TestResult[] = reports.flatMap((r) => r.tests);
+  const tests: ReportEntry[] = reports.flatMap((r) => r.tests);
   const passed = tests.filter((t) => t.ok).length;
+  const diagnoses = reports.map((r) => r.selfDiagnosis).filter((d): d is SelfDiagnosis => d !== undefined);
+  const abortedReport = reports.find((r) => r.aborted);
   return {
     ok: tests.every((t) => t.ok),
     env: envName,
@@ -1822,6 +1730,8 @@ function mergeReports(reports: readonly RunReport[], envName: string, seed: numb
     now,
     insecure,
     browserEngine,
+    ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
+    ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),
   };
 }
 

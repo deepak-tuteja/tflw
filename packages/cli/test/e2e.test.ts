@@ -1923,7 +1923,32 @@ test('`tflw init --load` scaffolds load.tflw alongside the usual files', async (
   }
 });
 
-test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, writes report/load-results.json', async () => {
+// M56 (Phase 3, D116/D117/D121): a workload test's result now lives inline in the one unified
+// `report.tests` (tagged `kind: 'workload'`) — no more separate `load-results.json`/
+// `load-report.html`/`load-junit.xml` artifacts.
+interface WorkloadReportEntry {
+  readonly kind: 'workload';
+  readonly name: string;
+  readonly ok: boolean;
+  readonly workload: { readonly kind: string; readonly target: number; readonly overMs: number };
+  readonly metrics: { readonly iterations: number; readonly failures: number; readonly errorRate: number };
+  readonly thresholds: { readonly label: string; readonly ok: boolean }[];
+  readonly endpoints: { readonly identity: string; readonly metrics: { readonly iterations: number } }[];
+  readonly backOff?: { readonly ratio: number; readonly warning: boolean };
+}
+interface UnifiedResultsJson {
+  readonly ok: boolean;
+  readonly inconclusive?: boolean;
+  readonly aborted?: boolean;
+  readonly abortedMessage?: string;
+  readonly selfDiagnosis?: { readonly avgEventLoopLagMs: number; readonly maxEventLoopLagMs: number; readonly cpuPercent: number; readonly saturated: boolean };
+  readonly tests: readonly (WorkloadReportEntry | { readonly kind: 'functional' })[];
+}
+function workloadEntries(results: UnifiedResultsJson): WorkloadReportEntry[] {
+  return results.tests.filter((t): t is WorkloadReportEntry => t.kind === 'workload');
+}
+
+test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, writes report/results.json', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-pass-'));
     try {
@@ -1937,31 +1962,25 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "health burst"/);
       assert.match(stdout, /iterations: \d+/);
-      assert.match(stdout, /load run passed/);
-      assert.match(stdout, /results:.*load-results\.json/);
-      assert.match(stdout, /report:.*load-report\.html/);
-      assert.match(stdout, /junit:.*load-junit\.xml/);
+      assert.match(stdout, /PASS 1\/1 passed/);
+      assert.doesNotMatch(stdout, /results:.*load-results\.json/);
+      assert.match(stdout, /report:.*report\.html/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
-        ok: boolean;
-        inconclusive: boolean;
-        scenarios: { name: string; ok: boolean; thresholds: { ok: boolean }[] }[];
-        combined: { iterations: number };
-      };
-      assert.equal(metrics.ok, true);
-      assert.equal(metrics.inconclusive, false);
-      assert.equal(metrics.scenarios.length, 1);
-      assert.equal(metrics.scenarios[0]!.name, 'health burst');
-      assert.equal(metrics.scenarios[0]!.ok, true);
-      assert.equal(metrics.scenarios[0]!.thresholds[0]!.ok, true);
-      assert.ok(metrics.combined.iterations > 0);
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(results.ok, true);
+      assert.equal(results.inconclusive, false);
+      const scenarios = workloadEntries(results);
+      assert.equal(scenarios.length, 1);
+      assert.equal(scenarios[0]!.name, 'health burst');
+      assert.equal(scenarios[0]!.ok, true);
+      assert.equal(scenarios[0]!.thresholds[0]!.ok, true);
+      assert.ok(scenarios[0]!.metrics.iterations > 0);
 
-      const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
-      assert.match(html, /<title>tflw load report — PASS<\/title>/);
-      assert.match(html, /Scenario &quot;health burst&quot;/);
+      const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+      assert.match(html, /health burst/);
 
-      const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
-      assert.match(junit, /<testsuite name="tflw load"/);
+      const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
+      assert.match(junit, /<testsuite name="tflw"/);
       assert.match(junit, /health burst — error rate/);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -1994,12 +2013,10 @@ test('`tflw load`: a scenario with an untagged step and an `as "label"`-tagged s
       assert.match(stdout, /endpoints:/);
       assert.match(stdout, /GET \/health: iterations \d+/);
       assert.match(stdout, /checkout: iterations \d+/);
-      assert.match(stdout, /load run passed/);
+      assert.match(stdout, /PASS 1\/1 passed/);
 
-      const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
-        scenarios: { name: string; thresholds: { label: string; ok: boolean }[]; endpoints: { identity: string; metrics: { iterations: number } }[] }[];
-      };
-      const scenario = results.scenarios[0]!;
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      const scenario = workloadEntries(results)[0]!;
       assert.deepEqual(
         scenario.endpoints.map((e) => e.identity),
         ['GET /health', 'checkout'],
@@ -2009,11 +2026,11 @@ test('`tflw load`: a scenario with an untagged step and an `as "label"`-tagged s
       assert.ok(scoped, `expected a scoped threshold, got ${JSON.stringify(scenario.thresholds)}`);
       assert.equal(scoped!.ok, true);
 
-      const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
+      const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
       assert.match(html, /class="endpoints"/);
       assert.match(html, /<details class="endpoint"><summary>checkout/);
 
-      const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+      const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
       assert.match(junit, /p95 duration for &quot;checkout&quot;/);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -2056,16 +2073,18 @@ test('`tflw load`: an `env(NAME)` value from a `.env` file (not a real process e
     );
 
     const single = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir, env: envWithout('API_KEY') });
-    assert.match(single.stdout, /load run passed/);
-    const singleResults = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { combined: { failures: number; iterations: number } };
-    assert.equal(singleResults.combined.failures, 0);
-    assert.ok(singleResults.combined.iterations > 0);
+    assert.match(single.stdout, /PASS 1\/1 passed/);
+    const singleResults = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+    const singleScenario = workloadEntries(singleResults)[0]!;
+    assert.equal(singleScenario.metrics.failures, 0);
+    assert.ok(singleScenario.metrics.iterations > 0);
 
     const workers = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color', '--workers', '2'], { cwd: dir, env: envWithout('API_KEY') });
-    assert.match(workers.stdout, /load run passed/);
-    const workersResults = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { combined: { failures: number; iterations: number } };
-    assert.equal(workersResults.combined.failures, 0);
-    assert.ok(workersResults.combined.iterations > 0);
+    assert.match(workers.stdout, /PASS 1\/1 passed/);
+    const workersResults = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+    const workersScenario = workloadEntries(workersResults)[0]!;
+    assert.equal(workersScenario.metrics.failures, 0);
+    assert.ok(workersScenario.metrics.iterations > 0);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
@@ -2102,22 +2121,22 @@ test('`tflw load`: a closed-model scenario against a degrading server prints and
     assert.match(stdout, /⚠ your load backed off/);
     assert.match(stdout, /results understate real latency/);
 
-    const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
-      scenarios: { backOff?: { ratio: number; warning: boolean } }[];
-    };
-    const backOff = results.scenarios[0]!.backOff;
+    const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+    const backOff = workloadEntries(results)[0]!.backOff;
     assert.ok(backOff, 'expected the JSON report to carry a backOff diagnosis');
     assert.equal(backOff!.warning, true);
     assert.ok(backOff!.ratio > 0.2, `expected ratio > 0.2, got ${backOff!.ratio}`);
 
-    const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
     assert.match(html, /class="backoff-warning"/);
     assert.match(html, /coordinated omission, D17/);
 
     // Report-only: a back-off warning must never touch the exit code or gate CI on its own — only
-    // `threshold`s (this scenario declares none) and `inconclusive` do that.
-    const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
-    assert.match(junit, /tests="0"/);
+    // `threshold`s and `inconclusive` do that. D119: this scenario declares zero thresholds, so it
+    // still contributes exactly one bare, always-passing <testcase> (not zero — a threshold-less
+    // workload test must still show up in CI output).
+    const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
+    assert.match(junit, /tests="1" failures="0"/);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
@@ -2154,18 +2173,17 @@ test('`tflw run` runs two `parallel`-tagged workload-bearing tests concurrently:
       assert.equal(failure.code, 1);
       assert.match(failure.stdout, /scenario "healthy"/);
       assert.match(failure.stdout, /scenario "unhealthy"/);
-      assert.match(failure.stdout, /combined:/);
-      assert.match(failure.stdout, /load run failed/);
+      // D117: no more pooled "combined:" view — each workload test renders standalone, like a
+      // functional test; both still appear, each with its own metrics/threshold lines.
+      assert.doesNotMatch(failure.stdout, /combined:/);
+      assert.match(failure.stdout, /FAIL \d+\/2 passed, \d+ failed/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
-        ok: boolean;
-        scenarios: { name: string; ok: boolean }[];
-        combined: { iterations: number };
-      };
-      assert.equal(metrics.ok, false);
-      assert.equal(metrics.scenarios.length, 2);
-      const healthy = metrics.scenarios.find((s) => s.name === 'healthy')!;
-      const unhealthy = metrics.scenarios.find((s) => s.name === 'unhealthy')!;
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(results.ok, false);
+      const scenarios = workloadEntries(results);
+      assert.equal(scenarios.length, 2);
+      const healthy = scenarios.find((s) => s.name === 'healthy')!;
+      const unhealthy = scenarios.find((s) => s.name === 'unhealthy')!;
       assert.equal(healthy.ok, true);
       assert.equal(unhealthy.ok, false);
     } finally {
@@ -2191,10 +2209,10 @@ test('`tflw load` exits 1 and reports a breached threshold without throwing', as
 
     const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
     assert.equal(failure.code, 1);
-    assert.match(failure.stdout, /load run failed/);
+    assert.match(failure.stdout, /FAIL 0\/1 passed, 1 failed/);
 
-    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { ok: boolean };
-    assert.equal(metrics.ok, false);
+    const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+    assert.equal(results.ok, false);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
@@ -2204,7 +2222,8 @@ test('`tflw load` exits 1 and reports a breached threshold without throwing', as
 
 // Phase 2b (D99): unlike the old, dropped `tflw load` (which hard-errored on 0 workload-bearing
 // tests), `tflw run` on a file with none is just an ordinary functional-only run — no special
-// case, no error, no `loadReport` produced at all (covered directly in `unified-dispatch.test.ts`).
+// case, no error (covered directly in `unified-dispatch.test.ts`). M56: no more `selfDiagnosis`/
+// workload entry in `report.tests` either.
 test('`tflw run` on a file with no workload-bearing `test` runs it as an ordinary functional test, no error', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-noscenario-'));
@@ -2214,7 +2233,9 @@ test('`tflw run` on a file with no workload-bearing `test` runs it as an ordinar
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'plain.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /PASS 1\/1 passed/);
-      await assert.rejects(access(join(dir, 'report', 'load-results.json')), 'no load report should be written when the file has no workload-bearing tests');
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(results.selfDiagnosis, undefined);
+      assert.equal(workloadEntries(results).length, 0);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2236,14 +2257,11 @@ test('`tflw load` runs a `hold` workload end-to-end: passes, prints a summary, w
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "steady load" — hold 4 users for 200ms \(closed\)/);
-      assert.match(stdout, /load run passed/);
+      assert.match(stdout, /PASS 1\/1 passed/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
-        ok: boolean;
-        scenarios: { name: string; ok: boolean; workload: { kind: string; target: number; overMs: number } }[];
-      };
-      assert.equal(metrics.ok, true);
-      assert.deepEqual(metrics.scenarios[0]!.workload, { kind: 'users', target: 4, overMs: 200 });
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(results.ok, true);
+      assert.deepEqual(workloadEntries(results)[0]!.workload, { kind: 'users', target: 4, overMs: 200 });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2259,14 +2277,11 @@ test('`tflw load` runs a `run N iterations across M users` workload end-to-end, 
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "fixed batch" — run 12 iterations across 3 users/);
-      assert.match(stdout, /load run passed/);
+      assert.match(stdout, /PASS 1\/1 passed/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
-        ok: boolean;
-        combined: { iterations: number };
-      };
-      assert.equal(metrics.ok, true);
-      assert.equal(metrics.combined.iterations, 12);
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(results.ok, true);
+      assert.equal(workloadEntries(results)[0]!.metrics.iterations, 12);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2285,7 +2300,7 @@ test('`tflw run` with no file argument auto-discovers a workload-bearing test to
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "health burst"/);
-      assert.match(stdout, /load run passed/);
+      assert.match(stdout, /PASS 1\/1 passed/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2308,23 +2323,19 @@ test('`tflw load --workers 3` really forks 3 OS processes and merges their resul
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '3', '--no-color'], { cwd: dir });
       assert.match(stdout, /running across 3 generator processes/);
       assert.match(stdout, /scenario "health burst"/);
-      assert.match(stdout, /load run passed/);
+      assert.match(stdout, /PASS 1\/1 passed/);
       assert.match(stdout, /generator:/);
 
-      const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as {
-        ok: boolean;
-        scenarios: { name: string; ok: boolean }[];
-        combined: { iterations: number };
-        selfDiagnosis: { avgEventLoopLagMs: number; maxEventLoopLagMs: number; cpuPercent: number; saturated: boolean };
-      };
-      assert.equal(metrics.ok, true);
-      assert.equal(metrics.scenarios.length, 1);
-      assert.equal(metrics.scenarios[0]!.name, 'health burst');
-      assert.equal(metrics.scenarios[0]!.ok, true);
-      assert.ok(metrics.combined.iterations > 0, 'the 3 forked processes together should have produced real iterations');
-      assert.equal(typeof metrics.selfDiagnosis.saturated, 'boolean');
-      assert.ok(metrics.selfDiagnosis.avgEventLoopLagMs >= 0);
-      assert.ok(metrics.selfDiagnosis.cpuPercent >= 0);
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(results.ok, true);
+      const scenarios = workloadEntries(results);
+      assert.equal(scenarios.length, 1);
+      assert.equal(scenarios[0]!.name, 'health burst');
+      assert.equal(scenarios[0]!.ok, true);
+      assert.ok(scenarios[0]!.metrics.iterations > 0, 'the 3 forked processes together should have produced real iterations');
+      assert.equal(typeof results.selfDiagnosis!.saturated, 'boolean');
+      assert.ok(results.selfDiagnosis!.avgEventLoopLagMs >= 0);
+      assert.ok(results.selfDiagnosis!.cpuPercent >= 0);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2348,12 +2359,13 @@ test('`tflw load --workers 2` still fails the run (exit 1) when the merged, pool
 
     const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '2', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
     assert.equal(failure.code, 1);
-    assert.match(failure.stdout, /load run failed/);
+    assert.match(failure.stdout, /FAIL 0\/1 passed, 1 failed/);
 
-    const metrics = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { ok: boolean; combined: { iterations: number; failures: number } };
-    assert.equal(metrics.ok, false);
-    assert.ok(metrics.combined.iterations > 0);
-    assert.equal(metrics.combined.failures, metrics.combined.iterations, 'every /health hit a 500, every iteration should be a recorded failure');
+    const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+    assert.equal(results.ok, false);
+    const scenario = workloadEntries(results)[0]!;
+    assert.ok(scenario.metrics.iterations > 0);
+    assert.equal(scenario.metrics.failures, scenario.metrics.iterations, 'every /health hit a 500, every iteration should be a recorded failure');
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
@@ -2377,8 +2389,9 @@ test('`tflw load --workers 0` (or any non-positive-integer) is a usage error, sa
   });
 });
 
-// ---- M32: full LoadReport design — load-report.html/load-junit.xml, Ctrl-C partial report,
-// inconclusive exit code (PLAN_REPORTS_PERF_SECURITY.md R1-R6/R11) --------------------------------
+// ---- M32: full load-report design (Ctrl-C partial report, inconclusive exit code —
+// PLAN_REPORTS_PERF_SECURITY.md R1-R6/R11), now unified into report.html/junit.xml/results.json
+// by M56 (Phase 3, D121) rather than separate load-report.html/load-junit.xml files -------------
 
 /** Spawns `tflw load`, sends SIGINT after `killAfterMs`, and resolves once the process exits with
  * everything it printed. `execFileAsync` can't do this — it has no way to deliver a signal partway
@@ -2406,18 +2419,17 @@ test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing 
       const { code, output } = await runLoadAndSigint(['load.tflw'], dir, 300);
       assert.equal(code, 130);
       assert.match(output, /aborting… flushing a partial report/);
-      assert.match(output, /aborted at \d+s of 4s planned/);
-      assert.match(output, /load run aborted \(partial\)/);
+      assert.match(output, /⚠ aborted — aborted at \d+s of 4s planned/);
 
-      const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { aborted: boolean; abortedMessage: string; combined: { iterations: number } };
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
       assert.equal(results.aborted, true);
-      assert.match(results.abortedMessage, /^aborted at \d+s of 4s planned$/);
-      assert.ok(results.combined.iterations > 0, 'iterations completed before Ctrl-C must still be counted, not discarded');
+      assert.match(results.abortedMessage!, /^aborted at \d+s of 4s planned$/);
+      assert.ok(workloadEntries(results)[0]!.metrics.iterations > 0, 'iterations completed before Ctrl-C must still be counted, not discarded');
 
-      const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
-      assert.match(html, /aborted-banner/);
+      const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+      assert.match(html, /insecure-warning/);
 
-      const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+      const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
       assert.match(junit, /<property name="aborted" value="aborted at \d+s of 4s planned"\/>/);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -2441,11 +2453,11 @@ test('`tflw load --workers 2`: Ctrl-C propagates to forked workers and still mer
       const { code, output } = await runLoadAndSigint(['load.tflw', '--workers', '2'], dir, 900);
       assert.equal(code, 130);
       assert.match(output, /running across 2 generator processes/);
-      assert.match(output, /⚠ aborted at \d+s of 4s planned/);
+      assert.match(output, /⚠ aborted — aborted at \d+s of 4s planned/);
 
-      const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { aborted: boolean; combined: { iterations: number } };
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
       assert.equal(results.aborted, true);
-      assert.ok(results.combined.iterations > 0, 'at least one of the two workers must have completed real iterations before the abort');
+      assert.ok(workloadEntries(results)[0]!.metrics.iterations > 0, 'at least one of the two workers must have completed real iterations before the abort');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2472,20 +2484,20 @@ test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and ma
 
     const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
     assert.equal(failure.code, 3);
-    assert.match(failure.stdout, /tflw itself is the bottleneck/);
-    assert.match(failure.stdout, /load run inconclusive/);
+    assert.match(failure.stdout, /⚠ tflw itself is the bottleneck/);
+    assert.match(failure.stdout, /⚠ inconclusive/);
 
-    const results = JSON.parse(await readFile(join(dir, 'report', 'load-results.json'), 'utf8')) as { inconclusive: boolean; selfDiagnosis: { saturated: boolean } };
+    const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
     assert.equal(results.inconclusive, true);
-    assert.equal(results.selfDiagnosis.saturated, true);
+    assert.equal(results.selfDiagnosis!.saturated, true);
 
-    const junit = await readFile(join(dir, 'report', 'load-junit.xml'), 'utf8');
+    const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
     assert.match(junit, /skipped="1"/);
     assert.doesNotMatch(junit, /<failure/);
     assert.match(junit, /<skipped message="[^"]*saturated[^"]*"\/>/);
 
-    const html = await readFile(join(dir, 'report', 'load-report.html'), 'utf8');
-    assert.match(html, /<title>tflw load report — INCONCLUSIVE<\/title>/);
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    assert.match(html, /generator process saturated/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -2503,7 +2515,8 @@ test('`tflw run --workers 4` on an all-functional file is a non-fatal no-op warn
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'plain.tflw', '--workers', '4', '--no-color'], { cwd: dir });
       assert.match(stdout, /`--workers` has no effect — plain\.tflw has no workload-bearing tests/);
       assert.match(stdout, /PASS 1\/1 passed/);
-      await assert.rejects(access(join(dir, 'report', 'load-results.json')), 'no load report should be written for an all-functional file');
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(workloadEntries(results).length, 0, 'no workload entry should appear for an all-functional file');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2524,7 +2537,9 @@ test('`tflw run --workers 4` on a file mixing functional and workload-bearing te
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'mixed.tflw', '--workers', '4', '--no-color'], { cwd: dir });
       assert.doesNotMatch(stdout, /`--workers` has no effect/);
       assert.match(stdout, /running across 4 generator processes/);
-      assert.match(stdout, /PASS 1\/1 passed/);
+      // M56: the workload test's result now lives inline in `report.tests` alongside the
+      // functional one, so the tally counts both — 2/2, not just the functional side's 1/1.
+      assert.match(stdout, /PASS 2\/2 passed/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2545,7 +2560,8 @@ test('`tflw run --skip-workload` skips every workload-bearing test regardless of
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'mixed.tflw', '--skip-workload', '--no-color'], { cwd: dir });
       assert.match(stdout, /PASS 1\/1 passed/);
       assert.doesNotMatch(stdout, /scenario "burst"/);
-      await assert.rejects(access(join(dir, 'report', 'load-results.json')), 'no load report should be written once the workload-bearing test is skipped');
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      assert.equal(workloadEntries(results).length, 0, 'no workload entry should appear once the workload-bearing test is skipped');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

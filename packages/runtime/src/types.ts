@@ -209,6 +209,11 @@ export interface AttemptResult {
 }
 
 export interface TestResult {
+  /** M56 (Phase 3, D116) — discriminates a `ReportEntry` from a `WorkloadTestResult`. Always
+   * `'functional'`; every construction site sets it explicitly (or inherits it via `{ ...result }`
+   * spread from one that did) so a plain `test.ok` narrows correctly wherever `ReportEntry` is
+   * consumed, without a duck-typed guess (e.g. "does it have `.metrics`?"). */
+  readonly kind: 'functional';
   readonly name: string;
   readonly ok: boolean;
   readonly durationMs: number;
@@ -231,7 +236,35 @@ export interface TestResult {
   /** This test's own kept (last) attempt's trace, mirroring `AttemptResult.trace` the same way
    * `steps` mirrors the last attempt's `steps` (M3c). */
   readonly trace?: TraceAsset;
+  /** `parallel`/`sequential` (D105-D107/D115) — this test's own declared relation to its file
+   * neighbors, threaded through purely for `report.html`'s badge (M56); never affects scheduling
+   * here, that's the interpreter's job. Undefined for a report built without this field (every
+   * pre-M56 fixture/unit test), rendered the same as `'sequential'` (no badge). */
+  readonly concurrency?: 'parallel' | 'sequential';
 }
+
+/** M56 (Phase 3, D116/D117) — one workload-bearing `test`'s finished result, the exact same shape
+ * `LoadScenarioReport` (below) already had, now a first-class member of `RunReport.tests` instead
+ * of living in a separate `LoadReport.scenarios` array. `name`/`workload`/`metrics`/`thresholds`/
+ * `ok`/`backOff`/`endpoints` are unchanged from `LoadScenarioReport` — kept as one shared shape
+ * (`WorkloadTestResult extends LoadScenarioReport`) rather than duplicated, since `runLoadShard`'s
+ * multi-process merge machinery (`mergeLoadShardReports`) still produces a `LoadReport` internally
+ * before its scenarios get spliced into the final `RunReport` (`spliceLoadReportIntoRunReport`,
+ * interpreter.ts). No `durationMs`/`steps` — a workload test has no single "this took Nms" figure
+ * (its `workload.overMs` is the *planned* span, not an outcome) and no step timeline (D24a/D26: a
+ * workload iteration's body executes silently, only aggregate metrics are kept). */
+export interface WorkloadTestResult extends LoadScenarioReport {
+  readonly kind: 'workload';
+  readonly file?: string;
+  readonly concurrency?: 'parallel' | 'sequential';
+}
+
+/** M56 (Phase 3, D116) — one `program.tests` entry's outcome, in file-declaration order alongside
+ * every other entry regardless of kind (D101/D112) — `report.html`/`junit.xml` render whichever
+ * layout `entry.kind` calls for; `RunReport.total/passed/failed` count both kinds identically
+ * (`entry.ok`, vacuously `true` for a workload test declaring zero `threshold`s, same as it always
+ * was inside `LoadScenarioReport.ok`). */
+export type ReportEntry = TestResult | WorkloadTestResult;
 
 export interface RunReport {
   readonly ok: boolean;
@@ -241,7 +274,7 @@ export interface RunReport {
   readonly total: number;
   readonly passed: number;
   readonly failed: number;
-  readonly tests: readonly TestResult[];
+  readonly tests: readonly ReportEntry[];
   /** The `random`/`unique` run seed — reproduce this exact run with `tflw run --seed <n>` (P#23). */
   readonly seed: number;
   /** The run clock (ISO 8601) that `today`/`now`/date generators derived from — reproduce the
@@ -255,6 +288,26 @@ export interface RunReport {
    * property in the report header"). Undefined only for a run given no `BrowserManager` at all
    * (a hand-built test harness, never a real `tflw run` invocation, which always supplies one). */
   readonly browserEngine?: BrowserEngine;
+  /** M56 (Phase 3, D117) — this run's own generator health, hoisted from the old standalone
+   * `LoadReport.selfDiagnosis` now that load reporting lives inside `RunReport`. Present only when
+   * at least one file in this run had a workload-bearing test that got a chance to run (mirrors
+   * `LoadReport.selfDiagnosis`'s old always-present-when-a-`LoadReport`-existed-at-all rule, just
+   * optional here since a purely functional run never had one). Merged across files, when more
+   * than one contributed, via the same `mergeSelfDiagnosis` shard-merge already used within one
+   * file (`cli.ts`'s `mergeReports`). */
+  readonly selfDiagnosis?: SelfDiagnosis;
+  /** M56 (Phase 3, D117) — `selfDiagnosis.saturated` lifted to run level, `true` if *any*
+   * contributing file's generator saturated (a saturated generator anywhere invalidates that
+   * file's own workload numbers, and CI must not read the merged run as a trustworthy "system
+   * passed" while that's true). Always `false`/absent on a purely functional run. */
+  readonly inconclusive?: boolean;
+  /** M56 (Phase 3, D117) — `true` if Ctrl-C stopped any file's workload-bearing test before its
+   * planned duration elapsed; every workload entry in `tests` still reflects whatever iterations
+   * completed. Absent (not merely `false`) on a run with no abort. */
+  readonly aborted?: boolean;
+  /** Human-readable "aborted at Ns of Nm planned" for the (first) file that was aborted — only
+   * present alongside `aborted: true`. */
+  readonly abortedMessage?: string;
 }
 
 // ---- Event stream ----------------------------------------------------------

@@ -81,7 +81,11 @@ export function resolveReportAssets(report: RunReport, inlineBudgetBytes: number
     if (step.snapshotDiff.diff) addScreenshot(step.snapshotDiff.diff);
   };
 
+  // M56 (Phase 3) — a workload entry has no steps/trace/attempts at all (D24a: a load iteration's
+  // body runs silently) — nothing here to walk for it, same as a `TestResult` that never captured
+  // a screenshot/trace to begin with.
   for (const test of report.tests) {
+    if (test.kind !== 'functional') continue;
     for (const step of test.steps) {
       if (step.screenshot) addScreenshot(step.screenshot.base64);
       addSnapshotStep(step);

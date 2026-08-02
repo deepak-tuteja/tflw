@@ -9,21 +9,31 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram, runLoadShard } from '../src/interpreter.js';
+import type { ReportEntry, WorkloadTestResult } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
-test('a file with only functional tests produces no `loadReport` (unaffected by Phase 2b)', async () => {
+function workloadEntries(tests: readonly ReportEntry[]): WorkloadTestResult[] {
+  return tests.filter((t): t is WorkloadTestResult => t.kind === 'workload');
+}
+
+// M56 (Phase 3, D116/D117): a workload test's result now lives inline in `report.tests` (tagged
+// `kind: 'workload'`) and `selfDiagnosis`/`inconclusive`/`aborted` are top-level `RunReport`
+// fields — there's no more separate `loadReport` sibling `runProgram` returns.
+
+test('a file with only functional tests produces no workload entries or selfDiagnosis (unaffected by Phase 2b)', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "a"\n  api GET /health\n  expect status equals 200\n\ntest "b"\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const { report, loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true);
   assert.equal(report.tests.length, 2);
-  assert.equal(loadReport, undefined);
+  assert.equal(workloadEntries(report.tests).length, 0);
+  assert.equal(report.selfDiagnosis, undefined);
   await server.close();
 });
 
-test('a file mixing functional and workload-bearing tests (all default `sequential`) runs both and returns both reports', async () => {
+test('a file mixing functional and workload-bearing tests (all default `sequential`) runs both, in declaration order, in one report', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = [
     'test "functional"',
@@ -37,15 +47,15 @@ test('a file mixing functional and workload-bearing tests (all default `sequenti
   ].join('\n');
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
-  const { report, loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true);
-  assert.equal(report.tests.length, 1);
+  assert.equal(report.tests.length, 2);
   assert.equal(report.tests[0]!.name, 'functional');
-  assert.ok(loadReport, 'expected a loadReport since the file has a workload-bearing test');
-  assert.equal(loadReport!.scenarios.length, 1);
-  assert.equal(loadReport!.scenarios[0]!.name, 'burst');
-  assert.ok(loadReport!.scenarios[0]!.metrics.iterations > 0);
+  assert.equal(report.tests[0]!.kind, 'functional');
+  const burst = workloadEntries(report.tests)[0]!;
+  assert.equal(burst.name, 'burst');
+  assert.ok(burst.metrics.iterations > 0);
   await server.close();
 });
 
@@ -124,10 +134,10 @@ test('a `parallel` batch mixing a functional test and a workload-bearing test ru
   ].join('\n');
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
-  const { report, loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true);
-  assert.ok(loadReport?.ok);
+  assert.ok(workloadEntries(report.tests)[0]?.ok);
   assert.ok(sawOverlap, 'the functional test should still be in flight while the workload test iterates');
   await server.close();
 });
@@ -290,7 +300,7 @@ test('D114: a `parallel` batch buffers each test\'s events and flushes them as o
   await server.close();
 });
 
-test('a `before file` hook failure runs neither functional nor workload-bearing tests, and produces no `loadReport`', async () => {
+test('a `before file` hook failure runs neither functional nor workload-bearing tests, and produces no workload entry or selfDiagnosis', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = [
     'before file',
@@ -308,12 +318,13 @@ test('a `before file` hook failure runs neither functional nor workload-bearing 
   ].join('\n');
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
-  const { report, loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
   assert.equal(report.tests.length, 1);
   assert.equal(report.tests[0]!.name, 'before file');
-  assert.equal(loadReport, undefined);
+  assert.equal(workloadEntries(report.tests).length, 0);
+  assert.equal(report.selfDiagnosis, undefined);
   await server.close();
 });
 
@@ -342,10 +353,10 @@ test('a `sequential` workload test in the second batch still gets its own full i
   ].join('\n');
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
-  const { loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  assert.ok(loadReport?.ok);
-  const [sceneA, sceneB] = loadReport!.scenarios;
+  const [sceneA, sceneB] = workloadEntries(report.tests);
+  assert.ok(sceneA!.ok && sceneB!.ok);
   assert.ok(sceneA!.metrics.iterations > 0, 'the first batch\'s scenario should still iterate as before');
   assert.ok(sceneB!.metrics.iterations > 0, 'a second, later-batch scenario must not be starved by a stale file-global runStart');
   await server.close();
@@ -385,9 +396,9 @@ test('two default-`sequential` workload tests still never overlap in wall time, 
     '  expect status equals 200',
   ].join('\n');
   const { program } = parseSource(source);
-  const { loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  assert.ok(loadReport?.ok);
+  assert.ok(workloadEntries(report.tests).every((s) => s.ok));
   assert.equal(sawCrossOverlap, false, 'sequential scenarios must still run one after the other, not concurrently');
   await server.close();
 });

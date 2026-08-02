@@ -99,6 +99,7 @@ import type {
   LoadShardResult,
   LoadShardScenarioResult,
   LoadThresholdResult,
+  ReportEntry,
   RequestTrace,
   ResolvedConfig,
   ResponseTrace,
@@ -107,6 +108,7 @@ import type {
   SelfDiagnosis,
   StepResult,
   TestResult,
+  WorkloadTestResult,
 } from './types.js';
 import { LatencyHistogram } from './histogram.js';
 import { Timeline } from './timeline.js';
@@ -185,18 +187,21 @@ export interface RunOptions {
 }
 
 export interface RunOutput {
+  /** M56 (Phase 3, D117): a workload-bearing test's finished result now lives inline in
+   * `report.tests` (as a `WorkloadTestResult`, `kind: 'workload'`) alongside functional ones, in
+   * file-declaration order — there is no more separate `loadReport` sibling (Phase 2b/D99 had one;
+   * Phase 3 folds it in). `report.selfDiagnosis`/`inconclusive`/`aborted`/`abortedMessage` carry
+   * what `LoadReport`'s own top-level fields used to, present only when this file had at least one
+   * workload-bearing test that got a chance to run. Exception: when `opts.shard` is set (below),
+   * any workload entries here are *provisional* — this call only ran its own shard's share, so
+   * its metrics/thresholds are meaningless until merged; see `loadShardResult`. */
   readonly report: RunReport;
-  /** Phase 2b (D99) — populated whenever `program.tests` has at least one workload-bearing test;
-   * `undefined` for an all-functional file, exactly like today's `RunOutput` shape (this field is
-   * purely additive — every existing caller that never has workload tests in scope keeps getting
-   * back exactly what it always has). Aggregate metrics (`combined`, `selfDiagnosis`) reflect only
-   * this file's own workload-bearing tests, unaffected by any functional tests sharing the file. */
-  readonly loadReport?: LoadReport;
-  /** Phase 2b (D111) — populated instead of `loadReport` (never both) when `opts.shard` was set:
-   * this call's contribution is only *part* of the eventual load picture (a forked `--workers
-   * N>1` worker's share, or the main process's own shard-0 share), in the same compact shape a
-   * forked worker already returns — the CLI merges every shard's `loadShardResult` together via
-   * `mergeLoadShardReports`, exactly as it already merges forked workers, main process included. */
+  /** Phase 2b (D111) — populated when `opts.shard` was set: this call's contribution is only
+   * *part* of the eventual load picture (a forked `--workers N>1` worker's share, or the main
+   * process's own shard-0 share), in the same compact shape a forked worker already returns — the
+   * CLI merges every shard's `loadShardResult` together via `mergeLoadShardReports`, then splices
+   * the real, merged result into `report.tests`' provisional workload slots via
+   * `spliceLoadReportIntoRunReport` (M56). */
   readonly loadShardResult?: LoadShardResult;
   readonly redactor: Redactor;
 }
@@ -252,7 +257,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
 
   emit({ type: 'run:start', total: cases.length, env: config.envName });
 
-  const results: TestResult[] = [];
+  const results: ReportEntry[] = [];
   const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
@@ -393,13 +398,64 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
       if (tasks.length === 1) await tasks[0];
       else await Promise.all(tasks);
     }
-    // D112: results are collected keyed by declaration index above, then flattened into `results`
-    // in that order here — regardless of which batch member actually finished first.
-    for (const r of functionalResults) results.push(r!);
+    // M56 (Phase 3, D116/D117), formerly D112's "flatten `functionalResults` in place": walk
+    // `program.tests` once more, this time interleaving each test's finished result — functional
+    // row-cases pulled from `functionalResults` (contiguous per `FunctionalGroup`), a workload
+    // test's own finalized `WorkloadTestResult` (`finalizeScenario`, reused from `buildLoadReport`)
+    // — into one list in file-declaration order, regardless of kind or which batch member actually
+    // finished first. Under `opts.shard`, a workload entry's metrics/thresholds here are only this
+    // shard's own partial share (`finalizeScenario` doesn't know it's partial) — deliberately
+    // provisional, since the real, merged result only exists once the CLI combines every shard via
+    // `mergeLoadShardReports` and splices it in (`spliceLoadReportIntoRunReport`).
+    for (const test of program.tests) {
+      if (test.workload) {
+        const acc = accumulatorByTest.get(test);
+        if (!acc) continue;
+        const scenarioReport = finalizeScenario(acc);
+        results.push({ ...scenarioReport, kind: 'workload', concurrency: test.concurrency });
+      } else {
+        const group = functionalGroups.get(test);
+        if (!group) continue;
+        for (let j = 0; j < group.cases.length; j++) {
+          const r = functionalResults[group.startIndex + j];
+          if (r) results.push({ ...r, concurrency: test.concurrency });
+        }
+      }
+    }
     await runFileHooks(afterFile, 'after file', config, fileTc, registry, results, emit);
   }
 
   if (progressTimer) clearInterval(progressTimer);
+
+  // M56 (Phase 3, D117): this file's own generator-health envelope, hoisted onto `RunReport`
+  // itself now that a workload test's result lives inline in `tests` rather than a sibling
+  // `LoadReport`. Only computed when this file actually had a workload-bearing test that got a
+  // chance to run (`beforeFileOk`) — a before-file hook failure means nothing ran at all,
+  // functional or workload alike, mirroring the pre-M56 `loadReport`'s own "never fabricated"
+  // rule. Under `opts.shard`, these values are likewise provisional (this shard's own reading) —
+  // `spliceLoadReportIntoRunReport` overwrites them with the merged run's real values.
+  let selfDiagnosis: SelfDiagnosis | undefined;
+  let inconclusive: boolean | undefined;
+  let aborted: boolean | undefined;
+  let abortedMessage: string | undefined;
+  let loadShardResult: LoadShardResult | undefined;
+  if (selfDiag && beforeFileOk) {
+    const diagnosis = selfDiag.stop();
+    selfDiagnosis = diagnosis;
+    inconclusive = diagnosis.saturated;
+    if (opts.abortSignal?.aborted) {
+      const plannedMs = Math.max(0, ...scenarios.map((s) => totalDurationMs(s.workload) ?? 0));
+      aborted = true;
+      abortedMessage = formatAbortedMessage(Math.round(performance.now() - runStart), plannedMs);
+    }
+    // Phase 2b (D111): `opts.shard` set means this call's contribution is only *part* of the
+    // eventual load picture (a forked `--workers N>1` worker's share, or the main process's own
+    // shard-0 share) — the CLI merges every shard's `loadShardResult` together via
+    // `mergeLoadShardReports`, exactly as it already merges forked workers together.
+    if (opts.shard) loadShardResult = buildLoadShardResult(accumulators, diagnosis);
+  } else {
+    selfDiag?.stop();
+  }
 
   const passed = results.filter((r) => r.ok).length;
   const rawReport: RunReport = {
@@ -415,6 +471,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     now: runClock.toISOString(),
     insecure: config.insecure,
     ...(opts.browserManager ? { browserEngine: opts.browserManager.engine } : {}),
+    ...(selfDiagnosis ? { selfDiagnosis, inconclusive } : {}),
+    ...(aborted ? { aborted, abortedMessage } : {}),
   };
   // Final full-report redaction pass (decision 56, half 2): a secret registered late in this run
   // (or, when `redactor` is shared across files, by a file that ran concurrently/after this one)
@@ -423,39 +481,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const report = redactReport(rawReport, redactor);
   emit({ type: 'run:end', report });
 
-  // Phase 2b (D99/D111): a `loadReport`/`loadShardResult` is only ever produced when this file
-  // actually has workload-bearing tests, *and* they actually got a chance to run (`beforeFileOk`)
-  // — a before-file hook failure means nothing ran at all, functional or workload alike, mirroring
-  // `rawReport` itself never fabricating zero-count functional results in that case either.
-  // `opts.shard` set (a forked `--workers N>1` worker, or the main process's own shard-0 share)
-  // means this call's contribution is only ever *part* of the eventual load picture — it comes
-  // back as the same compact `LoadShardResult` a forked worker already produces, for the CLI to
-  // merge via `mergeLoadShardReports` exactly as it already merges forked workers together.
-  // `opts.shard` unset (the common case, unchanged from before Phase 2b) returns a full,
-  // self-contained `LoadReport` directly, no merge needed.
-  let loadReport: LoadReport | undefined;
-  let loadShardResult: LoadShardResult | undefined;
-  if (selfDiag && beforeFileOk) {
-    const selfDiagnosis = selfDiag.stop();
-    if (opts.shard) {
-      loadShardResult = buildLoadShardResult(accumulators, selfDiagnosis);
-    } else {
-      const plannedMs = Math.max(0, ...scenarios.map((s) => totalDurationMs(s.workload) ?? 0));
-      loadReport = buildLoadReport(accumulators, {
-        selfDiagnosis,
-        runSeed,
-        runClock,
-        runStart,
-        aborted: opts.abortSignal?.aborted ?? false,
-        plannedMs,
-        startedAt,
-      });
-    }
-  } else {
-    selfDiag?.stop();
-  }
-
-  return { report, redactor, ...(loadReport ? { loadReport } : {}), ...(loadShardResult ? { loadShardResult } : {}) };
+  return { report, redactor, ...(loadShardResult ? { loadShardResult } : {}) };
 }
 
 // ---- Load testing (M29/M30/M31, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D28/D29/D30) -
@@ -1304,6 +1330,20 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
 /** Shapes a run's `ScenarioAccumulator`s into a full `LoadReport` — extracted from `runLoad`'s own
  * body (M50-era) so the unified per-file dispatch (`runProgramInner`, Phase 2b/D99) can build one
  * too, from its own D109-batched accumulators, without duplicating this finalization logic. */
+/** M56 (Phase 3) — finalizes one scenario's raw accumulator into its `LoadScenarioReport` (metrics,
+ * evaluated thresholds, back-off diagnosis, per-endpoint breakdown). Extracted from
+ * `buildLoadReport`'s own `.map()` body so `runProgramInner`'s unified dispatch can build one
+ * `WorkloadTestResult` per workload test directly, without going through a full `LoadReport`
+ * first — `buildLoadReport` below still uses it too, for the `--workers N>1` shard-merge path
+ * (`mergeLoadShardReports`) that still needs a complete `LoadReport` shape internally. */
+function finalizeScenario({ scenario, histogram, timeline, failures, early, late, endpoints }: ScenarioAccumulator): LoadScenarioReport {
+  const metrics = buildLoadMetrics(histogram, failures, timeline);
+  const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, failures }, endpoints);
+  const backOff = computeBackOff(scenario, early, late);
+  const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
+  return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
+}
+
 function buildLoadReport(
   accumulators: readonly ScenarioAccumulator[],
   info: {
@@ -1316,13 +1356,7 @@ function buildLoadReport(
     readonly startedAt: string;
   },
 ): LoadReport {
-  const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => {
-    const metrics = buildLoadMetrics(histogram, failures, timeline);
-    const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, failures }, endpoints);
-    const backOff = computeBackOff(scenario, early, late);
-    const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
-    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
-  });
+  const scenarioReports: LoadScenarioReport[] = accumulators.map((acc) => finalizeScenario(acc));
 
   const combinedHistogram = new LatencyHistogram();
   const combinedTimeline = new Timeline();
@@ -1446,15 +1480,10 @@ export function mergeLoadShardReports(
     return { scenario, histogram, timeline, iterations, failures, early, late, endpoints };
   });
 
-  const scenarioReports: LoadScenarioReport[] = perScenario.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => {
-    const metrics = buildLoadMetrics(histogram, failures, timeline);
-    const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, failures }, endpoints);
-    // M34 (D17): recomputed from the *merged* early/late totals, not shard-by-shard then averaged
-    // — same "merge first, derive second" order R4's histogram/percentile design already established.
-    const backOff = computeBackOff(scenario, early, late);
-    const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
-    return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
-  });
+  // M34 (D17): `finalizeScenario` recomputes back-off from whatever `early`/`late` totals it's
+  // given — here those are the *merged* (shard-summed) totals, not shard-by-shard then averaged,
+  // same "merge first, derive second" order R4's histogram/percentile design already established.
+  const scenarioReports: LoadScenarioReport[] = perScenario.map((acc) => finalizeScenario(acc));
 
   const combinedHistogram = new LatencyHistogram();
   const combinedTimeline = new Timeline();
@@ -1481,6 +1510,34 @@ export function mergeLoadShardReports(
     selfDiagnosis,
     inconclusive: selfDiagnosis.saturated,
     ...(meta.aborted ? { aborted: true, abortedMessage: formatAbortedMessage(meta.durationMs, plannedMs) } : {}),
+  };
+}
+
+/** M56 (Phase 3, D117) — replaces a `RunReport`'s *provisional* workload entries (one shard's own
+ * partial share, stamped in by `runProgramInner` when `opts.shard` was set) with the real, merged
+ * result once the CLI has combined every shard via `mergeLoadShardReports`, and hoists the merged
+ * `selfDiagnosis`/`inconclusive`/`aborted`/`abortedMessage` onto the report. Matches workload
+ * entries to `loadReport.scenarios` **by position**, not by name: both are built by mapping over
+ * `filterWorkloadTests(program.tests)` in the exact same file-declaration order (`runProgramInner`'s
+ * own interleaving loop, and `mergeLoadShardReports`'s `scenarios` derivation), so the k-th
+ * workload entry in `report.tests` always corresponds to `loadReport.scenarios[k]`. Only ever
+ * called for the main process's own per-file report (never on an already-merged, cross-file
+ * report — that merge, `cli.ts`'s `mergeReports`, happens after this). */
+export function spliceLoadReportIntoRunReport(report: RunReport, loadReport: LoadReport): RunReport {
+  let i = 0;
+  const tests: ReportEntry[] = report.tests.map((entry) => {
+    if (entry.kind !== 'workload') return entry;
+    const merged = loadReport.scenarios[i++];
+    if (!merged) return entry;
+    const spliced: WorkloadTestResult = { ...merged, kind: 'workload', ...(entry.file !== undefined ? { file: entry.file } : {}), ...(entry.concurrency !== undefined ? { concurrency: entry.concurrency } : {}) };
+    return spliced;
+  });
+  return {
+    ...report,
+    tests,
+    selfDiagnosis: loadReport.selfDiagnosis,
+    inconclusive: loadReport.inconclusive,
+    ...(loadReport.aborted ? { aborted: true, abortedMessage: loadReport.abortedMessage } : {}),
   };
 }
 
@@ -1862,7 +1919,7 @@ async function runFileHooks(
   config: ResolvedConfig,
   tc: TestCtx,
   registry: CallRegistry,
-  results: TestResult[],
+  results: ReportEntry[],
   emit: EventSink,
 ): Promise<boolean> {
   if (hooks.length === 0) return true;
@@ -1873,7 +1930,7 @@ async function runFileHooks(
   for (const hook of hooks) {
     const exec = await execSteps(hook.body, config, ctx, tc, label, registry);
     if (!exec.ok) {
-      const result: TestResult = { name: label, ok: false, durationMs: Math.round(performance.now() - start), steps: exec.steps, error: exec.error ?? `a \`${label}\` hook failed` };
+      const result: TestResult = { kind: 'functional', name: label, ok: false, durationMs: Math.round(performance.now() - start), steps: exec.steps, error: exec.error ?? `a \`${label}\` hook failed` };
       results.push(result);
       emit({ type: 'test:end', result });
       return false;
@@ -1960,7 +2017,7 @@ async function runTestAttempt(
     const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
     const redacted = tc.redactor.redact(message);
     if (isFirstAttempt) tc.emit({ type: 'test:start', name: test.name.value });
-    return { name: test.name.value, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error: redacted };
+    return { kind: 'functional', name: test.name.value, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error: redacted };
   }
   if (isFirstAttempt) tc.emit({ type: 'test:start', name });
 
@@ -2012,13 +2069,13 @@ async function runTestAttemptBody(
     const decl = config.sessions.get(sessionName);
     if (!decl) {
       const error = tc.redactor.redact(`unknown session "${sessionName}" — is it declared in tflw.config?`);
-      return { name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
+      return { kind: 'functional', name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
     }
     const outcome = await tc.sessionCache.ensure(sessionName, decl, config, tc, sessionOwnership?.get(sessionName) ?? false);
     steps.push(...outcome.steps);
     if (!outcome.ok) {
       const error = `session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`;
-      return { name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
+      return { kind: 'functional', name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
     }
     Object.assign(sessionHeaders, outcome.headers);
     // Clone, not the live shared instance (SPEC §3.3) — this test's own subsequent cookie updates
@@ -2037,7 +2094,7 @@ async function runTestAttemptBody(
     const exec = await execSteps(hook.body, config, evalCtx, tc, name, registry);
     steps.push(...exec.steps);
     if (!exec.ok) {
-      return { name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error: exec.error ?? 'a `before` hook failed' };
+      return { kind: 'functional', name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error: exec.error ?? 'a `before` hook failed' };
     }
   }
 
@@ -2055,7 +2112,7 @@ async function runTestAttemptBody(
     }
   }
 
-  return { name, ok, durationMs: Math.round(performance.now() - testStart), steps, ...(error ? { error } : {}) };
+  return { kind: 'functional', name, ok, durationMs: Math.round(performance.now() - testStart), steps, ...(error ? { error } : {}) };
 }
 
 interface StepsExec {

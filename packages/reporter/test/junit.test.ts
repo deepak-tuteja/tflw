@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { RunReport } from '@tflw/runtime';
+import type { RunReport, WorkloadTestResult } from '@tflw/runtime';
 import { renderJunitXml } from '../src/junit.js';
 
 const report: RunReport = {
@@ -18,9 +18,9 @@ const report: RunReport = {
   now: '2026-07-05T00:00:00.000Z',
   insecure: false,
   tests: [
-    { name: 'health check', ok: true, durationMs: 12, steps: [] },
-    { name: 'eventually works', ok: true, durationMs: 45, steps: [], flaky: true },
-    { name: 'broken <thing> & "stuff"', ok: false, durationMs: 8, steps: [], error: 'expected status to equal 200, but got 500' },
+    { kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] },
+    { kind: 'functional', name: 'eventually works', ok: true, durationMs: 45, steps: [], flaky: true },
+    { kind: 'functional', name: 'broken <thing> & "stuff"', ok: false, durationMs: 8, steps: [], error: 'expected status to equal 200, but got 500' },
   ],
 };
 
@@ -54,7 +54,7 @@ test('renderJunitXml strips XML-invalid C0 control characters from a test name/e
   // so leaving them in would hand some CI JUnit parsers a document that isn't well-formed XML.
   const dirtyReport: RunReport = {
     ...report,
-    tests: [{ name: 'name with a \x01 control char', ok: false, durationMs: 3, steps: [], error: 'bad byte: \x1F end' }],
+    tests: [{ kind: 'functional', name: 'name with a \x01 control char', ok: false, durationMs: 3, steps: [], error: 'bad byte: \x1F end' }],
   };
   const xml = renderJunitXml(dirtyReport);
 
@@ -64,13 +64,13 @@ test('renderJunitXml strips XML-invalid C0 control characters from a test name/e
 
   const tabNewlineReport: RunReport = {
     ...report,
-    tests: [{ name: 'has\ttab and\nnewline', ok: true, durationMs: 1, steps: [] }],
+    tests: [{ kind: 'functional', name: 'has\ttab and\nnewline', ok: true, durationMs: 1, steps: [] }],
   };
   assert.match(renderJunitXml(tabNewlineReport), /has\ttab and\nnewline/, 'tab/LF/CR are XML-legal and must survive untouched');
 });
 
 test('renderJunitXml on an all-passing report has zero failures and no <failure>/<system-out> elements', () => {
-  const cleanReport: RunReport = { ...report, ok: true, failed: 0, tests: [{ name: 'ok', ok: true, durationMs: 1, steps: [] }] };
+  const cleanReport: RunReport = { ...report, ok: true, failed: 0, tests: [{ kind: 'functional', name: 'ok', ok: true, durationMs: 1, steps: [] }] };
   const xml = renderJunitXml(cleanReport);
   assert.match(xml, /failures="0"/);
   assert.doesNotMatch(xml, /<failure/);
@@ -85,6 +85,7 @@ test('renderJunitXml includes the attempt count in <system-out> when `attempts` 
     ...report,
     tests: [
       {
+        kind: 'functional',
         name: 'eventually works',
         ok: true,
         durationMs: 45,
@@ -104,6 +105,66 @@ test('renderJunitXml includes the attempt count in <system-out> when `attempts` 
   );
 
   // Existing shape (no `attempts` field at all) must be completely unaffected.
-  const withoutAttempts: RunReport = { ...report, tests: [{ name: 'eventually works', ok: true, durationMs: 45, steps: [], flaky: true }] };
+  const withoutAttempts: RunReport = { ...report, tests: [{ kind: 'functional', name: 'eventually works', ok: true, durationMs: 45, steps: [], flaky: true }] };
   assert.match(renderJunitXml(withoutAttempts), /<system-out>flaky: passed after a retry<\/system-out>/);
+});
+
+// -- M56 (Phase 3, D119): a WorkloadTestResult entry, folded in from the old load-junit.ts --------
+
+const emptyMetrics = { iterations: 0, failures: 0, errorRate: 0, durations: { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 }, histogram: [], timeline: [] };
+
+const workloadTest: WorkloadTestResult = {
+  kind: 'workload',
+  name: 'checkout',
+  workload: { kind: 'users', target: 10, overMs: 1000 },
+  metrics: emptyMetrics,
+  thresholds: [
+    { label: 'p95 duration', op: 'lessThan', target: 800, actual: 950, ok: false },
+    { label: 'error rate', op: 'lessThan', target: 0.01, actual: 0, ok: true },
+  ],
+  ok: false,
+  endpoints: [],
+};
+
+test('a workload entry contributes one <testcase> per declared threshold, pass/fail from threshold.ok', () => {
+  const xml = renderJunitXml({ ...report, tests: [workloadTest] });
+  assert.match(xml, /<testcase name="checkout — p95 duration &lt; 800" time="0\.000">\s*<failure message="threshold breached: actual 950 was not less than 800">/);
+  assert.match(xml, /<testcase name="checkout — error rate &lt; 0\.01" time="0\.000"\/>/);
+});
+
+// D119: an intentional behavior change from the old load-junit.ts, which contributed zero
+// <testcase>s for a threshold-less scenario (invisible in CI output) — a workload test with no
+// `threshold` now still gets one bare <testcase>, so it shows up in the suite at all.
+test('a workload entry with zero thresholds contributes one bare, always-passing <testcase>', () => {
+  const noThresholds: WorkloadTestResult = { ...workloadTest, thresholds: [], ok: true };
+  const xml = renderJunitXml({ ...report, tests: [noThresholds] });
+  assert.match(xml, /tests="1" failures="0"/);
+  assert.match(xml, /<testcase name="checkout" time="0\.000"\/>/);
+});
+
+test('report.inconclusive marks every workload threshold <testcase> skipped, not passed or failed', () => {
+  const xml = renderJunitXml({ ...report, tests: [workloadTest], inconclusive: true });
+  assert.match(xml, /skipped="2"/);
+  assert.match(xml, /failures="0"/);
+  assert.doesNotMatch(xml, /<failure/);
+  const skipped = [...xml.matchAll(/<skipped message="([^"]+)"/g)];
+  assert.equal(skipped.length, 2);
+  assert.match(skipped[0]![1]!, /saturated/);
+});
+
+test('report.aborted records the abortedMessage as a property', () => {
+  const xml = renderJunitXml({ ...report, tests: [workloadTest], aborted: true, abortedMessage: 'aborted at 12s of 30s planned' });
+  assert.match(xml, /<property name="aborted" value="aborted at 12s of 30s planned"\/>/);
+});
+
+test('a file mixing functional and workload entries contributes testcases for both, in order', () => {
+  const xml = renderJunitXml({
+    ...report,
+    tests: [
+      { kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] },
+      { ...workloadTest, thresholds: [{ label: 'error rate', op: 'lessThan', target: 0.01, actual: 0, ok: true }], ok: true },
+    ],
+  });
+  const names = [...xml.matchAll(/<testcase name="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(names, ['health check', 'checkout — error rate &lt; 0.01']);
 });

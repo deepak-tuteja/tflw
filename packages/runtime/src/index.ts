@@ -6,7 +6,7 @@ export { Redactor, redactReport } from './redact.js';
 export { RuntimeError } from './eval.js';
 export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSelection } from './resolve.js';
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
-export { runLoad, runLoadShard, mergeLoadShardReports, type LoadOptions } from './interpreter.js';
+export { runLoad, runLoadShard, mergeLoadShardReports, spliceLoadReportIntoRunReport, type LoadOptions } from './interpreter.js';
 export { mergeSelfDiagnosis } from './selfDiagnosis.js';
 export { shutdownMtlsWorker } from './mtlsWorker.js';
 export { resolveRunSeed, resolveRunClock } from './seed.js';

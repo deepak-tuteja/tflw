@@ -23,7 +23,7 @@ const baseReport: RunReport = {
   seed: 42,
   now: '2026-07-05T00:00:00.000Z',
   insecure: false,
-  tests: [{ name: 'health check', ok: true, durationMs: 12, steps: [] }],
+  tests: [{ kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] }],
 };
 
 test('the embedded stylesheet wraps every free-form-text container that can carry an unbroken long token', () => {

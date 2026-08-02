@@ -22,9 +22,9 @@ const report: RunReport = {
   now: '2026-07-20T00:00:00.000Z',
   insecure: false,
   tests: [
-    { name: 'health check', ok: true, durationMs: 12, steps: [], file: 'a.tflw' },
-    { name: 'eventually works', ok: true, durationMs: 45, steps: [], flaky: true, file: 'a.tflw' },
-    { name: 'broken thing', ok: false, durationMs: 8, steps: [], error: 'boom', file: 'b.tflw' },
+    { kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [], file: 'a.tflw' },
+    { kind: 'functional', name: 'eventually works', ok: true, durationMs: 45, steps: [], flaky: true, file: 'a.tflw' },
+    { kind: 'functional', name: 'broken thing', ok: false, durationMs: 8, steps: [], error: 'boom', file: 'b.tflw' },
   ],
 };
 

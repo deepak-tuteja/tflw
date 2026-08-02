@@ -27,7 +27,7 @@ const SMALL_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'); // 3
 const bigPngBase64 = (bytes: number) => Buffer.alloc(bytes, 1).toString('base64');
 
 test('a screenshot under the inline budget produces no file and no href — stays inline', () => {
-  const report = baseReport([{ name: 't', ok: true, durationMs: 1, steps: [{ kind: 'screenshot', source: 'screenshot "x"', line: 1, ok: true, durationMs: 1, screenshot: { base64: SMALL_PNG } }] }]);
+  const report = baseReport([{ kind: 'functional', name: 't', ok: true, durationMs: 1, steps: [{ kind: 'screenshot', source: 'screenshot "x"', line: 1, ok: true, durationMs: 1, screenshot: { base64: SMALL_PNG } }] }]);
   const { files, hrefs } = resolveReportAssets(report, 1024);
   assert.deepEqual(files, []);
   assert.equal(hrefs.size, 0);
@@ -35,7 +35,7 @@ test('a screenshot under the inline budget produces no file and no href — stay
 
 test('a screenshot at/over the inline budget is written to assets/screenshots/ and gets an href', () => {
   const big = bigPngBase64(2048);
-  const report = baseReport([{ name: 't', ok: false, durationMs: 1, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 1, screenshot: { base64: big } }] }]);
+  const report = baseReport([{ kind: 'functional', name: 't', ok: false, durationMs: 1, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 1, screenshot: { base64: big } }] }]);
   const { files, hrefs } = resolveReportAssets(report, 1024);
   assert.equal(files.length, 1);
   assert.match(files[0]!.relPath, /^assets\/screenshots\/[0-9a-f]{16}\.png$/);
@@ -48,6 +48,7 @@ test('two identical (byte-for-byte) over-budget screenshots dedupe into one file
   const big = bigPngBase64(2048);
   const report = baseReport([
     {
+      kind: 'functional',
       name: 't',
       ok: false,
       durationMs: 1,
@@ -63,7 +64,7 @@ test('two identical (byte-for-byte) over-budget screenshots dedupe into one file
 
 test('a trace is always written externally regardless of size, even well under the inline budget', () => {
   const tinyZip = Buffer.from('PK').toString('base64');
-  const report = baseReport([{ name: 't', ok: false, durationMs: 1, steps: [], trace: { base64: tinyZip } }]);
+  const report = baseReport([{ kind: 'functional', name: 't', ok: false, durationMs: 1, steps: [], trace: { base64: tinyZip } }]);
   const { files, hrefs } = resolveReportAssets(report, 1_000_000);
   assert.equal(files.length, 1);
   assert.match(files[0]!.relPath, /^assets\/traces\/[0-9a-f]{16}\.zip$/);
@@ -71,7 +72,7 @@ test('a trace is always written externally regardless of size, even well under t
 });
 
 test('a clean run with no screenshots or traces produces no files and no hrefs at all', () => {
-  const report = baseReport([{ name: 't', ok: true, durationMs: 1, steps: [{ kind: 'api', source: 'api GET /x', line: 1, ok: true, durationMs: 1 }] }]);
+  const report = baseReport([{ kind: 'functional', name: 't', ok: true, durationMs: 1, steps: [{ kind: 'api', source: 'api GET /x', line: 1, ok: true, durationMs: 1 }] }]);
   const { files, hrefs } = resolveReportAssets(report);
   assert.deepEqual(files, []);
   assert.equal(hrefs.size, 0);
@@ -84,7 +85,7 @@ test('a snapshot step\'s baseline+actual+diff each resolve through the same inli
   const actual = bigPngBase64(2049); // different bytes, so it doesn't dedupe with baseline
   const diff = bigPngBase64(2050);
   const report = baseReport([
-    { name: 't', ok: false, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: false, durationMs: 1, snapshotDiff: { baseline, actual, diff } }] },
+    { kind: 'functional', name: 't', ok: false, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: false, durationMs: 1, snapshotDiff: { baseline, actual, diff } }] },
   ]);
   const { files, hrefs } = resolveReportAssets(report, 1024);
   assert.equal(files.length, 3, 'baseline, actual, and diff each get their own file');
@@ -94,13 +95,13 @@ test('a snapshot step\'s baseline+actual+diff each resolve through the same inli
 
 test('a snapshot step with only `actual` (a brand-new baseline, nothing to diff against) writes just one file', () => {
   const actual = bigPngBase64(2048);
-  const report = baseReport([{ name: 't', ok: true, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 1, snapshotDiff: { actual } }] }]);
+  const report = baseReport([{ kind: 'functional', name: 't', ok: true, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 1, snapshotDiff: { actual } }] }]);
   const { files } = resolveReportAssets(report, 1024);
   assert.equal(files.length, 1);
 });
 
 test('a clean-pass snapshot step (no `snapshotDiff` at all) writes nothing, same as a step with no screenshot', () => {
-  const report = baseReport([{ name: 't', ok: true, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 1 }] }]);
+  const report = baseReport([{ kind: 'functional', name: 't', ok: true, durationMs: 1, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 1 }] }]);
   const { files, hrefs } = resolveReportAssets(report, 1024);
   assert.deepEqual(files, []);
   assert.equal(hrefs.size, 0);
@@ -111,6 +112,7 @@ test('an identical baseline/actual pair across two attempts dedupes each role in
   const actual = bigPngBase64(2049);
   const report = baseReport([
     {
+      kind: 'functional',
       name: 't',
       ok: false,
       durationMs: 1,
@@ -127,6 +129,7 @@ test('walks retry attempts too, not just the kept final steps/trace', () => {
   const tinyZip = Buffer.from('PK\x03\x04').toString('base64');
   const report = baseReport([
     {
+      kind: 'functional',
       name: 't',
       ok: true,
       durationMs: 1,

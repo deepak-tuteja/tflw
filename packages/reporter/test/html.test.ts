@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { RunReport } from '@tflw/runtime';
+import type { RunReport, WorkloadTestResult } from '@tflw/runtime';
 import { resolveReportAssets } from '../src/assets.js';
 import { renderReportHtml } from '../src/html.js';
 
@@ -20,8 +20,8 @@ const baseReport: RunReport = {
   now: '2026-07-05T00:00:00.000Z',
   insecure: false,
   tests: [
-    { name: 'health check', ok: true, durationMs: 12, steps: [] },
-    { name: 'plain failure', ok: false, durationMs: 8, steps: [], error: 'expected 200, got 500' },
+    { kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] },
+    { kind: 'functional', name: 'plain failure', ok: false, durationMs: 8, steps: [], error: 'expected 200, got 500' },
   ],
 };
 
@@ -53,6 +53,7 @@ test('renderReportHtml shows a collapsed <details> per failed prior attempt, in 
     ...baseReport,
     tests: [
       {
+        kind: 'functional',
         name: 'eventually works',
         ok: true,
         durationMs: 45,
@@ -108,6 +109,7 @@ test('renderReportHtml escapes an attempt\'s error the same way a top-level test
     ...baseReport,
     tests: [
       {
+        kind: 'functional',
         name: 'flaky with nasty error',
         ok: true,
         durationMs: 20,
@@ -134,9 +136,9 @@ test('renderReportHtml groups tests into one <details class="filegroup"> per fil
     passed: 2,
     failed: 1,
     tests: [
-      { name: 'first in b', ok: true, durationMs: 1, steps: [], file: 'b.tflw' },
-      { name: 'first in a', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
-      { name: 'second in b', ok: false, durationMs: 1, steps: [], file: 'b.tflw' },
+      { kind: 'functional', name: 'first in b', ok: true, durationMs: 1, steps: [], file: 'b.tflw' },
+      { kind: 'functional', name: 'first in a', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
+      { kind: 'functional', name: 'second in b', ok: false, durationMs: 1, steps: [], file: 'b.tflw' },
     ],
   };
   const html = renderReportHtml(report);
@@ -161,8 +163,8 @@ test('a file group with a failing test is open and marked "fail"; an all-passing
     passed: 1,
     failed: 1,
     tests: [
-      { name: 'passes', ok: true, durationMs: 1, steps: [], file: 'clean.tflw' },
-      { name: 'fails', ok: false, durationMs: 1, steps: [], file: 'dirty.tflw' },
+      { kind: 'functional', name: 'passes', ok: true, durationMs: 1, steps: [], file: 'clean.tflw' },
+      { kind: 'functional', name: 'fails', ok: false, durationMs: 1, steps: [], file: 'dirty.tflw' },
     ],
   };
   const html = renderReportHtml(report);
@@ -181,8 +183,8 @@ test('the first failing test\'s section is active by default; an all-passing rep
     passed: 1,
     failed: 1,
     tests: [
-      { name: 'passes', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
-      { name: 'fails', ok: false, durationMs: 1, steps: [], file: 'b.tflw' },
+      { kind: 'functional', name: 'passes', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
+      { kind: 'functional', name: 'fails', ok: false, durationMs: 1, steps: [], file: 'b.tflw' },
     ],
   };
   const html1 = renderReportHtml(withFailure);
@@ -195,8 +197,8 @@ test('the first failing test\'s section is active by default; an all-passing rep
     passed: 2,
     failed: 0,
     tests: [
-      { name: 'first', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
-      { name: 'second', ok: true, durationMs: 1, steps: [], file: 'b.tflw' },
+      { kind: 'functional', name: 'first', ok: true, durationMs: 1, steps: [], file: 'a.tflw' },
+      { kind: 'functional', name: 'second', ok: true, durationMs: 1, steps: [], file: 'b.tflw' },
     ],
   };
   const html2 = renderReportHtml(allGreen);
@@ -223,7 +225,7 @@ test('the sidebar carries a filter input, a status-filter toggle, and one <scrip
 test('a screenshot with no matching assetHrefs entry (the default empty map) renders as an inline data: URI', () => {
   const withShot: RunReport = {
     ...baseReport,
-    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 5, screenshot: { base64: 'aGVsbG8=' } }] }],
+    tests: [{ kind: 'functional', name: 'ui test', ok: false, durationMs: 5, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 5, screenshot: { base64: 'aGVsbG8=' } }] }],
   };
   const html = renderReportHtml(withShot);
   assert.match(html, /<img src="data:image\/png;base64,aGVsbG8="/);
@@ -232,7 +234,7 @@ test('a screenshot with no matching assetHrefs entry (the default empty map) ren
 test('a screenshot whose hash IS in assetHrefs renders the external href instead of inlining', () => {
   const withShot: RunReport = {
     ...baseReport,
-    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 5, screenshot: { base64: 'aGVsbG8=' } }] }],
+    tests: [{ kind: 'functional', name: 'ui test', ok: false, durationMs: 5, steps: [{ kind: 'click', source: 'click button "x"', line: 1, ok: false, durationMs: 5, screenshot: { base64: 'aGVsbG8=' } }] }],
   };
   const { hrefs } = resolveReportAssets(withShot, 0); // budget 0 forces every screenshot external
   const html = renderReportHtml(withShot, hrefs);
@@ -243,7 +245,7 @@ test('a screenshot whose hash IS in assetHrefs renders the external href instead
 test('a test/attempt trace renders a download link + `npx playwright show-trace` hint when resolved via resolveReportAssets', () => {
   const withTrace: RunReport = {
     ...baseReport,
-    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [], trace: { base64: 'UEsDBA==' } }],
+    tests: [{ kind: 'functional', name: 'ui test', ok: false, durationMs: 5, steps: [], trace: { base64: 'UEsDBA==' } }],
   };
   const { hrefs } = resolveReportAssets(withTrace);
   const html = renderReportHtml(withTrace, hrefs);
@@ -254,7 +256,7 @@ test('a test/attempt trace renders a download link + `npx playwright show-trace`
 test('a trace with no matching assetHrefs entry renders no link at all (safe degrade, never a broken href)', () => {
   const withTrace: RunReport = {
     ...baseReport,
-    tests: [{ name: 'ui test', ok: false, durationMs: 5, steps: [], trace: { base64: 'UEsDBA==' } }],
+    tests: [{ kind: 'functional', name: 'ui test', ok: false, durationMs: 5, steps: [], trace: { base64: 'UEsDBA==' } }],
   };
   const html = renderReportHtml(withTrace); // default empty map — resolveReportAssets never ran
   // Note: the embedded <style> block always defines `.trace-link` CSS regardless of any actual
@@ -270,6 +272,7 @@ test('a snapshotDiff with baseline+actual+diff renders all three figures, inline
     ...baseReport,
     tests: [
       {
+        kind: 'functional',
         name: 'visual test',
         ok: false,
         durationMs: 5,
@@ -287,7 +290,7 @@ test('a snapshotDiff with baseline+actual+diff renders all three figures, inline
 test('a snapshotDiff with only `actual` (a brand-new baseline) renders just the actual figure', () => {
   const withDiff: RunReport = {
     ...baseReport,
-    tests: [{ name: 'visual test', ok: true, durationMs: 5, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 5, snapshotDiff: { actual: 'YWN0' } }] }],
+    tests: [{ kind: 'functional', name: 'visual test', ok: true, durationMs: 5, steps: [{ kind: 'expect', source: 'expect page matches snapshot "x"', line: 1, ok: true, durationMs: 5, snapshotDiff: { actual: 'YWN0' } }] }],
   };
   const html = renderReportHtml(withDiff);
   assert.match(html, /<figcaption>actual<\/figcaption>/);
@@ -303,7 +306,7 @@ test('a step with no snapshotDiff at all (a clean pass) renders no snapshot-diff
 test('a snapshotDiff image whose hash IS in assetHrefs renders the external href instead of inlining', () => {
   const withDiff: RunReport = {
     ...baseReport,
-    tests: [{ name: 'visual test', ok: false, durationMs: 5, steps: [{ kind: 'expect', source: 's', line: 1, ok: false, durationMs: 5, snapshotDiff: { baseline: 'YmFzZQ==', actual: 'YWN0dWFs' } }] }],
+    tests: [{ kind: 'functional', name: 'visual test', ok: false, durationMs: 5, steps: [{ kind: 'expect', source: 's', line: 1, ok: false, durationMs: 5, snapshotDiff: { baseline: 'YmFzZQ==', actual: 'YWN0dWFs' } }] }],
   };
   const { hrefs } = resolveReportAssets(withDiff, 0); // budget 0 forces every image external
   const html = renderReportHtml(withDiff, hrefs);
@@ -315,4 +318,109 @@ test('report.browserEngine renders a small header badge; its absence renders not
   const withEngine: RunReport = { ...baseReport, browserEngine: 'firefox' };
   assert.match(renderReportHtml(withEngine), /<div class="engine-badge">browser <code>firefox<\/code><\/div>/);
   assert.doesNotMatch(renderReportHtml(baseReport), /<div class="engine-badge">/);
+});
+
+// -- M56 (Phase 3, D120): a WorkloadTestResult entry, folded in from the old load-html.ts --------
+
+const emptyMetrics = { iterations: 0, failures: 0, errorRate: 0, durations: { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 }, histogram: [], timeline: [] };
+const metricsWithData = {
+  iterations: 10,
+  failures: 1,
+  errorRate: 0.1,
+  durations: { min: 5, max: 500, avg: 80, p50: 50, p90: 200, p95: 300, p99: 480 },
+  histogram: [{ value: 5, count: 3 }],
+  timeline: [{ offsetSeconds: 0, count: 5, failures: 1, rps: 5, errorRate: 0.2, min: 5, mean: 50, max: 100, p50: 40, p95: 90, p99: 100 }],
+};
+
+const workloadTest: WorkloadTestResult = {
+  kind: 'workload',
+  name: 'checkout burst',
+  workload: { kind: 'users', target: 10, overMs: 1000 },
+  metrics: metricsWithData,
+  thresholds: [{ label: 'p95 duration', op: 'lessThan', target: 800, actual: 300, ok: true }],
+  ok: true,
+  endpoints: [],
+};
+
+const healthyDiagnosis = { avgEventLoopLagMs: 1, maxEventLoopLagMs: 2, cpuPercent: 5, saturated: false };
+
+test('a workload entry renders its own panel with PASS/FAIL, the workload description, metrics table, and thresholds', () => {
+  const report: RunReport = { ...baseReport, tests: [workloadTest] };
+  const html = renderReportHtml(report);
+  assert.match(html, /<section class="test ok active"/);
+  assert.match(html, /checkout burst/);
+  assert.match(html, /ramp to 10 users over 1000ms/);
+  assert.match(html, /<tr class="ok"><td>✓<\/td><td>p95 duration &lt; 800ms<\/td>/);
+});
+
+test('a failing workload threshold marks the panel fail and the threshold row fail', () => {
+  const failing: WorkloadTestResult = { ...workloadTest, ok: false, thresholds: [{ label: 'p95 duration', op: 'lessThan', target: 800, actual: 900, ok: false }] };
+  const html = renderReportHtml({ ...baseReport, ok: false, tests: [failing] });
+  assert.match(html, /<section class="test fail active"/);
+  assert.match(html, /<tr class="fail"><td>✗<\/td>/);
+});
+
+test('a workload entry with zero iterations renders "no iterations recorded" chart placeholders instead of crashing', () => {
+  const empty: WorkloadTestResult = { ...workloadTest, metrics: emptyMetrics, thresholds: [] };
+  assert.match(renderReportHtml({ ...baseReport, tests: [empty] }), /no iterations recorded/);
+});
+
+test('a workload entry with concurrency: parallel shows the parallel badge; a functional entry does too', () => {
+  const html = renderReportHtml({ ...baseReport, tests: [{ ...workloadTest, concurrency: 'parallel' }] });
+  assert.match(html, /<span class="parallel">parallel<\/span>/);
+  const functionalParallel = renderReportHtml({ ...baseReport, tests: [{ kind: 'functional', name: 'a', ok: true, durationMs: 1, steps: [], concurrency: 'parallel' }] });
+  assert.match(functionalParallel, /<span class="parallel">parallel<\/span>/);
+  assert.doesNotMatch(renderReportHtml(baseReport), /class="parallel"/);
+});
+
+test('a workload entry with backOff.warning shows the coordinated-omission banner with its ratio', () => {
+  const backedOff: WorkloadTestResult = { ...workloadTest, backOff: { ratio: 0.41, warning: true } };
+  const html = renderReportHtml({ ...baseReport, tests: [backedOff] });
+  assert.match(html, /class="backoff-warning"/);
+  assert.match(html, /41%/);
+});
+
+test('a workload entry with endpoints renders one collapsed <details> per identity', () => {
+  const withEndpoints: WorkloadTestResult = {
+    ...workloadTest,
+    endpoints: [
+      { identity: 'GET /products', metrics: emptyMetrics },
+      { identity: 'checkout <fast>', metrics: metricsWithData },
+    ],
+  };
+  const html = renderReportHtml({ ...baseReport, tests: [withEndpoints] });
+  assert.match(html, /class="endpoints"/);
+  assert.match(html, /<details class="endpoint"><summary>GET \/products/);
+  assert.match(html, /<h4>checkout &lt;fast&gt;<\/h4>/);
+  assert.doesNotMatch(html, /checkout <fast>/);
+});
+
+test('report.selfDiagnosis renders a generator line on the workload panel; saturated shows a warning', () => {
+  const html = renderReportHtml({ ...baseReport, tests: [workloadTest], selfDiagnosis: healthyDiagnosis });
+  assert.match(html, /class="generator-line "/);
+  const saturated = renderReportHtml({ ...baseReport, tests: [workloadTest], selfDiagnosis: { ...healthyDiagnosis, saturated: true }, inconclusive: true });
+  assert.match(saturated, /generator-line saturated/);
+  assert.match(saturated, /tflw itself was the bottleneck/);
+});
+
+test('report.inconclusive/aborted render header banners', () => {
+  const inconclusive = renderReportHtml({ ...baseReport, inconclusive: true });
+  assert.match(inconclusive, /generator process saturated/);
+  const aborted = renderReportHtml({ ...baseReport, aborted: true, abortedMessage: 'aborted at 12s of 30s planned' });
+  assert.match(aborted, /aborted at 12s of 30s planned/);
+});
+
+test('a mixed file (functional + workload) renders both, in declaration order, sharing one sidebar', () => {
+  const report: RunReport = {
+    ...baseReport,
+    total: 2,
+    tests: [
+      { kind: 'functional', name: 'functional', ok: true, durationMs: 1, steps: [], file: 'mix.tflw' },
+      { ...workloadTest, file: 'mix.tflw' },
+    ],
+  };
+  const html = renderReportHtml(report);
+  const order = [...html.matchAll(/<h2><span class="dot[^>]*><\/span>([^<]+)/g)].map((m) => m[1]!.trim());
+  assert.deepEqual(order, ['functional', 'checkout burst']);
+  assert.equal([...html.matchAll(/data-file="mix\.tflw"/g)].length > 0, true);
 });

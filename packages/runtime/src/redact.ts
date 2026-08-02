@@ -4,7 +4,7 @@
 // header-blocklists) means a secret in a login body or a URL is caught wherever it flows, so
 // report.html and CLI output are ticket-attachable by construction.
 
-import type { AttemptResult, RequestTrace, ResponseTrace, RunReport, StepResult, TestResult } from './types.js';
+import type { AttemptResult, ReportEntry, RequestTrace, ResponseTrace, RunReport, StepResult, TestResult, WorkloadTestResult } from './types.js';
 
 /** A secret shorter than this is too likely to collide with unrelated report content (a port
  * number, a small numeric ID) — substring-redacting it would silently corrupt those unrelated
@@ -67,7 +67,20 @@ export class Redactor {
  * masked is a harmless no-op.
  */
 export function redactReport(report: RunReport, redactor: Redactor): RunReport {
-  return { ...report, tests: report.tests.map((t) => redactTestResult(t, redactor)) };
+  return { ...report, tests: report.tests.map((t) => redactReportEntry(t, redactor)) };
+}
+
+function redactReportEntry(t: ReportEntry, redactor: Redactor): ReportEntry {
+  // M56 (Phase 3): a workload test has no step timeline/request-response evidence to redact (D24a
+  // — a load iteration's body executes silently, only aggregate metrics are kept) — only its own
+  // name could ever carry a secret (an interpolated `test "${env("...")}"` header, however
+  // unlikely in practice for a load test).
+  if (t.kind === 'workload') return redactWorkloadTestResult(t, redactor);
+  return redactTestResult(t, redactor);
+}
+
+function redactWorkloadTestResult(t: WorkloadTestResult, redactor: Redactor): WorkloadTestResult {
+  return { ...t, name: redactor.redact(t.name) };
 }
 
 function redactTestResult(t: TestResult, redactor: Redactor): TestResult {
