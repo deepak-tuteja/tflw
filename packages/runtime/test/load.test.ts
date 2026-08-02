@@ -138,6 +138,24 @@ test('`runLoad` throws when the file declares no workload-bearing `test`', async
   await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /at least one workload-bearing `test`/);
 });
 
+// Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97) added grammar/checker support for `hold`/`step`/
+// `spike`/the 2 iteration forms, but their VU-loop semantics are Phase 2's job — `runLoad` should
+// fail fast, by name, rather than crash on an `undefined` `overMs` deep in the VU loop.
+test('`runLoad` throws a clear "not implemented yet" error for a `hold` workload (Phase 2 not shipped)', async () => {
+  const { program } = parseSource('test "steady"\n  hold 5 users for 5s\n  api GET /health\n');
+  await assert.rejects(
+    () => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }),
+    /doesn't execute `hold`\/`step`\/`spike`\/`run …` workloads yet.*"steady"/,
+  );
+});
+
+test('`runLoad` names every unsupported-kind test when several are present, alongside a supported `ramp` one', async () => {
+  const { program } = parseSource(
+    'test "ramped"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "stepped"\n  step users\n    to 1 for 1s\n  api GET /health\n\ntest "counted"\n  run 5 iterations across 1 users\n  api GET /health\n',
+  );
+  await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /"stepped".*"counted"/);
+});
+
 test('a session opted into via `as <name>` establishes once before the loop, not once per iteration', async () => {
   let logins = 0;
   const server = await startFixtureServer({

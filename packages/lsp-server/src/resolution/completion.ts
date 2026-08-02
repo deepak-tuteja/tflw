@@ -38,7 +38,7 @@ const STEP_KEYWORDS = [
   'api', 'expect', 'check', 'let', 'capture', 'log', 'wait', 'give',
   'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll',
   'within', 'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
-  'think', 'ramp', 'threshold', 'cleanup',
+  'think', 'ramp', 'threshold', 'cleanup', 'hold', 'step', 'spike', 'run',
 ] as const;
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 

@@ -103,6 +103,15 @@ import type {
   RequireDecl,
   RampRpsWorkload,
   RampUsersWorkload,
+  HoldRpsWorkload,
+  HoldUsersWorkload,
+  PerVuIterationsWorkload,
+  SharedIterationsWorkload,
+  Stage,
+  StepRpsWorkload,
+  StepUsersWorkload,
+  SpikeRpsWorkload,
+  SpikeUsersWorkload,
   RetryAfterClause,
   ScrollStmt,
   SelectStmt,
@@ -422,13 +431,18 @@ class Parser {
       }
       const before = this.pos;
       const tok = this.peek();
-      if (this.isKw(tok, 'ramp')) {
-        const w = this.parseWorkload();
-        if (w) {
+      const maybeWorkload = this.tryParseWorkloadLine(tok);
+      if (maybeWorkload !== undefined) {
+        if (maybeWorkload) {
           if (workload) {
-            this.error(Codes.LOAD_INVALID, 'a `test` has at most one `ramp to …` workload line', w.span, `already declared at ${workload.span.start.line}:${workload.span.start.column}`);
+            this.error(
+              Codes.LOAD_INVALID,
+              'a `test` has at most one workload line (`ramp`/`hold`/`step`/`spike`/`run`)',
+              maybeWorkload.span,
+              `already declared at ${workload.span.start.line}:${workload.span.start.column}`,
+            );
           } else {
-            workload = w;
+            workload = maybeWorkload;
           }
         } else {
           this.synchronize();
@@ -482,6 +496,208 @@ class Parser {
     this.endLine();
     const span = this.spanFrom(start);
     return kind === 'users' ? { type: 'RampUsersWorkload', users: n, overMs, span } : { type: 'RampRpsWorkload', rps: n, overMs, span };
+  }
+
+  // -- load testing: the 4 new D97 workload kinds (Phase 1b, PLAN_UNIFIED_TEST_WORKLOAD.md) -----
+
+  /** Dispatches a `test` body line that might start a workload clause. Returns `undefined` when
+   * `tok` doesn't start one of the 5 workload keywords (so the caller falls through to threshold/
+   * cleanup/step parsing); returns `null` on a parse error inside a recognized keyword (caller
+   * synchronizes); otherwise returns the parsed `Workload`. */
+  private tryParseWorkloadLine(tok: Token): Workload | null | undefined {
+    if (this.isKw(tok, 'ramp')) return this.parseWorkload();
+    if (this.isKw(tok, 'hold')) return this.parseHoldWorkload();
+    if (this.isKw(tok, 'step')) return this.parseStepOrSpikeWorkload('step');
+    if (this.isKw(tok, 'spike')) return this.parseStepOrSpikeWorkload('spike');
+    if (this.isKw(tok, 'run')) return this.parseIterationsWorkload();
+    return undefined;
+  }
+
+  /** `hold N users for <dur>` (closed) / `hold N rps for <dur>` (open) — D97: a constant target
+   * for the whole duration, no ramp-up. */
+  private parseHoldWorkload(): Workload | null {
+    const start = this.peek().span.start;
+    this.advance(); // `hold`
+    const num = this.expect('number', 'a target number, e.g. `hold 50 users for 30s`');
+    if (!num) return null;
+    const n = Number(num.value);
+    if (n <= 0) {
+      this.error(Codes.LOAD_INVALID, `a workload target must be positive, found ${num.value}`, num.span);
+      return null;
+    }
+    const unitTok = this.peek();
+    let kind: 'users' | 'rps';
+    if (this.isKw(unitTok, 'users')) {
+      this.advance();
+      kind = 'users';
+    } else if (this.isKw(unitTok, 'rps')) {
+      this.advance();
+      kind = 'rps';
+    } else {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`users\` or \`rps\`, found ${describeToken(unitTok)}`, unitTok.span);
+      return null;
+    }
+    if (!this.expectKw('for')) return null;
+    const forMs = this.parseDuration();
+    if (forMs === null) return null;
+    this.endLine();
+    const span = this.spanFrom(start);
+    return kind === 'users' ? { type: 'HoldUsersWorkload', users: n, forMs, span } : { type: 'HoldRpsWorkload', rps: n, forMs, span };
+  }
+
+  /** `step users` / `step rps` / `spike users` / `spike rps` (D97) — a keyword+unit header line
+   * followed by an indented block of stage lines. */
+  private parseStepOrSpikeWorkload(headKind: 'step' | 'spike'): Workload | null {
+    const start = this.peek().span.start;
+    this.advance(); // `step`/`spike`
+    const unitTok = this.peek();
+    let unit: 'users' | 'rps';
+    if (this.isKw(unitTok, 'users')) {
+      this.advance();
+      unit = 'users';
+    } else if (this.isKw(unitTok, 'rps')) {
+      this.advance();
+      unit = 'rps';
+    } else {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`users\` or \`rps\`, found ${describeToken(unitTok)}`, unitTok.span);
+      return null;
+    }
+    this.endLine();
+    const stages = this.parseStageBlock(headKind, unit);
+    if (!stages) return null;
+    const span = this.spanFrom(start);
+    if (headKind === 'step') {
+      return unit === 'users' ? { type: 'StepUsersWorkload', stages, span } : { type: 'StepRpsWorkload', stages, span };
+    }
+    return unit === 'users' ? { type: 'SpikeUsersWorkload', stages, span } : { type: 'SpikeRpsWorkload', stages, span };
+  }
+
+  /** The indented stage block under a `step`/`spike` header. */
+  private parseStageBlock(headKind: 'step' | 'spike', unit: 'users' | 'rps'): Stage[] | null {
+    if (!this.check('indent')) {
+      this.error(
+        Codes.EMPTY_BLOCK,
+        `this \`${headKind} ${unit}\` has no stages`,
+        this.peek().span,
+        `indent at least one stage line under \`${headKind} ${unit}\``,
+      );
+      return null;
+    }
+    this.advance(); // indent
+    const stages: Stage[] = [];
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const stage = headKind === 'step' ? this.parseStepStage() : this.parseSpikeStage();
+      if (stage) stages.push(stage);
+      else this.synchronize();
+      if (this.pos === before) this.advance(); // guarantee progress
+    }
+    if (this.check('dedent')) this.advance();
+    if (stages.length === 0) {
+      this.error(Codes.LOAD_INVALID, `a \`${headKind} ${unit}\` workload needs at least one stage line`, this.peek().span);
+      return null;
+    }
+    return stages;
+  }
+
+  /** `to N for <dur>` — a `step` stage: an instant jump to a new level, held for `<dur>`. */
+  private parseStepStage(): Stage | null {
+    const start = this.peek().span.start;
+    if (!this.expectKw('to')) return null;
+    const num = this.expect('number', 'a target number, e.g. `to 50 for 10s`');
+    if (!num) return null;
+    const n = Number(num.value);
+    if (n <= 0) {
+      this.error(Codes.LOAD_INVALID, `a workload target must be positive, found ${num.value}`, num.span);
+      return null;
+    }
+    if (!this.expectKw('for')) return null;
+    const durationMs = this.parseDuration();
+    if (durationMs === null) return null;
+    this.endLine();
+    return { type: 'Stage', mode: 'jump', target: n, durationMs, span: this.spanFrom(start) };
+  }
+
+  /** `hold N for <dur>` (flat) / `to N over <dur>` (ramped) — a `spike` stage. */
+  private parseSpikeStage(): Stage | null {
+    const start = this.peek().span.start;
+    const tok = this.peek();
+    if (this.isKw(tok, 'hold')) {
+      this.advance();
+      const num = this.expect('number', 'a target number, e.g. `hold 50 for 10s`');
+      if (!num) return null;
+      const n = Number(num.value);
+      if (n <= 0) {
+        this.error(Codes.LOAD_INVALID, `a workload target must be positive, found ${num.value}`, num.span);
+        return null;
+      }
+      if (!this.expectKw('for')) return null;
+      const durationMs = this.parseDuration();
+      if (durationMs === null) return null;
+      this.endLine();
+      return { type: 'Stage', mode: 'jump', target: n, durationMs, span: this.spanFrom(start) };
+    }
+    if (this.isKw(tok, 'to')) {
+      this.advance();
+      const num = this.expect('number', 'a target number, e.g. `to 200 over 10s`');
+      if (!num) return null;
+      const n = Number(num.value);
+      if (n <= 0) {
+        this.error(Codes.LOAD_INVALID, `a workload target must be positive, found ${num.value}`, num.span);
+        return null;
+      }
+      if (!this.expectKw('over')) return null;
+      const durationMs = this.parseDuration();
+      if (durationMs === null) return null;
+      this.endLine();
+      return { type: 'Stage', mode: 'ramp', target: n, durationMs, span: this.spanFrom(start) };
+    }
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      `expected \`hold\` or \`to\`, found ${describeToken(tok)}`,
+      tok.span,
+      'a `spike` stage is either `hold N for <dur>` or `to N over <dur>`',
+    );
+    return null;
+  }
+
+  /** `run N iterations across M users` (shared pool) / `run N iterations per user across M users`
+   * (each VU runs its own N) — D97: count-bounded, no duration at all. */
+  private parseIterationsWorkload(): Workload | null {
+    const start = this.peek().span.start;
+    this.advance(); // `run`
+    const countTok = this.expect('number', 'an iteration count, e.g. `run 500 iterations across 20 users`');
+    if (!countTok) return null;
+    const count = Number(countTok.value);
+    if (count <= 0) {
+      this.error(Codes.LOAD_INVALID, `an iteration count must be positive, found ${countTok.value}`, countTok.span);
+      return null;
+    }
+    if (!this.expectKw('iterations')) return null;
+    let perVu = false;
+    if (this.isKw(this.peek(), 'per')) {
+      this.advance();
+      if (!this.expectKw('user')) return null;
+      perVu = true;
+    }
+    if (!this.expectKw('across')) return null;
+    const vusTok = this.expect('number', 'a user count, e.g. `across 20 users`');
+    if (!vusTok) return null;
+    const vus = Number(vusTok.value);
+    if (vus <= 0) {
+      this.error(Codes.LOAD_INVALID, `a user count must be positive, found ${vusTok.value}`, vusTok.span);
+      return null;
+    }
+    if (!this.expectKw('users')) return null;
+    this.endLine();
+    const span = this.spanFrom(start);
+    return perVu
+      ? { type: 'PerVuIterationsWorkload', iterationsPerVu: count, vus, span }
+      : { type: 'SharedIterationsWorkload', iterations: count, vus, span };
   }
 
   /** `threshold p95 duration is less than 800ms` / `threshold error rate is less than 1%` (D24a). */

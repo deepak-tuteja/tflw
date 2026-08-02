@@ -366,7 +366,7 @@ export function checkWorkloadTests(program: Program): Diagnostic[] {
           severity: 'error',
           message: '`think` is only legal inside a workload-bearing `test`',
           span: step.span,
-          hint: 'a functional `test`/`before`/`after` body uses `wait until …` for eventual consistency, never a fixed sleep — this `test` needs a `ramp to …` workload line for `think` to be meaningful',
+          hint: 'a functional `test`/`before`/`after` body uses `wait until …` for eventual consistency, never a fixed sleep — this `test` needs a workload line (`ramp`/`hold`/`step`/`spike`/`run`) for `think` to be meaningful',
         });
       } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
         walkForThink(step.body);

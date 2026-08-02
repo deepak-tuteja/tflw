@@ -2212,6 +2212,24 @@ test('`tflw load` on a file with no workload-bearing `test` is a usage error, no
   });
 });
 
+// Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97): `hold`/`step`/`spike`/the 2 iteration forms parse
+// and check today but have no interpreter loop semantics yet (Phase 2, not shipped) — `tflw load`
+// should reject them with a clear usage error rather than crashing mid-run.
+test('`tflw load` on a `hold` workload (not yet executable, Phase 2) is a usage error naming the test', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-unsupported-kind-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'steady.tflw'), 'test "steady load"\n  hold 5 users for 5s\n  api GET /health\n', 'utf8');
+
+    const failure = await execFileAsync('node', [cliEntry, 'load', 'steady.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+    assert.equal(failure.code, 2);
+    assert.match(failure.stderr, /doesn't execute `hold`\/`step`\/`spike`\/`run …` workloads yet/);
+    assert.match(failure.stderr, /"steady load"/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`tflw load` with no file argument is a usage error', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-nofile-'));
   try {

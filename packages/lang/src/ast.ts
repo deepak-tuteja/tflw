@@ -126,7 +126,17 @@ export interface FileDataTable extends Node {
 // browser steps rejected inside a workload-bearing body via D19) still applies, just phrased
 // against `TestDecl.workload` instead of a separate node type (`checker.ts`'s `checkWorkloadTests`,
 // formerly `checkScenarios`).
-export type Workload = RampUsersWorkload | RampRpsWorkload;
+export type Workload =
+  | RampUsersWorkload
+  | RampRpsWorkload
+  | HoldUsersWorkload
+  | HoldRpsWorkload
+  | StepUsersWorkload
+  | StepRpsWorkload
+  | SpikeUsersWorkload
+  | SpikeRpsWorkload
+  | SharedIterationsWorkload
+  | PerVuIterationsWorkload;
 
 /** `ramp to N users over <dur>` (D17) — **closed** model: VUs loop continuously once spawned:
  * `users` ramps linearly from 0 to `users` over `overMs`, one VU roughly every `overMs/users`.
@@ -149,6 +159,91 @@ export interface RampRpsWorkload extends Node {
   readonly type: 'RampRpsWorkload';
   readonly rps: number;
   readonly overMs: number;
+}
+
+// ---- Load testing: the 4 new D97 workload kinds (Phase 1b, PLAN_UNIFIED_TEST_WORKLOAD.md) -----
+//
+// D97 chose distinct named keywords per workload shape over a generalized k6-style stage list.
+// `hold` is a single flat level; `step`/`spike` are each a block of `Stage` lines (a staircase and
+// a mixed hold/ramp schedule respectively); the two iteration forms are count-bounded with no
+// duration at all. D98: every kind supports both closed (`users`) and open (`rps`) variants,
+// matching `ramp`. D102: the count-based kinds skip the D17 back-off diagnostic entirely — there's
+// no duration to divide by, so it's structurally undefined rather than a withheld feature.
+
+/** `hold N users for <dur>` (D97) — closed model, no ramp: `users` VUs are all live for the whole
+ * duration `forMs` (steady-state load, mirrors k6 `constant-vus`). Same D17 back-off diagnostic as
+ * `ramp` applies (D98). */
+export interface HoldUsersWorkload extends Node {
+  readonly type: 'HoldUsersWorkload';
+  readonly users: number;
+  readonly forMs: number;
+}
+
+/** `hold N rps for <dur>` (D97) — open model, no ramp: a constant target arrival rate of `rps` for
+ * the whole duration `forMs` (mirrors k6 `constant-arrival-rate`). */
+export interface HoldRpsWorkload extends Node {
+  readonly type: 'HoldRpsWorkload';
+  readonly rps: number;
+  readonly forMs: number;
+}
+
+/** One level of a `step`/`spike` stage list (D97). `mode: 'jump'` (`to N for <dur>` / `hold N for
+ * <dur>`) holds flat at `target` for the whole stage — an instant level change at the stage
+ * boundary, no ramp. `mode: 'ramp'` (`to N over <dur>`) linearly ramps from the previous stage's
+ * ending target (0 before the first stage) to `target` over the stage's own duration — the same
+ * math as `ramp to … over …`, just one leg of a multi-leg schedule. */
+export interface Stage extends Node {
+  readonly type: 'Stage';
+  readonly mode: 'jump' | 'ramp';
+  readonly target: number;
+  readonly durationMs: number;
+}
+
+/** `step users` (D97) — closed model: a block of `to N for <dur>` lines, each an instant jump to
+ * a new level held for its own duration (a staircase; mirrors k6 `ramping-vus` fed a
+ * staircase-shaped stage list, surfaced here as its own keyword per D97 rather than a generic
+ * stage list). At least one stage is required. */
+export interface StepUsersWorkload extends Node {
+  readonly type: 'StepUsersWorkload';
+  readonly stages: readonly Stage[];
+}
+
+/** `step rps` (D97) — open model equivalent of `StepUsersWorkload`. */
+export interface StepRpsWorkload extends Node {
+  readonly type: 'StepRpsWorkload';
+  readonly stages: readonly Stage[];
+}
+
+/** `spike users` (D97) — closed model: a block mixing `hold N for <dur>` (flat, `mode: 'jump'`)
+ * and `to N over <dur>` (ramped, `mode: 'ramp'`) lines — typically baseline → ramp up → hold peak
+ * → ramp down → baseline. At least one stage is required. */
+export interface SpikeUsersWorkload extends Node {
+  readonly type: 'SpikeUsersWorkload';
+  readonly stages: readonly Stage[];
+}
+
+/** `spike rps` (D97) — open model equivalent of `SpikeUsersWorkload`. */
+export interface SpikeRpsWorkload extends Node {
+  readonly type: 'SpikeRpsWorkload';
+  readonly stages: readonly Stage[];
+}
+
+/** `run N iterations across M users` (D97) — count-bounded, no duration: `vus` VUs pull from a
+ * shared pool of `iterations` total iterations until it's exhausted (mirrors k6
+ * `shared-iterations`). No D17 back-off diagnostic (D102). */
+export interface SharedIterationsWorkload extends Node {
+  readonly type: 'SharedIterationsWorkload';
+  readonly iterations: number;
+  readonly vus: number;
+}
+
+/** `run N iterations per user across M users` (D97) — count-bounded: each of `vus` VUs runs
+ * exactly `iterationsPerVu` iterations independently (mirrors k6 `per-vu-iterations`). No D17
+ * back-off diagnostic (D102). */
+export interface PerVuIterationsWorkload extends Node {
+  readonly type: 'PerVuIterationsWorkload';
+  readonly iterationsPerVu: number;
+  readonly vus: number;
 }
 
 export type ThresholdMetric =

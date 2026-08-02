@@ -67,6 +67,15 @@ import type {
   ScrollStmt,
   SelectStmt,
   SessionDecl,
+  HoldRpsWorkload,
+  HoldUsersWorkload,
+  PerVuIterationsWorkload,
+  SharedIterationsWorkload,
+  Stage,
+  StepRpsWorkload,
+  StepUsersWorkload,
+  SpikeRpsWorkload,
+  SpikeUsersWorkload,
   StatusSubject,
   StubStmt,
   SwitchToNewTabBlock,
@@ -114,12 +123,23 @@ function children(node: Node): readonly Node[] {
     }
     case 'RampUsersWorkload':
     case 'RampRpsWorkload':
+    case 'HoldUsersWorkload':
+    case 'HoldRpsWorkload':
+    case 'SharedIterationsWorkload':
+    case 'PerVuIterationsWorkload':
     case 'ThresholdDecl':
     case 'ThinkStmt':
-      // `users`/`rps`/`overMs` (workload), `metric`/`op`/`value` (threshold), `minMs`/`maxMs`
-      // (think) are all plain numbers/enums — no child `Node` to descend into, same leaf shape as
+    case 'Stage':
+      // `users`/`rps`/`overMs`/`forMs` (workload), `iterations`/`vus` (iteration-count workload),
+      // `metric`/`op`/`value` (threshold), `minMs`/`maxMs` (think), `mode`/`target`/`durationMs`
+      // (stage) are all plain numbers/enums — no child `Node` to descend into, same leaf shape as
       // `DurationLit`/`NumberLit` below.
       return [];
+    case 'StepUsersWorkload':
+    case 'StepRpsWorkload':
+    case 'SpikeUsersWorkload':
+    case 'SpikeRpsWorkload':
+      return (node as StepUsersWorkload | StepRpsWorkload | SpikeUsersWorkload | SpikeRpsWorkload).stages;
     case 'InlineDataTable':
       return (node as InlineDataTable).rows.flat();
     case 'FileDataTable':

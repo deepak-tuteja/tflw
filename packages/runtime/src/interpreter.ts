@@ -24,6 +24,8 @@ import type {
   Oauth2SessionConfig,
   PathSegment,
   Program,
+  RampRpsWorkload,
+  RampUsersWorkload,
   RedactPattern,
   SessionDecl,
   Span,
@@ -337,8 +339,33 @@ export function globalIterationIndex(localIndex: number, shard?: { readonly inde
  * as a local narrowed alias (rather than threading `TestDecl['workload'] | null` checks through
  * every function below) since every load-engine function here only ever receives one that's
  * already been filtered by `test.workload !== null` (`runLoadCore`'s `scenarios` derivation).
- * Exported for tests that build a `LoadTest` directly rather than filtering a parsed `Program`. */
-export type LoadTest = TestDecl & { readonly workload: Workload };
+ * Narrowed to the 2 `ramp` variants specifically (not the full `Workload` union) because that's
+ * still the only kind this engine knows how to run — Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97)
+ * added grammar/AST for `hold`/`step`/`spike`/the 2 iteration forms, but their VU-loop semantics
+ * are Phase 2's job, still ahead. `assertRampOnly` below is what actually enforces this at the
+ * `program.tests` boundary. Exported for tests that build a `LoadTest` directly rather than
+ * filtering a parsed `Program`. */
+export type LoadTest = TestDecl & { readonly workload: RampUsersWorkload | RampRpsWorkload };
+
+/** Every workload-bearing `test` in `tests`, any kind. */
+function filterWorkloadTests(tests: readonly TestDecl[]): (TestDecl & { workload: Workload })[] {
+  return tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
+}
+
+/** Fails fast — before any VU work starts — if any of `workloadTests` uses a Phase 1b workload
+ * kind this engine can't execute yet (Phase 2, not shipped). Without this, `scenario.workload.
+ * overMs` etc. would simply be `undefined` deep inside the VU loop for a `hold`/`step`/`spike`/
+ * `run …` test, a far more confusing failure than naming the unsupported test(s) up front. */
+function assertRampOnly(workloadTests: readonly (TestDecl & { workload: Workload })[]): LoadTest[] {
+  const unsupported = workloadTests.filter((t) => t.workload.type !== 'RampUsersWorkload' && t.workload.type !== 'RampRpsWorkload');
+  if (unsupported.length > 0) {
+    const names = unsupported.map((t) => `"${t.name.value}"`).join(', ');
+    throw new RuntimeError(
+      `\`tflw load\` doesn't execute \`hold\`/\`step\`/\`spike\`/\`run …\` workloads yet (Phase 2 of PLAN_UNIFIED_TEST_WORKLOAD.md, not shipped) — found ${unsupported.length} such test(s): ${names}. Only \`ramp to …\` workloads run today.`,
+    );
+  }
+  return workloadTests as LoadTest[];
+}
 
 /** One mutable accumulator per scenario, filled in by that scenario's own `runIteration` closure
  * as its VUs run concurrently with every other scenario's. */
@@ -389,10 +416,11 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // M50 (D93-D95): a "scenario" is now any `test` block whose `workload` is non-null — `scenario`
   // no longer exists as its own keyword/array. `tflw load` (this function's caller) only ever
   // wants the workload-bearing subset of a file's `program.tests`.
-  const scenarios: LoadTest[] = program.tests.filter((t): t is LoadTest => t.workload !== null);
-  if (scenarios.length === 0) {
+  const workloadTests = filterWorkloadTests(program.tests);
+  if (workloadTests.length === 0) {
     throw new RuntimeError('`tflw load` needs at least one workload-bearing `test` (a `ramp to …` line) in this file, found 0');
   }
+  const scenarios: LoadTest[] = assertRampOnly(workloadTests);
   const selfDiag = startSelfDiagnosis();
   const environ = opts.environ ?? process.env;
   const redactor = new Redactor();
@@ -865,7 +893,7 @@ export function mergeLoadShardReports(
 ): LoadReport {
   if (shardResults.length === 0) throw new RuntimeError('`mergeLoadShardReports` needs at least one shard result');
 
-  const scenarios: LoadTest[] = program.tests.filter((t): t is LoadTest => t.workload !== null);
+  const scenarios: LoadTest[] = assertRampOnly(filterWorkloadTests(program.tests));
   const perScenario = scenarios.map((scenario) => {
     const histogram = new LatencyHistogram();
     const timeline = new Timeline();

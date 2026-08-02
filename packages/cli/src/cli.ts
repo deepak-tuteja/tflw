@@ -37,6 +37,8 @@ import {
   type ReuseOccurrence,
   type TestDecl,
   type Workload,
+  type RampRpsWorkload,
+  type RampUsersWorkload,
 } from '@tflw/lang';
 import {
   runProgram,
@@ -1257,12 +1259,25 @@ async function loadCommand(argv: string[]): Promise<number> {
   const { file, source, program } = parsedFiles[0]!;
   // M50 (D93-D95): a "scenario" is any `test` block whose `workload` is non-null — `scenario` no
   // longer exists as its own keyword/array.
-  const scenarios = program.tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
+  const workloadTests = program.tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
 
-  if (scenarios.length === 0) {
+  if (workloadTests.length === 0) {
     err(`tflw load needs a file with at least one workload-bearing \`test\` (a \`ramp to …\` line) — ${relative(cwd, file)} has 0.`);
     return EXIT_USAGE;
   }
+
+  // Phase 1b (PLAN_UNIFIED_TEST_WORKLOAD.md D97) added grammar for `hold`/`step`/`spike`/the 2
+  // iteration forms, but their VU-loop semantics are Phase 2's job, still ahead — fail fast here
+  // with a clear message rather than letting the interpreter throw a less specific one downstream.
+  const unsupported = workloadTests.filter((t) => t.workload.type !== 'RampUsersWorkload' && t.workload.type !== 'RampRpsWorkload');
+  if (unsupported.length > 0) {
+    const names = unsupported.map((t) => `"${t.name.value}"`).join(', ');
+    err(
+      `tflw load doesn't execute \`hold\`/\`step\`/\`spike\`/\`run …\` workloads yet (Phase 2 of PLAN_UNIFIED_TEST_WORKLOAD.md, not shipped) — ${relative(cwd, file)} has ${unsupported.length}: ${names}. Only \`ramp to …\` workloads run today.`,
+    );
+    return EXIT_USAGE;
+  }
+  const scenarios = workloadTests as (TestDecl & { workload: RampUsersWorkload | RampRpsWorkload })[];
 
   const missing = missingRequiredEnv(resolved, environ);
   if (missing.length > 0) {
