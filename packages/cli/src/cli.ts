@@ -40,7 +40,6 @@ import {
 } from '@tflw/lang';
 import {
   runProgram,
-  runLoad,
   runLoadShard,
   mergeLoadShardReports,
   resolveConfig,
@@ -95,11 +94,12 @@ import { DOCS_TOPICS } from './docs-data.generated.js';
 const EXIT_OK = 0;
 const EXIT_FAIL = 1; // a test failed
 const EXIT_USAGE = 2; // usage / config / parse error — could not run
-const EXIT_INCONCLUSIVE = 3; // M32/R11 — `tflw load` only: the generator itself saturated, so the
-// measured numbers don't describe the system under test. Takes priority over pass/fail — CI must
-// not read an unmeasurable run as "system passed" (or "system failed").
-const EXIT_ABORTED = 130; // M32/R5 — Ctrl-C during `tflw load`; the standard Unix "died from
-// SIGINT" code (128+2), same convention `tflw watch`'s own SIGINT handling documents.
+const EXIT_INCONCLUSIVE = 3; // M32/R11 — a `tflw run` with workload-bearing tests only: the
+// generator itself saturated, so the measured numbers don't describe the system under test. Takes
+// priority over pass/fail — CI must not read an unmeasurable run as "system passed" (or "failed").
+const EXIT_ABORTED = 130; // M32/R5 — Ctrl-C during a `tflw run` with workload-bearing tests; the
+// standard Unix "died from SIGINT" code (128+2), same convention `tflw watch`'s own SIGINT
+// handling documents.
 
 // Set via esbuild `--define` at bundle time (packages/cli/scripts/bundle.mjs, decision 74b) to the
 // real package.json version. Undefined under `npm run dev` (unbundled `tsx`), where `getVersion()`
@@ -117,13 +117,12 @@ async function main(argv: string[]): Promise<number> {
   switch (command) {
     case 'run':
       return runCommand(rest);
-    case 'load':
-      return loadCommand(rest);
     case '--internal-load-worker':
-      // M31 (D19) — never invoked directly by a user; `loadCommand` forks this exact same script
-      // with this as its sole argv token when `--workers N>1`. Undocumented on purpose (no
-      // CLI_FLAGS entry, no --help mention) — it's a process-boundary implementation detail of
-      // `tflw load`, not user-facing surface.
+      // M31 (D19) — never invoked directly by a user; `runCommand` forks this exact same script
+      // with this as its sole argv token when `--workers N>1` and the file has workload-bearing
+      // tests (Phase 2b/D99 — this used to be `loadCommand`'s job before `tflw load` was folded
+      // into `tflw run`). Undocumented on purpose (no CLI_FLAGS entry, no --help mention) — it's a
+      // process-boundary implementation detail, not user-facing surface.
       return loadWorkerCommand();
     case 'init':
       return initCommand(rest);
@@ -155,7 +154,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw load\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
       );
       return EXIT_USAGE;
   }
@@ -433,8 +432,25 @@ interface RunArgs {
    * than being mutually exclusive, since that's the least surprising behavior if a future caller
    * ever passes both — no extra validation needed for a combination that's simply more selective. */
   readonly only?: string | undefined;
-  /** Raw `--workers` text, validated in `runCommand` (P#47). */
+  /** Raw `--parallel` text, validated in `runCommand` (P#47) — how many *files* run concurrently
+   * in this one process (`runWithConcurrency`). Renamed from `--workers` (Phase 2b, user
+   * direction during the D111/D113 grill-me): `--workers` now exclusively means load-generation
+   * *process* forking (below), a completely different axis that happened to share a flag name
+   * with this one before the command unification made them coexist on `run`. Defaults to
+   * `resolved.workers` (the `tflw.config` `workers N` key, unchanged name/meaning) when omitted. */
+  readonly parallelRaw?: string | undefined;
+  /** Raw `--workers` text, validated in `runCommand` (mirrors the pre-Phase-2b `tflw load
+   * --workers`'s own validation, P#47) — how many *processes* fork to generate one file's
+   * workload-bearing tests' load (D111/D19), scoped to those tests only (D113); has no config-file
+   * default (unlike `--parallel` above), matching `tflw load --workers`'s own no-default-fallback
+   * before this unification. Meaningless (and a non-fatal no-op warning, D113) on a file with zero
+   * workload-bearing tests. */
   readonly workersRaw?: string | undefined;
+  /** `--skip-workload` (D110, renamed from the originally-proposed `--skip-load` now that
+   * `tflw load` no longer exists as its own command) — skips every workload-bearing test in every
+   * file this invocation runs, regardless of which `parallel`/`sequential` batch it's declared in;
+   * for fast iteration on a file's functional tests without also paying for its load run. */
+  readonly skipWorkload: boolean;
   readonly noColor: boolean;
   /** `--verbose`: prints one line per step, not just per test (no `-v` short form — `-v` is already
    * `--version` at the top-level `main()` dispatch). */
@@ -502,7 +518,9 @@ function parseRunArgs(argv: string[]): RunArgs {
   let nowRaw: string | undefined;
   let tagRaw: string | undefined;
   let only: string | undefined;
+  let parallelRaw: string | undefined;
   let workersRaw: string | undefined;
+  let skipWorkload = false;
   let noColor = false;
   let verbose = false;
   let forbidInsecure = false;
@@ -529,8 +547,11 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--tag=')) tagRaw = a.slice('--tag='.length);
     else if (a === '--only') only = argv[++i];
     else if (a.startsWith('--only=')) only = a.slice('--only='.length);
+    else if (a === '--parallel') parallelRaw = argv[++i];
+    else if (a.startsWith('--parallel=')) parallelRaw = a.slice('--parallel='.length);
     else if (a === '--workers') workersRaw = argv[++i];
     else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
+    else if (a === '--skip-workload') skipWorkload = true;
     else if (a === '--no-color') noColor = true;
     else if (a === '--verbose') verbose = true;
     else if (a === '--forbid-insecure') forbidInsecure = true;
@@ -565,7 +586,9 @@ function parseRunArgs(argv: string[]): RunArgs {
     nowRaw,
     tags,
     only,
+    parallelRaw,
     workersRaw,
+    skipWorkload,
     noColor,
     verbose,
     forbidInsecure,
@@ -730,6 +753,19 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
       return EXIT_USAGE;
     }
   }
+  let parallelArg: number | undefined;
+  if (args.parallelRaw !== undefined) {
+    parallelArg = Number(args.parallelRaw);
+    if (!Number.isInteger(parallelArg) || parallelArg < 1) {
+      err(`--parallel expects a positive integer, got "${args.parallelRaw}"`);
+      return EXIT_USAGE;
+    }
+  }
+  // D111/D113 — process-level scaling of one file's own workload-bearing tests' load generation
+  // (forked child processes, mirrors pre-Phase-2b `tflw load --workers`); unrelated to `--parallel`
+  // above (in-process file concurrency). No config-file default (matches `tflw load`'s own
+  // always-1-unless-flagged behavior) — defaulted to `1` below, after `runnable` is known, so the
+  // D113 "no workload-bearing tests" warning can name the affected file(s).
   let workersArg: number | undefined;
   if (args.workersRaw !== undefined) {
     workersArg = Number(args.workersRaw);
@@ -865,7 +901,12 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
           tests: fileProgram.tests
             .filter((t) => !args.tags || args.tags.some((tag) => t.tags.includes(tag)))
             .filter((t) => !args.only || t.name.value === args.only)
-            .filter((t) => !failedSet || failedSet.has(`${relFile}::${t.name.value}`)),
+            .filter((t) => !failedSet || failedSet.has(`${relFile}::${t.name.value}`))
+            // D110 (`--skip-workload`, renamed from the originally-proposed `--skip-load`): drops
+            // every workload-bearing test regardless of which `parallel`/`sequential` batch it's
+            // declared in — a file mixing functional and workload tests still runs its functional
+            // ones normally.
+            .filter((t) => !args.skipWorkload || t.workload === null),
         },
       };
     })
@@ -909,7 +950,48 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
     }
   }
 
-  const workers = workersArg ?? resolved.workers;
+  const parallel = parallelArg ?? resolved.workers;
+  // D111/D113: process-level load-generation scaling, scoped to workload-bearing tests only — no
+  // legitimate use forking processes over a purely functional test (no population/rate to stripe,
+  // no percentile aggregate to merge). `loadWorkers` defaults to `1` (no forking) unlike `parallel`
+  // above, matching `tflw load --workers`'s own pre-Phase-2b default.
+  const loadWorkers = workersArg ?? 1;
+  const anyWorkload = runnable.some(({ program }) => program.tests.some((t) => t.workload !== null));
+  if (loadWorkers > 1) {
+    for (const { file, program } of runnable) {
+      if (!program.tests.some((t) => t.workload !== null)) {
+        out.write(withTimestamps(`\`--workers\` has no effect — ${relative(cwd, file)} has no workload-bearing tests`, !args.noTimestamps) + '\n');
+      }
+    }
+  }
+  // D99: same pre-run "scenario … — …" preview `tflw load` always printed for its one file, now
+  // printed once up front for every file in this invocation that has at least one workload-bearing
+  // test (a purely functional invocation prints nothing new here, unchanged from before Phase 2b).
+  if (anyWorkload && !ndjsonActive) {
+    for (const { program } of runnable) {
+      for (const test of program.tests) {
+        if (test.workload) out.write(withTimestamps(`scenario "${test.name.value}" — ${describeWorkload(test.workload)}`, !args.noTimestamps) + '\n');
+      }
+    }
+  }
+  // M32 (R5), carried over from `tflw load`: first Ctrl-C requests a graceful stop for any
+  // in-flight workload-bearing test (no new iterations; its `loadReport.aborted` flushes whatever
+  // completed); a second one before that resolves force-quits immediately. Only installed when
+  // this invocation actually has a workload-bearing test anywhere — a purely functional run keeps
+  // today's default Node SIGINT behavior (immediate exit) unchanged, since functional execution has
+  // no notion of a graceful mid-test abort to offer instead.
+  const abortController = new AbortController();
+  let interrupted = false;
+  const onSigint = (): void => {
+    if (interrupted) {
+      process.stdout.write('\n' + dim(color, 'second Ctrl-C — exiting immediately') + '\n');
+      process.exit(EXIT_ABORTED);
+    }
+    interrupted = true;
+    abortController.abort();
+    process.stdout.write('\n' + dim(color, 'aborting… flushing a partial report (Ctrl-C again to force-quit)') + '\n');
+  };
+  if (anyWorkload) process.on('SIGINT', onSigint);
   const githubActions = process.env.GITHUB_ACTIONS === 'true';
   const timestamps = !args.noTimestamps;
 
@@ -926,7 +1008,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   // concurrent files in the human renderer — so in that combination each file gets its own
   // buffered sink instead, flushed as one contiguous block once that file finishes, and the
   // shared live sink is skipped entirely.
-  const useBufferedVerbose = !ndjsonActive && args.verbose && workers > 1;
+  const useBufferedVerbose = !ndjsonActive && args.verbose && parallel > 1;
   const sharedHumanEmit = !ndjsonActive && !useBufferedVerbose ? liveEmit(out, color, args.verbose, githubActions, timestamps, resolved.logLevel) : undefined;
   const ndjsonCollected: RunEvent[] = [];
   const sharedNdjsonEmit = ndjsonActive ? ndjsonEmit(out, ndjsonCollected) : undefined;
@@ -939,31 +1021,101 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   const browserManager = watchOpts?.browserManager ?? new BrowserManager({ engine: browserEngine, headless: !args.headed, viewport: resolved.viewport });
   watchOpts?.onBrowserManagerReady?.(browserManager);
 
-  const reports = await runWithConcurrency(
+  interface FileRunResult {
+    readonly report: RunReport;
+    readonly loadReport?: LoadReport;
+  }
+
+  const fileResults = await runWithConcurrency(
     runnable,
-    workers,
-    async ({ file, source, program }, i) => {
+    parallel,
+    async ({ file, source, program }, i): Promise<FileRunResult> => {
       const fileLabel = relative(cwd, file);
       const buffered = useBufferedVerbose ? bufferedEmit(out, color, args.verbose, githubActions, timestamps, resolved.logLevel) : undefined;
       const rawSink = buffered?.sink ?? sharedHumanEmit ?? sharedNdjsonEmit;
       const fileEmit = rawSink ? withFileTag(rawSink, fileLabel) : undefined;
+      let previousTick: LoadProgressSnapshot | undefined;
+      const printProgress = (snapshot: LoadProgressSnapshot): void => {
+        if (process.stdout.isTTY && !ndjsonActive) process.stdout.write(`\r${renderLoadProgressLine(snapshot, previousTick, plannedMsFor(program), color)}   `);
+        previousTick = snapshot;
+      };
       try {
-        const { report } = await runProgram(program, resolved, {
-          source,
-          baseDir: dirname(file),
-          environ,
-          redactor,
-          sessionCache,
-          browserManager,
-          seed,
-          now,
-          uniqueSeq,
-          testIndexOffset: offsets[i]!,
-          sessionSpliceOwners,
-          filePath: fileLabel,
-          updateSnapshots: args.updateSnapshots,
-          ...(fileEmit ? { emit: fileEmit } : {}),
-        });
+        const hasWorkload = program.tests.some((t) => t.workload !== null);
+        // D111: process-level scaling forks `loadWorkers - 1` additional children as shards
+        // 1..N-1, each running only this file's workload-bearing subset (`runLoadShard`, unchanged
+        // since before Phase 2b); the main process contributes its own striped shard-0 share via
+        // the exact same unified `runProgram` call that already runs this file's functional tests
+        // — a functional test never runs inside a forked shard worker (D113).
+        let report: RunReport;
+        let loadReport: LoadReport | undefined;
+        if (hasWorkload && loadWorkers > 1) {
+          if (!ndjsonActive) out.write(withTimestamps(`running across ${loadWorkers} generator processes…`, timestamps) + '\n');
+          // M32 (R5), carried over from `tflw load`: each shard (the main process's own shard-0,
+          // and every forked child) ticks independently — the live line always reflects the sum of
+          // the latest snapshot heard from every shard, not a lockstep round.
+          const latestByShard = new Map<number, LoadProgressSnapshot>();
+          const printShardProgress = (shardIndex: number, snapshot: LoadProgressSnapshot): void => {
+            latestByShard.set(shardIndex, snapshot);
+            printProgress(combineProgressSnapshots([...latestByShard.values()]));
+          };
+          const [main, ...children] = await Promise.all([
+            runProgram(program, resolved, {
+              source,
+              baseDir: dirname(file),
+              environ,
+              redactor,
+              sessionCache,
+              browserManager,
+              seed,
+              now,
+              uniqueSeq,
+              testIndexOffset: offsets[i]!,
+              sessionSpliceOwners,
+              filePath: fileLabel,
+              updateSnapshots: args.updateSnapshots,
+              abortSignal: abortController.signal,
+              onProgressTick: (snapshot) => printShardProgress(0, snapshot),
+              shard: { index: 0, count: loadWorkers },
+              ...(fileEmit ? { emit: fileEmit } : {}),
+            }),
+            ...Array.from({ length: loadWorkers - 1 }, (_unused, i2) =>
+              runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(seed), nowRaw: now }, i2 + 1, loadWorkers, {
+                abortSignal: abortController.signal,
+                onProgress: (snapshot) => printShardProgress(i2 + 1, snapshot),
+              }),
+            ),
+          ]);
+          report = main.report;
+          loadReport = mergeLoadShardReports(program, [main.loadShardResult!, ...children], {
+            startedAt: main.report.startedAt,
+            durationMs: main.report.durationMs,
+            seed,
+            now,
+            aborted: abortController.signal.aborted,
+          });
+        } else {
+          const out2 = await runProgram(program, resolved, {
+            source,
+            baseDir: dirname(file),
+            environ,
+            redactor,
+            sessionCache,
+            browserManager,
+            seed,
+            now,
+            uniqueSeq,
+            testIndexOffset: offsets[i]!,
+            sessionSpliceOwners,
+            filePath: fileLabel,
+            updateSnapshots: args.updateSnapshots,
+            abortSignal: abortController.signal,
+            onProgressTick: printProgress,
+            ...(fileEmit ? { emit: fileEmit } : {}),
+          });
+          report = out2.report;
+          loadReport = out2.loadReport;
+        }
+        if (hasWorkload && process.stdout.isTTY && !ndjsonActive) process.stdout.write('\r' + ' '.repeat(90) + '\r');
         buffered?.flush();
         // Stamp each test with the relative file it came from (report.html's per-file grouping,
         // decision 92) — done here, once, after the fact. `filePath` above is a *separate* threading
@@ -971,7 +1123,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
         // `matches snapshot` step's `snapshots/<file>/…` path (M4b) — this stamp remains the
         // display-only one `report.tests[].file` has always been, kept as its own assignment rather
         // than merged into the two so neither concern's rationale gets confused for the other's.
-        return { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) };
+        return { report: { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) }, ...(loadReport ? { loadReport } : {}) };
       } catch (e) {
         buffered?.flush();
         // A runtime throw in this file (e.g. a bad `import`/`use` path) must never sink the whole
@@ -991,14 +1143,17 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
           now,
           insecure: resolved.insecure,
         };
-        return crashed;
+        return { report: crashed };
       }
     },
     // `--bail` (decision 111/M17): stop pulling new files once any in-flight one reports a
     // failure. `TestResult.ok` is already the final, post-retry verdict (same one `flaky` uses),
     // so a mid-retry failing attempt never trips this early.
-    args.bail ? (r: RunReport) => !r.ok : undefined,
+    args.bail ? (r: FileRunResult) => !r.report.ok : undefined,
   );
+  process.removeListener('SIGINT', onSigint);
+  const reports = fileResults.map((r) => r.report);
+  const loadReports = fileResults.map((r) => r.loadReport).filter((r): r is LoadReport => r !== undefined);
 
   // 6. Merge reports, write report.html + junit.xml + results.json (decision 111.1) +
   //    .last-run.json (decision 111.2, always overwritten — unconditional, not just under
@@ -1016,55 +1171,49 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   await writeLastRun(merged, reportDir);
   if (ndjsonActive) await writeEventsNdjson(ndjsonCollected, reportDir);
 
-  if (!ndjsonActive) {
+  // A file made up entirely of workload-bearing tests contributes 0 functional results — printing
+  // a "0/0 passed" functional summary ahead of the real load summary below would be pure noise
+  // (report.html/junit.xml/etc. are still always written, unconditionally, for any tooling that
+  // expects them to exist regardless of what actually ran).
+  if (!ndjsonActive && (merged.total > 0 || loadReports.length === 0)) {
     out.write(withTimestamps('\n' + renderCliSummary(merged, color), timestamps) + '\n');
     out.write(withTimestamps(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}`, timestamps) + '\n');
   }
+
+  // D99: `load-report.html`/`load-junit.xml`/`load-results.json` — same artifacts `tflw load`
+  // always wrote, now from this same `tflw run` invocation. The overwhelmingly common case (one
+  // file with workload-bearing tests, matching every fixture migrated off `tflw load` so far,
+  // D108) writes them exactly as before. Phase 3 (D101) is what actually unifies load reporting
+  // into the one combined `report.html` — merging *several* files' own `LoadReport`s into one
+  // numerically-correct combined view needs each file's raw per-scenario histograms, not just
+  // their already-finalized `LoadReport.combined`, so that's deliberately not attempted here: if
+  // more than one file produced one, only the first is written, with a visible warning instead of
+  // silently discarding the rest.
+  if (loadReports.length > 0) {
+    if (loadReports.length > 1) {
+      out.write(withTimestamps(`\`load-report.html\`/\`load-junit.xml\`/\`load-results.json\` only cover the first of ${loadReports.length} files with workload-bearing tests in this run — combining several files' load reports isn't supported yet.`, timestamps) + '\n');
+    }
+    const loadReport = loadReports[0]!;
+    out.write(renderLoadSummary(loadReport, color));
+    const [resultsPath, htmlPath, junitPath] = await Promise.all([writeLoadResultsJson(loadReport, reportDir), writeLoadReport(loadReport, reportDir), writeLoadJunitXml(loadReport, reportDir)]);
+    out.write(withTimestamps(`\n${dim(color, 'load results:')} ${relative(cwd, resultsPath)}`, timestamps) + '\n');
+    out.write(withTimestamps(`${dim(color, 'load report: ')} ${relative(cwd, htmlPath)}`, timestamps) + '\n');
+    out.write(withTimestamps(`${dim(color, 'load junit:  ')} ${relative(cwd, junitPath)}`, timestamps) + '\n');
+  }
+
   await out.save();
   if (!watchOpts?.keepBrowserOpen) await browserManager.close(); // no-op if no test in this run ever used a browser step
 
-  return merged.ok ? EXIT_OK : EXIT_FAIL;
+  // Exit-code priority mirrors `tflw load`'s own (aborted > inconclusive > ok), now combined with
+  // the functional side's verdict — an aborted or inconclusive load run outranks a merely-failing
+  // functional report, same as it always outranked a load run's own thresholds.
+  if (loadReports.some((r) => r.aborted)) return EXIT_ABORTED;
+  if (loadReports.some((r) => r.inconclusive)) return EXIT_INCONCLUSIVE;
+  return merged.ok && loadReports.every((r) => r.ok) ? EXIT_OK : EXIT_FAIL;
 }
 
-// ---- tflw load (M29/M30/M31, PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D28/D29) --------------
-
-interface LoadArgs {
-  readonly file?: string;
-  readonly env?: string;
-  readonly seedRaw?: string;
-  readonly nowRaw?: string;
-  /** Raw `--workers` text, validated in `loadCommand` (mirrors `runCommand`'s own `workersRaw`,
-   * P#47) — M31/D19, a *process* count (forked generators), unrelated to `tflw run --workers`'s
-   * in-process file-parallelism count. */
-  readonly workersRaw?: string;
-  readonly noColor: boolean;
-}
-
-function parseLoadArgs(argv: string[]): LoadArgs {
-  let file: string | undefined;
-  let env: string | undefined;
-  let seedRaw: string | undefined;
-  let nowRaw: string | undefined;
-  let workersRaw: string | undefined;
-  let noColor = false;
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    if (a === '--env') env = argv[++i];
-    else if (a.startsWith('--env=')) env = a.slice('--env='.length);
-    else if (a === '--seed') seedRaw = argv[++i];
-    else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
-    else if (a === '--now') nowRaw = argv[++i];
-    else if (a.startsWith('--now=')) nowRaw = a.slice('--now='.length);
-    else if (a === '--workers') workersRaw = argv[++i];
-    else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
-    else if (a === '--no-color') noColor = true;
-    else if (file === undefined) file = a;
-    else {
-      err(`unexpected argument \`${a}\`. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--workers <n>]`);
-    }
-  }
-  return { file, env, seedRaw, nowRaw, workersRaw, noColor };
-}
+// ---- Load-generation process forking (M29-M32/D16-D19/D24a/D28/D29, unified into `tflw run`'s
+// own dispatch by Phase 2b/D99 — `tflw load` no longer exists as its own command). -------------
 
 /** What the parent sends a freshly-forked `--internal-load-worker` child once it signals `ready`
  * (M31, D19) — everything the child needs to independently re-parse/re-validate the same file and
@@ -1254,159 +1403,15 @@ function workloadPlannedMs(workload: Workload): number {
   }
 }
 
-/** `tflw load <file.tflw>` — runs every workload-bearing `test` declared in the file (a `test`
- * with a `ramp to …` line; M30/D29 — checker-enforced unique names among those,
- * `checkWorkloadTests`/TF033; M50/D93-D95 collapsed what used to be a separate `scenario` keyword
- * into this) concurrently as a load test via `@tflw/runtime`'s `runLoad`. Deliberately a separate
- * command from `tflw run`, not a flag on it — a load run has a different shape end to end (no
- * per-test report, a workload/threshold verdict instead) and no reason to share most of
- * `runCommand`'s flag surface (`--tag`/`--browser`/…, meaningless here — load tests are API-only,
- * D19). `--workers N>1` (M31) is the one flag it does gain, forking N generator *processes* rather
- * than scaling in-process — load generation is CPU-bound and Node caps at one core per process.
- *
- * M32 fills in the rest of `PLAN_REPORTS_PERF_SECURITY.md`'s R1-R6/R11 design: a real ~1Hz live
- * console line (single-process *and* multi-worker, via the forked workers' own `progress` IPC
- * messages), `load-report.html`/`load-junit.xml`/`load-results.json` (R2/R3/R6), Ctrl-C flushing a
- * partial report instead of losing the run (R5), and a distinct exit code when the generator itself
- * saturated (R11) — see `EXIT_INCONCLUSIVE`/`EXIT_ABORTED` above.
- */
-async function loadCommand(argv: string[]): Promise<number> {
-  const args = parseLoadArgs(argv);
-  const color = args.noColor ? false : process.stdout.isTTY === true;
-  const cwd = process.cwd();
-
-  if (!args.file) {
-    err('tflw load needs exactly one file. Usage: tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--workers <n>]');
-    return EXIT_USAGE;
-  }
-  let seedArg: number | undefined;
-  if (args.seedRaw !== undefined) {
-    seedArg = Number(args.seedRaw);
-    if (!Number.isFinite(seedArg)) {
-      err(`--seed expects a number, got "${args.seedRaw}"`);
-      return EXIT_USAGE;
-    }
-  }
-  if (args.nowRaw !== undefined && Number.isNaN(new Date(args.nowRaw).getTime())) {
-    err(`--now expects an ISO 8601 date/time, got "${args.nowRaw}"`);
-    return EXIT_USAGE;
-  }
-  let workers = 1;
-  if (args.workersRaw !== undefined) {
-    workers = Number(args.workersRaw);
-    if (!Number.isInteger(workers) || workers < 1) {
-      err(`--workers expects a positive integer, got "${args.workersRaw}"`);
-      return EXIT_USAGE;
-    }
-  }
-
-  const loaded = await loadAndValidate(cwd, [args.file], args.env, color);
-  if (typeof loaded === 'number') return loaded;
-  const { resolved, parsedFiles, environ } = loaded;
-  const { file, source, program } = parsedFiles[0]!;
-  // M50 (D93-D95): a "scenario" is any `test` block whose `workload` is non-null — `scenario` no
-  // longer exists as its own keyword/array. M52: every workload kind (Phase 1b's 4 new ones
-  // included) runs today, not just `ramp` — see `describeWorkload`/`workloadPlannedMs` below.
+/** Phase 2b — this program's own longest workload-bearing test's planned span, for that file's
+ * live progress line's "Ns/Nm planned" (mirrors `tflw load`'s single-file `plannedMs`, now
+ * computed per file since one `tflw run` invocation can process several). `0` for a file with no
+ * workload-bearing tests (the progress line itself never renders in that case). */
+function plannedMsFor(program: Program): number {
   const scenarios = program.tests.filter((t): t is TestDecl & { workload: Workload } => t.workload !== null);
-
-  if (scenarios.length === 0) {
-    err(`tflw load needs a file with at least one workload-bearing \`test\` (a \`ramp to …\` line) — ${relative(cwd, file)} has 0.`);
-    return EXIT_USAGE;
-  }
-
-  const missing = missingRequiredEnv(resolved, environ);
-  if (missing.length > 0) {
-    err(`missing required environment ${missing.length > 1 ? 'variables' : 'variable'}: ${missing.join(', ')}\n  set ${missing.length > 1 ? 'them' : 'it'} in your environment or a local .env file (see \`require env\` in tflw.config).`);
-    return EXIT_USAGE;
-  }
-
-  for (const scenario of scenarios) {
-    process.stdout.write(`scenario "${scenario.name.value}" — ${describeWorkload(scenario.workload)}\n`);
-  }
-
-  const plannedMs = Math.max(0, ...scenarios.map((s) => workloadPlannedMs(s.workload)));
-
-  // M32 (R5) — first Ctrl-C requests a graceful stop (no new iterations; `report.aborted` flushes
-  // whatever completed); a second one before that resolves force-quits immediately, the usual
-  // escape hatch for a run that's genuinely stuck.
-  const controller = new AbortController();
-  let interrupted = false;
-  const onSigint = (): void => {
-    if (interrupted) {
-      process.stdout.write('\n' + dim(color, 'second Ctrl-C — exiting immediately') + '\n');
-      process.exit(EXIT_ABORTED);
-    }
-    interrupted = true;
-    controller.abort();
-    process.stdout.write('\n' + dim(color, 'aborting… flushing a partial report (Ctrl-C again to force-quit)') + '\n');
-  };
-  process.on('SIGINT', onSigint);
-
-  let previousTick: LoadProgressSnapshot | undefined;
-  const printProgress = (snapshot: LoadProgressSnapshot): void => {
-    if (process.stdout.isTTY) process.stdout.write(`\r${renderLoadProgressLine(snapshot, previousTick, plannedMs, color)}   `);
-    previousTick = snapshot;
-  };
-
-  let report: LoadReport;
-  if (workers === 1) {
-    report = await runLoad(program, resolved, {
-      source,
-      baseDir: dirname(file),
-      seed: seedArg,
-      now: args.nowRaw,
-      abortSignal: controller.signal,
-      onProgressTick: printProgress,
-      // M34 acceptance-milestone finding: this was missing — a `.env`-only `env(NAME)` value
-      // (the normal way SPEC §3.4 expects secrets to reach a run) silently fell back to the raw
-      // `process.env` `runLoadCore` defaults to when `opts.environ` is omitted, never the
-      // `.env`-merged environment `loadAndValidate` already built above. `tflw run`'s own call
-      // site (below, `environ,`) always passed this; `tflw load` never did, for either workload
-      // model, until a real authenticated scenario (this milestone's own acceptance run) hit it.
-      environ,
-    });
-    if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(90) + '\r');
-  } else {
-    // M31 (D19): the parent resolves the seed/clock exactly once and hands the *concrete* values
-    // to every forked worker — resolving them independently per worker (re-running
-    // `resolveRunSeed(undefined)`'s own randomness inside each child) would break `--seed`
-    // reproducibility and make "the run's seed" ambiguous across N different processes.
-    const runSeed = resolveRunSeed(seedArg);
-    const runClock = resolveRunClock(args.nowRaw);
-    const startedAt = new Date().toISOString();
-    const runStart = Date.now();
-    process.stdout.write(`running across ${workers} generator processes…\n`);
-    // M32 (R5): each worker ticks independently (~1Hz, not synchronized across processes) — the
-    // live line always reflects the latest snapshot heard from every worker, not a lockstep round.
-    const latestByWorker = new Map<number, LoadProgressSnapshot>();
-    const shardResults: LoadShardResult[] = await Promise.all(
-      Array.from({ length: workers }, (_unused, index) =>
-        runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(runSeed), nowRaw: runClock.toISOString() }, index, workers, {
-          abortSignal: controller.signal,
-          onProgress: (snapshot) => {
-            latestByWorker.set(index, snapshot);
-            printProgress(combineProgressSnapshots([...latestByWorker.values()]));
-          },
-        }),
-      ),
-    );
-    if (process.stdout.isTTY) process.stdout.write('\r' + ' '.repeat(90) + '\r');
-    report = mergeLoadShardReports(program, shardResults, { startedAt, durationMs: Date.now() - runStart, seed: runSeed, now: runClock.toISOString(), aborted: controller.signal.aborted });
-  }
-  process.removeListener('SIGINT', onSigint);
-
-  process.stdout.write(renderLoadSummary(report, color));
-
-  const reportDir = join(cwd, resolved.reportDir);
-  const [resultsPath, htmlPath, junitPath] = await Promise.all([writeLoadResultsJson(report, reportDir), writeLoadReport(report, reportDir), writeLoadJunitXml(report, reportDir)]);
-  process.stdout.write(`\n${dim(color, 'results:')} ${relative(cwd, resultsPath)}\n`);
-  process.stdout.write(`${dim(color, 'report: ')} ${relative(cwd, htmlPath)}\n`);
-  process.stdout.write(`${dim(color, 'junit:  ')} ${relative(cwd, junitPath)}\n`);
-
-  if (report.aborted) return EXIT_ABORTED;
-  if (report.inconclusive) return EXIT_INCONCLUSIVE;
-  return report.ok ? EXIT_OK : EXIT_FAIL;
+  return Math.max(0, ...scenarios.map((s) => workloadPlannedMs(s.workload)));
 }
+
 
 /** M32 (R5) — pools every forked worker's latest progress tick into one snapshot for the live
  * console line, the same shape `mergeLoadShardReports` uses for the final report: sum
@@ -2067,7 +2072,7 @@ async function initCommand(argv: string[]): Promise<number> {
   }
   if (await ensureGitignore(cwd)) created.push('.gitignore');
 
-  process.stdout.write(`created ${created.join(', ')}\n\nnext:\n  tflw run\n${load ? '  tflw load load.tflw\n' : ''}`);
+  process.stdout.write(`created ${created.join(', ')}\n\nnext:\n  tflw run\n${load ? '  tflw run load.tflw\n' : ''}`);
   return EXIT_OK;
 }
 
@@ -2125,7 +2130,7 @@ test "health check"
 // `tflw init --load` (M29, D30). The **open** (arrival-rate) workload form — D17's own reasoning
 // for leading with it: VUs loop in the closed form, so a slow system just makes VUs back off and
 // issue fewer requests (understating latency); the open form keeps arriving on schedule and lets
-// queueing show up honestly. Run it with \`tflw load load.tflw\`.
+// queueing show up honestly. Run it with \`tflw run load.tflw\`.
 const SCAFFOLD_LOAD = `# A load test. A \`test\` becomes a per-VU loop instead of a single pass as soon as it has a
 # \`ramp to …\` workload line — reuses ordinary steps, so anything an \`action\` already does works
 # here too.
@@ -2163,9 +2168,12 @@ function printUsage(): void {
       'tflw — a testing-only DSL for API tests (.tflw files), reports first.',
       '',
       'usage:',
-      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--workers <n>] [--no-color] [--verbose]',
+      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
       '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]',
-      '                                                      run .tflw tests (default: all under cwd)',
+      '            [--workers <n>] [--skip-workload]',
+      '                                                      run .tflw tests (default: all under cwd), functional and workload-bearing (a `ramp to …`',
+      '                                                      line, or another of the 5 workload shapes) alike, in file declaration order — a `parallel`/',
+      '                                                      `sequential` header modifier controls each test\'s concurrency with its file-siblings',
       '                                                      --now replays the exact run-clock instant',
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
       '                                                      --verbose prints one line per step, not just per test',
@@ -2178,12 +2186,14 @@ function printUsage(): void {
       '                                                      --browser switches every browser step to one engine (default chromium)',
       '                                                      --headed shows the browser window instead of running headless',
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
+      '                                                      --parallel <n> runs up to n *files* concurrently in this process (default: tflw.config\'s `workers`)',
+      '                                                      --workers <n> forks n *processes* to generate one file\'s workload-bearing tests\' load;',
+      '                                                      a no-op warning on a file with none (unrelated to --parallel; default: 1, no forking)',
+      '                                                      --skip-workload skips every workload-bearing test, for fast iteration on functional tests alone',
       '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json}',
       '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
-      '  tflw load <file.tflw> [--env <name>] [--seed <n>] [--now <iso>] [--workers <n>] [--no-color]',
-      '                                                      run every workload-bearing `test` (a `ramp to …` line) in the file as a load test;',
-      '                                                      live console + a metrics/threshold summary, writes report/{load-report.html,load-junit.xml,load-results.json};',
-      '                                                      Ctrl-C flushes a partial report; exit 0 = passed, 1 = a threshold breached, 3 = inconclusive (generator saturated), 130 = aborted',
+      '                                                      also written when any file has a workload-bearing test: report/{load-report.html,load-junit.xml,load-results.json};',
+      '                                                      Ctrl-C flushes a partial load report; exit 3 = inconclusive (generator saturated), 130 = aborted, else 0/1',
       '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',

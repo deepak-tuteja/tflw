@@ -1405,12 +1405,19 @@ class Parser {
       const n = this.expect('number', 'a retry count, e.g. `retry 2`');
       if (n) retry = Number(n.value);
     }
+    // `parallel`/`sequential` (D105-D107) — contextual keyword, same fixed-order header-modifier
+    // slot pattern as `retry N` above; defaults to `'sequential'` when omitted (D107: the parser
+    // resolves the default itself, never left implicit downstream).
+    let concurrency: 'parallel' | 'sequential' = 'sequential';
+    if (this.isKw(this.peek(), 'parallel') || this.isKw(this.peek(), 'sequential')) {
+      concurrency = this.advance().value as 'parallel' | 'sequential';
+    }
     this.endLine();
     // D96 (`retry`/`with each` vs. a workload clause) is checker-enforced, not parser-enforced —
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
     const { workload, thresholds, cleanup, body } = this.parseTestBody('test');
-    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, body, span: this.spanFrom(start) };
+    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, concurrency, body, span: this.spanFrom(start) };
   }
 
   private tagsContinue(): boolean {

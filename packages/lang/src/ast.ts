@@ -93,6 +93,15 @@ export interface TestDecl extends Node {
    * iteration of a workload-bearing test. Default `false`; meaningless when `workload` is null
    * (formerly `ScenarioDecl.cleanup`). */
   readonly cleanup: boolean;
+  /** `parallel`/`sequential` (D105-D107) — this test's execution relation to *other* tests in the
+   * same file, checked right after `retry` on the header line. Always present (never inferred
+   * downstream): the parser resolves the default itself. `'sequential'` (the default) blocks the
+   * next batch until this test finishes, matching today's plain execution shape. `'parallel'`
+   * joins a maximal run of consecutive `parallel` tests into one concurrently-executed batch
+   * (D109) — legal on any test regardless of kind, `retry`, or `table` (D112's last paragraph): a
+   * `with each` test's own rows stay internally sequential either way, only this test's relation
+   * to other file-level tests changes. */
+  readonly concurrency: 'parallel' | 'sequential';
   readonly body: readonly Step[];
 }
 

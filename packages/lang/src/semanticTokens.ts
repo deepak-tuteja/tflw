@@ -38,7 +38,9 @@ export interface SemanticToken {
  * M29-M32 load-testing leading keywords (M33 catch-up — `ramp`/`over`/`threshold`/`cleanup`/
  * `think`; `think` was already in parser.ts's `STATEMENT_KEYWORDS` since M29 but never caught up
  * here either). M50 (D93) removed `scenario` itself — every load-testing keyword now lives
- * inside an ordinary `test` body, so there's no separate leading keyword to list here for it. */
+ * inside an ordinary `test` body, so there's no separate leading keyword to list here for it.
+ * Phase 2b (D105-D107) added `parallel`/`sequential` as an optional header modifier on `test`,
+ * same slot as `retry N` — legal on any test, not just workload-bearing ones. */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
@@ -49,6 +51,7 @@ const KEYWORDS = new Set([
   'on', 'to', 'onto', 'dialog', 'new', 'tab', 'frame', 'respond', 'mask',
   'ramp', 'over', 'threshold', 'cleanup', 'think',
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
+  'parallel', 'sequential',
 ]);
 
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words

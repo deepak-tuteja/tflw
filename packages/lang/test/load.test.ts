@@ -241,6 +241,20 @@ test('checkWorkloadTests: `retry`/`with each` on a plain functional test is neve
   assert.deepEqual(diags, []);
 });
 
+// -- Phase 2b (D105-D107/D112): `parallel`/`sequential` is orthogonal to D96 -------------------
+
+test('checkWorkloadTests: `parallel` alongside a workload is never flagged (D112 — orthogonal to D96)', () => {
+  const { program } = parseSource('test "S" parallel\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const diags = checkWorkloadTests(program);
+  assert.deepEqual(diags, []);
+});
+
+test('checkWorkloadTests: `sequential` alongside a workload is never flagged', () => {
+  const { program } = parseSource('test "S" sequential\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const diags = checkWorkloadTests(program);
+  assert.deepEqual(diags, []);
+});
+
 // -- M43 (D70/D72): `threshold … for "label"` scoping, TF034 --------------------------------
 
 test('checkWorkloadTests: `threshold … for "label"` matching an explicit `as "label"` tag is not flagged (TF034)', () => {

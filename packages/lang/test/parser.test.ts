@@ -39,6 +39,47 @@ test('parses `HEAD`/`OPTIONS` as valid HTTP methods (gap #16)', () => {
   }
 });
 
+test('`test` defaults to `concurrency: "sequential"` when no modifier is written (D107)', () => {
+  const { program, diagnostics } = parseSource('test "ok"\n  api GET /health\n');
+  assert.deepEqual(diagnostics, []);
+  assert.equal(program.tests[0]!.concurrency, 'sequential');
+});
+
+test('`test "…" parallel` sets concurrency to "parallel" (D105-D107)', () => {
+  const { program, diagnostics } = parseSource('test "ok" parallel\n  api GET /health\n');
+  assert.deepEqual(diagnostics, []);
+  assert.equal(program.tests[0]!.concurrency, 'parallel');
+});
+
+test('`test "…" sequential` sets concurrency to "sequential" explicitly (D105-D107)', () => {
+  const { program, diagnostics } = parseSource('test "ok" sequential\n  api GET /health\n');
+  assert.deepEqual(diagnostics, []);
+  assert.equal(program.tests[0]!.concurrency, 'sequential');
+});
+
+test('`retry N` and `parallel`/`sequential` compose on the same header line, retry first (D105-D107)', () => {
+  const { program, diagnostics } = parseSource('test "ok" retry 2 parallel\n  api GET /health\n');
+  assert.deepEqual(diagnostics, []);
+  assert.equal(program.tests[0]!.retry, 2);
+  assert.equal(program.tests[0]!.concurrency, 'parallel');
+});
+
+test('`as <session>` and `parallel`/`sequential` compose on the same header line (D105-D107)', () => {
+  const { program, diagnostics } = parseSource('test "ok" as admin parallel\n  api GET /health\n');
+  assert.deepEqual(diagnostics, []);
+  assert.deepEqual(program.tests[0]!.sessions, ['admin']);
+  assert.equal(program.tests[0]!.concurrency, 'parallel');
+});
+
+test('`parallel`/`sequential` is legal alongside a workload clause (D112 — orthogonal to D96)', () => {
+  const { program, diagnostics } = parseSource(
+    'test "ok" parallel\n  ramp to 1 users over 1s\n  api GET /health\n',
+  );
+  assert.deepEqual(diagnostics, []);
+  assert.equal(program.tests[0]!.concurrency, 'parallel');
+  assert.ok(program.tests[0]!.workload);
+});
+
 test('parses `upload … type "…"` into UploadBody.contentType (decision 22/M19)', () => {
   const { program, diagnostics } = parseSource(
     `test "ok"\n  api POST /uploads upload "./img.png" as "avatar" type "image/png"\n`,

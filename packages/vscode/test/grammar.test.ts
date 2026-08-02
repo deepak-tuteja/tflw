@@ -210,6 +210,13 @@ test('tokenizes `threshold p95 duration is less than 800ms` / `threshold error r
   assert.ok(hasScope(findToken(lines, 'rate'), 'support.type.tflw'), '`rate` (error rate) is a subject keyword');
 });
 
+test('tokenizes `test "…" retry N parallel`/`sequential` header modifiers (Phase 2b, D105-D107)', () => {
+  const lines = tokenizeLines(['test "checkout burst" retry 2 parallel', 'test "browsing" sequential']);
+  assert.ok(hasScope(findToken(lines, 'retry'), 'keyword.control.tflw'), '`retry` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'parallel'), 'keyword.control.tflw'), '`parallel` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'sequential'), 'keyword.control.tflw'), '`sequential` is a statement keyword');
+});
+
 test('tokenizes every p50/p90/p95/p99 percentile form, but leaves a similarly-shaped ordinary identifier alone (M33)', () => {
   const lines = tokenizeLines(['  threshold p50 duration is less than 200ms', '  threshold p90 duration is less than 500ms', '  threshold p99 duration is less than 1500ms']);
   assert.ok(hasScope(findToken(lines, 'p50'), 'support.type.tflw'));

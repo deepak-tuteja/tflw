@@ -102,6 +102,7 @@ import type {
   RequestTrace,
   ResolvedConfig,
   ResponseTrace,
+  RunEvent,
   RunReport,
   SelfDiagnosis,
   StepResult,
@@ -168,10 +169,35 @@ export interface RunOptions {
   /** `--update-snapshots` (M4b, D15) — writes/overwrites baselines instead of just comparing
    * against them. Defaults to `false` (compare-only), same as every prior milestone's behavior. */
   readonly updateSnapshots?: boolean;
+  /** Phase 2b (D99) — `runProgram` now also drives this file's workload-bearing `test`s (formerly
+   * `runLoad`'s exclusive job); these four fields mirror `LoadOptions`' own and are only consulted
+   * when `program.tests` has at least one (`RunOutput.loadReport` stays `undefined` otherwise, same
+   * as a file with no workload tests never populating one today). See each field's `LoadOptions`
+   * twin for its full rationale — repeated here only where the meaning narrows. */
+  readonly onIteration?: (result: LoadIterationResult) => void;
+  readonly onProgressTick?: (snapshot: LoadProgressSnapshot) => void;
+  readonly abortSignal?: AbortSignal;
+  /** This call's striped share of every workload-bearing test's target population/rate (D19,
+   * D111) — set by a forked `--workers N>1` shard worker; unset runs the whole share in this one
+   * process, unchanged from before Phase 2b. Never affects functional tests (D113: sharding is
+   * scoped to workload-bearing tests only). */
+  readonly shard?: { readonly index: number; readonly count: number };
 }
 
 export interface RunOutput {
   readonly report: RunReport;
+  /** Phase 2b (D99) — populated whenever `program.tests` has at least one workload-bearing test;
+   * `undefined` for an all-functional file, exactly like today's `RunOutput` shape (this field is
+   * purely additive — every existing caller that never has workload tests in scope keeps getting
+   * back exactly what it always has). Aggregate metrics (`combined`, `selfDiagnosis`) reflect only
+   * this file's own workload-bearing tests, unaffected by any functional tests sharing the file. */
+  readonly loadReport?: LoadReport;
+  /** Phase 2b (D111) — populated instead of `loadReport` (never both) when `opts.shard` was set:
+   * this call's contribution is only *part* of the eventual load picture (a forked `--workers
+   * N>1` worker's share, or the main process's own shard-0 share), in the same compact shape a
+   * forked worker already returns — the CLI merges every shard's `loadShardResult` together via
+   * `mergeLoadShardReports`, exactly as it already merges forked workers, main process included. */
+  readonly loadShardResult?: LoadShardResult;
   readonly redactor: Redactor;
 }
 
@@ -218,6 +244,11 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
   const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
   const cases = await expandTestCases(program, baseDir);
+  // Phase 2b (D99): `runProgram` now also drives every workload-bearing `test` in the file
+  // (formerly `runLoad`'s exclusive job, invoked separately) — `expandTestCases` above already
+  // skips these (unchanged), so `cases`/`results` below stay purely functional, exactly as before.
+  const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
+  const hasWorkload = scenarios.length > 0;
 
   emit({ type: 'run:start', total: cases.length, env: config.envName });
 
@@ -225,23 +256,138 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
-  if (beforeFileOk) {
-    for (const [i, kase] of cases.entries()) {
-      const globalIndex = testIndexOffset + i;
-      const testSeed = subSeed(runSeed, globalIndex);
-      const tc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
-      // Per session *name*, not per test — a test opting into several sessions at once can own
-      // the splice for one of them and not another, if some earlier test already claimed a name
-      // it also opts into.
-      const sessionOwnership: ReadonlyMap<string, boolean> | undefined = opts.sessionSpliceOwners
-        ? new Map(kase.test.sessions.map((name) => [name, opts.sessionSpliceOwners!.get(name) === globalIndex] as const))
-        : undefined;
-      const result = await runTest(kase.test, config, tc, registry, beforeEach, afterEach, testSeed, kase.cells, sessionOwnership);
-      results.push(result);
-      emit({ type: 'test:end', result });
+  // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
+  // walks `program.tests` in order, so every `with each` test's row-cases are always contiguous
+  // here, making this grouping exact with one pass (no lookup by identity needed beyond `===`).
+  interface FunctionalGroup {
+    readonly test: TestDecl;
+    readonly startIndex: number;
+    readonly cases: TestCase[];
+  }
+  const functionalGroups = new Map<TestDecl, FunctionalGroup>();
+  cases.forEach((kase, i) => {
+    let group = functionalGroups.get(kase.test);
+    if (!group) {
+      group = { test: kase.test, startIndex: i, cases: [] };
+      functionalGroups.set(kase.test, group);
     }
+    group.cases.push(kase);
+  });
+
+  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({
+    scenario,
+    histogram: new LatencyHistogram(),
+    timeline: new Timeline(),
+    failures: 0,
+    early: { count: 0, sum: 0 },
+    late: { count: 0, sum: 0 },
+    endpoints: new Map(),
+  }));
+  const accumulatorByTest = new Map<TestDecl, ScenarioAccumulator>();
+  for (const acc of accumulators) accumulatorByTest.set(acc.scenario, acc);
+
+  // M32 (R5), carried over from `runLoadCore` — a cumulative snapshot roughly once a second for
+  // the CLI's live console line; `selfDiag` only exists at all when this file actually has
+  // workload-bearing tests (a purely functional file pays nothing extra here, same as before
+  // Phase 2b — this whole block is a no-op when `hasWorkload` is false).
+  const selfDiag = hasWorkload ? startSelfDiagnosis() : undefined;
+  let iterationIndex = 0;
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
+  if (selfDiag && opts.onProgressTick) {
+    const tick = (): void => {
+      const iterations = accumulators.reduce((n, acc) => n + acc.histogram.count, 0);
+      const failures = accumulators.reduce((n, acc) => n + acc.failures, 0);
+      opts.onProgressTick!({ iterations, failures, elapsedMs: Math.round(performance.now() - runStart), selfDiagnosis: selfDiag.peek() });
+    };
+    progressTimer = setInterval(tick, 1000);
+    progressTimer.unref?.();
+  }
+  // Session establishment for a workload-bearing test stays silent on the live event stream,
+  // exactly as `tflw load` always was (`runLoadCore`'s own `tc` below) — Phase 2b unifies
+  // *scheduling*, not the console-event surface, which stays a functional-tests-only concern
+  // until Phase 3 (reporter) actually has something workload-shaped to render per-step.
+  const scenarioCtx: ScenarioRunCtx = {
+    config,
+    environ,
+    redactor,
+    runSeed,
+    runClock,
+    uniqueSeq,
+    sessionCache,
+    tc: { ...fileTc, emit: () => {} },
+    registry,
+    beforeEach,
+    afterEach,
+    runStart,
+    nextIterationIndex: () => iterationIndex++,
+    onIteration: opts.onIteration,
+    abortSignal: opts.abortSignal,
+    shard: opts.shard,
+  };
+
+  if (beforeFileOk) {
+    // Phase 2b (D109): walk `program.tests` in file order, batching consecutive `parallel` tests
+    // together; a batch runs as one `Promise.all` group, a singleton batch is awaited directly —
+    // today's plain sequential shape is this loop's degenerate case (every test `sequential`, the
+    // default, and/or no workload tests at all). Each functional batch member runs every one of
+    // its own row-cases sequentially internally (D112's last paragraph); each workload batch
+    // member runs its own VU population loop exactly as `runLoadCore` always has.
+    const functionalResults: (TestResult | undefined)[] = new Array(cases.length);
+    const batches = partitionIntoBatches(program.tests);
+    for (const batch of batches) {
+      // D114: a multi-member `parallel` batch's live events would otherwise interleave mid-block
+      // on the console (two concurrent tests' step lines mixed together, no way to tell which
+      // belongs to which) — a singleton batch has nothing to interleave against, so it stays on
+      // the unbuffered, immediate-emit path, unchanged from before Phase 2b.
+      const isBatched = batch.length > 1;
+      const tasks: Promise<void>[] = batch.map((test) => {
+        if (test.workload) return runScenarioTask(accumulatorByTest.get(test)!, scenarioCtx);
+        const group = functionalGroups.get(test);
+        if (!group) return Promise.resolve();
+        return (async () => {
+          for (let j = 0; j < group.cases.length; j++) {
+            const kase = group.cases[j]!;
+            const globalIndex = testIndexOffset + group.startIndex + j;
+            const testSeed = subSeed(runSeed, globalIndex);
+            // D114: one row-case's whole event sequence (`test:start`, every `step:end`, the
+            // closing `test:end`) is the atomic flush unit — buffered locally as it occurs, then
+            // written to the real sink in one go the instant this case's `test:end` is known.
+            // A `with each` test's rows still flush one at a time, not as one giant end-of-test
+            // block, for the same "don't delay all feedback behind the slowest thing" reason D114
+            // rejected withholding a whole batch's output until every member finished.
+            const eventBuffer: RunEvent[] = [];
+            const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
+            // Per session *name*, not per test — a test opting into several sessions at once can
+            // own the splice for one of them and not another, if some earlier test already
+            // claimed a name it also opts into.
+            const sessionOwnership: ReadonlyMap<string, boolean> | undefined = opts.sessionSpliceOwners
+              ? new Map(kase.test.sessions.map((name) => [name, opts.sessionSpliceOwners!.get(name) === globalIndex] as const))
+              : undefined;
+            const result = await runTest(kase.test, config, tc, registry, beforeEach, afterEach, testSeed, kase.cells, sessionOwnership);
+            functionalResults[group.startIndex + j] = result;
+            const endEvent: RunEvent = { type: 'test:end', result };
+            if (isBatched) {
+              eventBuffer.push(endEvent);
+              for (const event of eventBuffer) emit(event);
+            } else {
+              emit(endEvent);
+            }
+          }
+        })();
+      });
+      // A singleton batch is awaited directly (D111) — today's exact sequential shape, preserved
+      // as the degenerate case; a multi-member `parallel` batch launches every member together.
+      if (tasks.length === 1) await tasks[0];
+      else await Promise.all(tasks);
+    }
+    // D112: results are collected keyed by declaration index above, then flattened into `results`
+    // in that order here — regardless of which batch member actually finished first.
+    for (const r of functionalResults) results.push(r!);
     await runFileHooks(afterFile, 'after file', config, fileTc, registry, results, emit);
   }
+
+  if (progressTimer) clearInterval(progressTimer);
 
   const passed = results.filter((r) => r.ok).length;
   const rawReport: RunReport = {
@@ -264,7 +410,40 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   // whole report now, with the redactor in its final state, catches anything still unmasked.
   const report = redactReport(rawReport, redactor);
   emit({ type: 'run:end', report });
-  return { report, redactor };
+
+  // Phase 2b (D99/D111): a `loadReport`/`loadShardResult` is only ever produced when this file
+  // actually has workload-bearing tests, *and* they actually got a chance to run (`beforeFileOk`)
+  // — a before-file hook failure means nothing ran at all, functional or workload alike, mirroring
+  // `rawReport` itself never fabricating zero-count functional results in that case either.
+  // `opts.shard` set (a forked `--workers N>1` worker, or the main process's own shard-0 share)
+  // means this call's contribution is only ever *part* of the eventual load picture — it comes
+  // back as the same compact `LoadShardResult` a forked worker already produces, for the CLI to
+  // merge via `mergeLoadShardReports` exactly as it already merges forked workers together.
+  // `opts.shard` unset (the common case, unchanged from before Phase 2b) returns a full,
+  // self-contained `LoadReport` directly, no merge needed.
+  let loadReport: LoadReport | undefined;
+  let loadShardResult: LoadShardResult | undefined;
+  if (selfDiag && beforeFileOk) {
+    const selfDiagnosis = selfDiag.stop();
+    if (opts.shard) {
+      loadShardResult = buildLoadShardResult(accumulators, selfDiagnosis);
+    } else {
+      const plannedMs = Math.max(0, ...scenarios.map((s) => totalDurationMs(s.workload) ?? 0));
+      loadReport = buildLoadReport(accumulators, {
+        selfDiagnosis,
+        runSeed,
+        runClock,
+        runStart,
+        aborted: opts.abortSignal?.aborted ?? false,
+        plannedMs,
+        startedAt,
+      });
+    }
+  } else {
+    selfDiag?.stop();
+  }
+
+  return { report, redactor, ...(loadReport ? { loadReport } : {}), ...(loadShardResult ? { loadShardResult } : {}) };
 }
 
 // ---- Load testing (M29/M30/M31, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D28/D29/D30) -
@@ -524,6 +703,296 @@ interface LoadCoreResult {
   readonly plannedMs: number;
 }
 
+/** Everything one scenario's task (`runScenarioTask` below) needs that isn't specific to that one
+ * scenario — shared across every scenario in a `runLoadCore` call (unchanged, all-scenarios-
+ * concurrent) or, since Phase 2b (D109/D111), across just one `parallel` batch's workload members
+ * in the unified per-file dispatch (`runProgramInner`). `tc` carries the (possibly silent, `emit:
+ * () => {}`) context used for session establishment; `nextIterationIndex` is a shared, monotonic
+ * counter so every iteration across every scenario in scope still gets its own globally-unique
+ * sub-seed (P#23), exactly as `runLoadCore`'s own local `iterationIndex` did before this
+ * extraction. */
+interface ScenarioRunCtx {
+  readonly config: ResolvedConfig;
+  readonly environ: NodeJS.ProcessEnv;
+  readonly redactor: Redactor;
+  readonly runSeed: number;
+  readonly runClock: Date;
+  readonly uniqueSeq: { next(): number };
+  readonly sessionCache: SessionCache;
+  readonly tc: TestCtx;
+  readonly registry: CallRegistry;
+  readonly beforeEach: readonly HookDecl[];
+  readonly afterEach: readonly HookDecl[];
+  readonly runStart: number;
+  readonly nextIterationIndex: () => number;
+  readonly onIteration?: (result: LoadIterationResult) => void;
+  readonly abortSignal?: AbortSignal;
+  readonly shard?: { readonly index: number; readonly count: number };
+}
+
+/** Runs one scenario's session establishment + VU scheduling to completion — extracted from
+ * `runLoadCore`'s own `scenarioTasks.map(async (acc) => { ... })` callback (M50-era) so the
+ * unified per-file dispatch (`runProgramInner`, Phase 2b/D111) can launch a workload-bearing
+ * batch member's task the exact same way `runLoadCore` launches every scenario's, without
+ * duplicating this logic. `sessionCache` is safe under concurrent `ensure()` calls (dedupes
+ * in-flight promises by name), so two scenarios opting into the same session, whether inside one
+ * `runLoadCore` call or one `parallel` batch, never race a duplicate login. Scheduling an *open*-
+ * workload scenario's arrivals genuinely blocks its own task on real-time sleeps below — that must
+ * never block a sibling task in the same batch/call, or concurrent execution wouldn't actually
+ * overlap in wall time, defeating the whole point (originally D29, now equally true of D109). */
+async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): Promise<void> {
+  const scenario = acc.scenario;
+  const { config, environ, redactor, runSeed, runClock, uniqueSeq, sessionCache, tc, registry, beforeEach, afterEach, runStart, nextIterationIndex, onIteration, abortSignal, shard } = ctx;
+
+  for (const sessionName of scenario.sessions) {
+    const decl = config.sessions.get(sessionName);
+    if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
+    const outcome = await sessionCache.ensure(sessionName, decl, config, tc, true);
+    if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
+  }
+
+  // M45 (D75) — `pinnedAgents` is set only by the closed-model (`RampUsersWorkload`) VU spawn
+  // loop below, one pair created per VU and reused across every iteration that VU runs; an
+  // open-model (rate-based) arrival has no persistent "VU" to pin a connection to (each arrival
+  // is its own fire-and-forget iteration, D75's design sketch cites only the closed-model spawn
+  // block), so it stays on `sendRequest`'s unpinned path exactly as before.
+  const runIteration = async (pinnedAgents?: PinnedAgents): Promise<void> => {
+    const index = globalIterationIndex(nextIterationIndex(), shard);
+    const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)), pinnedAgents };
+    const scope = new Map<string, unknown>();
+    // D44 (M37, PLAN_BROWSER_PERF_SECURITY.md §2.8): every iteration reads each session fresh
+    // from the shared cache, instead of cloning a snapshot frozen before the VU loop started.
+    // This is the fix for the bug D43 found: `refreshSessions` (below) only ever wrote a
+    // reactive 401 refresh into *its own* iteration's headers, never back into a shared
+    // snapshot every other iteration cloned from — so once a session's credential first went
+    // stale mid-run, every subsequent iteration paid for its own re-login, forever. Reading the
+    // cache fresh here means any VU's refresh becomes immediately visible to every other VU's
+    // next iteration, and an `oauth2` session's proactive TTL re-check (`ensure()`'s own logic)
+    // applies here too, which the old snapshot design never benefited from either.
+    const sessionHeaders: Record<string, string> = {};
+    const cookieJar = new CookieJar();
+    const sessionRefs = new Map<string, SessionRef>();
+    for (const sessionName of scenario.sessions) {
+      const decl = config.sessions.get(sessionName);
+      if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
+      const outcome = await sessionCache.ensure(sessionName, decl, config, iterTc, false);
+      if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
+      Object.assign(sessionHeaders, outcome.headers);
+      cookieJar.mergeFrom(outcome.cookieJar.clone());
+      const ref = sessionCache.currentRef(sessionName);
+      if (ref !== undefined) sessionRefs.set(sessionName, ref);
+    }
+    const ctx: EvalCtx = {
+      scope,
+      environ,
+      redactor,
+      rng: iterTc.rng,
+      runSeed,
+      runClock,
+      uniqueSeq,
+      sessionHeaders,
+      sessionNames: scenario.sessions,
+      sessionRefs,
+      cookieJar,
+    };
+    const iterStart = performance.now();
+    let result: LoadIterationResult;
+    // M43 (D67-D69) — the scenario body's own `exec.steps`, captured regardless of whether the
+    // iteration goes on to pass or fail (a failed iteration's completed `api` steps are still
+    // real per-endpoint samples). Stays `undefined` only when the failure happened before
+    // `scenario.body` ever ran (a `before each` hook or session-establishment error) — nothing to
+    // attribute in that case.
+    let iterSteps: readonly StepResult[] | undefined;
+    try {
+      for (const hook of beforeEach) {
+        const exec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
+        if (!exec.ok) throw new RuntimeError(exec.error ?? 'a `before` hook failed');
+      }
+      const exec = await execSteps(scenario.body, config, ctx, iterTc, scenario.name.value, registry);
+      iterSteps = exec.steps;
+      if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
+      // D26: `after each` is skipped by default per iteration under load (running it every
+      // iteration would double request volume and pollute the very latency metrics this run
+      // exists to measure) — `cleanup` (ast.ts) opts a scenario back into it.
+      if (scenario.cleanup) {
+        for (const hook of afterEach) {
+          const afterExec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
+          if (!afterExec.ok) throw new RuntimeError(afterExec.error ?? 'an `after` hook failed');
+        }
+      }
+      const thinkMs = exec.steps.filter((s) => s.kind === 'think').reduce((sum, s) => sum + s.durationMs, 0);
+      result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, Math.round(performance.now() - iterStart - thinkMs)) };
+    } catch (err) {
+      const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
+      // Think time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
+      // negligible skew: a failure that happens after a `think` still counts that pacing time as
+      // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
+      // duration. Only successful iterations feed the duration percentiles that thresholds read.
+      result = { ok: false, scenario: scenario.name.value, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
+    }
+    if (!result.ok) acc.failures++;
+    acc.histogram.record(result.durationMs);
+    recordEndpointMetrics(acc, iterSteps, result.ok, runStart);
+    acc.timeline.record((performance.now() - runStart) / 1000, result.durationMs, result.ok);
+    // M34 (D17) — which half of the scenario's own wall-clock window this iteration *started*
+    // in, by real elapsed time (not request order — see `computeBackOff`'s doc for why an
+    // elapsed-time split is the robust choice here). Only ever read back for a closed-model
+    // scenario, but recorded unconditionally: cheap, and one fewer branch to keep in sync with
+    // `scenario.workload.type` elsewhere. M52: `null` for the 2 count-based kinds (no duration to
+    // halve) — the split still has to land somewhere, and `computeBackOff` never reads it back
+    // for those kinds anyway (D102), so an all-"early" split is harmless, not just unused.
+    const scheduleMs = totalDurationMs(scenario.workload);
+    const half = scheduleMs === null || iterStart - runStart < scheduleMs / 2 ? acc.early : acc.late;
+    half.count++;
+    half.sum += result.durationMs;
+    onIteration?.(result);
+  };
+
+  const vuPromises: Promise<void>[] = [];
+  if (scenario.workload.type === 'RampUsersWorkload') {
+    // Closed model (D17): VUs loop continuously once spawned. `users` VUs ramp in linearly over
+    // `overMs`; the scenario itself lasts exactly `overMs` (no separate "hold" stage in the
+    // grammar). M31: only this shard's striped share of `users` actually spawns here — the loop
+    // simply doesn't run when that share is 0 (a small target split across more shards than it
+    // has room for), no special-casing needed.
+    const { overMs } = scenario.workload;
+    const users = shareOfWorkloadTarget(scenario.workload.users, shard);
+    const runEnd = runStart + overMs;
+    for (let i = 0; i < users; i++) {
+      const spawnAt = runStart + (i / users) * overMs;
+      vuPromises.push(
+        (async () => {
+          const waitMs = spawnAt - performance.now();
+          if (waitMs > 0) await sleep(waitMs, abortSignal);
+          // M45 (D75): one pinned connection pair for this VU's whole lifetime, created after its
+          // ramp-in wait (so an idle-waiting VU holds no open socket) and torn down once its loop
+          // exits — Ctrl-C or `runEnd`, either way, never left open for the rest of the process.
+          const pinnedAgents = createPinnedAgents();
+          try {
+            // M32 (R5): Ctrl-C stops this VU from *starting* another iteration — whichever
+            // iteration it's mid-`runIteration()` on (if any) still runs to completion above.
+            while (performance.now() < runEnd && !abortSignal?.aborted) await runIteration(pinnedAgents);
+          } finally {
+            destroyPinnedAgents(pinnedAgents);
+          }
+        })(),
+      );
+    }
+  } else if (scenario.workload.type === 'RampRpsWorkload') {
+    // Open model (D17): arrivals are scheduled at a target rate that itself ramps linearly from
+    // 0 to `rps` over `overMs`, independent of whether earlier iterations have finished — the
+    // schedule never waits on completion, so queueing under saturation is real, not smoothed
+    // away. Cumulative arrivals by time t (seconds) under a linear ramp: N(t) = rps·t²/(2·overS);
+    // solving for the k-th arrival's time inverts that: t_k = √(2k·overS / rps). M31: `rps` here
+    // is already this shard's striped share (`shareOfWorkloadTarget`) — every shard schedules
+    // its own slice of the file's total arrival rate independently.
+    const { overMs } = scenario.workload;
+    const rps = shareOfWorkloadTarget(scenario.workload.rps, shard);
+    const overS = overMs / 1000;
+    const totalArrivals = rps > 0 ? Math.floor((rps * overS) / 2) : 0;
+    // M32 (R5): checked both before *and* after the wait — an abort that lands mid-sleep must
+    // stop this scenario from scheduling one more arrival once `sleep` returns early, not just
+    // catch the next iteration of the loop.
+    for (let k = 1; k <= totalArrivals && !abortSignal?.aborted; k++) {
+      const scheduledMs = Math.sqrt((2 * k * overS) / rps) * 1000;
+      const waitMs = runStart + scheduledMs - performance.now();
+      if (waitMs > 0) await sleep(waitMs, abortSignal);
+      if (abortSignal?.aborted) break;
+      // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion
+      // (that's the whole point of "open") — its promise is still collected so this scenario's
+      // own task (and, transitively, `runLoad`) waits for every fired iteration.
+      vuPromises.push(runIteration());
+    }
+  } else if (scenario.workload.type === 'HoldUsersWorkload') {
+    // D97: a flat target for the whole duration, no ramp-in — every VU is live from t=0, so the
+    // generic population engine's "am I below the live target" check is trivially true for every
+    // spawned VU the whole time (no idle polling actually happens).
+    const { users, forMs } = scenario.workload;
+    const targetVus = shareOfWorkloadTarget(users, shard);
+    vuPromises.push(runClosedPopulationVus(runStart, forMs, targetVus, () => targetVus, runIteration, abortSignal));
+  } else if (scenario.workload.type === 'HoldRpsWorkload') {
+    // D97: a constant target arrival rate for the whole duration — every inter-arrival gap is
+    // `1000/rps`, no ramp.
+    const { rps, forMs } = scenario.workload;
+    const targetRps = shareOfWorkloadTarget(rps, shard);
+    vuPromises.push(runOpenPopulationArrivals(runStart, forMs, () => targetRps, () => runIteration(), abortSignal));
+  } else if (scenario.workload.type === 'StepUsersWorkload' || scenario.workload.type === 'SpikeUsersWorkload') {
+    // D97: a staircase (`step`, every stage `mode: 'jump'`) or a mixed jump/ramp schedule
+    // (`spike`) — `stageTargetAt` handles both uniformly, ramp legs included (up or down).
+    const { stages } = scenario.workload;
+    const scheduleMs2 = stages.reduce((sum, s) => sum + s.durationMs, 0);
+    const maxVus = shareOfWorkloadTarget(Math.max(...stages.map((s) => s.target)), shard);
+    vuPromises.push(runClosedPopulationVus(runStart, scheduleMs2, maxVus, (elapsedMs) => stageTargetAt(stages, elapsedMs, shard), runIteration, abortSignal));
+  } else if (scenario.workload.type === 'StepRpsWorkload' || scenario.workload.type === 'SpikeRpsWorkload') {
+    const { stages } = scenario.workload;
+    const scheduleMs2 = stages.reduce((sum, s) => sum + s.durationMs, 0);
+    vuPromises.push(runOpenPopulationArrivals(runStart, scheduleMs2, (elapsedMs) => stageTargetAt(stages, elapsedMs, shard), () => runIteration(), abortSignal));
+  } else if (scenario.workload.type === 'SharedIterationsWorkload') {
+    // D97: `vus` VUs pull from one shared pool of `iterations` total iterations until it's
+    // exhausted — no duration, no ramp. Decrementing `remaining` synchronously before the
+    // `await runIteration()` below is race-free: Node is single-threaded, so nothing else can
+    // observe `remaining` between the check and the decrement.
+    const { iterations, vus } = scenario.workload;
+    const targetVus = shareOfWorkloadTarget(vus, shard);
+    const targetIterations = shareOfWorkloadTarget(iterations, shard);
+    let remaining = targetIterations;
+    for (let i = 0; i < targetVus; i++) {
+      vuPromises.push(
+        (async () => {
+          const pinnedAgents = createPinnedAgents();
+          try {
+            while (remaining > 0 && !abortSignal?.aborted) {
+              remaining--;
+              await runIteration(pinnedAgents);
+            }
+          } finally {
+            destroyPinnedAgents(pinnedAgents);
+          }
+        })(),
+      );
+    }
+  } else {
+    // PerVuIterationsWorkload (D97): each of `vus` VUs runs exactly `iterationsPerVu` iterations,
+    // independently of every other VU — no shared pool, no duration.
+    const { iterationsPerVu, vus } = scenario.workload;
+    const targetVus = shareOfWorkloadTarget(vus, shard);
+    for (let i = 0; i < targetVus; i++) {
+      vuPromises.push(
+        (async () => {
+          const pinnedAgents = createPinnedAgents();
+          try {
+            for (let n = 0; n < iterationsPerVu && !abortSignal?.aborted; n++) await runIteration(pinnedAgents);
+          } finally {
+            destroyPinnedAgents(pinnedAgents);
+          }
+        })(),
+      );
+    }
+  }
+
+  await Promise.all(vuPromises);
+}
+
+/** D109 (Phase 2b) — a maximal run of consecutive `concurrency: 'parallel'` tests forms one batch
+ * that executes concurrently (`Promise.all`, D111); every `'sequential'` test (the default) is its
+ * own singleton batch, awaited alone. Batches themselves always run in file order — batch N+1
+ * never starts before batch N fully finishes — declaration order still anchors everything (D109
+ * supersedes D100's "never batched" wording, not D101's file-order backbone). A lone `'parallel'`
+ * test with no adjacent `'parallel'` neighbor is still a singleton batch — tagging it `parallel`
+ * only matters once it actually has a neighbor to run alongside. */
+function partitionIntoBatches(tests: readonly TestDecl[]): TestDecl[][] {
+  const batches: TestDecl[][] = [];
+  for (const test of tests) {
+    const last = batches[batches.length - 1];
+    if (test.concurrency === 'parallel' && last && last[0]!.concurrency === 'parallel') {
+      last.push(test);
+    } else {
+      batches.push([test]);
+    }
+  }
+  return batches;
+}
+
 /** The engine shared by `runLoad` and `runLoadShard` — everything through "every scenario's VUs
  * have finished," before either caller shapes the result differently (a full `LoadReport` vs. a
  * compact, IPC-ready `LoadShardResult`). Never throws for an iteration failure (D18: an `expect`
@@ -588,249 +1057,25 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
     progressTimer.unref?.();
   }
 
-  // Each scenario's own session establishment + VU scheduling runs as one independent async task
-  // (`sessionCache` is safe under concurrent `ensure()` calls — it dedupes in-flight promises by
-  // name, so two scenarios opting into the same session never race a duplicate login). Scheduling
-  // an *open*-workload scenario's arrivals genuinely blocks its own task on real-time sleeps
-  // (below) — that must never block a *different* scenario's task, or two `scenario`s in one file
-  // wouldn't actually overlap in wall time, defeating D29's entire point.
-  const scenarioTasks = accumulators.map(async (acc) => {
-    const scenario = acc.scenario;
-    // Sessions establish once per scenario, before its VU loop starts — never re-run *from
-    // scratch* per iteration (same run-lifetime cache `test … as <session>` uses, SPEC §3.3) —
-    // purely for its fail-fast value: a broken `session` block errors the whole run immediately,
-    // before any VU spawns, rather than every VU independently discovering it on its own first
-    // iteration. Each iteration still re-reads the cache fresh (below, D44) rather than cloning
-    // this call's own result — on the overwhelmingly common cache-hit path that's a `Map.get` plus
-    // awaiting an already-resolved promise, not a real re-establish.
-    for (const sessionName of scenario.sessions) {
-      const decl = config.sessions.get(sessionName);
-      if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
-      const outcome = await sessionCache.ensure(sessionName, decl, config, tc, true);
-      if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
-    }
-
-    // M45 (D75) — `pinnedAgents` is set only by the closed-model (`RampUsersWorkload`) VU spawn
-    // loop below, one pair created per VU and reused across every iteration that VU runs; an
-    // open-model (rate-based) arrival has no persistent "VU" to pin a connection to (each arrival
-    // is its own fire-and-forget iteration, D75's design sketch cites only the closed-model spawn
-    // block), so it stays on `sendRequest`'s unpinned path exactly as before.
-    const runIteration = async (pinnedAgents?: PinnedAgents): Promise<void> => {
-      const index = globalIterationIndex(iterationIndex++, opts.shard);
-      const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)), pinnedAgents };
-      const scope = new Map<string, unknown>();
-      // D44 (M37, PLAN_BROWSER_PERF_SECURITY.md §2.8): every iteration reads each session fresh
-      // from the shared cache, instead of cloning a snapshot frozen before the VU loop started.
-      // This is the fix for the bug D43 found: `refreshSessions` (below) only ever wrote a
-      // reactive 401 refresh into *its own* iteration's headers, never back into a shared
-      // snapshot every other iteration cloned from — so once a session's credential first went
-      // stale mid-run, every subsequent iteration paid for its own re-login, forever. Reading the
-      // cache fresh here means any VU's refresh becomes immediately visible to every other VU's
-      // next iteration, and an `oauth2` session's proactive TTL re-check (`ensure()`'s own logic)
-      // applies here too, which the old snapshot design never benefited from either.
-      const sessionHeaders: Record<string, string> = {};
-      const cookieJar = new CookieJar();
-      const sessionRefs = new Map<string, SessionRef>();
-      for (const sessionName of scenario.sessions) {
-        const decl = config.sessions.get(sessionName);
-        if (!decl) throw new RuntimeError(`unknown session "${sessionName}" — is it declared in tflw.config?`);
-        const outcome = await sessionCache.ensure(sessionName, decl, config, iterTc, false);
-        if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
-        Object.assign(sessionHeaders, outcome.headers);
-        cookieJar.mergeFrom(outcome.cookieJar.clone());
-        const ref = sessionCache.currentRef(sessionName);
-        if (ref !== undefined) sessionRefs.set(sessionName, ref);
-      }
-      const ctx: EvalCtx = {
-        scope,
-        environ,
-        redactor,
-        rng: iterTc.rng,
-        runSeed,
-        runClock,
-        uniqueSeq,
-        sessionHeaders,
-        sessionNames: scenario.sessions,
-        sessionRefs,
-        cookieJar,
-      };
-      const iterStart = performance.now();
-      let result: LoadIterationResult;
-      // M43 (D67-D69) — the scenario body's own `exec.steps`, captured regardless of whether the
-      // iteration goes on to pass or fail (a failed iteration's completed `api` steps are still
-      // real per-endpoint samples). Stays `undefined` only when the failure happened before
-      // `scenario.body` ever ran (a `before each` hook or session-establishment error) — nothing to
-      // attribute in that case.
-      let iterSteps: readonly StepResult[] | undefined;
-      try {
-        for (const hook of beforeEach) {
-          const exec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
-          if (!exec.ok) throw new RuntimeError(exec.error ?? 'a `before` hook failed');
-        }
-        const exec = await execSteps(scenario.body, config, ctx, iterTc, scenario.name.value, registry);
-        iterSteps = exec.steps;
-        if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
-        // D26: `after each` is skipped by default per iteration under load (running it every
-        // iteration would double request volume and pollute the very latency metrics this run
-        // exists to measure) — `cleanup` (ast.ts) opts a scenario back into it.
-        if (scenario.cleanup) {
-          for (const hook of afterEach) {
-            const afterExec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
-            if (!afterExec.ok) throw new RuntimeError(afterExec.error ?? 'an `after` hook failed');
-          }
-        }
-        const thinkMs = exec.steps.filter((s) => s.kind === 'think').reduce((sum, s) => sum + s.durationMs, 0);
-        result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, Math.round(performance.now() - iterStart - thinkMs)) };
-      } catch (err) {
-        const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
-        // Think time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
-        // negligible skew: a failure that happens after a `think` still counts that pacing time as
-        // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
-        // duration. Only successful iterations feed the duration percentiles that thresholds read.
-        result = { ok: false, scenario: scenario.name.value, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
-      }
-      if (!result.ok) acc.failures++;
-      acc.histogram.record(result.durationMs);
-      recordEndpointMetrics(acc, iterSteps, result.ok, runStart);
-      acc.timeline.record((performance.now() - runStart) / 1000, result.durationMs, result.ok);
-      // M34 (D17) — which half of the scenario's own wall-clock window this iteration *started*
-      // in, by real elapsed time (not request order — see `computeBackOff`'s doc for why an
-      // elapsed-time split is the robust choice here). Only ever read back for a closed-model
-      // scenario, but recorded unconditionally: cheap, and one fewer branch to keep in sync with
-      // `scenario.workload.type` elsewhere. M52: `null` for the 2 count-based kinds (no duration to
-      // halve) — the split still has to land somewhere, and `computeBackOff` never reads it back
-      // for those kinds anyway (D102), so an all-"early" split is harmless, not just unused.
-      const scheduleMs = totalDurationMs(scenario.workload);
-      const half = scheduleMs === null || iterStart - runStart < scheduleMs / 2 ? acc.early : acc.late;
-      half.count++;
-      half.sum += result.durationMs;
-      opts.onIteration?.(result);
-    };
-
-    const vuPromises: Promise<void>[] = [];
-    if (scenario.workload.type === 'RampUsersWorkload') {
-      // Closed model (D17): VUs loop continuously once spawned. `users` VUs ramp in linearly over
-      // `overMs`; the scenario itself lasts exactly `overMs` (no separate "hold" stage in the
-      // grammar). M31: only this shard's striped share of `users` actually spawns here — the loop
-      // simply doesn't run when that share is 0 (a small target split across more shards than it
-      // has room for), no special-casing needed.
-      const { overMs } = scenario.workload;
-      const users = shareOfWorkloadTarget(scenario.workload.users, opts.shard);
-      const runEnd = runStart + overMs;
-      for (let i = 0; i < users; i++) {
-        const spawnAt = runStart + (i / users) * overMs;
-        vuPromises.push(
-          (async () => {
-            const waitMs = spawnAt - performance.now();
-            if (waitMs > 0) await sleep(waitMs, opts.abortSignal);
-            // M45 (D75): one pinned connection pair for this VU's whole lifetime, created after its
-            // ramp-in wait (so an idle-waiting VU holds no open socket) and torn down once its loop
-            // exits — Ctrl-C or `runEnd`, either way, never left open for the rest of the process.
-            const pinnedAgents = createPinnedAgents();
-            try {
-              // M32 (R5): Ctrl-C stops this VU from *starting* another iteration — whichever
-              // iteration it's mid-`runIteration()` on (if any) still runs to completion above.
-              while (performance.now() < runEnd && !opts.abortSignal?.aborted) await runIteration(pinnedAgents);
-            } finally {
-              destroyPinnedAgents(pinnedAgents);
-            }
-          })(),
-        );
-      }
-    } else if (scenario.workload.type === 'RampRpsWorkload') {
-      // Open model (D17): arrivals are scheduled at a target rate that itself ramps linearly from
-      // 0 to `rps` over `overMs`, independent of whether earlier iterations have finished — the
-      // schedule never waits on completion, so queueing under saturation is real, not smoothed
-      // away. Cumulative arrivals by time t (seconds) under a linear ramp: N(t) = rps·t²/(2·overS);
-      // solving for the k-th arrival's time inverts that: t_k = √(2k·overS / rps). M31: `rps` here
-      // is already this shard's striped share (`shareOfWorkloadTarget`) — every shard schedules
-      // its own slice of the file's total arrival rate independently.
-      const { overMs } = scenario.workload;
-      const rps = shareOfWorkloadTarget(scenario.workload.rps, opts.shard);
-      const overS = overMs / 1000;
-      const totalArrivals = rps > 0 ? Math.floor((rps * overS) / 2) : 0;
-      // M32 (R5): checked both before *and* after the wait — an abort that lands mid-sleep must
-      // stop this scenario from scheduling one more arrival once `sleep` returns early, not just
-      // catch the next iteration of the loop.
-      for (let k = 1; k <= totalArrivals && !opts.abortSignal?.aborted; k++) {
-        const scheduledMs = Math.sqrt((2 * k * overS) / rps) * 1000;
-        const waitMs = runStart + scheduledMs - performance.now();
-        if (waitMs > 0) await sleep(waitMs, opts.abortSignal);
-        if (opts.abortSignal?.aborted) break;
-        // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion
-        // (that's the whole point of "open") — its promise is still collected so this scenario's
-        // own task (and, transitively, `runLoad`) waits for every fired iteration.
-        vuPromises.push(runIteration());
-      }
-    } else if (scenario.workload.type === 'HoldUsersWorkload') {
-      // D97: a flat target for the whole duration, no ramp-in — every VU is live from t=0, so the
-      // generic population engine's "am I below the live target" check is trivially true for every
-      // spawned VU the whole time (no idle polling actually happens).
-      const { users, forMs } = scenario.workload;
-      const targetVus = shareOfWorkloadTarget(users, opts.shard);
-      vuPromises.push(runClosedPopulationVus(runStart, forMs, targetVus, () => targetVus, runIteration, opts.abortSignal));
-    } else if (scenario.workload.type === 'HoldRpsWorkload') {
-      // D97: a constant target arrival rate for the whole duration — every inter-arrival gap is
-      // `1000/rps`, no ramp.
-      const { rps, forMs } = scenario.workload;
-      const targetRps = shareOfWorkloadTarget(rps, opts.shard);
-      vuPromises.push(runOpenPopulationArrivals(runStart, forMs, () => targetRps, () => runIteration(), opts.abortSignal));
-    } else if (scenario.workload.type === 'StepUsersWorkload' || scenario.workload.type === 'SpikeUsersWorkload') {
-      // D97: a staircase (`step`, every stage `mode: 'jump'`) or a mixed jump/ramp schedule
-      // (`spike`) — `stageTargetAt` handles both uniformly, ramp legs included (up or down).
-      const { stages } = scenario.workload;
-      const scheduleMs2 = stages.reduce((sum, s) => sum + s.durationMs, 0);
-      const maxVus = shareOfWorkloadTarget(Math.max(...stages.map((s) => s.target)), opts.shard);
-      vuPromises.push(runClosedPopulationVus(runStart, scheduleMs2, maxVus, (elapsedMs) => stageTargetAt(stages, elapsedMs, opts.shard), runIteration, opts.abortSignal));
-    } else if (scenario.workload.type === 'StepRpsWorkload' || scenario.workload.type === 'SpikeRpsWorkload') {
-      const { stages } = scenario.workload;
-      const scheduleMs2 = stages.reduce((sum, s) => sum + s.durationMs, 0);
-      vuPromises.push(runOpenPopulationArrivals(runStart, scheduleMs2, (elapsedMs) => stageTargetAt(stages, elapsedMs, opts.shard), () => runIteration(), opts.abortSignal));
-    } else if (scenario.workload.type === 'SharedIterationsWorkload') {
-      // D97: `vus` VUs pull from one shared pool of `iterations` total iterations until it's
-      // exhausted — no duration, no ramp. Decrementing `remaining` synchronously before the
-      // `await runIteration()` below is race-free: Node is single-threaded, so nothing else can
-      // observe `remaining` between the check and the decrement.
-      const { iterations, vus } = scenario.workload;
-      const targetVus = shareOfWorkloadTarget(vus, opts.shard);
-      const targetIterations = shareOfWorkloadTarget(iterations, opts.shard);
-      let remaining = targetIterations;
-      for (let i = 0; i < targetVus; i++) {
-        vuPromises.push(
-          (async () => {
-            const pinnedAgents = createPinnedAgents();
-            try {
-              while (remaining > 0 && !opts.abortSignal?.aborted) {
-                remaining--;
-                await runIteration(pinnedAgents);
-              }
-            } finally {
-              destroyPinnedAgents(pinnedAgents);
-            }
-          })(),
-        );
-      }
-    } else {
-      // PerVuIterationsWorkload (D97): each of `vus` VUs runs exactly `iterationsPerVu` iterations,
-      // independently of every other VU — no shared pool, no duration.
-      const { iterationsPerVu, vus } = scenario.workload;
-      const targetVus = shareOfWorkloadTarget(vus, opts.shard);
-      for (let i = 0; i < targetVus; i++) {
-        vuPromises.push(
-          (async () => {
-            const pinnedAgents = createPinnedAgents();
-            try {
-              for (let n = 0; n < iterationsPerVu && !opts.abortSignal?.aborted; n++) await runIteration(pinnedAgents);
-            } finally {
-              destroyPinnedAgents(pinnedAgents);
-            }
-          })(),
-        );
-      }
-    }
-
-    await Promise.all(vuPromises);
-  });
+  const scenarioCtx: ScenarioRunCtx = {
+    config,
+    environ,
+    redactor,
+    runSeed,
+    runClock,
+    uniqueSeq,
+    sessionCache,
+    tc,
+    registry,
+    beforeEach,
+    afterEach,
+    runStart,
+    nextIterationIndex: () => iterationIndex++,
+    onIteration: opts.onIteration,
+    abortSignal: opts.abortSignal,
+    shard: opts.shard,
+  };
+  const scenarioTasks = accumulators.map((acc) => runScenarioTask(acc, scenarioCtx));
 
   await Promise.all(scenarioTasks);
   if (progressTimer) clearInterval(progressTimer);
@@ -1026,9 +1271,21 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
  * `runLoadShard` for the multi-process, `--workers N>1` path). Each scenario's `threshold`s are
  * evaluated once against *its own* accumulated metrics (D24a); R6's combined-vs-per-scenario split
  * falls out of how results are pooled at the end, not out of separate runs. */
-export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
-  const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted, plannedMs } = await runLoadCore(program, config, opts);
-
+/** Shapes a run's `ScenarioAccumulator`s into a full `LoadReport` — extracted from `runLoad`'s own
+ * body (M50-era) so the unified per-file dispatch (`runProgramInner`, Phase 2b/D99) can build one
+ * too, from its own D109-batched accumulators, without duplicating this finalization logic. */
+function buildLoadReport(
+  accumulators: readonly ScenarioAccumulator[],
+  info: {
+    readonly selfDiagnosis: SelfDiagnosis;
+    readonly runSeed: number;
+    readonly runClock: Date;
+    readonly runStart: number;
+    readonly aborted: boolean;
+    readonly plannedMs: number;
+    readonly startedAt: string;
+  },
+): LoadReport {
   const scenarioReports: LoadScenarioReport[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => {
     const metrics = buildLoadMetrics(histogram, failures, timeline);
     const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, failures }, endpoints);
@@ -1047,19 +1304,24 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
   }
   const combined = buildLoadMetrics(combinedHistogram, combinedFailures, combinedTimeline);
 
-  const durationMs = Math.round(performance.now() - runStart);
+  const durationMs = Math.round(performance.now() - info.runStart);
   return {
     ok: scenarioReports.every((s) => s.ok),
     scenarios: scenarioReports,
     combined,
-    startedAt,
+    startedAt: info.startedAt,
     durationMs,
-    seed: runSeed,
-    now: runClock.toISOString(),
-    selfDiagnosis,
-    inconclusive: selfDiagnosis.saturated,
-    ...(aborted ? { aborted: true, abortedMessage: formatAbortedMessage(durationMs, plannedMs) } : {}),
+    seed: info.runSeed,
+    now: info.runClock.toISOString(),
+    selfDiagnosis: info.selfDiagnosis,
+    inconclusive: info.selfDiagnosis.saturated,
+    ...(info.aborted ? { aborted: true, abortedMessage: formatAbortedMessage(durationMs, info.plannedMs) } : {}),
   };
+}
+
+export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
+  const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted, plannedMs } = await runLoadCore(program, config, opts);
+  return buildLoadReport(accumulators, { selfDiagnosis, runSeed, runClock, runStart, aborted, plannedMs, startedAt });
 }
 
 /** M31 (D19) — runs one shard's striped share of every `scenario` in the file (`opts.shard`
@@ -1067,8 +1329,11 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
  * own is not a meaningful pass/fail verdict (its thresholds would be evaluated against a fraction
  * of the intended load), only the parent's `mergeLoadShardReports` — combining every shard —
  * produces one. Invoked by the CLI's forked worker processes under `--workers N>1`. */
-export async function runLoadShard(program: Program, config: ResolvedConfig, opts: LoadOptions & { readonly shard: { readonly index: number; readonly count: number } }): Promise<LoadShardResult> {
-  const { accumulators, selfDiagnosis } = await runLoadCore(program, config, opts);
+/** Shapes a run's `ScenarioAccumulator`s into a compact, IPC-safe `LoadShardResult` — extracted
+ * from `runLoadShard`'s own body (M31-era) so the unified per-file dispatch (`runProgramInner`,
+ * Phase 2b/D111) can produce the exact same shape for its own shard-0 contribution when
+ * `opts.shard` is set, without duplicating this mapping. */
+function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], selfDiagnosis: SelfDiagnosis): LoadShardResult {
   const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => ({
     name: scenario.name.value,
     workload: workloadOf(scenario),
@@ -1093,6 +1358,11 @@ export async function runLoadShard(program: Program, config: ResolvedConfig, opt
     })),
   }));
   return { scenarios, selfDiagnosis };
+}
+
+export async function runLoadShard(program: Program, config: ResolvedConfig, opts: LoadOptions & { readonly shard: { readonly index: number; readonly count: number } }): Promise<LoadShardResult> {
+  const { accumulators, selfDiagnosis } = await runLoadCore(program, config, opts);
+  return buildLoadShardResult(accumulators, selfDiagnosis);
 }
 
 /** M31 (D19/R4) — combines every forked worker's `LoadShardResult` into the exact same

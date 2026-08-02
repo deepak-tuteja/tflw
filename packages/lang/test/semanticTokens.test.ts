@@ -173,6 +173,13 @@ test('collectSemanticTokens (M33/M50): `ramp`/`over`/`threshold`/`cleanup`/`thin
   assertTypeAt(tokens, source, 'think', 'keyword');
 });
 
+test('collectSemanticTokens (Phase 2b, D105-D107): `parallel`/`sequential` header modifiers classify as `keyword`', () => {
+  const source = `test "checkout burst" retry 2 parallel\n  api GET /health\n\ntest "browsing" sequential\n  api GET /health\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'parallel', 'keyword');
+  assertTypeAt(tokens, source, 'sequential', 'keyword');
+});
+
 test('collectSemanticTokens (M33/M50): `users`/`rps`/`error`/`rate` workload+threshold nouns classify as `type`', () => {
   const source = `test "browsing"\n  ramp to 100 rps over 30s\n  threshold error rate is less than 1%\n  api GET /health\n\ntest "checkout"\n  ramp to 10 users over 30s\n  api GET /health\n`;
   const tokens = tokensOf(source);
