@@ -399,18 +399,20 @@ session admin
 
 // ---- M30: concurrent multi-scenario runs (D29, R6) -------------------------------------------
 
-test('two scenarios in one file run concurrently — a fast scenario is not blocked behind a slower one scheduling its arrivals', async () => {
+test('two `parallel` scenarios in one file run concurrently — a fast scenario is not blocked behind a slower one scheduling its arrivals', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   // "Slow" is an open-workload scenario whose arrival schedule spans real time (5 arrivals spread
-  // across it) — if scenarios ran sequentially (the M29 shape, one scenario per file), "Fast"
+  // across it) — if scenarios ran sequentially (the M29 shape, one scenario per file, and — since
+  // Phase 2b/D109 — the new default for two `test`s with no explicit `parallel` keyword), "Fast"
   // couldn't even start until "Slow"'s task fully finished scheduling *and awaiting* every one of
-  // its arrivals. Asserted on arrival *order*, not a wall-clock threshold (flaky under CI/test-
-  // suite CPU contention, which delays every timer uniformly but doesn't reorder concurrent work):
-  // a truly concurrent "Fast" (near-zero spawn delay) lands among "Slow"'s iterations, not strictly
-  // after every one of them.
+  // its arrivals. Both declare `parallel` explicitly (D109's opt-in) to keep asserting the
+  // concurrent-execution behavior this test has always been about. Asserted on arrival *order*,
+  // not a wall-clock threshold (flaky under CI/test-suite CPU contention, which delays every timer
+  // uniformly but doesn't reorder concurrent work): a truly concurrent "Fast" (near-zero spawn
+  // delay) lands among "Slow"'s iterations, not strictly after every one of them.
   const source =
-    'test "Slow"\n  ramp to 20 rps over 500ms\n  api GET /health\n  expect status equals 200\n\n' +
-    'test "Fast"\n  ramp to 1 users over 10ms\n  api GET /health\n  expect status equals 200\n';
+    'test "Slow" parallel\n  ramp to 20 rps over 500ms\n  api GET /health\n  expect status equals 200\n\n' +
+    'test "Fast" parallel\n  ramp to 1 users over 10ms\n  api GET /health\n  expect status equals 200\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 

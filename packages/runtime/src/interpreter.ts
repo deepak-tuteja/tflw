@@ -340,8 +340,20 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
       // belongs to which) — a singleton batch has nothing to interleave against, so it stays on
       // the unbuffered, immediate-emit path, unchanged from before Phase 2b.
       const isBatched = batch.length > 1;
+      // Bug found verifying the concurrency model (post-M53): a workload test's ramp/hold/step/
+      // spike schedule (`spawnAt`/`runEnd` in `runScenarioTask`) is computed from `ctx.runStart`.
+      // `scenarioCtx.runStart` is stamped once at the top of the whole file's run — fine for batch
+      // 1 (its members start at essentially that instant, same as pre-Phase-2b `runLoadCore` where
+      // every scenario always started together), but wrong for batch 2+: a `sequential` (the
+      // default) workload test declared after any earlier batch inherits a `runStart` that's
+      // already stale by however long batch 1 took, so its whole schedule window is already "in
+      // the past" the moment it starts — observed as a hard 0 iterations, not degraded metrics.
+      // Fix: stamp a fresh start instant per batch and use that for any workload member's ctx —
+      // batch 1 sees the same wall-clock instant as before (no behavior change there).
+      const batchRunStart = performance.now();
+      const batchScenarioCtx: ScenarioRunCtx = { ...scenarioCtx, runStart: batchRunStart };
       const tasks: Promise<void>[] = batch.map((test) => {
-        if (test.workload) return runScenarioTask(accumulatorByTest.get(test)!, scenarioCtx);
+        if (test.workload) return runScenarioTask(accumulatorByTest.get(test)!, batchScenarioCtx);
         const group = functionalGroups.get(test);
         if (!group) return Promise.resolve();
         return (async () => {
@@ -1075,9 +1087,27 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
     abortSignal: opts.abortSignal,
     shard: opts.shard,
   };
-  const scenarioTasks = accumulators.map((acc) => runScenarioTask(acc, scenarioCtx));
-
-  await Promise.all(scenarioTasks);
+  // Batch by each test's own `parallel`/`sequential` field (D109), same as the unified
+  // `runProgramInner` dispatch — `runLoadCore` used to `Promise.all` every scenario unconditionally
+  // (pre-Phase-2b, when "every scenario in the file" and "every scenario declared `parallel`" were
+  // the same thing by definition). Left unconditional here, a `sequential` scenario would ignore
+  // its own declared ordering under `--workers N>1` (this engine is also `runLoadShard`'s core):
+  // shard 0 (the unified path) would correctly keep two `sequential` scenarios apart, while every
+  // forked shard 1..N-1 raced them together, an inconsistency the user's own `--parallel`/`--workers`
+  // resolution explicitly ruled out ("make sure all of it also respect tests own parallel/sequential
+  // keyword"). Batching (and each batch's own fresh `runStart`, same fix as `runProgramInner`'s)
+  // restores that — a functional member of a mixed batch is simply not in `scenarios`/`accumulatorByTest`
+  // and is skipped, exactly as before (D113: no functional test ever runs inside this engine).
+  const accumulatorByTest = new Map<TestDecl, ScenarioAccumulator>();
+  for (const acc of accumulators) accumulatorByTest.set(acc.scenario, acc);
+  for (const batch of partitionIntoBatches(program.tests)) {
+    const members = batch.filter((t): t is LoadTest => t.workload !== null);
+    if (members.length === 0) continue;
+    const batchScenarioCtx: ScenarioRunCtx = { ...scenarioCtx, runStart: performance.now() };
+    const tasks = members.map((scenario) => runScenarioTask(accumulatorByTest.get(scenario)!, batchScenarioCtx));
+    if (tasks.length === 1) await tasks[0];
+    else await Promise.all(tasks);
+  }
   if (progressTimer) clearInterval(progressTimer);
   const selfDiagnosis = selfDiag.stop();
   // M52: a count-based scenario contributes 0 — there's no way to predict its wall-clock length in

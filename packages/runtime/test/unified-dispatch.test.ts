@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
-import { runProgram } from '../src/interpreter.js';
+import { runProgram, runLoadShard } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 test('a file with only functional tests produces no `loadReport` (unaffected by Phase 2b)', async () => {
@@ -273,4 +273,101 @@ test('a `before file` hook failure runs neither functional nor workload-bearing 
   assert.equal(report.tests[0]!.name, 'before file');
   assert.equal(loadReport, undefined);
   await server.close();
+});
+
+// Regression coverage for a bug found while writing the concurrency-model README (docs/CONCURRENCY.md):
+// a workload test's ramp/hold/step/spike schedule (`spawnAt`/`runEnd` in `runScenarioTask`) is
+// computed from its `ScenarioRunCtx.runStart`. Before this fix, every batch shared the same
+// file-global `runStart` stamped once at the top of `runProgramInner` — correct for batch 1 (whose
+// members start at essentially that instant, same as pre-Phase-2b `runLoadCore`, where every
+// scenario always started together), but wrong for batch 2+: a `sequential` (the default) workload
+// test declared after an earlier batch inherited a `runStart` already stale by however long that
+// earlier batch took, so its entire ramp/arrival schedule was already in the past the instant it
+// started — observed as a hard 0 iterations, not merely degraded metrics.
+
+test('a `sequential` workload test in the second batch still gets its own full iteration count, not 0 (regression)', async () => {
+  const server = await startFixtureServer({ '/a': (_req, res) => json(res, 200, { ok: true }), '/b': (_req, res) => json(res, 200, { ok: true }) });
+  const source = [
+    'test "sceneA"',
+    '  ramp to 3 users over 200ms',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+    'test "sceneB"',
+    '  ramp to 3 users over 200ms',
+    '  api GET /b',
+    '  expect status equals 200',
+  ].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.ok(loadReport?.ok);
+  const [sceneA, sceneB] = loadReport!.scenarios;
+  assert.ok(sceneA!.metrics.iterations > 0, 'the first batch\'s scenario should still iterate as before');
+  assert.ok(sceneB!.metrics.iterations > 0, 'a second, later-batch scenario must not be starved by a stale file-global runStart');
+  await server.close();
+});
+
+test('two default-`sequential` workload tests still never overlap in wall time, even after the per-batch runStart fix', async () => {
+  let inFlightA = 0;
+  let inFlightB = 0;
+  let sawCrossOverlap = false;
+  const server = await startFixtureServer({
+    '/a': (_req, res) => {
+      inFlightA++;
+      if (inFlightB > 0) sawCrossOverlap = true;
+      setTimeout(() => {
+        inFlightA--;
+        json(res, 200, { ok: true });
+      }, 20);
+    },
+    '/b': (_req, res) => {
+      inFlightB++;
+      if (inFlightA > 0) sawCrossOverlap = true;
+      setTimeout(() => {
+        inFlightB--;
+        json(res, 200, { ok: true });
+      }, 20);
+    },
+  });
+  const source = [
+    'test "sceneA"',
+    '  ramp to 3 users over 150ms',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+    'test "sceneB"',
+    '  ramp to 3 users over 150ms',
+    '  api GET /b',
+    '  expect status equals 200',
+  ].join('\n');
+  const { program } = parseSource(source);
+  const { loadReport } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.ok(loadReport?.ok);
+  assert.equal(sawCrossOverlap, false, 'sequential scenarios must still run one after the other, not concurrently');
+  await server.close();
+});
+
+test('`runLoadShard` (the `--workers N>1` forked-process engine) also batches its scenarios by `parallel`/`sequential`, not one blind `Promise.all` (regression)', async () => {
+  const server = await startFixtureServer({ '/a': (_req, res) => json(res, 200, { ok: true }), '/b': (_req, res) => json(res, 200, { ok: true }) });
+  const source = [
+    'test "sceneA"',
+    '  ramp to 3 users over 200ms',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+    'test "sceneB"',
+    '  ramp to 3 users over 200ms',
+    '  api GET /b',
+    '  expect status equals 200',
+  ].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const shardResult = await runLoadShard(program, testConfig(server.baseUrl), { source, shard: { index: 0, count: 1 } });
+
+  const [sceneA, sceneB] = shardResult.scenarios;
+  assert.ok(sceneA!.iterations > 0);
+  assert.ok(sceneB!.iterations > 0, 'a forked shard must not zero out a later-batch sequential scenario either');
 });
