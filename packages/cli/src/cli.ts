@@ -48,6 +48,7 @@ import {
   resolveRunClock,
   ConfigError,
   Redactor,
+  redactEvent,
   redactReport,
   SessionCache,
   BrowserManager,
@@ -101,6 +102,29 @@ async function getVersion(): Promise<string> {
   if (typeof __TFLW_VERSION__ === 'string') return __TFLW_VERSION__;
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
   return pkg.version;
+}
+
+/**
+ * Reads the value of a value-taking flag, and refuses the two ways one can go missing silently
+ * (M63, review finding A12-04). A bare `argv[++i]` returns `undefined` past the end of argv, and
+ * happily swallows the *next flag* otherwise — both without a word. That is a bad default for any
+ * flag, and an actively unsafe one for `--evidence`, where a lost argument (a CI YAML fold, a
+ * shell-quoting slip) silently ran at `full`, the *least* protective level, and left the pipeline
+ * green. Every value-taking flag in every subcommand goes through here, so the rule belongs to the
+ * flag, not to one flag.
+ *
+ * Only `--`-prefixed tokens are rejected as values: a single `-` can legitimately begin one (a
+ * negative `--seed`, a `-`-prefixed `--only` name), and `--flag=value` — which never reaches this
+ * function — is the escape hatch for a value that really does start with `--`.
+ *
+ * Thrown, not returned: the top-level `.catch` around `main` already prints `error: <message>` and
+ * exits `EXIT_USAGE`, the same shape as every other usage error here.
+ */
+function flagValue(argv: string[], i: number, flag: string): string {
+  const value = argv[i];
+  if (value === undefined) throw new Error(`${flag} expects a value, but none was given.`);
+  if (value.startsWith('--')) throw new Error(`${flag} expects a value, but the next argument is \`${value}\`. Write \`${flag}=${value}\` if that really is the value you meant.`);
+  return value;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -164,7 +188,7 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
   let browser: string = 'chromium'; // D11: Chromium default
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--browser') browser = argv[++i] ?? browser;
+    if (a === '--browser') browser = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browser = a.slice('--browser='.length);
   }
   if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browser)) {
@@ -196,7 +220,7 @@ async function pickCommand(argv: string[]): Promise<number> {
   let browserRaw: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--browser') browserRaw = argv[++i];
+    if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
     else if (url === undefined) url = a;
     else {
@@ -281,11 +305,11 @@ function parseWatchArgs(argv: string[]): WatchArgs {
   let noColor = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--env') env = argv[++i];
+    if (a === '--env') env = flagValue(argv, ++i, a);
     else if (a.startsWith('--env=')) env = a.slice('--env='.length);
-    else if (a === '--browser') browserRaw = argv[++i];
+    else if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
-    else if (a === '--seed') seedRaw = argv[++i];
+    else if (a === '--seed') seedRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
     else if (a === '--no-color') noColor = true;
     else files.push(a);
@@ -528,40 +552,40 @@ function parseRunArgs(argv: string[]): RunArgs {
   let logLevelRaw: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--env') env = argv[++i];
+    if (a === '--env') env = flagValue(argv, ++i, a);
     else if (a.startsWith('--env=')) env = a.slice('--env='.length);
-    else if (a === '--seed') seedRaw = argv[++i];
+    else if (a === '--seed') seedRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
-    else if (a === '--now') nowRaw = argv[++i];
+    else if (a === '--now') nowRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--now=')) nowRaw = a.slice('--now='.length);
-    else if (a === '--tag') tagRaw = argv[++i];
+    else if (a === '--tag') tagRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--tag=')) tagRaw = a.slice('--tag='.length);
-    else if (a === '--only') only = argv[++i];
+    else if (a === '--only') only = flagValue(argv, ++i, a);
     else if (a.startsWith('--only=')) only = a.slice('--only='.length);
-    else if (a === '--parallel') parallelRaw = argv[++i];
+    else if (a === '--parallel') parallelRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--parallel=')) parallelRaw = a.slice('--parallel='.length);
-    else if (a === '--workers') workersRaw = argv[++i];
+    else if (a === '--workers') workersRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
     else if (a === '--skip-workload') skipWorkload = true;
     else if (a === '--no-color') noColor = true;
     else if (a === '--verbose') verbose = true;
     else if (a === '--forbid-insecure') forbidInsecure = true;
-    else if (a === '--evidence') evidenceRaw = argv[++i];
+    else if (a === '--evidence') evidenceRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--evidence=')) evidenceRaw = a.slice('--evidence='.length);
     else if (a === '--failed') failed = true;
     else if (a === '--bail') bail = true;
-    else if (a === '--format') formatRaw = argv[++i];
+    else if (a === '--format') formatRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--format=')) formatRaw = a.slice('--format='.length);
     else if (a === '--no-timestamps') noTimestamps = true;
-    else if (a === '--log-file') logFile = argv[++i];
+    else if (a === '--log-file') logFile = flagValue(argv, ++i, a);
     else if (a.startsWith('--log-file=')) logFile = a.slice('--log-file='.length);
-    else if (a === '--browser') browserRaw = argv[++i];
+    else if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
     else if (a === '--headed') headed = true;
     else if (a === '--update-snapshots') updateSnapshots = true;
-    else if (a === '--log-output') logOutputRaw = argv[++i];
+    else if (a === '--log-output') logOutputRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--log-output=')) logOutputRaw = a.slice('--log-output='.length);
-    else if (a === '--log-level') logLevelRaw = argv[++i];
+    else if (a === '--log-level') logLevelRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--log-level=')) logLevelRaw = a.slice('--log-level='.length);
     else files.push(a);
   }
@@ -1163,7 +1187,13 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   await writeJunitXml(merged, reportDir);
   await writeResultsJson(merged, reportDir);
   await writeLastRun(merged, reportDir);
-  if (ndjsonActive) await writeEventsNdjson(ndjsonCollected, reportDir);
+  // M63 (V2-02): the persisted event log gets the same final redaction pass as every other
+  // artifact. It is written after the whole run, so — unlike the live stdout stream, which is gone
+  // by the time a late `env()` reveals a secret — the redactor here is fully populated. Skipping
+  // this left the file masking a value in its `run:end` line while printing it raw in the
+  // `step:end`/`test:end` lines above it, in the one output mode built to be machine-consumed
+  // somewhere else.
+  if (ndjsonActive) await writeEventsNdjson(ndjsonCollected.map((e) => redactEvent(e, redactor)), reportDir);
 
   if (!ndjsonActive) {
     out.write(withTimestamps('\n' + renderCliSummary(merged, color), timestamps) + '\n');
@@ -1437,10 +1467,10 @@ function parseCheckArgs(argv: string[]): CheckArgs {
   let format: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--env') env = argv[++i];
+    if (a === '--env') env = flagValue(argv, ++i, a);
     else if (a.startsWith('--env=')) env = a.slice('--env='.length);
     else if (a === '--no-color') noColor = true;
-    else if (a === '--format') format = argv[++i];
+    else if (a === '--format') format = flagValue(argv, ++i, a);
     else if (a.startsWith('--format=')) format = a.slice('--format='.length);
     else files.push(a);
   }
@@ -2084,7 +2114,8 @@ function printUsage(): void {
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
       '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]',
-      '            [--workers <n>] [--skip-workload]',
+      '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--evidence full|headers-only|none] [--log-output console|html|both|none]',
+      '            [--log-level debug|info|warn|error]',
       '                                                      run .tflw tests (default: all under cwd), functional and workload-bearing (a `ramp to …`',
       '                                                      line, or another of the 5 workload shapes) alike, in file declaration order — a `parallel`/',
       '                                                      `sequential` header modifier controls each test\'s concurrency with its file-siblings',
@@ -2100,6 +2131,10 @@ function printUsage(): void {
       '                                                      --browser switches every browser step to one engine (default chromium)',
       '                                                      --headed shows the browser window instead of running headless',
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
+      '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',
+      '                                                      --evidence <level> how much request/response detail the report keeps: full (default), headers-only, none',
+      '                                                      --log-output <dest> where a bare `log "…"` goes: console|html|both|none',
+      '                                                      --log-level <level> minimum level a `log` step must clear to be rendered: debug|info|warn|error',
       '                                                      --parallel <n> runs up to n *files* concurrently in this process (default: tflw.config\'s `workers`)',
       '                                                      --workers <n> forks n *processes* to generate one file\'s workload-bearing tests\' load;',
       '                                                      a no-op warning on a file with none (unrelated to --parallel; default: 1, no forking)',

@@ -16,6 +16,7 @@
 import type { AttemptResult, BackOffDiagnosis, LoadMetrics, LoadScenarioReport, LoadThresholdResult, LogLevel, ReportEntry, RequestTrace, ResponseTrace, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { LOG_LEVEL_ORDER } from '@tflw/runtime';
 import { assetHash } from './assets.js';
+import { esc } from './escape.js';
 import { CHART_STYLE, renderErrorRateChart, renderHistogramChart, renderLatencyOverTimeChart, renderThroughputChart } from './load-charts.js';
 
 /** A test's slot in the sidebar tree + `<main>`'s panel list — computed once, shared by both. */
@@ -320,10 +321,6 @@ function pretty(text: string): string {
   } catch {
     return text;
   }
-}
-
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
 const STYLE = `

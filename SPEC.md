@@ -276,7 +276,13 @@ require env ADMIN_USER, ADMIN_PW
   `env(NAME)` isn't evaluated until later in the run) still masks that earlier step: a final
   full-report redaction pass runs once when each file's `runProgram` call finishes, and again on
   the merged report just before `tflw run` writes it, so both the within-file and cross-file
-  ordering windows are closed (fixed in M2.65, decision 56).
+  ordering windows are closed (fixed in M2.65, decision 56). `report/events.ndjson` (§13) is
+  re-walked through that same pass before it is written (M63) — it is a persisted artifact, built
+  after the run, so it gets the fully-populated redactor like every other file in `report/`. The
+  one thing that pass cannot reach is the **live** `--format ndjson` stdout stream: a line is
+  already out of the process by the time a later `env()` reveals the secret, so a stream consumer
+  that reads stdout directly sees only per-step redaction — read `report/events.ndjson` instead
+  when that difference matters.
 
 A value shorter than `MIN_REDACTABLE_LENGTH` (6 characters) is never registered for substring
 redaction — a short/common secret (a numeric ID, a port number) would otherwise blot out every
@@ -826,7 +832,10 @@ expect body matches schema "ProductResponseDto" from "/openapi.json"
   service's document needs an absolute URL — a deliberate minimal-scope limitation).
 - The document is fetched once and cached for the rest of the run (keyed by resolved URL) — every
   further `matches schema` assertion against the same source reuses it, including across
-  `--workers N`. `allow hosts` (§3.7) gates this fetch the same as any `api` step's request.
+  `--workers N`. Only a *successful* fetch is cached (M63): if the document can't be loaded, the
+  next assertion tries again rather than replaying the first failure's message, so a transient
+  outage doesn't fail the rest of the run — and, under `tflw watch`, doesn't outlive the fix.
+  `allow hosts` (§3.7) gates this fetch the same as any `api` step's request.
   OpenAPI 3.0's `nullable: true` is understood (folded into a JSON-Schema `type` union before
   validating), since plain JSON-Schema doesn't have that keyword.
 - The one matcher this codebase evaluates outside the ordinarily-pure, synchronous matcher
@@ -1571,6 +1580,16 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | `tflw pick <url> [--browser chromium\|firefox\|webkit]` | opens a real, visible browser at `<url>`; every click prints the best *verified* tflw locator for whatever was clicked (M5, §9.3) — walks the same resolution tiers (D6) the runtime itself uses and only ever prints a suggestion once it's confirmed to resolve to exactly the clicked element (D7), falling back to a generated CSS selector when nothing semantic round-trips. Picking is inert: `preventDefault`/`stopPropagation` stop a clicked link or submit button from actually navigating/submitting. Runs until the window is closed or Ctrl+C; `<url>` must be absolute (no `tflw.config` involved) |
 | `tflw watch [files] [--env E] [--seed S] [--browser chromium\|firefox\|webkit] [--no-color]` | save → the affected test re-runs headed (M5) — one shared, real browser window for the *whole watch session* (not relaunched per save), so it's still there to inspect after a failure. One seed, resolved once at startup (`--seed`, else freshly minted) and reused for every run for the life of the session — since it never changes, a run right after a fix trivially reuses the seed the failing run before it used. Saving a `.tflw` file re-runs *that file*; saving `tflw.config` re-runs the whole (requested) suite, since every file's resolved settings could have changed — no cross-file dependency tracking beyond that (a `.ts` helper behind `use "…"` isn't watched). Runs until Ctrl+C |
 | `tflw refactor apply <id>` | apply one reuse-pass extraction (M6, §8, P#2) — re-runs the same deterministic detection over the whole default-discovered suite (no `[files]`, matching `tflw run`/`tflw check` with none given), finds the hint with that id, writes its `action` into a fresh `shared/<name>.tflw`, and rewrites every occurrence's call site in place (a bare `CallStmt`, §8) — adding an `import "…"` line to each affected file that doesn't already have one. Refuses (exit 2, nothing written) if the id isn't found (ids can shift as the suite changes — re-run `tflw check` for fresh ones) or if the target `shared/<name>.tflw` already exists, rather than ever guessing or clobbering. The only command that mutates source (P#2's "builds never mutate source" is about `run`/`check`, not this explicit, user-invoked one) |
+
+Across every subcommand, a flag that takes a value must actually be given one: `--evidence` with
+nothing after it, or with another `--flag` in the value slot, is a usage error (exit 2), never a
+silent fall-back to the default (M63). This matters most where the default is the *least*
+protective setting — `--evidence` that lost its argument to a CI YAML fold used to run at `full`
+and leave the pipeline green. Only `--`-prefixed tokens are refused as values, so a negative
+number or a `-`-prefixed name still works positionally; `--flag=value` takes anything at all.
+Every flag listed above also appears in `tflw --help`, and a test enforces that (`CLI_FLAGS` in
+`packages/lang/src/spec-data.ts` is the list this table, the docs-site reference page, and
+`--help` are all checked against).
 
 **🔮 Planned:**
 

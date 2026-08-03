@@ -5,6 +5,7 @@
 // in, an SVG string out) — easy to unit-test the geometry directly without parsing HTML.
 
 import type { HistogramBucket, TimelinePoint } from '@tflw/runtime';
+import { esc } from './escape.js';
 
 const WIDTH = 640;
 const HEIGHT = 160;
@@ -142,10 +143,6 @@ export function renderHistogramChart(buckets: readonly HistogramBucket[]): strin
     ${bars}
   </svg>
 </div>`;
-}
-
-export function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
 export const CHART_STYLE = `

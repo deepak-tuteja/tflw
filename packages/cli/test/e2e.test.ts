@@ -15,6 +15,7 @@ import { mkdtemp, mkdir, writeFile, rm, readFile, access } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLI_FLAGS } from '@tflw/lang';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -292,6 +293,71 @@ test('`tflw pick <url> <extra>` (too many positional args) is a usage error', as
 test('`tflw --help` mentions `tflw pick`', async () => {
   const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
   assert.match(stdout, /tflw pick <url>/);
+});
+
+// ---- M63 (review finding A12-04): the flag surface, and its two silent holes ----------------
+
+test('`tflw --help` lists every flag CLI_FLAGS documents — the help text is a third surface that had drifted', async () => {
+  // A12-04: `--forbid-insecure`, `--evidence`, `--log-output` and `--log-level` were implemented,
+  // accepted, listed in SPEC §12, and listed in the docs-site reference table (both generate from
+  // CLI_FLAGS) — and absent from `--help`. The two a user reaches for when they care about
+  // credential exposure and TLS policy were the two you could only find by opening SPEC.md.
+  // Same shape as M60's checker-pass drift: three surfaces claiming to describe one thing, one of
+  // them assembled by hand. This test is the thing that makes forgetting the hand-written one fail.
+  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
+  const missing = CLI_FLAGS.filter((f) => f.command !== 'global')
+    .map((f) => /`(--[a-z-]+)`/.exec(f.flag)?.[1])
+    .filter((name): name is string => name !== undefined)
+    .filter((name) => !stdout.includes(name));
+  assert.deepEqual([...new Set(missing)], [], 'every documented flag must appear in `tflw --help`');
+});
+
+test('a value-taking flag with no value is a usage error, not a silent fall-back to the default (M63/A12-04)', async () => {
+  // The sharper half of A12-04, and the reason this is a fix and not a note: `--evidence` given no
+  // value didn't complain — it fell back to `full`, the *least* protective level, and the run
+  // carried on. In CI, a flag that lost its argument to a YAML fold or a quoting slip produced a
+  // full-evidence artifact and a green-looking pipeline. Given a *bad* value it always validated
+  // properly (`--evidence bogus` → exit 2); only the missing case failed open.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-missing-flag-value-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+    // Flag last on the line — the argument simply isn't there.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', 'health.tflw', '--evidence'], { cwd: dir }),
+      (e: unknown) => (e as { code?: number }).code === 2 && /--evidence expects a value, but none was given/.test((e as { stderr: string }).stderr),
+      '`--evidence` with nothing after it must not run at `full`',
+    );
+
+    // Flag followed by another flag — the value slot silently ate `--no-color` before.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', '--evidence', '--no-color', 'health.tflw'], { cwd: dir }),
+      (e: unknown) => (e as { code?: number }).code === 2 && /--evidence expects a value, but the next argument is `--no-color`/.test((e as { stderr: string }).stderr),
+      'a flag must never be swallowed as another flag\'s value',
+    );
+
+    // The rule belongs to the flag, not to `--evidence`: every value-taking flag, every subcommand.
+    for (const [args, flag] of [
+      [['run', '--env'], '--env'],
+      [['run', '--log-file'], '--log-file'],
+      [['check', '--format'], '--format'],
+      [['watch', '--seed'], '--seed'],
+      [['pick', 'http://127.0.0.1:1', '--browser'], '--browser'],
+    ] as const) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, ...args], { cwd: dir }),
+        (e: unknown) => (e as { code?: number }).code === 2 && new RegExp(`\\${flag} expects a value`).test((e as { stderr: string }).stderr),
+        `${args.join(' ')} must be a usage error`,
+      );
+    }
+
+    // And the escape hatch the error message names really works: `=` still takes any value.
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--format=json', 'health.tflw'], { cwd: dir });
+    assert.deepEqual(JSON.parse(stdout), [], '`--flag=value` is unaffected — it never goes through the value slot');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // ---- tflw refactor apply <id> (M6, P#2) ------------------------------------
@@ -1707,6 +1773,10 @@ test('--format ndjson streams one JSON-parseable, file-tagged RunEvent per line,
       // No human text (a stray non-JSON line) mixed into stdout.
       for (const l of lines) assert.doesNotThrow(() => JSON.parse(l));
 
+      // The persisted file mirrors the stream event-for-event. Since M63 it is additionally
+      // re-walked through the final redaction pass before being written (V2-02), so the two can
+      // legitimately differ on a run where a secret is first registered late — see the redaction
+      // test below. This run has no secrets at all, so they must still match exactly.
       const ndjsonPath = join(dir, 'report', 'events.ndjson');
       const fileLines = (await readFile(ndjsonPath, 'utf8')).trim().split('\n');
       assert.deepEqual(fileLines.map((l) => JSON.parse(l)), events);
@@ -1714,6 +1784,49 @@ test('--format ndjson streams one JSON-parseable, file-tagged RunEvent per line,
       await rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+test('report/events.ndjson gets the same final redaction pass as every other artifact — no line carries a secret the report itself masks (M63/V2-02)', async () => {
+  // V2-02: the file was written from the array collected live at emit time, so a secret first
+  // registered *late* in the run stayed raw in the `step:end`/`test:end` lines while the very same
+  // file's `run:end` line (which carries the already-redacted RunReport) masked it — one artifact
+  // contradicting itself. `/whoami` echoes the value before any `env()` has been evaluated, which
+  // is the only ordering that reproduces it.
+  const secret = 'SUPERSECRET_LATE_VALUE_999';
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/whoami') res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ note: `current pw is ${secret}` }));
+    else if (req.url === '/login') res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    else res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-redact-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    await writeFile(join(dir, 'leak.tflw'), `test "secret surfaces before it is ever read"\n  api GET /whoami\n  expect status equals 200\n  api POST /login body { pass: env(LATE) }\n  expect status equals 200\n`, 'utf8');
+
+    await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir, env: { ...process.env, LATE: secret } });
+
+    const ndjson = await readFile(join(dir, 'report', 'events.ndjson'), 'utf8');
+    const results = await readFile(join(dir, 'report', 'results.json'), 'utf8');
+    const count = (haystack: string): number => haystack.split(secret).length - 1;
+
+    assert.equal(count(results), 0, 'baseline: results.json was already covered by the decision-56 pass');
+    assert.equal(count(ndjson), 0, 'events.ndjson must not print a secret its own run:end line masks');
+    assert.ok(ndjson.includes('•••(LATE)'), 'and the placeholder must actually be there — an empty file would also satisfy the line above');
+
+    // The leak was in these two event kinds specifically; assert on them by name so a future
+    // change that redacts only the report event fails here rather than passing on a technicality.
+    const byType = (t: string): string[] => ndjson.trim().split('\n').filter((l) => (JSON.parse(l) as { type: string }).type === t);
+    assert.ok(byType('step:end').length > 0 && byType('test:end').length === 1, 'sanity: the run produced the event kinds that leaked');
+    for (const line of [...byType('step:end'), ...byType('test:end')]) assert.equal(count(line), 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
 });
 
 test('--format ndjson always includes step-level detail even without --verbose (decision 111.4)', async () => {

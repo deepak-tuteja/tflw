@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
-import { Redactor } from '../src/redact.js';
+import { Redactor, redactEvent } from '../src/redact.js';
+import type { RunEvent } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 test('Redactor.redact masks a registered secret wherever it appears verbatim', () => {
@@ -101,6 +102,49 @@ test('an env() secret with a quote in it stays redacted end-to-end through a JSO
   const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.request!.body ?? '', /w\\word/);
   assert.match(apiStep.request!.body ?? '', /•••\(ADMIN_PW\)/);
+
+  await server.close();
+});
+
+test('the same late-secret run, replayed through the event stream: `redactEvent` masks every event kind, not just the one carrying the report (M63/V2-02)', async () => {
+  // The two halves of this proof already existed and had never been put in the same test: the
+  // decision-56 test above asserts the *report* is retroactively masked, and
+  // reporter/test/events-ndjson.test.ts asserts the *writer* emits one line per event — with
+  // hand-authored events, from a run that never happened. Nothing checked that the events a real
+  // run produces are masked before they are persisted, which is exactly what V2-02 found leaking.
+  const server = await startFixtureServer({
+    '/whoami': (_req, res) => json(res, 200, { note: 'current pw is p@ssw0rd-xyz' }),
+    '/login': (_req, res) => json(res, 200, { ok: true }),
+  });
+
+  const source = `test "secret surfaces before it's ever read via env()"
+  api GET /whoami
+  expect status equals 200
+  api POST /login body { pass: env(ADMIN_PW) }
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const environ = { ...process.env, ADMIN_PW: 'p@ssw0rd-xyz' };
+  const collected: RunEvent[] = [];
+  const { redactor } = await runProgram(program, testConfig(server.baseUrl), { source, environ, emit: (e) => collected.push(e) });
+
+  // Sanity: the raw stream really does carry the secret — the `/whoami` events are emitted before
+  // `env(ADMIN_PW)` is ever evaluated, so nothing could have masked them at emit time. Without
+  // this the assertions below would pass vacuously.
+  const raw = collected.map((e) => JSON.stringify(e)).join('\n');
+  assert.match(raw, /p@ssw0rd-xyz/, 'sanity: the live event stream is the thing that needs the final pass');
+
+  const persisted = collected.map((e) => redactEvent(e, redactor));
+  const kinds = new Set(persisted.map((e) => e.type));
+  assert.deepEqual([...kinds].sort(), ['run:end', 'run:start', 'step:end', 'test:end', 'test:start'], 'every event kind must be exercised, or this test stops covering the one that leaks');
+  const text = persisted.map((e) => JSON.stringify(e)).join('\n');
+  assert.doesNotMatch(text, /p@ssw0rd-xyz/, 'no event may carry the raw secret once the final pass has run');
+  assert.match(text, /ADMIN_PW/, 'and the placeholder must be there — an empty stream would also satisfy the line above');
+
+  // Idempotent, the same way `redactReport` is: the CLI re-walks events that were already masked
+  // at emit time (the `/login` ones), and re-redacting a placeholder must not mangle it.
+  const twice = persisted.map((e) => redactEvent(e, redactor));
+  assert.deepEqual(twice, persisted);
 
   await server.close();
 });

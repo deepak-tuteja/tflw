@@ -139,3 +139,55 @@ test('the OpenAPI document is fetched once and cached across multiple assertions
 
   await server.close();
 });
+
+test('a *failed* document fetch is not cached — the next assertion retries and succeeds once the server recovers (M63/A12-02)', async () => {
+  // The twin of the test above, and the half its fixture could never reach: caching-works and
+  // caching-a-failure are the same line of code, but every failure-path test in this file uses a
+  // server that fails deterministically, so the cache is always cold when they run. A transient
+  // 500 was therefore permanent for the life of the process — and, worse, tests 2..N failed
+  // citing the *first* one's HTTP status, describing an exchange they never had. Under
+  // `tflw watch` that meant fixing the server and re-saving never cleared the failure.
+  let hits = 0;
+  const server = await startFixtureServer({
+    '/openapi.json': (_req, res) => {
+      hits++;
+      if (hits === 1) {
+        res.writeHead(500, { 'content-type': 'text/plain' }).end('transient outage');
+        return;
+      }
+      json(res, 200, OPENAPI_DOC);
+    },
+    '/widgets/good': (_req, res) => json(res, 200, { id: 'w1', name: 'Widget', address: { city: 'Springfield' } }),
+  });
+  const config = testConfig(server.baseUrl);
+  const source = `test "first assertion — the document fetch 500s"
+  api GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+
+test "second assertion — the server has recovered"
+  api GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+
+test "third assertion — still healthy, and now served from the cache"
+  api GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+`;
+  const { program } = parseSource(source);
+  // try/finally, unlike this file's other tests: without it a failing assertion skips the close
+  // and the leaked server keeps the test process alive, so a regression here would hang the suite
+  // instead of reporting.
+  try {
+    const { report } = await runProgram(program, config, { source });
+
+    assert.equal(report.tests[0]!.ok, false, 'the outage itself must still fail — this is not about swallowing the error');
+    assert.match(report.tests[0]!.error ?? '', /got 500/);
+    assert.equal(report.tests[1]!.ok, true, 'the second assertion must re-fetch, not replay a cached rejection');
+    assert.equal(report.tests[2]!.ok, true);
+
+    // Exactly two fetches: one that failed and was evicted, one that succeeded and was kept. Three
+    // would mean the cache stopped working; one is the bug.
+    assert.equal(server.received.get('/openapi.json')!.length, 2, 'the failure evicts, the success caches');
+  } finally {
+    await server.close();
+  }
+});

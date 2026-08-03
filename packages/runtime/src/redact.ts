@@ -4,7 +4,7 @@
 // header-blocklists) means a secret in a login body or a URL is caught wherever it flows, so
 // report.html and CLI output are ticket-attachable by construction.
 
-import type { AttemptResult, ReportEntry, RequestTrace, ResponseTrace, RunReport, StepResult, TestResult, WorkloadTestResult } from './types.js';
+import type { AttemptResult, ReportEntry, RequestTrace, ResponseTrace, RunEvent, RunReport, StepResult, TestResult, WorkloadTestResult } from './types.js';
 
 /** A secret shorter than this is too likely to collide with unrelated report content (a port
  * number, a small numeric ID) — substring-redacting it would silently corrupt those unrelated
@@ -68,6 +68,37 @@ export class Redactor {
  */
 export function redactReport(report: RunReport, redactor: Redactor): RunReport {
   return { ...report, tests: report.tests.map((t) => redactReportEntry(t, redactor)) };
+}
+
+/**
+ * The same final pass, for one `RunEvent` (M63, review finding V2-02). `report/events.ndjson` is a
+ * *persisted* artifact, not the live stream: the CLI collects every event as it is emitted and
+ * writes the file only after the run is over — at which point the redactor is fully populated and
+ * the exact same ordering window `redactReport` closes for report.html/results.json can be closed
+ * here too. Without this the file contradicted itself, masking a secret in its `run:end` line
+ * (which carries the already-redacted `RunReport`) while printing it raw in the `step:end`/
+ * `test:end` lines above, and `--format ndjson` is precisely the mode whose output is meant to be
+ * shipped into another system.
+ *
+ * The live stdout stream is *not* fixable this way and deliberately isn't touched: a line is
+ * already gone by the time a later `env()` reveals the secret. Idempotent for the same reason
+ * `redactReport` is — an event that was already masked at emit time re-redacts to itself.
+ */
+export function redactEvent(event: RunEvent, redactor: Redactor): RunEvent {
+  switch (event.type) {
+    // `total` is a count and `env` is a `tflw.config` env-block name — neither is ever built from
+    // an interpolated value, which is why `redactReport` doesn't redact `RunReport.env` either.
+    case 'run:start':
+      return event;
+    case 'test:start':
+      return { ...event, name: redactor.redact(event.name) };
+    case 'step:end':
+      return { ...event, test: redactor.redact(event.test), step: redactStepResult(event.step, redactor) };
+    case 'test:end':
+      return { ...event, result: redactTestResult(event.result, redactor) };
+    case 'run:end':
+      return { ...event, report: redactReport(event.report, redactor) };
+  }
 }
 
 function redactReportEntry(t: ReportEntry, redactor: Redactor): ReportEntry {

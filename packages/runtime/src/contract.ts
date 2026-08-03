@@ -23,7 +23,9 @@ import { truncate, type MatchOutcome } from './matcher.js';
 /** Process-lifetime cache, keyed by the resolved OpenAPI document URL — same precedent as
  * `interpreter.ts`'s existing `mtlsCredCache`: lives outside `TestCtx`/`RunOptions`, so
  * concurrent `--workers N` assertions against the same URL share one in-flight fetch+compile via
- * the shared Promise, and repeat assertions across many tests in one run never re-fetch. */
+ * the shared Promise, and repeat assertions across many tests in one run never re-fetch. Only
+ * *successes* are cached for the process lifetime: a rejected entry evicts itself (see
+ * `loadSchemaDoc`), so the cache never turns a transient outage into a permanent one. */
 const schemaDocCache = new Map<string, Promise<Ajv>>();
 
 /** Absolute (`http(s)://`) sources pass through; anything else is resolved against the default
@@ -73,6 +75,21 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<Ajv> 
       }
       return ajv;
     })();
+    // Cache the *in-flight* promise (that's the point — concurrent assertions share one fetch),
+    // but evict it the moment it rejects (M63, review finding A12-02). Caching a rejection made a
+    // transient failure permanent for the life of the process: a server that 500s once and is
+    // healthy a millisecond later failed every subsequent assertion in the run with the *first*
+    // one's status — a message describing an exchange those assertions never had. Their tell was
+    // a 1 ms duration: no I/O happened. Worst under `tflw watch`, where the process outlives the
+    // outage and no amount of re-saving clears it.
+    //
+    // The `.catch` is attached to a copy, not to `cached` — `cached` must stay the original
+    // promise so every awaiting caller still sees the rejection. This handler only cleans up, and
+    // returning nothing from it marks the copy handled, so the eviction itself never becomes an
+    // unhandled rejection.
+    void cached.catch(() => {
+      schemaDocCache.delete(url);
+    });
     schemaDocCache.set(url, cached);
   }
   return cached;

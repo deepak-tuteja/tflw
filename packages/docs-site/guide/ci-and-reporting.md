@@ -89,6 +89,11 @@ human text mixed in, safe to pipe into a log aggregator or `jq`. Always full ste
 independent of `--verbose`. Also always written to `report/events.ndjson`, so the stream survives
 even when the invoking process didn't capture stdout.
 
+The file is not a byte-for-byte copy of stdout: it is written after the run, so it gets the same
+final redaction pass as `report.html`/`results.json` (see [secrets](/guide/config#secrets)) with
+the fully-populated redactor. The live stream can't — a line has already left the process by the time
+a secret read later in the run reveals itself. **If you archive one of the two, archive the file.**
+
 ## User-defined logging — the `log` statement
 
 ```tflw
