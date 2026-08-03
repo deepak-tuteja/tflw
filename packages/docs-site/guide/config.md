@@ -56,7 +56,7 @@ env staging
 ```
 
 A value `capture`d out of a position you named is tracked from then on and masked wherever it later
-appears. See [CI, reporting & safety](/guide/ci-and-reporting#redact-name-a-secret-by-position-not-by-source).
+appears. See [CI, reporting & safety](/guide/ci-and-reporting#redact).
 
 ## Corporate networks
 

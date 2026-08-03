@@ -101,8 +101,48 @@ test('the built dist/cli.cjs runs a real test file against a real server and wri
 
       const junitPath = join(dir, 'report', 'junit.xml');
       const junit = await readFile(junitPath, 'utf8');
-      assert.match(junit, /<testsuite name="tflw" tests="1" failures="0"/);
-      assert.match(junit, /<testcase name="health check"/);
+      assert.match(junit, /<testsuites name="tflw" tests="1" failures="0"/);
+      // M65 (FS-09): the file the test came from reaches junit.xml, not just report.html — the
+      // stamping happens in the CLI (`mergeReports`), so only an end-to-end run proves it survives
+      // the trip. A unit test on `renderJunitXml` can only prove the renderer would use it.
+      assert.match(junit, /<testsuite name="health\.tflw" tests="1" failures="0"/);
+      assert.match(junit, /<testcase name="health check" classname="health\.tflw"/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// M65 (FS-09, review finding A13-01) — the end-to-end form of the property: two files each
+// declaring a test with the *same name*, one passing and one failing. A CI dashboard keys
+// flaky-test history off name + classname; before this, both files' tests shared one
+// `<testsuite name="tflw">` and carried no classname at all, so the two were byte-identical and the
+// failure landed on whichever row the dashboard happened to merge them into.
+test('two files declaring a same-named test produce two suites, and the failure is attributed to exactly one of them', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-multifile-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'smoke.tflw'), `test "checkout works"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      await writeFile(join(dir, 'regression.tflw'), `test "checkout works"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }),
+        (e: unknown) => (e as { code?: number }).code === 1,
+      );
+
+      const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
+      assert.match(junit, /<testsuites name="tflw" tests="2" failures="1"/);
+      assert.match(junit, /<testsuite name="smoke\.tflw" tests="1" failures="0"/);
+      assert.match(junit, /<testsuite name="regression\.tflw" tests="1" failures="1"/);
+
+      const cases = [...junit.matchAll(/<testcase name="([^"]+)" classname="([^"]+)"/g)].map((m) => [m[1], m[2]]);
+      assert.equal(cases.length, 2);
+      assert.deepEqual(
+        cases.map((c) => c[0]),
+        ['checkout works', 'checkout works'],
+      );
+      assert.equal(new Set(cases.map((c) => c[1])).size, 2, 'same name, different file — the pair must not collapse to one identity');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -127,7 +167,7 @@ test('the built dist/cli.cjs exits non-zero on a failing test, and still writes 
 
       await access(join(dir, 'report', 'report.html'));
       const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
-      assert.match(junit, /<testsuite name="tflw" tests="1" failures="1"/);
+      assert.match(junit, /<testsuites name="tflw" tests="1" failures="1"/);
       assert.match(junit, /<failure /);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -2093,7 +2133,7 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
       assert.match(html, /health burst/);
 
       const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
-      assert.match(junit, /<testsuite name="tflw"/);
+      assert.match(junit, /<testsuites name="tflw"/);
       assert.match(junit, /health burst — error rate/);
     } finally {
       await rm(dir, { recursive: true, force: true });

@@ -1677,6 +1677,27 @@ regression baselines (their own before/after/diff evidence) wait for M4b.
 permits) in addition to entity-escaping `& < > "` — a test name or error message that happens to
 echo one (e.g. from a garbled/binary response) still produces well-formed XML (PLAN decision 73).
 
+**`junit.xml`'s document shape (FS-09, review finding A13-01).** A `<testsuites name="tflw">` root
+holding **one `<testsuite>` per `.tflw` file**, named by that file's path relative to the run's cwd
+— the same grouping key `report.html`'s sidebar uses, from one shared implementation. Every
+`<testcase>` carries `classname="<that file>"` alongside its `name`. This is the identity CI
+dashboards key flaky-test history off: without it, two tests that happen to share a name in
+different files are byte-identical to a dashboard, which merges them into one row and attributes
+each one's failures to the other. A workload test's per-`threshold` `<testcase>`s carry the same
+`classname`.
+
+Counts are per level: each `<testsuite>` reports its own file's `tests`/`failures`/`skipped`, the
+root reports the run's. `time` differs by level too — a suite's is the sum of its own testcases'
+durations, the root's is the run's wall clock, because files run concurrently and summing the
+suites would report a run as slower than it was. A workload `<testcase>` contributes `0.000`
+(`workload.overMs` is the planned span, an input, not an elapsed time).
+
+`<properties>` (`env`, `seed`, `now`, and `aborted` when set) describe the run rather than any one
+file, but the JUnit schema only admits `<properties>` under a `<testsuite>`, so each suite repeats
+them — any suite a reader opens hands back the seed needed to reproduce the run. A test that
+arrives with no `file` at all (`TestResult.file` is optional; the interpreter never sets it) groups
+under `(no file)`, the same placeholder `report.html` uses.
+
 **Evidence levels — `evidence full\|headers-only\|none` (PLAN decision 101c, enterprise arc
 cluster 2).** A `tflw.config` key (`evidence "headers-only"` — a string literal, since the lexer
 has no hyphen in identifiers) controlling how much of each step's request/response trace lands in

@@ -17,6 +17,7 @@ import type { AttemptResult, BackOffDiagnosis, LoadMetrics, LoadScenarioReport, 
 import { LOG_LEVEL_ORDER } from '@tflw/runtime';
 import { assetHash } from './assets.js';
 import { esc } from './escape.js';
+import { fileOf, groupByFile } from './group-by-file.js';
 import { CHART_STYLE, renderErrorRateChart, renderHistogramChart, renderLatencyOverTimeChart, renderThroughputChart } from './load-charts.js';
 
 /** A test's slot in the sidebar tree + `<main>`'s panel list — computed once, shared by both. */
@@ -26,20 +27,10 @@ interface TestSlot {
   readonly test: ReportEntry;
 }
 
-const UNGROUPED = '(no file)';
-
 export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<string, string> = new Map(), logLevelThreshold: LogLevel = 'debug'): string {
   const title = `testFlow report — ${report.passed}/${report.total} passed`;
-  const slots: TestSlot[] = report.tests.map((test, i) => ({ id: `t${i}`, file: test.file ?? UNGROUPED, test }));
-
-  // Group by file, preserving each file's first-appearance order (already the CLI's per-file run
-  // order via `mergeReports`) — a `Map` iterates insertion order, so no separate sort is needed.
-  const groups = new Map<string, TestSlot[]>();
-  for (const slot of slots) {
-    const g = groups.get(slot.file);
-    if (g) g.push(slot);
-    else groups.set(slot.file, [slot]);
-  }
+  const slots: TestSlot[] = report.tests.map((test, i) => ({ id: `t${i}`, file: fileOf(test), test }));
+  const groups = groupByFile(slots, (s) => s.file);
 
   const firstFailing = slots.find((s) => !s.test.ok);
   const defaultActiveId = (firstFailing ?? slots[0])?.id;

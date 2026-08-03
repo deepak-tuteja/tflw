@@ -136,4 +136,4 @@ has the complete picture for every step: full request/response — method, URL, 
 status, timing — with secrets redacted the same way everywhere. Open it in a browser first when a
 failure isn't self-explanatory from the terminal output alone. `--evidence <level>` trims how much
 of that detail gets captured (`full`/`headers-only`/`none`) — see
-[CI, reporting & safety](/guide/ci-and-reporting#evidence-levels-—-how-much-trace-lands-in-the-report).
+[CI, reporting & safety](/guide/ci-and-reporting#evidence-levels).

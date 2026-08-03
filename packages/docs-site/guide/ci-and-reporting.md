@@ -3,7 +3,8 @@
 ## Reports
 
 Every run writes `report/report.html` (step timeline, full request/response detail),
-`report/junit.xml` (for CI test-result ingestion), and `report/results.json` (the same redacted run
+[`report/junit.xml`](#junit-xml) (for CI test-result ingestion), and
+`report/results.json` (the same redacted run
 report as JSON — read a run's outcome from a file instead of scraping stdout) — they all fall out of
 the same event stream `tflw run` already emits, nothing to wire up.
 
@@ -11,7 +12,7 @@ the same event stream `tflw run` already emits, nothing to wire up.
 written out beside it, in which case the report is `report.html` **plus** `report/assets/` — its
 footer tells you which, along with what the file actually contains. Read that footer before you
 attach a report anywhere: at the default evidence level it holds whole response bodies and page
-screenshots. See [evidence levels](#evidence-levels-how-much-lands-in-the-report) to turn that down.
+screenshots. See [evidence levels](#evidence-levels) to turn that down.
 
 `tflw check [files]` runs the same parse + full checker pipeline `run` executes before it does
 anything, with **no execution** and no secrets required — a fast pre-commit/CI lint step. `tflw
@@ -30,13 +31,51 @@ run` exits non-zero on any test failure. A GitHub Actions example:
     path: report/
 ```
 
+## `junit.xml` — what your CI dashboard reads {#junit-xml}
+
+`report/junit.xml` is the artifact GitHub Actions, Jenkins, GitLab and friends ingest to build a
+test-results view. Its shape mirrors your suite: a `<testsuites>` root, **one `<testsuite>` per
+`.tflw` file**, and a `classname` on every `<testcase>` naming the file it came from.
+
+```xml
+<testsuites name="tflw" tests="2" failures="1" errors="0" time="1.234" timestamp="…">
+  <testsuite name="tests/smoke.tflw" tests="1" failures="0" errors="0" time="0.012" timestamp="…">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="42"/>
+      <property name="now" value="…"/>
+    </properties>
+    <testcase name="checkout works" classname="tests/smoke.tflw" time="0.012"/>
+  </testsuite>
+  <testsuite name="tests/regression.tflw" tests="1" failures="1" errors="0" time="0.020" timestamp="…">
+    …
+    <testcase name="checkout works" classname="tests/regression.tflw" time="0.020">
+      <failure message="expected status to equal 200, but got 500">…</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
+```
+
+Dashboards identify a test by `name` + `classname` and track its history — flaky rate, "first
+failed in", "fixed in" — under that identity. Two files declaring a test with the same name (a
+`smoke.tflw` and a `regression.tflw` both having a `"checkout works"`) therefore stay two distinct
+rows, which is why the file is on every testcase and not only on the suite.
+
+Each suite repeats the run's `<properties>` — including the **seed**, so you can reproduce a failed
+CI run locally with `tflw run --seed <n>` straight from the dashboard. They're duplicated because
+JUnit only allows `<properties>` inside a `<testsuite>`, not at the root.
+
+A workload-bearing test contributes one `<testcase>` per declared `threshold` (see
+[Load testing](/guide/load-testing)); a run whose generator saturated marks them `<skipped>` rather
+than passed or failed.
+
 ## Secrets are redacted automatically
 
 Anything that ever flowed through `env(NAME)` — header, body, URL, a derived interpolation —
 prints as `•••(NAME)` in `report.html`, traces, and CLI output, automatically. See
 [Config & environments](/guide/config) for `require env`.
 
-## `redact` — name a secret by position, not by source
+## `redact` — name a secret by position, not by source {#redact}
 
 `redact` masks a named body field, header or query parameter regardless of where its value came
 from — useful for PII (`email`, `address`, `ssn`) and for credentials that were never read through
@@ -79,7 +118,7 @@ test "reads a session"
   api GET /session?token={token}    # the token is masked here too
 ```
 
-## Evidence levels — how much lands in the report
+## Evidence levels — how much lands in the report {#evidence-levels}
 
 ```tflw-config
 env staging
