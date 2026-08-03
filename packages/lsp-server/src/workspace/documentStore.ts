@@ -20,10 +20,7 @@ import {
   parseConfigSource,
   collectSymbols,
   collectConfigSymbols,
-  checkServices,
-  checkDataTables,
-  checkSessions,
-  checkUnknownVariables,
+  checkProgram,
   checkSessionServices,
   type ConfigFile,
   type Diagnostic,
@@ -104,6 +101,10 @@ export class DocumentStore {
 
     const parsed = parseSource(doc.text);
     const symbols = collectSymbols(parsed.program, doc.text);
+    // An unresolvable project (no root, or an unreadable `tflw.config`) still checks against `[]`
+    // rather than `undefined`, unchanged from before M60: a file outside any project genuinely
+    // can't name a service or session that resolves, so the server keeps reporting them. Only the
+    // docs-site demo — a browser, where no config can exist even in principle — omits these.
     let knownServices: string[] = [];
     let knownSessions: string[] = [];
     if (doc.root) {
@@ -113,13 +114,9 @@ export class DocumentStore {
         knownSessions = Array.from(project.resolved.sessions.keys());
       }
     }
-    const diagnostics = [
-      ...parsed.diagnostics,
-      ...checkServices(parsed.program, knownServices),
-      ...checkDataTables(parsed.program),
-      ...checkSessions(parsed.program, knownSessions),
-      ...checkUnknownVariables(parsed.program),
-    ];
+    // The CLI's own pass list, verbatim — one shared entry point, so the server can't fall behind it
+    // again (M60). It ran four of the CLI's six until now.
+    const diagnostics = [...parsed.diagnostics, ...checkProgram(parsed.program, { knownServices, knownSessions })];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), baseDir };
   }
 

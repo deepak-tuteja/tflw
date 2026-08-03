@@ -59,7 +59,13 @@ function renderTestCase(test: TestResult): string {
 /** M56 (Phase 3, D119) — one `<testcase>` per declared `threshold` (named `${test.name} — ${label}
  * ${op} ${target}`, matching the old `load-junit.ts` naming so existing CI dashboards reading that
  * shape keep working), or one bare `<testcase name="${test.name}"/>` when it declared none — so a
- * threshold-less workload test still shows up in CI output instead of vanishing entirely. */
+ * threshold-less workload test still shows up in CI output instead of vanishing entirely.
+ *
+ * M60 (A4-01) narrowed how a threshold-less result can arrive here: the checker now rejects a
+ * workload-bearing `test` with no `threshold` (TF033), because its verdict is decided only by
+ * thresholds, so with none it reported `PASS` over a 100% error rate. The zero-threshold branch
+ * stays — this is a library boundary and a caller can still hand one in — but it is no longer a
+ * shape any `.tflw` file run through the CLI produces. */
 function renderWorkloadTestCases(test: WorkloadTestResult, inconclusive: boolean): string[] {
   if (test.thresholds.length === 0) return [`  <testcase name="${esc(test.name)}" time="0.000"/>`];
   return test.thresholds.map((t) => renderThresholdTestCase(test, t, inconclusive));

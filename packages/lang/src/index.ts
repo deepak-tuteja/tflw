@@ -24,11 +24,14 @@ export {
   type CompletionContext,
 } from './parser.js';
 export {
+  checkProgram,
+  type ProgramCheckOptions,
   validateConfig,
   checkServices,
   checkSessionServices,
   checkDataTables,
   checkSessions,
+  checkActionDecls,
   checkUnknownVariables,
   checkRequestAssertions,
   checkWorkloadTests,

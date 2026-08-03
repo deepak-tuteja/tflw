@@ -2,12 +2,18 @@
 // widget needs the same starting point — parse + symbol table + diagnostics — so it's computed
 // once here rather than repeated per widget. Pure, no I/O: same `@tflw/lang` surface
 // `playground/Playground.vue` already proves bundles fine for the browser.
-import { parseSource, collectSymbols, checkUnknownVariables } from '@tflw/lang';
+import { parseSource, collectSymbols, checkProgram } from '@tflw/lang';
 
+// `checkProgram` is the CLI's and the language server's own composed pass list (M60). This used to
+// call `checkUnknownVariables` alone — one of six — while this page claimed the demos run the same
+// resolver code the server does. The two passes that need a resolved `tflw.config` are skipped by
+// omitting their options: there is no config in the browser, and checking against an empty list
+// would flag every `api <service>` reference here as unknown. Everything a single file can be
+// judged on by itself now runs.
 export function analyze(source) {
   const parsed = parseSource(source);
   const symbols = collectSymbols(parsed.program, source);
-  const diagnostics = [...parsed.diagnostics, ...checkUnknownVariables(parsed.program)];
+  const diagnostics = [...parsed.diagnostics, ...checkProgram(parsed.program)];
   return { program: parsed.program, symbols, diagnostics };
 }
 

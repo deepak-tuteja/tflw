@@ -5,6 +5,7 @@
 // milestone (SPEC §1's "static scope" note).
 
 import type {
+  ActionDecl,
   ApiBody,
   ApiRequestSpec,
   ConfigEntry,
@@ -24,6 +25,45 @@ import type {
 import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import { parseStringParts } from './parser.js';
+
+/** What a caller of `checkProgram` knows about the project around the file being checked. Each
+ * field is `undefined` when the caller could not resolve a config at all — distinct from `[]`,
+ * which means a config *was* resolved and declares none. The distinction matters: with `[]`,
+ * `api users GET /x` is a real error ("the active env declares no named services"); with
+ * `undefined` there is nothing to check it against, so the pass is skipped rather than guessed at.
+ * The docs-site editor demo is the case that needs it: it runs in a browser, where no `tflw.config`
+ * can exist even in principle. The CLI and the language server both always pass a list. */
+export interface ProgramCheckOptions {
+  readonly knownServices?: readonly string[];
+  readonly knownSessions?: readonly string[];
+}
+
+/**
+ * Every semantic pass a single `.tflw` file gets, composed once (M60).
+ *
+ * Before this existed each consumer assembled its own list, and they had drifted: the CLI ran six
+ * passes, the language server ran four (no `checkRequestAssertions`, no `checkWorkloadTests`), and
+ * the docs-site editor demo ran one — while `packages/docs-site/editor.md` told the reader the
+ * demos run "the exact same resolver code the language server does" and that the squiggles are
+ * "the same teaching-quality errors the CLI prints". Both claims were false, and quietly: the
+ * missing passes are the ones that report load-testing and connection-assertion mistakes, so an
+ * editor showed a clean file that `tflw run` then refused. Adding a pass and forgetting one of
+ * three call sites was the standing failure mode; there is now one call site to forget.
+ *
+ * Cross-file checks that need the *config* tree rather than a program (`validateConfig`,
+ * `checkSessionServices`) stay separate — they run once per project, not once per test file.
+ */
+export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  return [
+    ...(opts.knownServices ? checkServices(program, opts.knownServices) : []),
+    ...checkDataTables(program),
+    ...(opts.knownSessions ? checkSessions(program, opts.knownSessions) : []),
+    ...checkActionDecls(program),
+    ...checkUnknownVariables(program),
+    ...checkRequestAssertions(program),
+    ...checkWorkloadTests(program),
+  ];
+}
 
 /** Keys valid only in `defaults`, only in `env`, or in both. */
 const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl', 'ViewportDecl']);
@@ -200,6 +240,39 @@ export function checkDataTables(program: Program): Diagnostic[] {
 }
 
 /**
+ * Action names are unique within a file (M60, A2-01). `env` (`TF024`) and `session` (`TF029`) have
+ * always had this rule; `action` did not, so two same-named `action`s passed `tflw check` with "no
+ * problems found" and then aborted the whole file at run time — the interpreter throws
+ * (`runtime/src/interpreter.ts`, `duplicate action "…"`), the console reporter renders the file as
+ * `(crashed)`, and the thrown message survives only in `results.json`. A statically decidable
+ * condition that the checker declares clean and the runtime kills the run over is exactly what
+ * `tflw check` exists to prevent, so the rule lives here and the interpreter's throw becomes the
+ * unreachable backstop it should always have been.
+ *
+ * Reported at the *second* declaration, pointing back at the first: the first one is not the
+ * mistake, and a rename/delete happens at the duplicate.
+ */
+export function checkActionDecls(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const seen = new Map<string, ActionDecl>();
+  for (const action of program.actions) {
+    const first = seen.get(action.name);
+    if (!first) {
+      seen.set(action.name, action);
+      continue;
+    }
+    diags.push({
+      code: Codes.DUPLICATE_ACTION,
+      severity: 'error',
+      message: `duplicate action "${action.name}"`,
+      span: action.span,
+      hint: `already declared at line ${first.span.start.line} — actions are file-scoped, so rename this one or delete it`,
+    });
+  }
+  return diags;
+}
+
+/**
  * `expect`/`check request connects`/`fails` validity (SPEC §6.2.2, PLAN decision 18, enterprise
  * arc cluster 5.5): the one piece of matcher↔subject compatibility checking that *is* static
  * (everything else stays a runtime concern, per the module doc above), because this one has a
@@ -313,10 +386,18 @@ const BROWSER_STEP_TYPES = new Set<Step['type']>([
  * (D19 — a browser VU is ~50-100MB, infeasible at load-test scale; checker-enforced rather than
  * left to surface as a runtime crash), and `retry`/`with each` rejected alongside a workload
  * (D96 — a load test's own iterations already provide repetition; it has no per-row cases, only
- * per-VU ones). The `think`/browser-step checks only look at *directly* written steps — a test
- * calling an `action` that itself contains one isn't traced interprocedurally (actions are the
- * reuse unit shared by every kind of test, D16, and can't statically know their caller's
- * context); such a call still fails loudly at runtime instead of silently doing the wrong thing.
+ * per-VU ones), and a workload-bearing test carries at least one `threshold` (M60, A4-01 — without
+ * one there is nothing to decide a verdict from, so the test can never fail).
+ *
+ * The `think`/browser-step bans resolve through the call graph (`reachableOffender`), not just a
+ * test's directly-written steps. Until M60 they did not, and the comment that used to sit here
+ * claimed a call into an `action` "still fails loudly at runtime instead of silently doing the
+ * wrong thing" — it does not, in either direction (A4-02): a workload test calling an action
+ * containing `click` ran 57 384 iterations at a 100 % error rate and reported `PASS`, and a
+ * functional test calling an action containing `think 2s` slept for two seconds and reported
+ * `PASS`. Actions are the reuse unit shared by every kind of test (D16) and so still can't be
+ * judged on their own — the same action is legal under a workload and illegal outside one — which
+ * is why the diagnostic lands on the *call site*, the one place the caller's context is known.
  */
 export function checkWorkloadTests(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
@@ -356,11 +437,36 @@ export function checkWorkloadTests(program: Program): Diagnostic[] {
         hint: 'a load test has no per-row cases, only per-VU iterations — drop `with each`',
       });
     }
+    // M60, A4-01. A workload-bearing test's verdict is decided once, after the run, by its
+    // `threshold` lines against the aggregate metrics (SPEC §4.5) — with none there is nothing to
+    // decide, so the verdict is unconditionally pass: a 100 %-error-rate run printed `✓`, `PASS`,
+    // and exit 0. That is the one thing a testing tool must never ship, it is decidable from a
+    // field `checkThresholdScopes` already reads, and it costs one `if`. An error rather than a
+    // warning because a warning changes no exit code, and "a CI job that can never fail" is
+    // precisely a CI-visible problem.
+    if (test.thresholds.length === 0) {
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: `workload-bearing test "${name}" has no \`threshold\`, so it can never fail`,
+        span: test.span,
+        hint: "a workload's verdict comes only from its `threshold` lines against the run's aggregate metrics (SPEC §4.5) — with none, a 100% error rate still reports PASS. Add at least one, e.g. `threshold error rate is less than 1%`",
+      });
+    }
   }
+
+  const actionsByName = new Map<string, ActionDecl>();
+  for (const action of program.actions) if (!actionsByName.has(action.name)) actionsByName.set(action.name, action);
+
+  const isThink = (step: Step): boolean => step.type === 'ThinkStmt';
+  const isBrowserStep = (step: Step): boolean =>
+    BROWSER_STEP_TYPES.has(step.type) ||
+    (step.type === 'ExpectStmt' &&
+      (step.subject.type === 'LocatorSubject' || step.subject.type === 'PageSubject' || step.subject.type === 'NetworkRequestSubject'));
 
   const walkForThink = (steps: readonly Step[]): void => {
     for (const step of steps) {
-      if (step.type === 'ThinkStmt') {
+      if (isThink(step)) {
         diags.push({
           code: Codes.LOAD_INVALID,
           severity: 'error',
@@ -378,13 +484,31 @@ export function checkWorkloadTests(program: Program): Diagnostic[] {
   }
   for (const hook of program.hooks) walkForThink(hook.body);
 
+  // The same two bans, one level of indirection out (M60, A4-02): a call whose callee reaches the
+  // banned construct is reported at the call site, since only the caller knows which of the two
+  // rules applies.
+  const callsIntoThink = (steps: readonly Step[]): void => {
+    for (const call of directCalls(steps)) {
+      const found = reachableOffender(call.name, actionsByName, isThink);
+      if (!found) continue;
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: '`think` is only legal inside a workload-bearing `test`',
+        span: call.span,
+        hint: `\`${found.action.name}\` (line ${found.step.span.start.line}) contains a \`think\`, so calling it from a body with no workload line is a fixed sleep in a functional test — use \`wait until …\` for eventual consistency, or give this \`test\` a workload (\`ramp\`/\`hold\`/\`step\`/\`spike\`/\`run\`)`,
+      });
+    }
+  };
+  for (const test of program.tests) {
+    if (!test.workload) callsIntoThink(test.body);
+  }
+  for (const hook of program.hooks) callsIntoThink(hook.body);
+
   for (const test of program.tests) {
     if (!test.workload) continue;
     for (const step of test.body) {
-      const isBrowserExpect =
-        step.type === 'ExpectStmt' &&
-        (step.subject.type === 'LocatorSubject' || step.subject.type === 'PageSubject' || step.subject.type === 'NetworkRequestSubject');
-      if (BROWSER_STEP_TYPES.has(step.type) || isBrowserExpect) {
+      if (isBrowserStep(step)) {
         diags.push({
           code: Codes.LOAD_INVALID,
           severity: 'error',
@@ -394,10 +518,123 @@ export function checkWorkloadTests(program: Program): Diagnostic[] {
         });
       }
     }
+    for (const call of directCalls(test.body)) {
+      const found = reachableOffender(call.name, actionsByName, isBrowserStep);
+      if (!found) continue;
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: "browser steps aren't supported inside a workload-bearing `test` in this milestone (D19)",
+        span: call.span,
+        hint: `\`${found.action.name}\` (line ${found.step.span.start.line}) contains a browser step — load tests are API-only in v1, a browser VU is ~50-100MB and infeasible at load-test scale, so this call can't run under a workload`,
+      });
+    }
     checkThresholdScopes(test, diags);
   }
 
   return diags;
+}
+
+/** One call written in a body, by call name and the span to point a diagnostic at (M60, A4-02). */
+interface CallSite {
+  readonly name: string;
+  readonly span: Span;
+}
+
+/** Every call written *directly* in `steps` — as a `CallStmt`, or as a `CallExpr` anywhere inside a
+ * value (`let x = create order(...)`, an argument to another call, a field of an inline body).
+ * Both forms execute the callee's body, and only the statement form was ever considered a call by
+ * anything in this file, so both are collected here. Nested block-shaped steps are walked, matching
+ * `walkForThink`'s own recursion. */
+function directCalls(steps: readonly Step[]): CallSite[] {
+  const out: CallSite[] = [];
+
+  const fromValue = (value: Value): void => {
+    switch (value.type) {
+      case 'CallExpr':
+        out.push({ name: value.name, span: value.span });
+        for (const arg of value.args) fromValue(arg);
+        break;
+      case 'ObjectLit':
+        for (const field of value.fields) fromValue(field.value);
+        break;
+      case 'ArrayLit':
+        for (const element of value.elements) fromValue(element);
+        break;
+      case 'BinaryExpr':
+        fromValue(value.left);
+        fromValue(value.right);
+        break;
+      case 'FormatExpr':
+      case 'TransformExpr':
+        fromValue(value.value);
+        break;
+      default:
+        // Every other `Value` is a literal, a `{var}`/`env()` reference, or a generator — none of
+        // them can contain a call.
+        break;
+    }
+  };
+
+  for (const step of steps) {
+    switch (step.type) {
+      case 'CallStmt':
+        fromValue(step.call);
+        break;
+      case 'LetStmt':
+      case 'GiveStmt':
+        fromValue(step.value);
+        break;
+      case 'WithinBlock':
+      case 'SwitchToNewTabBlock':
+      case 'DownloadBlock':
+        out.push(...directCalls(step.body));
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
+/** Depth-first search from a call name for the first step matching `predicate`, anywhere in the
+ * callee's body or the bodies it calls in turn (M60, A4-02). Returns the action that *directly*
+ * contains the offending step, so the diagnostic can name a specific declaration and line rather
+ * than "somewhere below this call".
+ *
+ * A name that resolves to no `action` in this file is a `use`d JS/TS helper (SPEC §11) or a typo —
+ * either way there is no tflw body to inspect, so it is skipped; a `use`d helper cannot contain a
+ * `think` or a browser step in the first place, those being tflw steps. `seen` makes a recursive
+ * or mutually recursive action terminate instead of hanging the checker. */
+function reachableOffender(
+  name: string,
+  byName: ReadonlyMap<string, ActionDecl>,
+  predicate: (step: Step) => boolean,
+  seen: Set<string> = new Set(),
+): { action: ActionDecl; step: Step } | undefined {
+  if (seen.has(name)) return undefined;
+  seen.add(name);
+  const action = byName.get(name);
+  if (!action) return undefined;
+
+  const scan = (steps: readonly Step[]): Step | undefined => {
+    for (const step of steps) {
+      if (predicate(step)) return step;
+      if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+        const nested = scan(step.body);
+        if (nested) return nested;
+      }
+    }
+    return undefined;
+  };
+  const direct = scan(action.body);
+  if (direct) return { action, step: direct };
+
+  for (const call of directCalls(action.body)) {
+    const found = reachableOffender(call.name, byName, predicate, seen);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /** M43 (D70/D72), TF034: a `threshold … for "label"` clause must resolve to at least one `api`

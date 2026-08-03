@@ -69,6 +69,7 @@ export const Codes = {
   INVALID_CONTENT_TYPE: 'TF032',
   LOAD_INVALID: 'TF033',
   THRESHOLD_SCOPE_UNKNOWN: 'TF034',
+  DUPLICATE_ACTION: 'TF035',
 } as const;
 
 // ---------------------------------------------------------------------------

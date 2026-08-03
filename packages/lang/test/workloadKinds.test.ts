@@ -128,20 +128,20 @@ test('mixing two different workload keywords in one test is a parse error (at mo
 });
 
 test('checkWorkloadTests: `retry` alongside a `hold` workload is flagged (D96 applies to every kind)', () => {
-  const { program } = parseSource('test "S" retry 2\n  hold 5 users for 10s\n  api GET /health\n');
+  const { program } = parseSource('test "S" retry 2\n  hold 5 users for 10s\n  threshold error rate is less than 1%\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.match(diags[0]!.message, /`retry` can't be combined with a workload/);
 });
 
 test('checkWorkloadTests: `think` is legal inside a `run … iterations …` body (D102 — count-based kinds keep pacing)', () => {
-  const { program } = parseSource('test "S"\n  run 10 iterations across 5 users\n  think 500ms\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  run 10 iterations across 5 users\n  threshold error rate is less than 1%\n  think 500ms\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
 
 test('checkWorkloadTests: browser steps are still rejected inside a `step`/`spike`/`run` body, same as `ramp` (D19)', () => {
-  const { program } = parseSource('test "S"\n  hold 5 users for 10s\n  open "/checkout"\n');
+  const { program } = parseSource('test "S"\n  hold 5 users for 10s\n  threshold error rate is less than 1%\n  open "/checkout"\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.match(diags[0]!.message, /browser steps aren't supported inside a workload-bearing `test`/);
@@ -149,7 +149,7 @@ test('checkWorkloadTests: browser steps are still rejected inside a `step`/`spik
 
 test('checkWorkloadTests: two differently-shaped workload-bearing tests sharing a name is still flagged (uniqueness is kind-agnostic)', () => {
   const { program } = parseSource(
-    'test "Same"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "Same"\n  hold 5 users for 10s\n  api GET /health\n',
+    'test "Same"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n\ntest "Same"\n  hold 5 users for 10s\n  threshold error rate is less than 1%\n  api GET /health\n',
   );
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);

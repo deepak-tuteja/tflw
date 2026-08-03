@@ -41,6 +41,7 @@ action checkout(productId)
 test "checkout under load"
   ramp to 50 users over 30s
   checkout("widget-1")
+  threshold p95 duration is less than 800ms
 ```
 
 **Not supported inside a workload-bearing `test` (v1):** browser steps (`open`/`click`/`fill`/…)
@@ -49,6 +50,11 @@ for a load test is infeasible. Load tests are API-only; the checker rejects a br
 rather than letting it surface as a confusing runtime error. `retry`/`with each` are also rejected
 alongside a workload — a load test's own iterations already provide repetition, and it has no
 per-row cases, only per-VU ones.
+
+Calling an `action` doesn't get around either ban. The checker follows the call, and reports on the
+call line — because the same action is perfectly legal inside a functional test, so only the caller
+decides. (Before M60 it didn't follow the call: a workload test calling an action containing
+`click` ran tens of thousands of failing iterations and still printed `PASS`.)
 
 ## Two workload models — pick deliberately
 
@@ -146,9 +152,11 @@ test "browsing"
   ramp to 30 users over 20s
   api GET /products
   expect status equals 200
+  capture body.products[0].id as id
   think 1s to 3s
   api GET /products/{id}
   expect status equals 200
+  threshold error rate is less than 1%
 ```
 
 `think <duration>` (fixed) or `think <duration> to <duration>` (a fresh random draw per
@@ -167,16 +175,19 @@ threshold error rate is less than 1%
 ```
 
 Evaluated once, after the whole run, against every iteration's outcome. `tflw run` exits `0` when
-every declared threshold passes (or the test declares none), `1` when any is breached — the
-same signal a CI gate reads. An `expect` failure inside a workload-bearing test's body fails
-**that iteration** only, counted toward the error rate — it never aborts the run the way a
-functional test's failure would.
+every declared threshold passes, `1` when any is breached — the same signal a CI gate reads. An
+`expect` failure inside a workload-bearing test's body fails **that iteration** only, counted
+toward the error rate — it never aborts the run the way a functional test's failure would.
+
+**At least one threshold is required.** A workload-bearing test's verdict comes from nothing else,
+so one declaring none can never fail: a run with a 100% error rate would report `✓`, `PASS`, and
+exit `0`. The checker rejects that shape (`TF033`). If you want a workload for the numbers rather
+than as a gate, say so out loud with a deliberately loose one — `threshold error rate is less than
+100%` reads as "I am not gating on this", where silence read as "this passed".
 
 Every threshold also lands in the one `report/junit.xml` as its own `<testcase>` (named `test name
 — label op target`), interleaved with the functional suite's own `<testcase>`s in file-declaration
-order — no separate junit file to point CI at. A workload-bearing test with zero declared
-thresholds still contributes one bare, always-passing `<testcase>` (its bare name, no verdict to
-gate on) so it shows up in CI output rather than silently contributing nothing.
+order — no separate junit file to point CI at.
 
 ## Cleanup — `after each` is skipped by default
 
@@ -192,6 +203,7 @@ test "reserve and release"
   cleanup
   api POST /reservations body { seat: "12A" }
   expect status equals 201
+  threshold error rate is less than 1%
 ```
 
 ## Identity per VU — `as <session>` and `unique(...)`
@@ -202,6 +214,7 @@ A workload-bearing test can opt into a session exactly like a functional one doe
 test "checkout under load" as customer
   ramp to 50 users over 30s
   api POST /cart/checkout body { productId: "widget-1" }
+  threshold p95 duration is less than 800ms
 ```
 
 The session establishes **once**, before the VU loop starts — never per iteration — and its

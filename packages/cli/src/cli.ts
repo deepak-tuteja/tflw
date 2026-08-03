@@ -15,13 +15,8 @@ import {
   parseSource,
   parseConfigSource,
   renderDiagnostics,
-  checkServices,
+  checkProgram,
   checkSessionServices,
-  checkDataTables,
-  checkSessions,
-  checkUnknownVariables,
-  checkRequestAssertions,
-  checkWorkloadTests,
   suggest,
   detectReuse,
   renderCallSiteReplacement,
@@ -688,13 +683,13 @@ async function loadAndValidate(
   for (const file of files) {
     const source = await readFile(file, 'utf8');
     const parsed = parseSource(source);
-    const serviceDiags = checkServices(parsed.program, Object.keys(resolved.services));
-    const tableDiags = checkDataTables(parsed.program);
-    const sessionDiags = checkSessions(parsed.program, knownSessions);
-    const variableDiags = checkUnknownVariables(parsed.program);
-    const requestDiags = checkRequestAssertions(parsed.program);
-    const workloadDiags = checkWorkloadTests(parsed.program);
-    const diagnostics = [...parsed.diagnostics, ...serviceDiags, ...tableDiags, ...sessionDiags, ...variableDiags, ...requestDiags, ...workloadDiags];
+    // One composed pass list, shared with the language server and the docs-site editor demo (M60)
+    // — those two used to assemble their own shorter lists and silently drifted behind this one.
+    const checkDiags = checkProgram(parsed.program, {
+      knownServices: Object.keys(resolved.services),
+      knownSessions,
+    });
+    const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
     // deprecation notices, `tflw migrate`'s own input) is advisory: printed/handed to the caller,
     // but the file still runs. No diagnostic in the shipped checker uses `'warning'` yet (the

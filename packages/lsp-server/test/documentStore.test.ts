@@ -118,3 +118,50 @@ test('close: cancels a pending debounced publish', async () => {
     assert.equal(published, false);
   });
 });
+
+// -- M60: the server runs the CLI's pass list, not a subset -----------------------------------
+//
+// It used to run four of the CLI's six: no `checkRequestAssertions`, no `checkWorkloadTests`. So an
+// editor showed a clean file that `tflw run` then refused to run at all — the two missing passes
+// being exactly the ones that report load-testing and connection-assertion mistakes. These assert
+// per-diagnostic, one per formerly-missing pass, rather than counting: a count would still pass if
+// one pass were dropped and another double-reported.
+
+test('analyze: a workload-bearing test with no threshold is reported by the server too (checkWorkloadTests, M60)', async () => {
+  await withTmpProject(CLEAN_CONFIG, async (dir) => {
+    const store = new DocumentStore();
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), `test "load"\n  hold 2 users for 1s\n  api GET /health\n`);
+    const analysis = await store.analyze(uri, undefined);
+    assert.ok(
+      analysis?.diagnostics.some((d) => d.code === 'TF033'),
+      `expected TF033 from the workload pass, got ${JSON.stringify(analysis?.diagnostics.map((d) => d.code))}`,
+    );
+  });
+});
+
+test('analyze: a `request` assertion mixed with a response assertion is reported by the server too (checkRequestAssertions, M60)', async () => {
+  await withTmpProject(CLEAN_CONFIG, async (dir) => {
+    const store = new DocumentStore();
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), `test "ok"\n  api GET /health\n  expect request connects\n  expect status equals 200\n`);
+    const analysis = await store.analyze(uri, undefined);
+    assert.ok(
+      analysis?.diagnostics.some((d) => d.code === 'TF031'),
+      `expected TF031 from the request-assertion pass, got ${JSON.stringify(analysis?.diagnostics.map((d) => d.code))}`,
+    );
+  });
+});
+
+test('analyze: a duplicate action name is reported by the server too (checkActionDecls, M60/A2-01)', async () => {
+  await withTmpProject(CLEAN_CONFIG, async (dir) => {
+    const store = new DocumentStore();
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), `action a()\n  give 1\n\naction a()\n  give 2\n\ntest "t"\n  api GET /health\n`);
+    const analysis = await store.analyze(uri, undefined);
+    assert.ok(
+      analysis?.diagnostics.some((d) => d.code === 'TF035'),
+      `expected TF035, got ${JSON.stringify(analysis?.diagnostics.map((d) => d.code))}`,
+    );
+  });
+});

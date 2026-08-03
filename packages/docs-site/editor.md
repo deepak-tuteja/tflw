@@ -21,7 +21,10 @@ via the `tflw` extension (`packages/vscode` in the repo).
 
 Everything below works for both `.tflw` test files and `tflw.config` — one server, one grammar,
 two dialects. Every demo on this page runs the exact same resolver code the language server
-does, client-side — not a screenshot or a recording.
+does, client-side — not a screenshot or a recording. The one difference is that a browser has no
+project on disk: the two checks that need a resolved `tflw.config` — unknown `api <service>` and
+unknown `session` names — can't run here, so they're the only errors you'll see in your editor but
+not in these demos.
 
 ## Install
 

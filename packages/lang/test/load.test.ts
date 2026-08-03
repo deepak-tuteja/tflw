@@ -136,7 +136,7 @@ test('a second `ramp to …` line in one test is a parse error (at most one work
 
 test('checkWorkloadTests: a second, differently-named workload-bearing test in one file is not flagged (M30 lifts the one-per-file restriction)', () => {
   const { program, diagnostics } = parseSource(
-    'test "First"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "Second"\n  ramp to 1 users over 1s\n  api GET /health\n',
+    'test "First"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n\ntest "Second"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n',
   );
   assert.deepEqual(diagnostics, []);
   assert.equal(program.tests.length, 2);
@@ -146,7 +146,7 @@ test('checkWorkloadTests: a second, differently-named workload-bearing test in o
 
 test('checkWorkloadTests: two workload-bearing tests sharing a name is flagged (TF033, M30/D29) — the first is not, the second points back at it', () => {
   const { program, diagnostics } = parseSource(
-    'test "Same"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "Same"\n  ramp to 2 users over 1s\n  api GET /health\n',
+    'test "Same"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n\ntest "Same"\n  ramp to 2 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n',
   );
   assert.deepEqual(diagnostics, []);
   assert.equal(program.tests.length, 2);
@@ -158,14 +158,14 @@ test('checkWorkloadTests: two workload-bearing tests sharing a name is flagged (
 });
 
 test('checkWorkloadTests: a functional test sharing a name with a workload-bearing test is not flagged (D93 — only workload-bearing names are keyed)', () => {
-  const { program } = parseSource('test "Same"\n  api GET /health\n\ntest "Same"\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "Same"\n  api GET /health\n\ntest "Same"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
 
 test('checkWorkloadTests: three workload-bearing tests where only two share a name flags exactly one diagnostic', () => {
   const { program } = parseSource(
-    'test "A"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "B"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "A"\n  ramp to 1 users over 1s\n  api GET /health\n',
+    'test "A"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n\ntest "B"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n\ntest "A"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n',
   );
   assert.equal(program.tests.length, 3);
   const diags = checkWorkloadTests(program);
@@ -191,13 +191,13 @@ test('checkWorkloadTests: `think` inside a `before`/`after` hook is flagged (TF0
 });
 
 test('checkWorkloadTests: `think` inside a workload-bearing test body is not flagged', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  think 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  think 1s\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
 
 test('checkWorkloadTests: a browser step directly inside a workload-bearing test body is flagged (TF033, D19)', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  open "/checkout"\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  open "/checkout"\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
@@ -205,14 +205,14 @@ test('checkWorkloadTests: a browser step directly inside a workload-bearing test
 });
 
 test('checkWorkloadTests: a UI-locator `expect` inside a workload-bearing test body is flagged (TF033, D19)', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  expect button "Pay" is visible\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  expect button "Pay" is visible\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
 });
 
 test('checkWorkloadTests: an ordinary API `expect`/`check` inside a workload-bearing test body is not flagged', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  api GET /health\n  expect status equals 200\n  check status equals 200\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n  expect status equals 200\n  check status equals 200\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
@@ -220,7 +220,7 @@ test('checkWorkloadTests: an ordinary API `expect`/`check` inside a workload-bea
 // -- M50 (D96): `retry`/`with each` can't coexist with a workload -----------------------------
 
 test('checkWorkloadTests: `retry N` alongside a workload is flagged (D96)', () => {
-  const { program } = parseSource('test "S" retry 2\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S" retry 2\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
@@ -228,7 +228,7 @@ test('checkWorkloadTests: `retry N` alongside a workload is flagged (D96)', () =
 });
 
 test('checkWorkloadTests: `with each` alongside a workload is flagged (D96)', () => {
-  const { program } = parseSource('with each\n  | n |\n  | 1 |\ntest "S"\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('with each\n  | n |\n  | 1 |\ntest "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
@@ -244,13 +244,13 @@ test('checkWorkloadTests: `retry`/`with each` on a plain functional test is neve
 // -- Phase 2b (D105-D107/D112): `parallel`/`sequential` is orthogonal to D96 -------------------
 
 test('checkWorkloadTests: `parallel` alongside a workload is never flagged (D112 — orthogonal to D96)', () => {
-  const { program } = parseSource('test "S" parallel\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S" parallel\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
 
 test('checkWorkloadTests: `sequential` alongside a workload is never flagged', () => {
-  const { program } = parseSource('test "S" sequential\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S" sequential\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
@@ -280,7 +280,7 @@ test('checkWorkloadTests: `threshold … for "label"` matching no step in the te
 
 test('checkWorkloadTests: a `for "label"` on one workload-bearing test does not see another one\'s identities (TF034 is per-test)', () => {
   const { program } = parseSource(
-    'test "A"\n  ramp to 1 users over 1s\n  api POST /orders as "checkout"\n\ntest "B"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkout" is less than 250ms\n  api GET /health\n',
+    'test "A"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api POST /orders as "checkout"\n\ntest "B"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkout" is less than 250ms\n  api GET /health\n',
   );
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
@@ -313,4 +313,88 @@ test('a bare `scenario` keyword produces the TF033 migration-hint diagnostic, no
 test('a workload target of 0 (or negative) is a parse error', () => {
   const { diagnostics } = parseSource('test "S"\n  ramp to 0 users over 1s\n  api GET /health\n');
   assert.ok(diagnostics.some((d) => d.code === 'TF033'), JSON.stringify(diagnostics));
+});
+
+// -- M60 (A4-01): a workload-bearing test must be able to fail --------------------------------
+
+test('checkWorkloadTests: a workload-bearing test with no `threshold` is flagged (TF033) — it can never fail', () => {
+  const { program } = parseSource('test "load no threshold"\n  run 5 iterations across 1 users\n  api GET /nope\n  expect status equals 999\n');
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF033');
+  assert.match(diags[0]!.message, /has no `threshold`, so it can never fail/);
+  assert.match(diags[0]!.hint ?? '', /threshold error rate is less than 1%/, 'the hint must name a threshold that actually parses');
+  // The property, not the message: this exact file used to check clean and then report `PASS 1/1`
+  // with a 100% error rate. Whatever the wording, it must not be accepted.
+  assert.equal(diags[0]!.span.start.line, 1, 'reported on the test declaration');
+});
+
+test('checkWorkloadTests: one `threshold` of any kind satisfies the rule', () => {
+  for (const line of ['  threshold error rate is less than 1%\n', '  threshold p95 duration is less than 800ms\n']) {
+    const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n' + line + '  api GET /health\n');
+    assert.deepEqual(checkWorkloadTests(program), [], `expected \`${line.trim()}\` to satisfy the rule`);
+  }
+});
+
+test('checkWorkloadTests: a functional test needs no threshold (the rule is workload-only)', () => {
+  const { program } = parseSource('test "plain"\n  api GET /health\n  expect status equals 200\n');
+  assert.deepEqual(checkWorkloadTests(program), []);
+});
+
+// -- M60 (A4-02): D18/D19 follow calls into actions --------------------------------------------
+
+test('checkWorkloadTests: `think` inside an action called from a functional test is flagged at the call site (D18)', () => {
+  const { program } = parseSource('action helper()\n  api GET /x\n  think 2s\n\ntest "t"\n  helper()\n  api GET /x\n  expect status equals 200\n');
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF033');
+  assert.match(diags[0]!.message, /`think` is only legal inside a workload-bearing `test`/);
+  assert.match(diags[0]!.hint ?? '', /`helper` \(line 3\) contains a `think`/, 'the hint must name the action and the line the `think` is on');
+  // At the call site, not at the `think`: the action itself is legal under a workload.
+  const callLine = program.tests[0]!.body[0]!.span.start.line;
+  assert.equal(diags[0]!.span.start.line, callLine);
+});
+
+test('checkWorkloadTests: the same action called from a workload-bearing test is never flagged', () => {
+  const { program } = parseSource(
+    'action helper()\n  api GET /x\n  think 2s\n\ntest "load"\n  hold 2 users for 1s\n  threshold error rate is less than 1%\n  helper()\n',
+  );
+  assert.deepEqual(checkWorkloadTests(program), []);
+});
+
+test('checkWorkloadTests: a browser step inside an action called from a workload-bearing test is flagged at the call site (D19)', () => {
+  const { program } = parseSource(
+    'action openIt()\n  open "/"\n  click button "Buy"\n\ntest "load"\n  hold 2 users for 1s\n  threshold error rate is less than 1%\n  openIt()\n  expect status equals 200\n',
+  );
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF033');
+  assert.match(diags[0]!.message, /browser steps aren't supported inside a workload-bearing `test`/);
+  assert.match(diags[0]!.hint ?? '', /`openIt` \(line 2\) contains a browser step/);
+});
+
+test('checkWorkloadTests: a call in value position (`let x = helper()`) is resolved too, not just a bare call statement', () => {
+  const { program } = parseSource('action helper()\n  think 2s\n  give 1\n\ntest "t"\n  let x = helper()\n  api GET /x\n  expect status equals 200\n');
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.hint ?? '', /`helper` \(line 2\)/);
+});
+
+test('checkWorkloadTests: the ban is transitive through a chain of actions', () => {
+  const { program } = parseSource(
+    'action inner()\n  think 2s\n\naction outer()\n  inner()\n\ntest "t"\n  outer()\n  api GET /x\n  expect status equals 200\n',
+  );
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.hint ?? '', /`inner` \(line 2\) contains a `think`/, 'names the action that actually holds the `think`, not the one called');
+});
+
+test('checkWorkloadTests: a recursive action terminates instead of hanging the checker', () => {
+  const { program } = parseSource('action loops()\n  loops()\n\ntest "t"\n  loops()\n  api GET /x\n  expect status equals 200\n');
+  assert.deepEqual(checkWorkloadTests(program), []);
+});
+
+test('checkWorkloadTests: a call to a name with no matching action (a `use`d JS helper, or a typo) is skipped, not guessed at', () => {
+  const { program } = parseSource('test "t"\n  sign payload("x")\n  api GET /x\n  expect status equals 200\n');
+  assert.deepEqual(checkWorkloadTests(program), []);
 });

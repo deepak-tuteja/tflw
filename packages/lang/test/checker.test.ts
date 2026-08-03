@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, parseConfigSource, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables, checkRequestAssertions } from '../src/index.js';
+import { parseSource, parseConfigSource, checkServices, checkSessionServices, checkDataTables, checkSessions, checkUnknownVariables, checkRequestAssertions, checkActionDecls, checkProgram } from '../src/index.js';
 
 test('checkServices: accepts a known named service', () => {
   const { program } = parseSource(`test "ok"\n  api billing GET /invoices/1\n  expect status equals 200\n`);
@@ -479,4 +479,73 @@ test('checkRequestAssertions: validates an `api`+`expect request` pair nested in
   assert.equal(checkRequestAssertions(tab).length, 1);
   const download = parseSource(`test "bad"\n  download as file\n    api GET /health\n    expect request connects\n    expect status equals 200\n`).program;
   assert.equal(checkRequestAssertions(download).length, 1);
+});
+
+// -- M60 (A2-01): action names are unique within a file ---------------------------------------
+
+test('checkActionDecls: two actions with the same name is flagged (TF035) at the second declaration', () => {
+  const { program, diagnostics } = parseSource('action fetch it()\n  give 1\n\naction fetch it()\n  give 2\n\ntest "t"\n  fetch it()\n');
+  assert.deepEqual(diagnostics, [], 'the duplicate is a semantic error, not a parse error — the file still parses');
+  const diags = checkActionDecls(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF035');
+  assert.match(diags[0]!.message, /duplicate action "fetch it"/);
+  assert.deepEqual(diags[0]!.span, program.actions[1]!.span, 'reported at the duplicate, not the original');
+  assert.match(diags[0]!.hint ?? '', /already declared at line 1/);
+});
+
+test('checkActionDecls: distinct action names, and a name shared with a test, are never flagged', () => {
+  const { program } = parseSource('action a()\n  give 1\n\naction b()\n  give 2\n\ntest "a"\n  api GET /health\n');
+  assert.deepEqual(checkActionDecls(program), []);
+});
+
+test('checkActionDecls: three actions where two share a name flags exactly one diagnostic', () => {
+  const { program } = parseSource('action a()\n  give 1\n\naction b()\n  give 2\n\naction a()\n  give 3\n');
+  const diags = checkActionDecls(program);
+  assert.equal(diags.length, 1);
+  assert.deepEqual(diags[0]!.span, program.actions[2]!.span);
+});
+
+// -- M60: `checkProgram` composes every per-file pass ------------------------------------------
+//
+// The point of this test is coverage of the *list*, not of any one rule: the CLI, the language
+// server, and the docs-site editor demo each used to assemble their own, and had drifted to 6, 4,
+// and 1 pass respectively. A new pass that isn't added to `checkProgram` fails here.
+
+test('checkProgram: reports a diagnostic from every pass it composes, given one file that breaks all of them', () => {
+  const source = [
+    'action dup()',
+    '  give 1',
+    '',
+    'action dup()',                                             // TF035 — checkActionDecls
+    '  give 2',
+    '',
+    'with each',
+    '  | n |',
+    '  | 1 |',
+    'test "row {nope}"',                                        // TF027 — checkDataTables
+    '  api ghost GET /a/{missing}',                             // TF026 — checkServices, TF030 — checkUnknownVariables
+    '  expect request connects',                                // TF031 — checkRequestAssertions
+    '  expect status equals 200',
+    '',
+    'test "load" as nosuch',                                    // TF028 — checkSessions
+    '  ramp to 1 users over 1s',                                // TF033 — checkWorkloadTests (no threshold)
+    '  api GET /health',
+    '',
+  ].join('\n');
+  const { program } = parseSource(source);
+  const codes = new Set(checkProgram(program, { knownServices: [], knownSessions: [] }).map((d) => d.code));
+  for (const expected of ['TF026', 'TF027', 'TF028', 'TF030', 'TF031', 'TF033', 'TF035']) {
+    assert.ok(codes.has(expected), `checkProgram dropped the pass that reports ${expected}; got ${[...codes].join(', ')}`);
+  }
+});
+
+test('checkProgram: omitting knownServices/knownSessions skips those two passes rather than checking against nothing', () => {
+  // The docs-site editor demo's case: a browser has no `tflw.config` even in principle, so a named
+  // service is unresolvable rather than wrong. Everything a single file can be judged on alone
+  // still runs.
+  const { program } = parseSource('test "t" as admin\n  api billing GET /invoices/1\n  expect status equals 200\n');
+  assert.deepEqual(checkProgram(program), []);
+  const codes = checkProgram(program, { knownServices: [], knownSessions: [] }).map((d) => d.code).sort();
+  assert.deepEqual(codes, ['TF026', 'TF028'], 'an empty list means "resolved, declares none" — that *is* checkable');
 });

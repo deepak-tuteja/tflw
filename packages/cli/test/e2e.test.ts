@@ -2068,7 +2068,7 @@ test('`tflw load`: an `env(NAME)` value from a `.env` file (not a real process e
     await writeFile(join(dir, '.env'), 'API_KEY=from-dotenv-only\n', 'utf8');
     await writeFile(
       join(dir, 'load.tflw'),
-      'test "dotenv-only credential"\n  ramp to 3 users over 150ms\n  api GET /secret\n    header "X-Api-Key" is env(API_KEY)\n  expect status equals 200\n',
+      'test "dotenv-only credential"\n  ramp to 3 users over 150ms\n  api GET /secret\n    header "X-Api-Key" is env(API_KEY)\n  expect status equals 200\n  threshold error rate is less than 1%\n',
       'utf8',
     );
 
@@ -2115,7 +2115,7 @@ test('`tflw load`: a closed-model scenario against a degrading server prints and
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
     // 1400ms/5 users comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves —
     // runtime's load.test.ts has the full derivation of this margin.
-    await writeFile(join(dir, 'load.tflw'), 'test "degrading checkout"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n', 'utf8');
+    await writeFile(join(dir, 'load.tflw'), 'test "degrading checkout"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
     assert.match(stdout, /⚠ your load backed off/);
@@ -2132,9 +2132,13 @@ test('`tflw load`: a closed-model scenario against a degrading server prints and
     assert.match(html, /coordinated omission, D17/);
 
     // Report-only: a back-off warning must never touch the exit code or gate CI on its own — only
-    // `threshold`s and `inconclusive` do that. D119: this scenario declares zero thresholds, so it
-    // still contributes exactly one bare, always-passing <testcase> (not zero — a threshold-less
-    // workload test must still show up in CI output).
+    // `threshold`s and `inconclusive` do that. The scenario's own error-rate threshold is met here
+    // (a slow `/slow` still answers 200), so the one <testcase> it contributes passes and the
+    // warning is visible without failing anything. This used to declare zero thresholds and lean on
+    // D119's bare always-passing <testcase>; M60/A4-01 makes that shape a checker error — a
+    // workload test with nothing to gate on reported `PASS` over a 100% error rate — so the
+    // zero-threshold branch in `reporter/src/junit.ts` is now only reachable through the library
+    // API, not from a `.tflw` file the CLI will run.
     const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
     assert.match(junit, /tests="1" failures="0"/);
   } finally {
@@ -2253,7 +2257,7 @@ test('`tflw load` runs a `hold` workload end-to-end: passes, prints a summary, w
       // busy CI box — a `hold` this tight and this short is a legitimately heavy generator load
       // (this local fixture returns in ~1ms, so 4 always-on VUs issue thousands of iterations),
       // exactly as it would be for an equivalent `ramp to N users over <dur>` at this scale too.
-      await writeFile(join(dir, 'load.tflw'), 'test "steady load"\n  hold 4 users for 200ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "steady load"\n  hold 4 users for 200ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "steady load" — hold 4 users for 200ms \(closed\)/);
@@ -2273,7 +2277,7 @@ test('`tflw load` runs a `run N iterations across M users` workload end-to-end, 
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-iterations-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
-      await writeFile(join(dir, 'load.tflw'), 'test "fixed batch"\n  run 12 iterations across 3 users\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "fixed batch"\n  run 12 iterations across 3 users\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "fixed batch" — run 12 iterations across 3 users/);
@@ -2296,7 +2300,7 @@ test('`tflw run` with no file argument auto-discovers a workload-bearing test to
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-nofile-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
-      await writeFile(join(dir, 'load.tflw'), 'test "health burst"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "health burst"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "health burst"/);
@@ -2446,7 +2450,7 @@ test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing 
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       // A long planned duration (4s) so "aborted well before the end" isn't a race against natural
       // completion — SIGINT fires at 300ms, under 1/10th of the plan.
-      await writeFile(join(dir, 'load.tflw'), 'test "long"\n  ramp to 5 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "long"\n  ramp to 5 users over 4000ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       const { code, output } = await runLoadAndSigint(['load.tflw'], dir, 300);
       assert.equal(code, 130);
@@ -2474,7 +2478,7 @@ test('`tflw load --workers 2`: Ctrl-C propagates to forked workers and still mer
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-sigint-workers-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
-      await writeFile(join(dir, 'load.tflw'), 'test "long"\n  ramp to 6 users over 4000ms\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "long"\n  ramp to 6 users over 4000ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       // Phase 2b (D111): the main process now also runs its own striped shard-0 share in-process
       // (not just orchestrating N forked children the way pre-Phase-2b `tflw load` always did) —
@@ -2562,7 +2566,7 @@ test('`tflw run --workers 4` on a file mixing functional and workload-bearing te
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(
         join(dir, 'mixed.tflw'),
-        'test "functional"\n  api GET /health\n  expect status equals 200\n\ntest "burst"\n  ramp to 4 users over 150ms\n  api GET /health\n  expect status equals 200\n',
+        'test "functional"\n  api GET /health\n  expect status equals 200\n\ntest "burst"\n  ramp to 4 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
         'utf8',
       );
 
@@ -2585,7 +2589,7 @@ test('`tflw run --skip-workload` skips every workload-bearing test regardless of
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(
         join(dir, 'mixed.tflw'),
-        'test "functional" parallel\n  api GET /health\n  expect status equals 200\n\ntest "burst" parallel\n  ramp to 4 users over 150ms\n  api GET /health\n  expect status equals 200\n',
+        'test "functional" parallel\n  api GET /health\n  expect status equals 200\n\ntest "burst" parallel\n  ramp to 4 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n',
         'utf8',
       );
 
@@ -2594,6 +2598,89 @@ test('`tflw run --skip-workload` skips every workload-bearing test regardless of
       assert.doesNotMatch(stdout, /scenario "burst"/);
       const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
       assert.equal(workloadEntries(results).length, 0, 'no workload entry should appear once the workload-bearing test is skipped');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---- M60: the launch review's A4/A2 checker findings, end-to-end through the real CLI ---------
+//
+// Each of these ran green before M60. They assert the *outcome a user sees* — a refusal instead of
+// a `PASS` — rather than the diagnostic's wording, because the defect in every case was that a
+// wrong run reported success, not that a message read badly.
+
+test('`tflw run` refuses a workload-bearing test with no `threshold` instead of reporting PASS over a 100% error rate (M60, A4-01)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m60-no-threshold-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // Every iteration fails: /nope-not-a-real-route 404s and the expectation demands 999.
+      await writeFile(join(dir, 'load.tflw'), 'test "load no threshold"\n  run 5 iterations across 1 users\n  api GET /nope-not-a-real-route\n  expect status equals 999\n', 'utf8');
+
+      const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string; stderr: string });
+      assert.equal(failure.code, 2, 'a load test that cannot fail must not be runnable');
+      assert.doesNotMatch(failure.stdout ?? '', /PASS/);
+      assert.match(failure.stderr, /has no `threshold`, so it can never fail/);
+      await assert.rejects(access(join(dir, 'report', 'results.json')), 'nothing should have executed');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw check` catches a duplicate `action` name instead of letting the run abort with a bare `(crashed)` (M60, A2-01)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m60-dup-action-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a.tflw'), 'action fetch it()\n  log "FIRST"\n  give 1\n\naction fetch it()\n  log "SECOND"\n  give 2\n\ntest "t"\n  fetch it()\n', 'utf8');
+
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      assert.equal(failure.code, 2, '`tflw check` used to print "no problems found" for this file');
+      assert.match(failure.stderr, /duplicate action "fetch it"/);
+      assert.match(failure.stderr, /already declared at line 1/, 'the diagnostic must carry a source location — the runtime crash carried none');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw check` catches a browser step reached through an `action` from a workload-bearing test (M60, A4-02)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m60-indirect-browser-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // Verbatim from A4-02's repro A, plus the threshold A4-01 now requires. This ran 57 384
+      // iterations at a 100% error rate and printed PASS.
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'action openIt()\n  open "/"\n  click button "Buy"\n\ntest "load"\n  hold 2 users for 1s\n  threshold error rate is less than 1%\n  openIt()\n  expect status equals 200\n',
+        'utf8',
+      );
+
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      assert.equal(failure.code, 2);
+      assert.match(failure.stderr, /browser steps aren't supported inside a workload-bearing `test`/);
+      assert.match(failure.stderr, /`openIt` \(line 2\) contains a browser step/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw check` catches a `think` reached through an `action` from a functional test (M60, A4-02)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m60-indirect-think-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // A4-02's repro B: this functional test slept for two real seconds and reported PASS.
+      await writeFile(join(dir, 't.tflw'), 'action helper()\n  api GET /health\n  think 2s\n\ntest "t"\n  helper()\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      assert.equal(failure.code, 2);
+      assert.match(failure.stderr, /`think` is only legal inside a workload-bearing `test`/);
+      assert.match(failure.stderr, /`helper` \(line 3\) contains a `think`/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
