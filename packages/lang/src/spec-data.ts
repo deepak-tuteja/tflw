@@ -69,7 +69,7 @@ export const GENERATORS: readonly GeneratorEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'check' | 'pick' | 'watch' | 'migrate' | 'global';
+  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'watch' | 'migrate' | 'global';
   readonly effect: string;
 }
 
@@ -138,6 +138,15 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--log-output <dest>`', command: 'run', effect: 'overrides `tflw.config`\'s `log destination` key (`console`/`html`/`both`/`none`) for this run\'s bare `log "…"` calls only — a `log … to …` statement\'s own destination always wins' },
   { flag: '`--log-level <level>`', command: 'run', effect: 'overrides `tflw.config`\'s `log level` key (`debug`/`info`/`warn`/`error`) — the minimum level a `log` step must clear to be rendered in console output/`report.html` (never affects whether it\'s recorded in `results.json`/ndjson)' },
   { flag: '`--format json`', command: 'check', effect: 'prints the target file\'s `Diagnostic[]` as JSON instead of text — for editor integrations' },
+  // M62 (doc truth): `check`\'s two shared flags, `init --load` and `install-browsers --browser`
+  // were accepted by the parser and listed in `tflw --help`, but missing here — so the reference
+  // page generated from this list simply didn\'t have them, and `reference/cli.md` carried a
+  // hand-written sentence apologising for the gap. Found by the docs guard, which validates every
+  // documented invocation against this list. The `--help` test now runs in both directions.
+  { flag: '`--env <name>`', command: 'check', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one — decides which env-scoped checks (service names, `insecure`) run' },
+  { flag: '`--no-color`', command: 'check', effect: 'disables ANSI color in CLI output' },
+  { flag: '`--load`', command: 'init', effect: 'also scaffolds a `load.tflw` — a workload-bearing `test` in the open (`rps`) model, runnable with plain `tflw run` (M29/D30)' },
+  { flag: '`--browser <engine>`', command: 'install-browsers', effect: 'downloads chromium/firefox/webkit (default chromium) — shells out to the `playwright` CLI inside the optional peer dependency' },
   { flag: '`--browser <engine>`', command: 'pick', effect: 'launches chromium/firefox/webkit (default chromium) instead of chromium' },
   { flag: '`--env <name>`', command: 'watch', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },
   { flag: '`--seed <n>`', command: 'watch', effect: 'fixes the seed reused by every run for the whole watch session (else one is freshly minted at startup)' },

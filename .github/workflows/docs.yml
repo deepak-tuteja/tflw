@@ -38,6 +38,11 @@ jobs:
 
       - run: npm run build -w @tflw/docs-site
 
+      # M62/DT-07. Until now this workflow built the site and published it having verified nothing
+      # at all — not even the sample check ci.yml runs. A broken anchor is invisible in review and
+      # silent at runtime (the reader lands at the top of the page), so the deploy gates on it.
+      - run: npm run test:links -w @tflw/docs-site
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

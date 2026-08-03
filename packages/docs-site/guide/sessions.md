@@ -1,14 +1,21 @@
 # 3. Sessions & auth
 
 `session <name>` is tflw's single auth concept — there's no separate "auth preset". A session's
-steps run **once per run per worker**, cached, and a test opts in to reuse the result:
+steps run **once per run per worker**, cached, and a test opts in to reuse the result.
 
-```
+Sessions are declared in **`tflw.config`**, alongside `env` and `defaults` — one login shared by
+every test file in the project, not re-declared per file:
+
+```tflw-config fragment
 session admin
   api POST /auth/login body { user: env(ADMIN_USER), pass: env(ADMIN_PW) }
   capture body.token as token
   header "Authorization" is "Bearer {token}"
+```
 
+Any test in any `.tflw` file then opts in by name:
+
+```tflw
 test "admin can list orders" as admin
   api GET /orders
   expect status equals 200
@@ -43,7 +50,7 @@ goes stale:
 
 For the common client-credentials shape, skip the hand-written login steps:
 
-```tflw-config
+```tflw-config fragment
 session billing oauth2
   token url env(BILLING_TOKEN_URL)
   client id env(BILLING_CLIENT_ID)

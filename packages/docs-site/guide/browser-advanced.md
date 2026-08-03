@@ -5,7 +5,7 @@ downloads, drag-drop, evidence capture, network mocking, accessibility, and visu
 
 ## Frames, tabs, downloads & drag-drop
 
-```
+```tflw fragment
 within frame css "#payment-frame"        # traverses into the iframe's own document — nested
   click button "Pay"                     # steps resolve inside it, not on the main page
 
@@ -39,7 +39,7 @@ race past it. `drag`/`drop file` only work against a page that actually listens 
 
 ## Evidence: screenshots & Playwright trace
 
-```
+```tflw fragment
 open "/checkout"
 screenshot "before payment"       # captures the active page unconditionally
 click button "Pay"
@@ -59,7 +59,7 @@ debugging. `viewport <width> <height>` in `tflw.config`'s `defaults` block sizes
 
 ## Network observation & `stub` mocking
 
-```
+```tflw fragment
 open "/checkout"
 click button "Pay"
 expect request to "/api/orders" was made
@@ -85,7 +85,7 @@ own dogfood suites never mock the API they're testing.
 
 ## Accessibility
 
-```
+```tflw fragment
 open "/checkout"
 expect page has no a11y violations              # every severity
 
@@ -102,7 +102,7 @@ real violations (rule id, severity, description, target element).
 
 ## Visual regression
 
-```
+```tflw fragment
 open "/checkout"
 expect page matches snapshot "checkout-page" mask css ".timestamp" mask css ".order-id"
 

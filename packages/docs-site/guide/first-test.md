@@ -30,7 +30,7 @@ final-state audits (report everything wrong at once).
 `capture` pulls a value out of a response and gives it a name; later steps reference it with
 `{name}` string interpolation:
 
-```tflw-config
+```tflw-config fragment
 session admin
   api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
   expect status equals 200
@@ -38,7 +38,8 @@ session admin
   header "Authorization" is "Bearer {token}"
 ```
 
-`session` blocks like this one run **once per run**, cached — a test opts in with `as admin` and
+This one goes in `tflw.config`, not the test file — sessions are project-wide. `session` blocks
+like it run **once per run**, cached — a test opts in with `as admin` and
 gets the session's captured headers auto-applied, no repeated login boilerplate. More on this in
 [Sessions & auth](/guide/sessions).
 
@@ -65,10 +66,11 @@ reported passed-but-flagged-`flaky`, never silently green. See
 
 ## Tags and running a subset
 
-```
+```tflw
 @smoke @orders
 test "pay for an order" as admin
-  ...
+  api POST /orders/42/pay
+  expect status equals 200
 ```
 
 `--tag <name>[,<name>...]` on `tflw run` filters to tests carrying any of the listed `@name`s

@@ -44,6 +44,12 @@ jobs:
       # watch tests failed with "Missing X server or $DISPLAY").
       - run: xvfb-run -a npm test
 
+      # Every internal anchor on the docs site resolves to a real heading (M62/DT-07). Separate
+      # from `npm test` because it reads heading ids out of `.vitepress/dist` — the root `npm run
+      # build` above already produced it. Here rather than only in docs.yml so a pull request sees
+      # a broken link too: docs.yml runs on pushes to main, after review.
+      - run: npm run test:links -w @tflw/docs-site
+
       # Coverage baseline (decision: M21) — informational only, no threshold gate yet (a
       # green-field target picked before a real baseline exists is unfair debt). Runs once (not
       # once per Node version in the matrix) since it's the same source regardless of runtime.

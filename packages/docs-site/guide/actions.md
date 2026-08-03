@@ -60,7 +60,7 @@ doesn't scale past a handful of files. `tflw check` also looks for near-identica
 npx tflw check
 ```
 
-```
+```console
 hint[RF001]: 3 tests share a near-identical 4-step sequence — extract into an action?
  --> tests/checkout.tflw:12, tests/returns.tflw:8, tests/admin.tflw:21
   = help: run `tflw refactor apply RF001` to extract it automatically

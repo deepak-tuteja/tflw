@@ -2,7 +2,7 @@
 
 One form covers every assertion:
 
-```
+```text
 expect <subject> [not] <matcher> [value]
 check  <subject> [not] <matcher> [value]     # soft twin
 ```
@@ -16,7 +16,7 @@ every matcher, what it applies to, and an example.
 
 ## Array quantifiers
 
-```
+```tflw fragment
 expect any body.items.name equals "Widget"
 expect all body.items.status equals "active"
 ```
@@ -26,7 +26,7 @@ expect all body.items.status equals "active"
 `equals` is a full deep-equal; `matches subset {...}` checks the other direction only — every
 key/value in the literal must be present on the actual object, extra keys are ignored:
 
-```
+```tflw fragment
 expect body matches subset { type: "about:blank", title: "Unprocessable Entity", status: 422 }
 ```
 
@@ -37,7 +37,7 @@ object — so a large response with one wrong field reads as one short line.
 
 ## Contract validation against a real OpenAPI document
 
-```
+```tflw fragment binds=productId
 api GET /products/{productId}
 expect body matches schema "ProductResponseDto" from "/openapi.json"
 ```
@@ -53,7 +53,7 @@ deliberately-drifted-endpoint regression check.
 
 ## Connection-failure assertions
 
-```
+```tflw fragment
 api GET /health
 expect request fails matching "certificate"
 ```

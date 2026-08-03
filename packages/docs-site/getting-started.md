@@ -28,7 +28,7 @@ npx tflw run    # runs it — green in seconds
 `tflw init` scaffolds a health-check test against `http://localhost:3001` — point `tflw.config`'s
 `api` line at your own service and edit `example.tflw` from there. A passing run looks like this:
 
-```
+```console
   ✓ health check (16 ms)
 
 PASS 1/1 passed · env local · seed 1486355565 · now 2026-07-20T19:09:07.104Z · 17 ms

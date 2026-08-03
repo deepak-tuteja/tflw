@@ -352,6 +352,27 @@ test('`tflw --help` lists every flag CLI_FLAGS documents — the help text is a 
   assert.deepEqual([...new Set(missing)], [], 'every documented flag must appear in `tflw --help`');
 });
 
+test('…and the reverse: every flag `tflw --help` shows is in CLI_FLAGS (M62)', async () => {
+  // The test above checks one direction only, and the gap on the other side had four flags in it:
+  // `check --env`, `check --no-color`, `init --load` and `install-browsers --browser` were all
+  // accepted by the parser and printed by `--help`, but missing from CLI_FLAGS — so the docs-site
+  // reference page, which *generates* its tables from that list, simply didn't have them, and
+  // `reference/cli.md` carried a hand-written sentence apologising for the omission. `--load` had
+  // been shipping since M29. Found by M62's docs guard, which validates every documented
+  // invocation against this same registry; a one-directional check on a list is half a check.
+  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
+  const documented = new Set(CLI_FLAGS.flatMap((f) => [...f.flag.matchAll(/(--[a-z][a-z-]*)/g)].map((m) => m[1])));
+
+  // Usage lines only (`  tflw check [files...] [--env <name>] …`) — the prose beneath each command
+  // explains flags in sentences, where a match would be a mention rather than a declaration.
+  const undocumented = new Set<string>();
+  for (const line of stdout.split('\n')) {
+    if (!/^\s{2}tflw /.test(line)) continue;
+    for (const m of line.matchAll(/(--[a-z][a-z-]*)/g)) if (!documented.has(m[1])) undocumented.add(m[1]);
+  }
+  assert.deepEqual([...undocumented], [], 'every flag `--help` prints must be in CLI_FLAGS, which the reference page generates from');
+});
+
 test('a value-taking flag with no value is a usage error, not a silent fall-back to the default (M63/A12-04)', async () => {
   // The sharper half of A12-04, and the reason this is a fix and not a note: `--evidence` given no
   // value didn't complain — it fell back to `full`, the *least* protective level, and the run

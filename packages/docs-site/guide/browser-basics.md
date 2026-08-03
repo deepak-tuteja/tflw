@@ -10,7 +10,7 @@ npx tflw install-browsers
 
 ## Interaction steps
 
-```
+```tflw fragment binds=orderId,email
 open "/orders/{orderId}"                 # relative to the active env's `web` base URL
 click button "Add to cart"
 double click button "Row"
@@ -38,7 +38,7 @@ collides — no assertion form exists for it.
 
 ## `fill form`
 
-```
+```tflw fragment
 fill form
   | "Name"  | unique("user")         |
   | "Email" | unique email           |
@@ -65,7 +65,7 @@ would be:
 error lists up to 5 matched candidates' visible text and suggests `within <container>` or a more
 specific name:
 
-```
+```tflw fragment
 within list "Cart items"                 # scopes every nested step's locator resolution to inside
   click button "Remove"                  # this container, block form, same indentation as any
                                           # other construct — no brace syntax
@@ -87,7 +87,7 @@ Locators (`button "…"`, `field "…"`, `text "…"`, `list "…"`, `css "…"`
 assertion subjects too, using the state/value/count matchers from the
 [Matchers reference](/reference/matchers):
 
-```
+```tflw fragment
 expect button "Pay" is enabled
 expect field "Email" has value "a@b.c"
 expect list "Cart items" has count 3

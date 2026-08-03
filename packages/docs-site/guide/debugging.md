@@ -2,7 +2,7 @@
 
 ## What a run actually prints
 
-```
+```console
   ✓ health check (16 ms)
 
 PASS 1/1 passed · env local · seed 1486355565 · now 2026-07-20T19:09:07.104Z · 17 ms
@@ -15,7 +15,7 @@ One line per test (`✓`/`✗`, name, duration), then a summary line (`PASS`/`FA
 report path. A failing test also prints its failing step(s) indented underneath, live, the moment
 it fails — you don't have to wait for the whole suite or open the report to see what broke:
 
-```
+```console
 ✗ health check
     request failed: GET http://localhost:3001/health — fetch failed — connection refused; is the
     service actually listening at that host:port?
@@ -41,7 +41,7 @@ which step it's stuck on:
 npx tflw run --verbose
 ```
 
-```
+```console
 health check
   ✓ GET http://localhost:3001/health → 200 (13ms)
   ✓ status to equal 200 (0ms)
@@ -114,7 +114,7 @@ diagnostics, in milliseconds, before any request goes out:
 npx tflw check example.tflw
 ```
 
-```
+```console
 error[TF014]: unknown matcher `eq`
  --> example.tflw:3:17
   |

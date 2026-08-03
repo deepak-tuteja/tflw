@@ -37,7 +37,7 @@ env staging
 
 ## Secrets
 
-```tflw-config
+```tflw-config fragment
 require env ADMIN_USER, ADMIN_PW
 ```
 
@@ -91,7 +91,7 @@ alongside it.
 
 ## Host allowlist — an anti-pointed-at-prod guardrail
 
-```tflw-config
+```tflw-config fragment
 defaults
   allow hosts "api.example.com", "*.staging.example.com"
 ```

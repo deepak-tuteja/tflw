@@ -14,7 +14,7 @@ test "flaky endpoint eventually succeeds" retry 2
 Re-runs the **entire test** up to `N` more times on failure. A pass on a later attempt is never
 silently green — it's reported passed-but-flagged:
 
-```
+```console
 ✓ flaky endpoint eventually succeeds (flaky) (48 ms)
 ```
 
@@ -45,7 +45,7 @@ Deliberately **not** the same mechanism as `retry N`, which retries the whole te
 This is a per-`api`-step clause for a server that replies `429`/`503` with a `Retry-After` header
 telling you exactly how long to wait before trying *that one request* again:
 
-```
+```tflw fragment binds=id
 api POST /orders body { productId: {id} }
   retry honoring "Retry-After" up to 3
 expect status equals 201

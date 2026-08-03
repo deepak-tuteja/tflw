@@ -58,7 +58,7 @@ decides. (Before M60 it didn't follow the call: a workload test calling an actio
 
 ## Two workload models — pick deliberately
 
-```
+```tflw fragment workload
 ramp to 50 users over 30s
 ```
 
@@ -69,7 +69,7 @@ push harder. This understates latency ("coordinated omission"). `tflw run`'s con
 a run whose VUs spent a large share of wall time waiting rather than iterating, so this doesn't
 silently distort your numbers:
 
-```
+```console
 ✓ checkout under load (workload — ramp to 50 users over 30000ms)
     iterations: 812  failures: 3  error rate: 0.37%
     duration (ms, think-excluded): min 40  avg 210  p50 210  p90 480  p95 640  p99 910  max 1200
@@ -84,7 +84,7 @@ pass/fail: it's a warning about how to *read* the numbers, not a verdict on whet
 trustworthy. Switch to the open model if you want to measure the true degradation curve instead of
 being warned about it after the fact.
 
-```
+```tflw fragment workload
 ramp to 200 rps over 30s
 ```
 
@@ -100,7 +100,7 @@ the closed model actually represents.
 `ramp` covers the two most common shapes, but a workload line is any of 5 keywords — every one
 supports both a closed (`users`) and open (`rps`) variant, the same choice `ramp` offers:
 
-```
+```tflw fragment workload
 hold 50 users for 2m
 ```
 
@@ -108,7 +108,7 @@ hold 50 users for 2m
 behavior once the system's already warmed up, or to follow a `ramp` you write yourself as a second,
 separate `test` block for the warm-up phase.
 
-```
+```tflw fragment workload
 step users
   to 20 for 1m
   to 50 for 1m
@@ -120,7 +120,7 @@ for its own duration. Unlike `ramp`'s continuous linear increase, `step` holds e
 enough to read a stable percentile at that level before moving on — the shape you want when the
 question is "at what concurrency does p95 start climbing," not just "does it survive the peak."
 
-```
+```tflw fragment workload
 spike users
   hold 10 for 30s
   to 200 over 10s
@@ -133,7 +133,7 @@ and `to N over <dur>` (a gradual ramp, in either direction — up or back down) 
 order. This is the shape for "baseline load, sudden burst, recovery" — a flash-sale or breaking-news
 traffic pattern that `ramp`'s one-directional linear increase can't express on its own.
 
-```
+```tflw fragment workload alternatives
 run 5000 iterations across 50 users
 run 100 iterations per user across 50 users
 ```
@@ -168,7 +168,7 @@ sleeping more should never help a load test pass a latency threshold.
 
 ## Thresholds — the pass/fail gate
 
-```
+```tflw fragment
 threshold p95 duration is less than 800ms
 threshold p99 duration is less than 1500ms
 threshold error rate is less than 1%
@@ -299,7 +299,7 @@ usage. If tflw's own generator process saturates — no headroom left to generat
 the system under test could take it — the summary's `generator:` line says so instead of silently
 handing back numbers that describe tflw contending with itself, not your system:
 
-```
+```console
 generator:
 ⚠ tflw itself is the bottleneck (avg event-loop lag 340.2ms  max 890.1ms  cpu 97%) — measured
 latency/throughput reflects tflw's own generator process, not your system under test. Results are
@@ -328,7 +328,7 @@ npx tflw run --skip-workload
 While a run is in flight, a ~1Hz console line tracks progress — iterations, current rps (windowed,
 not averaged since the start), error rate, and elapsed vs. planned duration:
 
-```
+```console
 iterations: 1204  failures: 3  rps: 198.4  error rate: 0.25%  4.1s/30.0s planned
 ```
 

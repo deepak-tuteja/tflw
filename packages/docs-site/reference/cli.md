@@ -7,6 +7,8 @@ import { CLI_FLAGS } from '../../lang/src/spec-data.ts';
 const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
 const runFlags = CLI_FLAGS.filter((f) => f.command === 'run');
 const checkFlags = CLI_FLAGS.filter((f) => f.command === 'check');
+const initFlags = CLI_FLAGS.filter((f) => f.command === 'init');
+const installFlags = CLI_FLAGS.filter((f) => f.command === 'install-browsers');
 const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
 const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
@@ -75,7 +77,38 @@ does start with `--`.
   </tbody>
 </table>
 
-`tflw check [files] [--env E] [--no-color]` shares `run`'s `--env`/`--no-color` flags too.
+Validate-only: the same parse + checker pipeline `run` executes before it does anything, with no
+HTTP traffic and no secrets required. Exit `0` when every file is clean, `2` otherwise.
+
+## `tflw init`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in initFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Scaffolds `tflw.config`, `example.tflw`, `.env.example`, and a `.gitignore` covering `.env` and
+`report/` — appending to an existing `.gitignore` rather than duplicating entries.
+
+## `tflw install-browsers`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in installFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+One-time browser binary download for UI steps — `playwright` is an optional peer, so this only
+works once the consuming project installs it.
 
 ## `tflw pick <url>`
 
