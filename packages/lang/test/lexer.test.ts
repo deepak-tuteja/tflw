@@ -179,3 +179,59 @@ test('a variable named after an HTTP verb still divides (decision 60)', () => {
     assert.equal(tokens.filter((t) => t.type === 'path').length, 1, `path count for verb ${verb}`);
   }
 });
+
+// -- M59: the A1 pass's lexer findings -------------------------------------------------------
+// Each of these asserts the *property* that was violated, not merely that lexing succeeds. The
+// review's `OBS-03` found a test titled "…redacted in the report" that only asserted `1/1 passed`
+// and so never noticed the secret it was named for; these are written not to repeat that.
+
+test('A1-02: a `#` inside a path is diagnosed, never silently truncated', () => {
+  const { tokens, diagnostics } = lex(`test "x"\n  api GET /items?color=#fff&size=large\n`);
+  // The bug: the path token shrank to `/items?color=` and *no* diagnostic was produced anywhere,
+  // so `check` said "no problems found" and the run passed against a request nobody wrote.
+  assert.equal(diagnostics.length, 1, 'the `#` collision must be reported');
+  assert.match(diagnostics[0]!.message, /`#` ends the path/);
+  assert.match(diagnostics[0]!.hint ?? '', /%23/, 'the hint must name the escape that works');
+  const path = tokens.find((t) => t.type === 'path')!;
+  assert.equal(path.value, '/items?color=', 'the truncation itself is unchanged — only its silence was the bug');
+});
+
+test('A1-06: every RFC 3986 path/query character lexes as one path token', () => {
+  // `?q=hello+world` and `?ids=1,2,3` were both hard parse errors whose help said only
+  // "expected end of line", never mentioning the path.
+  for (const ch of ['!', '$', "'", '(', ')', '*', '+', ',', ';', '[', ']', '@', '&', '=', ':', '-', '.', '_', '~']) {
+    const { tokens, diagnostics } = lex(`test "x"\n  api GET /a${ch}b\n`);
+    assert.equal(diagnostics.length, 0, `unexpected diagnostic for ${JSON.stringify(ch)}`);
+    const path = tokens.find((t) => t.type === 'path')!;
+    assert.equal(path.value, `/a${ch}b`, `path token truncated at ${JSON.stringify(ch)}`);
+  }
+});
+
+test('A1-03: a CRLF file lexes identically to the same file with LF', () => {
+  const body = `test "crlf"\n  api GET /health\n  expect status equals 200\n`;
+  const lf = lex(body);
+  const crlf = lex(body.replace(/\n/g, '\r\n'));
+  assert.equal(crlf.diagnostics.length, 0, 'a Windows-authored file produced one TF001 per line');
+  assert.deepEqual(
+    crlf.tokens.map((t) => [t.type, t.value]),
+    lf.tokens.map((t) => [t.type, t.value]),
+    'CRLF and LF must produce the same token stream',
+  );
+});
+
+test('A1-04: a leading UTF-8 BOM is invisible to the lexer', () => {
+  const { diagnostics } = lex(`﻿test "x"\n  api GET /health\n`);
+  // Left as an "unexpected character" this produced a diagnostic quoting a character that
+  // renders as nothing at all — unactionable by construction.
+  assert.equal(diagnostics.length, 0);
+});
+
+test('A1-01: unreadable input is bounded, not quadratic', () => {
+  // 50 KB of unlexable bytes previously emitted one diagnostic per byte, each rendered with a full
+  // copy of the line plus O(n) caret padding — 3.6 GB, then `Aborted (core dumped)`.
+  const { diagnostics } = lex('§'.repeat(50_000));
+  assert.ok(diagnostics.length <= 50, `expected the cap to hold, got ${diagnostics.length}`);
+  const last = diagnostics[diagnostics.length - 1]!;
+  assert.match(last.message, /too many unreadable characters/);
+  assert.match(last.hint ?? '', /not tflw source at all/, 'the cap must explain itself, not just stop');
+});

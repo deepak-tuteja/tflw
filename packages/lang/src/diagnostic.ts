@@ -138,17 +138,44 @@ export interface RenderOptions {
  *    = help: did you mean `expect`?
  * ```
  */
+/** Widest source line `renderDiagnostic` will print in full (M59, A1-01). */
+const MAX_RENDERED_LINE = 200;
+
+/** Keep a diagnostic's rendered source line bounded (M59, A1-01).
+ *
+ * Rendering used to emit the whole line plus one space of caret padding per preceding column, so a
+ * diagnostic on a minified bundle or a single-line JSON blob cost O(line length) *each* — with one
+ * diagnostic per unreadable byte, that was quadratic, and 50 KB of input took the process to 3.6 GB
+ * and an abort. A window around the caret is bounded and strictly more readable: 50 KB of source in
+ * a terminal helps nobody. */
+function windowLine(line: string, caretStart: number, caretEnd: number): { lineText: string; caretStart: number; caretLen: number } {
+  const caretLen = Math.max(1, caretEnd - caretStart);
+  if (line.length <= MAX_RENDERED_LINE) return { lineText: line, caretStart, caretLen };
+
+  const ellipsis = '…';
+  const context = Math.floor((MAX_RENDERED_LINE - Math.min(caretLen, 40)) / 2);
+  const from = Math.max(0, caretStart - context);
+  const to = Math.min(line.length, from + MAX_RENDERED_LINE);
+  const head = from > 0 ? ellipsis : '';
+  const tail = to < line.length ? ellipsis : '';
+  return {
+    lineText: head + line.slice(from, to) + tail,
+    caretStart: caretStart - from + head.length,
+    caretLen: Math.max(1, Math.min(caretLen, to - caretStart)),
+  };
+}
+
 export function renderDiagnostic(diag: Diagnostic, source: string, opts: RenderOptions = {}): string {
   const filename = opts.filename ?? '<input>';
   const lines = source.split('\n');
   const { start, end } = diag.span;
-  const lineText = lines[start.line - 1] ?? '';
+  const rawLine = lines[start.line - 1] ?? '';
 
   // Caret spans from the start column to the end column, clamped to this line.
-  const caretStart = start.column - 1;
+  const rawCaretStart = start.column - 1;
   const sameLine = end.line === start.line;
-  const caretEnd = sameLine ? Math.max(end.column - 1, caretStart + 1) : lineText.length;
-  const caretLen = Math.max(1, caretEnd - caretStart);
+  const rawCaretEnd = sameLine ? Math.max(end.column - 1, rawCaretStart + 1) : rawLine.length;
+  const { lineText, caretStart, caretLen } = windowLine(rawLine, rawCaretStart, rawCaretEnd);
 
   const gutterWidth = String(start.line).length;
   const pad = ' '.repeat(gutterWidth);

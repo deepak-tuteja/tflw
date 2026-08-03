@@ -11,8 +11,28 @@ export interface LexResult {
   readonly diagnostics: readonly Diagnostic[];
 }
 
-/** Characters that may appear in a `/`-initiated PATH token (GRAMMAR.md M0 simplification). */
-const PATH_CHARS = /[A-Za-z0-9_\-./{}?=&:%~]/;
+/** Characters that may appear in a `/`-initiated PATH token.
+ *
+ * M59 (A1-06): this was the RFC-3986 *unreserved* set plus a handful of delimiters, which rejected
+ * perfectly ordinary URLs — `?q=hello+world` and `?ids=1,2,3` both failed to lex, and the help line
+ * said `expected end of line` without ever mentioning the path. It now covers every character RFC
+ * 3986 permits unescaped in a path or query (unreserved + sub-delims + `[`/`]`/`@`), so a path stops
+ * only at whitespace or a genuine comment.
+ *
+ * `#` is deliberately still excluded: it starts a comment, and no widening can change that without
+ * making trailing comments unparseable after a path. The silent-truncation bug it used to cause
+ * (A1-02 — a green run against a request the author never wrote) is handled at the scan site
+ * instead, by diagnosing the collision rather than swallowing it. */
+const PATH_CHARS = /[A-Za-z0-9_\-./{}?=&:%~!$'()*+,;[\]@]/;
+
+/** A byte-order mark is invisible, so left as an "unexpected character" it produces a diagnostic
+ * whose message quotes nothing a user can see (A1-04). Treated as whitespace wherever whitespace is
+ * skipped; it is a zero-width no-break space, so this is harmless anywhere it appears. */
+const BOM = '﻿';
+
+/** Ceiling on "unexpected character" diagnostics from one lex (M59, A1-01) — see `unexpectedChars`.
+ * Well past any real typo count, far below the point where rendering them costs anything. */
+const MAX_UNEXPECTED_CHARS = 50;
 
 /** HTTP method words — a `/` right after one of these starts a PATH token; elsewhere `/` is the
  * arithmetic divide operator (M2, P#25). Case-insensitive to match the parser's method check. */
@@ -39,6 +59,13 @@ class Lexer {
    * line: its own indentation is irrelevant (no `indent`/`dedent`), and no `newline` is emitted
    * at its end — this is what lets an object/array literal span several hand-formatted lines. */
   private bracketDepth = 0;
+  /** How many "unexpected character" diagnostics have been emitted (M59, A1-01). Recovery skips a
+   * single character and reports it, so a file the lexer cannot read at all — a binary blob, a
+   * minified bundle, the wrong file extension — produced one diagnostic *per byte*, each rendered
+   * with a full copy of the offending line plus O(n) caret padding. That is quadratic: 50 KB of
+   * unlexable input reached 3.6 GB and aborted the process. Past the cap the lexer keeps lexing
+   * (recovery is unchanged) but stops accumulating, and says once that it has stopped. */
+  private unexpectedChars = 0;
 
   constructor(private readonly source: string) {}
 
@@ -54,7 +81,12 @@ class Lexer {
       let eol = src.indexOf('\n', i);
       const atEof = eol === -1;
       if (atEof) eol = n;
-      const line = src.slice(lineStart, eol);
+      // M59 (A1-03): drop a CRLF's `\r` before lexing. Nothing else in the toolchain normalizes
+      // line endings, so without this a Windows-authored file produced one `TF001: unexpected
+      // character "\r"` per line, each with the caret parked past the end of the visible text.
+      // Only the *trailing* `\r` is removed, so every column on the line is unchanged.
+      let line = src.slice(lineStart, eol);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
 
       this.processLine(line, lineStart, lineNo);
 
@@ -81,7 +113,7 @@ class Lexer {
     // Measure leading whitespace / indentation.
     let col = 0;
     let sawTab = false;
-    while (col < line.length && (line[col] === ' ' || line[col] === '\t')) {
+    while (col < line.length && (line[col] === ' ' || line[col] === '\t' || line[col] === BOM)) {
       if (line[col] === '\t') sawTab = true;
       col++;
     }
@@ -150,7 +182,7 @@ class Lexer {
     while (c < len) {
       const ch = line[c]!;
 
-      if (ch === ' ' || ch === '\t') {
+      if (ch === ' ' || ch === '\t' || ch === BOM) {
         c++;
         continue;
       }
@@ -172,6 +204,20 @@ class Lexer {
           while (c < len && PATH_CHARS.test(line[c]!)) c++;
           const raw = line.slice(startCol, c);
           this.push('path', raw, raw, { start: startPos, end: at(c) });
+          // M59 (A1-02): `#` ends the path and starts a comment, so `/items?color=#fff&size=large`
+          // used to shrink to `/items?color=` with *no* diagnostic anywhere — `tflw check` said "no
+          // problems found", the run said `PASS`, and the request that left the machine was not the
+          // one written. A silent wrong request is the one failure a testing tool must never
+          // produce, so the collision is now reported at the point it happens.
+          if (c < len && line[c] === '#') {
+            this.diag(
+              Codes.UNEXPECTED_CHAR,
+              'error',
+              `\`#\` ends the path \`${raw}\` and starts a comment`,
+              { start: at(c), end: at(c + 1) },
+              'write `%23` for a literal `#`. A URL fragment is never sent to the server, so it cannot be part of a request path.',
+            );
+          }
         } else {
           c++;
           this.push('slash', '/', '/', { start: startPos, end: at(c) });
@@ -222,10 +268,21 @@ class Lexer {
 
       // anything else: report and skip one character (recovery).
       c++;
-      this.diag(Codes.UNEXPECTED_CHAR, 'error', `unexpected character ${JSON.stringify(ch)}`, {
-        start: startPos,
-        end: at(c),
-      });
+      this.unexpectedChars += 1;
+      if (this.unexpectedChars < MAX_UNEXPECTED_CHARS) {
+        this.diag(Codes.UNEXPECTED_CHAR, 'error', `unexpected character ${JSON.stringify(ch)}`, {
+          start: startPos,
+          end: at(c),
+        });
+      } else if (this.unexpectedChars === MAX_UNEXPECTED_CHARS) {
+        this.diag(
+          Codes.UNEXPECTED_CHAR,
+          'error',
+          `too many unreadable characters — stopping after ${MAX_UNEXPECTED_CHARS}`,
+          { start: startPos, end: at(c) },
+          'this usually means the file is not tflw source at all (a binary, a minified bundle, or the wrong extension), rather than that it has hundreds of separate typos.',
+        );
+      }
     }
   }
 
