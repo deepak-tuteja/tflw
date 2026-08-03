@@ -291,27 +291,54 @@ different `require env` vars (or a secret and a coincidentally-equal generated v
 same string, the redactor tracks every name registered for it and renders all of them —
 `•••(NAME1|NAME2)` — rather than silently keeping only whichever registered first (PLAN decision 72).
 
-**Declarative field redaction — `redact` (PLAN decision 101d, enterprise arc cluster 2).** The
-secret redaction above is *value-based*: it only ever masks something that actually entered via
-`env(...)`. `redact` is a separate, *path-based* mechanism for masking a JSON field regardless of
-where its value came from — a response's `email`/`address`/`ssn` field is PII whether or not it's
-ever read through `env(...)`:
+**Declarative position redaction — `redact` (PLAN decision 101d, enterprise arc cluster 2;
+widened by FS-03).** The secret redaction above is *value-based*: it only ever masks something that
+actually entered via `env(...)`. `redact` is a separate, *position-based* mechanism for masking a
+named JSON field, header or query parameter regardless of where its value came from — a response's
+`email`/`address`/`ssn` field is PII whether or not it's ever read through `env(...)`, and an
+`Authorization` header is a credential whoever minted it:
 
 ```
 env staging
   api "https://staging.example.com"
   redact body.email, body.*.address
+  redact header "Authorization", header "X-Api-Key", query "token"
 ```
 
-- Each pattern starts with `body` (the request or response JSON body) followed by `.prop` segments
-  and/or a `.* ` wildcard segment (matches every key of an object, or every element of an array —
-  both are plain JS values from `JSON.parse`'s point of view, so one wildcard form covers both).
-  Accumulates across `defaults` + `env`, like `allow hosts` (§3.7) — not override semantics.
+- A pattern names one of three roots:
+  - **`body`** — the request or response JSON body, followed by `.prop` segments and/or a `.* `
+    wildcard segment (matches every key of an object, or every element of an array — both are plain
+    JS values from `JSON.parse`'s point of view, so one wildcard form covers both).
+  - **`header "<name>"`** — one request *or* response header, matched **case-insensitively** as HTTP
+    header names are. `redact header "*"` masks every header.
+  - **`query "<name>"`** — one URL query parameter. Only the parameter's **value** is masked; the
+    origin, path, other parameters and the parameter's own name all survive, so the report can still
+    say which request this was. Parameter names are matched case-sensitively (unlike header names,
+    query parameters are). `redact query "*"` masks every parameter's value.
+
+  Header and query names are **quoted strings**, matching every other header-name site in the
+  language (`header "Accept" is …`, `expect header "content-type" …`, `capture header "location"
+  as …`) — and necessarily so: identifiers cannot contain the hyphen that `X-Api-Key`/`Set-Cookie`
+  need. There is deliberately **no bare `redact url`**: masking a whole URL destroys the report's
+  ability to identify a request, and `query "<name>"` is the precise form.
+
+  Patterns accumulate across `defaults` + `env`, like `allow hosts` (§3.7) — not override semantics.
+- **`redact` means "this value is a secret", not "this position is masked" (FS-03).** A
+  `capture` whose subject is a covered position (`capture body.accessToken as token` under `redact
+  body.accessToken`, or `capture header "x-auth-token" as t` under `redact header "x-auth-token"`)
+  **registers its value with the taint redactor above**. From then on that value is masked wherever
+  it later appears in any file sink — a subsequent request's URL, a `log` line, another step's
+  detail text — and the end-of-run full-report pass catches occurrences written before the
+  `capture` ran. Without this, naming a position masked it in exactly one place and then let the
+  same bytes flow onward unmasked one step later. The `MIN_REDACTABLE_LENGTH` floor (§3.4) still
+  applies, and only string/number values are registered — substring-replacing an object's
+  `[object Object]` would mask unrelated text and hide nothing.
 - Applied to the request/response **report-only** trace — the same `redactRequest`/
   `redactResponse` boundary every step already routes through, right after the secret redactor
   above and right before the evidence-level trim (§13) — *and*, since gap #15 (TFLW-GAPS.md,
   fixed in tflw 0.1.0), to a `capture`/`expect`/`check` step's own rendered detail text when its
-  subject is a plain (non-quantified) `body.<path>` covered by a pattern: `capture body.phone as p`
+  subject is a plain (non-quantified) `body.<path>` or `header "<name>"` covered by a pattern:
+  `capture body.phone as p`
   renders `p = [redacted] (captured)` instead of the real number, and `expect body.phone equals
   "..."` masks whichever side of the message carries the real response value — even on a *passing*
   assertion, where the shown "expected" text is the real value by construction (`actual ===
@@ -1362,9 +1389,14 @@ click button "Pay"
 expect text "Order confirmed" is visible
 ```
 
+Everything in this section is **binary evidence, and is captured only at `evidence full`**
+(FS-01, §13) — no redactor reaches rendered pixels, so below `full` none of it is captured at all.
+The rest of this section describes behavior at the default level.
+
 - **Explicit `screenshot "<name>"`** — a real step, reported like any other (`click`/`fill`): a
   capture failure (a closed page, an unexpected navigation mid-capture) is itself a diagnosis and
-  surfaces the same way any other action failure does, never silently swallowed.
+  surfaces the same way any other action failure does, never silently swallowed. Below `evidence
+  full` the shot is not taken and the step passes reporting `not captured (evidence level)`.
 - **Automatic failure screenshot** — best-effort, attached to whichever step just failed (a browser
   action, a UI `expect`, or even an API step inside an otherwise-UI test) whenever a browser page
   already exists for the attempt. Never creates a browser process just to try to screenshot nothing
@@ -1631,7 +1663,8 @@ regression baselines (their own before/after/diff evidence) wait for M4b.
   test and one detail panel per test in `<main>` toggled via a shared `active` class — a small
   inline `<script>` (decision 92) wires up click-to-switch, a text filter, and an All/Failed/Passed
   status toggle. Self-contained (no external requests, opens via `file://`) whenever the run
-  produced no external `assets/` (M3c, above) — no longer JS-free either way. A file group with any
+  produced no external `assets/` (M3c, above) — no longer JS-free either way; the footer says which
+  of the two this report is (FS-01, below). A file group with any
   failing test starts expanded
   with the first failing test's panel shown; an all-passing run defaults to the first file's first
   test. `@media print` forces every panel visible and hides the sidebar, so printing/PDF export is
@@ -1650,17 +1683,52 @@ has no hyphen in identifiers) controlling how much of each step's request/respon
 `report.html`; `--evidence LEVEL` (§12) overrides it for one run. Override semantics like
 `insecure` (env wins over `defaults`); default `full`, today's unchanged behavior.
 
-- `full` — everything, as always: method/url/status/headers/body.
+- `full` — everything, as always: method/url/status/headers/body, plus all binary evidence.
 - `headers-only` — drops the request/response body, replaced with a `[omitted by evidence level]`
   marker (distinguishable in the report from a genuinely empty, e.g. 204, body). Headers still
   shown.
 - `none` — drops headers too. Only method/url/status/statusText/duration remain.
 
+`evidence` governs **three things at once** (FS-01/FS-02), so that one dial covers everything a
+report can leak rather than covering the trace and quietly leaving two other doors open:
+
+1. **The request/response trace**, as above.
+2. **Step detail text.** A step's own rendered line never shows what the level already dropped from
+   the trace: at `headers-only` a `header "<name>"` subject's value still shows (it is printed in
+   full in the header panel above) while every body-derived subject's does not; at `none` only
+   `status` and `duration` survive. *What* was compared always survives — a failure at `evidence
+   none` still reads `expected body.token to equal "…", but got [omitted by evidence level]`.
+   Dropping detail entirely was rejected: it would make `evidence none` useless for diagnosing the
+   CI failure it was turned on for.
+3. **Binary evidence — captured only at `evidence full`.** Playwright trace archives, explicit
+   `screenshot` steps, automatic failure screenshots and `matches snapshot` diff images are all page
+   *pixels*, and **no redactor reaches rendered text** (see §3.4 — the redaction pass walks text
+   fields only). The only promise the tool can keep about a captured screenshot is *"we didn't
+   capture it"*, so `headers-only` and `none` — the levels reached for precisely when an artifact is
+   about to be attached somewhere — suppress all of it. Post-processing the archive was rejected:
+   the format is Playwright's and changes on their schedule, and it cannot touch pixels at all.
+   `matches snapshot` is the one case where the capture is load-bearing for the assertion, so there
+   the comparison, the baseline write and the `N px / N% differed` message are unaffected and only
+   the images are withheld. An explicit `screenshot "<name>"` step still **passes** below `full` —
+   it is an evidence step, never an assertion — and reports `not captured (evidence level)`.
+   *Accepted cost:* at `evidence none` a failing browser test loses its trace. `full` is the
+   default, so this only bites when evidence was deliberately turned down, which is itself the
+   "I am going to attach this somewhere" signal.
+
 Trimming happens where the **report-only** trace is built, entirely separate from the trace
 `expect`/`capture` read during the run itself — an assertion against a response body still works
 identically under `evidence none`; only what a human (or CI artifact) later sees is reduced. Order
 of operations on that report-only trace: secret redaction (this section, taint-based) → `redact`
-declarative field redaction (§3.4) → evidence-level trim (coarsest cut, applied last).
+position redaction (§3.4) → evidence-level trim (coarsest cut, applied last).
+
+**`report.html`'s footer states what the file contains, and promises nothing (FS-01).** It names
+the run's `evidence` level and lists what actually landed in the report — request/response bodies,
+page screenshots, trace archives — or says positively that none of those are present, and tells the
+reader to copy the whole report directory when some assets live in `assets/`. It used to read
+*"report.html is self-contained and safe to attach to a ticket"*; both halves could be false at
+once (at the default `evidence full` the file embeds whole response bodies and screenshots, and a
+report with external assets is not one file), and a report generator is not in a position to
+certify that anything is safe to share.
 
 **CI ergonomics + console/log output (PLAN decision 111, enterprise arc cluster 6).**
 

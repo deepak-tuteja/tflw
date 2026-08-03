@@ -7,8 +7,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
-import { Redactor, redactEvent } from '../src/redact.js';
-import type { RunEvent } from '../src/types.js';
+import { Redactor, redactEvent, redactReport } from '../src/redact.js';
+import type { RunEvent, RunReport } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 test('Redactor.redact masks a registered secret wherever it appears verbatim', () => {
@@ -203,4 +203,58 @@ test('a secret that only appears in a discarded-until-now failing retry attempt 
   assert.match(JSON.stringify(report.tests[0]!.attempts![0]), /•••\(ADMIN_PW\)/, 'the masked placeholder should appear inside attempt 1 specifically');
 
   await server.close();
+});
+
+// ---- FS-01 (review finding V2-01): the limit, stated as a test ---------------
+
+test('a trace archive passes through `redactReport` byte-identical — redaction does not reach binary evidence', () => {
+  // No test in this suite had ever produced a real `TraceAsset`, which is how the gap survived:
+  // `redactStepResult` spreads `...s`, so a trace (and a screenshot) flows through the whole
+  // redaction pass untouched. That is not a bug to fix here — it is a fact about what redaction
+  // *is*. `Redactor.redact` walks text; a Playwright archive is a zip of DOM snapshots and
+  // per-action screenshots, and a screenshot is pixels. A page that renders a secret on screen
+  // shows it in the capture exactly as it would to a person looking at the monitor.
+  //
+  // This test pins that limit so nobody later assumes the redactor covers it — and it is precisely
+  // why FS-01 gates capture on `evidence full` instead of promising to clean the archive. The only
+  // promise the tool can keep about a captured screenshot is "we didn't capture it"; see
+  // browser-steps.test.ts's FS-01 block for the capture-side half.
+  const r = new Redactor();
+  r.register('API_KEY', 'sekret-value');
+  const traceBytes = Buffer.from('PK sekret-value inside the archive').toString('base64');
+
+  const report: RunReport = {
+    ok: false,
+    env: 'local',
+    startedAt: '2026-08-03T00:00:00.000Z',
+    durationMs: 1,
+    total: 1,
+    passed: 0,
+    failed: 1,
+    seed: 1,
+    now: '2026-08-03T00:00:00.000Z',
+    insecure: false,
+    tests: [
+      {
+        kind: 'functional',
+        name: 'renders a secret',
+        ok: false,
+        durationMs: 1,
+        error: 'sekret-value showed up',
+        steps: [{ kind: 'click', source: 'click button "Pay"', line: 2, ok: false, durationMs: 1, detail: 'sekret-value', screenshot: { base64: traceBytes } }],
+        trace: { base64: traceBytes },
+      },
+    ],
+  };
+
+  const redacted = redactReport(report, r);
+  const t = redacted.tests[0]!;
+  assert.equal(t.kind, 'functional');
+  // Text is redacted…
+  assert.match(t.error!, /•••\(API_KEY\)/);
+  assert.match(t.steps[0]!.detail!, /•••\(API_KEY\)/);
+  // …and binary evidence is not, at all.
+  assert.equal(t.trace!.base64, traceBytes, 'the archive is returned exactly as captured');
+  assert.equal(t.steps[0]!.screenshot!.base64, traceBytes);
+  assert.ok(Buffer.from(t.trace!.base64, 'base64').toString().includes('sekret-value'), 'the secret really is still in there — that is the point');
 });

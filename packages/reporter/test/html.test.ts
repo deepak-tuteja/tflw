@@ -424,3 +424,97 @@ test('a mixed file (functional + workload) renders both, in declaration order, s
   assert.deepEqual(order, ['functional', 'checkout burst']);
   assert.equal([...html.matchAll(/data-file="mix\.tflw"/g)].length > 0, true);
 });
+
+// ---- FS-01 (review findings V2-01 / FU-01): the footer ----------------------
+//
+// The footer used to be the string literal `report.html is self-contained and safe to attach to a
+// ticket.` Both halves could be false at once: "safe" was false whenever the run captured anything
+// (the fresh-user pass found 24 live JWTs sitting directly above that sentence), and
+// "self-contained" was false whenever an asset was large enough to be written out to `assets/`
+// instead of inlined. It now describes what the file contains and makes no promise at all.
+
+function footerOf(html: string): string {
+  return html.match(/<footer>([\s\S]*?)<\/footer>/)![1]!;
+}
+
+test('the footer never claims the report is safe to attach — that was a promise the file could not keep', () => {
+  assert.doesNotMatch(footerOf(renderReportHtml(baseReport)), /safe to attach/);
+});
+
+test('a run that captured nothing says so positively', () => {
+  const footer = footerOf(renderReportHtml({ ...baseReport, evidenceLevel: 'none' }));
+  assert.match(footer, /evidence <code>none<\/code>/);
+  assert.match(footer, /contains no request\/response bodies, screenshots or traces/);
+  assert.doesNotMatch(footer, /Review it before attaching/, 'there is nothing to review');
+});
+
+test('a run that captured bodies and screenshots lists both and asks the reader to review', () => {
+  const report: RunReport = {
+    ...baseReport,
+    evidenceLevel: 'full',
+    tests: [
+      {
+        kind: 'functional',
+        name: 'checkout',
+        ok: false,
+        durationMs: 5,
+        steps: [
+          { kind: 'api', source: 'api GET /orders', line: 2, ok: true, durationMs: 1, request: { method: 'GET', url: 'http://x/orders', headers: {} } },
+          { kind: 'click', source: 'click button "Pay"', line: 3, ok: false, durationMs: 1, screenshot: { base64: 'iVBORw0KGgo=' } },
+        ],
+      },
+    ],
+  };
+  const footer = footerOf(renderReportHtml(report));
+  assert.match(footer, /evidence <code>full<\/code>/);
+  assert.match(footer, /request and response bodies and page screenshots/);
+  assert.match(footer, /Review it before attaching to a ticket/);
+});
+
+test('the evidence level renames what an api step contributed — at `none` a URL is nearly all that survives', () => {
+  const withApi = (evidenceLevel: RunReport['evidenceLevel']): string =>
+    footerOf(
+      renderReportHtml({
+        ...baseReport,
+        evidenceLevel,
+        tests: [
+          {
+            kind: 'functional',
+            name: 'orders',
+            ok: true,
+            durationMs: 5,
+            steps: [{ kind: 'api', source: 'api GET /orders', line: 2, ok: true, durationMs: 1, request: { method: 'GET', url: 'http://x/orders', headers: {} } }],
+          },
+        ],
+      }),
+    );
+  assert.match(withApi('full'), /request and response bodies/);
+  assert.match(withApi('headers-only'), /request and response headers/);
+  assert.match(withApi('none'), /request URLs and status codes/);
+});
+
+test('a report whose assets were written out beside it stops calling itself one file', () => {
+  // The `self-contained` half of the old sentence: past the inline-size threshold `report.html`
+  // alone is incomplete, and a reader who attaches just this file loses the evidence.
+  // A trace archive is always written externally regardless of size (assets.ts's module doc) —
+  // multi-hundred-KB binary zips are not meaningfully embeddable — so it is the cheapest fixture
+  // that genuinely leaves `report.html` incomplete on its own.
+  const report: RunReport = {
+    ...baseReport,
+    evidenceLevel: 'full',
+    tests: [
+      {
+        kind: 'functional',
+        name: 'checkout',
+        ok: false,
+        durationMs: 5,
+        steps: [{ kind: 'click', source: 'click button "Pay"', line: 3, ok: false, durationMs: 1, screenshot: { base64: 'iVBORw0KGgo=' } }],
+        trace: { base64: 'UEsDBAoAAAAAAA==' },
+      },
+    ],
+  };
+  const { hrefs } = resolveReportAssets(report);
+  assert.ok(hrefs.size > 0, 'fixture must actually cross the inline threshold for this test to mean anything');
+  assert.match(footerOf(renderReportHtml(report, hrefs)), /copy the whole report directory, not just this file/);
+  assert.doesNotMatch(footerOf(renderReportHtml(report)), /copy the whole report directory/, 'an inlined-only report really is one file');
+});

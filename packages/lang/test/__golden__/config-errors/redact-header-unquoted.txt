@@ -1,0 +1,7 @@
+error[TF010]: expected a quoted header name, e.g. `redact header "Authorization"`, found `.`
+ --> tflw.config:3:16
+  |
+3 |   redact header.Authorization
+  |                ^
+  |
+  = help: expected a string

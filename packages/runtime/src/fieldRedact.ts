@@ -15,7 +15,8 @@ const MASK = '[redacted]';
  * can't be field-redacted (`evidence none`/`headers-only` are the tool for that case).
  */
 export function redactFields(text: string, patterns: readonly RedactPattern[]): string {
-  if (patterns.length === 0) return text;
+  const bodyPatterns = patterns.filter((p) => p.root === 'body');
+  if (bodyPatterns.length === 0) return text;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -23,10 +24,55 @@ export function redactFields(text: string, patterns: readonly RedactPattern[]): 
     return text;
   }
   let changed = false;
-  for (const pattern of patterns) {
+  for (const pattern of bodyPatterns) {
     if (maskPath(parsed, pattern.segments)) changed = true;
   }
   return changed ? JSON.stringify(parsed) : text;
+}
+
+/**
+ * FS-03 (review findings FU-01/V2-06) — `redact header "<name>"`. HTTP header names are
+ * case-insensitive, so matching is too; the literal name `"*"` masks every header, mirroring
+ * `body.*`. Applied to both the request and the response header maps in the report-only trace, so
+ * `redact header "Authorization"` covers the credential going out *and* a `Set-Cookie` coming back
+ * once both are named.
+ */
+export function redactHeaderFields(headers: Readonly<Record<string, string>>, patterns: readonly RedactPattern[]): Record<string, string> {
+  const names = new Set(patterns.filter((p) => p.root === 'header').map((p) => p.name.toLowerCase()));
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) out[k] = names.has('*') || names.has(k.toLowerCase()) ? MASK : v;
+  return out;
+}
+
+/**
+ * FS-03 — `redact query "<name>"`. Masks a named query parameter's *value* in a URL while leaving
+ * the rest of the URL — origin, path, every other parameter, and the parameter's own name — intact.
+ *
+ * That precision is the whole reason `query "<name>"` exists rather than a bare `redact url`, which
+ * was considered and declined: masking the entire URL destroys the report's ability to say which
+ * request this even was, a property `evidence-level.test.ts` protects deliberately ("the URL itself
+ * is never trimmed"). Parameter names are matched case-sensitively — unlike header names, query
+ * parameters are, and `?Token=` and `?token=` are genuinely different parameters.
+ *
+ * Best-effort in the same spirit as `redactFields`: a URL that doesn't parse is returned unchanged.
+ */
+export function redactUrlQuery(url: string, patterns: readonly RedactPattern[]): string {
+  const names = patterns.filter((p) => p.root === 'query').map((p) => p.name);
+  if (names.length === 0) return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const wildcard = names.includes('*');
+  let changed = false;
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (!wildcard && !names.includes(key)) continue;
+    parsed.searchParams.set(key, MASK);
+    changed = true;
+  }
+  return changed ? parsed.toString() : url;
 }
 
 /** Mutates `value` in place, masking every leaf reached by `segments`. A `wildcard` segment
@@ -65,7 +111,15 @@ function applySegment(obj: Record<string, unknown>, key: string, rest: readonly 
  * subject segment.
  */
 export function pathMatchesRedactPattern(path: readonly PathSegment[], patterns: readonly RedactPattern[]): boolean {
-  return patterns.some((p) => segmentsMatch(path, p.segments));
+  return patterns.some((p) => p.root === 'body' && segmentsMatch(path, p.segments));
+}
+
+/** FS-03's taint half, for a `capture header "<name>" as x` subject — the header analogue of
+ * `pathMatchesRedactPattern`. Case-insensitive, like HTTP header names and like
+ * `redactHeaderFields`. */
+export function headerMatchesRedactPattern(name: string, patterns: readonly RedactPattern[]): boolean {
+  const lower = name.toLowerCase();
+  return patterns.some((p) => p.root === 'header' && (p.name === '*' || p.name.toLowerCase() === lower));
 }
 
 function segmentsMatch(path: readonly PathSegment[], pattern: readonly RedactPathSegment[]): boolean {
@@ -87,7 +141,7 @@ function segmentsMatch(path: readonly PathSegment[], pattern: readonly RedactPat
  */
 const MIN_MASKABLE_LENGTH = 6;
 
-export function maskDetailValue(message: string, reprValue: string): string {
+export function maskDetailValue(message: string, reprValue: string, mask: string = MASK): string {
   if (reprValue.length < MIN_MASKABLE_LENGTH) return message;
-  return message.split(reprValue).join(MASK);
+  return message.split(reprValue).join(mask);
 }

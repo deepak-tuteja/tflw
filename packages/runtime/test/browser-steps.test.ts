@@ -667,6 +667,78 @@ test('a `retry` test that fails then passes captures a trace on both attempts (D
   assert.equal(result.trace?.base64, result.attempts![1]!.trace?.base64);
 });
 
+// ---- FS-01 (review finding V2-01): binary evidence exists only at `evidence full` --------------
+//
+// A trace archive is a time-travel recording of the rendered page and a screenshot is pixels;
+// **no redactor reaches rendered text**, so the only promise the tool can keep about a captured
+// screenshot is "we didn't capture it". `headers-only`/`none` — the levels a user reaches for
+// precisely when they are about to attach the artifact somewhere — therefore suppress both, rather
+// than shipping a hand-wave about cleaning them. Post-processing Playwright's archive was
+// considered and rejected: the format is theirs and changes on their schedule, and it cannot touch
+// screenshot pixels at all.
+
+test('FS-01: at `evidence none` a failing browser test captures neither a trace nor a failure screenshot', async () => {
+  const noEvidence: ResolvedConfig = { ...config, evidenceLevel: 'none', timeouts: { ...config.timeouts, wait: 300 } };
+  const { program } = parseSource(`test "fails with no evidence"
+  open "/"
+  wait until button "Disabled button" is enabled
+`);
+  const { report } = await runProgram(program, noEvidence, { source: 'x', browserManager });
+
+  // The test still fails, and still says why — only the binary evidence is withheld.
+  assert.equal(report.ok, false);
+  const failedStep = report.tests[0]!.steps.at(-1)!;
+  assert.equal(failedStep.ok, false);
+  assert.equal(failedStep.screenshot, undefined, 'no failure screenshot below `evidence full`');
+  assert.equal(report.tests[0]!.trace, undefined, 'no trace archive below `evidence full`');
+  assert.ok((failedStep.detail ?? '').length > 0, 'the failure message is not evidence and must survive');
+});
+
+test('FS-01: at `evidence headers-only` binary evidence is suppressed too — one sentence, no exceptions', async () => {
+  // Deliberately *not* "traces at full, screenshots at headers-only": a split rule is one nobody
+  // would remember, and `headers-only` is already a level chosen to make an artifact shareable.
+  const headersOnly: ResolvedConfig = { ...config, evidenceLevel: 'headers-only', timeouts: { ...config.timeouts, wait: 300 } };
+  const { program } = parseSource(`test "fails at headers-only"
+  open "/"
+  wait until button "Disabled button" is enabled
+`);
+  const { report } = await runProgram(program, headersOnly, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.equal(report.tests[0]!.steps.at(-1)!.screenshot, undefined);
+  assert.equal(report.tests[0]!.trace, undefined);
+});
+
+test('FS-01: an explicit `screenshot "..."` step below `evidence full` still passes, and says it was not captured', async () => {
+  // `screenshot` is an evidence step, never an assertion — a run that deliberately turned evidence
+  // down must not start failing because of it. But it must not claim a capture that isn't there
+  // either, so the detail line reports the omission the same way a dropped body does.
+  const noEvidence: ResolvedConfig = { ...config, evidenceLevel: 'none' };
+  const { program } = parseSource(`test "explicit screenshot, no evidence"
+  open "/"
+  screenshot "landing page"
+`);
+  const { report } = await runProgram(program, noEvidence, { source: 'x', browserManager });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const step = report.tests[0]!.steps[1]!;
+  assert.equal(step.kind, 'screenshot');
+  assert.equal(step.ok, true);
+  assert.equal(step.screenshot, undefined);
+  assert.match(step.detail ?? '', /landing page.*not captured \(evidence level\)/);
+});
+
+test('FS-01: `evidence full` (the default) is unchanged — the accepted cost only bites when evidence was turned down', async () => {
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 300 } };
+  const { program } = parseSource(`test "fails at full"
+  open "/"
+  wait until button "Disabled button" is enabled
+`);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.ok(report.tests[0]!.steps.at(-1)!.screenshot, 'the default level still captures failure evidence');
+  assert.ok(report.tests[0]!.trace, 'the default level still captures a trace');
+});
+
 test('engine selection: a `BrowserManager({ engine: "firefox" })` runs real Firefox end-to-end', async () => {
   const firefoxManager = new BrowserManager({ engine: 'firefox' });
   try {
@@ -894,11 +966,31 @@ test('the a11y expect retries and re-scans, passing once a violation genuinely f
 
 const PNG_MAGIC_M4B = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
-async function runSnapshot(source: string, baseDir: string, opts: { filePath?: string; updateSnapshots?: boolean } = {}) {
+async function runSnapshot(source: string, baseDir: string, opts: { filePath?: string; updateSnapshots?: boolean; config?: ResolvedConfig } = {}) {
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, [], `unexpected parse diagnostics: ${JSON.stringify(diagnostics)}`);
-  return runProgram(program, config, { source, browserManager, baseDir, filePath: opts.filePath ?? 'visual.tflw', updateSnapshots: opts.updateSnapshots ?? false });
+  return runProgram(program, opts.config ?? config, { source, browserManager, baseDir, filePath: opts.filePath ?? 'visual.tflw', updateSnapshots: opts.updateSnapshots ?? false });
 }
+
+test('FS-01: below `evidence full` a snapshot mismatch still fails and still says by how much — only the images are withheld', async () => {
+  // `matches snapshot` is the one place the pixels are load-bearing for an assertion, so unlike the
+  // trace/failure-screenshot/`screenshot`-step cases the capture itself is *not* skippable — the
+  // comparison, the baseline write and the `N px / N% differed` message all behave identically at
+  // every level. Only the baseline/actual/diff triptych stops reaching the report, because it is
+  // page pixels like any other screenshot and no redactor reaches rendered text.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
+  try {
+    const noEvidence: ResolvedConfig = { ...config, evidenceLevel: 'none' };
+    await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "gated"\n', dir, { updateSnapshots: true });
+    const { report } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "gated"\n', dir, { config: noEvidence });
+    assert.equal(report.ok, false, 'the assertion must be unaffected');
+    const step = report.tests[0]!.steps.at(-1)!;
+    assert.match(step.detail ?? '', /does not match baseline.*px.*%/, 'the diagnosis must survive intact');
+    assert.equal(step.snapshotDiff, undefined, 'the triptych is page pixels — it does not reach the report below `evidence full`');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test('with no baseline and no `--update-snapshots`, the step fails clearly and attaches the actual capture as evidence', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));

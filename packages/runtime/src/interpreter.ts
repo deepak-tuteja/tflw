@@ -15,6 +15,7 @@ import type {
   ApiRequestSpec,
   ApiStep,
   CaptureStmt,
+  EvidenceLevel,
   ExpectStmt,
   HookDecl,
   LetStmt,
@@ -75,7 +76,7 @@ import { evaluateSnapshot, snapshotPaths } from './snapshot.js';
 import { camelCaseName, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
-import { maskDetailValue, pathMatchesRedactPattern, redactFields } from './fieldRedact.js';
+import { headerMatchesRedactPattern, maskDetailValue, pathMatchesRedactPattern, redactFields, redactHeaderFields, redactUrlQuery } from './fieldRedact.js';
 import { evaluateSchemaMatch } from './contract.js';
 import { evaluateFileMatch } from './binary-match.js';
 import { parseCsv } from './csv-parse.js';
@@ -470,6 +471,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     seed: runSeed,
     now: runClock.toISOString(),
     insecure: config.insecure,
+    evidenceLevel: config.evidenceLevel,
     ...(opts.browserManager ? { browserEngine: opts.browserManager.engine } : {}),
     ...(selfDiagnosis ? { selfDiagnosis, inconclusive } : {}),
     ...(aborted ? { aborted, abortedMessage } : {}),
@@ -2028,13 +2030,14 @@ async function runTestAttempt(
   // (session failure, `before` hook failure, …) — the `finally`'s plain `close()` is only a
   // defensive fallback for the (never-expected) case that something threw before `finish()` ran;
   // `close()` is a no-op once `finish()` already cleared `context` (both methods idempotent).
-  const browserPageState = tc.browserManager ? new BrowserPageState() : undefined;
+  const browserPageState = tc.browserManager ? new BrowserPageState(capturesBinaryEvidence(config)) : undefined;
   try {
     const result = await runTestAttemptBody(test, config, tc, registry, beforeEach, afterEach, sessionOwnership, name, nameCtx, testStart, steps, browserPageState);
     if (!browserPageState) return result;
     // Trace on failure and on every retry attempt (M3c, D12) — a clean, single-attempt pass never
     // captures one; a retry attempt does even if it ultimately passes (the flaky path is exactly
-    // the evidence worth keeping).
+    // the evidence worth keeping). Below `evidence full` (FS-01) tracing was never started, so
+    // `finish` returns `undefined` here whatever this argument says.
     const trace = await browserPageState.finish(!isFirstAttempt || !result.ok);
     return trace ? { ...result, trace } : result;
   } finally {
@@ -2519,6 +2522,14 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'ScreenshotStmt': {
           const name = String(evalValue(step.name, ctx));
           const page = await ensurePageForStep(ctx);
+          // FS-01: below `evidence full` the shot is not taken at all, and the step says so rather
+          // than reporting a capture that isn't in the report. It still *passes* — `screenshot` is
+          // an evidence step, never an assertion, so a run that deliberately turned evidence down
+          // must not start failing because of it.
+          if (!capturesBinaryEvidence(config)) {
+            result = mkStep('screenshot', src, step.span, true, stepStart, `screenshot ${JSON.stringify(name)} ${EVIDENCE_OMITTED_SCREENSHOT}`);
+            break;
+          }
           const screenshot = await performScreenshot(page);
           result = { ...mkStep('screenshot', src, step.span, true, stepStart, `screenshot ${JSON.stringify(name)} captured`), screenshot };
           break;
@@ -2548,7 +2559,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       // page state). `currentPageIfAny()` never creates a browser process for an API-only test that
       // merely happens to share a `BrowserManager` (SPEC §9's "present regardless of whether this
       // test uses a browser step" framing) — only a test that already opened a page gets a shot.
-      if (!result.ok && ctx.browser) {
+      if (!result.ok && ctx.browser && capturesBinaryEvidence(config)) {
         const screenshot = await captureFailureScreenshot(ctx.browser.page.currentPageIfAny());
         if (screenshot) result = { ...result, screenshot };
       }
@@ -2570,7 +2581,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
       const redacted = tc.redactor.redact(message);
       let failed = mkStep(stepKind(step), src, step.span, false, stepStart, redacted);
-      if (ctx.browser) {
+      if (ctx.browser && capturesBinaryEvidence(config)) {
         const screenshot = await captureFailureScreenshot(ctx.browser.page.currentPageIfAny());
         if (screenshot) failed = { ...failed, screenshot };
       }
@@ -2838,7 +2849,7 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
 
 async function execExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig, baseDir: string): Promise<StepResult> {
   const outcome = await evaluateExpect(step, response, connectionError, ctx, config, baseDir);
-  const message = maskExpectDetail(step, response, outcome.message, config.redactPatterns);
+  const message = maskExpectDetail(step, response, outcome.message, config);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(message));
 }
 
@@ -2889,6 +2900,12 @@ async function execSnapshotExpect(step: ExpectStmt, ctx: EvalCtx, src: string, s
   const outcome = await evaluateSnapshot(paths, name, actualPng, platformKey, tc.updateSnapshots, step.matcher.negated);
 
   const result = mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+  // FS-01: the baseline/actual/diff PNGs are page pixels like any other screenshot, so they only
+  // reach the report at `evidence full`. Unlike the other binary sinks the *capture* is not
+  // skippable here — `actualPng` is what the assertion compares — so the comparison, the baseline
+  // write, and `outcome.message`'s `N px / N% differed` all behave identically at every level; only
+  // the images are withheld. A mismatch below `full` still fails the test and still says by how much.
+  if (!capturesBinaryEvidence(config)) return result;
   return outcome.diff ? { ...result, snapshotDiff: outcome.diff } : result;
 }
 
@@ -3084,12 +3101,58 @@ function describeA11yOutcome(step: ExpectStmt, floor: A11ySeverity | null, viola
  * (since a passing `equals` necessarily has `actual === expected`) as the literal shown even on
  * success. Quantified (`any`/`all`) assertions are deliberately left alone: the per-element path
  * that actually matched isn't known statically here the way a plain subject's is, and the messages
- * they build (`arrayLabel[idx]...`) don't reduce to one resolvable subject value to mask. */
-function maskExpectDetail(step: ExpectStmt, response: ResponseTrace | null, message: string, patterns: readonly RedactPattern[]): string {
-  if (step.quantifier || step.subject.type !== 'BodySubject' || !response) return message;
-  if (!pathMatchesRedactPattern(step.subject.path, patterns)) return message;
+ * they build (`arrayLabel[idx]...`) don't reduce to one resolvable subject value to mask.
+ *
+ * FS-02 (review finding V2-04) adds the second reason to mask: the configured `evidence` level.
+ * Before FS-02, `redactRequest`/`redactResponse` were the *only* functions in this file that read
+ * `config.evidenceLevel`, so `evidence none` dropped the response body from the trace and then
+ * printed a field out of that same body verbatim one line below it — which is how a failing
+ * assertion at `evidence none` still shipped a live JWT into `report.html`, `results.json` and
+ * `junit.xml`. See `subjectValueSurvivesEvidenceLevel` for the rule. */
+function maskExpectDetail(step: ExpectStmt, response: ResponseTrace | null, message: string, config: ResolvedConfig): string {
+  if (step.quantifier || !response) return message;
+  const evidenceMasks = !subjectValueSurvivesEvidenceLevel(step.subject, config.evidenceLevel);
+  const redactMasks = subjectMatchesRedactPattern(step.subject, config.redactPatterns);
+  if (!evidenceMasks && !redactMasks) return message;
   const { value } = resolveSubject(step.subject, response);
-  return maskDetailValue(message, repr(value));
+  return maskDetailValue(message, repr(value), evidenceMasks ? EVIDENCE_OMITTED_BODY : undefined);
+}
+
+/**
+ * FS-02 — **a step's detail text never shows what this run's `evidence` level already dropped from
+ * the trace.** The rule is read straight off `redactRequest`/`redactResponse` rather than invented
+ * separately, so the two can't drift into contradicting each other:
+ *
+ * - `full` — the trace keeps everything, so detail does too.
+ * - `headers-only` — the trace keeps status, URL and headers but drops bodies, so a `header "…"`
+ *   subject's value still shows (it is already printed in the header panel above) while every
+ *   body-derived subject's does not.
+ * - `none` — the trace keeps only method, URL and status, so only `status` and `duration` survive.
+ *
+ * *What* was compared always survives — the subject label and the matcher are part of the message,
+ * not the value — so a failure at `evidence none` still reads `expected body.token to equal "…",
+ * but got [omitted by evidence level]`. That is the point of the decision: dropping detail entirely
+ * below `full` would make `evidence none` useless for diagnosing a CI failure, which is precisely
+ * the situation a user turns evidence down for.
+ *
+ * UI subjects (`LocatorSubject`, `PageSubject`) are unaffected: they are page state, not part of
+ * the request/response trace `evidence` governs, and they never reach this function anyway
+ * (`execUiExpect`/`execA11yExpect` intercept them upstream).
+ */
+function subjectValueSurvivesEvidenceLevel(subject: Subject, level: EvidenceLevel): boolean {
+  if (level === 'full') return true;
+  switch (subject.type) {
+    case 'StatusSubject':
+    case 'DurationSubject':
+      return true;
+    case 'HeaderSubject':
+      return level === 'headers-only';
+    case 'LocatorSubject':
+    case 'PageSubject':
+      return true;
+    default:
+      return false;
+  }
 }
 
 function execLet(step: LetStmt, ctx: EvalCtx, src: string, start: number, redactor: Redactor): StepResult {
@@ -3114,8 +3177,15 @@ function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: Eva
   // is one of the configured `body.<path>` patterns. The captured *variable* itself stays the real
   // value (so a later `expect {name} equals ...` still asserts against ground truth) — only this
   // step's own report text changes.
-  const masked = step.subject.type === 'BodySubject' && pathMatchesRedactPattern(step.subject.path, config.redactPatterns);
-  const rendered = masked ? '[redacted]' : repr(value);
+  //
+  // FS-02 adds the second, independent reason: a `capture` reads out of the very trace the
+  // `evidence` level just trimmed, so `capture body.accessToken as token` printed the whole token
+  // on its own line while the response body above it said `[omitted by evidence level]`. Same rule
+  // as `maskExpectDetail`'s, from the same helper.
+  const evidenceMasked = !subjectValueSurvivesEvidenceLevel(step.subject, config.evidenceLevel);
+  const redactMasked = subjectMatchesRedactPattern(step.subject, config.redactPatterns);
+  if (redactMasked) registerCapturedSecret(step.name, value, redactor);
+  const rendered = evidenceMasked ? EVIDENCE_OMITTED_BODY : redactMasked ? '[redacted]' : repr(value);
   return mkStep('capture', src, step.span, true, start, redactor.redact(`${step.name} = ${rendered} (captured)`));
 }
 
@@ -3129,6 +3199,47 @@ function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: Eva
  * `logDestination` (itself already `--log-output`-overridden by the time it reaches here, decision
  * 121) only when the statement omitted its own `to …` clause — an explicit per-statement
  * destination always wins. */
+/** Whether a `capture`/`expect` subject names a position covered by a `redact` pattern (FS-03) —
+ * the two subject kinds a pattern can reach, dispatched to their own matchers so a header is never
+ * matched as if it were a JSON path. */
+function subjectMatchesRedactPattern(subject: Subject, patterns: readonly RedactPattern[]): boolean {
+  if (subject.type === 'BodySubject') return pathMatchesRedactPattern(subject.path, patterns);
+  if (subject.type === 'HeaderSubject') return headerMatchesRedactPattern(subject.name.value, patterns);
+  return false;
+}
+
+/**
+ * FS-03's second half (review findings V2-03/V2-06) — **`redact` means "this value is a secret",
+ * not "this JSON field position is masked".**
+ *
+ * Before this, the two redaction mechanisms had a hole exactly between them. Path-based `redact`
+ * masked one *position* in one trace; taint-based redaction followed a *value* everywhere but only
+ * ever learned values that arrived via `env(...)` — there were exactly three `register()` sites and
+ * all three were on the env path. So the V2-03 repro
+ *
+ *     redact body.accessToken          # in tflw.config
+ *     capture body.accessToken as token
+ *     api GET /session?token={token}
+ *
+ * masked the token in the login response and then printed it verbatim in the next request's URL,
+ * with `redact body.accessToken` sitting in the config the whole time doing nothing about it. This
+ * is the fourth `register()` site, and it closes that repro: naming a position now taints whatever
+ * flows out of it, so the value is masked in every file sink wherever it later appears — a URL, a
+ * log line, another step's detail text — and `redactReport`'s end-of-run pass catches occurrences
+ * that were already written before the `capture` ran.
+ *
+ * Only string and numeric values are registered: substring-replacing an object's
+ * `String(value)` (`[object Object]`) would mask unrelated text and hide nothing. The variable's
+ * own name becomes the placeholder (`•••(token)`) — the reader should be able to tell which
+ * captured value was masked, the same way `•••(API_KEY)` names the env var. `Redactor.register`
+ * still applies its `MIN_REDACTABLE_LENGTH` floor (decision 64), so a short captured value is left
+ * alone rather than blotting out every coincidental match in the report.
+ */
+function registerCapturedSecret(name: string, value: unknown, redactor: Redactor): void {
+  if (typeof value !== 'string' && typeof value !== 'number') return;
+  redactor.register(name, String(value));
+}
+
 function execLog(step: LogStmt, ctx: EvalCtx, src: string, start: number, redactor: Redactor, config: ResolvedConfig): StepResult {
   const message = String(evalValue(step.message, ctx));
   const destination = step.destination ?? config.logDestination;
@@ -3410,18 +3521,45 @@ export function resolveBaseUrl(service: string | null, config: ResolvedConfig): 
  * decision 101c) — distinguishable in the report from a genuinely empty (e.g. 204) body. */
 const EVIDENCE_OMITTED_BODY = '[omitted by evidence level]';
 
+/** The same idea for an explicit `screenshot "<name>"` step below `evidence full` (FS-01) — the
+ * step ran and the shot was deliberately not taken, which is a different thing from a capture that
+ * silently failed. */
+const EVIDENCE_OMITTED_SCREENSHOT = 'not captured (evidence level)';
+
+/**
+ * FS-01 (review finding V2-01) — **binary evidence exists only at `evidence full`.** One sentence,
+ * no exceptions: trace archives, explicit `screenshot` steps, best-effort failure screenshots and
+ * `matches snapshot` diff images are all page *pixels*, and there is no redactor that reaches
+ * rendered text. The only promise the tool can keep about a captured screenshot is "we didn't
+ * capture it" — so `headers-only`/`none`, the levels a user reaches for precisely when they are
+ * about to attach the artifact somewhere, suppress every one of them rather than shipping a
+ * hand-wave about cleaning them.
+ *
+ * Where the capture exists *only* to produce report evidence (trace, failure screenshot, the
+ * `screenshot` step) the capture itself is skipped. `matches snapshot` is the one place the pixels
+ * are load-bearing for an assertion, so there the comparison still runs and only the images are
+ * withheld from the report — the assertion's own pass/fail and its `N px / N% differed` message are
+ * unaffected.
+ */
+function capturesBinaryEvidence(config: ResolvedConfig): boolean {
+  return config.evidenceLevel === 'full';
+}
+
 /** Builds the **report-only** copy of a request trace: secret redaction (existing, decision
  * P#30) → declarative field redaction (decision 101d) → evidence-level trim (decision 101c), in
  * that order. The raw `trace` returned alongside this by `execApi` is what `expect`/`capture`
  * actually read — this copy never feeds back into the run. */
 function redactRequest(req: RequestTrace, r: Redactor, config: ResolvedConfig): RequestTrace {
-  const url = r.redact(req.url);
+  // FS-03: `redact query "…"` applies at every evidence level, because the URL itself survives at
+  // every level — including `none`, where it is nearly all that survives.
+  const url = redactUrlQuery(r.redact(req.url), config.redactPatterns);
   if (config.evidenceLevel === 'none') return { method: req.method, url, headers: {} };
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.headers)) headers[k] = r.redact(v);
-  if (config.evidenceLevel === 'headers-only') return { method: req.method, url, headers };
+  const masked = redactHeaderFields(headers, config.redactPatterns);
+  if (config.evidenceLevel === 'headers-only') return { method: req.method, url, headers: masked };
   const body = req.body !== undefined ? redactFields(r.redact(req.body), config.redactPatterns) : undefined;
-  return { method: req.method, url, headers, ...(body !== undefined ? { body } : {}) };
+  return { method: req.method, url, headers: masked, ...(body !== undefined ? { body } : {}) };
 }
 
 // Gap #17: the report-only copy never carries real bytes, at any evidence level — `results.json`
@@ -3440,11 +3578,14 @@ function redactResponse(res: ResponseTrace, r: Redactor, config: ResolvedConfig)
   }
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(res.headers)) headers[k] = r.redact(v);
+  // FS-03: the same `redact header "…"` patterns cover the response side — a `Set-Cookie` coming
+  // back is as much a credential as an `Authorization` going out.
+  const masked = redactHeaderFields(headers, config.redactPatterns);
   if (config.evidenceLevel === 'headers-only') {
-    return { status: res.status, statusText, headers, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
+    return { status: res.status, statusText, headers: masked, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
   }
   const bodyText = redactFields(r.redact(res.bodyText), config.redactPatterns);
-  return { status: res.status, statusText, headers, bodyText, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
+  return { status: res.status, statusText, headers: masked, bodyText, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
 }
 
 // ---- helpers ---------------------------------------------------------------

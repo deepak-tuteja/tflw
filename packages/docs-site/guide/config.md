@@ -47,6 +47,17 @@ evaluated). `.env` at the project root auto-loads for local dev; real environmen
 over it. Anything that ever flowed through `env(NAME)` prints as `•••(NAME)` everywhere — reports,
 traces, CLI output — automatically, by construction.
 
+For a secret that **doesn't** come from an env var — a token the API mints and hands back mid-run,
+a `Set-Cookie`, an API key baked into a fixture — name its position with `redact` instead:
+
+```tflw-config
+env staging
+  redact header "Authorization", body.accessToken, query "token"
+```
+
+A value `capture`d out of a position you named is tracked from then on and masked wherever it later
+appears. See [CI, reporting & safety](/guide/ci-and-reporting#redact-name-a-secret-by-position-not-by-source).
+
 ## Corporate networks
 
 Three real-world blockers Node's plain `fetch` doesn't handle, each with a zero-new-dependency

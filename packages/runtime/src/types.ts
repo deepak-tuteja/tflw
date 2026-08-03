@@ -288,6 +288,14 @@ export interface RunReport {
   /** True when this run had `insecure true` active (TLS verification disabled) — surfaced as a
    * visible warning in the CLI summary and report header, never silently (decision 78). */
   readonly insecure: boolean;
+  /** FS-01 (review finding V2-01) — the `evidence` level this run actually ran at, carried into the
+   * report so `report.html`'s footer can describe what the file contains instead of asserting a
+   * fixed claim about it. The reporter cannot infer this from the contents alone: "no screenshots"
+   * is equally true of a clean API-only run at `evidence full` and a browser run at `evidence none`,
+   * and those two deserve different sentences. Optional so every fixture built directly against
+   * `RunReport` (unit tests across `runtime`/`reporter`) keeps compiling; absent is rendered as
+   * `full`, the default. */
+  readonly evidenceLevel?: EvidenceLevel;
   /** The Playwright engine this run's browser steps ran against (M3c, D11: "engine is a run-level
    * property in the report header"). Undefined only for a run given no `BrowserManager` at all
    * (a hand-built test harness, never a real `tflw run` invocation, which always supplies one). */

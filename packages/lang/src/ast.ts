@@ -1353,21 +1353,44 @@ export interface ViewportDecl extends Node {
   readonly height: number;
 }
 
-/** A single `redact` target: `body` followed by one or more `.prop`/`.* ` segments. Deliberately
+/** A single `redact` target's path below `body`: one or more `.prop`/`.* ` segments. Deliberately
  * a separate, minimal path type from `PathSegment` (used by `expect`/`capture`) — those never
  * need wildcards and shouldn't silently gain them just because `redact` does. */
 export type RedactPathSegment = { readonly kind: 'prop'; readonly name: string } | { readonly kind: 'wildcard' };
 
-export interface RedactPattern {
-  readonly root: 'body';
-  readonly segments: readonly RedactPathSegment[];
-}
+/**
+ * What one `redact` entry names. FS-03 (review findings FU-01/V2-06) widened this from `body`-only:
+ * the fresh-user pass found `report.html` and `results.json` each carrying 24 live JWTs while the
+ * footer called the artifact safe to attach to a ticket — and those JWTs were in **headers**, which
+ * `redact` had no way to name at all.
+ *
+ * A discriminated union rather than one shape with an optional path, because a header or query
+ * parameter is a *name*, not a path: there is nothing below `Authorization` to descend into, so no
+ * consumer should be able to hand it a `segments` array by accident.
+ *
+ * Header and query names are quoted strings (`redact header "X-Api-Key"`), not dotted identifiers.
+ * That is both the spelling every other header-name site in the language already uses
+ * (`header "Accept" is …`, `expect header "content-type" …`, `capture header "location" as …`) and
+ * the only one that works: `isIdentCont` is `/[A-Za-z0-9_]/`, so a bare `header.X-Api-Key` lexes as
+ * three tokens, and the real-world headers worth redacting — `X-Api-Key`, `Set-Cookie`,
+ * `x-auth-token` — are precisely the hyphenated ones. Matching is case-insensitive, as HTTP header
+ * names are; the literal name `"*"` matches every header/parameter, mirroring `body.*`.
+ */
+export type RedactPattern =
+  | { readonly root: 'body'; readonly segments: readonly RedactPathSegment[] }
+  | { readonly root: 'header'; readonly name: string }
+  | { readonly root: 'query'; readonly name: string };
 
-/** `redact body.email, body.*.address` — masks matching JSON fields with `[redacted]` in the
- * report-only trace before it's written (SPEC §3.4, PLAN decision 101d, enterprise arc cluster
- * 2). Accumulates across `defaults` + `env`, same as `AllowHostsDecl`. Distinct mechanism from
- * the existing taint-based secret redaction (`env(...)` values, `redact.ts`) — this one is
- * path-based and doesn't require the value to have come from an env var. */
+/** `redact body.email, header "Authorization", query "token"` — masks matching JSON fields,
+ * response/request headers and URL query parameters with `[redacted]` in the report-only trace
+ * before it's written (SPEC §3.4, PLAN decision 101d, enterprise arc cluster 2; widened beyond
+ * `body` by FS-03). Accumulates across `defaults` + `env`, same as `AllowHostsDecl`.
+ *
+ * Related to but distinct from the taint-based secret redaction (`env(...)` values, `redact.ts`):
+ * that one follows a *value* wherever it flows, this one masks a *position*. FS-03 connects them —
+ * a `capture` whose subject is covered by one of these patterns registers its value with the
+ * taint redactor, so naming a position here now also means "this value is a secret" and it gets
+ * masked wherever it later reappears (a URL, a log line, another step's detail text). */
 export interface RedactDecl extends Node {
   readonly type: 'RedactDecl';
   readonly patterns: readonly RedactPattern[];

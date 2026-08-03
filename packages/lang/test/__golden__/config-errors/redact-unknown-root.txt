@@ -1,0 +1,7 @@
+error[TF010]: expected `body`, `header` or `query` after `redact`, found `url`
+ --> tflw.config:3:10
+  |
+3 |   redact url
+  |          ^^^
+  |
+  = help: e.g. `redact body.password`, `redact header "Authorization"`, `redact query "token"`

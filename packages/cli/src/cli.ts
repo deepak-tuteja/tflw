@@ -1157,6 +1157,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
           seed,
           now,
           insecure: resolved.insecure,
+          evidenceLevel: resolved.evidenceLevel,
         };
         return { report: crashed };
       }
@@ -1181,7 +1182,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   //    a secret first registered by one file (e.g. running later, or concurrently under
   //    `--workers`) can still retroactively mask an earlier file's already-built report once
   //    everything is merged.
-  const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine), redactor);
+  const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel), redactor);
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
@@ -1737,7 +1738,15 @@ async function runWithConcurrency<T, R>(
  * file's own `selfDiagnosis`/`inconclusive`/`aborted` (present only for a file that had a
  * workload-bearing test) — `inconclusive`/`aborted` become "true if any contributing file's was,"
  * `selfDiagnosis` merges via the same N-way `mergeSelfDiagnosis` already used for shard merging. */
-function mergeReports(reports: readonly RunReport[], envName: string, seed: number, now: string, insecure: boolean, browserEngine: BrowserEngine): RunReport {
+function mergeReports(
+  reports: readonly RunReport[],
+  envName: string,
+  seed: number,
+  now: string,
+  insecure: boolean,
+  browserEngine: BrowserEngine,
+  evidenceLevel: EvidenceLevel,
+): RunReport {
   const tests: ReportEntry[] = reports.flatMap((r) => r.tests);
   const passed = tests.filter((t) => t.ok).length;
   const diagnoses = reports.map((r) => r.selfDiagnosis).filter((d): d is SelfDiagnosis => d !== undefined);
@@ -1754,6 +1763,7 @@ function mergeReports(reports: readonly RunReport[], envName: string, seed: numb
     seed,
     now,
     insecure,
+    evidenceLevel,
     browserEngine,
     ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
     ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),

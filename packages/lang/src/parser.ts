@@ -1264,25 +1264,9 @@ class Parser {
     this.advance(); // `redact`
     const patterns: RedactPattern[] = [];
     for (;;) {
-      if (!this.expectKw('body')) return null;
-      const segments: RedactPathSegment[] = [];
-      while (this.check('dot')) {
-        this.advance();
-        if (this.check('star')) {
-          this.advance();
-          segments.push({ kind: 'wildcard' });
-        } else {
-          const name = this.expect('ident', 'a property name or `*` after `.`');
-          if (!name) return null;
-          segments.push({ kind: 'prop', name: name.value });
-        }
-      }
-      if (segments.length === 0) {
-        const tok = this.peek();
-        this.error(Codes.UNEXPECTED_TOKEN, `expected a field path after \`body\`, e.g. \`redact body.email\``, tok.span);
-        return null;
-      }
-      patterns.push({ root: 'body', segments });
+      const pattern = this.parseRedactPattern();
+      if (!pattern) return null;
+      patterns.push(pattern);
       if (this.check('comma')) {
         this.advance();
         continue;
@@ -1291,6 +1275,50 @@ class Parser {
     }
     this.endLine();
     return { type: 'RedactDecl', patterns, span: this.spanFrom(start) };
+  }
+
+  /** One `redact` target: `body.<path>`, `header "<name>"` or `query "<name>"` (FS-03). The header
+   * and query names are quoted strings, matching every other header-name site in the language
+   * (`header "Accept" is …`) — and necessarily so, since identifiers can't contain the hyphen that
+   * `X-Api-Key`/`Set-Cookie` need. */
+  private parseRedactPattern(): RedactPattern | null {
+    const head = this.peek();
+    if (this.isKw(head, 'header') || this.isKw(head, 'query')) {
+      const root = head.value as 'header' | 'query';
+      this.advance();
+      const example = root === 'header' ? 'Authorization' : 'token';
+      const name = this.expect('string', `a quoted ${root} name, e.g. \`redact ${root} "${example}"\``);
+      if (!name) return null;
+      return { root, name: name.value };
+    }
+    if (!this.isKw(head, 'body')) {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `expected \`body\`, \`header\` or \`query\` after \`redact\`, found ${describeToken(head)}`,
+        head.span,
+        'e.g. `redact body.password`, `redact header "Authorization"`, `redact query "token"`',
+      );
+      return null;
+    }
+    this.advance(); // `body`
+    const segments: RedactPathSegment[] = [];
+    while (this.check('dot')) {
+      this.advance();
+      if (this.check('star')) {
+        this.advance();
+        segments.push({ kind: 'wildcard' });
+      } else {
+        const name = this.expect('ident', 'a property name or `*` after `.`');
+        if (!name) return null;
+        segments.push({ kind: 'prop', name: name.value });
+      }
+    }
+    if (segments.length === 0) {
+      const tok = this.peek();
+      this.error(Codes.UNEXPECTED_TOKEN, `expected a field path after \`body\`, e.g. \`redact body.email\``, tok.span);
+      return null;
+    }
+    return { root: 'body', segments };
   }
 
   private parseViewportDecl(): ViewportDecl | null {

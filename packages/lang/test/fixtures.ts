@@ -471,6 +471,17 @@ env staging
 `,
   },
   {
+    // FS-03 — `redact` names headers and query parameters, not only body paths. The header/query
+    // names are quoted strings, matching every other header-name site in the language and, unlike
+    // a dotted identifier, able to express the hyphenated names that actually carry credentials
+    // (`X-Api-Key`, `Set-Cookie`). All three roots mix freely in one comma-separated list.
+    name: 'redact-headers-and-query',
+    source: `env staging
+  api "https://staging.example.com"
+  redact body.password, header "Authorization", header "X-Api-Key", query "token"
+`,
+  },
+  {
     name: 'viewport',
     source: `defaults
   viewport 1280 720
@@ -596,6 +607,26 @@ env staging
     source: `env staging
   api "https://staging.example.com"
   redact body
+`,
+  },
+  {
+    // FS-03 declined a bare `redact url`: masking a whole URL destroys the report's ability to
+    // identify a request. The error must teach the three roots that do exist rather than just
+    // rejecting the word.
+    name: 'redact-unknown-root',
+    source: `env staging
+  api "https://staging.example.com"
+  redact url
+`,
+  },
+  {
+    // The hyphenated-header trap: `header.X-Api-Key` is the spelling a user arrives with, and it
+    // cannot work — `isIdentCont` has no hyphen, so it lexes as three tokens. The diagnostic has to
+    // point at the quoted form rather than leave them guessing at the lexer.
+    name: 'redact-header-unquoted',
+    source: `env staging
+  api "https://staging.example.com"
+  redact header.Authorization
 `,
   },
   {

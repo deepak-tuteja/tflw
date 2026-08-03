@@ -2,10 +2,16 @@
 
 ## Reports
 
-Every run writes a self-contained `report/report.html` (step timeline, full request/response
-detail), `report/junit.xml` (for CI test-result ingestion), and `report/results.json` (the same
-redacted run report as JSON — read a run's outcome from a file instead of scraping stdout) — they
-all fall out of the same event stream `tflw run` already emits, nothing to wire up.
+Every run writes `report/report.html` (step timeline, full request/response detail),
+`report/junit.xml` (for CI test-result ingestion), and `report/results.json` (the same redacted run
+report as JSON — read a run's outcome from a file instead of scraping stdout) — they all fall out of
+the same event stream `tflw run` already emits, nothing to wire up.
+
+`report.html` is a single file unless the run captured a screenshot or trace large enough to be
+written out beside it, in which case the report is `report.html` **plus** `report/assets/` — its
+footer tells you which, along with what the file actually contains. Read that footer before you
+attach a report anywhere: at the default evidence level it holds whole response bodies and page
+screenshots. See [evidence levels](#evidence-levels-how-much-lands-in-the-report) to turn that down.
 
 `tflw check [files]` runs the same parse + full checker pipeline `run` executes before it does
 anything, with **no execution** and no secrets required — a fast pre-commit/CI lint step. `tflw
@@ -30,31 +36,73 @@ Anything that ever flowed through `env(NAME)` — header, body, URL, a derived i
 prints as `•••(NAME)` in `report.html`, traces, and CLI output, automatically. See
 [Config & environments](/guide/config) for `require env`.
 
-## Declarative field redaction — PII by path, not by source
+## `redact` — name a secret by position, not by source
 
-`redact` masks a JSON field regardless of where its value came from — useful for PII (`email`,
-`address`, `ssn`) that's never actually read through `env(...)`:
+`redact` masks a named body field, header or query parameter regardless of where its value came
+from — useful for PII (`email`, `address`, `ssn`) and for credentials that were never read through
+`env(...)` in the first place:
 
 ```tflw-config
 env staging
   api "https://staging.example.com"
   redact body.email, body.*.address
+  redact header "Authorization", header "X-Api-Key", query "token"
 ```
 
-`.prop` segments and a `.*` wildcard (matches every object key or array element). Applied only to
-the report-only trace — `expect`/`capture` always see the real, unmasked value.
+- **`body.<path>`** — `.prop` segments and a `.*` wildcard (matches every object key or array
+  element).
+- **`header "<name>"`** — one request or response header, matched case-insensitively. `"*"` matches
+  every header.
+- **`query "<name>"`** — one URL query parameter. Only the **value** is masked; the path, the other
+  parameters and the parameter's own name survive, so the report still says which request this was.
+  (There is no `redact url` on purpose — masking a whole URL makes the report unreadable.)
 
-## Evidence levels — how much trace lands in the report
+Header and query names are quoted strings, the same way every header name is written elsewhere in
+the language (`header "Accept" is …`) — and the only form that can express `X-Api-Key` or
+`Set-Cookie`.
+
+Applied to the report-only trace — `expect`/`capture` always see the real, unmasked value.
+
+**`redact` means "this value is a secret."** If you `capture` out of a position you named here, the
+captured value is tracked from then on and masked wherever it turns up later — a subsequent
+request's URL, a `log` line, another step's detail text:
+
+```tflw-config
+env staging
+  redact body.accessToken
+```
+
+```tflw
+test "reads a session"
+  api POST /login
+  capture body.accessToken as token
+  api GET /session?token={token}    # the token is masked here too
+```
+
+## Evidence levels — how much lands in the report
 
 ```tflw-config
 env staging
   evidence "headers-only"
 ```
 
-- `full` (default) — everything: method/url/status/headers/body.
+- `full` (default) — everything: method/url/status/headers/body, screenshots and traces included.
 - `headers-only` — drops the request/response body (replaced with an `[omitted by evidence
   level]` marker).
 - `none` — drops headers too; only method/url/status/duration remain.
+
+The level governs three things, not just the trace:
+
+1. **The request/response trace**, as above.
+2. **Step detail text** — a step's own line never shows what the level already dropped. A failing
+   assertion at `evidence none` reads `expected body.token to equal "…", but got [omitted by
+   evidence level]`: you still see *what* was compared, just not the value.
+3. **Screenshots and traces — captured only at `full`.** Nothing can redact a screenshot; it is
+   pixels, and a page that renders a token on screen renders it into the image. So rather than
+   promise to clean them, `headers-only` and `none` don't capture them at all. A `screenshot` step
+   still passes below `full`, reporting `not captured (evidence level)`; a `matches snapshot`
+   assertion still runs and still tells you how many pixels differed, it just doesn't attach the
+   images. The cost is real: at `evidence none` a failing browser test has no trace to open.
 
 `--evidence <level>` overrides the config value for one run — handy for a CI job that wants
 `none`-level reports by policy regardless of what any given `tflw.config` declares.

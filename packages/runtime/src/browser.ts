@@ -166,6 +166,18 @@ export class BrowserPageState {
   private pages: PWPage[] = [];
   private activeIndex = 0;
   private context: PWBrowserContext | undefined;
+  /** FS-01 (review finding V2-01): binary evidence exists only at `evidence full`. A trace archive
+   * is a time-travel recording of the rendered page — DOM, network bodies, per-action screenshots —
+   * and **no redactor reaches rendered pixels**, so the only promise the tool can keep about a
+   * captured trace is "we didn't capture it". Below `full` tracing is therefore never *started*,
+   * not merely discarded at the end: `finish()`'s decision is about whether an archive is worth
+   * keeping, and that question shouldn't be reachable when the archive must not exist. Defaults to
+   * `true` so a hand-built harness (and `browser-steps.test.ts`) behaves as it did before FS-01. */
+  private readonly captureBinaryEvidence: boolean;
+
+  constructor(captureBinaryEvidence = true) {
+    this.captureBinaryEvidence = captureBinaryEvidence;
+  }
   /** Set by `accept dialog`/`dismiss dialog` — armed for exactly the next native dialog, then
    * cleared (SPEC §9.1). */
   armedDialog: 'accept' | 'dismiss' | null = null;
@@ -236,11 +248,12 @@ export class BrowserPageState {
       // instead of letting the browser navigate to (or silently drop) the response. `viewport`
       // (M3c) is this run's configured size, or Playwright's own default when `null`.
       this.context = await browser.newContext({ acceptDownloads: true, ...(manager.viewport ? { viewport: manager.viewport } : {}) });
-      // Started unconditionally (M3c, D12) — cheap enough to always run; `finish()` below decides
-      // at the *end* of the attempt whether it's worth keeping (failure, or a retry attempt),
-      // discarding it otherwise. `sources: true` lets a trace viewer show the actual `.tflw` source
-      // alongside the DOM/network timeline.
-      await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+      // Started for the whole attempt whenever binary evidence is allowed at all (M3c, D12) —
+      // cheap enough to always run; `finish()` below decides at the *end* of the attempt whether
+      // it's worth keeping (failure, or a retry attempt), discarding it otherwise. `sources: true`
+      // lets a trace viewer show the actual `.tflw` source alongside the DOM/network timeline.
+      // Below `evidence full` it never starts at all (FS-01) — see `captureBinaryEvidence`.
+      if (this.captureBinaryEvidence) await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();
       this.wireDialogHandler(page);
       this.wireNetworkCapture(page);
@@ -353,6 +366,12 @@ export class BrowserPageState {
    * browser was never actually used this attempt) returns `undefined` without touching tracing. */
   async finish(shouldSaveTrace: boolean): Promise<TraceAsset | undefined> {
     if (!this.context) return undefined;
+    // Nothing was ever recorded below `evidence full` (FS-01), so there is no archive to stop or
+    // keep — `tracing.stop()` on a context that never started tracing is not a supported call.
+    if (!this.captureBinaryEvidence) {
+      await this.close();
+      return undefined;
+    }
     let trace: TraceAsset | undefined;
     if (shouldSaveTrace) {
       const tmpPath = join(tmpdir(), `tflw-trace-${randomUUID()}.zip`);

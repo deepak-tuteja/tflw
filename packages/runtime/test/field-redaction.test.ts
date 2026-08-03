@@ -121,7 +121,20 @@ test('`capture body.phone` on a redact-covered field masks its own detail line, 
   const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
   assert.equal(captureStep.detail, 'p = [redacted] (captured)');
   const expectSteps = report.tests[0]!.steps.filter((s) => s.kind === 'expect');
-  assert.match(expectSteps[1]!.detail!, /\+1-234-335-0035/, 'the later expect proves the real value, not the mask, was actually used');
+  // FS-03 changed what this step is allowed to *show* without changing what it evaluates. The
+  // captured value is now registered with the taint redactor (that is the whole point — V2-03: a
+  // `redact`-covered value must not resurface in a later step's URL or detail text), so the raw
+  // phone number no longer appears anywhere in the report and this assertion can't look for it.
+  //
+  // `•••(p)` is still proof of exactly the same property, and a sharper one: that placeholder can
+  // only appear here if the real phone number was interpolated into this message *and* the
+  // redactor recognised it — neither of which could happen if `p` held the literal string
+  // `[redacted]`, which would have rendered as `[redacted]` instead. So the pair of assertions
+  // below distinguishes "real value flowed, then got masked on the way out" (correct) from "the
+  // mask itself flowed" (the bug this test exists to catch).
+  assert.match(expectSteps[1]!.detail!, /•••\(p\)/, 'the later expect proves the real value, not the mask, was actually used');
+  assert.doesNotMatch(expectSteps[1]!.detail!, /\[redacted\]/, '`p` must hold the real value, not the literal mask string');
+  assert.doesNotMatch(expectSteps[1]!.detail!, /\+1-234-335-0035/, 'FS-03: a captured redact-covered value never reappears raw in a later step');
 
   await server.close();
 });
@@ -224,6 +237,148 @@ test('no `redact` patterns declared means the body passes through byte-for-byte 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
   assert.equal(apiStep.response!.bodyText, JSON.stringify({ email: 'a@example.com' }));
+
+  await server.close();
+});
+
+// ---- FS-03 (review findings FU-01 / V2-03 / V2-06) --------------------------
+//
+// Two halves of one decision. *Grammar*: `redact` can name a header or a query parameter, not only
+// a JSON body path — the fresh-user pass found `report.html` and `results.json` each carrying 24
+// live JWTs while the footer called the artifact safe to attach to a ticket, and those JWTs were in
+// headers, which `redact` could not name at all. *Policy*: `redact` means "this value is a secret",
+// not "this JSON field position is masked", so a `capture` out of a covered position taints the
+// value and it is masked wherever it later flows.
+
+const FS03_JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+
+test('`redact header "Authorization"` masks the credential in the request trace', async () => {
+  const server = await startFixtureServer({ '/me': (_req, res) => json(res, 200, { ok: true }) });
+  const patterns: RedactPattern[] = [{ root: 'header', name: 'Authorization' }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "calls with a bearer token"\n  api GET /me\n    header "Authorization" is "Bearer ${FS03_JWT}"\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  // The request trace preserves the casing the `.tflw` file declared, so this reads it back the
+  // same case-insensitive way `redactHeaderFields` matches it.
+  const headers = new Map(Object.entries(apiStep.request!.headers).map(([k, v]) => [k.toLowerCase(), v]));
+  assert.equal(headers.get('authorization'), '[redacted]');
+  assert.equal(JSON.stringify(apiStep.request).includes(FS03_JWT), false);
+  // Every other header is untouched — this is a named mask, not a blanket one.
+  assert.notEqual(headers.get('accept'), '[redacted]');
+
+  await server.close();
+});
+
+test('`redact header` matches case-insensitively, as HTTP header names do', async () => {
+  const server = await startFixtureServer({
+    '/me': (_req, res) => {
+      res.setHeader('Set-Cookie', `session=${FS03_JWT}`);
+      json(res, 200, { ok: true });
+    },
+  });
+  // Declared with different casing than either the request or the response uses.
+  const patterns: RedactPattern[] = [{ root: 'header', name: 'set-COOKIE' }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "receives a session cookie"\n  api GET /me\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  assert.equal(apiStep.response!.headers['set-cookie'], '[redacted]', 'a `Set-Cookie` coming back is as much a credential as an `Authorization` going out');
+
+  await server.close();
+});
+
+test('`redact query "token"` masks one parameter value and leaves the rest of the URL identifiable', async () => {
+  const server = await startFixtureServer({ '/session': (_req, res) => json(res, 200, { ok: true }) });
+  const patterns: RedactPattern[] = [{ root: 'query', name: 'token' }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "reads a session"\n  api GET /session?token=${FS03_JWT}&page=2\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  const url = report.tests[0]!.steps.find((s) => s.kind === 'api')!.request!.url;
+  assert.equal(url.includes(FS03_JWT), false);
+  // The precision is the whole reason `query "<name>"` exists rather than a bare `redact url`,
+  // which was considered and declined: masking the entire URL destroys the report's ability to say
+  // which request this even was.
+  assert.match(url, /\/session\?/, 'the path must survive');
+  assert.match(url, /page=2/, 'unnamed parameters must survive');
+  assert.match(url, /token=/, "the parameter's own name must survive — only its value is a secret");
+
+  await server.close();
+});
+
+test('the V2-03 repro: a `redact`-covered value is captured, then flows into a URL — and leaks nowhere', async () => {
+  // This exact program, with this exact `redact` line in place, previously masked the token in the
+  // login response and then printed it verbatim in the next request's URL. `redact body.accessToken`
+  // sat in the config the whole time doing nothing about it, because path-based `redact` masked one
+  // *position* and taint-based redaction only ever learned values that arrived via `env(...)`.
+  const server = await startFixtureServer({
+    '/login': (_req, res) => json(res, 200, { accessToken: FS03_JWT }),
+    '/session': (_req, res) => json(res, 200, { ok: true }),
+  });
+  const patterns: RedactPattern[] = [{ root: 'body', segments: [{ kind: 'prop', name: 'accessToken' }] }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "logs in then reads a session"\n  api POST /login\n  capture body.accessToken as token\n  api GET /session?token={token}\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  // `results.json` is `JSON.stringify(report)` verbatim and `report.html`/`junit.xml` render from
+  // this same object, so zero occurrences here is zero occurrences in all three file sinks.
+  assert.equal(JSON.stringify(report).includes(FS03_JWT), false, 'the captured token must not survive anywhere in the report');
+  // …and it is masked as a *named* secret, so a reader can tell which captured value was hidden.
+  const sessionStep = report.tests[0]!.steps.filter((s) => s.kind === 'api').at(-1)!;
+  assert.match(sessionStep.request!.url, /•••\(token\)/);
+
+  await server.close();
+});
+
+test('a captured value NOT covered by `redact` is untainted — no gratuitous masking', async () => {
+  const server = await startFixtureServer({
+    '/login': (_req, res) => json(res, 200, { accessToken: FS03_JWT }),
+    '/session': (_req, res) => json(res, 200, { ok: true }),
+  });
+  const patterns: RedactPattern[] = [{ root: 'body', segments: [{ kind: 'prop', name: 'somethingElse' }] }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "logs in then reads a session"\n  api POST /login\n  capture body.accessToken as token\n  api GET /session?token={token}\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  const sessionStep = report.tests[0]!.steps.filter((s) => s.kind === 'api').at(-1)!;
+  assert.match(sessionStep.request!.url, new RegExp(FS03_JWT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'taint follows `redact`, it is not applied to every capture');
+
+  await server.close();
+});
+
+test('`capture header "…"` out of a `redact header`-covered position taints the value too', async () => {
+  const server = await startFixtureServer({
+    '/login': (_req, res) => {
+      res.setHeader('x-auth-token', FS03_JWT);
+      json(res, 200, { ok: true });
+    },
+    '/session': (_req, res) => json(res, 200, { ok: true }),
+  });
+  const patterns: RedactPattern[] = [{ root: 'header', name: 'x-auth-token' }];
+  const config = { ...testConfig(server.baseUrl), redactPatterns: patterns };
+
+  const source = `test "logs in then reads a session"\n  api POST /login\n  capture header "x-auth-token" as token\n  api GET /session?token={token}\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(JSON.stringify(report).includes(FS03_JWT), false);
 
   await server.close();
 });
