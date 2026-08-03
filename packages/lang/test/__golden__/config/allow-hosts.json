@@ -69,5 +69,6 @@
     }
   ],
   "requires": [],
+  "excludes": [],
   "sessions": []
 }

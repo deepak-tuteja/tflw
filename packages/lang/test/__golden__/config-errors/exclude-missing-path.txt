@@ -1,0 +1,7 @@
+error[TF010]: expected a path string, e.g. `exclude "tflw-acceptance"`, found end of line
+ --> tflw.config:4:8
+  |
+4 | exclude
+  |        ^
+  |
+  = help: expected a string

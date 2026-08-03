@@ -479,6 +479,14 @@ env staging
   api "https://staging.example.com"
 `,
   },
+  {
+    name: 'exclude-decl',
+    source: `env local default
+  api "http://localhost:3001"
+
+exclude "tflw-acceptance", "fixtures/broken"
+`,
+  },
 ];
 
 export const CONFIG_INVALID: readonly Fixture[] = [
@@ -601,6 +609,14 @@ env staging
     name: 'viewport-missing-height',
     source: `defaults
   viewport 1280
+`,
+  },
+  {
+    name: 'exclude-missing-path',
+    source: `env local default
+  api "http://localhost:3001"
+
+exclude
 `,
   },
 ];

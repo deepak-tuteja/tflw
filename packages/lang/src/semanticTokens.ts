@@ -51,7 +51,7 @@ const KEYWORDS = new Set([
   'on', 'to', 'onto', 'dialog', 'new', 'tab', 'frame', 'respond', 'mask',
   'ramp', 'over', 'threshold', 'cleanup', 'think',
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
-  'parallel', 'sequential',
+  'parallel', 'sequential', 'exclude',
 ]);
 
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words

@@ -1190,6 +1190,7 @@ export interface ConfigFile extends Node {
   readonly defaults: DefaultsBlock | null;
   readonly envs: readonly EnvBlock[];
   readonly requires: readonly RequireDecl[];
+  readonly excludes: readonly ExcludeDecl[];
   /** `session <name> ... ` blocks — the single auth concept (SPEC §3.3, P#20/31/42). */
   readonly sessions: readonly SessionDecl[];
 }
@@ -1382,4 +1383,13 @@ export interface ApiServiceDecl extends Node {
 export interface RequireDecl extends Node {
   readonly type: 'RequireDecl';
   readonly names: readonly string[];
+}
+
+/** `exclude "<path>"[, "<path>"...]` — paths, relative to this config's own directory, that bare
+ * (no-file-args) discovery must never descend into (D127, PLAN_DISCOVERY_EXCLUDE.md). Additive to
+ * discovery's existing dot-dir/`node_modules` skip; an explicit file arg inside an excluded path
+ * still runs. */
+export interface ExcludeDecl extends Node {
+  readonly type: 'ExcludeDecl';
+  readonly paths: readonly StringLit[];
 }

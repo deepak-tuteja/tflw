@@ -34,5 +34,6 @@
     }
   ],
   "requires": [],
+  "excludes": [],
   "sessions": []
 }

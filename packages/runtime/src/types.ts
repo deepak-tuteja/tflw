@@ -50,6 +50,10 @@ export interface ResolvedConfig {
    * corporate-QA escape hatch for self-signed/private-CA staging APIs; explicit and greppable. */
   readonly insecure: boolean;
   readonly requiredEnv: readonly string[];
+  /** `exclude "<path>"[, "<path>"...]` — paths, relative to this config's own directory, that bare
+   * (no-file-args) discovery must never descend into (SPEC §3, D127, PLAN_DISCOVERY_EXCLUDE.md).
+   * `[]` = never declared, no exclusion. Doesn't affect explicit file args. */
+  readonly exclude: readonly string[];
   /** `session <name> ... ` blocks declared in `tflw.config`, by name (SPEC §3.3, P#42). */
   readonly sessions: ReadonlyMap<string, SessionDecl>;
   /** `cert`/`key` — per-env mTLS client certificate paths, resolved relative to the config file's

@@ -128,6 +128,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   const mtls = certPath !== null && keyPath !== null ? { certPath, keyPath } : null;
 
   const requiredEnv = config.requires.flatMap((r) => r.names);
+  const exclude = config.excludes.flatMap((e) => e.paths.map((p) => p.value));
   const sessions = new Map(config.sessions.map((s) => [s.name, s] as const));
 
   return {
@@ -141,6 +142,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     workers,
     insecure,
     requiredEnv,
+    exclude,
     sessions,
     mtls,
     allowHosts,

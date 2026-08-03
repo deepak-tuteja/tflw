@@ -24,52 +24,33 @@
       ]
     }
   ],
-  "requires": [
+  "requires": [],
+  "excludes": [
     {
-      "type": "RequireDecl",
-      "names": [
-        "CLIENT_ID",
-        "CLIENT_SECRET"
-      ]
-    }
-  ],
-  "excludes": [],
-  "sessions": [
-    {
-      "type": "SessionDecl",
-      "name": "admin",
-      "oauth2": {
-        "type": "Oauth2SessionConfig",
-        "tokenUrl": {
+      "type": "ExcludeDecl",
+      "paths": [
+        {
           "type": "StringLit",
-          "value": "http://localhost:3001/oauth/token",
+          "value": "tflw-acceptance",
           "parts": [
             {
               "kind": "text",
-              "value": "http://localhost:3001/oauth/token"
+              "value": "tflw-acceptance"
             }
           ]
         },
-        "clientId": {
-          "type": "EnvRef",
-          "name": "CLIENT_ID"
-        },
-        "clientSecret": {
-          "type": "EnvRef",
-          "name": "CLIENT_SECRET"
-        },
-        "scope": {
+        {
           "type": "StringLit",
-          "value": "read write",
+          "value": "fixtures/broken",
           "parts": [
             {
               "kind": "text",
-              "value": "read write"
+              "value": "fixtures/broken"
             }
           ]
         }
-      },
-      "body": []
+      ]
     }
-  ]
+  ],
+  "sessions": []
 }

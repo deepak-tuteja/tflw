@@ -62,6 +62,7 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     workers: 1,
     insecure,
     requiredEnv: [],
+    exclude: [],
     sessions: new Map(),
     mtls: null,
     allowHosts: null,

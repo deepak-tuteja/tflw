@@ -45,6 +45,7 @@ import type {
   EnvRef,
   EvidenceDecl,
   EvidenceLevel,
+  ExcludeDecl,
   ExpectStmt,
   Field,
   FieldValue,
@@ -790,6 +791,7 @@ class Parser {
     let defaults: DefaultsBlock | null = null;
     const envs: EnvBlock[] = [];
     const requires: RequireDecl[] = [];
+    const excludes: ExcludeDecl[] = [];
     const sessions: SessionDecl[] = [];
     this.skipNewlines();
     while (!this.atEof()) {
@@ -809,6 +811,10 @@ class Parser {
         const r = this.parseRequire();
         if (r) requires.push(r);
         else this.synchronize();
+      } else if (this.isKw(tok, 'exclude')) {
+        const ex = this.parseExclude();
+        if (ex) excludes.push(ex);
+        else this.synchronize();
       } else if (this.isKw(tok, 'session')) {
         const s = this.parseSessionDecl();
         if (s) sessions.push(s);
@@ -820,7 +826,7 @@ class Parser {
       } else {
         this.error(
           Codes.CONFIG_UNEXPECTED,
-          `expected \`defaults\`, \`env\`, \`session\`, or \`require\`, found ${describeToken(tok)}`,
+          `expected \`defaults\`, \`env\`, \`session\`, \`require\`, or \`exclude\`, found ${describeToken(tok)}`,
           tok.span,
         );
         this.synchronize();
@@ -836,7 +842,7 @@ class Parser {
       if (this.pos === before) this.advance();
       this.skipNewlines();
     }
-    const config: ConfigFile = { type: 'ConfigFile', defaults, envs, requires, sessions, span: this.spanFrom(startPos) };
+    const config: ConfigFile = { type: 'ConfigFile', defaults, envs, requires, excludes, sessions, span: this.spanFrom(startPos) };
     return { config, diagnostics: this.diagnostics };
   }
 
@@ -1342,6 +1348,24 @@ class Parser {
     }
     this.endLine();
     return { type: 'RequireDecl', names, span: this.spanFrom(start) };
+  }
+
+  /** `exclude "<path>"[, "<path>"...]` (D127) — top-level, same comma-list shape as `require env`
+   * but string-literal paths (like `allow hosts`) rather than bare identifiers. */
+  private parseExclude(): ExcludeDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `exclude`
+    const paths: StringLit[] = [];
+    const first = this.expectString('a path string, e.g. `exclude "tflw-acceptance"`');
+    if (!first) return null;
+    paths.push(first);
+    while (this.check('comma')) {
+      this.advance();
+      const p = this.expectString('a path string');
+      if (p) paths.push(p);
+    }
+    this.endLine();
+    return { type: 'ExcludeDecl', paths, span: this.spanFrom(start) };
   }
 
   /** Skip an indented block wholesale (recovery after a bad block header). */

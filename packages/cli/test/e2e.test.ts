@@ -11,7 +11,7 @@ import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { mkdtemp, writeFile, rm, readFile, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2305,6 +2305,38 @@ test('`tflw run` with no file argument auto-discovers a workload-bearing test to
       await rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+// ---- `exclude` (D127, PLAN_DISCOVERY_EXCLUDE.md) ---------------------------------------------
+
+test('`exclude "<path>"` in tflw.config skips that directory during bare (no-file-args) discovery', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-exclude-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n\nexclude "other-suite"\n', 'utf8');
+    await writeFile(join(dir, 'health.tflw'), 'test "health check"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+    await mkdir(join(dir, 'other-suite'), { recursive: true });
+    // Deliberately invalid — proves this file is never even parsed, not just excluded from the run.
+    await writeFile(join(dir, 'other-suite', 'broken.tflw'), 'test "broken"\n  expct status equals 200\n', 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+    assert.match(stdout, /1 file checked, no problems found\./);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`exclude` does not stop an explicit file arg inside the excluded path from running', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-exclude-explicit-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n\nexclude "other-suite"\n', 'utf8');
+    await mkdir(join(dir, 'other-suite'), { recursive: true });
+    await writeFile(join(dir, 'other-suite', 'health.tflw'), 'test "health check"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', 'other-suite/health.tflw', '--no-color'], { cwd: dir });
+    assert.match(stdout, /1 file checked, no problems found\./);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // ---- M31: multi-process generator scaling + self-diagnosis (D19/D28) -------------------------

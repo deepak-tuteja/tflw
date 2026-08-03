@@ -438,6 +438,25 @@ env ci
 - `--log-output`/`--log-level` (§12) override these for one run; `--log-output` only ever reaches a
   bare `log "…"` call, never a statement's own explicit `to …` clause.
 
+### 3.9 Test discovery — `exclude` (D127, PLAN_DISCOVERY_EXCLUDE.md)
+
+```
+exclude "tflw-acceptance", "fixtures/broken"
+```
+
+- Top-level, like `require env` (§3.4) — not a `defaults`/`env` entry. Declares one or more paths,
+  relative to this `tflw.config`'s own directory, that `tflw run`/`check`/`migrate`/`watch`'s bare
+  (no-file-args) discovery must never descend into — for a nested tree that's really a second,
+  independent suite with its own `tflw.config` (different sessions/envs), so it shouldn't be swept
+  into the root's default run.
+- Only affects bare discovery. An explicit file path given on the command line always runs, even
+  if it lives inside an excluded directory — `exclude` narrows the *default* file set, it isn't a
+  hard deny.
+- Matches by exact relative-path equality at any depth, not a glob — `exclude "a/b"` matches a
+  directory literally at `a/b` under the config's directory. A path that doesn't currently exist
+  (typo, or excluding a not-yet-created directory) is silently a no-op, same tolerance a
+  `.gitignore` line has for a pattern matching nothing.
+
 ## 4. Tests & structure ✅
 
 ### 4.1 `test`

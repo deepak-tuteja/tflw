@@ -673,7 +673,7 @@ async function loadAndValidate(
   }
 
   // 4. Discover the test files.
-  const files = filesArg.length > 0 ? filesArg.map((f) => resolve(cwd, f)) : await discoverTests(cwd);
+  const files = filesArg.length > 0 ? filesArg.map((f) => resolve(cwd, f)) : await discoverTests(cwd, resolved.exclude);
   if (files.length === 0) {
     err('no `.tflw` test files given or found (looked for *.tflw under the current directory).');
     return EXIT_USAGE;
@@ -1924,7 +1924,13 @@ function ndjsonEmit(out: { write: (text: string) => void }, collected: RunEvent[
   };
 }
 
-async function discoverTests(cwd: string): Promise<string[]> {
+/** `exclude` (SPEC §3, D127, PLAN_DISCOVERY_EXCLUDE.md) — paths relative to `cwd` (== the
+ * `tflw.config` directory, see `loadAndValidate`) that this walk must never descend into. Matched
+ * by exact relative-path equality at any depth, not a glob (decision 5) — a no-op for a path that
+ * doesn't exist, same tolerance a `.gitignore` line has for a pattern matching nothing (decision
+ * 4). Only affects this bare, no-file-args walk — an explicit file arg inside an excluded
+ * directory is resolved elsewhere and still runs. */
+async function discoverTests(cwd: string, exclude: readonly string[] = []): Promise<string[]> {
   const found: string[] = [];
   const walk = async (dir: string): Promise<void> => {
     let entries;
@@ -1936,8 +1942,11 @@ async function discoverTests(cwd: string): Promise<string[]> {
     for (const e of entries) {
       if (e.name.startsWith('.') || e.name === 'node_modules') continue;
       const full = join(dir, e.name);
-      if (e.isDirectory()) await walk(full);
-      else if (e.isFile() && e.name.endsWith('.tflw')) found.push(full);
+      if (e.isDirectory()) {
+        const rel = relative(cwd, full);
+        if (exclude.includes(rel)) continue;
+        await walk(full);
+      } else if (e.isFile() && e.name.endsWith('.tflw')) found.push(full);
     }
   };
   await walk(cwd);
