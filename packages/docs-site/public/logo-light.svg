@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 53 32" role="img" aria-label="tflw">
+<g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(0.7 0)">
+<g stroke="#1d1b16" stroke-width="2.6">
+<path d="M9,5 L9,21.6 C9,24.6 10.9,25.9 13.3,25.9"/>
+<path d="M20,25.9 L20,10.4 C20,7.1 22.1,5.5 25,6"/>
+<path d="M30,5 L30,25.9"/>
+<path d="M37.6,25.9 L41,15.2 L44.4,25.9 L47.4,13"/>
+</g>
+<path d="M4.4,13 L34.6,13 L37.6,25.9" stroke="#9c5f0c" stroke-width="3"/>
+</g>
+</svg>

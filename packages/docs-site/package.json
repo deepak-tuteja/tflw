@@ -5,6 +5,7 @@
   "description": "tflw documentation site (VitePress) — deployed to GitHub Pages. PLAN decision 103, enterprise arc cluster 4.",
   "type": "module",
   "scripts": {
+    "brand": "node scripts/generate-brand-assets.mjs",
     "dev": "vitepress dev .",
     "build": "vitepress build .",
     "preview": "vitepress preview .",

@@ -1,4 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#0a0a0b"/>
-  <path d="M9 17.5 L14 22.5 L23 11" fill="none" stroke="#f2a93b" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="tflw">
+<style>
+.ink{stroke:#1d1b16}.rail{stroke:#9c5f0c}
+@media (prefers-color-scheme:dark){.ink{stroke:#f2f0ec}.rail{stroke:#f2a93b}}
+</style>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<g class="ink" stroke-width="3">
+<path d="M10.5,5.4 L10.5,21.6 C10.5,24.7 12.4,26 14.8,26"/>
+<path d="M21.5,26 L21.5,10.4 C21.5,7 23.5,5.4 26.4,5.9"/>
+</g>
+<path class="rail" d="M5.4,13.4 L27,13.4" stroke-width="3.4"/>
+</g>
 </svg>

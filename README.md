@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="packages/docs-site/public/logo-dark.svg">
+  <img alt="tflw" src="packages/docs-site/public/logo-light.svg" width="150">
+</picture>
+
 # testFlow (`tflw`)
 
 A testing-only DSL for API tests — reports first, syntax second. API and browser testing (real

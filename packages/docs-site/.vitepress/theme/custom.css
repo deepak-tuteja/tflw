@@ -255,3 +255,12 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---------- nav: the brand wordmark ---------- */
+/* PLAN_BRAND_MARK.md: `siteTitle: false` leaves the wordmark standing alone at the far left, and
+   at VitePress's default 24px it reads undersized next to 14px nav links — a wordmark spends most
+   of its height on the ascender/descender band, so its letters are optically smaller than a text
+   logo of the same box height. 28px matches the nav links' weight without crowding the bar. */
+.VPNavBarTitle .logo {
+  height: 28px;
+}
