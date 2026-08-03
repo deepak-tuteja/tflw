@@ -16,6 +16,12 @@ export default defineConfig({
   lastUpdated: true,
   srcExclude: ['**/README.md'],
 
+  // PLAN_DOCS_SITE_UPDATE.md decision 6: no logo/mark existed anywhere in the repo before this —
+  // a checkmark, the exact glyph tflw already prints on every passing test (`✓ health check`, see
+  // getting-started.md's own sample), not an invented mark. Path is base-prefixed manually: head
+  // tags aren't rewritten for a custom `base` the way markdown links are.
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/tflw/favicon.svg' }]],
+
   // Real syntax highlighting for ```tflw / ```tflw-config fences (M22, root test-coverage audit
   // follow-up) — reuses the same TextMate grammar the VS Code extension ships, so a code sample
   // colors identically to the editor rather than falling back to shiki's plain-text default for

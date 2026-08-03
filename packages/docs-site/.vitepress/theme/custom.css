@@ -24,6 +24,15 @@
   --vp-c-text-2: #665f50;
   --vp-c-text-3: #928a78;
 
+  /* PLAN_DOCS_SITE_UPDATE.md decision 4: VitePress's own default (`--vp-code-block-color:
+     var(--vp-c-text-2)`) is the fallback color for any fenced code block with no per-token shiki
+     highlighting (an unlabeled ``` fence, or an unhighlighted token inside a labeled one) — the
+     exact "faded" look a user screenshot flagged. `tflw`-tagged blocks set `--shiki-dark`/
+     `--shiki-light` inline per token, which always wins over this, so bumping it only brightens
+     plain/output-style blocks (getting-started.md's console sample, etc.), never real syntax
+     highlighting. */
+  --vp-code-block-color: var(--vp-c-text-1);
+
   --vp-c-brand-1: #9c5f0c;
   --vp-c-brand-2: #86500a;
   --vp-c-brand-3: #714309;
@@ -53,6 +62,9 @@
   --vp-c-text-1: #f2f0ec;
   --vp-c-text-2: #8d8b87;
   --vp-c-text-3: #6f6d6a;
+
+  /* See the :root block's own comment above — same fix, dark theme's brighter text-1. */
+  --vp-code-block-color: var(--vp-c-text-1);
 
   --vp-c-brand-1: #f2a93b;
   --vp-c-brand-2: #e2982a;
@@ -215,8 +227,31 @@
   border-color: var(--vp-c-brand-1) !important;
 }
 
+/* A feature card's own `details` text can contain an inline link (PLAN_DOCS_SITE_UPDATE.md
+   decision 1's "see the numbers" link to the load-testing validation section) — the default
+   theme has no link styling in this context, so without this it's indistinguishable from plain
+   prose. */
+.VPFeature .details a {
+  color: var(--vp-c-brand-1);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 @media (min-width: 960px) {
   .VPFeatures .item.grid-4 {
     width: calc(100% / 2) !important;
   }
+}
+
+/* ---------- /grammar: wrap long EBNF lines instead of truncating them ---------- */
+/* PLAN_DOCS_SITE_UPDATE.md decision 5: packages/lang/GRAMMAR.md (verbatim-included here) has
+   several EBNF lines over 100 characters — real content (trailing `# comment` annotations) was
+   getting cut off behind a thin horizontal scrollbar. Scoped to this one page via `pageClass`
+   (grammar.md's frontmatter) rather than wrapping code blocks site-wide, and rather than editing
+   GRAMMAR.md's own wording — see decision 5's full reasoning. Trades the EBNF's `:=`/`|` column
+   alignment on the handful of lines that actually wrap for guaranteeing nothing is ever hidden. */
+.grammar-page .vp-doc pre,
+.grammar-page .vp-doc code {
+  white-space: pre-wrap;
+  word-break: break-word;
 }

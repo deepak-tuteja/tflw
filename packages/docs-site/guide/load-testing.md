@@ -19,7 +19,7 @@ test "checkout under load"
 Run it exactly like any other file — `tflw run` drives functional and workload-bearing `test`s
 alike, in one pass, in file declaration order:
 
-```
+```sh
 tflw run checkout.tflw
 ```
 
@@ -326,6 +326,33 @@ planned`, and the process exits `130`. This is deliberate: the most common reaso
 Ctrl-C on a load test is "this is melting down, kill it" — the evidence from those seconds is
 exactly what you want to keep, not lose. A second Ctrl-C before the first finishes flushing
 force-quits immediately, for a run that's genuinely stuck.
+
+## Validated against k6 and Artillery
+
+Numbers are only useful if they can be trusted — a 7-rung comparison ran tflw against **k6** and
+**Artillery** against the same real NestJS+Postgres application (not a synthetic microbenchmark),
+covering everything from a zero-latency echo endpoint to a real row-lock-contended checkout.
+
+On the two rungs with genuine contention — where the target system itself is the bottleneck, not
+just how fast a generator can fire requests — tflw tracks k6 closely:
+
+| | tflw | k6 | gap |
+|---|--:|--:|--:|
+| Uncontended write, throughput | 1,827.7/s | 1,820.1/s | +0.42% |
+| Uncontended write, p95 | 29.67ms | 30.47ms | -2.6% (tflw ahead) |
+| Contended checkout, throughput | 661.5/s | 658.7/s | +0.44% |
+| Contended checkout, p95 | 71.33ms | 68.89ms | +3.54% |
+| Contended checkout, p99 | 97.67ms | 91.76ms | +6.44% |
+
+Both rungs land well inside a ~20% tolerance set before any of these numbers were known. Artillery,
+run as a third comparator on the same rungs, proved less stable under sustained load (connection
+resets, coarser sub-millisecond precision) — a genuine finding about Artillery on this workload
+shape, not a knock against it in general.
+
+Full methodology, every rung's numbers (including the ones excluded above for self-saturating at
+near-zero latency, where tflw's own generator — not the target system — becomes the bottleneck),
+and the raw run logs: [`tflw-acceptance`
+README](https://github.com/deepak-tuteja/tflw-tests/blob/main/tflw-acceptance/README.md).
 
 ## What's next
 

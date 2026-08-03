@@ -1,3 +1,7 @@
+---
+pageClass: grammar-page
+---
+
 # Grammar
 
 The formal EBNF-ish grammar reference, straight from

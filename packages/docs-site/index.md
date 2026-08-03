@@ -4,7 +4,7 @@ layout: home
 hero:
   name: tflw
   text: Test <span class="hero-accent">APIs and browsers</span> in one language.
-  tagline: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Performance and security testing are next. Pre-1.0, not yet published.
+  tagline: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Load testing is built in and validated against k6 on real contended workloads; security testing is next. Pre-1.0, not yet published.
   actions:
     - theme: brand
       text: Get started
@@ -22,7 +22,7 @@ features:
   - title: Teaching-quality diagnostics
     details: Source line + caret + "did you mean", stable TF0xx codes, a conservative unknown-variable checker pass — errors read like a compiler's, not a stack trace.
   - title: One language for API, browser, load & security testing
-    details: UI steps share the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing two tools together. Performance and security-testing arcs are next.
+    details: UI steps share the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing two tools together. Load testing (ramp/hold/step/spike, thresholds) is validated within a few percent of k6 on real contended workloads — <a href="/tflw/guide/load-testing#validated-against-k6-and-artillery">see the numbers</a>. Security testing is next.
   - title: Real editor support
     details: A real Language Server Protocol implementation (tflw lsp) powers the VS Code extension — diagnostics, hover, go-to-definition, autocomplete, rename, signature help, and semantic highlighting, live as you type.
 ---
