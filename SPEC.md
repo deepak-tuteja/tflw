@@ -169,7 +169,7 @@ session admin
   whichever test happens to trigger it), and which test's report shows a given session's steps is
   decided up front **per session name**, in sorted-file/declaration order — a test can own one
   opted-in session's step-splice without owning another's, if some other test already claimed that
-  other name first. Both stay identical regardless of `--workers N>1` concurrency (fixed in M2.65,
+  other name first. Both stay identical regardless of `--parallel N>1` concurrency (fixed in M2.65,
   decision 53; extended to multi-session opt-ins in decision 96).
 - Only a **successful** establishment is cached: a session that fails (a transient auth blip) is
   not memoized, so a later attempt — a `retry` on the same test, or a later test opting in — may
@@ -199,7 +199,7 @@ session shopper
   clients reject outright.
 - A test opting into `as <session>` starts with a **clone** of that session's own jar, not the live
   instance — the test's own subsequent cookie updates never leak back into the session cache
-  (shared for the run's lifetime) or into a concurrently-running sibling test under `--workers
+  (shared for the run's lifetime) or into a concurrently-running sibling test under `--parallel
   N>1`. Opting into **several** sessions (`as admin, userA`) clones and merges every one of their
   jars into the test's one starting jar, in listed order — same later-wins-per-name rule as the
   header merge above. An action call shares its caller's live jar (same as `rng`/`redactor`).
@@ -383,7 +383,7 @@ mechanism.
   `report.html`'s header carries the same banner — this is never a silent trade-off. Implementation
   note: Node's `fetch` (undici) has no zero-dependency per-request TLS-verification switch, so
   `insecure true` sets the process-wide `NODE_TLS_REJECT_UNAUTHORIZED` env var for the run's
-  duration (reference-counted so `--workers N>1` files sharing the same active env can run this
+  duration (reference-counted so `--parallel N>1` files sharing the same active env can run this
   concurrently without one file's completion re-enabling verification for another still in flight)
   and restores whatever it was before once the run finishes.
 - **A private/internal CA — `NODE_EXTRA_CA_CERTS`.** If your staging API's cert chains to a real
@@ -889,7 +889,8 @@ expect body matches schema "ProductResponseDto" from "/openapi.json"
   service's document needs an absolute URL — a deliberate minimal-scope limitation).
 - The document is fetched once and cached for the rest of the run (keyed by resolved URL) — every
   further `matches schema` assertion against the same source reuses it, including across
-  `--workers N`. Only a *successful* fetch is cached (M63): if the document can't be loaded, the
+  `--parallel N` (the cache is per-process, so `--workers N`'s forked generators each keep their
+  own). Only a *successful* fetch is cached (M63): if the document can't be loaded, the
   next assertion tries again rather than replaying the first failure's message, so a transient
   outage doesn't fail the rest of the run — and, under `tflw watch`, doesn't outlive the fix.
   `allow hosts` (§3.7) gates this fetch the same as any `api` step's request.
@@ -1131,7 +1132,7 @@ Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/la
 
 `unique(…)` values are deliberately **not** seed-reproducible (their run-wide counter keeps
 advancing so a retry can't collide — §4.4). Generators used *inside* a `session` block reproduce
-identically under any `--workers N` (§3.3, decision 53), same as everywhere else.
+identically under any `--parallel N` (§3.3, decision 53), same as everywhere else.
 
 ### 7.5 Expressions (P#25)
 
@@ -1850,14 +1851,16 @@ certify that anything is safe to share.
   a prior run with zero failures: falls back to the full suite with a printed note, matching
   pytest's `--lf` default. Composes with `--tag`/`--only` as AND.
 - `--bail` — stops after the first failing test's final (post-retry) verdict. Under
-  `--workers > 1`, the pool stops pulling new files once a failure is seen; files already claimed
-  finish normally (no hard-abort/cancellation-token plumbing into the interpreter).
+  `--parallel > 1`, the pool stops pulling new files once a failure is seen; files already claimed
+  finish normally (no hard-abort/cancellation-token plumbing into the interpreter). `--parallel`,
+  not `--workers`: this is the *file* concurrency axis (§12), and `--workers` — the workload-only
+  load-generation axis — has no bearing on it (`B5-04`).
 - `--format ndjson` — replaces the human console output with one `JSON.stringify`'d `RunEvent` per
   line (always full step-level detail, independent of `--verbose`), safe to pipe into a log
   aggregator; also always written to `report/events.ndjson` as a permanent artifact. `RunEvent`
   carries an optional `file` field (tagged by the CLI, not the interpreter — same "display
   concern" precedent as `TestResult.file`) so concurrent files' events stay distinguishable under
-  `--workers > 1`.
+  `--parallel > 1`.
 
   **What the stream guarantees** (cluster C4 — `B3-05`, `B3-07`, `B5-03`; each of these was
   violated before M77, and each is a regression test now):

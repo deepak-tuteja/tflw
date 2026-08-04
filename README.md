@@ -5,8 +5,9 @@
 
 # testFlow (`tflw`)
 
-A testing-only DSL for API tests — reports first, syntax second. API and browser testing (real
-Playwright automation) are both built; performance and security/pen-test testing are next — see
+A testing-only DSL for API tests — reports first, syntax second. API testing, browser testing (real
+Playwright automation) and load testing (ramp/hold/step/spike, thresholds, validated against k6 on
+real contended workloads) are all built; security/pen-test testing is next — see
 [PLAN_BROWSER_PERF_SECURITY.md](PLAN_BROWSER_PERF_SECURITY.md). Pre-1.0, **not yet published to
 npm**.
 
@@ -27,9 +28,10 @@ Three things tflw does that a general-purpose language + an HTTP client doesn't 
 - **Teaching-quality diagnostics.** Source line + caret + "did you mean", stable `TF0xx` codes
   (§17), a conservative unknown-variable checker pass — errors read like a compiler's, not a stack
   trace.
-- **One language for API, browser, and (soon) load & security testing.** UI steps share the same
-  grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one
-  readable file instead of gluing two tools together.
+- **One language for API, browser and load testing** (security testing is next)**.** UI steps share
+  the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test
+  stays one readable file instead of gluing two tools together — and a load test is the same `test`
+  block with a `ramp to …` line in it, not a separate tool with its own script format.
 
 Measured against raw `fetch` + `node:test` (the honest "no tool" baseline, [`tflw-acceptance/README.md`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tflw-acceptance/README.md)):
 **2.8× fewer lines** overall (4–8× on retry/polling/generated-data scenarios), a categorical report
@@ -50,7 +52,8 @@ the rest is the implementation and the evidence behind the numbers above.
 | `packages/runtime` | The interpreter: HTTP execution, sessions, hooks, retries, data tables, generators |
 | `packages/reporter` | Turns the runtime's event stream into `report.html`, `junit.xml`, and `results.json` (+ `events.ndjson` under `--format ndjson`) |
 | `packages/cli` | The `tflw` command itself — what `npm i -D tflw` installs. Own [README](packages/cli/README.md) (what ships in the npm package) |
-| `packages/vscode` | VS Code extension: `.tflw` syntax highlighting |
+| `packages/lsp-server` | The Language Server behind `tflw lsp` — diagnostics, hover, go-to-definition, completion, rename, signature help, semantic tokens |
+| `packages/vscode` | VS Code extension: an LSP client over `packages/lsp-server`, plus TextMate syntax highlighting and snippets |
 | `packages/docs-site` | [The documentation site](https://deepak-tuteja.github.io/tflw/) (VitePress), deployed to GitHub Pages |
 | `examples/dogfood` | Worked `.tflw` files exercising the full grammar together (sessions, hooks, actions, data tables) — used as regression fixtures, and a good place to see real, larger examples beyond this README |
 
@@ -101,15 +104,22 @@ features.
 Built so far (internal milestones, not yet published — see
 [PLAN_BROWSER_PERF_SECURITY.md](PLAN_BROWSER_PERF_SECURITY.md) decision D25 / PLAN.md decision
 112 for the versioning story): config-as-tflw, sessions, capture-chaining, hooks/retry/tags/
-data-tables, actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, parallel
-workers, CI ergonomics (`--failed`/`--bail`/`--format ndjson`), a self-contained `report.html` +
-`junit.xml` + `results.json`; the full browser half (Playwright — interaction steps, tiered
-locators, frames/tabs/downloads/drag-drop, network mocking, accessibility assertions, visual
-regression, `tflw watch`/`tflw pick`); a reuse pass (`tflw refactor apply`) and `tflw migrate`.
-**Next:** performance testing (`tflw load`, k6-style `scenario` blocks), then security/pen-test
-testing (`tflw scan`) — both dogfooded against the real app before anything publishes. See
-[SPEC.md](SPEC.md)'s per-section status badges for the full shipped-vs-planned breakdown, and
-[CHANGELOG.md](CHANGELOG.md) for what's built and pending release.
+data-tables, actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, file-level
+concurrency (`--parallel`), CI ergonomics (`--failed`/`--bail`/`--format ndjson`), a self-contained
+`report.html` + `junit.xml` + `results.json`; the full browser half (Playwright — interaction steps,
+tiered locators, frames/tabs/downloads/drag-drop, network mocking, accessibility assertions, visual
+regression, `tflw watch`/`tflw pick`); a real Language Server (`tflw lsp`) behind the VS Code
+extension; the full load-testing arc — the five workload shapes (`ramp`/`hold`/`step`/`spike`/
+`run … iterations`), `threshold` assertions, `pause`, multi-process load generation (`--workers`),
+and a `parallel`/`sequential` test-header modifier, all rendering into the same one report; and a
+reuse pass (`tflw refactor apply`).
+
+**Next:** security/pen-test testing (`tflw scan`) — zero code today, and dogfooded against the real
+app before anything publishes. `tflw migrate` also ships but has nothing to do yet: no checker rule
+emits a deprecation, because the grammar has been additive-only since the first release, so it
+always reports `no deprecated syntax found`. See [SPEC.md](SPEC.md)'s per-section status badges for
+the full shipped-vs-planned breakdown, and [CHANGELOG.md](CHANGELOG.md) for what's built and pending
+release.
 
 ## Platform support
 

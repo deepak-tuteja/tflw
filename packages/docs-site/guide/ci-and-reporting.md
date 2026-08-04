@@ -162,7 +162,7 @@ npx tflw run --bail     # stop at the first failing test
 `--failed` reads `report/.last-run.json` (always written, every run) and re-runs just those
 tests — nothing failed last time, or no state file yet: falls back to the full suite with a note,
 never a silent zero-test run. `--bail` stops after the first failing test's final verdict; under
-`--workers > 1` it stops starting new files, but files already in flight finish normally.
+`--parallel > 1` it stops starting new files, but files already in flight finish normally.
 
 ## Structured logs — `--format ndjson`
 

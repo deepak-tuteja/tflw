@@ -51,7 +51,7 @@ Validates the subject against a named schema in an externally-fetched OpenAPI do
 real **ajv** (JSON-Schema) validator, including `$ref` resolution across `components.schemas`.
 `"src"` is an absolute URL, or a path resolved against the default `api` service's base URL. The
 document is fetched once and cached for the rest of the run — every further `matches schema`
-assertion against the same source reuses it, including across `--workers N`. `allow hosts`
+assertion against the same source reuses it, including across `--parallel N`. `allow hosts`
 (see [Config & environments](/guide/config)) gates this fetch the same as any `api` step.
 `not matches schema ...` asserts the subject does **not** conform — useful for a
 deliberately-drifted-endpoint regression check.

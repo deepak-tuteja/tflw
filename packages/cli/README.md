@@ -1,8 +1,9 @@
 # tflw
 
-A testing-only DSL for API tests — reports first, syntax second. API and browser testing (real
-Playwright automation) are both built; performance and security/pen-test testing are next.
-Pre-1.0, not yet published to npm.
+A testing-only DSL for API tests — reports first, syntax second. API testing, browser testing (real
+Playwright automation) and load testing (ramp/hold/step/spike, thresholds, validated against k6 on
+real contended workloads) are all built; security/pen-test testing is next. Pre-1.0, not yet
+published to npm.
 
 ## Why tflw
 
@@ -14,9 +15,10 @@ Three things tflw does that a general-purpose language + an HTTP client doesn't 
   Nothing to wire up.
 - **Teaching-quality diagnostics.** Source line + caret + "did you mean", stable `TF0xx` codes, a
   conservative unknown-variable checker pass — errors read like a compiler's, not a stack trace.
-- **One language for API, browser, and (soon) load & security testing.** UI steps share the same
-  grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one
-  readable file instead of gluing two tools together.
+- **One language for API, browser and load testing** (security testing is next)**.** UI steps share
+  the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test
+  stays one readable file instead of gluing two tools together — and a load test is the same `test`
+  block with a `ramp to …` line in it, not a separate tool with its own script format.
 
 Measured against raw `fetch` + `node:test` (the honest "no tool" baseline): **2.8× fewer lines**
 overall (4–8× on retry/polling/generated-data scenarios), a categorical report quality gap, and
@@ -83,8 +85,10 @@ test "creates a {category} product" as admin retry 1
 - `with each` runs one reported case per row — inline (`| col | ...`) or file-backed
   (`with each from "./data.csv"` / `.json`).
 - `--tag <name>[,<name>...]` on `tflw run` filters to tests carrying any of the listed `@name`s
-  (comma-separated OR; combines with `--only` as AND); `--workers <n>` runs files concurrently
-  (default 1); `--seed <n>` reproduces a run's exact generated values.
+  (comma-separated OR; combines with `--only` as AND); `--parallel <n>` runs files concurrently
+  (default: `tflw.config`'s `workers` key); `--seed <n>` reproduces a run's exact generated values.
+  `--workers <n>` is the unrelated, workload-only axis — it forks load-generation processes for one
+  file's workload-bearing tests, never files.
 
 Secrets (`env(NAME)`) are redacted from every report automatically.
 
@@ -150,6 +154,29 @@ test "flaky endpoint eventually succeeds" retry 2
 ✓ flaky endpoint eventually succeeds (flaky) (48 ms)
 ```
 
+### Load testing
+
+There is no second language and no separate command. A `test` becomes a load test the moment it
+contains a workload line — `ramp`/`hold`/`step`/`spike`/`run … iterations` — and `tflw run` drives
+it alongside the functional tests, into the same one report:
+
+```
+test "checkout under load"
+  ramp to 50 users over 30s
+  api POST /cart/checkout body { productId: "widget-1", qty: 1 }
+  expect status equals 201
+  threshold p95 duration is less than 800ms
+  threshold error rate is less than 1%
+```
+
+Its verdict comes from the `threshold` lines, not from a single request's outcome. The body is
+ordinary steps, so an `action` written for the functional suite is callable here unchanged. Browser
+steps are rejected inside one (a browser VU is 50–100MB each — API-only in v1). `--workers <n>`
+forks generator processes when one Node process becomes the bottleneck, and `--skip-workload` drops
+these tests entirely for fast iteration on the functional ones. `tflw init --load` scaffolds a
+runnable starter file. Measured against k6 and Artillery on real contended workloads — see the
+[load-testing guide](https://deepak-tuteja.github.io/tflw/guide/load-testing) for the numbers.
+
 Full worked examples (hooks, generators, CSV, CLI flag reference) are in the root
 [README.md](https://github.com/deepak-tuteja/tflw#readme) and [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md).
 
@@ -168,18 +195,34 @@ Full worked examples (hooks, generators, CSV, CLI flag reference) are in the roo
 
 ```
 tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>]
-         [--workers <n>] [--no-color] [--verbose] [--forbid-insecure] [--evidence <level>]
-         [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>]
+         [--parallel <n>] [--workers <n>] [--skip-workload] [--no-color] [--verbose]
+         [--forbid-insecure] [--evidence <level>] [--failed] [--bail] [--format ndjson]
+         [--no-timestamps] [--log-file <path>] [--log-output <dest>] [--log-level <level>]
+         [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]
 tflw check [files...] [--env <name>] [--no-color] [--format json]
-tflw init
+tflw init [--load]
 tflw docs [topic]
 tflw lsp
+tflw install-browsers [--browser chromium|firefox|webkit]
+tflw pick <url> [--browser chromium|firefox|webkit]
+tflw watch [files...] [--env <name>] [--seed <n>] [--browser chromium|firefox|webkit] [--no-color]
+tflw refactor apply <id>
+tflw migrate [files...] [--env <name>] [--no-color]
 tflw --version, -v
 tflw --help, -h
 ```
 
+`run` drives functional and workload-bearing tests alike in one pass — a `test` becomes
+workload-bearing the moment it contains a `ramp`/`hold`/`step`/`spike`/`run … iterations` line, and
+everything renders into the same one report. There is no separate `load` command (folded into `run`
+in M53). `--parallel <n>` runs files concurrently; `--workers <n>` is the unrelated, workload-only
+axis that forks load-generation processes; `--skip-workload` drops the workload-bearing tests for
+fast iteration on the functional ones. `install-browsers`/`pick`/`watch` are the browser half,
+`refactor apply` is the reuse pass, and `migrate` currently has nothing to do — no checker rule
+emits a deprecation yet, so it always reports `no deprecated syntax found`.
+
 ```sh
-npx tflw run --env staging --workers 4 --seed 42 --now 2026-01-01T00:00:00.000Z --no-color
+npx tflw run --env staging --parallel 4 --seed 42 --now 2026-01-01T00:00:00.000Z --no-color
 ```
 
 Every run always writes `report/report.html`, `report/junit.xml`, and `report/results.json`

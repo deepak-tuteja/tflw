@@ -1,9 +1,10 @@
 # testFlow grammar
 
-The formal grammar `packages/lang`'s lexer/parser/checker implement: the API and browser dialects
-through **M3e** (`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — M3d's network observation (`request to
-"…"`/`of request to "…"`) and `stub`, plus M3e's `page` a11y subject), plus the grammar-freeze
-changes of milestone B1 (`FS-04` … `FS-08`) — see the known gap below. This is a strict subset of the
+The formal grammar `packages/lang`'s lexer/parser/checker implement — **current through M78**: the
+API dialect, the browser dialect through M3e (`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — M3d's network
+observation (`request to "…"`/`of request to "…"`) and `stub`, plus M3e's `page` a11y subject), the
+load-testing/workload dialect (M29–M53), and the grammar-freeze changes of milestone B1
+(`FS-04` … `FS-08`). This is a strict subset of the
 full language design in [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md); SPEC.md is the prose reference with rationale
 and examples, this file is the grammar shape only. Cross-references to SPEC decisions are `(P#n)`;
 cross-references to a SPEC section are `(§n)`.
@@ -14,15 +15,14 @@ not this file. That rewrite caught it up through decision 102, and the rule is t
 changing the grammar updates this file alongside SPEC.md — the same discipline `spec-data.ts`'s
 generated tables (§6.2, §7.3.1) enforce for the constructs they cover.
 
-**Known gap, stated rather than implied.** The rule above was not kept through the load-testing arc.
-The productions below cover the API and browser grammar plus the grammar-freeze changes, but the
-**workload grammar has no productions here yet** — `ramp`/`hold`/`step`/`spike`/`run`, `threshold`,
-`pause`, `cleanup`, the `parallel`/`sequential` test modifier — nor do `exclude` (§3.9) or `allow
-hosts` (§3.7). Those constructs are specified in
-[SPEC.md §4.5](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#45-load-testing--workload-bearing-tests-m29m30-m50-m56-d16-d19d24ad26d70d93-d122)
-and are shipped and tested; they are simply not written down in this notation yet. Treat this file
-as authoritative for what it covers and silent — not negative — about what it doesn't, until that
-catch-up lands.
+**The load-testing catch-up landed (M78).** For seven milestones the rule above was not kept: the
+whole workload grammar (M29–M53) shipped without a production here, and this file said so only by
+being silent about it. Those productions now exist — see the **Load testing** section below — and
+`grammarCoverage.test.ts` now asserts that every keyword the parser recognizes appears somewhere in
+this file, so the next construct that ships without a production fails CI instead of drifting for
+seven milestones. Writing the productions also surfaced three gaps nobody had filed: `redact header`/
+`redact query` (FS-03, M64), the `log destination`/`log level` config keys (M27), and
+`matches snapshot … mask` (M4b).
 
 Notation: `UPPER` = terminal token class, `'x'` = literal keyword/punct, `?` optional, `*` zero+,
 `+` one+, `|` alternation, `(...)` grouping. Blocks are **indentation-delimited** (offside rule) —
@@ -92,7 +92,14 @@ DataTable   := 'with' 'each' ('from' STRING)? NEWLINE
 
 Block       := INDENT Step+ DEDENT
 Step        := ApiStep | WaitUntilApiStep | ExpectStmt | CheckStmt | LetStmt | CaptureStmt
-             | GiveStmt | HeaderStmt | LogStmt | UiStep          # UiStep: see §9, below
+             | GiveStmt | HeaderStmt | LogStmt | PauseStmt | UiStep   # UiStep: see §9, below
+
+# A `test`'s block additionally admits the workload clauses, in any order among the steps:
+TestBlock   := INDENT (Step | Workload | ThresholdDecl | CleanupDecl)+ DEDENT
+CleanupDecl := 'cleanup' NEWLINE          # D26 — opts a workload-bearing test back into running
+                                          # the file's per-test `after` hook on *every* iteration
+                                          # (skipped by default: teardown thousands of times would
+                                          # double request volume and pollute the latency numbers)
 ```
 
 - `TAG*` may sit on its own line(s) above `test` (and above its `with each` table, if present).
@@ -102,6 +109,56 @@ Step        := ApiStep | WaitUntilApiStep | ExpectStmt | CheckStmt | LetStmt | C
 - `before`/`after` (no `file` keyword) run once per test, sharing its scope; `before file`/
   `after file` run once per file instead. There is no `before each`/`after each` — `each` is
   exclusively the `with each` keyword above.
+
+## Load testing — workload-bearing tests (§4.5)
+
+There is no `load`/`scenario` keyword: a `test` **becomes** workload-bearing the moment its block
+contains a `Workload` line (M50/D93–D96 collapsed `scenario` into `test`; `scenario` is now a hard
+`TF033` naming its replacement). At most one `Workload` per test.
+
+```
+Workload    := RampWorkload | HoldWorkload | StepWorkload | SpikeWorkload | IterationsWorkload
+
+RampWorkload := 'ramp' 'to' NUMBER Unit 'over' Duration NEWLINE     # linear ramp to a target
+HoldWorkload := 'hold' NUMBER Unit 'for' Duration NEWLINE           # constant target, no ramp (D97)
+Unit         := 'users' | 'rps'                                     # closed-model VUs | open-model rate
+
+StepWorkload  := 'step' Unit NEWLINE INDENT StepStage+ DEDENT       # D97/D98
+StepStage     := 'to' NUMBER 'for' Duration NEWLINE                 # instant jump, then hold
+
+SpikeWorkload := 'spike' Unit NEWLINE INDENT SpikeStage+ DEDENT     # D97/D98
+SpikeStage    := 'hold' NUMBER 'for' Duration NEWLINE               # flat
+               | 'to' NUMBER 'over' Duration NEWLINE                # ramped
+
+IterationsWorkload := 'run' NUMBER 'iterations' ('per' 'user')? 'across' NUMBER 'users' NEWLINE
+                      # count-bounded, no duration at all (D102). Bare = one shared pool of NUMBER
+                      # iterations; `per user` = each VU runs its own NUMBER.
+
+ThresholdDecl := 'threshold' ThresholdMetric ('for' STRING)? 'is' ThresholdOp ThresholdValue NEWLINE
+ThresholdMetric := PERCENTILE 'duration'      # PERCENTILE is an ident matching /^p([1-9][0-9]?)$/
+                 | 'error' 'rate'             #   — p50/p90/p95/p99 are the documented ones
+ThresholdOp     := 'less' 'than' | 'greater' 'than'
+ThresholdValue  := Duration                   # for a `duration` metric
+                 | NUMBER '%'                 # for `error rate`
+                 # `for "label"` scopes the threshold to one `api` step's identity — its `as "label"`
+                 # tag, or its automatic `METHOD path.raw` identity when untagged (M43/D70).
+
+PauseStmt   := 'pause' Duration ('to' Duration)? NEWLINE
+               # VU think-time; the range form picks uniformly per iteration. Parses anywhere a
+               # step does, but the checker rejects it outside a workload-bearing body (`TF033`) —
+               # `wait until …` is the construct for a *condition*. Renamed from `think` in FS-05.
+```
+
+- **Workload keywords are not reserved words.** `ramp`/`hold`/`step`/`spike`/`run` leading a line
+  never blocks an action call of the same name — disambiguation is by what follows (an ident-run
+  then `(` is a call; otherwise a workload clause), so `run checkout("1")` and
+  `action step users(n)` both work (FS-06/A2-02).
+- A workload cannot coexist with `retry` or `with each` on the same test (D96), and a
+  workload-bearing test with **no** `threshold` at all is a checker error — its verdict comes only
+  from thresholds, so with none it could never fail (M60/A4-01).
+- Browser steps and UI/network expect subjects are rejected inside a workload-bearing body (D19 —
+  API-only in v1). The ban follows `action` calls and reports at the **call site**, since the same
+  action is legal in a functional test (M60/A4-02).
 
 ## API steps (§5)
 
@@ -172,6 +229,8 @@ MatcherCore := 'equals' Value
              | 'matches' 'subset' Object                         # (§6.3.1)
              | 'matches' 'schema' STRING 'from' STRING            # (§6.2.1, PLAN decision 102a, gap #6)
              | 'matches' 'file' STRING                            # (§6.2.1, gap #17) — `body bytes` only
+             | 'matches' 'snapshot' STRING SnapshotMask*          # visual regression (§9.9, M4b/D15);
+                                                                  #   `page`/UI subjects only
              | 'greater' 'than' Value                             # canonically written `is greater
              | 'less' 'than' Value                                #   than` / `is less than` — the
                                                                   #   `is` comes from `Matcher`, above
@@ -183,6 +242,11 @@ MatcherCore := 'equals' Value
              | 'connects'                                        # `request` subject only (§6.2.2)
              | 'fails' ('matching' STRING)?                       # `request` subject only (§6.2.2)
              | 'was' 'made'                                       # `request to "…"` subject only (§9.7, M3d)
+
+SnapshotMask := 'mask' Locator                                    # dynamic regions painted over
+                                                                  #   before the comparison. Parses
+                                                                  #   after any matcher; the checker
+                                                                  #   rejects a stray one.
              | 'has' 'no' A11ySeverity? 'a11y' 'violations'       # `page` subject only (§9.8, M3e) —
                                                                    # severity is a *floor*, not an exact
                                                                    # match: `serious` also counts `critical`
@@ -379,15 +443,19 @@ Parsed by the same lexer/parser as test files; declaration-only (`test`/`action`
 errors here).
 
 ```
-ConfigFile      := (NEWLINE | RequireDecl | DefaultsBlock | EnvBlock | SessionDecl)*
+ConfigFile      := (NEWLINE | RequireDecl | ExcludeDecl | DefaultsBlock | EnvBlock | SessionDecl)*
 
 RequireDecl     := 'require' 'env' IDENT (',' IDENT)* NEWLINE
+ExcludeDecl     := 'exclude' STRING (',' STRING)* NEWLINE         # file-discovery exclusions (§3.9,
+                                                                   # D127) — top-level, not a
+                                                                   # ConfigEntry; string paths, not
+                                                                   # bare idents like `require env`
 DefaultsBlock   := 'defaults' NEWLINE INDENT ConfigEntry* DEDENT
 EnvBlock        := 'env' IDENT 'default'? NEWLINE INDENT ConfigEntry* DEDENT
 
 ConfigEntry     := HeaderDecl | TimeoutDecl | WorkersDecl | ReportDecl | WebDecl | ApiServiceDecl
                  | InsecureDecl | CertDecl | KeyDecl | AllowHostsDecl | EvidenceDecl | RedactDecl
-                 | ViewportDecl
+                 | ViewportDecl | LogDestinationDecl | LogLevelDecl
 
 HeaderDecl      := 'header' STRING 'is' Value ('for' IDENT)? (',' 'header' STRING 'is' Value ('for' IDENT)?)*
 TimeoutDecl     := 'timeout' TimeoutKind Duration (',' TimeoutKind Duration)*
@@ -405,6 +473,13 @@ AllowHostsDecl  := 'allow' 'hosts' STRING (',' STRING)*           # accumulates 
 EvidenceDecl    := 'evidence' STRING                              # "full" | "headers-only" | "none" (§13)
 RedactDecl      := 'redact' RedactPattern (',' RedactPattern)*    # accumulates across defaults+env (§3.4)
 RedactPattern   := 'body' ('.' IDENT | '.' '*')+
+                 | 'header' STRING                                # FS-03/M64 — quoted, not dotted:
+                 | 'query' STRING                                 #   an ident can't hold the hyphen
+                                                                   #   `X-Api-Key`/`Set-Cookie` need
+LogDestinationDecl := 'log' 'destination' STRING                  # "console" | "html" | "both" (§3.8,
+                                                                   # M27) — `--log-output` overrides
+LogLevelDecl    := 'log' 'level' STRING                           # "debug"|"info"|"warn"|"error"
+                                                                   # (§3.8) — `--log-level` overrides
 ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height, px (§9, M3c, D11);
                                                                    # `defaults`-only, like `workers`/
                                                                    # `report`; omitted = Playwright's

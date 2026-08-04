@@ -1794,9 +1794,10 @@ async function lspCommand(_argv: string[]): Promise<number> {
  *
  * `shouldBail`, when given, is checked after every result — once it returns `true` the pool stops
  * *pulling new items*, but any file already claimed by a worker still runs to completion (PLAN
- * decision 111/M17, `--bail` under `--workers > 1`: no hard-abort/cancellation-token plumbing into
+ * decision 111/M17, `--bail` under `--parallel > 1`: no hard-abort/cancellation-token plumbing into
  * `runProgram`, just stop starting new work). Items never claimed are simply absent from the
- * returned array, not `undefined` holes.
+ * returned array, not `undefined` holes. `--parallel`, not `--workers` — this pool is the *file*
+ * concurrency axis; `--workers` forks load-generation processes and never reaches here (`B5-04`).
  */
 async function runWithConcurrency<T, R>(
   items: readonly T[],

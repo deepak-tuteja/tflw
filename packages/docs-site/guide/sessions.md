@@ -40,7 +40,7 @@ Every scope that runs `api` steps — a session's own run, each test's own attem
 cookie jar with no new syntax. Every `Set-Cookie` a response carries is tracked (`Max-Age`/
 `Expires` honored) and auto-attached to subsequent requests in the same scope. A test opting into
 `as <session>` starts with a **clone** of that session's jar — its own updates never leak back
-into the shared session cache or a concurrent sibling test under `--workers N>1`.
+into the shared session cache or a concurrent sibling test under `--parallel N>1`.
 
 ## Refresh on 401 + TTL expiry
 

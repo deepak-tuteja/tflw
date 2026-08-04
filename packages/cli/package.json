@@ -1,8 +1,8 @@
 {
   "name": "tflw",
   "version": "0.1.0",
-  "description": "testFlow CLI — an external DSL (.tflw files) for API testing: config as tflw itself, sessions, capture-chaining, hooks/retry/tags, actions+JS escape hatch, teaching-quality diagnostics, and a self-contained report.html + junit.xml. v0.1 is API-only (M0-M2.6); the browser half lands in 0.2.0.",
-  "keywords": ["testing", "api-testing", "test-runner", "dsl", "http", "cli"],
+  "description": "testFlow CLI — an external DSL (.tflw files) for API, browser and load testing in one language: config as tflw itself, sessions, capture-chaining, hooks/retry/tags, actions+JS escape hatch, real Playwright browser automation, ramp/hold/step/spike workloads with thresholds, teaching-quality diagnostics, a Language Server, and a self-contained report.html + junit.xml + results.json.",
+  "keywords": ["testing", "api-testing", "browser-testing", "load-testing", "performance-testing", "e2e", "playwright", "test-runner", "dsl", "http", "cli"],
   "type": "module",
   "bin": {
     "tflw": "./dist/cli.cjs"
