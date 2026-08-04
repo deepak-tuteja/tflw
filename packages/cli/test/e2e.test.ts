@@ -2617,6 +2617,35 @@ test('`exclude "<path>"` in tflw.config skips that directory during bare (no-fil
   }
 });
 
+test('B6-10: `exclude "<a .tflw file>"` skips that one file, not just directories (M73)', async () => {
+  // The equality test lived inside the `isDirectory()` branch, so a file entry could never match:
+  // `exclude "b.tflw"` discovered and checked `b.tflw` anyway, at exit 0, with no diagnostic — and
+  // §3.9 opens by calling these "paths". A user excluding one known-broken file got no signal that
+  // nothing had happened.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-exclude-file-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n\nexclude "broken.tflw", "nested/also-broken.tflw"\n', 'utf8');
+    await writeFile(join(dir, 'health.tflw'), 'test "health check"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+    // Both deliberately invalid: if either is discovered, `check` exits 2 and this fails loudly
+    // rather than merely counting one file too many.
+    await writeFile(join(dir, 'broken.tflw'), 'test "broken"\n  expct status equals 200\n', 'utf8');
+    await mkdir(join(dir, 'nested'), { recursive: true });
+    await writeFile(join(dir, 'nested', 'also-broken.tflw'), 'test "broken"\n  expct status equals 200\n', 'utf8');
+    await writeFile(join(dir, 'nested', 'fine.tflw'), 'test "fine"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+    assert.match(stdout, /2 files checked, no problems found\./, 'health.tflw + nested/fine.tflw, with both excluded files skipped at any depth');
+
+    // Still not a hard deny — naming the excluded file explicitly runs it, same as a directory.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', 'broken.tflw', '--no-color'], { cwd: dir }),
+      (e: unknown) => (e as { code?: number }).code === 2,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`exclude` does not stop an explicit file arg inside the excluded path from running', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-exclude-explicit-'));
   try {

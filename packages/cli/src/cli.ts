@@ -2031,11 +2031,12 @@ function ndjsonEmit(out: { write: (text: string) => void }, collected: RunEvent[
 }
 
 /** `exclude` (SPEC §3, D127, PLAN_DISCOVERY_EXCLUDE.md) — paths relative to `cwd` (== the
- * `tflw.config` directory, see `loadAndValidate`) that this walk must never descend into. Matched
- * by exact relative-path equality at any depth, not a glob (decision 5) — a no-op for a path that
- * doesn't exist, same tolerance a `.gitignore` line has for a pattern matching nothing (decision
- * 4). Only affects this bare, no-file-args walk — an explicit file arg inside an excluded
- * directory is resolved elsewhere and still runs. */
+ * `tflw.config` directory, see `loadAndValidate`) that this walk skips: a directory is not
+ * descended into, a `.tflw` file is not collected. Matched by exact relative-path equality at any
+ * depth, not a glob (decision 5) — a no-op for a path that doesn't exist, same tolerance a
+ * `.gitignore` line has for a pattern matching nothing (decision 4). Only affects this bare,
+ * no-file-args walk — an explicit file arg inside an excluded path is resolved elsewhere and still
+ * runs. */
 async function discoverTests(cwd: string, exclude: readonly string[] = []): Promise<string[]> {
   const found: string[] = [];
   const walk = async (dir: string): Promise<void> => {
@@ -2048,11 +2049,16 @@ async function discoverTests(cwd: string, exclude: readonly string[] = []): Prom
     for (const e of entries) {
       if (e.name.startsWith('.') || e.name === 'node_modules') continue;
       const full = join(dir, e.name);
-      if (e.isDirectory()) {
-        const rel = relative(cwd, full);
-        if (exclude.includes(rel)) continue;
-        await walk(full);
-      } else if (e.isFile() && e.name.endsWith('.tflw')) found.push(full);
+      // The equality test used to live inside the `isDirectory()` branch, so a file entry could
+      // never match and `exclude "b.tflw"` was a silent no-op (M73, review finding B6-10) — while
+      // §3.9 opens by calling these "paths" and a user who wants one known-broken file out of the
+      // default sweep has no reason to read that as directories-only. It is checked for both kinds
+      // now. Separators are normalised because `relative()` returns them platform-style, and
+      // nobody writes `exclude "a\\b"` — that mismatch was the same silent no-op on Windows.
+      const rel = relative(cwd, full).split('\\').join('/');
+      if (exclude.includes(rel)) continue;
+      if (e.isDirectory()) await walk(full);
+      else if (e.isFile() && e.name.endsWith('.tflw')) found.push(full);
     }
   };
   await walk(cwd);

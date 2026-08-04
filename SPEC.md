@@ -485,10 +485,13 @@ exclude "tflw-acceptance", "fixtures/broken"
 - Only affects bare discovery. An explicit file path given on the command line always runs, even
   if it lives inside an excluded directory — `exclude` narrows the *default* file set, it isn't a
   hard deny.
-- Matches by exact relative-path equality at any depth, not a glob — `exclude "a/b"` matches a
-  directory literally at `a/b` under the config's directory. A path that doesn't currently exist
-  (typo, or excluding a not-yet-created directory) is silently a no-op, same tolerance a
-  `.gitignore` line has for a pattern matching nothing.
+- Matches by exact relative-path equality at any depth, not a glob — `exclude "a/b"` matches
+  whatever sits literally at `a/b` under the config's directory. **A directory or a single `.tflw`
+  file** — a directory is not descended into, a file is not collected. (Before B6-10 the equality
+  test only ran on directory entries, so `exclude "b.tflw"` was silently nothing, which the word
+  *paths* above never suggested.) Always written with `/`, on every platform. A path that doesn't
+  currently exist (typo, or excluding a not-yet-created directory) is silently a no-op, same
+  tolerance a `.gitignore` line has for a pattern matching nothing.
 
 ## 4. Tests & structure ✅
 
