@@ -780,6 +780,29 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
   });
 }
 
+/**
+ * Every variable a flat step sequence references but does not itself bind — i.e. everything it
+ * would need handed to it from an enclosing scope. Seeded with an empty bound-set, this asks
+ * exactly the question `checkUnknownVariables` asks of an `action` body, whose scope holds only its
+ * own parameters and never the caller's bindings (P#17): *would this sequence still resolve if it
+ * were lifted out on its own?*
+ *
+ * Exported for the reuse pass (`reuse.ts`), which must never propose extracting a window that
+ * references something only the caller binds. Until M81 it answered that question with its own
+ * hand-written scan for `{name}`-shaped text in a step's structural shape — which saw exactly one
+ * of the five channels a reference actually arrives through, and so proposed extractions that
+ * turned a clean suite into a non-compiling one (B5-01, S1). Sharing this walk instead is the
+ * point: "what counts as a variable reference" now has one definition, and a reference syntax
+ * added to the grammar later cannot be understood by the checker and missed by reuse.
+ */
+export function freeVariableRefs(steps: readonly Step[]): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  checkStepSequence(steps, new Set(), diags);
+  // `checkStepSequence` also carries the `upload … type "…"` shape check, which is about a
+  // literal's format rather than a name's scope — filter to the one code this answers for.
+  return diags.filter((d) => d.code === Codes.UNKNOWN_VARIABLE);
+}
+
 /** Walk a step sequence in declaration order, checking each step's referenced variables against
  * `bound` *before* adding any new binding it introduces (`let`/`capture`) — a step can never see
  * its own not-yet-assigned name, and a later step correctly sees everything bound before it. */

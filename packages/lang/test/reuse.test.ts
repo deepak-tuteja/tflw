@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '../src/index.js';
+import { checkUnknownVariables } from '../src/checker.js';
 import { detectReuse, renderCallSiteReplacement, type SuiteEntry } from '../src/reuse.js';
 
 function entry(path: string, source: string): SuiteEntry {
@@ -158,6 +159,82 @@ test('a window step referencing a variable only bound in the caller (outside the
   const b = `test "b"\n  api GET /other\n  capture body.id as bulk100Id\n  open "/products/{bulk100Id}"\n  fill field "Quantity" with "2"\n  expect button "Log out" is visible\n`;
   const hints = detectReuse([entry('t.tflw', a + '\n' + b)]);
   assert.deepEqual(hints, []);
+});
+
+// B5-01 (S1) — the test above states a general rule ("a window step referencing a variable only
+// bound in the caller") but its fixture exercises one channel: a raw string field. A `{ref}` can
+// reach a step four other ways, and every one of them used to cluster happily and propose an
+// action that failed `tflw check` the moment it was written. The suite in each case checks clean
+// before the refactor, which is the whole defect: `tflw refactor apply` turned a compiling suite
+// into a non-compiling one, with no dry-run, no backup and no undo.
+const CALLER_BOUND_CHANNELS: readonly (readonly [string, string])[] = [
+  [
+    'an Interp node in a Value position (carries no braces in the shape)',
+    `test "note alpha"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { order: {orderId}, text: "alpha" }\n  expect status equals 200\n  api GET /notes\n\ntest "note beta"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { order: {orderId}, text: "beta" }\n  expect status equals 200\n  api GET /notes\n`,
+  ],
+  [
+    'a StringLit hole, identical in every occurrence so it stays inlined rather than becoming a param',
+    `test "note alpha"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { note: "for order {orderId}", text: "alpha" }\n  expect status equals 200\n  api GET /notes\n\ntest "note beta"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { note: "for order {orderId}", text: "beta" }\n  expect status equals 200\n  api GET /notes\n`,
+  ],
+  [
+    'a bare VarRef identifier',
+    `test "note alpha"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { order: orderId, text: "alpha" }\n  expect status equals 200\n  api GET /notes\n\ntest "note beta"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { order: orderId, text: "beta" }\n  expect status equals 200\n  api GET /notes\n`,
+  ],
+  [
+    'an inline `with each` column, bound by the caller test rather than by a step at all',
+    `with each\n  | who     |\n  | "alice" |\n  | "bob"   |\ntest "note alpha {who}"\n  api GET /seed\n  api POST /notes body { text: "alpha", who: {who} }\n  expect status equals 200\n  api GET /notes\n\nwith each\n  | who     |\n  | "carol" |\n  | "dave"  |\ntest "note beta {who}"\n  api GET /seed\n  api POST /notes body { text: "beta", who: {who} }\n  expect status equals 200\n  api GET /notes\n`,
+  ],
+];
+
+for (const [channel, source] of CALLER_BOUND_CHANNELS) {
+  test(`a window step referencing a caller-bound variable via ${channel} is never matched (B5-01)`, () => {
+    const e = entry('t.tflw', source);
+    assert.deepEqual(checkUnknownVariables(e.program), [], 'the fixture suite must check clean before any refactor');
+    assert.deepEqual(detectReuse([e]), []);
+  });
+}
+
+// The systemic half of the B5-01 fix. Stating the four channels above as four fixtures is exactly
+// what the original M7 test did for its one channel, and it is why the other four survived: a test
+// per instance only ever covers the instances someone thought of. This states the property itself —
+// whatever `detectReuse` proposes, applying it must leave a suite that still checks — over every
+// fixture in this file, so a fifth channel added to the grammar later fails here without anyone
+// having to remember to enumerate it.
+test('no proposed extraction is ever one that `tflw check` would reject (B5-01, the property)', () => {
+  const corpus = [
+    LOGIN_A + '\n' + LOGIN_B,
+    ...CALLER_BOUND_CHANNELS.map(([, src]) => src),
+    // differing interpolated strings: the reference *is* rescuable here, so this one legitimately
+    // yields a hint — the corpus deliberately contains both outcomes.
+    `test "note alpha"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { note: "for order {orderId}" }\n  expect status equals 200\n  api GET /notes\n\ntest "note beta"\n  api GET /seed\n  capture body.id as otherId\n  api POST /notes body { note: "for other {otherId}" }\n  expect status equals 200\n  api GET /notes\n`,
+  ];
+
+  for (const source of corpus) {
+    const e = entry('t.tflw', source);
+    for (const hint of detectReuse([e])) {
+      const parsed = parseSource(hint.actionSource);
+      assert.deepEqual(parsed.diagnostics, [], `${hint.id} must parse:\n${hint.actionSource}`);
+      assert.deepEqual(
+        checkUnknownVariables(parsed.program),
+        [],
+        `${hint.id}'s action references something its own scope never binds:\n${hint.actionSource}`,
+      );
+    }
+  }
+});
+
+test('a caller-bound reference inside a literal that *differs* across occurrences still becomes a real param', () => {
+  // The guard against over-correcting B5-01 into "any step mentioning a variable is ineligible".
+  // These two strings differ, so the literal is parameterized and each call site passes its own
+  // text — evaluated in the caller's scope, where the variable does exist. The extraction is sound
+  // and must still be offered.
+  const src = `test "note alpha"\n  api GET /seed\n  capture body.id as orderId\n  api POST /notes body { note: "for order {orderId}" }\n  expect status equals 200\n  api GET /notes\n\ntest "note beta"\n  api GET /seed\n  capture body.id as otherId\n  api POST /notes body { note: "for other {otherId}" }\n  expect status equals 200\n  api GET /notes\n`;
+  const hints = detectReuse([entry('t.tflw', src)]);
+
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0]!.params.length, 1);
+  assert.deepEqual(hints[0]!.occurrences[0]!.args, ['"for order {orderId}"']);
+  assert.deepEqual(hints[0]!.occurrences[1]!.args, ['"for other {otherId}"']);
 });
 
 test('three or more occurrences of the same sequence cluster into a single hint', () => {

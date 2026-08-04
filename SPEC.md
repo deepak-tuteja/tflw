@@ -1288,7 +1288,15 @@ test "pay for an order"
   -*typed* fields stay structural (must match exactly) since there is no `{ref}`-shaped hole to
   parameterize them into without an IDE code action or another language release. Matching itself
   is greedy and longest-window-first, not a full suite-wide LCS search — simple, deterministic, and
-  enough to find the obviously-duplicated flows this targets. No IDE code action yet (P#2's other
+  enough to find the obviously-duplicated flows this targets.
+  Whatever it proposes, **applying a hint leaves a suite that still checks** (M81): a hint is
+  offered only if the `action` it would write resolves every variable it references against its own
+  parameters alone. A duplicated sequence that reads something the *caller* bound — a `capture`, a
+  `let`, an inline `with each` column — is reported as no hint at all, rather than as an extraction
+  that would fail `tflw check` the moment it was applied. The exception is a reference inside a
+  literal that *varies* across the occurrences: that literal becomes a real parameter, so each call
+  site passes its own text and it resolves in the caller's scope, where the variable exists.
+  No IDE code action yet (P#2's other
   named entry point) — `tflw refactor apply <id>` is the only way to apply a hint today.
 
 ## 9. UI steps (P#8–9, P#26) 🔧

@@ -26,7 +26,9 @@
 //     a v1 requirement.
 
 import type { GeneratorExpr, Program, Step, TestDecl, Value } from './ast.js';
-import { STATEMENT_KEYWORDS } from './parser.js';
+import { checkUnknownVariables, freeVariableRefs } from './checker.js';
+import { lex } from './lexer.js';
+import { parse, STATEMENT_KEYWORDS } from './parser.js';
 import type { Span } from './token.js';
 
 // ---------------------------------------------------------------------------
@@ -205,27 +207,44 @@ interface StepAnalysis {
   readonly literals: Literals;
 }
 
-/** True if any string leaf of a step's structural shape carries a `{name}`-shaped interpolation.
- * These fields (`OpenStmt.path`, a `Locator`'s own name/text, `DropFileStmt.filePath`, a `stub`'s
- * `urlPattern`, …) are deliberately copied through `analyzeStep` as opaque, byte-identical text —
- * never routed through `maskValue`'s genuine `Interp` case (SPEC's `{ref}`-interpolation only
- * exists as a distinct AST node inside a `Value`-typed position; a raw string field like
- * `OpenStmt.path` just stores `"/products/{bulk100Id}"` verbatim, `{bulk100Id}` and all). Two
- * occurrences can still be byte-identical text (e.g. two tests that both happen to `capture … as
- * bulk100Id` before opening it) and cluster into a hint — but the variable only exists in each
- * *caller's* own scope, never inside the extracted action's, so the generated action is broken on
- * its very first run (M7 acceptance: found via a real `tflw refactor apply` against
- * testFlow-tests' webv2-storefront.tflw, whose extracted action's `open "/products/{bulk100Id}"`
- * step referenced a variable nothing inside the action itself ever bound). Excluding any step
- * with this shape from matching entirely is conservative but correct — v1 has no mechanism to
- * turn a free reference like this into a real action parameter (`OpenStmt.path` is one of the
- * StringLit-strict fields the module doc above already excludes from `maskValue` parameterization
- * for a different reason — exactness — and reusing that same non-parameterizable status here). */
-function hasFreeInterpolation(shape: unknown): boolean {
-  if (typeof shape === 'string') return /\{[A-Za-z_][A-Za-z0-9_]*\}/.test(shape);
-  if (Array.isArray(shape)) return shape.some(hasFreeInterpolation);
-  if (shape && typeof shape === 'object') return Object.values(shape).some(hasFreeInterpolation);
-  return false;
+function spanKey(span: Span): string {
+  return `${span.start.offset}:${span.end.offset}`;
+}
+
+/**
+ * True if a step references a variable that could only ever come from the *caller's* scope and has
+ * nowhere to land inside an extracted action. Such a step is excluded from matching entirely — the
+ * variable doesn't exist in the action's own scope, so the generated action is broken on its very
+ * first run (M7 acceptance: a real `tflw refactor apply` against testFlow-tests'
+ * webv2-storefront.tflw produced an action whose `open "/products/{bulk100Id}"` referenced a
+ * variable nothing inside the action ever bound).
+ *
+ * *What* counts as a reference is not decided here — `freeVariableRefs` is the checker's own walk,
+ * the same one that would later report `TF030` against the action this pass proposes. Deciding it
+ * here a second time is what made B5-01 (S1) possible: the previous implementation regex-scanned
+ * the *masked* structural shape for `{name}`-shaped text, which saw raw string fields
+ * (`OpenStmt.path`, locator text, a `stub`'s `urlPattern`) and nothing else. A `{ref}` reaching a
+ * step as an `Interp` node, as a bare `VarRef`, as a hole inside a `StringLit` (already masked to
+ * `{p:N}` — the text is gone before any scan could run), or as an inline `with each` column all
+ * read as reference-free, and each produced an extraction that turned a checking suite into a
+ * non-checking one.
+ *
+ * *Where* the reference sits is decided here, and is the one thing the checker can't know: a hole
+ * inside a `StringLit` sitting in a `Value` position is survivable, because that literal is
+ * maskable (`maskValue`) and, if it differs across occurrences, becomes a real action parameter
+ * whose argument is written at the call site and evaluated in the caller's scope — where the
+ * variable does exist. Those are matched by span against the literals `analyzeEligibleStep` just
+ * collected (`checkStringParts` reports at the whole literal's span, which is the span `maskValue`
+ * records) and deliberately allowed through; `detectReuse`'s round-trip backstop catches the ones
+ * that end up inlined verbatim rather than parameterized. Everything else — a structural `Interp`
+ * or `VarRef` node, or a StringLit-strict field the module doc above already excludes from
+ * parameterization for exactness — is copied into the action as-is and cannot be rescued.
+ */
+function hasUnrescuableFreeRef(step: Step, literals: Literals): boolean {
+  const refs = freeVariableRefs([step]);
+  if (refs.length === 0) return false;
+  const maskable = new Set(literals.map((l) => spanKey(l.span)));
+  return refs.some((d) => !maskable.has(spanKey(d.span)));
 }
 
 /** Structural shape (JSON-stable-stringified by the caller) plus every masked literal, in
@@ -234,7 +253,7 @@ function analyzeStep(step: Step): StepAnalysis | null {
   if (!ELIGIBLE_STEP_TYPES.has(step.type)) return null;
   const literals: Literals = [];
   const analysis = analyzeEligibleStep(step, literals);
-  return analysis && hasFreeInterpolation(analysis.shape) ? null : analysis;
+  return analysis && hasUnrescuableFreeRef(step, literals) ? null : analysis;
 }
 
 function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | null {
@@ -463,18 +482,51 @@ export function detectReuse(entries: readonly SuiteEntry[]): ReuseHint[] {
     return ao.path === bo.path ? ao.startLine - bo.startLine : ao.path.localeCompare(bo.path);
   });
 
+  // The backstop (B5-01, M81). `analyzeStep` keeps a step out of a window when its free reference
+  // has nowhere to land, but one case can only be judged after clustering: a `StringLit` carrying a
+  // `{ref}` is *potentially* rescuable — it becomes a real parameter when it differs across
+  // occurrences — and stays inlined verbatim, still referencing the caller's variable, when every
+  // occurrence spells it identically. Rather than predict that, check the product: parse the
+  // action this hint would actually write and ask the checker whether it resolves. A hint that
+  // wouldn't survive `tflw check` is never offered, whatever channel the reference came through —
+  // which is the property `tflw refactor apply` is supposed to have, stated once, instead of a
+  // list of channels that has already been wrong once.
   const usedNames = new Set<string>();
-  return drafts.map((draft, i) => finalizeHint(`RF${String(i + 1).padStart(3, '0')}`, dedupeName(draft.actionName, usedNames), draft));
+  const hints: ReuseHint[] = [];
+  for (const draft of drafts) {
+    // Name first (it's in the rendered source), but claim it only if the hint survives, so a
+    // dropped hint doesn't push a later one to "post notes 2".
+    const actionName = nextFreeName(draft.actionName, usedNames);
+    if (!actionIsSelfContained(renderActionSource(actionName, draft))) continue;
+    usedNames.add(actionName);
+    hints.push(finalizeHint(`RF${String(hints.length + 1).padStart(3, '0')}`, actionName, draft));
+  }
+  return hints;
 }
 
-function dedupeName(base: string, used: Set<string>): string {
-  if (!used.has(base)) {
-    used.add(base);
-    return base;
-  }
+/** Does the action this hint proposes stand on its own — parse, and resolve every variable it
+ * references against nothing but its own parameters? A generated action that doesn't parse is
+ * likewise not offered: a proposal the user cannot apply cleanly is worse than no proposal. */
+function actionIsSelfContained(actionSource: string): boolean {
+  const lexed = lex(actionSource);
+  if (lexed.diagnostics.some((d) => d.severity === 'error')) return false;
+  const parsed = parse(lexed.tokens);
+  if (parsed.diagnostics.some((d) => d.severity === 'error')) return false;
+  return checkUnknownVariables(parsed.program).length === 0;
+}
+
+/** First unused `base`, `base 2`, `base 3`, … — pure, so a caller that may yet discard the name
+ * (the backstop above) doesn't consume it. */
+function nextFreeName(base: string, used: ReadonlySet<string>): string {
+  if (!used.has(base)) return base;
   let n = 2;
   while (used.has(`${base} ${n}`)) n++;
-  const name = `${base} ${n}`;
+  return `${base} ${n}`;
+}
+
+/** `nextFreeName` plus the claim — for param names, which are always kept once generated. */
+function dedupeName(base: string, used: Set<string>): string {
+  const name = nextFreeName(base, used);
   used.add(name);
   return name;
 }
