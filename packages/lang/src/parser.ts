@@ -282,6 +282,22 @@ function negatedStateWord(word: string): string | undefined {
 }
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport', 'log'] as const;
+/** Which block a config key belongs in — the parser's view of the rule the checker enforces as
+ * `TF025` (checker.ts `DEFAULTS_ONLY`/`ENV_ONLY`, keyed there on AST node type rather than on the
+ * word). The parser needs it only to keep a *suggestion* from naming a key the checker will then
+ * turn around and reject (M84, C11/`A2-07b`). Two statements of one rule is a drift risk, so
+ * `teaching.test.ts`'s round-trip guard walks all fourteen keys in both blocks and fails if what a
+ * hint claims about placement is not what the checker then does. */
+const DEFAULTS_ONLY_KEYS: readonly string[] = ['workers', 'report', 'viewport'];
+const ENV_ONLY_KEYS: readonly string[] = ['web', 'api'];
+type ConfigBlockKind = 'defaults' | 'env';
+function configKeyAllowedIn(key: string, block: ConfigBlockKind): boolean {
+  return block === 'defaults' ? !ENV_ONLY_KEYS.includes(key) : !DEFAULTS_ONLY_KEYS.includes(key);
+}
+/** Where a key that is barred from the current block does belong, phrased to drop into a hint. */
+function configKeyHome(key: string): string {
+  return ENV_ONLY_KEYS.includes(key) ? 'an `env` block' : 'the `defaults` block';
+}
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 /** `log [<level>] "…" [to <destination>]` (M27, PLAN_LOG.md) — bare-keyword enums, same shape as
  * `A11Y_SEVERITY_WORDS`/`LOCATOR_KEYWORDS`. Also reused (against a quoted string, not a bare
@@ -760,7 +776,13 @@ class Parser {
   /** `to N for <dur>` — a `step` stage: an instant jump to a new level, held for `<dur>`. */
   private parseStepStage(): Stage | null {
     const start = this.peek().span.start;
-    if (!this.expectKw('to')) return null;
+    // The cross-hints (M84, C11/`A2-10`). `step` and `spike` spell the same two shapes differently,
+    // and a mismatch is not a typo — it is someone who has the *other* block's grammar in mind. The
+    // bare ``expected `for`, found `over` `` restates the slot and leaves them to guess whether
+    // `over` is misspelled, unsupported, or in the wrong place. Naming the distinction the two
+    // prepositions carry — a jump versus a ramp — answers that in one line, and points at the block
+    // that does support what they were reaching for.
+    if (!this.expectKw('to', this.isKw(this.peek(), 'hold') ? '`hold` is a `spike` stage — a `step` stage is written `to N for <duration>`' : undefined)) return null;
     const num = this.expect('number', 'a target number, e.g. `to 50 for 10s`');
     if (!num) return null;
     const n = Number(num.value);
@@ -768,7 +790,16 @@ class Parser {
       this.error(Codes.LOAD_INVALID, `a workload target must be positive, found ${num.value}`, num.span);
       return null;
     }
-    if (!this.expectKw('for')) return null;
+    if (
+      !this.expectKw(
+        'for',
+        this.isKw(this.peek(), 'over')
+          ? '`over` ramps to the new level; a `step` stage always jumps to it — use `for`, or write this stage in a `spike` block'
+          : undefined,
+      )
+    ) {
+      return null;
+    }
     const durationMs = this.parseDuration();
     if (durationMs === null) return null;
     this.endLine();
@@ -803,7 +834,16 @@ class Parser {
         this.error(Codes.LOAD_INVALID, `a workload target must be positive, found ${num.value}`, num.span);
         return null;
       }
-      if (!this.expectKw('over')) return null;
+      if (
+        !this.expectKw(
+          'over',
+          this.isKw(this.peek(), 'for')
+            ? '`to N` ramps in a `spike`, and a ramp takes `over` — use `over`, or write `hold N for <duration>` to jump straight to N'
+            : undefined,
+        )
+      ) {
+        return null;
+      }
       const durationMs = this.parseDuration();
       if (durationMs === null) return null;
       this.endLine();
@@ -1143,7 +1183,7 @@ class Parser {
     const start = this.peek().span.start;
     this.advance(); // `defaults`
     this.endLine();
-    const entries = this.parseConfigEntries();
+    const entries = this.parseConfigEntries('defaults');
     return { type: 'DefaultsBlock', entries, span: this.spanFrom(start) };
   }
 
@@ -1158,11 +1198,11 @@ class Parser {
       isDefault = true;
     }
     this.endLine();
-    const entries = this.parseConfigEntries();
+    const entries = this.parseConfigEntries('env');
     return { type: 'EnvBlock', name: name.value, isDefault, entries, span: this.spanFrom(start) };
   }
 
-  private parseConfigEntries(): ConfigEntry[] {
+  private parseConfigEntries(block: ConfigBlockKind): ConfigEntry[] {
     const entries: ConfigEntry[] = [];
     if (!this.check('indent')) {
       this.error(Codes.EMPTY_BLOCK, 'this block has no entries', this.peek().span, 'indent at least one entry under the block header');
@@ -1175,7 +1215,7 @@ class Parser {
         continue;
       }
       const before = this.pos;
-      const parsed = this.parseConfigEntry();
+      const parsed = this.parseConfigEntry(block);
       if (parsed) entries.push(...parsed);
       else this.synchronize();
       if (this.pos === before) this.advance();
@@ -1184,7 +1224,7 @@ class Parser {
     return entries;
   }
 
-  private parseConfigEntry(): ConfigEntry[] | null {
+  private parseConfigEntry(block: ConfigBlockKind): ConfigEntry[] | null {
     const tok = this.peek();
     if (tok.type !== 'ident') {
       this.error(Codes.CONFIG_UNKNOWN_KEY, `expected a config key, found ${describeToken(tok)}`, tok.span);
@@ -1220,13 +1260,21 @@ class Parser {
       case 'viewport':
         return this.wrap(this.parseViewportDecl());
       default: {
-        const hint = suggest(tok.value, CONFIG_KEYS);
-        this.error(
-          Codes.CONFIG_UNKNOWN_KEY,
-          `unknown config key \`${tok.value}\``,
-          tok.span,
-          hint ? `did you mean \`${hint}\`?` : `expected one of: ${CONFIG_KEYS.join(', ')}`,
-        );
+        // Suggest with the block in mind (M84, C11/`A2-07b`). The nearest key by edit distance is
+        // still the right guess at what was *meant* — but half a dozen of the fourteen are legal in
+        // only one of the two blocks, and recommending one of those into the wrong block produced a
+        // tool that tells you what to write and then refuses it: `apii` in `defaults` drew ``did you
+        // mean `api`?``, and following it exactly drew the checker's ``\`api\` is not allowed in
+        // defaults``. So keep the guess and add the half that was missing — where the key lives.
+        const best = suggest(tok.value, CONFIG_KEYS);
+        const allowed = CONFIG_KEYS.filter((k) => configKeyAllowedIn(k, block));
+        const where = block === 'defaults' ? '`defaults`' : 'an `env` block';
+        const hint = best
+          ? configKeyAllowedIn(best, block)
+            ? `did you mean \`${best}\`?`
+            : `did you mean \`${best}\`? it belongs in ${configKeyHome(best)}, not ${where}`
+          : `expected one of: ${allowed.join(', ')}`;
+        this.error(Codes.CONFIG_UNKNOWN_KEY, `unknown config key \`${tok.value}\``, tok.span, hint);
         return null;
       }
     }
@@ -1765,8 +1813,22 @@ class Parser {
   }
 
   private parseTableColumnName(): string | null {
-    const tok = this.expect('ident', 'a column name');
-    return tok ? tok.value : null;
+    const tok = this.peek();
+    if (tok.type === 'string') {
+      // A `with each` table quotes its *cells* and not its *column names*, and the likeliest way to
+      // get the header wrong is to write it the way every other row in the same table is written
+      // (M84, C11/`A2-05`). The generic ``expected a name`` never mentioned that split — which is
+      // the entire content of the mistake — so say which half is quoted, and show the correction.
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `expected a column name, found ${describeToken(tok)}`,
+        tok.span,
+        `column names are bare words — write \`${tok.value}\`, not \`${tok.raw}\`; only the data cells below the header are quoted`,
+      );
+      return null;
+    }
+    const name = this.expect('ident', 'a column name');
+    return name ? name.value : null;
   }
 
   /** One `| cell | cell | … |` line, generic over what a cell is (a column-name ident for the
@@ -3636,13 +3698,13 @@ class Parser {
     return null;
   }
 
-  private expectKw(word: string): boolean {
+  private expectKw(word: string, hint?: string): boolean {
     if (this.isKw(this.peek(), word)) {
       this.advance();
       return true;
     }
     const tok = this.peek();
-    this.error(Codes.UNEXPECTED_TOKEN, `expected \`${word}\`, found ${describeToken(tok)}`, tok.span);
+    this.error(Codes.UNEXPECTED_TOKEN, `expected \`${word}\`, found ${describeToken(tok)}`, tok.span, hint);
     return false;
   }
 
@@ -3659,8 +3721,50 @@ class Parser {
     }
     if (this.atEof() || this.check('dedent')) return;
     const tok = this.peek();
-    this.error(Codes.UNEXPECTED_TOKEN, `unexpected ${describeToken(tok)} at end of step`, tok.span, 'expected end of line');
+    this.error(Codes.UNEXPECTED_TOKEN, `unexpected ${describeToken(tok)} at end of step`, tok.span, this.trailingHint(tok) ?? 'expected end of line');
     this.synchronize();
+  }
+
+  /** What the parser already knows about a token found where a line should have ended
+   * (M84, C11/`A3-09`).
+   *
+   * `endLine()` is the parser's single widest failure surface — every step production ends there, so
+   * every "you wrote something this step does not take" arrived with the same ``expected end of
+   * line``. That hint restates the grammar slot the parser was in and says nothing about the mistake,
+   * which is why one line of code was the whole diagnosis for five unrelated real-user errors: an
+   * inline `within`, a tag on the `test` header, a per-step `timeout` on a UI wait, a conjoined
+   * `expect`, and a duration unit spaced off its number.
+   *
+   * But by the time we arrive here the token has been *classified*, and for the shapes people
+   * actually write the token alone identifies both the mistake and its fix. Anything unrecognized
+   * still falls back to the generic hint — this is a lookup table of known mistakes, not a claim to
+   * understand every one. */
+  private trailingHint(tok: Token): string | null {
+    if (tok.type === 'tag') {
+      return `tags go on their own line above \`test\`, not on the header — put \`@${tok.value}\` on the line before it`;
+    }
+    if (tok.type !== 'ident') return null;
+    switch (tok.value) {
+      case 'within':
+        return '`within` opens a block, it is not an inline suffix — put `within <locator>` on its own line and indent the steps it scopes';
+      case 'timeout':
+        return 'a per-step `timeout` is only accepted on `api` requests — elsewhere set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
+      case 'and':
+        return 'one assertion per `expect` — put the second one on its own `expect` line';
+      case 'ms':
+      case 's':
+      case 'm': {
+        // The adjacency rule (`A3-13`): inside an expression a unit must touch its number, though
+        // after `think`/`timeout` it need not. `previous()` is that number, so the fix can be shown
+        // rather than described.
+        const num = this.previous();
+        return num.type === 'number'
+          ? `a duration unit must touch its number here — write \`${num.value}${tok.value}\`, not \`${num.value} ${tok.value}\``
+          : 'a duration unit must touch its number here, e.g. `500ms`';
+      }
+      default:
+        return null;
+    }
   }
 
   private synchronize(): void {
