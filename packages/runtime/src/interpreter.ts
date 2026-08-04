@@ -543,7 +543,13 @@ export interface LoadOptions {
 /** This shard's share of a workload `target` (a scenario's `users` or `rps`) — split as evenly as
  * an integer split allows, remainder handed to the lowest-indexed shards first. Every shard's
  * share summed back together always equals `target` exactly (D19: "processes stripe … by index").
- * `shard` undefined (single-process) is the identity split — the whole target, one "shard". */
+ * `shard` undefined (single-process) is the identity split — the whole target, one "shard".
+ *
+ * That exactness is a property of **one** call and guarantees nothing about two composed. A target
+ * smaller than `shard.count` gives the higher-indexed shards 0, so striping a second axis over the
+ * same `shard` hands work to shards that a first axis already emptied — `B3-01`, where the shared
+ * iteration pool was split across shards that had no VU to run it. Callers striping two related
+ * axes must reconcile them (see `SharedIterationsWorkload`), not assume the sums compose. */
 export function shareOfWorkloadTarget(target: number, shard?: { readonly index: number; readonly count: number }): number {
   if (!shard) return target;
   const base = Math.floor(target / shard.count);
@@ -979,7 +985,19 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     // observe `remaining` between the check and the decrement.
     const { iterations, vus } = scenario.workload;
     const targetVus = shareOfWorkloadTarget(vus, shard);
-    const targetIterations = shareOfWorkloadTarget(iterations, shard);
+    // B3-01 (M79): the iteration pool is striped across the shards that actually *got* a VU, not
+    // across all of `shard.count`. Striping both axes independently drops work on the floor
+    // whenever `vus < shard.count`: `shareOfWorkloadTarget` hands the whole population to the
+    // lowest `vus` shards, so every higher-indexed shard enters this branch with `targetVus === 0`,
+    // never runs the loop below, and silently takes its share of `iterations` to the grave —
+    // `run 100 iterations across 2 users` executed 50 under `--workers 4` and 26 under `--workers
+    // 8`, reporting `✓ PASS`. `shareOfWorkloadTarget`'s "shares always sum back to `target`" is
+    // true of one call and says nothing about two composed. Restricting the iteration split to
+    // `min(count, vus)` shards makes the two axes agree — the shards with a VU are exactly the
+    // shards with iterations — and is a no-op in the `vus >= count` case, which is every run where
+    // `--workers` is doing what it's for.
+    const iterationShard = shard && { index: shard.index, count: Math.min(shard.count, vus) };
+    const targetIterations = targetVus === 0 ? 0 : shareOfWorkloadTarget(iterations, iterationShard);
     let remaining = targetIterations;
     for (let i = 0; i < targetVus; i++) {
       vuPromises.push(

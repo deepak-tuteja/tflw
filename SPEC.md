@@ -611,6 +611,8 @@ test "checkout under load"
     baseline → burst → recovery shape.
   - `run N iterations across M users` / `run N iterations per user across M users` — count-bounded,
     no duration: a shared pool of `N` total iterations, or each of `M` VUs running its own fixed `N`.
+    The count is exact and independent of `--workers` (§12): spreading the run over more generator
+    processes than there are VUs changes how the iterations are distributed, never how many run.
 - **None of those five words is reserved** (FS-06). `ramp`/`hold`/`step`/`spike`/`run` lead these
   clauses, but an `action run checkout(id)` stays callable as `run checkout("1")` — a leading
   keyword never reserves that word for an action name, and disambiguation is always by what follows

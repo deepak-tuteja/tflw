@@ -548,6 +548,67 @@ test('globalIterationIndex: id ≡ shard.index mod shard.count, so two shards ne
   );
 });
 
+// B3-01 (M79). The two tests above cover `shareOfWorkloadTarget` as a *pure function*, where the
+// shares do sum back to the target exactly, as its doc comment says. That says nothing about two
+// independent applications of it composed, which is what the count-bounded workloads do — and
+// composing them is what dropped iterations on the floor whenever `vus < shard.count`. These assert
+// the invariant that actually matters to a user: a count-bounded workload runs *exactly* the number
+// of iterations it was told to, no matter how many processes `--workers` spread it over.
+test('B3-01: `run N iterations across M users` executes exactly N iterations at every shard count, including M < count', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "S"\n  run 12 iterations across 2 users\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const config = testConfig(server.baseUrl);
+
+  // count 1-2 exercise `vus >= count` (the shape that always worked); 3, 4 and 8 exercise
+  // `vus < count`, where the higher-indexed shards get no VU at all — pre-fix they took a share of
+  // the iteration pool anyway and never ran it, giving 8, 6 and 4 of the 12 requested.
+  for (const count of [1, 2, 3, 4, 8]) {
+    const shards = await Promise.all(
+      Array.from({ length: count }, (_, index) => runLoadShard(program, config, { source, shard: { index, count } })),
+    );
+    const perShard = shards.map((s) => s.scenarios[0]?.iterations ?? 0);
+    const total = perShard.reduce((a, b) => a + b, 0);
+    assert.equal(total, 12, `--workers ${count} ran ${total} of 12 iterations (per-shard ${perShard.join(',')})`);
+    assert.equal(
+      shards.reduce((sum, s) => sum + (s.scenarios[0]?.failures ?? 0), 0),
+      0,
+      `--workers ${count} should have no failures`,
+    );
+    // The complementary half of the same invariant: a shard with no VU must claim no iterations.
+    // Without this, "exactly 12" could be met by a shard that reports iterations it never ran.
+    assert.ok(
+      perShard.slice(2).every((n) => n === 0),
+      `only the 2 shards holding a VU may run iterations (per-shard ${perShard.join(',')})`,
+    );
+  }
+
+  await server.close();
+});
+
+test('B3-01: `run N iterations per user across M users` executes exactly N*M iterations at every shard count', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  // The per-VU kind stripes only `vus` — there is no second axis to compose — so it was already
+  // correct. Locked in here so a future change to the shared-pool split can't quietly break it.
+  const source = 'test "S"\n  run 3 iterations per user across 2 users\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const config = testConfig(server.baseUrl);
+
+  for (const count of [1, 2, 4]) {
+    const shards = await Promise.all(
+      Array.from({ length: count }, (_, index) => runLoadShard(program, config, { source, shard: { index, count } })),
+    );
+    const perShard = shards.map((s) => s.scenarios[0]?.iterations ?? 0);
+    assert.equal(
+      perShard.reduce((a, b) => a + b, 0),
+      6,
+      `--workers ${count} should run 2 users x 3 iterations (per-shard ${perShard.join(',')})`,
+    );
+  }
+
+  await server.close();
+});
+
 test('runLoadShard with shard {index:0, count:1} behaves like the whole run (a lone shard is the identity case)', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "S"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n';
