@@ -320,6 +320,8 @@ export const SUGGESTION_VOCABULARIES = {
 class Parser {
   private pos = 0;
   private readonly diagnostics: Diagnostic[] = [];
+  /** Token index the last diagnostic was reported at, for the panic-mode guard in `error()`. */
+  private lastErrorPos = -1;
   /** Set only by `runCompletion()`. When on, the six guarded production entry points below check
    * `atCompletionPoint()` before doing their normal work and, on a hit, record `completionResult`
    * and return `null` instead of erroring — no behavior change to `diagnostics`/the returned
@@ -370,28 +372,37 @@ class Parser {
     const startPos = this.peek().span.start;
     this.skipNewlines();
     while (!this.atEof()) {
+      // A `dedent` at the top level is never a mistake the user made — it is the tail of a block
+      // whose header already failed, and the file has no enclosing block for it to close. Reporting
+      // it produced the worst message the parser could emit (`A2-03`): a caret on a line beginning
+      // with `test`, saying a `test` was expected.
+      if (this.check('dedent')) {
+        this.advance();
+        this.skipNewlines();
+        continue;
+      }
       const before = this.pos;
       const tok = this.peek();
       if (this.check('tag') || this.isKw(tok, 'with') || this.isKw(tok, 'test')) {
         const test = this.parseTest();
         if (test) tests.push(test);
-        else this.synchronize();
+        else this.recoverTopLevel();
       } else if (this.isKw(tok, 'import')) {
         const imp = this.parseImportDecl();
         if (imp) imports.push(imp);
-        else this.synchronize();
+        else this.recoverTopLevel();
       } else if (this.isKw(tok, 'use')) {
         const u = this.parseUseDecl();
         if (u) uses.push(u);
-        else this.synchronize();
+        else this.recoverTopLevel();
       } else if (this.isKw(tok, 'action')) {
         const a = this.parseActionDecl();
         if (a) actions.push(a);
-        else this.synchronize();
+        else this.recoverTopLevel();
       } else if (this.isKw(tok, 'before') || this.isKw(tok, 'after')) {
         const h = this.parseHookDecl(tok.value as 'before' | 'after');
         if (h) hooks.push(h);
-        else this.synchronize();
+        else this.recoverTopLevel();
       } else if (this.isKw(tok, 'scenario')) {
         // D103 migration diagnostic: `scenario` was removed in M50 (D93) — a workload-bearing
         // block is now just `test "…" { ramp to … }`, kind inferred from the workload clause.
@@ -401,11 +412,14 @@ class Parser {
           tok.span,
           'a `test` block is a load test whenever it contains a workload line (`ramp to …`); there is no longer a separate keyword',
         );
-        this.synchronize();
+        this.recoverTopLevel();
       } else {
         const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
         this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
-        this.synchronize();
+        // The offending token may itself be the `indent` opening an orphaned body, in which case
+        // `synchronize()` would step *into* the block and report it line by line all over again.
+        if (this.check('indent')) this.skipBlock();
+        else this.recoverTopLevel();
       }
       // `synchronize()` deliberately won't cross a `dedent` (nested blocks consume their own), so
       // stray recovery landing exactly on one here — nothing left to close it — would otherwise
@@ -415,6 +429,21 @@ class Parser {
     }
     const program: Program = { type: 'Program', imports, uses, actions, hooks, tests, span: this.spanFrom(startPos) };
     return { program, diagnostics: this.diagnostics };
+  }
+
+  /** Top-level recovery: discard the failed header line *and the indented body it was meant to
+   * introduce* (M83, C11/`A2-03`).
+   *
+   * Without the second half, `parse()`'s loop re-feeds an orphaned body to the top-level dispatcher
+   * one line at a time, and every one of those lines is reported as a declaration that isn't allowed
+   * at the top level. A single missing `(` on an `action` header cost seven diagnostics — six of
+   * them noise, two of those at the same position — and the `scenario` migration path, the one place
+   * built to hold a migrating user's hand, buried its own carefully-written D103 message under six
+   * wrong ones. `parseConfig` has done `synchronize(); skipBlock();` since it was written; the top
+   * level never got it. */
+  private recoverTopLevel(): void {
+    this.synchronize();
+    this.skipBlock();
   }
 
   // -- hooks (P#10, P#19) ------------------------------------------------------
@@ -534,12 +563,12 @@ class Parser {
             workload = maybeWorkload;
           }
         } else {
-          this.synchronize();
+          this.recover(before);
         }
       } else if (this.isKw(tok, 'threshold')) {
         const t = this.parseThresholdDecl();
         if (t) thresholds.push(t);
-        else this.synchronize();
+        else this.recover(before);
       } else if (this.isKw(tok, 'cleanup')) {
         this.advance();
         this.endLine();
@@ -547,7 +576,7 @@ class Parser {
       } else {
         const step = this.parseStep();
         if (step) body.push(step);
-        else this.synchronize();
+        else this.recover(before);
       }
       if (this.pos === before) this.advance(); // guarantee progress
     }
@@ -674,8 +703,11 @@ class Parser {
       this.error(Codes.UNEXPECTED_TOKEN, `expected \`users\` or \`rps\`, found ${describeToken(unitTok)}`, unitTok.span);
       return null;
     }
+    // Captured before `endLine()` so a diagnostic about the block as a whole can point at the line
+    // that opened it, rather than wherever the cursor happens to be once the block is consumed.
+    const headerSpan: Span = { start, end: this.previous().span.end };
     this.endLine();
-    const stages = this.parseStageBlock(headKind, unit);
+    const stages = this.parseStageBlock(headKind, unit, headerSpan);
     if (!stages) return null;
     const span = this.spanFrom(start);
     if (headKind === 'step') {
@@ -685,18 +717,21 @@ class Parser {
   }
 
   /** The indented stage block under a `step`/`spike` header. */
-  private parseStageBlock(headKind: 'step' | 'spike', unit: 'users' | 'rps'): Stage[] | null {
+  private parseStageBlock(headKind: 'step' | 'spike', unit: 'users' | 'rps', headerSpan: Span): Stage[] | null {
     if (!this.check('indent')) {
+      // `headerSpan`, not `peek()`: by here the header's newline is consumed, so the cursor is on
+      // the *next* line and the caret would land on a step that has nothing wrong with it (`A2-04`).
       this.error(
         Codes.EMPTY_BLOCK,
         `this \`${headKind} ${unit}\` has no stages`,
-        this.peek().span,
+        headerSpan,
         `indent at least one stage line under \`${headKind} ${unit}\``,
       );
       return null;
     }
     this.advance(); // indent
     const stages: Stage[] = [];
+    const diagnosticsBefore = this.diagnostics.length;
     while (!this.check('dedent') && !this.atEof()) {
       if (this.check('newline')) {
         this.advance();
@@ -710,7 +745,13 @@ class Parser {
     }
     if (this.check('dedent')) this.advance();
     if (stages.length === 0) {
-      this.error(Codes.LOAD_INVALID, `a \`${headKind} ${unit}\` workload needs at least one stage line`, this.peek().span);
+      // Only news if nothing *inside* the block already failed (M83, C11/`A2-04`, `A2-10`). A single
+      // mistyped preposition — `to 50 over 10s` in a `step` block, where the spelling is `for` —
+      // used to cost this summary as well, with its caret on the line *after* the block, so the one
+      // typo read as two unrelated problems in two unrelated places.
+      if (this.diagnostics.length === diagnosticsBefore) {
+        this.error(Codes.LOAD_INVALID, `a \`${headKind} ${unit}\` workload needs at least one stage line`, headerSpan);
+      }
       return null;
     }
     return stages;
@@ -1510,6 +1551,13 @@ class Parser {
   /** Skip an indented block wholesale (recovery after a bad block header). */
   private skipBlock(): void {
     if (!this.check('indent')) return;
+    this.advance(); // indent
+    this.skipBlockBody();
+  }
+
+  /** The other half of `skipBlock()`, for a caller that has already consumed the opening `indent`
+   * and then failed part-way through the block — discard the rest of it, matching `dedent` included. */
+  private skipBlockBody(): void {
     let depth = 0;
     while (!this.atEof()) {
       const t = this.peek();
@@ -1517,11 +1565,35 @@ class Parser {
         depth++;
         this.advance();
       } else if (t.type === 'dedent') {
-        depth--;
         this.advance();
-        if (depth === 0) break;
+        if (depth === 0) return;
+        depth--;
       } else this.advance();
     }
+  }
+
+  /** Recover from a failed construct *without eating the next line* (M83, C11/`A2-04`).
+   *
+   * `synchronize()` discards to end of line. That is right when a production failed part-way through
+   * a line, and wrong when it failed *after* already consuming its own trailing newline or its own
+   * indented block. `step users` with an unparseable stage block is the second kind: by the time
+   * `parseStageBlock` returns `null` the block's `dedent` is consumed and the cursor sits on the
+   * next, perfectly good step — which `synchronize()` then deleted from the surviving `TestDecl`, so
+   * a load test came back as a functional one, missing its only request, still asserting a status
+   * against nothing.
+   *
+   * `startPos` is where the failed construct began. Both halves of the test are load-bearing: a
+   * production that consumed *nothing* also leaves `previous()` on the previous line's newline, and
+   * skipping the sync there would leave its whole line to be re-parsed a token at a time — which is
+   * the cascade this milestone is about, just one scope down. */
+  private recover(startPos: number): void {
+    if (this.pos === startPos) {
+      this.synchronize();
+      return;
+    }
+    const prev = this.previous();
+    if (prev.type === 'newline' || prev.type === 'dedent') return;
+    this.synchronize();
   }
 
   // -- tests -----------------------------------------------------------------
@@ -1653,8 +1725,13 @@ class Parser {
     this.advance(); // indent
     const columns = this.parseTableRow('a column name', () => this.parseTableColumnName());
     if (!columns) {
+      // Discard the whole table, not just the header line (M83, C11/`A2-05`). The old form only
+      // synchronized past the header and then looked for a `dedent` that the *data rows* were still
+      // in the way of, so `parseTest` resumed on a `|` — and one quoted header cell cost three
+      // errors: the real one, then ``expected `test`, found `|` ``, then a top-level complaint about
+      // the dedent, neither of the last two describing anything the user did.
       this.synchronize();
-      if (this.check('dedent')) this.advance();
+      this.skipBlockBody();
       return null;
     }
     const rows: Value[][] = [];
@@ -3600,6 +3677,19 @@ class Parser {
   }
 
   private error(code: string, message: string, span: Span, hint?: string, label?: string): void {
+    // Panic mode (M83, C11/`A3-17`, `A2-07`). Each production diagnoses the token it is looking at,
+    // so one bad token gets reported once per production that looks at it — and productions nest.
+    // `expect body.items[-1].id equals 1` reported the same `-` three times: as a missing array
+    // index, then as the `]` that would have closed it, then as a missing matcher. Three different
+    // grammar slots, one mistake, and none of the three messages named it. Likewise a bad `timeout`
+    // target was reported by the parser *and* by the config-key production one frame up, whose
+    // suggestion contradicted the first message.
+    //
+    // The test is whether the cursor moved. A diagnostic raised without a single token having been
+    // consumed since the last one is not news about a second mistake — it is the same mistake seen
+    // from the next production up. Anything that genuinely consumed input reports normally.
+    if (this.pos === this.lastErrorPos) return;
+    this.lastErrorPos = this.pos;
     this.diagnostics.push({ code, severity: 'error', message, span, ...(hint ? { hint } : {}), ...(label ? { label } : {}) });
   }
 }
