@@ -81,7 +81,7 @@ test('`select "..." from field "..."` parses a SelectStmt', () => {
 
 test('`uncheck field "..."` always parses as the action (no assertion form exists)', () => {
   const step = firstStep('test "ok"\n  uncheck field "Accept terms"\n') as { type: string; locator: { kind: string } };
-  assert.equal(step.type, 'UncheckStmt');
+  assert.equal(step.type, 'UntickStmt');
   assert.equal(step.locator.kind, 'field');
 });
 
@@ -153,9 +153,9 @@ test('an unknown locator keyword is a diagnosed error with a suggestion, not a s
 
 // ---- `check` dual grammar (SPEC §9.1) --------------------------------------
 
-test('`check <locator>` with nothing after it is the checkbox action (CheckStmt)', () => {
+test('`check <locator>` with nothing after it is the checkbox action (TickStmt)', () => {
   const step = firstStep('test "ok"\n  check field "Accept terms"\n') as { type: string; locator: { kind: string; value: { value: string } } };
-  assert.equal(step.type, 'CheckStmt');
+  assert.equal(step.type, 'TickStmt');
   assert.equal(step.locator.kind, 'field');
   assert.equal(step.locator.value.value, 'Accept terms');
 });

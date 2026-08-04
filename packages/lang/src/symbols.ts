@@ -323,8 +323,8 @@ function walkSteps(
       case 'ClickStmt':
       case 'HoverStmt':
       case 'ScrollStmt':
-      case 'UncheckStmt':
-      case 'CheckStmt':
+      case 'UntickStmt':
+      case 'TickStmt':
         walkStringLit(source, step.locator.value, bound, scopeId, refs);
         break;
       case 'FillStmt':

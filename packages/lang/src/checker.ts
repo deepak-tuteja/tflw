@@ -356,8 +356,8 @@ const BROWSER_STEP_TYPES = new Set<Step['type']>([
   'FillStmt',
   'FillFormStmt',
   'SelectStmt',
-  'CheckStmt',
-  'UncheckStmt',
+  'TickStmt',
+  'UntickStmt',
   'PressStmt',
   'HoverStmt',
   'ScrollStmt',
@@ -813,10 +813,10 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'ClickStmt':
       case 'HoverStmt':
       case 'ScrollStmt':
-      case 'UncheckStmt':
+      case 'UntickStmt':
         checkStringLit(step.locator.value, bound, diags);
         break;
-      case 'CheckStmt':
+      case 'TickStmt':
         checkStringLit(step.locator.value, bound, diags);
         break;
       case 'FillStmt':

@@ -112,7 +112,9 @@ test('getHover: an active diagnostic at the offset shows its live message + hint
   assert.ok(result);
   assert.match(result!.contents, /error\[TF014\]/);
   assert.match(result!.contents, /unknown matcher `eq`/);
-  assert.match(result!.contents, /expected one of: equals, contains, matches/);
+  // OBS-04 (B1): the fallback line names the value matchers, the comparison forms and the states —
+  // it used to omit `equals` and every state word, which is what made it unhelpful here.
+  assert.match(result!.contents, /expected a value matcher \(equals, contains, matches …\)/);
   assert.match(result!.contents, /unrecognised matcher/);
   assert.match(result!.contents, /Example:/);
 });

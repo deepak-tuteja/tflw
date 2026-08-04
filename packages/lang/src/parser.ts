@@ -25,7 +25,7 @@ import type {
   CallExpr,
   CaptureStmt,
   CertDecl,
-  CheckStmt,
+  TickStmt,
   ClickKind,
   ClickStmt,
   CloseTabStmt,
@@ -132,7 +132,7 @@ import type {
   TimeoutDecl,
   TimeoutTarget,
   TransformExpr,
-  UncheckStmt,
+  UntickStmt,
   UniqueEmailExpr,
   UniqueLikeExpr,
   UniqueNumberExpr,
@@ -191,6 +191,11 @@ export const STATEMENT_KEYWORDS = [
   'right',
   'fill',
   'select',
+  // FS-04: `tick`/`untick` are the checkbox actions. `uncheck` is still accepted for one migration
+  // step (B1 step 1 lands both spellings so testFlow-tests can move before `check <locator>` stops
+  // parsing) and is removed with the bare `check <locator>` form in step 3.
+  'tick',
+  'untick',
   'uncheck',
   'press',
   'hover',
@@ -211,6 +216,11 @@ const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'bu
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'was', 'not'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
+/** Every word that may legally *start* a matcher, for `suggest`. After FS-08 made `is` an optional
+ * copula, `greater`/`less` and the state words can appear with no `is` in front of them, so a typo'd
+ * `vissible` has to be reachable from the same list as a typo'd `equalz` — there is no longer an
+ * `is` branch with its own narrower vocabulary. */
+const MATCHER_VOCABULARY = [...MATCHER_KEYWORDS, 'greater', 'less', ...STATE_WORDS] as const;
 /** `has no [<severity>] a11y violations` (M3e, SPEC §9.8) — increasing severity, matching axe-core's
  * own `impact` scale (`A11ySeverity`, ast.ts). */
 const A11Y_SEVERITY_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
@@ -506,12 +516,35 @@ class Parser {
    * cleanup/step parsing); returns `null` on a parse error inside a recognized keyword (caller
    * synchronizes); otherwise returns the parsed `Workload`. */
   private tryParseWorkloadLine(tok: Token): Workload | null | undefined {
+    const isWorkloadKw =
+      this.isKw(tok, 'ramp') || this.isKw(tok, 'hold') || this.isKw(tok, 'step') || this.isKw(tok, 'spike') || this.isKw(tok, 'run');
+    // FS-06: a leading keyword never reserves that word for a user action name — disambiguation is
+    // always by what follows. Before this, `run checkout("1")` failed with "expected an iteration
+    // count" (A2-02) purely because `run` led the line, while `let x = run checkout("1")` in value
+    // position called cleanly, and `action run checkout(id)` declared cleanly.
+    if (!isWorkloadKw || this.startsActionCall()) return undefined;
     if (this.isKw(tok, 'ramp')) return this.parseWorkload();
     if (this.isKw(tok, 'hold')) return this.parseHoldWorkload();
     if (this.isKw(tok, 'step')) return this.parseStepOrSpikeWorkload('step');
     if (this.isKw(tok, 'spike')) return this.parseStepOrSpikeWorkload('spike');
-    if (this.isKw(tok, 'run')) return this.parseIterationsWorkload();
-    return undefined;
+    return this.parseIterationsWorkload();
+  }
+
+  /** Does the line starting at the *current* token (a workload keyword) actually continue as a call
+   * to a user action — `run checkout("1")`, `step users(3)` — rather than a workload clause?
+   *
+   * Amended at implementation time (B1, 2026-08-04). `FS-06` specifies "one token of lookahead",
+   * which is enough for `run`/`hold`, whose workload forms take a *number* next and so can never
+   * collide with an ident action name. It is not enough for `ramp to …`, `step users …` and
+   * `spike rps …`, whose second token is an ident: under a strict one-token rule an action named
+   * `ramp to` or `step users` would still be uncallable, and `FS-06`'s SPEC promise is written
+   * without exceptions. So the discriminator is the same ident-run-then-`(` scan `parseIdentOrCall`
+   * already uses — still "disambiguation by what follows", just not capped at one token. Action
+   * names are multi-word and calls always parenthesise (P#11, P#17), so the scan is exact. */
+  private startsActionCall(): boolean {
+    let k = 1;
+    while (this.peek(k).type === 'ident') k++;
+    return this.peek(k).type === 'lparen';
   }
 
   /** `hold N users for <dur>` (closed) / `hold N rps for <dur>` (open) — D97: a constant target
@@ -1610,8 +1643,11 @@ class Parser {
           return this.parseFillStep();
         case 'select':
           return this.parseSelectStep();
+        case 'tick':
+          return this.parseTickStep();
+        case 'untick':
         case 'uncheck':
-          return this.parseUncheckStep();
+          return this.parseUntickStep();
         case 'press':
           return this.parsePressStep();
         case 'hover':
@@ -2189,12 +2225,28 @@ class Parser {
     return this.parseNetworkRequestRef();
   }
 
+  /** `[is] [not] <matcher>` (FS-08). `is` is an optional copula carrying no meaning, and it may sit
+   * on either side of `not`, so all four spellings parse: `is not visible`, `not is visible`,
+   * `is visible`, `not visible`. Docs teach `is not visible` — the form SPEC §6.2 already documented
+   * before it parsed. Because `is` is consumed and discarded here, `greater`/`less` and the state
+   * words dispatch at the top level of the switch below rather than only under an `is` branch. */
   private parseMatcher(): Matcher | null {
     const start = this.peek().span.start;
     let negated = false;
-    if (this.isKw(this.peek(), 'not')) {
-      this.advance();
-      negated = true;
+    let sawCopula = false;
+    for (;;) {
+      const t = this.peek();
+      if (!sawCopula && this.isKw(t, 'is')) {
+        this.advance();
+        sawCopula = true;
+        continue;
+      }
+      if (!negated && this.isKw(t, 'not')) {
+        this.advance();
+        negated = true;
+        continue;
+      }
+      break;
     }
     if (this.completionMode && this.atCompletionPoint()) {
       this.completionResult = { kind: 'matcher', prefix: this.completionPrefix() };
@@ -2272,10 +2324,12 @@ class Parser {
         const next = this.peek();
         if (this.isKw(next, 'count')) {
           this.advance();
-          const num = this.expect('number', 'a count, e.g. `has count 3`');
-          if (!num) return null;
-          const value: NumberLit = { type: 'NumberLit', value: Number(num.value), raw: num.raw, span: num.span };
-          return mk('hasCount', value);
+          // FS-07/A3-06: was `expect('number')`, a literal token — so the only array-length matcher
+          // in the closed set could not be data-driven, and a `with each` table could supply a URL
+          // but never an expected count. `Matcher.value` was already `Value`; only the parser was
+          // narrow.
+          const v = this.parseValue();
+          return v ? mk('hasCount', v) : null;
         }
         if (this.isKw(next, 'value')) {
           this.advance();
@@ -2289,41 +2343,34 @@ class Parser {
         this.error(Codes.UNKNOWN_MATCHER, `expected \`count\`, \`value\`, or \`no\` after \`has\`, found ${describeToken(next)}`, next.span);
         return null;
       }
-      case 'is': {
+      case 'greater': {
         this.advance();
-        const next = this.peek();
-        if (this.isKw(next, 'greater')) {
-          this.advance();
-          if (!this.expectKw('than')) return null;
-          const v = this.parseValue();
-          return v ? mk('greaterThan', v) : null;
-        }
-        if (this.isKw(next, 'less')) {
-          this.advance();
-          if (!this.expectKw('than')) return null;
-          const v = this.parseValue();
-          return v ? mk('lessThan', v) : null;
-        }
-        if (next.type === 'ident' && (STATE_WORDS as readonly string[]).includes(next.value)) {
-          this.advance();
-          return mk(next.value as MatcherName, null);
-        }
-        const hint = next.type === 'ident' ? suggest(next.value, ['greater', 'less', ...STATE_WORDS]) : undefined;
-        this.error(
-          Codes.UNKNOWN_MATCHER,
-          `unexpected ${describeToken(next)} after \`is\``,
-          next.span,
-          hint ? `did you mean \`${hint}\`?` : 'expected `greater than`, `less than`, or a state (visible/hidden/enabled/disabled/checked)',
-        );
-        return null;
+        if (!this.expectKw('than')) return null;
+        const v = this.parseValue();
+        return v ? mk('greaterThan', v) : null;
+      }
+      case 'less': {
+        this.advance();
+        if (!this.expectKw('than')) return null;
+        const v = this.parseValue();
+        return v ? mk('lessThan', v) : null;
       }
       default: {
-        const hint = suggest(tok.value, MATCHER_KEYWORDS);
+        if ((STATE_WORDS as readonly string[]).includes(tok.value)) {
+          this.advance();
+          return mk(tok.value as MatcherName, null);
+        }
+        // OBS-04: the fallback line used to omit `equals` and every other value matcher, and after
+        // FS-08 it must also name the copula forms — it is the only help a reader gets when
+        // `suggest` finds nothing close enough.
+        const hint = suggest(tok.value, MATCHER_VOCABULARY);
         this.error(
           Codes.UNKNOWN_MATCHER,
           `unknown matcher \`${tok.value}\``,
           tok.span,
-          hint ? `did you mean \`${hint}\`?` : `expected one of: equals, contains, matches, is …, has …`,
+          hint
+            ? `did you mean \`${hint}\`?`
+            : 'expected a value matcher (equals, contains, matches …), `is greater than`/`is less than`, or a state (visible/hidden/enabled/disabled/checked)',
         );
         return null;
       }
@@ -2506,7 +2553,7 @@ class Parser {
         return null;
       }
       this.endLine();
-      return { type: 'CheckStmt', locator: subject.locator, span: this.spanFrom(start) };
+      return { type: 'TickStmt', locator: subject.locator, span: this.spanFrom(start) };
     }
     if (quantifier && subject.type !== 'BodySubject' && subject.type !== 'BodyCsvSubject') {
       this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
@@ -2519,13 +2566,26 @@ class Parser {
     return { type: 'ExpectStmt', soft: true, quantifier, subject, matcher, masks, span: this.spanFrom(start) };
   }
 
-  private parseUncheckStep(): Step | null {
+  /** `tick <locator>` (FS-04) — the checkbox action, unambiguous by construction: no matcher may
+   * follow, and `tick` is not a matcher word, so there is no second reading to resolve silently the
+   * way `check <locator>` had to. */
+  private parseTickStep(): Step | null {
     const start = this.peek().span.start;
-    this.advance(); // `uncheck`
+    this.advance(); // `tick`
     const locator = this.parseLocator();
     if (!locator) return null;
     this.endLine();
-    return { type: 'UncheckStmt', locator, span: this.spanFrom(start) };
+    return { type: 'TickStmt', locator, span: this.spanFrom(start) };
+  }
+
+  /** `untick <locator>` — and, for B1 step 1 only, its outgoing spelling `uncheck`. */
+  private parseUntickStep(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `untick` / `uncheck`
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    this.endLine();
+    return { type: 'UntickStmt', locator, span: this.spanFrom(start) };
   }
 
   private parsePressStep(): Step | null {
@@ -2847,8 +2907,21 @@ class Parser {
         }
         return { type: 'NumberLit', value: Number(tok.value), raw: tok.raw, span: tok.span };
       }
+      case 'lbracket':
+        return this.parseArray();
       case 'lbrace':
-        return this.parseInterp();
+        // FS-07. `{` in value position used to mean interpolation and nothing else, while
+        // `matches subset`/an `api` body reached `parseObject` down a separate path — so
+        // `matches subset { id: 1 }` was valid on the line above `equals { id: 1 }`, which failed
+        // with "expected `}` to close the interpolation". This is the same two-token rule
+        // `parseFieldValue` has always used, moved down here so there is one value parser rather
+        // than two that disagree.
+        //
+        // The rule, now a SPEC promise and not just parser behaviour: `{ IDENT }` is an
+        // interpolation — forever — and an object literal always requires `key: value`. So
+        // `{ stock }` reads as the variable `stock`, never as a one-field object, and there is no
+        // shorthand-key form to collide with it.
+        return this.startsObjectLiteral() ? this.parseObject() : this.parseInterp();
       case 'ident': {
         if (tok.value === 'env' && this.peek(1).type === 'lparen') return this.parseEnvRef();
         if (tok.value === 'unique') return this.parseUniqueExpr();
@@ -3125,20 +3198,21 @@ class Parser {
   }
 
   /** Field value: any scalar value, plus nested objects and arrays (JSON body shapes). */
+  /** Is the `{` at the current position an object literal rather than an interpolation? `{}` is the
+   * empty object; `{ key: …` and `{ "key": …` are objects; everything else — critically a bare
+   * `{ref}`, and `{price} * 2` — is an interpolation-led expression (P#25). Two tokens, and the rule
+   * is stated in SPEC: an object literal always requires `key: value`, so no shorthand-key form
+   * exists to make `{ stock }` ambiguous. */
+  private startsObjectLiteral(): boolean {
+    if (this.peek().type !== 'lbrace') return false;
+    if (this.peek(1).type === 'rbrace') return true;
+    return (this.peek(1).type === 'ident' || this.peek(1).type === 'string') && this.peek(2).type === 'colon';
+  }
+
+  /** Kept as a name because a dozen call sites read better for it, but after FS-07 it is exactly
+   * `parseValue` — object and array literals are ordinary atoms now, so field position and matcher
+   * position can no longer drift apart. */
   private parseFieldValue(): FieldValue | null {
-    const tok = this.peek();
-    if (tok.type === 'lbracket') return this.parseArray();
-    // Disambiguate `{ key: … }` (object) from a `{ref}`-led *expression* (`{price} * 2`, P#25):
-    // only an unambiguous object shape short-circuits here. Everything else — including a bare
-    // `{ref}` — falls through to `parseValue()`, whose `parseAtom` already treats `{` as an
-    // interpolation atom and, critically, keeps climbing for a trailing `* / + -`.
-    if (
-      tok.type === 'lbrace' &&
-      (this.peek(1).type === 'rbrace' ||
-        ((this.peek(1).type === 'ident' || this.peek(1).type === 'string') && this.peek(2).type === 'colon'))
-    ) {
-      return this.parseObject();
-    }
     return this.parseValue();
   }
 

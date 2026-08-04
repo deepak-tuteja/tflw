@@ -1895,7 +1895,7 @@ require reading the source.
 | `TF011` | Parser: an unrecognised statement keyword where a step was expected. | `expct status equals 200` → `did you mean `expect`?` |
 | `TF012` | Parser: an unknown HTTP method after `api`. | `api FETCH /health` → `did you mean `PATCH`?` |
 | `TF013` | Parser: an unrecognised `expect`/`capture` subject. | `expect statuss equals 200` → `did you mean `status`?` |
-| `TF014` | Parser: an unrecognised matcher after a subject. | `expect status eq 200` → `did you mean` one of `equals, contains, matches, is …, has …` |
+| `TF014` | Parser: an unrecognised matcher after a subject. | `expect text "x" is vissible` → `did you mean `visible`?`; a word with no near match gets the full vocabulary instead |
 | `TF015` | Parser: a `test`/`action`/hook block has no indented body. | a `before file` block with no steps under it |
 | `TF016` | Parser: top-level content that isn't a `test`/`action`/`import`/`use`/`before`/`after`. | a bare `expect …` line outside any block |
 | `TF020` | Parser (config): an unrecognised key inside a config block. | `headr "Accept" is "…"` → `did you mean `header`?` |

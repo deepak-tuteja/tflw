@@ -185,8 +185,8 @@ const ELIGIBLE_STEP_TYPES: ReadonlySet<Step['type']> = new Set([
   'ClickStmt',
   'FillStmt',
   'SelectStmt',
-  'CheckStmt',
-  'UncheckStmt',
+  'TickStmt',
+  'UntickStmt',
   'PressStmt',
   'HoverStmt',
   'ScrollStmt',
@@ -323,10 +323,10 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
       return { shape: { t: 'FillStmt', locator: locatorShape(step.locator), value: maskValue(step.value, literals, step.locator.value.value) }, literals };
     case 'SelectStmt':
       return { shape: { t: 'SelectStmt', locator: locatorShape(step.locator), value: maskValue(step.value, literals, step.locator.value.value) }, literals };
-    case 'CheckStmt':
-      return { shape: { t: 'CheckStmt', locator: locatorShape(step.locator) }, literals: [] };
-    case 'UncheckStmt':
-      return { shape: { t: 'UncheckStmt', locator: locatorShape(step.locator) }, literals: [] };
+    case 'TickStmt':
+      return { shape: { t: 'TickStmt', locator: locatorShape(step.locator) }, literals: [] };
+    case 'UntickStmt':
+      return { shape: { t: 'UntickStmt', locator: locatorShape(step.locator) }, literals: [] };
     case 'PressStmt':
       return { shape: { t: 'PressStmt', keys: step.keys.value, locator: step.locator ? locatorShape(step.locator) : null }, literals: [] };
     case 'HoverStmt':

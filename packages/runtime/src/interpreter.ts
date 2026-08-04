@@ -2383,14 +2383,14 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           result = mkStep('select', src, step.span, true, stepStart, `select ${JSON.stringify(value)} from ${locatorDetail(step.locator, name, via)}`);
           break;
         }
-        case 'CheckStmt': {
+        case 'TickStmt': {
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
           await performCheck(pwLocator, config.timeouts.step);
           result = mkStep('checkbox', src, step.span, true, stepStart, `check ${locatorDetail(step.locator, name, via)}`);
           break;
         }
-        case 'UncheckStmt': {
+        case 'UntickStmt': {
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
           await performUncheck(pwLocator, config.timeouts.step);
@@ -3650,9 +3650,9 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'fill';
     case 'SelectStmt':
       return 'select';
-    case 'CheckStmt':
+    case 'TickStmt':
       return 'checkbox';
-    case 'UncheckStmt':
+    case 'UntickStmt':
       return 'uncheckbox';
     case 'PressStmt':
       return 'press';

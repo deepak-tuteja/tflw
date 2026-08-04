@@ -93,7 +93,11 @@ export const DIAGNOSTICS: readonly DiagnosticEntry[] = [
   { code: 'TF011', meaning: 'Parser: an unrecognised statement keyword where a step was expected.', example: '`expct status equals 200` → `did you mean `expect`?`' },
   { code: 'TF012', meaning: 'Parser: an unknown HTTP method after `api`.', example: '`api FETCH /health` → `did you mean `PATCH`?`' },
   { code: 'TF013', meaning: 'Parser: an unrecognised `expect`/`capture` subject.', example: '`expect statuss equals 200` → `did you mean `status`?`' },
-  { code: 'TF014', meaning: 'Parser: an unrecognised matcher after a subject.', example: '`expect status eq 200` → `did you mean` one of `equals, contains, matches, is …, has …`' },
+  // A3-OS-06: the old example was a mashup of the two mutually-exclusive hint branches ("did you
+  // mean" *and* an option list) and showed output the tool does not produce — `eq` is two characters
+  // from nothing, so it gets the fallback line, not a suggestion. This one is copied from a real
+  // run, and names the branch it is showing.
+  { code: 'TF014', meaning: 'Parser: an unrecognised matcher after a subject.', example: '`expect text "x" is vissible` → `did you mean `visible`?`; a word with no near match gets the full vocabulary instead' },
   { code: 'TF015', meaning: 'Parser: a `test`/`action`/hook block has no indented body.', example: 'a `before file` block with no steps under it' },
   { code: 'TF016', meaning: 'Parser: top-level content that isn\'t a `test`/`action`/`import`/`use`/`before`/`after`.', example: 'a bare `expect …` line outside any block' },
   { code: 'TF020', meaning: 'Parser (config): an unrecognised key inside a config block.', example: '`headr "Accept" is "…"` → `did you mean `header`?`' },

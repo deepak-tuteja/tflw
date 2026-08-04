@@ -36,7 +36,7 @@ export interface CompletionSources {
 // the same over-broad-but-harmless tradeoff already baked into every other entry in this list.
 const STEP_KEYWORDS = [
   'api', 'expect', 'check', 'let', 'capture', 'log', 'wait', 'give',
-  'open', 'click', 'double', 'right', 'fill', 'select', 'uncheck', 'press', 'hover', 'scroll',
+  'open', 'click', 'double', 'right', 'fill', 'select', 'tick', 'untick', 'uncheck', 'press', 'hover', 'scroll',
   'within', 'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
   'think', 'ramp', 'threshold', 'cleanup', 'hold', 'step', 'spike', 'run',
 ] as const;

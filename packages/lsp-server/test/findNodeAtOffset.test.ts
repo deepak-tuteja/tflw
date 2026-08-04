@@ -54,13 +54,13 @@ test('findNodeAtOffset: descends into a FillStmt\'s `{email}` value as an Interp
   assert.deepEqual(path.map((n) => n.type), ['Program', 'TestDecl', 'FillStmt', 'Interp']);
 });
 
-test('findNodeAtOffset: descends into a ClickStmt/HoverStmt/ScrollStmt/UncheckStmt/CheckStmt locator', () => {
+test('findNodeAtOffset: descends into a ClickStmt/HoverStmt/ScrollStmt/UntickStmt/TickStmt locator', () => {
   const cases: readonly [string, string, string][] = [
     [`test "ok"\n  click button "Pay"\n`, 'Pay', 'ClickStmt'],
     [`test "ok"\n  hover text "Menu"\n`, 'Menu', 'HoverStmt'],
     [`test "ok"\n  scroll to list "Cart"\n`, 'Cart', 'ScrollStmt'],
-    [`test "ok"\n  uncheck field "Terms"\n`, 'Terms', 'UncheckStmt'],
-    [`test "ok"\n  check field "Terms"\n`, 'Terms', 'CheckStmt'],
+    [`test "ok"\n  uncheck field "Terms"\n`, 'Terms', 'UntickStmt'],
+    [`test "ok"\n  check field "Terms"\n`, 'Terms', 'TickStmt'],
   ];
   for (const [source, needle, stepType] of cases) {
     const { program } = parseSource(source);

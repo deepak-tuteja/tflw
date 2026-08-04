@@ -18,7 +18,7 @@ import type {
   CallExpr,
   CaptureStmt,
   CertDecl,
-  CheckStmt,
+  TickStmt,
   ClickStmt,
   ConfigFile,
   DefaultsBlock,
@@ -82,7 +82,7 @@ import type {
   TestDecl,
   TextBody,
   TransformExpr,
-  UncheckStmt,
+  UntickStmt,
   UniqueLikeExpr,
   UniquePrefixExpr,
   UploadBody,
@@ -224,9 +224,9 @@ function children(node: Node): readonly Node[] {
     case 'ClickStmt':
     case 'HoverStmt':
     case 'ScrollStmt':
-    case 'UncheckStmt':
-    case 'CheckStmt': {
-      const n = node as ClickStmt | HoverStmt | ScrollStmt | UncheckStmt | CheckStmt;
+    case 'UntickStmt':
+    case 'TickStmt': {
+      const n = node as ClickStmt | HoverStmt | ScrollStmt | UntickStmt | TickStmt;
       return [n.locator];
     }
     case 'FillStmt': {

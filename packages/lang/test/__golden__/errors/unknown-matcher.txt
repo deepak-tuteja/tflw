@@ -4,4 +4,4 @@ error[TF014]: unknown matcher `eq`
 3 |   expect status eq 200
   |                 ^^
   |
-  = help: expected one of: equals, contains, matches, is …, has …
+  = help: expected a value matcher (equals, contains, matches …), `is greater than`/`is less than`, or a state (visible/hidden/enabled/disabled/checked)

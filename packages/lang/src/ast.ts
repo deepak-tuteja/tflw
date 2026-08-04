@@ -308,8 +308,8 @@ export type Step =
   | FillStmt
   | FillFormStmt
   | SelectStmt
-  | CheckStmt
-  | UncheckStmt
+  | TickStmt
+  | UntickStmt
   | PressStmt
   | HoverStmt
   | ScrollStmt
@@ -770,19 +770,24 @@ export interface SelectStmt extends Node {
   readonly value: Value;
 }
 
-/** `check field "Accept terms"` — ticks a checkbox/radio. Grammar note: `check` is also the
- * soft-assertion keyword (`check <subject> <matcher>`); the parser disambiguates by whether a
- * matcher follows the parsed subject — present ⇒ `ExpectStmt(soft: true)`, absent ⇒ `CheckStmt`
- * (SPEC §9.1, checker/parser share this via `parseCheckStep`). */
-export interface CheckStmt extends Node {
-  readonly type: 'CheckStmt';
+/** `tick field "Accept terms"` — ticks a checkbox/radio (FS-04).
+ *
+ * The keyword used to be `check`, which is also the soft-assertion keyword, and the parser
+ * disambiguated on whether a matcher followed the subject — matcher ⇒ `ExpectStmt(soft: true)`,
+ * none ⇒ this node. That was silent: `check text "Order placed"`, written by someone whose model is
+ * "`check` is the soft `expect`", produced a checkbox tick against a text node with no diagnostic
+ * (`A3-07`). `check` is now purely the soft assertion; the action is `tick`/`untick`. Playwright and
+ * Cypress both spell it `check()`, so the migration diagnostic is the teaching surface for anyone
+ * arriving from either. */
+export interface TickStmt extends Node {
+  readonly type: 'TickStmt';
   readonly locator: Locator;
 }
 
-/** `uncheck field "Accept terms"` — never ambiguous with the assertion form (no `uncheck` matcher
- * exists), always an action. */
-export interface UncheckStmt extends Node {
-  readonly type: 'UncheckStmt';
+/** `untick field "Accept terms"` — the counterpart to `tick`, never ambiguous with anything (there
+ * has never been an `untick`/`uncheck` matcher), always an action. */
+export interface UntickStmt extends Node {
+  readonly type: 'UntickStmt';
   readonly locator: Locator;
 }
 
