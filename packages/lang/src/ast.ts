@@ -1297,7 +1297,14 @@ export interface WorkersDecl extends Node {
 
 export interface ReportDecl extends Node {
   readonly type: 'ReportDecl';
-  readonly dir: string;
+  /** The `StringLit`, not its flattened `.value` (M74, review finding A2-12). Every sibling path
+   * directive — `CertDecl.path`, `KeyDecl.path`, `WebDecl.url`, `ApiServiceDecl.url`,
+   * `ExcludeDecl.paths`, `HeaderDecl.name` — keeps one; this alone discarded it, and `ast.ts` is
+   * re-exported wholesale from `index.ts`, so `dir: string` was about to freeze as public API with
+   * the string's `parts` gone. Keeping the literal is what leaves `report "./out-{BUILD_ID}"`
+   * reachable later; today, like every other config path, it resolves by `.value` and does not
+   * interpolate. */
+  readonly dir: StringLit;
 }
 
 export interface WebDecl extends Node {

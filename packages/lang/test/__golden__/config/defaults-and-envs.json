@@ -48,7 +48,16 @@
       },
       {
         "type": "ReportDecl",
-        "dir": "./report"
+        "dir": {
+          "type": "StringLit",
+          "value": "./report",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "./report"
+            }
+          ]
+        }
       }
     ]
   },

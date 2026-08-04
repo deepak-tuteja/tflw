@@ -1381,7 +1381,7 @@ class Parser {
     const dir = this.expectString('a report directory string, e.g. `report "./report"`');
     if (!dir) return null;
     this.endLine();
-    return { type: 'ReportDecl', dir: dir.value, span: this.spanFrom(start) };
+    return { type: 'ReportDecl', dir, span: this.spanFrom(start) };
   }
 
   private parseWebDecl(): WebDecl | null {

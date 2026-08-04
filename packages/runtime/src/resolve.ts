@@ -80,7 +80,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
           workers = entry.count;
           break;
         case 'ReportDecl':
-          reportDir = entry.dir;
+          reportDir = entry.dir.value;
           break;
         case 'InsecureDecl':
           insecure = entry.value;
