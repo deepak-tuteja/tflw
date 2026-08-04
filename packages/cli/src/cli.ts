@@ -17,6 +17,7 @@ import {
   renderDiagnostics,
   checkProgram,
   checkSessionServices,
+  checkAllowHostsCoversBaseUrls,
   suggest,
   detectReuse,
   renderCallSiteReplacement,
@@ -834,8 +835,10 @@ async function loadAndValidate(
 
   // 2. Select the active env and resolve the concrete settings.
   let resolved;
+  let activeEnvBlock;
   try {
     const envBlock = selectEnv(parsedConfig.config, { flag: envFlag, envVar: process.env.TFLW_ENV });
+    activeEnvBlock = envBlock;
     resolved = resolveConfig(parsedConfig.config, envBlock);
   } catch (e) {
     if (e instanceof ConfigError) {
@@ -853,9 +856,15 @@ async function loadAndValidate(
   // Validate `api <service>` references inside `session` blocks against the active env's declared
   // services (decision 66) — a config-level check, done once (not per test file, unlike the
   // per-file `checkServices` below), since `session` blocks live in `tflw.config`, not a test file.
-  const sessionServiceDiags = checkSessionServices(parsedConfig.config.sessions, Object.keys(resolved.services));
-  if (sessionServiceDiags.length > 0) {
-    process.stderr.write(renderDiagnostics(sessionServiceDiags, configText, { filename: 'tflw.config', color }) + '\n');
+  // `allow hosts` vs. the active env's own base URLs (M85, `TF036`) joins it for the same reason
+  // and with the same scope — it is a `tflw.config` rule about the env that was just selected, not
+  // about every env the file happens to declare (see `checkAllowHostsCoversBaseUrls`).
+  const configEnvDiags = [
+    ...checkSessionServices(parsedConfig.config.sessions, Object.keys(resolved.services)),
+    ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
+  ];
+  if (configEnvDiags.length > 0) {
+    process.stderr.write(renderDiagnostics(configEnvDiags, configText, { filename: 'tflw.config', color }) + '\n');
     return EXIT_USAGE;
   }
 

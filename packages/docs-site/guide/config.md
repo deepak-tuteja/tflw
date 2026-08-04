@@ -91,16 +91,31 @@ alongside it.
 
 ## Host allowlist — an anti-pointed-at-prod guardrail
 
-```tflw-config fragment
+```tflw-config
 defaults
   allow hosts "api.example.com", "*.staging.example.com"
+
+env staging default
+  api "https://api.staging.example.com"
+  allow hosts "billing-staging.example.com"
 ```
 
 Refuses to send a request to any host not explicitly listed — enforced before any network I/O, so
 a violation never even opens a connection. `*.domain` matches that suffix or the bare domain;
-never declaring `allow hosts` means no enforcement at all (the unchanged default). Covers every
-real network call a run makes, including an `oauth2` session's token request and a
-`matches schema ... from ...` contract fetch (see [Assertions in depth](/guide/assertions)) — not
-just ordinary `api` steps.
+never declaring `allow hosts` means no enforcement at all (the unchanged default). The list
+accumulates: a baseline in `defaults`, extended per env.
+
+Covers every real network call a run makes — every `api` step on every client path, an `oauth2`
+session's token request, a `matches schema ... from ...` contract fetch (see
+[Assertions in depth](/guide/assertions)), **every hop of a redirect chain**, and **every request
+the browser makes**, including the page's own XHR calls and not just what you `open`. A
+[`stub`](/guide/browser-advanced#network-observation-stub-mocking)bed request is answered locally
+and never reaches the network, so the list
+doesn't apply to it.
+
+If the env you're running has an `api`/`web` base URL that isn't on its own list, `tflw check` says
+so (`TF036`) rather than letting every step fail identically at run time. It checks the env you
+selected, not every env in the file — so a suite can keep a deliberately-blocked env around as the
+negative-case fixture for this feature, and only hears about it when it actually runs that env.
 
 Full reference: [SPEC.md §3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#3-the-config-dialect--tflwconfig-p27-31).

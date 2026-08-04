@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { Locator as LocatorAst, LocatorKind } from '@tflw/lang';
 import { RuntimeError, evalValue, type EvalCtx } from './eval.js';
+import { allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { inferContentType } from './mime.js';
 import { computePlatformKey } from './snapshot.js';
 import type { ScreenshotAsset, TraceAsset } from './types.js';
@@ -174,9 +175,20 @@ export class BrowserPageState {
    * keeping, and that question shouldn't be reachable when the archive must not exist. Defaults to
    * `true` so a hand-built harness (and `browser-steps.test.ts`) behaves as it did before FS-01. */
   private readonly captureBinaryEvidence: boolean;
+  /** This env's `allow hosts` list (SPEC §3.7), or `null` for no enforcement. M85, review finding
+   * `B4-03`: the guardrail whose stated purpose is anti-pointed-at-prod had **three** call sites,
+   * all in `interpreter.ts`, all on the API half — so one run, one config, one host would refuse
+   * `api other GET /echo` and then happily `open` a page on that same host. The browser is the half
+   * of the tool most likely to be aimed at a real environment by accident, and it was the half with
+   * no guard at all. */
+  private readonly allowHosts: readonly string[] | null;
+  /** The first request this attempt refused, kept until a step boundary reads it (see
+   * `takeHostRefusal`). */
+  private hostRefusal: string | null = null;
 
-  constructor(captureBinaryEvidence = true) {
+  constructor(captureBinaryEvidence = true, allowHosts: readonly string[] | null = null) {
     this.captureBinaryEvidence = captureBinaryEvidence;
+    this.allowHosts = allowHosts;
   }
   /** Set by `accept dialog`/`dismiss dialog` — armed for exactly the next native dialog, then
    * cleared (SPEC §9.1). */
@@ -201,6 +213,68 @@ export class BrowserPageState {
    * an opaque/binary payload) still gets logged for `was made`, just with a null body. Errors here
    * must never propagate — a network-capture bug can't be allowed to crash an otherwise-passing
    * browser step. */
+  /** `allow hosts` for the browser half (M85, `B4-03`). One blanket context route, registered
+   * before the first page exists, so nothing this context sends can get out ahead of it.
+   *
+   * **Scope: every request, not just navigations.** SPEC §3.7 says "covers every real network call
+   * a run makes", and the modern shape of pointing a test at prod isn't a `open "https://prod…"` —
+   * it's a staging page whose bundle calls `https://api.prod…` over XHR. Guarding navigation alone
+   * would leave exactly that case open while reading as covered.
+   *
+   * `route.abort()` is what makes this a guardrail rather than a report: the request is refused in
+   * the browser, before a connection, which is the same promise the API half keeps.
+   *
+   * Registered **only** when a list is actually declared. Routing every request through a handler
+   * is not free — it disables some of the browser's own fast paths and is observable in timing —
+   * and a run that never wrote `allow hosts` must behave exactly as it did before this milestone.
+   * The same opt-in split `http.ts#mustFollowByHand` makes, for the same reason.
+   *
+   * Page-level routes (`stub`, SPEC §9.6) are registered later and on the page, and Playwright runs
+   * page routes ahead of context routes — so a stubbed call is fulfilled locally and never reaches
+   * this handler. That ordering is the correct semantics, not a loophole: a stubbed request is not
+   * a real network call, and `allow hosts` is about real ones. */
+  private async wireAllowHostsGuard(context: PWBrowserContext): Promise<void> {
+    const allowHosts = this.allowHosts;
+    if (!allowHosts || allowHosts.length === 0) return;
+    await context.route('**/*', async (route) => {
+      const request = route.request();
+      const url = request.url();
+      if (isHostAllowed(url, allowHosts)) {
+        // `route.continue()`, not `route.fallback()`. `fallback()` defers to the *next matching
+        // handler*, and this guard is registered first, at context creation, so at the moment it
+        // runs there is by construction nothing left to defer to — the request simply never went
+        // out, and a run with `allow hosts` declared could not load an allowed page either.
+        // Verified, not assumed: with `fallback()` the allowed-host repro failed identically to the
+        // blocked one.
+        await route.continue();
+        return;
+      }
+      // First one only: a blocked page typically retries or cascades (a failed bundle takes its
+      // API calls with it), and the tenth refusal explains nothing the first didn't.
+      this.hostRefusal ??= allowHostsRefusal(url, allowHosts, {
+        kind: 'browser',
+        navigation: request.isNavigationRequest(),
+        pageUrl: request.frame()?.url() || '(not yet loaded)',
+        resourceType: request.resourceType(),
+      });
+      await route.abort('blockedbyclient');
+    });
+  }
+
+  /** The refusal to raise, if this attempt has one pending, clearing it as it's read (M85).
+   *
+   * A refusal can't simply throw from the route handler — the handler runs on Playwright's own
+   * event loop, with no step to attach a failure to. So it's recorded there and collected at the
+   * next step boundary (`execSteps`), which covers both shapes: a *navigation* that was blocked
+   * makes `page.goto` reject with a bare `net::ERR_FAILED`, and this is what replaces that with the
+   * reason; a blocked *subresource* fails nothing on its own, and this is what keeps it from
+   * passing silently into a confusing downstream assertion. */
+  takeHostRefusal(): string | null {
+    const refusal = this.hostRefusal;
+    this.hostRefusal = null;
+    return refusal;
+  }
+
   private wireNetworkCapture(page: PWPage): void {
     page.on('response', (response) => {
       void this.captureResponse(response).catch(() => {});
@@ -253,6 +327,7 @@ export class BrowserPageState {
       // it's worth keeping (failure, or a retry attempt), discarding it otherwise. `sources: true`
       // lets a trace viewer show the actual `.tflw` source alongside the DOM/network timeline.
       // Below `evidence full` it never starts at all (FS-01) — see `captureBinaryEvidence`.
+      await this.wireAllowHostsGuard(this.context);
       if (this.captureBinaryEvidence) await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();
       this.wireDialogHandler(page);

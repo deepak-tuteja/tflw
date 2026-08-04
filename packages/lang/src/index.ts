@@ -29,6 +29,7 @@ export {
   validateConfig,
   checkServices,
   checkSessionServices,
+  checkAllowHostsCoversBaseUrls,
   checkDataTables,
   checkSessions,
   checkActionDecls,
@@ -36,6 +37,7 @@ export {
   checkRequestAssertions,
   checkWorkloadTests,
 } from './checker.js';
+export { hostMatchesAllowPattern } from './allowHostsPattern.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
 export { getCompletionContext } from './completion.js';
 export { collectSemanticTokens, type SemanticToken, type SemanticTokenType } from './semanticTokens.js';

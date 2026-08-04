@@ -15,6 +15,8 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuntimeError } from './eval.js';
+import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
+import { MAX_REDIRECTS, isRedirectStatus, nextRedirectHop } from './redirect.js';
 import type { ResponseTrace } from './types.js';
 import type { SendRequestOptions } from './http.js';
 
@@ -28,6 +30,10 @@ type MtlsRequestMessage = {
   readonly timeoutMs: number;
   readonly followRedirects: boolean;
   readonly mtls: { readonly cert: string; readonly key: string };
+  /** SPEC §3.7, carried across the process boundary so the child can guard its own redirect hops
+   * (M85, C1/`B4-02`) — the third client path, and the one easiest to forget precisely because it
+   * runs somewhere else. */
+  readonly allowHosts?: readonly string[] | null;
 };
 
 type MtlsWorkerFromParentMessage = MtlsRequestMessage;
@@ -45,7 +51,7 @@ type MtlsWorkerToParentMessage =
       readonly json: unknown;
       readonly durationMs: number;
     }
-  | { readonly type: 'error'; readonly id: number; readonly message: string; readonly timedOut: boolean; readonly code?: string };
+  | { readonly type: 'error'; readonly id: number; readonly message: string; readonly timedOut: boolean; readonly code?: string; readonly refused?: boolean };
 
 /** Server side — runs inside the forked child (`mtlsWorkerEntry.ts`), never in the main process.
  * `undici` is imported here, and *only* here — this file's whole reason to exist. */
@@ -75,14 +81,38 @@ export async function runMtlsWorkerProcess(): Promise<void> {
       const agent = new Agent({ connect: mtlsConnectOptions(msg.mtls) });
       const start = performance.now();
       try {
-        const res = await undiciFetch(msg.url, {
-          method: msg.method,
-          headers: msg.headers,
-          body: msg.body,
-          signal: controller.signal,
-          redirect: msg.followRedirects ? 'follow' : 'manual',
-          dispatcher: agent,
-        });
+        // Same conditional split as the pooled path (`http.ts#mustFollowByHand`): without an
+        // `allow hosts` list this stays one native `redirect: 'follow'` call; with one, the chain
+        // is walked a hop at a time so the list can be checked before each connection (M85,
+        // C1/`B4-02`). The hop decision itself comes from `redirect.ts` — shared with the other two
+        // clients, because three clients silently disagreeing about redirects is review cluster C2
+        // and this milestone must not add a fourth opinion to it.
+        const guarded = msg.followRedirects && !!msg.allowHosts && msg.allowHosts.length > 0;
+        let res!: Awaited<ReturnType<typeof undiciFetch>>;
+        if (!guarded) {
+          res = await undiciFetch(msg.url, {
+            method: msg.method,
+            headers: msg.headers,
+            body: msg.body,
+            signal: controller.signal,
+            redirect: msg.followRedirects ? 'follow' : 'manual',
+            dispatcher: agent,
+          });
+        } else {
+          let current: { url: string; method: string; headers: Record<string, string>; body?: string } = { url: msg.url, method: msg.method, headers: msg.headers, body: msg.body };
+          for (let redirects = 0; ; redirects++) {
+            res = await undiciFetch(current.url, { method: current.method, headers: current.headers, body: current.body, signal: controller.signal, redirect: 'manual', dispatcher: agent });
+            const location = res.headers.get('location');
+            if (!isRedirectStatus(res.status) || !location || redirects >= MAX_REDIRECTS) break;
+            const hop = nextRedirectHop(current, res.status, location);
+            await res.arrayBuffer().catch(() => undefined); // release the socket either way
+            if (!isHostAllowed(hop.url, msg.allowHosts)) {
+              process.send?.({ type: 'error', id, message: allowHostsRefusal(hop.url, msg.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }), timedOut: false, refused: true } satisfies MtlsWorkerToParentMessage);
+              return;
+            }
+            current = { url: hop.url, method: hop.method, headers: hop.headers, body: hop.dropBody ? undefined : current.body };
+          }
+        }
         const bodyBytes = Buffer.from(await res.arrayBuffer());
         const bodyText = bodyBytes.toString('utf8');
         const durationMs = Math.round(performance.now() - start);
@@ -160,7 +190,12 @@ function getChild(): ChildProcess {
       // shape `sendRequest`'s own non-mTLS catch block already expects — `http.ts` formats the
       // final user-facing message the same way for both paths (`fetchErrorHint`, the "timed out
       // after Nms" text), rather than duplicating that formatting here.
-      const e = Object.assign(new Error(msg.message), { timedOut: msg.timedOut, cause: msg.code ? { code: msg.code } : undefined });
+      // …except an `allow hosts` refusal (M85), which isn't a transport failure to be formatted —
+      // it's a finished sentence about a request that was deliberately never sent. A `RuntimeError`
+      // is `sendRequest`'s signal to re-throw verbatim rather than wrap.
+      const e = msg.refused
+        ? new AllowHostsError(msg.message)
+        : Object.assign(new Error(msg.message), { timedOut: msg.timedOut, cause: msg.code ? { code: msg.code } : undefined });
       entry2.reject(e);
     }
   });
@@ -180,7 +215,7 @@ export async function sendMtlsRequest(opts: SendRequestOptions & { readonly mtls
   await readyPromise;
   const id = nextId++;
   const result = new Promise<ResponseTrace>((resolve, reject) => pending.set(id, { resolve, reject }));
-  c.send({ type: 'request', id, method: opts.method, url: opts.url, headers: opts.headers, body: opts.body as unknown as string | undefined, timeoutMs: opts.timeoutMs, followRedirects: opts.followRedirects, mtls: opts.mtls } satisfies MtlsRequestMessage);
+  c.send({ type: 'request', id, method: opts.method, url: opts.url, headers: opts.headers, body: opts.body as unknown as string | undefined, timeoutMs: opts.timeoutMs, followRedirects: opts.followRedirects, mtls: opts.mtls, allowHosts: opts.allowHosts ?? null } satisfies MtlsRequestMessage);
   return result;
 }
 

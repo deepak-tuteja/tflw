@@ -70,6 +70,7 @@ export const Codes = {
   LOAD_INVALID: 'TF033',
   THRESHOLD_SCOPE_UNKNOWN: 'TF034',
   DUPLICATE_ACTION: 'TF035',
+  ALLOW_HOSTS_EXCLUDES_BASE_URL: 'TF036',
 } as const;
 
 // ---------------------------------------------------------------------------

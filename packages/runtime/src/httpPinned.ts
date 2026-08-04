@@ -14,6 +14,8 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import { RuntimeError } from './eval.js';
 import { fetchErrorHint } from './http.js';
+import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
+import { MAX_REDIRECTS, isRedirectStatus, nextRedirectHop } from './redirect.js';
 import type { ResponseTrace } from './types.js';
 
 export interface PinnedAgents {
@@ -42,6 +44,10 @@ export interface PinnedSendOptions {
   readonly body?: string;
   readonly timeoutMs: number;
   readonly followRedirects: boolean;
+  /** This env's `allow hosts` list, or `null`/absent for no enforcement (SPEC §3.7). The caller
+   * has already checked the URL it composed; what this loop adds is every hop after it (M85,
+   * C1/`B4-02`). */
+  readonly allowHosts?: readonly string[] | null;
 }
 
 const warnedFallbacks = new Set<string>();
@@ -77,38 +83,12 @@ function buildHeaderMap(resHeaders: http.IncomingHttpHeaders): Record<string, st
   return headers;
 }
 
-/** Fetch §4.4 "HTTP-redirect fetch" deletes these from the request's header list when the redirect
- * leaves the request's origin, and Node's own `fetch` (undici) implements exactly this list —
- * `authorization` and `proxy-authorization` as authentication entries, `cookie` and `host` as
- * forbidden request-headers. The pooled path gets that for free from `redirect: 'follow'`; this
- * file's manual loop has to do it by hand, and until M80 didn't (B4-01, S1): the *same* step, with
- * the same `header "Authorization" is …`, disclosed the credential to the redirect target when it
- * ran under a workload and withheld it when it didn't. Which client a step runs on is a
- * performance decision (`run N iterations` selects this one); it must not be a
- * credential-disclosure decision. */
-const CROSS_ORIGIN_STRIPPED_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'host']);
-
-/** Scheme + host + port, the comparison Fetch makes. An opaque origin (`URL.origin === 'null'`,
- * i.e. any non-http(s) scheme) is never same-origin with anything, including another opaque one —
- * so a redirect to such a target strips rather than forwards. */
-function isSameOrigin(a: URL, b: URL): boolean {
-  return a.origin === b.origin && a.origin !== 'null';
-}
-
-/** Fetch's "request-body header name" list, deleted when a 301/302/303 drops the body on the way to
- * a bodyless GET. `content-length` isn't on Fetch's own list only because `fetch` derives it from
- * the body it just nulled and so can't emit a stale one; this loop takes `content-length` from the
- * caller's header map when one is set explicitly, so it has to be dropped by name to reach the same
- * wire result (B4-13). */
-const DOWNGRADE_STRIPPED_HEADERS = new Set(['content-encoding', 'content-language', 'content-location', 'content-type', 'content-length']);
-
-function stripHeaders(headers: Record<string, string>, drop: ReadonlySet<string>): Record<string, string> {
-  const kept: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    if (!drop.has(key.toLowerCase())) kept[key] = value;
-  }
-  return kept;
-}
+// The redirect decision this loop used to own — `CROSS_ORIGIN_STRIPPED_HEADERS`,
+// `DOWNGRADE_STRIPPED_HEADERS`, `isSameOrigin`, the 301/302/303-vs-307/308 split and the hop cap —
+// moved verbatim to `redirect.ts` in M85, unchanged. It was written here because `node:http` never
+// auto-follows a 3xx and so this file had to make the calls `fetch` makes for the pooled path; the
+// pooled path now has to make them too whenever `allow hosts` is enforced (C1/`B4-02`), and one
+// shared statement is the only way the two stay the same answer.
 
 function isTimeoutError(err: unknown): boolean {
   const e = err as { name?: string; code?: string };
@@ -196,19 +176,17 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
     const bodyBytes = Buffer.concat(chunks);
     const status = res.statusCode ?? 0;
 
-    if (current.followRedirects && status >= 300 && status < 400 && res.headers.location && redirects < 20) {
-      const nextUrl = new URL(res.headers.location, url);
-      const downgrade = status === 303 || ((status === 301 || status === 302) && current.method === 'POST');
-      let nextHeaders = current.headers;
-      if (!isSameOrigin(url, nextUrl)) nextHeaders = stripHeaders(nextHeaders, CROSS_ORIGIN_STRIPPED_HEADERS);
-      if (downgrade) nextHeaders = stripHeaders(nextHeaders, DOWNGRADE_STRIPPED_HEADERS);
-      current = {
-        ...current,
-        url: nextUrl.toString(),
-        headers: nextHeaders,
-        method: downgrade ? 'GET' : current.method,
-        body: downgrade ? undefined : current.body,
-      };
+    if (current.followRedirects && isRedirectStatus(status) && res.headers.location && redirects < MAX_REDIRECTS) {
+      const hop = nextRedirectHop(current, status, res.headers.location);
+      // The guardrail, one hop at a time (M85, C1/`B4-02`). `execApi` checked the URL *this step
+      // names*; nothing checked where a 3xx then sent it, so an allowlisted staging host that
+      // redirects to prod reached prod on both client paths. Refusing here is what makes SPEC
+      // §3.7's "no connection ever attempted" true of the whole chain and not just its first link:
+      // the next `lib.request` never happens.
+      if (!isHostAllowed(hop.url, current.allowHosts)) {
+        throw new AllowHostsError(allowHostsRefusal(hop.url, current.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }));
+      }
+      current = { ...current, url: hop.url, headers: hop.headers, method: hop.method, body: hop.dropBody ? undefined : current.body };
       continue;
     }
 

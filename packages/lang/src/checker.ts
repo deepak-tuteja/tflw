@@ -10,6 +10,7 @@ import type {
   ApiRequestSpec,
   ConfigEntry,
   ConfigFile,
+  EnvBlock,
   ExpectStmt,
   NetworkRequestRef,
   PathSegment,
@@ -24,6 +25,7 @@ import type {
 } from './ast.js';
 import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
+import { hostMatchesAllowPattern } from './allowHostsPattern.js';
 import { parseStringParts } from './parser.js';
 
 /** What a caller of `checkProgram` knows about the project around the file being checked. Each
@@ -128,6 +130,108 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
   }
 
   return diags;
+}
+
+/** The **active** env's own base URLs, checked against its own `allow hosts` list (M85, review
+ * finding `A4-10`, `TF036`).
+ *
+ * Both values are literals, in the same file, available in one pass — and an allowlist that
+ * excludes the env's own `api` base URL is not a subtle mistake, it is a config in which *every
+ * request in the suite* fails identically:
+ *
+ *     env local default
+ *       api "http://127.0.0.1:9099"
+ *       allow hosts "example.com"
+ *
+ * `tflw check` used to say "no problems found" over that, and `tflw run` then produced one
+ * excellent runtime message per step — thousands of times in a large suite, for one config line
+ * that could have been read once.
+ *
+ * **Why this takes an `EnvBlock` and not the whole `ConfigFile`.** The first cut checked every env
+ * and ran once inside `validateConfig`; the cross-repo gate is what showed that to be wrong.
+ * `testFlow-tests` declares `env allowHostsBlocked` whose list deliberately excludes its own base
+ * URL — it is the negative-case fixture proving a real, reachable host gets refused — so one
+ * intentional env reddened `tflw check` for that whole suite whichever env you actually selected.
+ * Env-scoping isn't a concession to that fixture: it is how the rest of the checker already works
+ * (`checkServices`, `checkSessionServices` and the `knownServices` opt all validate against the
+ * *active* env), so checking every env was the inconsistent choice. The cost is that a
+ * contradiction in an env nobody selects ships quietly until someone selects it — at which point
+ * this fires, before any request is sent.
+ *
+ * The rule is otherwise deliberately narrow, because being wrong here means refusing a config that
+ * works:
+ * - **Only base URLs declared in the config itself** (`api`, `api <service>`, `web`). A URL a test
+ *   composes at runtime is not decidable here and is left to the runtime, where it belongs.
+ * - **Only fully literal URLs.** `api "https://{API_HOST}/v1"` interpolates an env var; what its
+ *   hostname will be is exactly what this pass cannot know, so it is skipped rather than guessed
+ *   at (the same conservatism `TF030` states for variables).
+ * - **`allow hosts` accumulates across `defaults` + `env`** (SPEC §3.7). Checking an env against
+ *   only its own block would flag every config that keeps its baseline list in `defaults` — the
+ *   arrangement the SPEC actually recommends.
+ *
+ * The matcher is `hostMatchesAllowPattern`, imported from the same module the runtime enforces
+ * with. Two copies of a matching rule is how a checker comes to bless a config the runtime then
+ * refuses — which is this finding, one level down. */
+export function checkAllowHostsCoversBaseUrls(config: ConfigFile, env: EnvBlock): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const baseline = config.defaults ? allowHostPatterns(config.defaults.entries) : [];
+  const patterns = [...baseline, ...allowHostPatterns(env.entries)];
+  if (patterns.length === 0) return diags; // never declared anywhere: no enforcement at all (SPEC §3.7)
+
+  for (const entry of env.entries) {
+    const url = baseUrlLiteral(entry);
+    if (!url) continue;
+    const hostname = literalHostname(url.lit);
+    if (hostname === null) continue; // interpolated or unparseable — not decidable here
+    if (patterns.some((p) => hostMatchesAllowPattern(hostname, p))) continue;
+    diags.push({
+      code: Codes.ALLOW_HOSTS_EXCLUDES_BASE_URL,
+      severity: 'error',
+      message: `env \`${env.name}\`'s \`${url.key}\` base URL is "${url.lit.value}", whose host "${hostname}" is not in its own \`allow hosts\` (${patterns.join(', ')})`,
+      span: url.lit.span,
+      // Which of the two lines is the wrong one is genuinely the author's call — the allowlist
+      // may be the typo, or the base URL may be. Naming both, and the consequence, is the honest
+      // shape (C7/M84: say what happened, and don't recommend an edit that isn't obviously the
+      // intended one).
+      hint: `${url.consequence} — add "${hostname}" to \`allow hosts\`, or point \`${url.key}\` at a host that is already on the list`,
+    });
+  }
+  return diags;
+}
+
+function allowHostPatterns(entries: readonly ConfigEntry[]): string[] {
+  return entries.flatMap((e) => (e.type === 'AllowHostsDecl' ? e.hosts.map((h) => h.value) : []));
+}
+
+/** The config's own declared base URLs, with the key name to quote back at the author and the
+ * consequence *that key* actually has.
+ *
+ * The three differ and the hint must not flatten them: only the default `api` base makes it true
+ * that every request in the suite is refused. A named service takes its own calls down and leaves
+ * the rest of the suite running, and `web` takes the browser half. Saying "every request" for all
+ * three would be the C7 failure — a diagnostic asserting more than it knows — on the one line the
+ * author is meant to act on. */
+function baseUrlLiteral(entry: ConfigEntry): { readonly key: string; readonly lit: StringLit; readonly consequence: string } | null {
+  if (entry.type === 'WebDecl') {
+    return { key: 'web', lit: entry.url, consequence: 'every browser step in this env would be refused before it navigates' };
+  }
+  if (entry.type === 'ApiServiceDecl') {
+    return entry.service === null
+      ? { key: 'api', lit: entry.url, consequence: 'every request against this env would be refused before it is sent' }
+      : { key: `api ${entry.service}`, lit: entry.url, consequence: `every \`api ${entry.service}\` request would be refused before it is sent` };
+  }
+  return null;
+}
+
+/** The hostname of a *fully literal* URL, or `null` if any part of it interpolates or it doesn't
+ * parse as a URL at all. Both cases mean "this pass cannot decide", never "this is wrong". */
+function literalHostname(lit: StringLit): string | null {
+  if (lit.parts.some((p) => p.kind !== 'text')) return null;
+  try {
+    return new URL(lit.value).hostname || null;
+  } catch {
+    return null;
+  }
 }
 
 /**

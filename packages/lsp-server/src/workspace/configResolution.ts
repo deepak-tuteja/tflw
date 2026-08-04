@@ -9,7 +9,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parseConfigSource, checkSessionServices, collectConfigSymbols, type ConfigFile, type Diagnostic, type SymbolTable } from '@tflw/lang';
+import { parseConfigSource, checkSessionServices, checkAllowHostsCoversBaseUrls, collectConfigSymbols, type ConfigFile, type Diagnostic, type SymbolTable } from '@tflw/lang';
 import { ConfigError, selectEnv, resolveConfig, type ResolvedConfig } from '@tflw/runtime';
 
 /** Synthetic code for a project-level resolution failure (no active env, `--env`-equivalent
@@ -51,7 +51,12 @@ export async function loadProjectConfig(root: string, envSetting: string | undef
   try {
     const envBlock = selectEnv(parsed.config, { flag: undefined, envVar: envSetting ?? process.env.TFLW_ENV });
     resolved = resolveConfig(parsed.config, envBlock);
-    sessionServiceDiags = checkSessionServices(parsed.config.sessions, Object.keys(resolved.services));
+    sessionServiceDiags = [
+      ...checkSessionServices(parsed.config.sessions, Object.keys(resolved.services)),
+      // `TF036` (M85) is env-scoped for the same reason every check here is: the editor squiggles
+      // the env this workspace actually resolves to (`tflw.env`), not every env in the file.
+      ...checkAllowHostsCoversBaseUrls(parsed.config, envBlock),
+    ];
   } catch (e) {
     if (e instanceof ConfigError) resolutionError = e.message;
     else throw e;

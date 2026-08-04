@@ -49,6 +49,14 @@ before(async () => {
   server = createServer(
     { key: readFileSync(serverKey), cert: readFileSync(serverCert), ca: readFileSync(caCert), requestCert: true, rejectUnauthorized: true },
     (req, res) => {
+      // M85 (review cluster C1 / `B4-02`): one route that hands the client to a host no allowlist
+      // here names, so the mTLS worker's own redirect loop can be shown refusing a hop. `.invalid`
+      // is reserved by RFC 2606 and never resolves — which costs nothing, because a refused hop is
+      // refused before any resolution is attempted.
+      if (req.url === '/redirect-to-unlisted') {
+        res.writeHead(302, { location: 'https://unlisted.invalid/landing' }).end();
+        return;
+      }
       const peerCert = (req.socket as TLSSocket).getPeerCertificate();
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ clientCn: peerCert.subject?.CN ?? null }));
     },
@@ -143,6 +151,32 @@ test('the same client cert is reused across requests, not re-read from disk ever
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   assert.equal(report.tests.length, 2);
+});
+
+// M85 (review cluster C1 / `B4-02`) — the third client path. `allow hosts` is enforced in the
+// forked worker, not the parent, because the parent has no seam between hops here either; the
+// refusal then has to survive the IPC error channel, which re-frames what it carries as a
+// transport failure for every *other* error it forwards.
+test('the mTLS worker refuses a redirect hop to an unlisted host, and says why across the process boundary', async () => {
+  const config = { ...testConfig(baseUrl), mtls: { certPath: clientCertPath, keyPath: clientKeyPath }, allowHosts: ['127.0.0.1'] };
+  const source = `test "redirected away"\n  api GET /redirect-to-unlisted\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /redirected to "https:\/\/unlisted\.invalid\/landing"/);
+  assert.match(error, /host "unlisted\.invalid" is not in `allow hosts` \(127\.0\.0\.1\)/);
+  assert.doesNotMatch(error, /request failed/, 'a refusal is the finished sentence, not a transport failure to re-frame');
+});
+
+test('an allowed host on the mTLS path is unaffected by declaring `allow hosts`', async () => {
+  const config = { ...testConfig(baseUrl), mtls: { certPath: clientCertPath, keyPath: clientKeyPath }, allowHosts: ['127.0.0.1'] };
+  const source = `test "health check"\n  api GET /health\n  expect status equals 200\n  expect body.clientCn equals "tflw-test-client"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 });
 
 test('`cert` without a matching `key` is rejected once `defaults`+`env` are merged (decision 3b)', () => {

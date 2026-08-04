@@ -6,6 +6,8 @@
 
 import { RuntimeError } from './eval.js';
 import { sendMtlsRequest } from './mtlsWorker.js';
+import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
+import { MAX_REDIRECTS, isRedirectStatus, nextRedirectHop } from './redirect.js';
 import type { ResponseTrace } from './types.js';
 
 export interface SendRequestOptions {
@@ -24,6 +26,54 @@ export interface SendRequestOptions {
    * (decision 13) — `package.json` for the *published* `tflw` CLI still has zero runtime deps;
    * this package itself is only ever consumed pre-bundle. */
   readonly mtls?: { readonly cert: string; readonly key: string };
+  /** This env's `allow hosts` list, or `null`/absent for no enforcement (SPEC §3.7). Present only
+   * so redirect *hops* can be checked (M85, C1/`B4-02`) — the URL the caller composed is still
+   * checked by the caller, before this function is reached at all. */
+  readonly allowHosts?: readonly string[] | null;
+}
+
+/** Whether this request has to follow its redirect chain by hand instead of letting `fetch` do it.
+ *
+ * `redirect: 'follow'` is a single `await` with no seam between hops, so there is nowhere to ask
+ * "is *this* host allowed" before the connection to it — which is why `allow hosts` covered the URL
+ * a step named and nothing the server then sent it to. Owning the loop is the only way to get that
+ * seam, and owning the loop means restating what `fetch` decides for us (`redirect.ts`).
+ *
+ * So it is deliberately conditional: a run with no `allow hosts` — every run today, since the key
+ * is opt-in — keeps native `redirect: 'follow'` byte for byte, and only a run that asked to be
+ * guarded pays for being guarded. The cost of that split is that it *is* a split, and a guardrail
+ * that quietly changes how requests are made is its own kind of surprise; `allow-hosts.test.ts`
+ * pins the two paths against each other on the same chain (same status, headers, body, method
+ * downgrade, credential stripping) so "guarded" can't come to mean "different". */
+function mustFollowByHand(opts: SendRequestOptions): boolean {
+  return opts.followRedirects && !!opts.allowHosts && opts.allowHosts.length > 0;
+}
+
+/** `redirect: 'follow'`, re-done a hop at a time with the allowlist checked between hops. Returns
+ * the final response, exactly as `fetch` would have — the chain's own bookkeeping (method
+ * downgrade, cross-origin header stripping, the 20-hop cap) comes from `redirect.ts`, shared with
+ * the pinned path rather than invented here. */
+async function fetchFollowingGuardedRedirects(opts: SendRequestOptions, signal: AbortSignal): Promise<Response> {
+  let current: { url: string; method: string; headers: Record<string, string>; body?: BodyInit } = {
+    url: opts.url,
+    method: opts.method,
+    headers: opts.headers,
+    body: opts.body,
+  };
+  for (let redirects = 0; ; redirects++) {
+    const res = await fetch(current.url, { method: current.method, headers: current.headers, body: current.body, signal, redirect: 'manual' });
+    const location = res.headers.get('location');
+    if (!isRedirectStatus(res.status) || !location || redirects >= MAX_REDIRECTS) return res;
+    const hop = nextRedirectHop(current, res.status, location);
+    if (!isHostAllowed(hop.url, opts.allowHosts)) {
+      // Drained before throwing: this hop's own response is a 3xx we are choosing not to follow,
+      // and leaving its body unread holds the socket open for the rest of the process.
+      await res.arrayBuffer().catch(() => undefined);
+      throw new AllowHostsError(allowHostsRefusal(hop.url, opts.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }));
+    }
+    await res.arrayBuffer().catch(() => undefined);
+    current = { url: hop.url, method: hop.method, headers: hop.headers, body: hop.dropBody ? undefined : current.body };
+  }
 }
 
 /** `Headers.forEach` already Fetch-spec-combines every repeated header with `, ` EXCEPT
@@ -84,6 +134,11 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     try {
       return await sendMtlsRequest({ ...opts, mtls: opts.mtls });
     } catch (err) {
+      // Same exemption as the pooled catch below, and it needs stating twice because this branch
+      // has always had its own `catch` — an `allow hosts` refusal the worker sent back is already
+      // the finished sentence, so wrapping it yields `request failed: … — host "x" is not in …`,
+      // which frames a request that was deliberately never sent as a transport failure.
+      if (err instanceof AllowHostsError) throw err;
       if ((err as { timedOut?: boolean }).timedOut) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
       throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
     }
@@ -92,13 +147,15 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
   const start = performance.now();
   try {
-    const res = await fetch(opts.url, {
-      method: opts.method,
-      headers: opts.headers,
-      body: opts.body,
-      signal: controller.signal,
-      redirect: opts.followRedirects ? 'follow' : 'manual',
-    });
+    const res = mustFollowByHand(opts)
+      ? await fetchFollowingGuardedRedirects(opts, controller.signal)
+      : await fetch(opts.url, {
+          method: opts.method,
+          headers: opts.headers,
+          body: opts.body,
+          signal: controller.signal,
+          redirect: opts.followRedirects ? 'follow' : 'manual',
+        });
     // Single read (gap #17): the body stream can only be consumed once, so `bodyText` is derived
     // from `bodyBytes` rather than a separate `res.text()` call — confirmed behavior-preserving,
     // `Buffer.from(bytes).toString('utf8')` matches `res.text()`'s own `TextDecoder` byte-for-byte,
@@ -115,6 +172,11 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     }
     return { status: res.status, statusText: res.statusText, headers, bodyText, bodyBytes, json, durationMs };
   } catch (err) {
+    // An `allow hosts` refusal from the guarded loop above is already the finished, teachable
+    // message — re-wrapping it as `request failed: … — host "x" is not in …` would bury the one
+    // sentence the author needs behind a transport framing that isn't what happened (no request
+    // failed; one was deliberately not sent).
+    if (err instanceof AllowHostsError) throw err;
     if (controller.signal.aborted) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
     throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
   } finally {

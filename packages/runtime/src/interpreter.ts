@@ -83,6 +83,7 @@ import { parseCsv } from './csv-parse.js';
 import { extractPdfText } from './pdf-text.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
+import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest, warnPinnedFallback, type PinnedAgents } from './httpPinned.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { inferContentType } from './mime.js';
@@ -1859,7 +1860,7 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
   let response: ResponseTrace;
   try {
     checkHostAllowed(tokenUrl, config);
-    response = await sendRequest({ method: 'POST', url: tokenUrl, headers, body, timeoutMs: config.timeouts.step, followRedirects: true });
+    response = await sendRequest({ method: 'POST', url: tokenUrl, headers, body, timeoutMs: config.timeouts.step, followRedirects: true, allowHosts: config.allowHosts });
   } catch (err) {
     const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
     return fail(tc.redactor.redact(message), redactRequest(request, tc.redactor, config));
@@ -2066,7 +2067,7 @@ async function runTestAttempt(
   // (session failure, `before` hook failure, …) — the `finally`'s plain `close()` is only a
   // defensive fallback for the (never-expected) case that something threw before `finish()` ran;
   // `close()` is a no-op once `finish()` already cleared `context` (both methods idempotent).
-  const browserPageState = tc.browserManager ? new BrowserPageState(capturesBinaryEvidence(config)) : undefined;
+  const browserPageState = tc.browserManager ? new BrowserPageState(capturesBinaryEvidence(config), config.allowHosts) : undefined;
   try {
     const result = await runTestAttemptBody(test, config, tc, registry, beforeEach, afterEach, sessionOwnership, name, nameCtx, testStart, steps, browserPageState);
     if (!browserPageState) return result;
@@ -2590,6 +2591,15 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
       }
+      // A browser request this step's page tried to make and `allow hosts` refused (M85,
+      // `B4-03`). The route handler that refused it runs on Playwright's event loop with no step
+      // to fail, so it records and this collects — here, where the step that caused it is still
+      // the current one. A step that otherwise "passed" while its page was denied the network did
+      // not pass; a blocked XHR would otherwise surface several steps later as an unexplained
+      // empty table. Thrown rather than returned so it lands in the `catch` below and picks up the
+      // same failure-evidence handling as any other step failure.
+      const refusalAfter = ctx.browser?.page.takeHostRefusal();
+      if (refusalAfter) throw new AllowHostsError(refusalAfter);
       // Best-effort failure evidence (M3c, D12's "failure-first capture") — attached to whichever
       // step just failed, browser or API (a UI test's API step failing still benefits from seeing
       // page state). `currentPageIfAny()` never creates a browser process for an API-only test that
@@ -2614,7 +2624,11 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         }
       }
     } catch (err) {
-      const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
+      // A blocked *navigation* reaches here as Playwright's own `net::ERR_FAILED` — true, and
+      // useless in exactly the way C11/M84 is about. The refusal is the real reason and it is
+      // already recorded, so it wins over the transport-level symptom (M85, `B4-03`).
+      const refusalDuring = err instanceof AllowHostsError ? null : (ctx.browser?.page.takeHostRefusal() ?? null);
+      const message = refusalDuring ?? (err instanceof RuntimeError ? err.message : `${(err as Error).message}`);
       const redacted = tc.redactor.redact(message);
       let failed = mkStep(stepKind(step), src, step.span, false, stepStart, redacted);
       if (ctx.browser && capturesBinaryEvidence(config)) {
@@ -2775,8 +2789,8 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   if (pinnedAgents !== undefined && !canPin) warnPinnedFallback(mtls ? 'mtls' : 'formdata');
   const sendOnce = (): Promise<ResponseTrace> =>
     canPin
-      ? sendPinnedRequest({ method: spec.method, url, headers, body: sendBody as string | undefined, timeoutMs, followRedirects: spec.followRedirects }, pinnedAgents!)
-      : sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, ...(mtls ? { mtls } : {}) });
+      ? sendPinnedRequest({ method: spec.method, url, headers, body: sendBody as string | undefined, timeoutMs, followRedirects: spec.followRedirects, allowHosts: config.allowHosts }, pinnedAgents!)
+      : sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, allowHosts: config.allowHosts, ...(mtls ? { mtls } : {}) });
   let response = await sendOnce();
 
   // `retry honoring "Retry-After" up to N` (SPEC §5.1, PLAN decision 102b, enterprise arc
@@ -3556,24 +3570,16 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null): { val
 // ---- request/response building & redaction ---------------------------------
 
 /** `allow hosts` (SPEC §3.7, PLAN decision 101a, enterprise arc cluster 2) — rejected before any
- * network I/O so a misconfigured test can never actually reach an unlisted host, not even once. A
- * `null` `allowHosts` means the key was never declared: no enforcement, backward compatible. */
+ * network I/O so a misconfigured test can never actually reach an unlisted host, not even once.
+ *
+ * The matcher itself moved to `allowHosts.ts` in M85 (C1). It lived here, private, for as long as
+ * the interpreter was the only thing that called it — and that is precisely how the guardrail came
+ * to cover three call sites out of the six places a run opens a socket: a redirect hop on each of
+ * the three clients, and the whole browser half, had no way to reach it. */
 export function checkHostAllowed(url: string, config: ResolvedConfig): void {
-  if (!config.allowHosts || config.allowHosts.length === 0) return;
-  const hostname = new URL(url).hostname;
-  if (!config.allowHosts.some((pattern) => hostMatchesAllowPattern(hostname, pattern))) {
-    throw new RuntimeError(`host "${hostname}" is not in \`allow hosts\` (${config.allowHosts.join(', ')}) — refusing to send this request`);
+  if (!isHostAllowed(url, config.allowHosts)) {
+    throw new AllowHostsError(allowHostsRefusal(url, config.allowHosts!, { kind: 'request' }));
   }
-}
-
-/** A pattern starting with `*.` matches that suffix (any subdomain) or the bare domain itself;
- * anything else must match the hostname exactly. */
-function hostMatchesAllowPattern(hostname: string, pattern: string): boolean {
-  if (pattern.startsWith('*.')) {
-    const base = pattern.slice(2);
-    return hostname === base || hostname.endsWith(`.${base}`);
-  }
-  return hostname === pattern;
 }
 
 export function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {

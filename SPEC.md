@@ -448,9 +448,29 @@ env staging
 - A pattern starting with `*.` matches that suffix or the bare domain (`*.example.com` matches
   both `api.example.com` and `example.com`); anything else must match the hostname exactly.
 - Enforced *before* any network I/O — a violating request throws immediately, no connection ever
-  attempted, not just a request that then fails. Covers every real network call a run makes,
-  including the `oauth2` session sugar's (§3.3) client-credentials token request, not just
-  ordinary `api` steps.
+  attempted, not just a request that then fails. Covers every real network call a run makes
+  (M85, review cluster C1), on every path:
+  - every `api` step, on all three client paths (pooled `fetch`, the workload-pinned client, and
+    the mTLS worker), and the `oauth2` session sugar's (§3.3) client-credentials token request and
+    a `matches schema … from "…"` contract fetch (§6.4);
+  - **every hop of a redirect chain**, not just the URL the step names. A 3xx to an unlisted host
+    is refused rather than followed — the whole point of the guardrail is the case where an
+    allowlisted staging host hands the run to prod, and the target is chosen by the server, not by
+    the test;
+  - **every request the browser half makes** (§9) — navigations *and* the page's own subresource/
+    XHR calls, since the modern shape of accidentally testing against prod is a staging page whose
+    bundle calls a prod API. A `stub`bed request (§9.6) is fulfilled locally and never reaches the
+    network, so it is not subject to the list.
+- A `tflw check` error (`TF036`, §17) when the **active** env's own `api`/`web` base URL has a host
+  its own accumulated list doesn't match — a contradiction decidable from the config alone
+  shouldn't cost a run to discover. Scoped to the env actually selected (`--env`/`TFLW_ENV`, else
+  the `default` one), like every other config-level check: an env you did not select is not this
+  run's problem, and a suite may deliberately keep a blocks-everything env as the negative-case
+  fixture proving this guardrail works.
+- Declaring the key changes how requests are made, not only whether they're allowed: redirect
+  chains are then followed hop-by-hop rather than by `fetch` itself, and browser requests are
+  routed through an interception handler. Both are opt-in with the key and both are held to the
+  unguarded behavior by tests; a run that never declares `allow hosts` is byte-for-byte unaffected.
 
 ### 3.8 Logging defaults — `log destination`/`log level` (M27, PLAN_LOG.md) ✅
 
@@ -2057,6 +2077,7 @@ require reading the source.
 | `TF033` | Parser/checker (load, M29/M30, M50/D93-D96): a workload-bearing `test`'s workload/threshold shape is invalid, two such tests in one file share a name (M30, D29 — names key each one's own metrics/threshold breakdown under concurrent multi-load-test runs), a `retry`/`with each` clause coexists with a workload (D96), a browser step appears inside a workload-bearing body (D19 — API-only in v1), `pause` appears outside one (D18), a workload-bearing `test` carries no `threshold` at all (M60/A4-01 — its verdict comes only from thresholds, so with none it can never fail), or a removed keyword is found — `scenario` (D103 — write `test "…" { ramp to … }` instead) or `think` (FS-05 — renamed to `pause`). The `pause`/browser-step bans follow calls into `action`s (M60/A4-02) and report at the call site, since the same action is legal under a workload and illegal outside one. The `pause` hint names both ways out honestly (FS-05): a *condition* is `wait until …` / `wait until … for <dur>`, while genuinely elapsed time — a cache TTL, a token expiry — has no condition to poll and belongs in the JS escape hatch (§11). | `pause 2s` inside a plain `test` → ``pause` is only legal inside a workload-bearing `test`` — or `think 2s` → `` `think` was renamed to `pause` `` |
 | `TF034` | Checker (load, M43/D70): a `threshold … for "label"` clause references a label that matches no `api` step's identity (its explicit `as "label"` tag, or its automatic `METHOD path.raw` identity when untagged) within the same workload-bearing test. | `threshold p95 duration for "checkotu" is less than 250ms` with only an `as "checkout"`-tagged step in scope → `threshold for "checkotu" matches no step in this test` |
 | `TF035` | Checker (M60/A2-01): two `action`s in one file share a name. Actions are file-scoped, so the second declaration shadows nothing — it is simply ambiguous, and the runtime refuses to build the file. Reported at the second declaration, pointing back at the first. | `action fetch it()` declared twice → `duplicate action "fetch it"` with `already declared at line 1` |
+| `TF036` | Checker (M85/A4-10): the **active** env's own `api`/`api <service>`/`web` base URL has a host that its own `allow hosts` list (accumulated across `defaults` + the env, SPEC §3.7) does not match — a statically decidable contradiction that costs a whole run to discover otherwise, one identical runtime refusal per step for one config line. Env-scoped like every other config check (`checkSessionServices`, `knownServices`): a contradiction in an env you have not selected is not this run's problem, and a suite may legitimately keep a deliberately-blocked env as a negative-case fixture. The hint names the consequence *that key* has — only the default `api` base takes the whole suite down; a named service takes its own calls, `web` takes the browser half. Only fully literal URLs are checked: a base URL containing `{…}` names a host this pass cannot decide, and is skipped rather than guessed at (note that `resolveConfig` takes such a URL literally today — the recorded `A2-12` gap — so skipping it neither hides a live behaviour nor pre-commits this check if config interpolation ever lands). | `api "http://127.0.0.1:9099"` alongside `allow hosts "example.com"` → ``env `local`'s `api` base URL is "http://127.0.0.1:9099", whose host "127.0.0.1" is not in its own `allow hosts` (example.com)`` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

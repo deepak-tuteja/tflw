@@ -22,6 +22,7 @@ import {
   collectConfigSymbols,
   checkProgram,
   checkSessionServices,
+  checkAllowHostsCoversBaseUrls,
   type ConfigFile,
   type Diagnostic,
   type Program,
@@ -90,7 +91,13 @@ export class DocumentStore {
       try {
         const envBlock = selectEnv(parsed.config, { flag: undefined, envVar: envSetting ?? process.env.TFLW_ENV });
         const resolved = resolveConfig(parsed.config, envBlock);
-        diagnostics = [...diagnostics, ...checkSessionServices(parsed.config.sessions, Object.keys(resolved.services))];
+        diagnostics = [
+          ...diagnostics,
+          ...checkSessionServices(parsed.config.sessions, Object.keys(resolved.services)),
+          // `TF036` (M85) — same env scope as everything else here: the env this workspace
+          // resolves to, not every env the file declares.
+          ...checkAllowHostsCoversBaseUrls(parsed.config, envBlock),
+        ];
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
         // No active env resolvable yet (e.g. mid-edit, no `default` env) — session-service
