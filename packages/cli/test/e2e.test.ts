@@ -488,6 +488,115 @@ test('B6-11: a mistyped flag is a teaching diagnostic, not a raw Node ENOENT (M6
   }
 });
 
+test('B6-11/C5: a positional argument that is not a readable .tflw file is a teaching diagnostic too (M82)', async () => {
+  // M61 closed the `--`-prefixed half of every parser's fall-through branch and left the other
+  // half exactly as it was: an unexamined push into the file list, `readFile`d layers later. So the
+  // three ordinary ways a *path* goes wrong all still surfaced as raw Node errors — and the
+  // directory one (`EISDIR: illegal operation on a directory, read`) does not even name the
+  // directory it is complaining about.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-file-arg-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+    await mkdir(join(dir, 'legacy'), { recursive: true });
+    await writeFile(join(dir, 'legacy', 'old.tflw'), `test "old"\n  api GET /old\n  expect status equals 200\n`, 'utf8');
+
+    // One rule, one place — `run`, `check`, `migrate` and `watch` all reach their file list through
+    // `loadAndValidate`, so all four are checked here rather than only the one that was reported.
+    for (const command of ['run', 'check', 'migrate', 'watch'] as const) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, command, 'nosuch.tflw'], { cwd: dir }),
+        (e: unknown) => {
+          const { code, stderr } = e as { code?: number; stderr: string };
+          assert.equal(code, 2, `${command} nosuch.tflw must exit 2\n${stderr}`);
+          assert.match(stderr, /no test file `nosuch\.tflw`/, stderr);
+          assert.doesNotMatch(stderr, /ENOENT|EISDIR/, `${command} must not surface a raw Node error\n${stderr}`);
+          return true;
+        },
+        `${command} nosuch.tflw must be a usage error`,
+      );
+
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, command, 'legacy'], { cwd: dir }),
+        (e: unknown) => {
+          const { code, stderr } = e as { code?: number; stderr: string };
+          assert.equal(code, 2, `${command} legacy must exit 2\n${stderr}`);
+          // The refusal has to name the directory — the raw `EISDIR` it replaces did not, which is
+          // what made it unactionable — and name a file inside it, so it is one copy-paste from
+          // what the user meant.
+          assert.match(stderr, /`legacy` is a directory/, stderr);
+          assert.match(stderr, /legacy\/old\.tflw/, stderr);
+          assert.doesNotMatch(stderr, /ENOENT|EISDIR/, `${command} must not surface a raw Node error\n${stderr}`);
+          return true;
+        },
+        `${command} legacy must be a usage error`,
+      );
+    }
+
+    // `tflw run tflw.config` used to parse the config as a test file and report every line of it as
+    // a grammar error — a wall of diagnostics blaming the user's syntax for their argument.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', 'tflw.config'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stderr } = e as { code?: number; stderr: string };
+        assert.equal(code, 2, stderr);
+        assert.match(stderr, /`tflw\.config` is not a `\.tflw` test file/, stderr);
+        assert.doesNotMatch(stderr, /allowed at the top level/, `must not report the config as bad grammar\n${stderr}`);
+        return true;
+      },
+      '`run tflw.config` must be a usage error',
+    );
+
+    // The teaching half, drawn from real discovery rather than a fixed list: the nearest thing that
+    // actually exists in *this* project is named.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', 'health.tflww'], { cwd: dir }),
+      (e: unknown) => /did you mean `health\.tflw`\?/.test((e as { stderr: string }).stderr),
+      '`health.tflww` must name `health.tflw`',
+    );
+
+    // Nothing legitimate caught in it: the file that does exist still runs, and bare discovery —
+    // which never goes through this check — still finds both files.
+    await execFileAsync('node', [cliEntry, 'check', '--no-color', 'health.tflw'], { cwd: dir });
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+    assert.match(stdout, /2 files checked/, stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('B6-02: `tflw watch <bad path>` refuses before watching, instead of crashing with a Node stack trace (M82)', async () => {
+  // The sharpest shape in cluster C5, and one nobody filed: `runOne`'s promise chain has no
+  // `.catch`, so `loadAndValidate`'s `readFile` rejection escaped as an **unhandled rejection**.
+  // Node printed `node:internal/fs/promises:636` and a stack trace naming `dist/cli.cjs` internals,
+  // then killed the process — `tflw watch health.tflww` died during its first run, having never
+  // watched anything and never printed the line that says it is watching.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-watch-badpath-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'watch', 'health.tflww'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout, stderr } = e as { code?: number; stdout: string; stderr: string };
+        assert.equal(code, 2, `must be a usage error, not a crash\n${stderr}`);
+        assert.match(stderr, /did you mean `health\.tflw`\?/, stderr);
+        // The crash signature, and the reason this is a *watch* finding rather than a duplicate of
+        // the one above: an unhandled rejection prints a bare stack trace with no `error:` prefix.
+        assert.doesNotMatch(stderr, /node:internal|at async/, `must not print a raw stack trace\n${stderr}`);
+        // And it must refuse *before* claiming to watch — `[watch] watching for changes` printed
+        // over a predicate no saved file can satisfy is `B6-02`'s companion line.
+        assert.doesNotMatch(stdout, /watching for changes/, `must not claim to be watching\n${stdout}`);
+        return true;
+      },
+      '`watch health.tflww` must exit 2 rather than crash',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('B6-01: an empty `--tag`/`--only` is a usage error, not a silent run of the whole suite (M70)', async () => {
   // The third way a value goes missing, after M63 closed the two above: present and empty. Both
   // filters were read for truthiness downstream, so `""` meant "no filter" — a *narrowing* flag

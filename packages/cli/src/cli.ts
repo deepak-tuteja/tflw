@@ -8,7 +8,7 @@
 //   → for each .tflw: parseSource (abort on diagnostics) → runProgram (shared Redactor)
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
-import { readFile, readdir, writeFile, access, mkdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises';
 import { watch as fsWatch } from 'node:fs';
 import { join, resolve, relative, dirname, basename } from 'node:path';
 import {
@@ -192,6 +192,70 @@ function unknownFlag(command: string, arg: string): never {
       (hint ? `\n  did you mean \`${hint}\`?` : '') +
       `\n  run \`tflw --help\` for every flag \`tflw ${command}\` takes.`,
   );
+}
+
+/**
+ * `unknownFlag`'s other half. Every parser's fall-through branch splits two ways — a `--`-prefixed
+ * token, which M61 made a usage error, and everything else, which went into the file list
+ * unexamined. So the second half kept the whole of the original defect (review finding `B6-11`,
+ * cluster C5): the file list is `readFile`d several layers later, and a mistyped path surfaced as a
+ * raw Node `ENOENT` naming an absolute path that does not exist, a directory as `EISDIR: illegal
+ * operation on a directory, read` — which does not name the directory at all — and `tflw run
+ * tflw.config` as a wall of grammar diagnostics against a file that was never a test.
+ *
+ * In `tflw watch` it was worse than untidy. `runOne`'s promise chain has no `.catch`, so that same
+ * `readFile` rejection escaped as an **unhandled rejection**: Node printed a stack trace and killed
+ * the process, so `tflw watch a.tflww` died during its first run having never watched anything, and
+ * never printed the line that says it is watching. Validating here fixes that too, because a usage
+ * error in this function is a *returned* exit code rather than a throw.
+ *
+ * Checked in one place because `run`, `check`, `migrate` and `watch` all reach their file list
+ * through `loadAndValidate` — the same reasoning as `unknownFlag`: the rule belongs to the argument
+ * surface, not to one command. Discovery runs only to build the suggestion list, on the error path,
+ * so an ordinary `tflw run a.tflw` still stats its one file and walks nothing.
+ *
+ * A directory is refused rather than descended into: `--help`, the README and SPEC all spell the
+ * positional as `[files...]`, and making it mean "files or directories" is grammar-freeze surface,
+ * not a diagnostics fix. The message names the `.tflw` files inside it so the refusal is one
+ * copy-paste from what the user meant.
+ */
+async function checkFileArgs(cwd: string, typed: readonly string[], exclude: readonly string[]): Promise<number | undefined> {
+  const discovered = async (): Promise<string[]> => (await discoverTests(cwd, exclude)).map((f) => relative(cwd, f).split('\\').join('/'));
+  for (const arg of typed) {
+    const full = resolve(cwd, arg);
+    let stats;
+    try {
+      stats = await stat(full);
+    } catch {
+      const hint = suggest(arg, await discovered());
+      err(
+        `no test file \`${arg}\` — nothing exists at that path.` +
+          (hint ? `\n  did you mean \`${hint}\`?` : '') +
+          `\n  pass no file arguments at all and tflw uses every \`.tflw\` file under the current directory.`,
+      );
+      return EXIT_USAGE;
+    }
+    if (stats.isDirectory()) {
+      const inside = (await discovered()).filter((f) => f.startsWith(`${relative(cwd, full).split('\\').join('/')}/`));
+      err(
+        `\`${arg}\` is a directory — tflw takes \`.tflw\` files here, not directories.` +
+          (inside.length > 0
+            ? `\n  name the files instead: ${inside.slice(0, 3).map((f) => `\`${f}\``).join(' ')}${inside.length > 3 ? ` (and ${inside.length - 3} more)` : ''}`
+            : `\n  no \`.tflw\` files were found under it.`) +
+          `\n  pass no file arguments at all and tflw uses every \`.tflw\` file under the current directory.`,
+      );
+      return EXIT_USAGE;
+    }
+    if (!arg.endsWith('.tflw')) {
+      err(
+        `\`${arg}\` is not a \`.tflw\` test file.` +
+          `\n  tflw would try to parse it as one, and report every line of it as a grammar error.` +
+          `\n  test files end in \`.tflw\`; \`tflw.config\` is configuration, not a test.`,
+      );
+      return EXIT_USAGE;
+    }
+  }
+  return undefined;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -422,6 +486,16 @@ async function watchCommand(argv: string[]): Promise<number> {
   // watch event's cwd-relative `filename` compares equal regardless of how the user typed it
   // (`./foo.tflw`, `foo.tflw`, an absolute path, …).
   const watchFiles = args.files.map((f) => resolve(cwd, f));
+
+  // Up front, and not only inside `loadAndValidate` (M82, C5). `runOne` discards `runCommand`'s
+  // exit code — it has to, since a failing test must not stop the watcher — so a usage error there
+  // would print and then be followed by "watching for changes", with the watcher live on a
+  // predicate no saved file can ever satisfy (`watchFiles` non-empty, nothing matching it). That is
+  // review finding `B6-02`'s companion line, false in exactly the case it matters. `exclude` is
+  // unavailable this early (no config is loaded until the first run) and only widens the suggestion
+  // pool, which is harmless here.
+  const badWatchFile = await checkFileArgs(cwd, args.files, []);
+  if (badWatchFile !== undefined) return badWatchFile;
 
   process.stdout.write(`tflw watch — seed ${seed} (pass \`--seed ${seed}\` to \`tflw run\` to reproduce outside watch)\n`);
 
@@ -785,7 +859,13 @@ async function loadAndValidate(
     return EXIT_USAGE;
   }
 
-  // 4. Discover the test files.
+  // 4. Discover the test files. Anything named explicitly is checked first (M82, C5/`B6-11`) —
+  //    every path below this line assumes a readable `.tflw`, and the `readFile` that finds out
+  //    otherwise is 15 lines down with no handler above it.
+  if (filesArg.length > 0) {
+    const bad = await checkFileArgs(cwd, filesArg, resolved.exclude);
+    if (bad !== undefined) return bad;
+  }
   const files = filesArg.length > 0 ? filesArg.map((f) => resolve(cwd, f)) : await discoverTests(cwd, resolved.exclude);
   if (files.length === 0) {
     err('no `.tflw` test files given or found (looked for *.tflw under the current directory).');
