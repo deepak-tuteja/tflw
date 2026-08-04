@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest } from '../src/httpPinned.js';
+import { sendRequest } from '../src/http.js';
 import { startFixtureServer, json } from './support.js';
 
 test('reuses the same TCP connection across requests on one pinned Agent pair', async () => {
@@ -165,6 +166,89 @@ test('a slower server than the timeout throws the same "timed out" message shape
     sendPinnedRequest({ method: 'GET', url: `${server.baseUrl}/slow`, headers: {}, timeoutMs: 100, followRedirects: true }, agents),
     /timed out after 100ms: GET/,
   );
+
+  destroyPinnedAgents(agents);
+  await server.close();
+});
+
+// B4-01 (S1) — credential scoping across a redirect, the one parity property the original
+// pinned-vs-pooled tests didn't state. These two assert the *pair*: what must be dropped when the
+// redirect leaves the origin, and what must survive when it doesn't. Both compare the pinned
+// result against `sendRequest`'s on the same chain rather than against a hardcoded expectation, so
+// the property under test is "the two paths agree", not "the pinned path does what I typed".
+test('a cross-origin redirect drops Authorization/Cookie before the next hop, matching sendRequest', async () => {
+  const echoCreds = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) =>
+    json(res, 200, {
+      authorization: req.headers.authorization ?? null,
+      cookie: req.headers.cookie ?? null,
+      proxyAuthorization: req.headers['proxy-authorization'] ?? null,
+    });
+  // A different port on the same host is a different *origin* (scheme + host + port), which is the
+  // comparison the Fetch spec and undici both make — no second loopback address needed.
+  const other = await startFixtureServer({ '/landing': echoCreds });
+  const server = await startFixtureServer({
+    '/go': (_req, res) => {
+      res.writeHead(302, { location: `${other.baseUrl}/landing` }).end();
+    },
+  });
+  const agents = createPinnedAgents();
+  const headers = {
+    authorization: 'Bearer super-secret',
+    cookie: 'session=PINNED-SECRET',
+    'proxy-authorization': 'Basic cHJveHk=',
+  };
+
+  const pinned = await sendPinnedRequest({ method: 'GET', url: `${server.baseUrl}/go`, headers, timeoutMs: 5000, followRedirects: true }, agents);
+  const pooled = await sendRequest({ method: 'GET', url: `${server.baseUrl}/go`, headers, timeoutMs: 5000, followRedirects: true });
+
+  assert.deepEqual(pinned.json, { authorization: null, cookie: null, proxyAuthorization: null });
+  assert.deepEqual(pinned.json, pooled.json);
+
+  destroyPinnedAgents(agents);
+  await server.close();
+  await other.close();
+});
+
+// B4-13 (S3) — the same expression's other divergence, found while fixing B4-01: the downgraded
+// hop is bodyless, so the body's own headers have to go with it. `fetch` can't emit a stale one
+// (it derives them from the body it just nulled); this loop carries the caller's map forward and
+// has to drop them by name.
+test('a 303 downgrade drops the request body headers with the body, matching sendRequest', async () => {
+  const server = await startFixtureServer({
+    '/create': (_req, res) => {
+      res.writeHead(303, { location: '/created' }).end();
+    },
+    '/created': (req, res) =>
+      json(res, 200, { method: req.method, contentType: req.headers['content-type'] ?? null, contentLength: req.headers['content-length'] ?? null }),
+  });
+  const agents = createPinnedAgents();
+  const opts = { method: 'POST', url: `${server.baseUrl}/create`, headers: { 'content-type': 'application/json' }, body: '{"a":1}', timeoutMs: 5000, followRedirects: true };
+
+  const pinned = await sendPinnedRequest(opts, agents);
+  const pooled = await sendRequest(opts);
+
+  assert.deepEqual(pinned.json, { method: 'GET', contentType: null, contentLength: null });
+  assert.deepEqual(pinned.json, pooled.json);
+
+  destroyPinnedAgents(agents);
+  await server.close();
+});
+
+test('a same-origin redirect keeps Authorization/Cookie, matching sendRequest', async () => {
+  const server = await startFixtureServer({
+    '/go': (_req, res) => {
+      res.writeHead(302, { location: '/landing' }).end();
+    },
+    '/landing': (req, res) => json(res, 200, { authorization: req.headers.authorization ?? null, cookie: req.headers.cookie ?? null }),
+  });
+  const agents = createPinnedAgents();
+  const headers = { authorization: 'Bearer super-secret', cookie: 'session=PINNED-SECRET' };
+
+  const pinned = await sendPinnedRequest({ method: 'GET', url: `${server.baseUrl}/go`, headers, timeoutMs: 5000, followRedirects: true }, agents);
+  const pooled = await sendRequest({ method: 'GET', url: `${server.baseUrl}/go`, headers, timeoutMs: 5000, followRedirects: true });
+
+  assert.deepEqual(pinned.json, { authorization: 'Bearer super-secret', cookie: 'session=PINNED-SECRET' });
+  assert.deepEqual(pinned.json, pooled.json);
 
   destroyPinnedAgents(agents);
   await server.close();

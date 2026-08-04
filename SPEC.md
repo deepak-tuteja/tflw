@@ -684,6 +684,12 @@ Grammar: `api [<service>] <METHOD> <path>[?query] [<body-form>] [timeout <dur>] 
   `header "X-Trace" is "{traceId}"` lines directly under the api step.
 - `timeout <dur>` overrides the config request timeout for this step only.
 - Redirects are followed by default; `without redirects` leaves the 3xx observable (§6.2).
+  A redirect that leaves the request's origin (scheme + host + port) drops `Authorization`,
+  `Cookie`, `Proxy-Authorization` and `Host` before the next hop; a 301/302/303 that downgrades a
+  POST to a bodyless GET drops the body's `Content-*` headers along with the body. These are the
+  rules `fetch` and every browser follow, and they hold identically whether or not the step runs
+  under a workload — which client a step runs on is a performance decision, never a
+  credential-disclosure one (M80).
 - `retry honoring "Retry-After" up to N` (PLAN decision 102b, enterprise arc cluster 3, closes
   TFLW-GAPS.md gap #5): a line under the api step, alongside `header`. Re-issues *this one
   request* — not the whole test, unlike `retry N` on `test` (§4.4) — whenever its response

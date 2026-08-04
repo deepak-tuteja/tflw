@@ -77,6 +77,39 @@ function buildHeaderMap(resHeaders: http.IncomingHttpHeaders): Record<string, st
   return headers;
 }
 
+/** Fetch §4.4 "HTTP-redirect fetch" deletes these from the request's header list when the redirect
+ * leaves the request's origin, and Node's own `fetch` (undici) implements exactly this list —
+ * `authorization` and `proxy-authorization` as authentication entries, `cookie` and `host` as
+ * forbidden request-headers. The pooled path gets that for free from `redirect: 'follow'`; this
+ * file's manual loop has to do it by hand, and until M80 didn't (B4-01, S1): the *same* step, with
+ * the same `header "Authorization" is …`, disclosed the credential to the redirect target when it
+ * ran under a workload and withheld it when it didn't. Which client a step runs on is a
+ * performance decision (`run N iterations` selects this one); it must not be a
+ * credential-disclosure decision. */
+const CROSS_ORIGIN_STRIPPED_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'host']);
+
+/** Scheme + host + port, the comparison Fetch makes. An opaque origin (`URL.origin === 'null'`,
+ * i.e. any non-http(s) scheme) is never same-origin with anything, including another opaque one —
+ * so a redirect to such a target strips rather than forwards. */
+function isSameOrigin(a: URL, b: URL): boolean {
+  return a.origin === b.origin && a.origin !== 'null';
+}
+
+/** Fetch's "request-body header name" list, deleted when a 301/302/303 drops the body on the way to
+ * a bodyless GET. `content-length` isn't on Fetch's own list only because `fetch` derives it from
+ * the body it just nulled and so can't emit a stale one; this loop takes `content-length` from the
+ * caller's header map when one is set explicitly, so it has to be dropped by name to reach the same
+ * wire result (B4-13). */
+const DOWNGRADE_STRIPPED_HEADERS = new Set(['content-encoding', 'content-language', 'content-location', 'content-type', 'content-length']);
+
+function stripHeaders(headers: Record<string, string>, drop: ReadonlySet<string>): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!drop.has(key.toLowerCase())) kept[key] = value;
+  }
+  return kept;
+}
+
 function isTimeoutError(err: unknown): boolean {
   const e = err as { name?: string; code?: string };
   return e.name === 'TimeoutError' || e.name === 'AbortError' || e.code === 'ABORT_ERR';
@@ -86,8 +119,13 @@ function isTimeoutError(err: unknown): boolean {
  * `redirect: 'follow'` — `node:http`/`node:https` never auto-follows a 3xx — sharing this call's
  * one `start` timestamp across every hop so a redirected request's reported duration matches what
  * `sendRequest`'s single `await fetch()` would have measured for the same chain, not just its
- * final hop. 301/302/303 downgrade a POST to a bodyless GET (matching `fetch`'s own behavior and
- * every browser); 307/308 alone preserve method + body. */
+ * final hop. 301/302/303 downgrade a POST to a bodyless GET, dropping the body's own headers with
+ * it (matching `fetch`'s own behavior and every browser); 307/308 alone preserve method + body; a
+ * hop that leaves the origin drops the
+ * credential headers `fetch` would drop (`CROSS_ORIGIN_STRIPPED_HEADERS`, M80/B4-01). Every one of
+ * those is a place `redirect: 'follow'` decides something on the pooled path that this loop has to
+ * decide identically — the pooled path is normative, and `httpPinned.test.ts` states each such
+ * property as a pinned-vs-pooled comparison rather than a hardcoded expectation. */
 export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedAgents): Promise<ResponseTrace> {
   const start = performance.now();
   let current = opts;
@@ -159,9 +197,18 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
     const status = res.statusCode ?? 0;
 
     if (current.followRedirects && status >= 300 && status < 400 && res.headers.location && redirects < 20) {
-      const nextUrl = new URL(res.headers.location, url).toString();
+      const nextUrl = new URL(res.headers.location, url);
       const downgrade = status === 303 || ((status === 301 || status === 302) && current.method === 'POST');
-      current = { ...current, url: nextUrl, method: downgrade ? 'GET' : current.method, body: downgrade ? undefined : current.body };
+      let nextHeaders = current.headers;
+      if (!isSameOrigin(url, nextUrl)) nextHeaders = stripHeaders(nextHeaders, CROSS_ORIGIN_STRIPPED_HEADERS);
+      if (downgrade) nextHeaders = stripHeaders(nextHeaders, DOWNGRADE_STRIPPED_HEADERS);
+      current = {
+        ...current,
+        url: nextUrl.toString(),
+        headers: nextHeaders,
+        method: downgrade ? 'GET' : current.method,
+        body: downgrade ? undefined : current.body,
+      };
       continue;
     }
 
