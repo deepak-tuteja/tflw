@@ -256,7 +256,12 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
   const hasWorkload = scenarios.length > 0;
 
-  emit({ type: 'run:start', total: cases.length, env: config.envName });
+  // `cases` is functional-only (`expandTestCases` skips workload-bearing tests), while the final
+  // report counts both — so a file holding one workload test and nothing else announced `total: 0`
+  // and ended `total: 1`, and a progress consumer rendered "0 tests" then reported a result
+  // (M77, review finding B3-07). It is a forecast, not a promise: a *failing* file hook adds one
+  // further entry to the report, which is why SPEC §13 says `run:end.total` may exceed this.
+  emit({ type: 'run:start', total: cases.length + scenarios.length, env: config.envName });
 
   const results: ReportEntry[] = [];
   const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
@@ -1929,15 +1934,28 @@ async function runFileHooks(
   const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
   const start = performance.now();
   emit({ type: 'test:start', name: label });
+  const steps: StepResult[] = [];
   for (const hook of hooks) {
     const exec = await execSteps(hook.body, config, ctx, tc, label, registry);
+    steps.push(...exec.steps);
     if (!exec.ok) {
-      const result: TestResult = { kind: 'functional', name: label, ok: false, durationMs: Math.round(performance.now() - start), steps: exec.steps, error: exec.error ?? `a \`${label}\` hook failed` };
+      const result: TestResult = { kind: 'functional', name: label, ok: false, durationMs: Math.round(performance.now() - start), steps, error: exec.error ?? `a \`${label}\` hook failed` };
       results.push(result);
       emit({ type: 'test:end', result });
       return false;
     }
   }
+  // Every `test:start` gets a `test:end` (M77, review finding B3-05). Only the failure path emitted
+  // one before, so the *happy* path produced a malformed stream and the failure path a well-formed
+  // one — exactly backwards, and any consumer pairing the two (a live dashboard, anything counting
+  // tests in flight) mis-tracked on every run that used file hooks.
+  //
+  // A *passing* file hook is still absent from the final report's `tests`, unchanged: a hook that
+  // worked is not a test result. So the stream carries a pair the report has no entry for, and that
+  // is the contract (SPEC §13) rather than an accident — `run:start.total`/`run:end.total` are how
+  // a consumer counts tests; `test:start`/`test:end` are how it tracks work in flight, and a file
+  // hook is work.
+  emit({ type: 'test:end', result: { kind: 'functional', name: label, ok: true, durationMs: Math.round(performance.now() - start), steps } });
   return true;
 }
 

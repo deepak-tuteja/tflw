@@ -1856,6 +1856,23 @@ certify that anything is safe to share.
   carries an optional `file` field (tagged by the CLI, not the interpreter — same "display
   concern" precedent as `TestResult.file`) so concurrent files' events stay distinguishable under
   `--workers > 1`.
+
+  **What the stream guarantees** (cluster C4 — `B3-05`, `B3-07`, `B5-03`; each of these was
+  violated before M77, and each is a regression test now):
+
+  1. **Every `test:start` has a matching `test:end`, on every path.** Including `before file` /
+     `after file` hooks, which emit a pair like any other unit of work. A *passing* file hook is
+     still absent from the final report's `tests` — a hook that worked is not a test result — so
+     pairing `test:start`/`test:end` tracks work in flight, and `total` is how you count tests.
+  2. **`run:start.total` counts the tests that are about to run** — functional cases *and*
+     workload-bearing tests. It is a forecast, not a promise: a **failing** file hook adds one
+     further entry, so `run:end`'s `total` may exceed it by the number of hooks that failed. It
+     will never be *lower*.
+  3. **A file that crashes appears in the stream.** A runtime throw (a bad `import`/`use` path,
+     say) used to produce no event at all while the report sinks got the full reason, so a
+     consumer of the documented streaming contract saw a run with the file simply missing. It now
+     emits the same `run:start` → `test:start` → `test:end` → `run:end` sequence any other file
+     would, carrying the `ok: false` report every other sink receives.
 - Timestamps — every console line gets an `HH:MM:SS.mmm` wall-clock prefix by default;
   `--no-timestamps` opts out (symmetric to `--no-color`).
 - GitHub Actions log grouping — auto-detected via the `GITHUB_ACTIONS` env var, wraps a test's

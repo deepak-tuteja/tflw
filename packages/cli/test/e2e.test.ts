@@ -1994,6 +1994,95 @@ test('--format ndjson streams one JSON-parseable, file-tagged RunEvent per line,
   });
 });
 
+// ---- C4: the ndjson stream is a contract (M77 — `B3-05`, `B3-07`, `B5-03`) --------------------
+//
+// SPEC §13 states three guarantees; before M77 all three were violated, and the existing ndjson
+// tests missed every one because they assert that specific events *appear*, never that the stream
+// is well-formed as a whole.
+
+test('C4/B3-05+B3-07: every `test:start` is paired, and `run:start.total` forecasts what `run:end` reports (M77)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-contract-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // File hooks are what B3-05 is about, and they only emitted an end event when they *failed* —
+      // so the happy path produced a malformed stream and the failure path a well-formed one.
+      await writeFile(
+        join(dir, 'hooks.tflw'),
+        'before file\n  api GET /health\n\nafter file\n  api GET /health\n\ntest "a real test"\n  api GET /health\n  expect status equals 200\n',
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; total?: number; report?: { total: number } });
+
+      const starts = events.filter((e) => e.type === 'test:start').length;
+      const ends = events.filter((e) => e.type === 'test:end').length;
+      assert.equal(starts, 3, 'before file, the test, after file');
+      assert.equal(ends, starts, 'guarantee 1: every `test:start` has a matching `test:end`');
+
+      const runStart = events.find((e) => e.type === 'run:start')!;
+      const runEnd = events.find((e) => e.type === 'run:end')!;
+      assert.equal(runStart.total, 1, 'one declared test — passing hooks are not tests');
+      assert.equal(runEnd.report!.total, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('C4/B3-07: a workload-bearing test is counted by `run:start`, not announced as zero (M77)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-workload-total-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // `expandTestCases` skips workload-bearing tests, so `cases.length` was 0 here while the
+      // final report counted 1: a progress consumer rendered "0 tests" and then got a result.
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'test "burst"\n  ramp to 1 users over 100ms\n  threshold error rate is less than 100%\n  api GET /health\n',
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; total?: number; report?: { total: number } });
+      assert.equal(events.find((e) => e.type === 'run:start')!.total, 1);
+      assert.equal(events.find((e) => e.type === 'run:end')!.report!.total, 1, 'the forecast matched the result');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('C4/B5-03: a crashed file appears in the stream instead of vanishing from it (M77)', async () => {
+  // The crash `RunReport` is built inside `runCommand`'s catch, after `runProgram`'s emitter is
+  // gone — so `results.json`, `report.html` and `junit.xml` all carried the reason while the
+  // documented *streaming* contract carried no event of any kind for the file. Only the exit code
+  // disagreed, and a CI job parsing the stream saw nothing wrong.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-crash-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'crash.tflw'), 'use "./nope.ts"\n\ntest "t"\n  log "hi"\n', 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout } = e as { code?: number; stdout?: string };
+        assert.equal(code, 1);
+        const events = (stdout ?? '').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { type: string; file?: string; report?: { ok: boolean }; result?: { ok: boolean; error?: string } });
+
+        assert.deepEqual(events.map((ev) => ev.type), ['run:start', 'test:start', 'test:end', 'run:end'], 'the same well-formed sequence any other file emits');
+        assert.ok(events.every((ev) => ev.file === 'crash.tflw'), 'every event is attributed to the file that crashed');
+        assert.equal(events.find((ev) => ev.type === 'run:end')!.report!.ok, false, 'the stream must not report a green run');
+        assert.match(events.find((ev) => ev.type === 'test:end')!.result!.error ?? '', /nope\.ts/, 'and it carries the reason, not just a failure');
+        return true;
+      },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('report/events.ndjson gets the same final redaction pass as every other artifact — no line carries a secret the report itself masks (M63/V2-02)', async () => {
   // V2-02: the file was written from the array collected live at emit time, so a secret first
   // registered *late* in the run stayed raw in the `step:end`/`test:end` lines while the very same

@@ -59,6 +59,7 @@ import {
   shutdownMtlsWorker,
   type BrowserEngine,
   type RunReport,
+  type TestResult,
   type ReportEntry,
   type EventSink,
   type RunEvent,
@@ -1214,6 +1215,23 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
           insecure: resolved.insecure,
           evidenceLevel: resolved.evidenceLevel,
         };
+        // The crash reaches `results.json`, `report.html` and `junit.xml` — but it used to reach
+        // the event stream nowhere at all (M77, review finding B5-03). This `RunReport` is built
+        // inside the catch, after `runProgram`'s own emitter has gone, so a file that threw before
+        // emitting produced *no event of any kind*: `--format ndjson` showed a run with the
+        // crashed file simply absent. A CI job parsing the documented streaming contract saw
+        // nothing wrong; only the exit code disagreed.
+        //
+        // Emitted here as the sequence `runProgram` would have produced, so the stream stays
+        // well-formed: one file, one test, a `test:end` for the `test:start`, and a `run:end`
+        // whose report is the same `ok: false` one every other sink gets.
+        if (fileEmit) {
+          const crashResult: TestResult = { kind: 'functional', name: `${fileLabel} (crashed)`, ok: false, durationMs: 0, steps: [], error: redactor.redact(message), file: fileLabel };
+          fileEmit({ type: 'run:start', total: 1, env: resolved.envName });
+          fileEmit({ type: 'test:start', name: crashResult.name });
+          fileEmit({ type: 'test:end', result: crashResult });
+          fileEmit({ type: 'run:end', report: crashed });
+        }
         return { report: crashed };
       }
     },
