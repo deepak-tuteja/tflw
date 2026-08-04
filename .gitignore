@@ -23,3 +23,8 @@ packages/cli/src/docs-data.generated.ts
 PLAN.md
 PROGRESS.md
 PLAN_*.md
+
+# Pre-1.0 launch-review corpus (PLAN_LAUNCH_REVIEW.md): the master fix queue REVIEW_FINDINGS.md,
+# the per-pass ledgers behind it, the freeze-surface record and the fresh-user friction log. These
+# are internal working notes — every row is an unfixed defect with a reproduction — and stay local.
+REVIEW_*.md
