@@ -17,8 +17,8 @@ double click button "Row"
 right click button "Row"
 fill field "Email" with {email}
 select "Widget" from field "Size"
-check field "Accept terms"               # ticks a checkbox/radio
-uncheck field "Accept terms"
+tick field "Accept terms"                # ticks a checkbox/radio
+untick field "Accept terms"
 hover button "Menu"
 press "Enter"                            # page-level
 press "Enter" on field "Search"          # scoped to one locator
@@ -31,10 +31,20 @@ dismiss dialog
 ```
 
 Every interaction step polls up to `timeout step` (default 30s) for its locator to resolve —
-`sleep` doesn't exist, only auto-waiting/auto-retrying. `check` is dual-grammar: a bare locator
-(`check field "X"`) is this action; a locator followed by a matcher (`check field "X" is checked`)
-parses as the soft assertion from [Assertions in depth](/guide/assertions). `uncheck` never
-collides — no assertion form exists for it.
+`sleep` doesn't exist, only auto-waiting/auto-retrying.
+
+::: tip Coming from Playwright or Cypress? The tick action is `tick`, not `check`.
+Both of those spell it `check()`, so `check field "Accept terms"` is the natural thing to type. In
+tflw `check` is the **soft assertion** — the forgiving twin of `expect`, see
+[Assertions in depth](/guide/assertions) — and nothing else.
+
+It used to be both, told apart by whether a matcher followed. That reads fine until you forget the
+matcher: `check field "Accept terms"` meaning *"assert this box is ticked"* would instead **tick the
+box** and report a passing step, so the assertion you thought you wrote never ran. A bare
+`check <locator>` still parses as the tick action during the migration window, and becomes an error
+naming `tick` in the same release — the diagnostic, not this page, is where most people will meet
+the change.
+:::
 
 ## `fill form`
 
@@ -91,12 +101,16 @@ assertion subjects too, using the state/value/count matchers from the
 expect button "Pay" is enabled
 expect field "Email" has value "a@b.c"
 expect list "Cart items" has count 3
-expect button "Loading spinner" is hidden
+expect button "Loading spinner" is not visible
 ```
+
+`is` is an optional copula that carries no meaning — `is not visible`, `not is visible`,
+`is visible` and `not visible` all parse, and the docs use `is not visible` because it reads as
+English. Negation is `not` in front of any matcher, exactly as it is for API subjects.
 
 These auto-retry to `timeout expect` (default 5s) — a UI expect is tflw's own retry loop, not a
 thin Playwright wrapper. `has count` is the one matcher meaningful against more than one element;
 every other matcher still hard-errors on ambiguity. "Zero elements" is itself a legitimate,
-non-erroring state for `is hidden`/`has count 0`.
+non-erroring state for `is hidden`, `is not visible` and `has count 0`.
 
 Full reference: [SPEC.md §9](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#9-ui-steps-p8-9-p26-).

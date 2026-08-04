@@ -1,17 +1,28 @@
 # testFlow grammar
 
-The formal grammar `packages/lang`'s lexer/parser/checker implement, current through **M3e**
-(`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — M3d's network observation (`request to "…"`/`of request to
-"…"`) and `stub`, plus M3e's `page` a11y subject; the browser-arc gap noted below is now closed for M3a–M3e together). This is a strict subset of the
+The formal grammar `packages/lang`'s lexer/parser/checker implement: the API and browser dialects
+through **M3e** (`PLAN_BROWSER_PERF_SECURITY.md` §1.12 — M3d's network observation (`request to
+"…"`/`of request to "…"`) and `stub`, plus M3e's `page` a11y subject), plus the grammar-freeze
+changes of milestone B1 (`FS-04` … `FS-08`) — see the known gap below. This is a strict subset of the
 full language design in [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md); SPEC.md is the prose reference with rationale
 and examples, this file is the grammar shape only. Cross-references to SPEC decisions are `(P#n)`;
 cross-references to a SPEC section are `(§n)`.
 
 **Freshening note (PLAN decision 103, enterprise arc cluster 4, decision 16.11):** this file was a
 frozen M0-only snapshot from 2026-07-06 through M11 — every milestone after M0 updated SPEC.md but
-not this file. This rewrite catches it up through decision 102 and is required going forward:
-every milestone that changes the grammar updates this file alongside SPEC.md, the same discipline
-`spec-data.ts`'s generated tables (§6.2, §7.3.1) now help enforce for the constructs they cover.
+not this file. That rewrite caught it up through decision 102, and the rule is that every milestone
+changing the grammar updates this file alongside SPEC.md — the same discipline `spec-data.ts`'s
+generated tables (§6.2, §7.3.1) enforce for the constructs they cover.
+
+**Known gap, stated rather than implied.** The rule above was not kept through the load-testing arc.
+The productions below cover the API and browser grammar plus the grammar-freeze changes, but the
+**workload grammar has no productions here yet** — `ramp`/`hold`/`step`/`spike`/`run`, `threshold`,
+`pause`, `cleanup`, the `parallel`/`sequential` test modifier — nor do `exclude` (§3.9) or `allow
+hosts` (§3.7). Those constructs are specified in
+[SPEC.md §4.5](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#45-load-testing--workload-bearing-tests-m29m30-m50-m56-d16-d19d24ad26d70d93-d122)
+and are shipped and tested; they are simply not written down in this notation yet. Treat this file
+as authoritative for what it covers and silent — not negative — about what it doesn't, until that
+catch-up lands.
 
 Notation: `UPPER` = terminal token class, `'x'` = literal keyword/punct, `?` optional, `*` zero+,
 `+` one+, `|` alternation, `(...)` grouping. Blocks are **indentation-delimited** (offside rule) —
@@ -36,7 +47,11 @@ TAG         '@' IDENT
   `INDENT`/`DEDENT`/`NEWLINE` for it, regardless of its own leading whitespace — this is what lets
   an object/array literal (`body { … }`) span several hand-indented lines.
 - Keywords are `IDENT` lexemes recognised by the parser in position (soft keywords, not reserved
-  words) — see each production below for the keyword set it recognises.
+  words) — see each production below for the keyword set it recognises. **A leading keyword never
+  reserves that word for user-defined action names; disambiguation is always by what follows**
+  (FS-06, §8) — `run 200 iterations across 10 users` is a workload clause and `run checkout("1")` is
+  a call to `action run checkout(id)`, told apart by the scan to `(`, so a keyword added in a later
+  release can never make an existing action name uncallable.
 - `/` starts a `PATH` token only when the immediately preceding token is an HTTP method word
   (`GET`/`POST`/`PUT`/`DELETE`/`PATCH`, case-insensitive) sitting in HTTP-method grammatical
   position; everywhere else `/` is the arithmetic divide operator. A variable literally named
@@ -116,8 +131,15 @@ RetryAfterClause:= 'retry' 'honoring' STRING 'up' 'to' NUMBER NEWLINE
 ## Assertions (§6)
 
 ```
-ExpectStmt  := 'expect' Quantifier? Subject 'not'? MatcherCore NEWLINE
-CheckStmt   := 'check'  Quantifier? Subject 'not'? MatcherCore NEWLINE      # soft twin of expect
+ExpectStmt  := 'expect' Quantifier? Subject Matcher NEWLINE
+CheckStmt   := 'check'  Quantifier? Subject Matcher NEWLINE                 # soft twin of expect
+
+Matcher     := ('is' 'not'? | 'not' 'is'?)? MatcherCore    # (FS-08) `is` is an optional copula
+                                                            # carrying no meaning, and it may sit on
+                                                            # either side of `not` — so `is not
+                                                            # visible` (canonical), `not is visible`,
+                                                            # `is visible` and `not visible` are four
+                                                            # spellings of two assertions
 
 Quantifier  := 'any' | 'all'                                    # only over a body.<path> or body csv subject
 Subject     := 'status' NetworkRef?
@@ -145,11 +167,14 @@ MatcherCore := 'equals' Value
              | 'matches' 'subset' Object                         # (§6.3.1)
              | 'matches' 'schema' STRING 'from' STRING            # (§6.2.1, PLAN decision 102a, gap #6)
              | 'matches' 'file' STRING                            # (§6.2.1, gap #17) — `body bytes` only
-             | 'is' 'greater' 'than' Value
-             | 'is' 'less' 'than' Value
-             | 'has' 'count' NUMBER
+             | 'greater' 'than' Value                             # canonically written `is greater
+             | 'less' 'than' Value                                #   than` / `is less than` — the
+                                                                  #   `is` comes from `Matcher`, above
+             | 'has' 'count' Value                                # (FS-07) any value, not just a
+                                                                  #   NUMBER literal: `has count {n}`
              | 'has' 'value' Value                                # 🔮 UI subjects only
-             | 'is' StateWord                                    # 🔮 UI subjects only
+             | StateWord                                          # 🔮 UI subjects only; canonically
+                                                                  #   `is visible`/`is not visible`
              | 'connects'                                        # `request` subject only (§6.2.2)
              | 'fails' ('matching' STRING)?                       # `request` subject only (§6.2.2)
              | 'was' 'made'                                       # `request to "…"` subject only (§9.7, M3d)
@@ -199,7 +224,9 @@ Value       := AddSub
 AddSub      := MulDiv (('+' | '-') MulDiv)*
 MulDiv      := Atom (('*' | '/') Atom)*
 Atom        := STRING | NUMBER | 'true' | 'false' | 'null'
-             | Interp
+             | Interp | Object | Array                            # (FS-07) — one value parser for
+                                                                  # every position; see the `{` rule
+                                                                  # below
              | 'today' | 'now' | Atom ('+' | '-') NUMBER ('days' | 'hours' | 'minutes')
              | 'format' Atom 'as' STRING
              | 'env' '(' IDENT ')'
@@ -212,9 +239,8 @@ Atom        := STRING | NUMBER | 'true' | 'false' | 'null'
 
 Interp      := '{' IDENT ('.' IDENT | '[' NUMBER ']')* '}'
 Object      := '{' (Field (',' Field)* ','?)? '}'
-Field       := IDENT ':' FieldValue
-FieldValue  := Value | Object | Array
-Array       := '[' (FieldValue (',' FieldValue)* ','?)? ']'
+Field       := (IDENT | STRING) ':' Value
+Array       := '[' (Value (',' Value)* ','?)? ']'
 
 UniqueExpr  := 'unique' '(' STRING ')'
              | 'unique' 'email' | 'unique' 'number' | 'unique' 'uuid'
@@ -228,6 +254,15 @@ RandomExpr  := 'random' 'number' Value 'to' Value
              | 'random' 'uuid'
              | 'random' 'password' NUMBER?
 ```
+
+- **The `{` rule (FS-07, §7.5).** `Interp` and `Object` both start with `{`, and `Atom` admits both,
+  so the choice is made on **two tokens**: `{` `IDENT`/`STRING` `:` (or `{}`) is an `Object`;
+  anything else — critically a bare `{ref}`, and `{price} * 2` — is an `Interp`. The rule this rests
+  on is a language promise, not parser convenience: **an object literal always requires
+  `key: value`**, so no JavaScript-style shorthand-key form will ever exist to make `{stock}`
+  ambiguous. One consequence worth stating: `Value` is now the *only* value production — matcher
+  operands, field values, array elements and call arguments all parse through it, which is why
+  `has count {n}` works and why `equals {id: 1}` and `matches subset {id: 1}` agree.
 
 See the generated [generators quick reference](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#731-generators-quick-reference-plan-decision-103-enterprise-arc-cluster-4)
 (§7.3.1, from [`spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts))
@@ -250,7 +285,7 @@ callable values (via the `CallName '(' ... ')'` production in `Atom`, above). Ne
 
 ```
 UiStep      := OpenStmt | ClickStmt | FillStmt | FillFormStmt | SelectStmt
-             | CheckStmt | UncheckStmt | PressStmt | HoverStmt | ScrollStmt
+             | TickStmt | UntickStmt | PressStmt | HoverStmt | ScrollStmt
              | WithinBlock | DialogStmt | TabStmt | DownloadBlock
              | DragStmt | DropFileStmt | WaitUntilUiStmt | ScreenshotStmt
              | StubStmt
@@ -260,15 +295,12 @@ ClickStmt       := ('double' | 'right')? 'click' Locator
 FillStmt        := 'fill' Locator 'with' Value
 FillFormStmt    := 'fill' 'form' NEWLINE INDENT ('|' STRING '|' Value '|' NEWLINE)+ DEDENT
 SelectStmt      := 'select' Value 'from' Locator
-CheckStmt       := 'check' Locator                                  # the checkbox action (AST type
-                                                                      # `CheckStmt`) — `check Locator
-                                                                      # not? MatcherCore` (Assertions
-                                                                      # §6, above) is the *other*
-                                                                      # `check` shape: an `ExpectStmt`
-                                                                      # with `soft: true`, dual-
-                                                                      # dispatched purely on whether a
-                                                                      # matcher follows (§9.1)
-UncheckStmt     := 'uncheck' Locator
+TickStmt        := 'tick' Locator                                   # the checkbox action (AST type
+                                                                      # `TickStmt`) — its own keyword
+                                                                      # since FS-04, so `check` is
+                                                                      # only ever the soft assertion
+                                                                      # (Assertions §6, above)
+UntickStmt      := 'untick' Locator
 PressStmt       := 'press' STRING ('on' Locator)?
 HoverStmt       := 'hover' Locator
 ScrollStmt      := 'scroll' 'to' Locator
@@ -287,11 +319,20 @@ DownloadBlock   := 'download' 'as' IDENT NEWLINE Block                # M3b — 
 DragStmt        := 'drag' Locator 'to' Locator                        # M3b
 DropFileStmt    := 'drop' 'file' STRING 'onto' Locator                 # M3b
 
-WaitUntilUiStmt := 'wait' 'until' Subject 'not'? MatcherCore          # M3b — the UI sibling of
+WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)?    # M3b — the UI sibling of
                                                                        # WaitUntilApiStep (§5.5);
                                                                        # polls `timeout wait`, not
                                                                        # `timeout expect`; always
-                                                                       # hard-fails, no soft form
+                                                                       # hard-fails, no soft form.
+                                                                       # `for <dur>` (FS-05) requires
+                                                                       # the condition to hold
+                                                                       # *continuously* for that long
+                                                                       # instead of passing on the
+                                                                       # first poll that satisfies it
+                                                                       # — the only way to assert a
+                                                                       # negative (§9.5). UI-only:
+                                                                       # `wait until api … for` is
+                                                                       # refused by name
 
 ScreenshotStmt  := 'screenshot' STRING                                 # M3c — captures the active
                                                                         # page unconditionally
@@ -312,9 +353,12 @@ Method          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIO
 - **Ambiguity (D7):** more than one match for a locator is always a hard error listing candidates —
   never "take the first". No positional selection (`nth`/`first`/`last`); `within` is the only
   scoping mechanism.
-- **`check`'s dual grammar:** `check field "Accept terms"` alone is the checkbox action
-  (`CheckStmt`); `check field "Accept terms" is checked` is the soft-assertion form (`ExpectStmt`
-  with `soft: true`) — disambiguated by whether a matcher follows, not by a separate keyword.
+- **`tick`, not `check` (FS-04, §9.1):** `check` had a dual grammar — a locator *with* a matcher
+  after it was the soft assertion, a bare locator with nothing after it was the checkbox action, so
+  a forgotten matcher turned an assertion into a mutation that then passed. The action is its own
+  keyword now. `check <locator>` with no matcher still parses as the action during the migration
+  window and becomes a parse error naming `tick` in the same release; Playwright and Cypress both
+  spell it `check()`, so that diagnostic is the teaching surface.
 - **UI subjects** (`Subject` in §6, above) additionally accept a `Locator` — `has value`/`is
   StateWord`/`has count` — for `expect`/`check`/`wait until` against UI state.
 - **M3c (D12):** an automatic screenshot is attached to whichever step just failed whenever a

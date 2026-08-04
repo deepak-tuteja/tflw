@@ -31,11 +31,34 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
                                           # instead of `timeout expect` (5s) — for a UI condition
                                           # that can legitimately outlast the ordinary UI-expect
                                           # budget. Always hard-fails; no soft/`check` form.
+wait until text "Error" is not visible for 2s   # must hold *continuously* for 2s
 ```
 
 `switch to new tab`'s popup listener starts *before* its block runs, so a fast-opening tab can't
 race past it. `drag`/`drop file` only work against a page that actually listens for `dragstart`/
 `dragover`/`drop` the way a real drag-and-drop UI does.
+
+## Asserting a negative: `wait until … for <duration>`
+
+`wait until text "Error" is not visible` returns on its **first** poll — which, for a toast that
+hasn't rendered yet, is immediately. The step passes precisely because nothing has happened, and it
+would have passed just as readily one tick before the error appeared. That is the classic false
+green, and it is why "the error never appears" is unassertable with a plain condition.
+
+`for <duration>` fixes it by changing what satisfies the step: the condition must hold
+*continuously* for that long, and the hold clock **restarts from zero** every time the condition
+breaks. So `wait until text "Error" is not visible for 2s` fails the moment the toast shows up at
+any point inside the window.
+
+A failure reports the longest unbroken hold it managed (`longest unbroken hold 1900ms of 2000ms`)
+rather than just the state at the deadline — a condition that nearly held and one that was never
+true for a single poll are different bugs, and they need different fixes. The whole step is still
+bounded by `timeout wait`, so a hold window at or above that budget can never be satisfied and is
+rejected outright rather than burning 30s to report a mystery timeout.
+
+`for` is UI-only. Sustaining an *API* condition would mean re-issuing the request for the whole
+window, which is load testing rather than waiting — `wait until api … for` is refused by name and
+points you at [load testing](/guide/load-testing).
 
 ## Evidence: screenshots & Playwright trace
 

@@ -595,6 +595,10 @@ test "checkout under load"
     baseline → burst → recovery shape.
   - `run N iterations across M users` / `run N iterations per user across M users` — count-bounded,
     no duration: a shared pool of `N` total iterations, or each of `M` VUs running its own fixed `N`.
+- **None of those five words is reserved** (FS-06). `ramp`/`hold`/`step`/`spike`/`run` lead these
+  clauses, but an `action run checkout(id)` stays callable as `run checkout("1")` — a leading
+  keyword never reserves that word for an action name, and disambiguation is always by what follows
+  (§8).
 - **Closed (`users`) vs. open (`rps`).** Closed loops VUs continuously — under saturation a VU
   simply completes fewer iterations, which understates latency ("coordinated omission"); tflw's own
   back-off diagnostic (D17) flags a run whose VUs spent a large share of wall time waiting instead
@@ -827,7 +831,7 @@ them callable.
 | `matches schema "Name" from "src"` | objects | `expect body matches schema "ProductResponseDto" from "/openapi.json"` |
 | `matches file "<path>"` | `body bytes` | `expect body bytes matches file "expected-receipt.pdf"` |
 | `is greater than` / `is less than` | numbers, `duration` | `expect body.total is less than 100` |
-| `has count N` | arrays, UI lists, `body bytes` | `expect body.items has count 3` |
+| `has count <value>` | arrays, UI lists, `body bytes` | `expect body.items has count 3` |
 | `has value` | UI fields | `expect field "Email" has value "a@b.c"` |
 | `is visible/hidden/enabled/disabled/checked` | UI locators | `expect button "Pay" is enabled` |
 | `connects` | `request` | `expect request connects` |
@@ -840,7 +844,15 @@ them callable.
 Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
 (`scripts/gen-spec-tables.mjs`) — do not hand-edit the rows above; edit the manifest instead.
 
-`not` negates any matcher. For UI, `not visible` retries until absent (P#15).
+`not` negates any matcher. `is` is an **optional copula** (FS-08) — it carries no meaning of its
+own, and it may sit on either side of `not`, so `is not visible`, `not is visible`, `is visible`
+and `not visible` are four spellings of two assertions. **`is not visible` is the canonical one** —
+it reads as English. Before FS-08, `is` was a matcher keyword rather than a copula and `not` was
+consumed ahead of it, so `not is visible` was the *only* negated state spelling that parsed: this
+section's own documented example (`not visible`) was a `TF010`, and so was the spelling everyone
+actually reaches for. For UI, a negated state matcher retries until the condition holds (P#15) —
+`expect text "Spinner" is not visible` polls until the spinner is gone rather than failing on the
+first look.
 
 ### 6.2.1 Contract validation — `matches schema "Name" from "src"` (PLAN decision 102a,
 enterprise arc cluster 3, closes TFLW-GAPS.md gap #6)
@@ -1114,6 +1126,20 @@ Closed grammar, usable in `let`, fills, api bodies, table cells, expect values:
   `format {d} as "yyyy-MM-dd"` (project default format in config).
 - **Hard fence:** no conditionals, no loops, no boolean operators.
 
+**The `{` rule (FS-07).** One value grammar serves every position — a `let`, a fill, an api body, a
+table cell, and *every* matcher operand alike, so `has count {expected}` works exactly like `equals
+{expected}`. That means `{` has to mean one thing consistently:
+
+- `{ref}`, `{ref.path}`, `{ref[0]}` — an **interpolation**, always. `{stock}` is the variable
+  `stock`, never a one-field object.
+- `{key: value}`, `{"key": value}`, `{}` — an **object literal**, always.
+
+The discriminator is two tokens (`{`, then an ident or string, then `:`), and the rule behind it is
+a promise rather than an implementation detail: **an object literal always requires `key: value`**.
+tflw will never grow a JavaScript-style shorthand-key form — `{stock}` meaning `{stock: stock}` is
+permanently spoken for by interpolation. This is what lets `expect body.stock equals {stock}` and
+`expect body matches subset {id: 1}` sit on consecutive lines and each mean the obvious thing.
+
 A variable named `get`, `post`, `put`, `delete`, or `patch` (any case) followed by `/` lexes as
 division, not an HTTP path — `let ratio = get / 2` parses fine, since PATH-start requires the
 preceding ident to actually sit in HTTP-method grammatical position (right after `api`, optionally
@@ -1206,6 +1232,17 @@ test "pay for an order"
 - `login("alice", "secret1")` — a bare call to an action or JS helper as a standalone step (M6),
   its return value (if any) discarded. Exists alongside `let x = login(...)` specifically so a
   reuse-pass extraction that produces nothing worth binding gets a natural call site.
+- **A leading keyword never reserves that word for user-defined action names; disambiguation is
+  always by what follows** (FS-06). Every keyword in tflw is a *soft* keyword — recognised by
+  position, not reserved by the lexer — and this is the promise that makes that observable rather
+  than incidental. `run` leads a workload clause (§4.5), yet `action run checkout(id)` is both
+  declarable and callable: `run checkout("1")` is a call, `run 200 iterations across 10 users` is a
+  workload, and the parser decides by scanning past the name to the `(`. The versioning consequence
+  is the point — **a keyword added in a future release can never make an existing action name
+  uncallable**, so §15's additive-only grammar freeze covers action names too, not just the syntax
+  already written down. Before this rule, `run checkout("1")` failed with "expected an iteration count"
+  while the identical call in value position (`let x = run checkout("1")`) worked: the language
+  would let you declare an action it then refused to call.
 - Element aliases centralize locators; lint: a `css`/`xpath` escape duplicated across files
   SHOULD move behind an alias (checker warning) (P#18). Not yet built (see the status line above).
 - The **reuse pass** (P#2, M6) scans every test body `tflw check` is given and reports similar
@@ -1255,8 +1292,8 @@ double click button "Row"
 right click button "Row"
 fill field "Email" with {email}
 select "Widget" from field "Size"
-check field "Accept terms"               # ticks a checkbox/radio
-uncheck field "Accept terms"
+tick field "Accept terms"                # ticks a checkbox/radio
+untick field "Accept terms"
 hover button "Menu"
 press "Enter"                            # page-level
 press "Enter" on field "Search"          # scoped to one locator
@@ -1271,10 +1308,18 @@ click button "Delete"                    # (Playwright otherwise auto-dismisses 
 dismiss dialog
 ```
 
-`check` is dual-grammar (unchanged from §6: `check <subject> <matcher>` is the soft-assertion
-keyword) — a locator with a matcher following it (`check field "X" is checked`) parses as the
-soft assertion; a bare locator with nothing after it (`check field "X"`) is this action instead.
-`uncheck` never collides — no assertion form exists for it.
+**The tick action is `tick`/`untick`, not `check`/`uncheck` (FS-04).** `check` is the soft-assertion
+keyword (§6.4) and nothing else. It used to be dual-grammar: a locator *with* a matcher after it
+(`check field "X" is checked`) was the soft assertion, a bare locator with nothing after it (`check
+field "X"`) was the checkbox action. The two readings are one forgotten word apart and they fail in
+opposite directions — an author who meant "assert this box is ticked" and dropped the matcher got a
+test that *ticked the box* and passed, reporting a green assertion it never made. A soft assertion
+silently becoming a mutation is not a shape a dual grammar can be trusted with.
+
+Playwright and Cypress both spell this action `check()`, so arrivals from either will type `check
+field "X"` from muscle memory; that is exactly why the replacement is a diagnostic naming `tick`
+rather than a quiet re-reading. During the `tick` migration window a bare `check <locator>` still
+parses as the action; it becomes a parse error carrying that diagnostic in the same release.
 
 ### 9.2 `fill form` (P#26) ✅
 

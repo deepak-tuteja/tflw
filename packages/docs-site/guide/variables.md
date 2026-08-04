@@ -40,6 +40,24 @@ A closed grammar, usable in `let`, fills, api bodies, table cells, expect values
 - **Hard fence:** no conditionals, no loops, no boolean operators — reach for the
   [JS escape hatch](/guide/actions) instead.
 
+### What `{` means
+
+One value grammar serves every position — a `let`, a fill, an api body, a table cell, and every
+matcher operand alike — so `{` means the same thing everywhere:
+
+- `{ref}`, `{ref.path}`, `{ref[0]}` are **interpolation**. `{stock}` is the variable `stock`.
+- `{key: value}` is an **object literal**. It always requires `key: value`.
+
+That second half is a promise, not an implementation detail: tflw will never grow a
+JavaScript-style shorthand-key form, because `{stock}` meaning `{stock: stock}` is permanently
+spoken for by interpolation. It's what lets these two lines sit next to each other and each mean
+the obvious thing:
+
+```tflw fragment binds=stock
+expect body.stock equals {stock}
+expect body matches subset { id: 1 }
+```
+
 ## Value transforms
 
 ```tflw

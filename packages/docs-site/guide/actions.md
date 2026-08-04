@@ -39,6 +39,25 @@ A JS helper's return value isn't itself an assertion subject — route it throug
 names (`create widget(...)`, `make label(...)`) resolve to the action/export's camelCase name
 (`createWidget`/`makeLabel`) under the hood.
 
+## Keywords never take a name away from you
+
+**A leading keyword never reserves that word for an action name — disambiguation is always by what
+follows.** `run` leads a workload clause in [load testing](/guide/load-testing), and `action run
+checkout(id)` is still both declarable and callable:
+
+```tflw
+action run checkout(orderId)
+  api POST /orders/{orderId}/checkout
+  expect status equals 201
+
+test "an action named after a keyword is still callable"
+  run checkout("order-1")         # a call — the parser scans past the name to the `(`
+```
+
+Every keyword in tflw is a *soft* keyword, recognised by position rather than reserved by the
+lexer, and this is the promise that makes that useful instead of incidental: **a keyword added in a
+future release can never make an action name you already use uncallable.**
+
 **`action`/`use` calls don't work inside `session` blocks** in `v0.1` — a session runs with an
 empty call registry, so `create widget(...)` there fails with `unknown call \`create
 widget(...)\` — no action (\`import\`) or JS helper (\`use\`) defines it`, even though the

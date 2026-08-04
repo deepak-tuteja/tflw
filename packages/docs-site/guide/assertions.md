@@ -14,6 +14,11 @@ every matcher, what it applies to, and an example.
 
 `not` negates any matcher: `expect status not equals 404`.
 
+`is` is an **optional copula**. It carries no meaning of its own and may sit on either side of
+`not`, so `is not visible`, `not is visible`, `is visible` and `not visible` are four spellings of
+two assertions — write whichever reads best out loud. These docs use `is not visible`, and
+`is greater than` / `is less than` for the comparisons.
+
 ## Array quantifiers
 
 ```tflw fragment

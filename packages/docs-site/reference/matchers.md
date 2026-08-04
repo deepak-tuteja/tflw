@@ -15,7 +15,10 @@ const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
 Every row of `tflw`'s closed matcher set — generated from
 [`packages/lang/src/spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts),
 the same manifest that regenerates [SPEC.md §6.2](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#62-matcher-table).
-`not` negates any of them. See [Assertions in depth](/guide/assertions) for the full walkthrough.
+`not` negates any of them, and `is` is an optional copula that may sit on either side of it — so
+`is not visible`, `not is visible`, `is visible` and `not visible` all parse. Every matcher operand
+below takes the full value grammar, not just literals: `has count {expected}` works exactly like
+`equals {expected}`. See [Assertions in depth](/guide/assertions) for the full walkthrough.
 
 <table>
   <thead>
