@@ -19,7 +19,7 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { census, findMarkdownFiles, DECLARED_UNCHECKED } from './doc-blocks.mjs';
@@ -117,24 +117,39 @@ async function checkSamples() {
       }),
     );
 
-    // One process per sample: `check --format json` flattens diagnostics from every file into a
-    // single array with no file attribution (cli.ts, decision 94 — a per-file editor contract), so
-    // batching would lose which sample failed. ~85ms each, so a small pool keeps it under a second.
-    await pool(prepared, 8, async ({ block, path, lineOffset, startLine }) => {
-      const { stdout, stderr, code } = await runCli(['check', '--format', 'json', path], dir);
-      const diagnostics = safeJson(stdout);
-      if (diagnostics === undefined) {
-        fail(`${block.file}:${startLine}`, `\`tflw check\` produced no JSON (exit ${code})`, stderr.trim());
-        return;
+    // One `tflw check` for the whole corpus. This used to be one process per sample in a pool of
+    // 8, because `check --format json` flattened every file's diagnostics into a single array with
+    // no file attribution, so batching would have lost which sample failed. M70 (B6-07) gave each
+    // entry its own `file`, which is exactly what makes the batch addressable — so the workaround
+    // goes, and ~45 process spawns become one.
+    if (prepared.length > 0) {
+      const byName = new Map(prepared.map((p) => [basename(p.path), p]));
+      const { stdout, stderr, code } = await runCli(['check', '--format', 'json', ...prepared.map((p) => p.path)], dir);
+      const files = safeJson(stdout);
+      if (files === undefined) {
+        fail('docs samples', `\`tflw check\` produced no JSON (exit ${code})`, stderr.trim());
+      } else if (files.length !== prepared.length) {
+        // Every sample must come back, clean ones included (M70 lists them with an empty batch).
+        // A short array means the run died before checking them all — a broken `tflw.config`, say
+        // — which would otherwise read as "no diagnostics" and pass the guard silently.
+        fail('docs samples', `\`tflw check\` reported on ${files.length} of ${prepared.length} samples (exit ${code})`, stderr.trim());
+      } else {
+        for (const { file, diagnostics } of files) {
+          const piece = byName.get(basename(file));
+          if (!piece) {
+            fail('docs samples', `\`tflw check\` reported on an unexpected file: ${file}`);
+            continue;
+          }
+          for (const d of diagnostics) {
+            fail(
+              `${piece.block.file}:${toDocLine(piece.startLine, piece.lineOffset, d.span.start.line)}`,
+              `${d.code}: ${d.message}`,
+              d.hint ? `help: ${d.hint}` : undefined,
+            );
+          }
+        }
       }
-      for (const d of diagnostics) {
-        fail(
-          `${block.file}:${toDocLine(startLine, lineOffset, d.span.start.line)}`,
-          `${d.code}: ${d.message}`,
-          d.hint ? `help: ${d.hint}` : undefined,
-        );
-      }
-    });
+    }
 
     // A `tflw.config` sample is only a config in a directory of its own — `tflw check` validates
     // the config in its cwd. Each gets a scratch directory with an empty suite file, so what runs

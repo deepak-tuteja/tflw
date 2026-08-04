@@ -684,8 +684,11 @@ interface ValidatedProject {
  *
  * `onFileDiagnostics`, when given, redirects a *per-file* diagnostic batch (the common case — a
  * syntax/checker error in the `.tflw` file itself, not `tflw.config`) to the callback instead of
- * `renderDiagnostics`+stderr — used only by `tflw check --format json` (decision 94) to recover
- * the structured `Diagnostic[]` for the one file it's checking. Config-level failures (a broken
+ * `renderDiagnostics`+stderr — used by `tflw check --format json` (decision 94) to recover the
+ * structured diagnostics, and by `tflw migrate` to find deprecations to splice. It fires once for
+ * every file checked, including clean ones (with an empty batch, M70/B6-07): stderr has nothing to
+ * print for a clean file, but a structured consumer must be able to tell "checked, clean" from
+ * "not checked at all". Config-level failures (a broken
  * `tflw.config`, an unknown session service) still print text and return an exit code the same as
  * always — out of scope for a per-file editor check, since they aren't this file's problem. */
 async function loadAndValidate(
@@ -776,6 +779,12 @@ async function loadAndValidate(
     if (warnings.length > 0) {
       if (onFileDiagnostics) onFileDiagnostics(file, source, warnings);
       else process.stderr.write(renderDiagnostics(warnings, source, { filename: relative(cwd, file), color }) + '\n');
+    } else if (onFileDiagnostics) {
+      // A clean file reaches the callback too, with an empty batch (M70, B6-07). It has nothing to
+      // print, which is why the stderr side stays silent — but a *structured* consumer needs to
+      // know the file was checked and found clean, or it cannot clear the diagnostics it drew last
+      // time. "Absent" and "clean" have to be distinguishable in a machine contract.
+      onFileDiagnostics(file, source, []);
     }
     parsedFiles.push({ file, source, program: parsed.program });
   }
@@ -1537,13 +1546,28 @@ async function checkCommand(argv: string[]): Promise<number> {
   }
 
   if (args.format === 'json') {
-    // Structured output for the VS Code extension (decision 94): redirect the target file's own
+    // Structured output for editor and CI integrations (decision 94): redirect each file's
     // diagnostics into `collected` instead of stderr text. Config-level failures (broken
     // tflw.config, unknown session service) still print text to stderr and return exit 2 as
-    // always — out of scope for a per-file editor check.
-    const collected: Diagnostic[] = [];
-    const loaded = await loadAndValidate(cwd, args.files, args.env, false, (_file, _source, diagnostics) => {
-      collected.push(...diagnostics);
+    // always — they aren't any one file's problem.
+    //
+    // One entry per file checked, in discovery order, each naming its own file (M70, B6-07/A4-12).
+    // The shape used to be a flat `Diagnostic[]` concatenated across every file, and `Diagnostic`
+    // carries a span but no file — so two files with an error on the same line produced two
+    // byte-identical entries and a consumer had no way to tell them apart. It only ever worked
+    // when exactly one file was named, which nothing enforced and `--help` did not say. Decision
+    // 94 wrote the contract for the single-file case the VS Code extension used, and that consumer
+    // is gone (the LSP replaced it), leaving a machine-readable surface that was broken for its
+    // documented use and about to freeze that way.
+    //
+    // Listing clean files too is what makes it a report of the *invocation* rather than a bag of
+    // problems: an editor can clear stale diagnostics, and a top-level `[]` now means "nothing was
+    // checked" (a config-level failure) instead of being ambiguous with "everything was clean".
+    // Paths are relative to the cwd and POSIX-separated — text output matches the platform, a
+    // machine contract should not.
+    const collected: { file: string; diagnostics: Diagnostic[] }[] = [];
+    const loaded = await loadAndValidate(cwd, args.files, args.env, false, (file, _source, diagnostics) => {
+      collected.push({ file: relative(cwd, file).split('\\').join('/'), diagnostics: [...diagnostics] });
     });
     process.stdout.write(JSON.stringify(collected) + '\n');
     return typeof loaded === 'number' ? loaded : EXIT_OK;
@@ -1559,7 +1583,8 @@ async function checkCommand(argv: string[]): Promise<number> {
   // The reuse pass (M6, P#2) — advisory only, never affects the exit code: `tflw check` already
   // established every file is individually clean, and a reuse hint is a suggestion, not a defect.
   // Scanned over exactly the file set this invocation checked (`--format json` skips this — it's a
-  // per-file editor-diagnostics contract, decision 94, not the right shape for a suite-wide hint).
+  // suggestion carrying a diff preview, not a diagnostic anchored to a span, so it has no place in
+  // a per-file `diagnostics` array — which stays true now that the JSON shape covers every file).
   const entries: SuiteEntry[] = loaded.parsedFiles.map((f) => ({ path: relative(cwd, f.file), source: f.source, program: f.program }));
   const hints = detectReuse(entries);
   if (hints.length > 0) {

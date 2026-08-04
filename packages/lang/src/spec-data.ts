@@ -141,7 +141,7 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--update-snapshots`', command: 'run', effect: 'writes/overwrites `matches snapshot` baselines instead of just comparing against them' },
   { flag: '`--log-output <dest>`', command: 'run', effect: 'overrides `tflw.config`\'s `log destination` key (`console`/`html`/`both`/`none`) for this run\'s bare `log "…"` calls only — a `log … to …` statement\'s own destination always wins' },
   { flag: '`--log-level <level>`', command: 'run', effect: 'overrides `tflw.config`\'s `log level` key (`debug`/`info`/`warn`/`error`) — the minimum level a `log` step must clear to be rendered in console output/`report.html` (never affects whether it\'s recorded in `results.json`/ndjson)' },
-  { flag: '`--format json`', command: 'check', effect: 'prints the target file\'s `Diagnostic[]` as JSON instead of text — for editor integrations' },
+  { flag: '`--format json`', command: 'check', effect: 'prints one `{ file, diagnostics }` entry per file checked as JSON instead of text — for editor and CI integrations' },
   // M62 (doc truth): `check`\'s two shared flags, `init --load` and `install-browsers --browser`
   // were accepted by the parser and listed in `tflw --help`, but missing here — so the reference
   // page generated from this list simply didn\'t have them, and `reference/cli.md` carried a

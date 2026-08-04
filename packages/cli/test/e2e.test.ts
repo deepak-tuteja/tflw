@@ -415,7 +415,11 @@ test('a value-taking flag with no value is a usage error, not a silent fall-back
 
     // And the escape hatch the error message names really works: `=` still takes any value.
     const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--format=json', 'health.tflw'], { cwd: dir });
-    assert.deepEqual(JSON.parse(stdout), [], '`--flag=value` is unaffected — it never goes through the value slot');
+    assert.deepEqual(
+      JSON.parse(stdout),
+      [{ file: 'health.tflw', diagnostics: [] }],
+      '`--flag=value` is unaffected — it never goes through the value slot',
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -1570,7 +1574,7 @@ test('`tflw docs` on an unknown topic is a usage error (exit 2) with a did-you-m
 
 // Track 2 (grill-me, 2026-07-07): `tflw check --format json` and `tflw run --only` — new CLI
 // surface the VS Code extension's diagnostics/CodeLens-run features need.
-test('`tflw check --format json` prints the target file\'s Diagnostic[] as JSON, exit 2 on a real error', async () => {
+test('`tflw check --format json` prints one { file, diagnostics } entry per file, exit 2 on a real error', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-check-json-'));
   try {
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
@@ -1581,13 +1585,15 @@ test('`tflw check --format json` prints the target file\'s Diagnostic[] as JSON,
       (e: unknown) => {
         const { code, stdout } = e as { code?: number; stdout?: string };
         if (code !== 2) return false;
-        const diagnostics = JSON.parse((stdout ?? '').trim());
+        const files = JSON.parse((stdout ?? '').trim());
         return (
-          Array.isArray(diagnostics) &&
-          diagnostics.length === 1 &&
-          diagnostics[0].code === 'TF011' &&
-          diagnostics[0].hint === 'did you mean `expect`?' &&
-          typeof diagnostics[0].span?.start?.line === 'number'
+          Array.isArray(files) &&
+          files.length === 1 &&
+          files[0].file === 'broken.tflw' &&
+          files[0].diagnostics.length === 1 &&
+          files[0].diagnostics[0].code === 'TF011' &&
+          files[0].diagnostics[0].hint === 'did you mean `expect`?' &&
+          typeof files[0].diagnostics[0].span?.start?.line === 'number'
         );
       },
     );
@@ -1596,14 +1602,70 @@ test('`tflw check --format json` prints the target file\'s Diagnostic[] as JSON,
   }
 });
 
-test('`tflw check --format json` prints an empty array and exits 0 on a clean file', async () => {
+test('`tflw check --format json` lists a clean file with an empty diagnostics array, exit 0', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-check-json-clean-'));
   try {
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
     await writeFile(join(dir, 'clean.tflw'), `test "ok"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--format', 'json', 'clean.tflw'], { cwd: dir });
-    assert.deepEqual(JSON.parse(stdout.trim()), []);
+    // Not `[]`: a consumer that drew diagnostics for this file last time has to be told it was
+    // checked and is clean now, or it leaves them on screen. A top-level `[]` is reserved for
+    // "nothing was checked" — the config-level failure below.
+    assert.deepEqual(JSON.parse(stdout.trim()), [{ file: 'clean.tflw', diagnostics: [] }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('B6-07/A4-12: `tflw check --format json` attributes every diagnostic to its own file (M70)', async () => {
+  // The shape was a flat `Diagnostic[]` concatenated across every discovered file, and `Diagnostic`
+  // carries a span but no file — so two files with the same error on the same line produced two
+  // byte-identical entries and a consumer had to guess. It only ever worked for exactly one file,
+  // which nothing enforced and `--help` did not say; both tests above passed exactly one, which is
+  // how the VS Code extension used it before the LSP replaced that path entirely.
+  //
+  // The colliding-span case is the point, so these two files are deliberately identical in shape:
+  // same line, same column, same code, different file.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-check-json-multi-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    await writeFile(join(dir, 'a.tflw'), `test "a"\n  expct status equals 200\n`, 'utf8');
+    await writeFile(join(dir, 'b.tflw'), `test "b"\n  expct status equals 200\n`, 'utf8');
+    await writeFile(join(dir, 'c.tflw'), `test "c"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+    await assert.rejects(
+      // No file arguments: discovery finds all three, which is the invocation decision 94's
+      // single-file contract never described and the command never refused.
+      execFileAsync('node', [cliEntry, 'check', '--format', 'json'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout } = e as { code?: number; stdout?: string };
+        assert.equal(code, 2);
+        const files = JSON.parse((stdout ?? '').trim()) as { file: string; diagnostics: { code: string; span: { start: { line: number; column: number } } }[] }[];
+
+        assert.deepEqual(files.map((f) => f.file), ['a.tflw', 'b.tflw', 'c.tflw'], 'every file checked is listed, in discovery order');
+        assert.deepEqual(files.map((f) => f.diagnostics.length), [1, 1, 0], 'the clean file is present with an empty batch');
+
+        // The two errors are indistinguishable *except* by the `file` field — which is exactly the
+        // defect: before this, both of these were entries in one flat array.
+        const [a, b] = files;
+        assert.equal(a!.diagnostics[0]!.code, b!.diagnostics[0]!.code);
+        assert.deepEqual(a!.diagnostics[0]!.span.start, b!.diagnostics[0]!.span.start);
+        return true;
+      },
+    );
+
+    // Paths are POSIX-separated relative to the cwd, so a nested file is addressable too.
+    await mkdir(join(dir, 'nested'), { recursive: true });
+    await writeFile(join(dir, 'nested', 'd.tflw'), `test "d"\n  expct status equals 200\n`, 'utf8');
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', '--format', 'json', 'nested/d.tflw'], { cwd: dir }),
+      (e: unknown) => {
+        const files = JSON.parse(((e as { stdout?: string }).stdout ?? '').trim()) as { file: string }[];
+        assert.deepEqual(files.map((f) => f.file), ['nested/d.tflw']);
+        return true;
+      },
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
