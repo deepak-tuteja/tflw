@@ -421,6 +421,58 @@ test('a value-taking flag with no value is a usage error, not a silent fall-back
   }
 });
 
+test('B6-01: an empty `--tag`/`--only` is a usage error, not a silent run of the whole suite (M70)', async () => {
+  // The third way a value goes missing, after M63 closed the two above: present and empty. Both
+  // filters were read for truthiness downstream, so `""` meant "no filter" — a *narrowing* flag
+  // silently widened to every test in the repository, including every workload-bearing one,
+  // against whatever env was active, at exit 0. `--tag nope` errors; `--tag ""` ran everything.
+  //
+  // The shape that produces it is `tflw run --tag "$SUITE_TAGS"` with the variable unset, which is
+  // why the M63 test's own loop never caught it: these are values a shell interpolates, not values
+  // a person types. So this test constructs them the way a shell would — both spellings.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-empty-filter-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'suite.tflw'), `@smoke\ntest "one"\n  log "one ran"\n\ntest "two"\n  log "two ran"\n`, 'utf8');
+
+    const run = (extra: string[]) =>
+      execFileAsync('node', [cliEntry, 'run', 'suite.tflw', '--no-color', '--no-timestamps', ...extra], { cwd: dir });
+
+    // The positive controls, so this test fails if filtering itself breaks rather than only if the
+    // guard fires: unfiltered runs both, a real tag runs one, a real name runs one.
+    assert.match((await run([])).stdout, /2\/2 passed/);
+    assert.match((await run(['--tag=smoke'])).stdout, /1\/1 passed/);
+    assert.match((await run(['--only=one'])).stdout, /1\/1 passed/);
+
+    for (const [extra, pattern, why] of [
+      [['--tag='], /--tag was given an empty value/, '`--tag=` (an unset shell variable, `=` spelling)'],
+      [['--tag', ''], /--tag was given an empty value/, '`--tag ""` (an unset shell variable, space spelling)'],
+      [['--tag=,,'], /--tag was given `,,`, which names no tags/, 'a value that is all separators still names no tags'],
+      [['--tag= , '], /--tag was given ` , `, which names no tags/, 'whitespace between separators does not make a tag'],
+      [['--only='], /--only was given an empty value/, '`--only=` selects no test, so it must not select every test'],
+      [['--only', ''], /--only was given an empty value/, '`--only ""` (space spelling)'],
+    ] as const) {
+      await assert.rejects(
+        run([...extra]),
+        (e: unknown) =>
+          (e as { code?: number }).code === 2 &&
+          pattern.test((e as { stderr: string }).stderr) &&
+          !/passed/.test((e as { stdout: string }).stdout),
+        `${why} must be exit 2 with nothing run`,
+      );
+    }
+
+    // Unchanged: a filter that is well-formed but matches nothing is still the error it always was
+    // — P#46's invariant, which the empty case used to invert.
+    await assert.rejects(
+      run(['--tag=nope']),
+      (e: unknown) => (e as { code?: number }).code === 2 && /no test anywhere carries the tag `nope`/.test((e as { stderr: string }).stderr),
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 // ---- tflw refactor apply <id> (M6, P#2) ------------------------------------
 
 test('`tflw refactor apply` with no subcommand/id is a usage error', async () => {

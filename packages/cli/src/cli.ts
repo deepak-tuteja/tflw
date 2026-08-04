@@ -124,7 +124,43 @@ function flagValue(argv: string[], i: number, flag: string): string {
   const value = argv[i];
   if (value === undefined) throw new Error(`${flag} expects a value, but none was given.`);
   if (value.startsWith('--')) throw new Error(`${flag} expects a value, but the next argument is \`${value}\`. Write \`${flag}=${value}\` if that really is the value you meant.`);
+  requireNonEmpty(value, flag);
   return value;
+}
+
+/**
+ * Reads the value out of the `--flag=value` spelling, which never reaches `flagValue` — it is that
+ * function's documented escape hatch for a value starting with `--`, so it deliberately skips the
+ * next-argument check. It must not skip the *empty* check: `--tag=` and `--tag ""` are the same
+ * mistake wearing different quotes (M70, review finding B6-01).
+ */
+function inlineFlagValue(arg: string, flag: string): string {
+  const value = arg.slice(flag.length + 1);
+  requireNonEmpty(value, flag);
+  return value;
+}
+
+/**
+ * The third way a flag's value goes missing without a word (M70, B6-01), after M63 closed the two
+ * in `flagValue`: the value is *present and empty*. `--tag=` and `--only=` were the dangerous pair
+ * — every downstream guard tests them for truthiness (`!args.tags`, `args.only && …`), so an empty
+ * string was indistinguishable from the flag not being passed at all, and the run quietly widened
+ * from the requested subset to **the entire suite**, exit 0. `--tag nope` errors; `--tag ""` ran
+ * everything. Nobody types that by hand — a shell interpolates it (`tflw run --tag "$SUITE_TAGS"`
+ * with the variable unset), which is precisely why no test constructed it and why CI is where it
+ * bites.
+ *
+ * Applied to every value-taking flag rather than to those two, on the same reasoning as
+ * `flagValue`: no flag here has a meaningful empty value, and an empty `--env`/`--browser`/
+ * `--format` would silently fall back to a default in exactly the same shape.
+ */
+function requireNonEmpty(value: string, flag: string): void {
+  if (value.trim() !== '') return;
+  throw new Error(
+    `${flag} was given an empty value.\n` +
+      `  an empty value is not the same as omitting ${flag} — it asks for nothing, so tflw refuses it rather than silently running everything.\n` +
+      `  if this came from a shell variable (\`${flag} "$VAR"\`), the variable is unset or empty: set it, or drop the flag.`,
+  );
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -189,7 +225,7 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--browser') browser = flagValue(argv, ++i, a);
-    else if (a.startsWith('--browser=')) browser = a.slice('--browser='.length);
+    else if (a.startsWith('--browser=')) browser = inlineFlagValue(a, '--browser');
   }
   if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browser)) {
     err(`unknown --browser \`${browser}\` — expected one of: ${SUPPORTED_BROWSER_ENGINES.join(', ')}.`);
@@ -221,7 +257,7 @@ async function pickCommand(argv: string[]): Promise<number> {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
+    else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
     else if (url === undefined) url = a;
     else {
       err(`unexpected argument \`${a}\`. Usage: tflw pick <url> [--browser chromium|firefox|webkit]`);
@@ -306,11 +342,11 @@ function parseWatchArgs(argv: string[]): WatchArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = flagValue(argv, ++i, a);
-    else if (a.startsWith('--env=')) env = a.slice('--env='.length);
+    else if (a.startsWith('--env=')) env = inlineFlagValue(a, '--env');
     else if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
+    else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
     else if (a === '--seed') seedRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
+    else if (a.startsWith('--seed=')) seedRaw = inlineFlagValue(a, '--seed');
     else if (a === '--no-color') noColor = true;
     else files.push(a);
   }
@@ -553,46 +589,56 @@ function parseRunArgs(argv: string[]): RunArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = flagValue(argv, ++i, a);
-    else if (a.startsWith('--env=')) env = a.slice('--env='.length);
+    else if (a.startsWith('--env=')) env = inlineFlagValue(a, '--env');
     else if (a === '--seed') seedRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--seed=')) seedRaw = a.slice('--seed='.length);
+    else if (a.startsWith('--seed=')) seedRaw = inlineFlagValue(a, '--seed');
     else if (a === '--now') nowRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--now=')) nowRaw = a.slice('--now='.length);
+    else if (a.startsWith('--now=')) nowRaw = inlineFlagValue(a, '--now');
     else if (a === '--tag') tagRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--tag=')) tagRaw = a.slice('--tag='.length);
+    else if (a.startsWith('--tag=')) tagRaw = inlineFlagValue(a, '--tag');
     else if (a === '--only') only = flagValue(argv, ++i, a);
-    else if (a.startsWith('--only=')) only = a.slice('--only='.length);
+    else if (a.startsWith('--only=')) only = inlineFlagValue(a, '--only');
     else if (a === '--parallel') parallelRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--parallel=')) parallelRaw = a.slice('--parallel='.length);
+    else if (a.startsWith('--parallel=')) parallelRaw = inlineFlagValue(a, '--parallel');
     else if (a === '--workers') workersRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--workers=')) workersRaw = a.slice('--workers='.length);
+    else if (a.startsWith('--workers=')) workersRaw = inlineFlagValue(a, '--workers');
     else if (a === '--skip-workload') skipWorkload = true;
     else if (a === '--no-color') noColor = true;
     else if (a === '--verbose') verbose = true;
     else if (a === '--forbid-insecure') forbidInsecure = true;
     else if (a === '--evidence') evidenceRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--evidence=')) evidenceRaw = a.slice('--evidence='.length);
+    else if (a.startsWith('--evidence=')) evidenceRaw = inlineFlagValue(a, '--evidence');
     else if (a === '--failed') failed = true;
     else if (a === '--bail') bail = true;
     else if (a === '--format') formatRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--format=')) formatRaw = a.slice('--format='.length);
+    else if (a.startsWith('--format=')) formatRaw = inlineFlagValue(a, '--format');
     else if (a === '--no-timestamps') noTimestamps = true;
     else if (a === '--log-file') logFile = flagValue(argv, ++i, a);
-    else if (a.startsWith('--log-file=')) logFile = a.slice('--log-file='.length);
+    else if (a.startsWith('--log-file=')) logFile = inlineFlagValue(a, '--log-file');
     else if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--browser=')) browserRaw = a.slice('--browser='.length);
+    else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
     else if (a === '--headed') headed = true;
     else if (a === '--update-snapshots') updateSnapshots = true;
     else if (a === '--log-output') logOutputRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--log-output=')) logOutputRaw = a.slice('--log-output='.length);
+    else if (a.startsWith('--log-output=')) logOutputRaw = inlineFlagValue(a, '--log-output');
     else if (a === '--log-level') logLevelRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--log-level=')) logLevelRaw = a.slice('--log-level='.length);
+    else if (a.startsWith('--log-level=')) logLevelRaw = inlineFlagValue(a, '--log-level');
     else files.push(a);
   }
+  // A `--tag` value made only of separators (`,,`, ` , `) survives the empty check in
+  // `requireNonEmpty` but still names zero tags, and used to collapse to `undefined` — the same
+  // silent widening to the whole suite that B6-01 is about, one step further along. Refuse it here
+  // rather than in the flag layer, since only `--tag` has a list to be empty.
   const tagList = tagRaw
     ?.split(',')
     .map((t) => t.trim())
     .filter((t) => t.length > 0);
+  if (tagList && tagList.length === 0) {
+    throw new Error(
+      `--tag was given \`${tagRaw}\`, which names no tags.\n` +
+        `  write the tags as a comma-separated list (\`--tag smoke,api\`), or drop the flag to run everything.`,
+    );
+  }
   const tags = tagList && tagList.length > 0 ? tagList : undefined;
   return {
     files,
@@ -1469,10 +1515,10 @@ function parseCheckArgs(argv: string[]): CheckArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = flagValue(argv, ++i, a);
-    else if (a.startsWith('--env=')) env = a.slice('--env='.length);
+    else if (a.startsWith('--env=')) env = inlineFlagValue(a, '--env');
     else if (a === '--no-color') noColor = true;
     else if (a === '--format') format = flagValue(argv, ++i, a);
-    else if (a.startsWith('--format=')) format = a.slice('--format='.length);
+    else if (a.startsWith('--format=')) format = inlineFlagValue(a, '--format');
     else files.push(a);
   }
   return { files, env, noColor, format };

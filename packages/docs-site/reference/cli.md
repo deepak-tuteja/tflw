@@ -65,6 +65,15 @@ produce a full-detail artifact and a green pipeline. Use `--flag=value` for a va
 does start with `--`.
 :::
 
+::: warning An empty value is not "no filter"
+`--tag ""` and `--tag=` exit `2` as well. An empty value asks for *nothing*, so tflw refuses it
+rather than running everything: `--tag` and `--only` narrow a run, and an empty one used to be
+indistinguishable from leaving the flag off — widening the run to the whole suite, at exit `0`,
+while `--tag nope` correctly failed. You will not type this by hand; a shell writes it for you,
+from `tflw run --tag "$SUITE_TAGS"` with the variable unset. A value made only of separators
+(`--tag=,,`) names no tags and is refused for the same reason.
+:::
+
 ## `tflw check`
 
 <table>

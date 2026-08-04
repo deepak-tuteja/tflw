@@ -1677,7 +1677,17 @@ nothing after it, or with another `--flag` in the value slot, is a usage error (
 silent fall-back to the default (M63). This matters most where the default is the *least*
 protective setting — `--evidence` that lost its argument to a CI YAML fold used to run at `full`
 and leave the pipeline green. Only `--`-prefixed tokens are refused as values, so a negative
-number or a `-`-prefixed name still works positionally; `--flag=value` takes anything at all.
+number or a `-`-prefixed name still works positionally; `--flag=value` takes any non-empty value,
+including one beginning with `--`.
+
+An **empty** value is refused the same way, in both spellings (M70). `--tag ""` and `--tag=` are
+not "no filter": they ask for nothing, so they are a usage error rather than a run of everything.
+The two narrowing flags are the reason the rule exists — `--tag` and `--only` were read for
+truthiness downstream, so an empty value was indistinguishable from omitting the flag and quietly
+widened the run from the requested subset to the entire suite at exit 0, while `--tag nope`
+correctly failed. Nobody types that by hand; a shell interpolates it, from
+`tflw run --tag "$SUITE_TAGS"` with the variable unset. A `--tag` value made only of separators
+(`--tag=,,`) names no tags and is refused for the same reason.
 Every flag listed above also appears in `tflw --help`, and a test enforces that (`CLI_FLAGS` in
 `packages/lang/src/spec-data.ts` is the list this table, the docs-site reference page, and
 `--help` are all checked against).
