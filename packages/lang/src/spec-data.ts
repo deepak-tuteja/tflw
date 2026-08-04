@@ -90,14 +90,14 @@ export const DIAGNOSTICS: readonly DiagnosticEntry[] = [
   { code: 'TF002', meaning: 'Lexer: a string literal has no closing quote before end of line.', example: '`test "open string`' },
   { code: 'TF003', meaning: 'Lexer: indentation does not line up with any enclosing block.', example: 'a dedent that lands between two open indent levels' },
   { code: 'TF010', meaning: 'Parser: a token appeared where the grammar didn\'t allow it (the catch-all "unexpected token" code — covers many distinct shapes: a missing path after `api GET`, a multi-word call missing its parens, a malformed table row cell count, etc.).', example: '`api GET` (no path) → `expected a path like `/orders`, found end of line`' },
-  { code: 'TF011', meaning: 'Parser: an unrecognised statement keyword where a step was expected.', example: '`expct status equals 200` → `did you mean `expect`?`' },
+  { code: 'TF011', meaning: 'Parser: an unrecognised statement keyword where a step was expected, or a *retired* one — a keyword the parser still recognises solely so it can name its replacement outright (FS-04\'s `uncheck` → `untick`, D103 style). A retired spelling is kept out of both the did-you-mean vocabulary and the "expected one of" fallback: offering it back as valid would be worse than no suggestion.', example: '`expct status equals 200` → `did you mean `expect`?`; `uncheck field "Terms"` → `` `uncheck` was renamed to `untick` ``' },
   { code: 'TF012', meaning: 'Parser: an unknown HTTP method after `api`.', example: '`api FETCH /health` → `did you mean `PATCH`?`' },
   { code: 'TF013', meaning: 'Parser: an unrecognised `expect`/`capture` subject.', example: '`expect statuss equals 200` → `did you mean `status`?`' },
   // A3-OS-06: the old example was a mashup of the two mutually-exclusive hint branches ("did you
   // mean" *and* an option list) and showed output the tool does not produce — `eq` is two characters
   // from nothing, so it gets the fallback line, not a suggestion. This one is copied from a real
   // run, and names the branch it is showing.
-  { code: 'TF014', meaning: 'Parser: an unrecognised matcher after a subject.', example: '`expect text "x" is vissible` → `did you mean `visible`?`; a word with no near match gets the full vocabulary instead' },
+  { code: 'TF014', meaning: 'Parser: an unrecognised matcher after a subject, or none at all — including the one shape that used to be legal, a bare `check <locator>` (FS-04): it ticked a checkbox, so a forgotten matcher silently turned a soft assertion into a mutation that then passed. That case names both readings rather than guessing which was meant.', example: '`expect text "x" is vissible` → `did you mean `visible`?`; a word with no near match gets the full vocabulary instead; `check field "Terms"` → ``check <locator>` needs a matcher` with `tick`/`is checked` both offered' },
   { code: 'TF015', meaning: 'Parser: a `test`/`action`/hook block has no indented body.', example: 'a `before file` block with no steps under it' },
   { code: 'TF016', meaning: 'Parser: top-level content that isn\'t a `test`/`action`/`import`/`use`/`before`/`after`.', example: 'a bare `expect …` line outside any block' },
   { code: 'TF020', meaning: 'Parser (config): an unrecognised key inside a config block.', example: '`headr "Accept" is "…"` → `did you mean `header`?`' },

@@ -1335,8 +1335,10 @@ silently becoming a mutation is not a shape a dual grammar can be trusted with.
 
 Playwright and Cypress both spell this action `check()`, so arrivals from either will type `check
 field "X"` from muscle memory; that is exactly why the replacement is a diagnostic naming `tick`
-rather than a quiet re-reading. During the `tick` migration window a bare `check <locator>` still
-parses as the action; it becomes a parse error carrying that diagnostic in the same release.
+rather than a quiet re-reading. A bare `check <locator>` is now `TF014`, and it names *both*
+readings — `tick field "…"` to tick the box, `check field "…" is checked` to assert its state —
+because which one the author meant is the entire question a did-you-mean would have to guess at.
+`uncheck` is likewise `TF011` naming `untick` outright (§17), since edit distance does not reach it.
 
 ### 9.2 `fill form` (P#26) ✅
 
@@ -1995,10 +1997,10 @@ require reading the source.
 | `TF002` | Lexer: a string literal has no closing quote before end of line. | `test "open string` |
 | `TF003` | Lexer: indentation does not line up with any enclosing block. | a dedent that lands between two open indent levels |
 | `TF010` | Parser: a token appeared where the grammar didn't allow it (the catch-all "unexpected token" code — covers many distinct shapes: a missing path after `api GET`, a multi-word call missing its parens, a malformed table row cell count, etc.). | `api GET` (no path) → `expected a path like `/orders`, found end of line` |
-| `TF011` | Parser: an unrecognised statement keyword where a step was expected. | `expct status equals 200` → `did you mean `expect`?` |
+| `TF011` | Parser: an unrecognised statement keyword where a step was expected, or a *retired* one — a keyword the parser still recognises solely so it can name its replacement outright (FS-04's `uncheck` → `untick`, D103 style). A retired spelling is kept out of both the did-you-mean vocabulary and the "expected one of" fallback: offering it back as valid would be worse than no suggestion. | `expct status equals 200` → `did you mean `expect`?`; `uncheck field "Terms"` → `` `uncheck` was renamed to `untick` `` |
 | `TF012` | Parser: an unknown HTTP method after `api`. | `api FETCH /health` → `did you mean `PATCH`?` |
 | `TF013` | Parser: an unrecognised `expect`/`capture` subject. | `expect statuss equals 200` → `did you mean `status`?` |
-| `TF014` | Parser: an unrecognised matcher after a subject. | `expect text "x" is vissible` → `did you mean `visible`?`; a word with no near match gets the full vocabulary instead |
+| `TF014` | Parser: an unrecognised matcher after a subject, or none at all — including the one shape that used to be legal, a bare `check <locator>` (FS-04): it ticked a checkbox, so a forgotten matcher silently turned a soft assertion into a mutation that then passed. That case names both readings rather than guessing which was meant. | `expect text "x" is vissible` → `did you mean `visible`?`; a word with no near match gets the full vocabulary instead; `check field "Terms"` → ``check <locator>` needs a matcher` with `tick`/`is checked` both offered |
 | `TF015` | Parser: a `test`/`action`/hook block has no indented body. | a `before file` block with no steps under it |
 | `TF016` | Parser: top-level content that isn't a `test`/`action`/`import`/`use`/`before`/`after`. | a bare `expect …` line outside any block |
 | `TF020` | Parser (config): an unrecognised key inside a config block. | `headr "Accept" is "…"` → `did you mean `header`?` |
