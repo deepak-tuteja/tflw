@@ -860,12 +860,12 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
           if (!afterExec.ok) throw new RuntimeError(afterExec.error ?? 'an `after` hook failed');
         }
       }
-      const thinkMs = exec.steps.filter((s) => s.kind === 'think').reduce((sum, s) => sum + s.durationMs, 0);
-      result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, Math.round(performance.now() - iterStart - thinkMs)) };
+      const pauseMs = exec.steps.filter((s) => s.kind === 'pause').reduce((sum, s) => sum + s.durationMs, 0);
+      result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, Math.round(performance.now() - iterStart - pauseMs)) };
     } catch (err) {
       const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
-      // Think time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
-      // negligible skew: a failure that happens after a `think` still counts that pacing time as
+      // Pause time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
+      // negligible skew: a failure that happens after a `pause` still counts that pacing time as
       // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
       // duration. Only successful iterations feed the duration percentiles that thresholds read.
       result = { ok: false, scenario: scenario.name.value, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
@@ -2543,14 +2543,14 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           result = mkStep('stub', src, step.span, true, stepStart, `stub ${step.method} ${JSON.stringify(urlPattern)} → ${status}`);
           break;
         }
-        case 'ThinkStmt': {
-          // A fresh uniform draw per iteration for a ranged `think`, off `ctx.rng` — reproducible
-          // like every other generator (P#23), not `Math.random()`. Excluded from a scenario's own
+        case 'PauseStmt': {
+          // A fresh uniform draw per iteration for a ranged `pause`, off `ctx.rng` — reproducible
+          // like every other generator (P#23), not `Math.random()`. Excluded from a load test's own
           // `duration` threshold metric by the load engine (`runLoad` below, D24a) via this exact
-          // step's own `durationMs` — think models pacing, not system latency.
+          // step's own `durationMs` — pacing is not system latency.
           const ms = step.maxMs !== null ? step.minMs + Math.floor(ctx.rng() * (step.maxMs - step.minMs + 1)) : step.minMs;
           await sleep(ms);
-          result = mkStep('think', src, step.span, true, stepStart, `thought for ${ms}ms`);
+          result = mkStep('pause', src, step.span, true, stepStart, `paused for ${ms}ms`);
           break;
         }
       }
@@ -2909,25 +2909,61 @@ async function execSnapshotExpect(step: ExpectStmt, ctx: EvalCtx, src: string, s
   return outcome.diff ? { ...result, snapshotDiff: outcome.diff } : result;
 }
 
-/** `wait until <locator> [not] <matcher>` (SPEC §9.5, M3b) — the UI sibling of `execUiExpect`:
- * same resolve-fresh-every-poll / `hasCount`-exception logic, but polling `timeout wait` (default
- * 30s, the same clock `wait until api` uses) instead of `timeout expect` (default 5s), for a UI
- * condition that can legitimately take longer to settle than the ordinary UI-expect budget. Always
- * hard-fails on exhaustion — there is no soft/`check` form for `wait until`. */
+/** `wait until <locator> [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` from FS-05) — the
+ * UI sibling of `execUiExpect`: same resolve-fresh-every-poll / `hasCount`-exception logic, but
+ * polling `timeout wait` (default 30s, the same clock `wait until api` uses) instead of `timeout
+ * expect` (default 5s), for a UI condition that can legitimately take longer to settle than the
+ * ordinary UI-expect budget. Always hard-fails on exhaustion — there is no soft/`check` form for
+ * `wait until`.
+ *
+ * With `for <duration>` the condition must hold *continuously* for that long. The hold clock is
+ * reset to `null` the moment a poll comes back false, so only an uninterrupted window passes — a
+ * toast that flickers into view halfway through starts the count again rather than being averaged
+ * away. `timeout wait` still bounds the whole step, so a sustained condition that never gets a
+ * clean window fails with the elapsed budget rather than hanging. */
 async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
   const subject = step.subject;
   const browser = requireBrowserCtx(ctx);
   const page = await browser.page.ensurePage(browser.manager);
   const scope = browser.scope ?? page;
   const name = String(evalValue(subject.locator.value, ctx));
+  const holdMs = step.holdMs;
+  // A hold window at least as long as the poll budget can never pass — the condition would have to
+  // stay true past the deadline that ends the step. That is a written-wrong test, not a slow app,
+  // and it would otherwise surface as an ordinary timeout that says nothing about the real cause.
+  // The parser cannot catch it: `timeout wait` comes from config and can differ per run.
+  if (holdMs !== null && holdMs >= config.timeouts.wait) {
+    throw new RuntimeError(
+      `\`for ${holdMs}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${config.timeouts.wait}ms), so the hold window has to be shorter than it. Raise \`timeout wait\` in tflw.config, or shorten the hold.`,
+    );
+  }
   const deadline = performance.now() + config.timeouts.wait;
+  let heldSince: number | null = null;
+  let longestHoldMs = 0;
   for (;;) {
     const { pwLocator, via, count } = await resolveLocatorSnapshot(scope, subject.locator, ctx);
     if (step.matcher.name !== 'hasCount') await requireSingleMatch(subject.locator, name, { pwLocator, via }, count);
     const label = locatorDetail(subject.locator, name, via);
     const outcome = await evalUiMatcherOnce(label, pwLocator, step.matcher, ctx, count);
-    if (outcome.ok || performance.now() >= deadline) {
-      return mkStep('wait', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+    const now = performance.now();
+    if (outcome.ok) {
+      if (heldSince === null) heldSince = now;
+      longestHoldMs = Math.max(longestHoldMs, now - heldSince);
+      if (holdMs === null || now - heldSince >= holdMs) {
+        const message = holdMs === null ? outcome.message : `${outcome.message}, held for ${holdMs}ms`;
+        return mkStep('wait', src, step.span, true, start, ctx.redactor.redact(message));
+      }
+    } else {
+      if (heldSince !== null) longestHoldMs = Math.max(longestHoldMs, now - heldSince);
+      heldSince = null;
+    }
+    if (now >= deadline) {
+      // What a held wait fails on is the *interruption*, so report the longest unbroken window
+      // rather than only the state at the deadline: without it, a condition that held 1.9s of a
+      // required 2s and one that was never true for a single poll produce the same report line.
+      const detail = longestHoldMs > 0 ? `longest unbroken hold ${Math.round(longestHoldMs)}ms of ${holdMs}ms` : `never held for ${holdMs}ms`;
+      const message = holdMs === null ? outcome.message : `${outcome.message} (${detail})`;
+      return mkStep('wait', src, step.span, false, start, ctx.redactor.redact(message));
     }
     await sleep(WAIT_POLL_INTERVAL_MS);
   }
@@ -3311,7 +3347,7 @@ async function execWaitUntilApi(
  * open-model arrival wait) returns immediately once Ctrl-C fires instead of finishing out its full
  * delay, the difference between an abort taking effect this instant vs. up to the longest scheduled
  * sleep in the file (which for a `ramp … over 30s` scenario could be the better part of 30s). Every
- * other call site (think time, retry backoff, poll intervals) passes no signal and behaves exactly
+ * other call site (pause time, retry backoff, poll intervals) passes no signal and behaves exactly
  * as before. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0 || signal?.aborted) return Promise.resolve();
@@ -3680,8 +3716,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'screenshot';
     case 'StubStmt':
       return 'stub';
-    case 'ThinkStmt':
-      return 'think';
+    case 'PauseStmt':
+      return 'pause';
   }
 }
 

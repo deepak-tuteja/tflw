@@ -279,15 +279,21 @@ export interface ThresholdDecl extends Node {
   readonly scope: StringLit | null;
 }
 
-/** `think 2s` / `think 1s to 3s` (D18) — per-iteration pacing inside a `scenario` only; the
- * checker rejects it inside `test`/`before`/`after` (`TF033`) so decision 8's `sleep` ban stays
- * meaningful where it was aimed (functional sync hacks) while remaining a legitimate load-
- * modeling primitive here. A range picks a fresh uniform duration each iteration (`maxMs: null`
- * means a fixed `minMs`). Excluded from a scenario's own `duration` threshold metric — think
- * models user pacing, not system latency; counting it would let a scenario satisfy a latency
- * threshold merely by sleeping more. */
-export interface ThinkStmt extends Node {
-  readonly type: 'ThinkStmt';
+/** `pause 2s` / `pause 1s to 3s` (D18; `think` until FS-05) — per-iteration pacing inside a
+ * workload-bearing `test` only; the checker rejects it inside a functional `test`/`before`/`after`
+ * (`TF033`) so decision 8's `sleep` ban stays meaningful where it was aimed (functional sync hacks)
+ * while remaining a legitimate load-modeling primitive here. A range picks a fresh uniform duration
+ * each iteration (`maxMs: null` means a fixed `minMs`). Excluded from the test's own `duration`
+ * threshold metric — pacing is not system latency; counting it would let a load test satisfy a
+ * latency threshold merely by sleeping more.
+ *
+ * FS-05 renamed the keyword from `think`: the word described the *modelled user*, not the
+ * statement, which left the language with `think` and `wait until` as two unrelated-sounding names
+ * for "stop here for a bit" and "poll until true". `pause` says what it does and stays
+ * unambiguous against `wait until` — the collision a `wait <dur>` spelling would have
+ * reintroduced. */
+export interface PauseStmt extends Node {
+  readonly type: 'PauseStmt';
   readonly minMs: number;
   readonly maxMs: number | null;
 }
@@ -324,7 +330,7 @@ export type Step =
   | DropFileStmt
   | ScreenshotStmt
   | StubStmt
-  | ThinkStmt;
+  | PauseStmt;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */
 export interface GiveStmt extends Node {
@@ -404,15 +410,26 @@ export interface WaitUntilApiStmt extends Node {
   readonly expects: readonly ExpectStmt[];
 }
 
-/** `wait until <locator> [not] <matcher>` (SPEC §9.5, M3b) — the UI sibling of `wait until api`:
- * same "budget, not a moment" semantics, but for a UI condition that can outlast the ordinary UI
- * expect budget (`timeout expect`, default 5s) without a separate request to re-issue, so it's a
- * single line rather than a block. Polls up to `timeout wait` (default 30s, same clock `wait until
- * api` uses) and always hard-fails on exhaustion — there is no soft/`check` form. */
+/** `wait until <locator> [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` added by FS-05) —
+ * the UI sibling of `wait until api`: same "budget, not a moment" semantics, but for a UI condition
+ * that can outlast the ordinary UI expect budget (`timeout expect`, default 5s) without a separate
+ * request to re-issue, so it's a single line rather than a block. Polls up to `timeout wait`
+ * (default 30s, same clock `wait until api` uses) and always hard-fails on exhaustion — there is no
+ * soft/`check` form. */
 export interface WaitUntilUiStmt extends Node {
   readonly type: 'WaitUntilUiStmt';
   readonly subject: LocatorSubject;
   readonly matcher: Matcher;
+  /** `for <duration>` (FS-05) — how long the condition must hold *continuously* before the step
+   * passes, in ms; `null` is the original semantics, "pass the first poll it is true".
+   *
+   * This is what makes a *sustained* condition writable at all. Without it, `wait until text
+   * "Error" is hidden` returns on its first poll, which for a toast that has not rendered yet is
+   * immediately — the assertion passes precisely because nothing has happened, and keeps passing
+   * once the toast starts appearing. Proving a negative needs a span, not an instant. The hold
+   * clock restarts from zero whenever the condition goes false, so the step passes only on an
+   * uninterrupted window, and the whole thing stays bounded by `timeout wait`. */
+  readonly holdMs: number | null;
 }
 
 export interface ApiHeader extends Node {

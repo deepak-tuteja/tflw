@@ -128,10 +128,10 @@ function children(node: Node): readonly Node[] {
     case 'SharedIterationsWorkload':
     case 'PerVuIterationsWorkload':
     case 'ThresholdDecl':
-    case 'ThinkStmt':
+    case 'PauseStmt':
     case 'Stage':
       // `users`/`rps`/`overMs`/`forMs` (workload), `iterations`/`vus` (iteration-count workload),
-      // `metric`/`op`/`value` (threshold), `minMs`/`maxMs` (think), `mode`/`target`/`durationMs`
+      // `metric`/`op`/`value` (threshold), `minMs`/`maxMs` (pause), `mode`/`target`/`durationMs`
       // (stage) are all plain numbers/enums — no child `Node` to descend into, same leaf shape as
       // `DurationLit`/`NumberLit` below.
       return [];

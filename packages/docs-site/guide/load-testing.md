@@ -72,7 +72,7 @@ silently distort your numbers:
 ```console
 ✓ checkout under load (workload — ramp to 50 users over 30000ms)
     iterations: 812  failures: 3  error rate: 0.37%
-    duration (ms, think-excluded): min 40  avg 210  p50 210  p90 480  p95 640  p99 910  max 1200
+    duration (ms, pause-excluded): min 40  avg 210  p50 210  p90 480  p95 640  p99 910  max 1200
 ⚠ your load backed off — an estimated 41% of this test's available VU time was lost to the target
 system slowing down; results understate real latency
 ```
@@ -145,7 +145,7 @@ its own fixed `N`. Reach for these when you want a reproducible, fixed-size run 
 regression comparison — "exactly how long does 5,000 checkouts take today" — rather than a
 time-boxed one where the iteration count varies run to run.
 
-## `think` — pacing, not a hack
+## `pause` — pacing, not a hack
 
 ```tflw
 test "browsing"
@@ -153,18 +153,24 @@ test "browsing"
   api GET /products
   expect status equals 200
   capture body.products[0].id as id
-  think 1s to 3s
+  pause 1s to 3s
   api GET /products/{id}
   expect status equals 200
   threshold error rate is less than 1%
 ```
 
-`think <duration>` (fixed) or `think <duration> to <duration>` (a fresh random draw per
+`pause <duration>` (fixed) or `pause <duration> to <duration>` (a fresh random draw per
 iteration) models a real user pausing between actions. It's legal **only** inside a
 workload-bearing `test` — the checker rejects it inside a plain functional `test`/`before`/
-`after`, where a fixed sleep is exactly the sync hack `sleep` itself was banned for. Think time is
+`after`, where a fixed sleep is exactly the sync hack `sleep` itself was banned for. Pause time is
 excluded from a load test's own `duration` threshold: it models pacing, not system latency, so
 sleeping more should never help a load test pass a latency threshold.
+
+Waiting in a *functional* test is a different construct entirely. If you're waiting for something
+to become true, that's [`wait until …`](/guide/browser-basics); if it has to *stay* true —
+"the error toast never appears" — that's `wait until … for <duration>`. And if elapsed time is
+genuinely the thing under test, a cache TTL or a token expiry, no condition exists to poll and the
+[JS escape hatch](/guide/actions) is the honest answer.
 
 ## Thresholds — the pass/fail gate
 

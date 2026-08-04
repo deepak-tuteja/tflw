@@ -58,7 +58,13 @@ const FIXTURE_HTML = `<!doctype html>
 
   <button disabled>Disabled button</button>
 
-  <div style="display:none"><button>Hidden button</button></div>
+  <div id="hidden-wrap" style="display:none"><button>Hidden button</button></div>
+
+  <!-- FS-05: reveals "Hidden button" after a delay, so a wait-until hold window can be
+       interrupted partway through — the case the clause exists for (a toast that appears late is
+       exactly what "the error toast never appears" has to catch). Inert until clicked, so no
+       other test in this file sees the fixture change. -->
+  <button id="reveal" onclick="setTimeout(function () { document.getElementById('hidden-wrap').style.display = ''; }, 250);">Reveal hidden</button>
 
   <div style="height:2000px"></div>
   <button id="bottom">Bottom button</button>
@@ -588,6 +594,58 @@ test('`wait until <ui condition>` that never becomes true fails after the wait t
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   assert.match(report.tests[0]!.error ?? '', /expected .*to be enabled/);
+});
+
+// ---- FS-05 (milestone B1): `wait until … for <duration>` -------------------
+//
+// Proving a negative needs a span. Without a hold window `wait until button "Hidden button" is
+// hidden` returns on its very first poll — true because the page has barely started, and just as
+// true a moment before the thing appears. These three tests are the difference between the clause
+// being honoured, being ignored, and being unsatisfiable by construction.
+
+test('FS-05: a condition true throughout passes, and the step actually spends the hold window doing it', async () => {
+  const { report } = await run(`test "stays hidden"
+  open "/"
+  wait until button "Hidden button" is hidden for 400ms
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const step = report.tests[0]!.steps[1]!;
+  assert.equal(step.kind, 'wait');
+  // The load-bearing assertion: a `for` that were parsed and then dropped would return on the
+  // first poll and this would be a few milliseconds.
+  assert.ok(step.durationMs >= 400, `expected the step to hold for 400ms, took ${step.durationMs}ms`);
+  assert.match(step.detail ?? '', /held for 400ms/);
+});
+
+test('FS-05: a condition interrupted mid-window fails, and reports the longest unbroken hold rather than only the state at the deadline', async () => {
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 1500 } };
+  const { program, diagnostics } = parseSource(`test "toast appears late"
+  open "/"
+  click button "Reveal hidden"
+  wait until button "Hidden button" is hidden for 600ms
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false, JSON.stringify(report.tests[0], null, 2));
+  // ~250ms of hold before the reveal fires, against a required 600ms. The number is what tells a
+  // reader the condition was nearly met rather than never met — a 1.9s-of-2s flake and a
+  // never-true condition are otherwise the same report line.
+  assert.match(report.tests[0]!.error ?? '', /longest unbroken hold \d+ms of 600ms/);
+});
+
+test('FS-05: a hold window at least as long as `timeout wait` is refused by name — it could never pass, and would otherwise surface as an ordinary timeout that explains nothing', async () => {
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 500 } };
+  const { program } = parseSource(`test "impossible hold"
+  open "/"
+  wait until button "Hidden button" is hidden for 500ms
+`);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /can never be satisfied/);
+  // Both numbers, because the fix could be either one.
+  assert.match(error, /500ms/);
+  assert.match(error, /timeout wait/);
 });
 
 // ---- M3c: screenshot step, failure screenshots, trace-on-failure/retry, engine/viewport --------

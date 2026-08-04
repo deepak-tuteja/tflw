@@ -2843,18 +2843,18 @@ test('`tflw check` catches a browser step reached through an `action` from a wor
   });
 });
 
-test('`tflw check` catches a `think` reached through an `action` from a functional test (M60, A4-02)', async () => {
+test('`tflw check` catches a `pause` reached through an `action` from a functional test (M60, A4-02)', async () => {
   await withFixtureServer(async (baseUrl) => {
-    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m60-indirect-think-'));
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m60-indirect-pause-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       // A4-02's repro B: this functional test slept for two real seconds and reported PASS.
-      await writeFile(join(dir, 't.tflw'), 'action helper()\n  api GET /health\n  think 2s\n\ntest "t"\n  helper()\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 't.tflw'), 'action helper()\n  api GET /health\n  pause 2s\n\ntest "t"\n  helper()\n  api GET /health\n  expect status equals 200\n', 'utf8');
 
       const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
       assert.equal(failure.code, 2);
-      assert.match(failure.stderr, /`think` is only legal inside a workload-bearing `test`/);
-      assert.match(failure.stderr, /`helper` \(line 3\) contains a `think`/);
+      assert.match(failure.stderr, /`pause` is only legal inside a workload-bearing `test`/);
+      assert.match(failure.stderr, /`helper` \(line 3\) contains a `pause`/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

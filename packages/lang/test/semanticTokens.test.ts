@@ -163,14 +163,14 @@ test('collectSemanticTokens: a variable used inside a browser step (`fill … wi
 // exactly the M4a-era browser-arc gap for a different construct. M50 (D93-D95) later collapsed
 // `scenario` into a workload-bearing `test` — these now use `test "…" { ramp to … }` instead. ---
 
-test('collectSemanticTokens (M33/M50): `ramp`/`over`/`threshold`/`cleanup`/`think` classify as `keyword`', () => {
-  const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  threshold p95 duration is less than 800ms\n  cleanup\n  api GET /health\n  think 1s to 3s\n`;
+test('collectSemanticTokens (M33/M50): `ramp`/`over`/`threshold`/`cleanup`/`pause` classify as `keyword`', () => {
+  const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  threshold p95 duration is less than 800ms\n  cleanup\n  api GET /health\n  pause 1s to 3s\n`;
   const tokens = tokensOf(source);
   assertTypeAt(tokens, source, 'ramp', 'keyword');
   assertTypeAt(tokens, source, 'over', 'keyword');
   assertTypeAt(tokens, source, 'threshold', 'keyword');
   assertTypeAt(tokens, source, 'cleanup', 'keyword');
-  assertTypeAt(tokens, source, 'think', 'keyword');
+  assertTypeAt(tokens, source, 'pause', 'keyword');
 });
 
 test('collectSemanticTokens (Phase 2b, D105-D107): `parallel`/`sequential` header modifiers classify as `keyword`', () => {

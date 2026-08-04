@@ -169,16 +169,26 @@ test('getCompletions: matcher kind includes `matches snapshot` once `matches` is
 // -- M33 (perf-arc LSP/VS Code catch-up, D24b): the M29-M32 load-testing keywords had never been
 // offered by completion at all — `STEP_KEYWORDS` predated the whole arc. ------------------------
 
-test('getCompletions (M33): step kind includes `think` inside a scenario body', () => {
-  // `th` alone would also match `threshold` (both real step-position keywords here) — narrow past
-  // where they diverge, same reasoning as the `cleanup`-vs-`click`/`close` case below.
-  const source = 'test "checkout burst"\n  ramp to 10 users over 30s\n  thi';
+test('getCompletions (M33/FS-05): step kind includes `pause` inside a workload-bearing body', () => {
+  // `pa` alone would also match `parallel`; narrow past where they diverge, same reasoning as the
+  // `cleanup`-vs-`click`/`close` case below. Before FS-05 this was `thi` for `think`, kept clear of
+  // `threshold`.
+  const source = 'test "checkout burst"\n  ramp to 10 users over 30s\n  pau';
   const ctx = getCompletionContext(source, source.length)!;
-  assert.deepEqual(ctx, { kind: 'step', prefix: 'thi' });
+  assert.deepEqual(ctx, { kind: 'step', prefix: 'pau' });
   assert.deepEqual(
     getCompletions(ctx).map((c) => c.label),
-    ['think'],
+    ['pause'],
   );
+});
+
+test('FS-05: `think` is not offered by completion — a retired spelling must not be suggested back to the reader', () => {
+  const source = 'test "checkout burst"\n  ramp to 10 users over 30s\n  th';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(ctx, { kind: 'step', prefix: 'th' });
+  const labels = getCompletions(ctx).map((c) => c.label);
+  assert.ok(!labels.includes('think'), `completion still offers a removed keyword: ${JSON.stringify(labels)}`);
+  assert.ok(labels.includes('threshold'), `expected the real \`th\` keyword to still be offered: ${JSON.stringify(labels)}`);
 });
 
 test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at the start of a scenario body line', () => {

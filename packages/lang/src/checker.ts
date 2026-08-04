@@ -382,19 +382,19 @@ const BROWSER_STEP_TYPES = new Set<Step['type']>([
  * concurrent multi-load-test run keys each one's own metrics/threshold breakdown by name, so a
  * collision would silently merge two distinct runs' results — this rule is scoped to
  * workload-bearing tests only, since two functional tests have always been allowed to share a
- * name), `think` legal only inside a workload-bearing body (D18), no browser step inside one
+ * name), `pause` legal only inside a workload-bearing body (D18, FS-05), no browser step inside one
  * (D19 — a browser VU is ~50-100MB, infeasible at load-test scale; checker-enforced rather than
  * left to surface as a runtime crash), and `retry`/`with each` rejected alongside a workload
  * (D96 — a load test's own iterations already provide repetition; it has no per-row cases, only
  * per-VU ones), and a workload-bearing test carries at least one `threshold` (M60, A4-01 — without
  * one there is nothing to decide a verdict from, so the test can never fail).
  *
- * The `think`/browser-step bans resolve through the call graph (`reachableOffender`), not just a
+ * The `pause`/browser-step bans resolve through the call graph (`reachableOffender`), not just a
  * test's directly-written steps. Until M60 they did not, and the comment that used to sit here
  * claimed a call into an `action` "still fails loudly at runtime instead of silently doing the
  * wrong thing" — it does not, in either direction (A4-02): a workload test calling an action
  * containing `click` ran 57 384 iterations at a 100 % error rate and reported `PASS`, and a
- * functional test calling an action containing `think 2s` slept for two seconds and reported
+ * functional test calling an action containing `pause 2s` slept for two seconds and reported
  * `PASS`. Actions are the reuse unit shared by every kind of test (D16) and so still can't be
  * judged on their own — the same action is legal under a workload and illegal outside one — which
  * is why the diagnostic lands on the *call site*, the one place the caller's context is known.
@@ -458,52 +458,61 @@ export function checkWorkloadTests(program: Program): Diagnostic[] {
   const actionsByName = new Map<string, ActionDecl>();
   for (const action of program.actions) if (!actionsByName.has(action.name)) actionsByName.set(action.name, action);
 
-  const isThink = (step: Step): boolean => step.type === 'ThinkStmt';
+  const isPause = (step: Step): boolean => step.type === 'PauseStmt';
   const isBrowserStep = (step: Step): boolean =>
     BROWSER_STEP_TYPES.has(step.type) ||
     (step.type === 'ExpectStmt' &&
       (step.subject.type === 'LocatorSubject' || step.subject.type === 'PageSubject' || step.subject.type === 'NetworkRequestSubject'));
 
-  const walkForThink = (steps: readonly Step[]): void => {
+  // FS-05 rewrote both hints below. They used to send every reader to `wait until …`, which is only
+  // half the truth: `wait until` polls a condition, and the two situations that most often make
+  // someone reach for a sleep — a cache TTL, a token expiry — have no condition to poll, because
+  // elapsed time *is* the thing under test. Naming the escape hatch for those is honest; naming
+  // only `wait until` sent them toward a construct that structurally cannot express it.
+  const PAUSE_HINT =
+    'waiting for something to *become* true is `wait until …` (and `wait until … for <dur>` if it must *stay* true); ' +
+    'when elapsed time is genuinely the thing under test — a cache TTL, a token expiry — there is no condition to poll, so use the JS escape hatch (`use "./helpers/…"`, SPEC §11)';
+
+  const walkForPause = (steps: readonly Step[]): void => {
     for (const step of steps) {
-      if (isThink(step)) {
+      if (isPause(step)) {
         diags.push({
           code: Codes.LOAD_INVALID,
           severity: 'error',
-          message: '`think` is only legal inside a workload-bearing `test`',
+          message: '`pause` is only legal inside a workload-bearing `test`',
           span: step.span,
-          hint: 'a functional `test`/`before`/`after` body uses `wait until …` for eventual consistency, never a fixed sleep — this `test` needs a workload line (`ramp`/`hold`/`step`/`spike`/`run`) for `think` to be meaningful',
+          hint: `${PAUSE_HINT}. Give this \`test\` a workload line (\`ramp\`/\`hold\`/\`step\`/\`spike\`/\`run\`) and \`pause\` becomes per-iteration pacing, which is what it is for`,
         });
       } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
-        walkForThink(step.body);
+        walkForPause(step.body);
       }
     }
   };
   for (const test of program.tests) {
-    if (!test.workload) walkForThink(test.body);
+    if (!test.workload) walkForPause(test.body);
   }
-  for (const hook of program.hooks) walkForThink(hook.body);
+  for (const hook of program.hooks) walkForPause(hook.body);
 
   // The same two bans, one level of indirection out (M60, A4-02): a call whose callee reaches the
   // banned construct is reported at the call site, since only the caller knows which of the two
   // rules applies.
-  const callsIntoThink = (steps: readonly Step[]): void => {
+  const callsIntoPause = (steps: readonly Step[]): void => {
     for (const call of directCalls(steps)) {
-      const found = reachableOffender(call.name, actionsByName, isThink);
+      const found = reachableOffender(call.name, actionsByName, isPause);
       if (!found) continue;
       diags.push({
         code: Codes.LOAD_INVALID,
         severity: 'error',
-        message: '`think` is only legal inside a workload-bearing `test`',
+        message: '`pause` is only legal inside a workload-bearing `test`',
         span: call.span,
-        hint: `\`${found.action.name}\` (line ${found.step.span.start.line}) contains a \`think\`, so calling it from a body with no workload line is a fixed sleep in a functional test — use \`wait until …\` for eventual consistency, or give this \`test\` a workload (\`ramp\`/\`hold\`/\`step\`/\`spike\`/\`run\`)`,
+        hint: `\`${found.action.name}\` (line ${found.step.span.start.line}) contains a \`pause\`, so calling it from a body with no workload line is a fixed sleep in a functional test — ${PAUSE_HINT}, or give this \`test\` a workload (\`ramp\`/\`hold\`/\`step\`/\`spike\`/\`run\`)`,
       });
     }
   };
   for (const test of program.tests) {
-    if (!test.workload) callsIntoThink(test.body);
+    if (!test.workload) callsIntoPause(test.body);
   }
-  for (const hook of program.hooks) callsIntoThink(hook.body);
+  for (const hook of program.hooks) callsIntoPause(hook.body);
 
   for (const test of program.tests) {
     if (!test.workload) continue;
@@ -545,7 +554,7 @@ interface CallSite {
  * value (`let x = create order(...)`, an argument to another call, a field of an inline body).
  * Both forms execute the callee's body, and only the statement form was ever considered a call by
  * anything in this file, so both are collected here. Nested block-shaped steps are walked, matching
- * `walkForThink`'s own recursion. */
+ * `walkForPause`'s own recursion. */
 function directCalls(steps: readonly Step[]): CallSite[] {
   const out: CallSite[] = [];
 
@@ -604,7 +613,7 @@ function directCalls(steps: readonly Step[]): CallSite[] {
  *
  * A name that resolves to no `action` in this file is a `use`d JS/TS helper (SPEC §11) or a typo —
  * either way there is no tflw body to inspect, so it is skipped; a `use`d helper cannot contain a
- * `think` or a browser step in the first place, those being tflw steps. `seen` makes a recursive
+ * `pause` or a browser step in the first place, those being tflw steps. `seen` makes a recursive
  * or mutually recursive action terminate instead of hanging the checker. */
 function reachableOffender(
   name: string,
@@ -642,7 +651,7 @@ function reachableOffender(
  * "label"` tag, or its automatically-derived `METHOD path.raw` identity when untagged (mirrors
  * the interpreter's own fallback, `interpreter.ts`'s per-endpoint accumulator). Only walks the
  * test's own body (including into `within`/`switch to new tab`/`download` sub-blocks, same
- * recursion `walkForThink` uses) — a `call` into an `action` isn't resolved, a known, accepted
+ * recursion `walkForPause` uses) — a `call` into an `action` isn't resolved, a known, accepted
  * conservative limit shared with `checkUnknownVariables`'s own scope model, since actions aren't
  * required to appear at most once and their own api steps aren't statically visible here without
  * call-graph analysis. */
@@ -880,7 +889,7 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         checkStringLit(step.urlPattern, bound, diags);
         if (step.body) for (const field of step.body.fields) checkValue(field.value, bound, diags);
         break;
-      case 'ThinkStmt':
+      case 'PauseStmt':
         // `minMs`/`maxMs` are plain numbers (parser-level, ast.ts) — no `{var}` interpolation to check.
         break;
     }

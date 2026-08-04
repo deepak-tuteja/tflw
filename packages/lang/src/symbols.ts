@@ -393,10 +393,10 @@ function walkSteps(
         walkStringLit(source, step.urlPattern, bound, scopeId, refs);
         if (step.body) for (const field of step.body.fields) walkValue(field.value, bound, scopeId, source, actionDefs, refs);
         break;
-      // `think 2s` / `think 1s to 3s` (M29, D18) — `minMs`/`maxMs` are plain numbers, no name to
+      // `pause 2s` / `pause 1s to 3s` (M29, D18, FS-05) — `minMs`/`maxMs` are plain numbers, no name to
       // resolve; listed explicitly (not left as a silent switch fallthrough) so a future field
-      // addition to `ThinkStmt` shows up as a deliberate no-op here, not a gap.
-      case 'ThinkStmt':
+      // addition to `PauseStmt` shows up as a deliberate no-op here, not a gap.
+      case 'PauseStmt':
         break;
     }
   }

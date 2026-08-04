@@ -25,7 +25,6 @@ import type {
   CallExpr,
   CaptureStmt,
   CertDecl,
-  TickStmt,
   ClickKind,
   ClickStmt,
   CloseTabStmt,
@@ -84,6 +83,7 @@ import type {
   ObjectLit,
   OpenStmt,
   PathExpr,
+  PauseStmt,
   PathSegment,
   PressStmt,
   Program,
@@ -125,19 +125,19 @@ import type {
   SwitchToTabStmt,
   TestDecl,
   TextBody,
-  ThinkStmt,
   ThresholdDecl,
   ThresholdMetric,
   ThresholdOp,
+  TickStmt,
   TimeoutDecl,
   TimeoutTarget,
   TransformExpr,
-  UntickStmt,
   UniqueEmailExpr,
   UniqueLikeExpr,
   UniqueNumberExpr,
   UniquePrefixExpr,
   UniqueUuidExpr,
+  UntickStmt,
   UploadBody,
   UseDecl,
   Value,
@@ -210,8 +210,18 @@ export const STATEMENT_KEYWORDS = [
   'drop',
   'screenshot',
   'stub',
+  'pause',
+  // FS-05: `think` was renamed to `pause`. It stays a statement keyword purely so the migration
+  // diagnostic below can fire — dropping it outright would surface as `TF011: unknown statement`,
+  // whose did-you-mean is an edit-distance search that will never reach `pause` from `think`.
   'think',
 ] as const;
+/** Keywords the parser still recognises only in order to *reject* them with a migration diagnostic
+ * (FS-05's `think`). They have to stay in `STATEMENT_KEYWORDS` so dispatch reaches them at all, but
+ * they are not steps anyone may write — so the "expected one of" fallback must not advertise them,
+ * and did-you-mean must not route a typo through a spelling that is itself an error. */
+const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think'];
+const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'was', 'not'] as const;
@@ -794,12 +804,12 @@ class Parser {
     return { type: 'ThresholdDecl', metric, op, value, scope, span: this.spanFrom(start) };
   }
 
-  /** `think 2s` / `think 1s to 3s` (D18) — legal anywhere a step is (parser-level), restricted to
-   * `scenario` bodies by the checker (`TF033`) since only there does per-iteration pacing mean
-   * anything (SPEC's `sleep` ban is aimed at `test`/`before`/`after`). */
-  private parseThink(): Step | null {
+  /** `pause 2s` / `pause 1s to 3s` (D18, FS-05) — legal anywhere a step is (parser-level),
+   * restricted to workload-bearing bodies by the checker (`TF033`) since only there does
+   * per-iteration pacing mean anything (SPEC's `sleep` ban is aimed at `test`/`before`/`after`). */
+  private parsePause(): Step | null {
     const start = this.peek().span.start;
-    this.advance(); // `think`
+    this.advance(); // `pause`
     const minMs = this.parseDuration();
     if (minMs === null) return null;
     let maxMs: number | null = null;
@@ -808,12 +818,12 @@ class Parser {
       maxMs = this.parseDuration();
       if (maxMs === null) return null;
       if (maxMs < minMs) {
-        this.error(Codes.LOAD_INVALID, `\`think\` range's upper bound (${maxMs}ms) is less than its lower bound (${minMs}ms)`, this.spanFrom(start));
+        this.error(Codes.LOAD_INVALID, `\`pause\` range's upper bound (${maxMs}ms) is less than its lower bound (${minMs}ms)`, this.spanFrom(start));
         return null;
       }
     }
     this.endLine();
-    const stmt: ThinkStmt = { type: 'ThinkStmt', minMs, maxMs, span: this.spanFrom(start) };
+    const stmt: PauseStmt = { type: 'PauseStmt', minMs, maxMs, span: this.spanFrom(start) };
     return stmt;
   }
 
@@ -1674,16 +1684,26 @@ class Parser {
           return this.parseScreenshotStep();
         case 'stub':
           return this.parseStubStep();
+        case 'pause':
+          return this.parsePause();
         case 'think':
-          return this.parseThink();
+          // FS-05 migration diagnostic, D103 teaching style: name the replacement outright rather
+          // than leaving a did-you-mean to bridge two words that share no letters.
+          this.error(
+            Codes.LOAD_INVALID,
+            '`think` was renamed to `pause` — write `pause 2s` / `pause 1s to 3s` instead',
+            tok.span,
+            'same semantics and the same workload-only restriction; `pause` describes the statement rather than the modelled user, and stays unambiguous against `wait until …`',
+          );
+          return null;
         default: {
           if (this.looksLikeCallStart()) return this.parseCallStmt(tok);
-          const hint = suggest(tok.value, STATEMENT_KEYWORDS);
+          const hint = suggest(tok.value, SUGGESTABLE_STATEMENT_KEYWORDS);
           this.error(
             Codes.UNKNOWN_STATEMENT,
             `unknown step \`${tok.value}\``,
             tok.span,
-            hint ? `did you mean \`${hint}\`?` : `expected one of: ${STATEMENT_KEYWORDS.join(', ')}`,
+            hint ? `did you mean \`${hint}\`?` : `expected one of: ${SUGGESTABLE_STATEMENT_KEYWORDS.join(', ')}`,
             'not a known step keyword',
           );
           return null;
@@ -1975,6 +1995,20 @@ class Parser {
     this.advance(); // `api`
     const request = this.parseApiRequestLine();
     if (!request) return null;
+    // FS-05 scoped `for <duration>` to the UI form, where the measured gap was ("the error toast
+    // never appears"). Someone who learned it there will try it here, so say what it costs rather
+    // than letting `endLine()` report a bare unexpected `for`: sustaining an API condition means
+    // re-issuing the request for the whole window, which is a different amount of load, not a
+    // different amount of waiting. Adding it later stays purely additive.
+    if (this.isKw(this.peek(), 'for')) {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`for <duration>` is not supported on `wait until api …`',
+        this.peek().span,
+        'it holds only on the UI form (`wait until text "Error" is hidden for 2s`) — an API condition sustained over a window means re-issuing the request for that whole window, which is load, not waiting; write the repetition as a workload-bearing `test` instead',
+      );
+      return null;
+    }
     this.endLine();
     const { headers, expects } = this.parseWaitUntilBody();
     return {
@@ -1985,9 +2019,15 @@ class Parser {
     };
   }
 
-  /** `wait until <locator> [not] <matcher>` (SPEC §9.5, M3b) — a single line, the UI sibling of
-   * `wait until api`'s block form: no separate request to re-issue, so the whole condition is just
-   * an ordinary subject+matcher pair, polled against `timeout wait` instead of `timeout expect`. */
+  /** `wait until <locator> [is] [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` added by
+   * FS-05) — a single line, the UI sibling of `wait until api`'s block form: no separate request to
+   * re-issue, so the whole condition is just an ordinary subject+matcher pair, polled against
+   * `timeout wait` instead of `timeout expect`.
+   *
+   * The optional `for <duration>` asks for the condition to hold *continuously* for that long
+   * instead of passing on the first poll that satisfies it — the only way to write a sustained
+   * condition ("the error toast never appears", "the button stays disabled"), where the plain form
+   * passes instantly because the thing simply has not happened yet. */
   private parseWaitUntilUiRest(start: Position): Step | null {
     const subject = this.parseSubject();
     if (!subject) return null;
@@ -2002,8 +2042,14 @@ class Parser {
     }
     const matcher = this.parseMatcher();
     if (!matcher) return null;
+    let holdMs: number | null = null;
+    if (this.isKw(this.peek(), 'for')) {
+      this.advance();
+      holdMs = this.parseDuration();
+      if (holdMs === null) return null;
+    }
     this.endLine();
-    const stmt: WaitUntilUiStmt = { type: 'WaitUntilUiStmt', subject, matcher, span: this.spanFrom(start) };
+    const stmt: WaitUntilUiStmt = { type: 'WaitUntilUiStmt', subject, matcher, holdMs, span: this.spanFrom(start) };
     return stmt;
   }
 

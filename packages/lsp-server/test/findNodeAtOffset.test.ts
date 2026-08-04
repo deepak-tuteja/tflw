@@ -168,7 +168,7 @@ test('findNodeAtOffset (M4b): descends into a trailing `mask <locator>` clause o
   );
 });
 
-// -- M33 (perf-arc LSP/VS Code catch-up, D24b): `ramp`/`threshold`/`think` (M29-M32) had never
+// -- M33 (perf-arc LSP/VS Code catch-up, D24b): `ramp`/`threshold`/`pause` (M29-M32) had never
 // been reachable at all — the walker stopped dead at `Program`, since `children()`'s `Program`
 // case never listed `n.scenarios` and `ScenarioDecl` had no case of its own (silently fell into
 // `default: return []`). M50 (D93-D95) later collapsed `scenario`/`ScenarioDecl` into a
@@ -214,12 +214,12 @@ test('findNodeAtOffset (M33/M50): a ThresholdDecl node is reachable and is a lea
   );
 });
 
-test('findNodeAtOffset (M33/M50): a ThinkStmt node is reachable and is a leaf, distinct from the surrounding body steps', () => {
-  const source = `test "browsing"\n  ramp to 10 users over 30s\n  api GET /health\n  think 1s to 3s\n  api GET /health\n`;
+test('findNodeAtOffset (M33/M50): a PauseStmt node is reachable and is a leaf, distinct from the surrounding body steps', () => {
+  const source = `test "browsing"\n  ramp to 10 users over 30s\n  api GET /health\n  pause 1s to 3s\n  api GET /health\n`;
   const { program } = parseSource(source);
   assert.deepEqual(
-    findNodeAtOffset(program, source.indexOf('think') + 1).map((n) => n.type),
-    ['Program', 'TestDecl', 'ThinkStmt'],
+    findNodeAtOffset(program, source.indexOf('pause') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'PauseStmt'],
   );
 });
 

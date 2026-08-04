@@ -76,7 +76,7 @@ function metricsLines(metrics: LoadMetrics, c: typeof C): string[] {
   const d = metrics.durations;
   return [
     `    ${c.dim}iterations: ${metrics.iterations}  failures: ${metrics.failures}  error rate: ${(metrics.errorRate * 100).toFixed(2)}%${c.reset}`,
-    `    ${c.dim}duration (ms, think-excluded): min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}${c.reset}`,
+    `    ${c.dim}duration (ms, pause-excluded): min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}${c.reset}`,
   ];
 }
 

@@ -36,7 +36,7 @@ export interface SemanticToken {
  * `new`/`tab`/`frame`/`respond`), M4b's `mask <locator>` clause keyword, M28's `log` (PLAN_LOG_LSP.md
  * — M27 added `log` to `STATEMENT_KEYWORDS` but never caught this independent copy up), and the
  * M29-M32 load-testing leading keywords (M33 catch-up — `ramp`/`over`/`threshold`/`cleanup`/
- * `think`; `think` was already in parser.ts's `STATEMENT_KEYWORDS` since M29 but never caught up
+ * `pause` (`think` until FS-05); it was already in parser.ts's `STATEMENT_KEYWORDS` since M29 but never caught up
  * here either). M50 (D93) removed `scenario` itself — every load-testing keyword now lives
  * inside an ordinary `test` body, so there's no separate leading keyword to list here for it.
  * Phase 2b (D105-D107) added `parallel`/`sequential` as an optional header modifier on `test`,
@@ -49,7 +49,7 @@ const KEYWORDS = new Set([
   'open', 'click', 'double', 'right', 'fill', 'select', 'tick', 'untick', 'uncheck', 'press', 'hover', 'scroll', 'within',
   'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
   'on', 'to', 'onto', 'dialog', 'new', 'tab', 'frame', 'respond', 'mask',
-  'ramp', 'over', 'threshold', 'cleanup', 'think',
+  'ramp', 'over', 'threshold', 'cleanup', 'pause',
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
   'parallel', 'sequential', 'exclude',
 ]);

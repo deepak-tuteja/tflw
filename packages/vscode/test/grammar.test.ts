@@ -174,25 +174,25 @@ test('tokenizes `matches snapshot "<name>" mask <locator>` (M4b)', () => {
 });
 
 // M33 (perf-arc LSP/VS Code catch-up, D24b): the M29-M32 load-testing grammar (`ramp`/`threshold`/
-// `cleanup`/`think`) had zero keyword coverage in this grammar before this milestone — a
+// `cleanup`/`pause`) had zero keyword coverage in this grammar before this milestone — a
 // load-testing file rendered visually flat next to an ordinary `test`/browser file. M50 (D93)
 // later removed the standalone `scenario` keyword this originally covered — a `test` is a load
 // test whenever it contains a `ramp to …` line.
 
-test('tokenizes `ramp to … users|rps over …`/`cleanup`/`think` (M29-M32, M33 catch-up, M50)', () => {
+test('tokenizes `ramp to … users|rps over …`/`cleanup`/`pause` (M29-M32, M33 catch-up, M50)', () => {
   const lines = tokenizeLines([
     'test "checkout burst"',
     '  ramp to 10 users over 30s',
     '  cleanup',
     '  api GET /health',
-    '  think 1s to 3s',
+    '  pause 1s to 3s',
   ]);
 
   assert.ok(hasScope(findToken(lines, 'ramp'), 'keyword.control.tflw'), '`ramp` is a statement keyword');
   assert.ok(hasScope(findToken(lines, 'over'), 'keyword.control.tflw'), '`over` is a statement keyword');
   assert.ok(hasScope(findToken(lines, 'users'), 'support.type.tflw'), '`users` is a workload-target subject keyword');
   assert.ok(hasScope(findToken(lines, 'cleanup'), 'keyword.control.tflw'), '`cleanup` is a statement keyword');
-  assert.ok(hasScope(findToken(lines, 'think'), 'keyword.control.tflw'), '`think` is a statement keyword');
+  assert.ok(hasScope(findToken(lines, 'pause'), 'keyword.control.tflw'), '`pause` is a statement keyword');
 
   const rpsLines = tokenizeLines(['  ramp to 100 rps over 30s']);
   assert.ok(hasScope(findToken(rpsLines, 'rps'), 'support.type.tflw'), '`rps` is a workload-target subject keyword');

@@ -366,8 +366,8 @@ test('collectSymbols (M33): a `{var}` inside a `scenario` body (path interpolati
   assert.deepEqual(ref!.defSpan, def!.span);
 });
 
-test('collectSymbols (M33): a `think 1s to 3s` step is walked without throwing and produces no spurious refs', () => {
-  const source = `test "browsing"\n  ramp to 10 users over 30s\n  api GET /products\n  expect status equals 200\n  think 1s to 3s\n  api GET /products/1\n  expect status equals 200\n`;
+test('collectSymbols (M33): a `pause 1s to 3s` step is walked without throwing and produces no spurious refs', () => {
+  const source = `test "browsing"\n  ramp to 10 users over 30s\n  api GET /products\n  expect status equals 200\n  pause 1s to 3s\n  api GET /products/1\n  expect status equals 200\n`;
   const { program } = parseSource(source);
   let table: ReturnType<typeof collectSymbols> | undefined;
   assert.doesNotThrow(() => {

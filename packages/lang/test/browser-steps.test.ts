@@ -313,6 +313,58 @@ test('`wait until api …` still parses as WaitUntilApiStmt (unaffected by the `
   assert.equal(step.type, 'WaitUntilApiStmt');
 });
 
+// ---- FS-05 (milestone B1): `wait until … for <duration>` -------------------
+//
+// The sustained-condition case. Without `for`, `wait until text "Error" is hidden` returns on its
+// first poll — which for a toast that has not rendered yet is immediately, so the assertion passes
+// precisely because nothing has happened yet and goes on passing as the toast appears. The freeze
+// review measured this as gap 1 of five, and the only one that an extension of `wait until` can
+// reach at all (pacing and TTL are not conditions, so no amount of polling expresses them).
+
+test('FS-05: `wait until <locator> <matcher> for <duration>` parses, carrying the hold window in ms', () => {
+  const step = firstStep('test "ok"\n  wait until text "Error" is hidden for 2s\n') as {
+    type: string;
+    matcher: { name: string };
+    holdMs: number | null;
+  };
+  assert.equal(step.type, 'WaitUntilUiStmt');
+  assert.equal(step.matcher.name, 'hidden');
+  assert.equal(step.holdMs, 2000);
+});
+
+test('FS-05: `for` composes with a negated condition — `not visible for 500ms` (FS-08 made the copula optional in the same milestone)', () => {
+  for (const source of [
+    'test "ok"\n  wait until button "Submit" is not visible for 500ms\n',
+    'test "ok"\n  wait until button "Submit" not visible for 500ms\n',
+  ]) {
+    const step = firstStep(source) as { matcher: { name: string; negated: boolean }; holdMs: number | null };
+    assert.equal(step.matcher.name, 'visible');
+    assert.equal(step.matcher.negated, true);
+    assert.equal(step.holdMs, 500);
+  }
+});
+
+test('FS-05: omitting `for` leaves `holdMs` null — the original "pass the first true poll" semantics, unchanged', () => {
+  const step = firstStep('test "ok"\n  wait until button "Submit" is enabled\n') as { holdMs: number | null };
+  assert.equal(step.holdMs, null);
+});
+
+test('FS-05: `for` with no duration after it is a diagnosed error, not a silently-dropped clause', () => {
+  const { diagnostics } = parseSource('test "ok"\n  wait until button "Submit" is enabled for\n');
+  assert.ok(diagnostics.length > 0, 'expected a diagnostic');
+});
+
+test('FS-05: `for <duration>` on the `api` form is refused by name, saying what it would cost rather than reporting a bare unexpected token', () => {
+  const { diagnostics } = parseSource('test "ok"\n  wait until api GET /orders/1 for 2s\n    expect status equals 200\n');
+  const first = diagnostics[0]!;
+  assert.ok(first, 'expected a diagnostic');
+  assert.match(first.message, /`for <duration>` is not supported on `wait until api …`/);
+  // The hint has to name the UI form (where it does work) and the reason it is not merely an
+  // oversight here — sustaining an API condition re-issues the request for the whole window.
+  assert.match(first.hint ?? '', /wait until text "Error" is hidden for 2s/);
+  assert.match(first.hint ?? '', /load, not waiting/);
+});
+
 // ---- M3c: `screenshot "<name>"` --------------------------------------------
 
 test('`screenshot "..."` parses a ScreenshotStmt carrying a StringLit name', () => {

@@ -1,8 +1,8 @@
 // M29/M30 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D28/D29), M50 (PLAN_UNIFIED_TEST_
-// WORKLOAD.md D93-D96/D103): `threshold`/`ramp`/`think` grammar plus the load-arc's semantic
+// WORKLOAD.md D93-D96/D103): `threshold`/`ramp`/`pause` grammar plus the load-arc's semantic
 // checks (`checkWorkloadTests`, TF033) — a file may declare any number of workload-bearing `test`
 // blocks (M30 lifted M29's one-per-file restriction on what was then `scenario`) but their names
-// must be unique, `think` only legal inside one, no browser steps inside one. M50 collapsed the
+// must be unique, `pause` only legal inside one, no browser steps inside one. M50 collapsed the
 // standalone `scenario` keyword/AST node into an ordinary `test` block with a non-null `workload`
 // — kind is inferred from the presence of a `ramp to …` line, not a separate keyword.
 
@@ -29,24 +29,64 @@ test('an open `ramp to N rps over <dur>` workload parses as RampRpsWorkload', ()
   assert.deepEqual(t.workload, { ...t.workload, type: 'RampRpsWorkload', rps: 200, overMs: 60_000 });
 });
 
-test('`think <dur>` parses a fixed pacing ThinkStmt (maxMs null)', () => {
-  const t = parseWorkloadTest('test "S"\n  ramp to 1 users over 1s\n  think 2s\n  api GET /health\n');
-  const think = t.body[0] as { type: string; minMs: number; maxMs: number | null };
-  assert.equal(think.type, 'ThinkStmt');
-  assert.equal(think.minMs, 2000);
-  assert.equal(think.maxMs, null);
+test('`pause <dur>` parses a fixed pacing PauseStmt (maxMs null)', () => {
+  const t = parseWorkloadTest('test "S"\n  ramp to 1 users over 1s\n  pause 2s\n  api GET /health\n');
+  const pause = t.body[0] as { type: string; minMs: number; maxMs: number | null };
+  assert.equal(pause.type, 'PauseStmt');
+  assert.equal(pause.minMs, 2000);
+  assert.equal(pause.maxMs, null);
 });
 
-test('`think <dur> to <dur>` parses a ranged ThinkStmt', () => {
-  const t = parseWorkloadTest('test "S"\n  ramp to 1 users over 1s\n  think 1s to 3s\n  api GET /health\n');
-  const think = t.body[0] as { type: string; minMs: number; maxMs: number | null };
-  assert.equal(think.minMs, 1000);
-  assert.equal(think.maxMs, 3000);
+test('`pause <dur> to <dur>` parses a ranged PauseStmt', () => {
+  const t = parseWorkloadTest('test "S"\n  ramp to 1 users over 1s\n  pause 1s to 3s\n  api GET /health\n');
+  const pause = t.body[0] as { type: string; minMs: number; maxMs: number | null };
+  assert.equal(pause.minMs, 1000);
+  assert.equal(pause.maxMs, 3000);
 });
 
-test('`think` with a max below its min is a parse error, not a silently-swapped range', () => {
-  const { diagnostics } = parseSource('test "S"\n  ramp to 1 users over 1s\n  think 3s to 1s\n  api GET /health\n');
+test('`pause` with a max below its min is a parse error, not a silently-swapped range', () => {
+  const { diagnostics } = parseSource('test "S"\n  ramp to 1 users over 1s\n  pause 3s to 1s\n  api GET /health\n');
   assert.ok(diagnostics.some((d) => d.code === 'TF033'), JSON.stringify(diagnostics));
+});
+
+// ---- FS-05 (milestone B1): `think` was renamed to `pause` ------------------
+
+test('FS-05: `think` stops parsing and names `pause` outright, rather than leaving a did-you-mean to bridge two words that share no letters', () => {
+  const { diagnostics } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  think 2s\n  api GET /health\n');
+  const diag = diagnostics.find((d) => d.code === 'TF033');
+  assert.ok(diag, `expected a TF033 migration diagnostic, got ${JSON.stringify(diagnostics)}`);
+  assert.match(diag!.message, /`think` was renamed to `pause`/);
+  assert.match(diag!.message, /pause 2s/);
+  assert.match(diag!.hint ?? '', /same semantics and the same workload-only restriction/);
+});
+
+test('FS-05: `think` is diagnosed the same way inside a plain functional test — the rename is reported before the workload rule, so the reader fixes one thing at a time', () => {
+  const { diagnostics } = parseSource('test "t"\n  think 2s\n  api GET /health\n');
+  assert.equal(diagnostics.filter((d) => d.severity !== 'warning').length, 1, JSON.stringify(diagnostics));
+  assert.match(diagnostics[0]!.message, /`think` was renamed to `pause`/);
+});
+
+test('FS-05: the unknown-step fallback no longer advertises `think` as something a reader may write', () => {
+  const { diagnostics } = parseSource('test "t"\n  zzzz 2s\n  api GET /health\n');
+  const diag = diagnostics.find((d) => d.code === 'TF011');
+  assert.ok(diag, JSON.stringify(diagnostics));
+  const help = `${diag!.message} ${diag!.hint ?? ''}`;
+  assert.ok(help.includes('pause'), `expected \`pause\` to be offered: ${help}`);
+  assert.ok(!/\bthink\b/.test(help), `a retired spelling must not appear in the list of valid steps: ${help}`);
+});
+
+test('FS-05: TF033\'s `pause` hint names both ways out — `wait until` for a condition, the JS escape hatch for elapsed time', () => {
+  const { program } = parseSource('test "t"\n  pause 1s\n  api GET /health\n');
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1, JSON.stringify(diags));
+  const hint = diags[0]!.hint ?? '';
+  // The old hint sent every reader to `wait until …`. That is right for eventual consistency and
+  // wrong for the two cases people most often reach for a sleep in — a cache TTL and a token
+  // expiry — where elapsed time *is* the thing under test and there is no condition to poll.
+  assert.match(hint, /wait until …/);
+  assert.match(hint, /wait until … for <dur>/);
+  assert.match(hint, /cache TTL/);
+  assert.match(hint, /JS escape hatch/);
 });
 
 test('`threshold pNN duration is less than <dur>` parses a duration-percentile threshold', () => {
@@ -174,24 +214,24 @@ test('checkWorkloadTests: three workload-bearing tests where only two share a na
   assert.deepEqual(diags[0]!.span, program.tests[2]!.span);
 });
 
-test('checkWorkloadTests: `think` inside a plain functional `test` is flagged (TF033)', () => {
-  const { program, diagnostics } = parseSource('test "ok"\n  think 1s\n  api GET /health\n');
+test('checkWorkloadTests: `pause` inside a plain functional `test` is flagged (TF033)', () => {
+  const { program, diagnostics } = parseSource('test "ok"\n  pause 1s\n  api GET /health\n');
   assert.deepEqual(diagnostics, []);
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
-  assert.match(diags[0]!.message, /`think` is only legal inside a workload-bearing `test`/);
+  assert.match(diags[0]!.message, /`pause` is only legal inside a workload-bearing `test`/);
 });
 
-test('checkWorkloadTests: `think` inside a `before`/`after` hook is flagged (TF033)', () => {
-  const { program } = parseSource('before\n  think 1s\ntest "ok"\n  api GET /health\n');
+test('checkWorkloadTests: `pause` inside a `before`/`after` hook is flagged (TF033)', () => {
+  const { program } = parseSource('before\n  pause 1s\ntest "ok"\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
 });
 
-test('checkWorkloadTests: `think` inside a workload-bearing test body is not flagged', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  think 1s\n  api GET /health\n');
+test('checkWorkloadTests: `pause` inside a workload-bearing test body is not flagged', () => {
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  pause 1s\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
@@ -343,21 +383,21 @@ test('checkWorkloadTests: a functional test needs no threshold (the rule is work
 
 // -- M60 (A4-02): D18/D19 follow calls into actions --------------------------------------------
 
-test('checkWorkloadTests: `think` inside an action called from a functional test is flagged at the call site (D18)', () => {
-  const { program } = parseSource('action helper()\n  api GET /x\n  think 2s\n\ntest "t"\n  helper()\n  api GET /x\n  expect status equals 200\n');
+test('checkWorkloadTests: `pause` inside an action called from a functional test is flagged at the call site (D18)', () => {
+  const { program } = parseSource('action helper()\n  api GET /x\n  pause 2s\n\ntest "t"\n  helper()\n  api GET /x\n  expect status equals 200\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF033');
-  assert.match(diags[0]!.message, /`think` is only legal inside a workload-bearing `test`/);
-  assert.match(diags[0]!.hint ?? '', /`helper` \(line 3\) contains a `think`/, 'the hint must name the action and the line the `think` is on');
-  // At the call site, not at the `think`: the action itself is legal under a workload.
+  assert.match(diags[0]!.message, /`pause` is only legal inside a workload-bearing `test`/);
+  assert.match(diags[0]!.hint ?? '', /`helper` \(line 3\) contains a `pause`/, 'the hint must name the action and the line the `pause` is on');
+  // At the call site, not at the `pause`: the action itself is legal under a workload.
   const callLine = program.tests[0]!.body[0]!.span.start.line;
   assert.equal(diags[0]!.span.start.line, callLine);
 });
 
 test('checkWorkloadTests: the same action called from a workload-bearing test is never flagged', () => {
   const { program } = parseSource(
-    'action helper()\n  api GET /x\n  think 2s\n\ntest "load"\n  hold 2 users for 1s\n  threshold error rate is less than 1%\n  helper()\n',
+    'action helper()\n  api GET /x\n  pause 2s\n\ntest "load"\n  hold 2 users for 1s\n  threshold error rate is less than 1%\n  helper()\n',
   );
   assert.deepEqual(checkWorkloadTests(program), []);
 });
@@ -374,7 +414,7 @@ test('checkWorkloadTests: a browser step inside an action called from a workload
 });
 
 test('checkWorkloadTests: a call in value position (`let x = helper()`) is resolved too, not just a bare call statement', () => {
-  const { program } = parseSource('action helper()\n  think 2s\n  give 1\n\ntest "t"\n  let x = helper()\n  api GET /x\n  expect status equals 200\n');
+  const { program } = parseSource('action helper()\n  pause 2s\n  give 1\n\ntest "t"\n  let x = helper()\n  api GET /x\n  expect status equals 200\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.match(diags[0]!.hint ?? '', /`helper` \(line 2\)/);
@@ -382,11 +422,11 @@ test('checkWorkloadTests: a call in value position (`let x = helper()`) is resol
 
 test('checkWorkloadTests: the ban is transitive through a chain of actions', () => {
   const { program } = parseSource(
-    'action inner()\n  think 2s\n\naction outer()\n  inner()\n\ntest "t"\n  outer()\n  api GET /x\n  expect status equals 200\n',
+    'action inner()\n  pause 2s\n\naction outer()\n  inner()\n\ntest "t"\n  outer()\n  api GET /x\n  expect status equals 200\n',
   );
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
-  assert.match(diags[0]!.hint ?? '', /`inner` \(line 2\) contains a `think`/, 'names the action that actually holds the `think`, not the one called');
+  assert.match(diags[0]!.hint ?? '', /`inner` \(line 2\) contains a `pause`/, 'names the action that actually holds the `pause`, not the one called');
 });
 
 test('checkWorkloadTests: a recursive action terminates instead of hanging the checker', () => {

@@ -126,7 +126,7 @@ export type StepKind =
   | 'dropFile'
   | 'screenshot'
   | 'stub'
-  | 'think';
+  | 'pause';
 
 export interface RequestTrace {
   readonly method: string;
@@ -358,8 +358,8 @@ export interface LoadIterationResult {
   readonly ok: boolean;
   /** Which `scenario` this iteration belongs to (M30 — a run may interleave several concurrently). */
   readonly scenario: string;
-  /** Wall-clock duration of this iteration's steps, **excluding** any `think` time (ast.ts's
-   * `ThinkStmt` doc: think models pacing, not system latency — including it would let a scenario
+  /** Wall-clock duration of this iteration's steps, **excluding** any `pause` time (ast.ts's
+   * `PauseStmt` doc: pacing is not system latency — including it would let a load test
    * satisfy a duration threshold merely by sleeping more). */
   readonly durationMs: number;
   readonly error?: string;
@@ -380,7 +380,7 @@ export interface LoadMetrics {
   readonly failures: number;
   /** `failures / iterations`, `0` when `iterations === 0`. */
   readonly errorRate: number;
-  /** Active (think-excluded) iteration duration, ms — see `LoadIterationResult.durationMs`. */
+  /** Active (pause-excluded) iteration duration, ms — see `LoadIterationResult.durationMs`. */
   readonly durations: LoadDurationStats;
   /** M32 (R4) — this metric's own duration distribution, bucketed (not raw samples) — small enough
    * to inline into `load-report.html` for the response-time distribution histogram chart, and

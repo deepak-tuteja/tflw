@@ -1,5 +1,5 @@
 // M29/M30/M31 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D28/D29): the `runLoad` engine — a
-// single-process VU loop over both workload models (D17), `think`-excluded duration metrics,
+// single-process VU loop over both workload models (D17), `pause`-excluded duration metrics,
 // threshold evaluation (D24a), per-iteration error handling (D18: an iteration's `expect` failure
 // is counted, never thrown), session establishment once before the loop (not per iteration), M30's
 // concurrent multi-scenario scheduling with combined-vs-per-scenario metrics (D29, R6), and M31's
@@ -116,18 +116,22 @@ test('a `pNN duration` threshold reads the exact requested percentile, not just 
   await server.close();
 });
 
-test('`think` time is excluded from the reported iteration duration', async () => {
+test('`pause` time is excluded from the reported iteration duration', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'test "S"\n  ramp to 1 users over 50ms\n  think 300ms\n  api GET /health\n  expect status equals 200\n';
-  const { program } = parseSource(source);
+  const source = 'test "S"\n  ramp to 1 users over 50ms\n  pause 300ms\n  api GET /health\n  expect status equals 200\n';
+  const { program, diagnostics } = parseSource(source);
+  // FS-05 found this guard missing: without it, a source whose pacing line no longer parses drops
+  // to a `null` step and every assertion below holds *vacuously* — the two tests that exist to
+  // prove pause time is excluded both passed against a program containing no pause at all.
+  assert.deepEqual(diagnostics, []);
   const seen: LoadIterationResult[] = [];
   const report = await runLoad(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
   assert.ok(seen.length >= 1);
-  // Real wall time per iteration is >=300ms (the think) + request time, but the *reported*
-  // duration should be just the request — comfortably under the think time itself.
+  // Real wall time per iteration is >=300ms (the pause) + request time, but the *reported*
+  // duration should be just the request — comfortably under the pause time itself.
   for (const r of seen) {
     assert.equal(r.scenario, 'S');
-    assert.ok(r.durationMs < 250, `expected think-excluded duration, got ${r.durationMs}ms`);
+    assert.ok(r.durationMs < 250, `expected pause-excluded duration, got ${r.durationMs}ms`);
   }
   assert.ok(report.scenarios[0]!.metrics.durations.max < 250, JSON.stringify(report.scenarios[0]!.metrics));
   await server.close();
@@ -229,10 +233,11 @@ test('`run N iterations per user across M users` runs exactly M*N iterations tot
   await server.close();
 });
 
-test('`think` paces a `run … iterations …` body without being excluded from the iteration budget (D102)', async () => {
+test('`pause` paces a `run … iterations …` body without being excluded from the iteration budget (D102)', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
-  const source = 'test "PacedIterations"\n  run 3 iterations per user across 1 users\n  think 10ms\n  api GET /health\n  expect status equals 200\n';
-  const { program } = parseSource(source);
+  const source = 'test "PacedIterations"\n  run 3 iterations per user across 1 users\n  pause 10ms\n  api GET /health\n  expect status equals 200\n';
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
 
   const report = await runLoad(program, testConfig(server.baseUrl), { source });
 

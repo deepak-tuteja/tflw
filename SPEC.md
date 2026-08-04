@@ -624,8 +624,9 @@ test "checkout under load"
   interacts with `--workers`/`--skip-workload` (§12).
 - **Checker-enforced exclusivity (D96, `TF033`).** `retry`/`with each` can't coexist with a workload
   on the same test — a load test's own iterations already provide repetition, and it has no
-  per-row cases, only per-VU ones. `think <dur>` / `think <dur> to <dur>` (per-iteration pacing,
-  excluded from a `duration` threshold) is legal only inside a workload-bearing body; a browser
+  per-row cases, only per-VU ones. `pause <dur>` / `pause <dur> to <dur>` (per-iteration pacing,
+  excluded from a `duration` threshold; spelled `think` before FS-05) is legal only inside a
+  workload-bearing body; a browser
   step is rejected inside one (a browser VU is ~50-100MB, infeasible at load-test scale). Both of
   those two bans follow calls into an `action` since M60 (A4-02) — the diagnostic lands on the call
   site, because the same action is legal under a workload and illegal outside one, so only the
@@ -1358,6 +1359,9 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
                                           # instead of `timeout expect` (default 5s) — for a UI
                                           # condition that can legitimately outlast the ordinary
                                           # UI-expect budget. Always hard-fails; no soft/`check` form.
+
+wait until text "Error" is hidden for 2s  # must hold *continuously* for 2s, not merely be true on
+                                          # one poll — the only way to assert a sustained condition
 ```
 
 - **`within frame <locator>`** — the container locator must resolve to exactly one `<iframe>`
@@ -1376,9 +1380,19 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
   actions — they only work against a page that actually listens for `dragstart`/`dragover`/`drop`
   the way a real drag-and-drop UI does (a fixture/app with no such listeners simply won't react,
   same as a real user dragging over it wouldn't do anything either).
-- **`wait until <locator> [not] <matcher>`** is the UI sibling of `wait until api` (§5.5): same
-  "budget, not a moment" framing, but for a UI condition — no separate request to re-issue, so it's
-  a single line rather than a block. `has count` keeps its ambiguity exception from §9.4.
+- **`wait until <locator> [is] [not] <matcher> [for <duration>]`** is the UI sibling of `wait until
+  api` (§5.5): same "budget, not a moment" framing, but for a UI condition — no separate request to
+  re-issue, so it's a single line rather than a block. `has count` keeps its ambiguity exception
+  from §9.4.
+- **`for <duration>`** (FS-05) requires the condition to hold *continuously* for that long instead
+  of passing on the first poll that satisfies it. Without it a negative is unassertable: `wait until
+  text "Error" is hidden` passes immediately, because the toast has not rendered *yet*, and would
+  have passed just as readily one tick before it appeared. The hold clock restarts from zero
+  whenever the condition goes false, so only an uninterrupted window passes; `timeout wait` still
+  bounds the whole step, and a hold window at least as long as it is a runtime error rather than a
+  guaranteed timeout. Scoped to the UI form — sustaining an *API* condition means re-issuing the
+  request for the whole window, which is load rather than waiting, so `wait until api … for` is
+  refused by name and stays available as a later additive change.
 
 ### 9.6 Screenshots, failure evidence & Playwright trace (M3c, D12) ✅
 
@@ -1911,7 +1925,7 @@ require reading the source.
 | `TF030` | Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that's *definitely* unreachable, never one that merely might be. | `capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId` |
 | `TF031` | Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (decision 18). | `expect request connects` followed by `expect status equals 200` on the same `api` step → `can't be combined with `request connects`/`fails` on the same request` |
 | `TF032` | Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (decision 22/M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run. | `upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"` |
-| `TF033` | Parser/checker (load, M29/M30, M50/D93-D96): a workload-bearing `test`'s workload/threshold shape is invalid, two such tests in one file share a name (M30, D29 — names key each one's own metrics/threshold breakdown under concurrent multi-load-test runs), a `retry`/`with each` clause coexists with a workload (D96), a browser step appears inside a workload-bearing body (D19 — API-only in v1), `think` appears outside one (D18), a workload-bearing `test` carries no `threshold` at all (M60/A4-01 — its verdict comes only from thresholds, so with none it can never fail), or the removed `scenario` keyword is found (D103 — write `test "…" { ramp to … }` instead). The `think`/browser-step bans follow calls into `action`s (M60/A4-02) and report at the call site, since the same action is legal under a workload and illegal outside one. | `think 2s` inside a plain `test` → ``think` is only legal inside a workload-bearing `test`` — or `scenario "…"` → `` `scenario` was removed — write `test "…" { ramp to … }` instead `` |
+| `TF033` | Parser/checker (load, M29/M30, M50/D93-D96): a workload-bearing `test`'s workload/threshold shape is invalid, two such tests in one file share a name (M30, D29 — names key each one's own metrics/threshold breakdown under concurrent multi-load-test runs), a `retry`/`with each` clause coexists with a workload (D96), a browser step appears inside a workload-bearing body (D19 — API-only in v1), `pause` appears outside one (D18), a workload-bearing `test` carries no `threshold` at all (M60/A4-01 — its verdict comes only from thresholds, so with none it can never fail), or a removed keyword is found — `scenario` (D103 — write `test "…" { ramp to … }` instead) or `think` (FS-05 — renamed to `pause`). The `pause`/browser-step bans follow calls into `action`s (M60/A4-02) and report at the call site, since the same action is legal under a workload and illegal outside one. The `pause` hint names both ways out honestly (FS-05): a *condition* is `wait until …` / `wait until … for <dur>`, while genuinely elapsed time — a cache TTL, a token expiry — has no condition to poll and belongs in the JS escape hatch (§11). | `pause 2s` inside a plain `test` → ``pause` is only legal inside a workload-bearing `test`` — or `think 2s` → `` `think` was renamed to `pause` `` |
 | `TF034` | Checker (load, M43/D70): a `threshold … for "label"` clause references a label that matches no `api` step's identity (its explicit `as "label"` tag, or its automatic `METHOD path.raw` identity when untagged) within the same workload-bearing test. | `threshold p95 duration for "checkotu" is less than 250ms` with only an `as "checkout"`-tagged step in scope → `threshold for "checkotu" matches no step in this test` |
 | `TF035` | Checker (M60/A2-01): two `action`s in one file share a name. Actions are file-scoped, so the second declaration shadows nothing — it is simply ambiguous, and the runtime refuses to build the file. Reported at the second declaration, pointing back at the first. | `action fetch it()` declared twice → `duplicate action "fetch it"` with `already declared at line 1` |
 <!-- GENERATED:diagnostics:end -->
