@@ -148,8 +148,14 @@ session admin
 
 - Steps inside a session are ordinary parsed steps (API or browser).
 - Runtime: each session executes **once per run per worker**; results are cached.
-- A test opting in with `test "…" as admin` (§4.1) starts with: the session's declared headers
-  applied to its api steps, and the session's browser storage state applied to its fresh context.
+- A test opting in with `test "…" as admin` (§4.1) starts with the session's declared headers and
+  cookie jar applied to its **api** steps.
+- **A session does not log the browser in.** Its cached state is never applied to the test's fresh
+  browser context — a cookie jar and a browser context's storage state are two separate
+  representations, and D10 deliberately never bridges them (§10). A mixed UI+API test establishes
+  identity twice: an API login for the api steps, a UI form login for the page. Until B4-07 this
+  bullet claimed the opposite, in the section where a reader looks for it, while §10 stated the
+  truth and called it deliberate — of the two, §10 was the one describing the shipped tool.
 - There is no separate "auth preset" concept.
 - A test may opt into **more than one independent, unrelated session at once**:
   `test "..." as admin, userA` (decision 96, closing TFLW-GAPS.md gap #7). Each session's headers

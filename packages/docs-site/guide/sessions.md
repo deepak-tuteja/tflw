@@ -25,6 +25,15 @@ A test can opt into more than one independent session at once (`as admin, userA`
 session's headers and cookie jar fold into the test's starting state in listed order, a later
 session winning any header/cookie-name conflict against an earlier one.
 
+::: warning A session does not log the browser in
+`as admin` applies to a test's **`api`** steps — its headers and its cookie jar. It does not touch
+the fresh browser context the test gets, so a page opened with `open "/orders"` is logged out.
+
+A cookie jar and a browser context's storage state are two separate representations, and tflw
+deliberately never bridges them. A mixed UI+API test establishes identity twice: the session for
+the api steps, a UI form login for the page.
+:::
+
 ## Cookie jar, automatically
 
 Every scope that runs `api` steps — a session's own run, each test's own attempt — has its own
