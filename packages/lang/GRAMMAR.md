@@ -76,8 +76,13 @@ ActionDecl  := 'action' CallName '(' (IDENT (',' IDENT)*)? ')' NEWLINE Block   #
 ## Tests & structure (§4)
 
 ```
-TestDecl    := TAG* DataTable? 'test' STRING ('as' IDENT (',' IDENT)*)?
-               ('retry' NUMBER)? NEWLINE Block
+TestDecl    := TAG* DataTable? 'test' STRING TestModifier* NEWLINE Block
+TestModifier := 'as' IDENT (',' IDENT)*      # sessions this test opts into (§3.3)
+              | 'retry' NUMBER               # §4.4
+              | 'parallel' | 'sequential'    # D105-D107, §4.5
+              # Order-independent, each at most once (A2-06). `test "x" retry 2 as admin` and
+              # `test "x" as admin retry 2` are the same test. A repeat is an error rather than
+              # last-one-wins — list several sessions in one `as` clause, comma-separated.
 
 DataTable   := 'with' 'each' ('from' STRING)? NEWLINE
                ( '|' IDENT ('|' IDENT)* '|' NEWLINE          # inline: header row

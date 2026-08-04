@@ -1473,46 +1473,90 @@ class Parser {
     if (!this.expectKw('test')) return null;
     const name = this.expectString('a test name string, e.g. `test "logs in"`');
     if (!name) return null;
-    // `as admin, userA` — independent, unrelated sessions a test can opt into together (P#42
-    // extended); same comma-loop shape as `require env A, B, C` (parseRequire).
+    // Header modifiers — `as <session>[, <session>]`, `retry N`, `parallel`/`sequential`. They are
+    // independent attributes of the test, so they parse **in any order** (M72, review finding
+    // A2-06). Each used to have a fixed slot, in that sequence, and anything else fell through to
+    // `endLine()`: `test "x" retry 2 as admin` reported "unexpected `as` at end of step" — telling
+    // the author a valid keyword was invalid, calling a header a step, and hinting "expected end of
+    // line" when the line was not finished. Nothing documented the legal order, and an arbitrary
+    // one is exactly the kind of rule §15's freeze would have made permanent.
+    //
+    // Repeating a modifier is still an error, and now says so by name instead of by position: a
+    // second `as` is a repeat, not a continuation (`as admin, userA` is the comma form), and
+    // `parallel sequential` contradicts itself. Every header that parsed before still parses —
+    // this only ever accepts more.
+    //
+    // A repeat reports once and then *keeps parsing*: the clause is consumed normally and the
+    // first occurrence's value stands. Bailing out of the header would abandon the whole test, and
+    // the body's indentation would then be reported twice more as stray tokens — three diagnostics
+    // for one typo, two of them about something the author did not do.
     const sessions: string[] = [];
-    if (this.isKw(this.peek(), 'as')) {
-      this.advance();
-      if (this.completionMode && this.atCompletionPoint()) {
-        this.completionResult = { kind: 'session', prefix: this.completionPrefix() };
-        return null;
-      }
-      const first = this.expect('ident', 'a session name after `as`');
-      if (first) sessions.push(first.value);
-      while (this.check('comma')) {
+    let retry = 0;
+    let concurrency: 'parallel' | 'sequential' | null = null;
+    let sawAs = false;
+    let sawRetry = false;
+    for (;;) {
+      const tok = this.peek();
+      if (this.isKw(tok, 'as')) {
+        const duplicate = sawAs;
+        if (duplicate) {
+          this.error(Codes.UNEXPECTED_TOKEN, 'this test already has an `as` clause', tok.span, 'list every session in one clause, comma-separated: `as admin, userA`');
+        }
+        sawAs = true;
         this.advance();
+        // `as admin, userA` — independent, unrelated sessions a test can opt into together (P#42
+        // extended); same comma-loop shape as `require env A, B, C` (parseRequire).
         if (this.completionMode && this.atCompletionPoint()) {
           this.completionResult = { kind: 'session', prefix: this.completionPrefix() };
           return null;
         }
-        const s = this.expect('ident', 'a session name');
-        if (s) sessions.push(s.value);
+        const first = this.expect('ident', 'a session name after `as`');
+        if (first && !duplicate) sessions.push(first.value);
+        while (this.check('comma')) {
+          this.advance();
+          if (this.completionMode && this.atCompletionPoint()) {
+            this.completionResult = { kind: 'session', prefix: this.completionPrefix() };
+            return null;
+          }
+          const s = this.expect('ident', 'a session name');
+          if (s && !duplicate) sessions.push(s.value);
+        }
+        continue;
       }
-    }
-    let retry = 0;
-    if (this.isKw(this.peek(), 'retry')) {
-      this.advance();
-      const n = this.expect('number', 'a retry count, e.g. `retry 2`');
-      if (n) retry = Number(n.value);
-    }
-    // `parallel`/`sequential` (D105-D107) — contextual keyword, same fixed-order header-modifier
-    // slot pattern as `retry N` above; defaults to `'sequential'` when omitted (D107: the parser
-    // resolves the default itself, never left implicit downstream).
-    let concurrency: 'parallel' | 'sequential' = 'sequential';
-    if (this.isKw(this.peek(), 'parallel') || this.isKw(this.peek(), 'sequential')) {
-      concurrency = this.advance().value as 'parallel' | 'sequential';
+      if (this.isKw(tok, 'retry')) {
+        const duplicate = sawRetry;
+        if (duplicate) {
+          this.error(Codes.UNEXPECTED_TOKEN, 'this test already has a `retry` count', tok.span, 'write one `retry N` — the last one would silently win otherwise');
+        }
+        sawRetry = true;
+        this.advance();
+        const n = this.expect('number', 'a retry count, e.g. `retry 2`');
+        if (n && !duplicate) retry = Number(n.value);
+        continue;
+      }
+      // `parallel`/`sequential` (D105-D107) — contextual keyword; defaults to `'sequential'` when
+      // omitted (D107: the parser resolves the default itself, never left implicit downstream).
+      if (this.isKw(tok, 'parallel') || this.isKw(tok, 'sequential')) {
+        const word = this.advance().value as 'parallel' | 'sequential';
+        if (concurrency === null) concurrency = word;
+        else {
+          this.error(
+            Codes.UNEXPECTED_TOKEN,
+            concurrency === word ? `this test is already \`${word}\`` : `this test is already \`${concurrency}\`, so it cannot also be \`${word}\``,
+            tok.span,
+            'a test runs one way or the other — keep the one you meant',
+          );
+        }
+        continue;
+      }
+      break;
     }
     this.endLine();
     // D96 (`retry`/`with each` vs. a workload clause) is checker-enforced, not parser-enforced —
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
     const { workload, thresholds, cleanup, body } = this.parseTestBody('test');
-    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, concurrency, body, span: this.spanFrom(start) };
+    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
   }
 
   private tagsContinue(): boolean {

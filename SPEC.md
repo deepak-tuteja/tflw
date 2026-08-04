@@ -509,6 +509,13 @@ test "an admin acting on a shopper's behalf" as admin, userA
 - `as <session>` opts into a cached session (§3.3); `as <session>, <session>...` opts into several
   independent, unrelated sessions at once — a comma-separated list, same shape as `require env A,
   B, C` (§3.4). Omitted → anonymous fresh state.
+- **The three header modifiers — `as <session>...` (§3.3), `retry N` (§4.4), `parallel`/
+  `sequential` (§4.5) — may appear in any order, each at most once.** They are independent
+  attributes of the test, not a sequence: `test "x" retry 2 as admin` and `test "x" as admin
+  retry 2` are the same test. Repeating one is an error naming it (several sessions go in a single
+  comma-separated `as` clause; `parallel sequential` contradicts itself), rather than the last one
+  quietly winning. Before A2-06 the order was fixed and undocumented, and getting it wrong reported
+  the valid keyword as unexpected.
 - Isolation: every test gets a fresh browser context; no state leaks between tests (P#20).
 
 ### 4.2 Hooks (P#10, P#19)
@@ -618,7 +625,8 @@ test "checkout under load"
   `after each` hook on *every* iteration. Default: skipped — running teardown thousands of times
   would double request volume and pollute the very latency numbers the run exists to measure (D26).
 - **`parallel`/`sequential`** — a header modifier (`test "name" [as <session>...] [retry N]
-  [parallel|sequential]`, the same fixed slot as `retry N`) controlling this test's execution
+  [parallel|sequential]`, one of the three that may follow a test name **in any order**, each at
+  most once — A2-06) controlling this test's execution
   relation to its file-siblings, functional or workload-bearing alike (D105) — not a
   workload-specific concept. Default `sequential`: blocks whatever comes before and after it. A
   maximal run of *consecutive* `parallel`-marked tests forms one concurrently-executed batch

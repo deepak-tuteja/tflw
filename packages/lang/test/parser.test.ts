@@ -57,11 +57,66 @@ test('`test "…" sequential` sets concurrency to "sequential" explicitly (D105-
   assert.equal(program.tests[0]!.concurrency, 'sequential');
 });
 
-test('`retry N` and `parallel`/`sequential` compose on the same header line, retry first (D105-D107)', () => {
+test('`retry N` and `parallel`/`sequential` compose on the same header line (D105-D107)', () => {
   const { program, diagnostics } = parseSource('test "ok" retry 2 parallel\n  api GET /health\n');
   assert.deepEqual(diagnostics, []);
   assert.equal(program.tests[0]!.retry, 2);
   assert.equal(program.tests[0]!.concurrency, 'parallel');
+});
+
+// -- A2-06: the header modifiers are order-independent (M72) ------------------------------------
+//
+// They used to have a hard-coded sequence — `as`, then `retry`, then `parallel`/`sequential` — and
+// anything else fell through to `endLine()`, so `test "x" retry 2 as admin` reported "unexpected
+// `as` at end of step": a valid keyword called invalid, a header called a step, and the hint
+// "expected end of line" on a line that was not finished. Nothing documented the order, which made
+// it exactly the sort of arbitrary rule §15's freeze would have made permanent.
+
+test('A2-06: the three header modifiers parse in any order', () => {
+  const orders = [
+    'as admin retry 2 parallel',
+    'as admin parallel retry 2',
+    'retry 2 as admin parallel',
+    'retry 2 parallel as admin',
+    'parallel as admin retry 2',
+    'parallel retry 2 as admin',
+  ];
+  for (const modifiers of orders) {
+    const { program, diagnostics } = parseSource(`test "ok" ${modifiers}\n  api GET /health\n`);
+    assert.deepEqual(diagnostics, [], `expected \`test "ok" ${modifiers}\` to parse`);
+    const t = program.tests[0]!;
+    assert.deepEqual(
+      { sessions: t.sessions, retry: t.retry, concurrency: t.concurrency },
+      { sessions: ['admin'], retry: 2, concurrency: 'parallel' },
+      `\`${modifiers}\` must describe the same test as every other order`,
+    );
+  }
+});
+
+test('A2-06: a multi-session `as` list still composes with the others in any order', () => {
+  for (const modifiers of ['retry 3 as admin, userA sequential', 'sequential as admin, userA retry 3']) {
+    const { program, diagnostics } = parseSource(`test "ok" ${modifiers}\n  api GET /health\n`);
+    assert.deepEqual(diagnostics, [], `expected \`${modifiers}\` to parse`);
+    assert.deepEqual(program.tests[0]!.sessions, ['admin', 'userA']);
+    assert.equal(program.tests[0]!.retry, 3);
+    assert.equal(program.tests[0]!.concurrency, 'sequential');
+  }
+});
+
+test('A2-06: repeating a modifier is an error that names it, not last-one-wins', () => {
+  for (const [header, message, hint] of [
+    ['test "ok" as admin as userA', 'this test already has an `as` clause', 'comma-separated'],
+    ['test "ok" retry 1 retry 2', 'this test already has a `retry` count', 'silently win'],
+    ['test "ok" parallel parallel', 'this test is already `parallel`', 'one way or the other'],
+    ['test "ok" parallel sequential', 'this test is already `parallel`, so it cannot also be `sequential`', 'one way or the other'],
+  ] as const) {
+    const { diagnostics } = parseSource(`${header}\n  api GET /health\n`);
+    const errs = diagnostics.filter((d) => d.severity !== 'warning');
+    assert.equal(errs.length, 1, `expected exactly one diagnostic for \`${header}\`, got ${JSON.stringify(errs.map((d) => d.message))}`);
+    assert.equal(errs[0]!.code, 'TF010');
+    assert.equal(errs[0]!.message, message);
+    assert.match(errs[0]!.hint ?? '', new RegExp(hint));
+  }
 });
 
 test('`as <session>` and `parallel`/`sequential` compose on the same header line (D105-D107)', () => {
