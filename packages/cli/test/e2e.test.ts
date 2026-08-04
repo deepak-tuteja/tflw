@@ -587,6 +587,39 @@ test('`tflw migrate` against a real, checker-clean suite reports nothing to migr
   });
 });
 
+test('B5-05: `tflw migrate` cannot rewrite a removed keyword either — the one migration a user would expect today (M76)', async () => {
+  // The row is "`tflw migrate` cannot do anything and is documented as if it can". `collectMigrations`
+  // acts only on a `severity: 'warning'` diagnostic carrying `deprecation.replacement`, and no rule
+  // emits one — so the command is honest at run time and oversold everywhere around it.
+  //
+  // B1 sharpened this past what the review could see: `think` → `pause` is a real, mechanical,
+  // one-word rename that shipped days ago, and it is exactly what someone would reach for this
+  // command to do. It cannot, because D103 makes a removed keyword a hard *error* rather than a
+  // deprecation warning, and a file that does not parse never reaches the splice. This test pins
+  // that — including that the file is left alone — so wiring the two together has to move the
+  // `--help` text, `CLI_FLAGS` and SPEC §12 with it.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-removed-kw-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    const source = 'test "burst"\n  ramp to 1 users over 1s\n  threshold p95 duration is less than 1s\n  think 2s\n  api GET /x\n';
+    await writeFile(join(dir, 'old.tflw'), source, 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'migrate', '--no-color'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout } = e as { code?: number; stdout?: string };
+        assert.equal(code, 2, 'a removed keyword is an error, so migrate stops at validation');
+        assert.doesNotMatch(stdout ?? '', /migrated \d+ file/, 'and it must not claim to have migrated anything');
+        return true;
+      },
+    );
+
+    assert.equal(await readFile(join(dir, 'old.tflw'), 'utf8'), source, '`think` is still `think` — nothing was rewritten');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('--tag matching zero tests anywhere is a hard usage error, not a silent green CI (P#46)', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tag-zero-'));

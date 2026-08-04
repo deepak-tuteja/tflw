@@ -1714,7 +1714,7 @@ Every flag listed above also appears in `tflw --help`, and a test enforces that 
 | Command | Purpose |
 |---|---|
 | `tflw init --ui` | also scaffold a UI test + prompt for `tflw install-browsers` (M3) |
-| `tflw migrate` | mechanically rewrite a suite past grammar deprecations, P#38/45 (this arc's deliverable — decision 112) |
+| `tflw migrate` | mechanically rewrite a suite past grammar deprecations, P#38/45 (this arc's deliverable — decision 112). **The command exists and runs; the rules it needs do not.** `collectMigrations` acts only on a `severity: 'warning'` diagnostic carrying a `deprecation.replacement`, and no checker rule emits one — decision 45 has kept the grammar additive-only, and B1's removals (`think`, `uncheck`, bare `check <locator>`, `scenario`) are hard *errors* by D103's teaching style, which a file cannot parse past. So it reports "nothing to migrate" on every suite and never mutates source. Wiring the removed-keyword errors into it is the obvious next step and is scoped with cluster C8, not here: it means deciding whether `migrate` may rewrite a file that does not parse (B5-05) |
 
 ## 13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧
 
