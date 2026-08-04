@@ -104,11 +104,33 @@ test('FS-04: `tick` takes any locator kind, like the action it replaces', () => 
   }
 });
 
-test('FS-04 step 1: the outgoing spellings still parse, and still mean the action', () => {
-  const source = 'test "t"\n  open "/x"\n  check field "Accept terms"\n  uncheck field "Accept terms"\n';
-  assertProgramParses('the outgoing `check`/`uncheck` spellings', source);
-  const body = parseSource(source).program.tests[0]!.body as readonly { type: string }[];
-  assert.deepEqual(body.slice(-2).map((s) => s.type), ['TickStmt', 'UntickStmt']);
+test('FS-04 step 3: a bare `check <locator>` is an error naming both readings, not a silent tick', () => {
+  const { program, diagnostics } = parseSource('test "t"\n  open "/x"\n  check field "Accept terms"\n');
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.code, 'TF014');
+  assert.match(diagnostics[0]!.message, /needs a matcher/);
+  // Both ways out, because which one the author meant is the whole question — a did-you-mean would
+  // have to guess, and guessing wrong here is what the old dual grammar did.
+  assert.match(diagnostics[0]!.hint ?? '', /`tick field "…"`/);
+  assert.match(diagnostics[0]!.hint ?? '', /`check field "…" is checked`/);
+  // The step is dropped, not recovered into a tick.
+  const body = program.tests[0]!.body as readonly { type: string }[];
+  assert.deepEqual(body.map((s) => s.type), ['OpenStmt']);
+});
+
+test('FS-04 step 3: `uncheck` is refused by name, naming `untick` outright (D103 style)', () => {
+  const { diagnostics } = parseSource('test "t"\n  open "/x"\n  uncheck field "Accept terms"\n');
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.code, 'TF011');
+  assert.match(diagnostics[0]!.message, /`uncheck` was renamed to `untick`/);
+});
+
+test('FS-04 step 3: a retired spelling is never suggested back — `unchek` does not route through `uncheck`', () => {
+  const { diagnostics } = parseSource('test "t"\n  open "/x"\n  unchek field "Accept terms"\n');
+  assert.ok(diagnostics.length > 0);
+  const rendered = `${diagnostics[0]!.hint ?? ''} ${diagnostics[0]!.message}`;
+  assert.ok(!/`uncheck`/.test(rendered), `a retired keyword was offered as valid: ${rendered}`);
+  assert.match(rendered, /untick/);
 });
 
 // `check` as the soft assertion is the load-bearing meaning — it runs through the whole API half and

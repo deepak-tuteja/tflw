@@ -40,10 +40,10 @@ tflw `check` is the **soft assertion** — the forgiving twin of `expect`, see
 
 It used to be both, told apart by whether a matcher followed. That reads fine until you forget the
 matcher: `check field "Accept terms"` meaning *"assert this box is ticked"* would instead **tick the
-box** and report a passing step, so the assertion you thought you wrote never ran. A bare
-`check <locator>` still parses as the tick action during the migration window, and becomes an error
-naming `tick` in the same release — the diagnostic, not this page, is where most people will meet
-the change.
+box** and report a passing step, so the assertion you thought you wrote never ran. Now it's an
+error that names both readings — `tick field "…"` if you meant to tick it, `check field "…" is
+checked` if you meant to assert it — because which one you meant is exactly what a guess would get
+wrong. `uncheck` is an error too, naming `untick`.
 :::
 
 ## `fill form`

@@ -356,9 +356,9 @@ Method          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIO
 - **`tick`, not `check` (FS-04, §9.1):** `check` had a dual grammar — a locator *with* a matcher
   after it was the soft assertion, a bare locator with nothing after it was the checkbox action, so
   a forgotten matcher turned an assertion into a mutation that then passed. The action is its own
-  keyword now. `check <locator>` with no matcher still parses as the action during the migration
-  window and becomes a parse error naming `tick` in the same release; Playwright and Cypress both
-  spell it `check()`, so that diagnostic is the teaching surface.
+  keyword now: `check <locator>` with no matcher is `TF014` naming both readings, and `uncheck` is
+  `TF011` naming `untick`. Playwright and Cypress both spell it `check()`, so those diagnostics are
+  the teaching surface.
 - **UI subjects** (`Subject` in §6, above) additionally accept a `Locator` — `has value`/`is
   StateWord`/`has count` — for `expect`/`check`/`wait until` against UI state.
 - **M3c (D12):** an automatic screenshot is attached to whichever step just failed whenever a

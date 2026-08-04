@@ -281,9 +281,9 @@ test('open + click + fill (labelled) + fill (placeholder cascade) + select + che
   fill field "Email" with "a@b.com"
   fill field "Search" with "widget"
   select "Small" from field "Size"
-  check field "Accept terms"
+  tick field "Accept terms"
   expect field "Accept terms" is checked
-  uncheck field "Accept terms"
+  untick field "Accept terms"
   expect field "Accept terms" not is checked
   hover button "Add to cart"
   scroll to button "Bottom button"

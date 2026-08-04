@@ -191,9 +191,8 @@ export const STATEMENT_KEYWORDS = [
   'right',
   'fill',
   'select',
-  // FS-04: `tick`/`untick` are the checkbox actions. `uncheck` is still accepted for one migration
-  // step (B1 step 1 lands both spellings so testFlow-tests can move before `check <locator>` stops
-  // parsing) and is removed with the bare `check <locator>` form in step 3.
+  // FS-04: `tick`/`untick` are the checkbox actions. `uncheck` is retired (below) — it stays a
+  // statement keyword only so dispatch reaches it and can name `untick` outright.
   'tick',
   'untick',
   'uncheck',
@@ -217,10 +216,13 @@ export const STATEMENT_KEYWORDS = [
   'think',
 ] as const;
 /** Keywords the parser still recognises only in order to *reject* them with a migration diagnostic
- * (FS-05's `think`). They have to stay in `STATEMENT_KEYWORDS` so dispatch reaches them at all, but
- * they are not steps anyone may write — so the "expected one of" fallback must not advertise them,
- * and did-you-mean must not route a typo through a spelling that is itself an error. */
-const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think'];
+ * (FS-05's `think`, FS-04's `uncheck`). They have to stay in `STATEMENT_KEYWORDS` so dispatch
+ * reaches them at all, but they are not steps anyone may write — so the "expected one of" fallback
+ * must not advertise them, and did-you-mean must not route a typo through a spelling that is itself
+ * an error. Neither replacement is reachable by edit distance either (`think`→`pause` shares no
+ * letters; `uncheck`→`untick` is 3 edits, past `suggest`'s threshold), which is why both are named
+ * outright rather than left to a did-you-mean. */
+const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think', 'uncheck'];
 const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
@@ -1656,8 +1658,15 @@ class Parser {
         case 'tick':
           return this.parseTickStep();
         case 'untick':
-        case 'uncheck':
           return this.parseUntickStep();
+        case 'uncheck':
+          this.error(
+            Codes.UNKNOWN_STATEMENT,
+            '`uncheck` was renamed to `untick` — write `untick field "…"` instead',
+            tok.span,
+            'same step, same semantics; it moved with `check <locator>` → `tick <locator>`, which had to stop being a checkbox action so `check` means only the soft assertion (SPEC §9.1)',
+          );
+          return null;
         case 'press':
           return this.parsePressStep();
         case 'hover':
@@ -2580,9 +2589,11 @@ class Parser {
     return { type: 'SelectStmt', locator, value, span: this.spanFrom(start) };
   }
 
-  /** `check` is dual-grammar (SPEC §9.1): the soft-assertion keyword AND the checkbox-tick action.
-   * Parsed together (rather than reusing `parseExpect`) so the disambiguation — locator subject +
-   * nothing following ⇒ action, anything else ⇒ assertion — lives in one place. */
+  /** `check` is the soft-assertion keyword and nothing else (FS-04, SPEC §9.1). It used to be
+   * dual-grammar — a locator subject with nothing following it was the checkbox-tick action — which
+   * meant a forgotten matcher silently turned an assertion into a mutation that then passed. That
+   * branch is now a diagnostic naming both readings, kept here (rather than left to `parseMatcher`'s
+   * generic "expected a matcher") because *which* reading the author meant is the whole question. */
   private parseCheckStep(): Step | null {
     const start = this.peek().span.start;
     this.advance(); // `check`
@@ -2595,11 +2606,16 @@ class Parser {
     if (!subject) return null;
     if (subject.type === 'LocatorSubject' && this.atStatementEnd()) {
       if (quantifier) {
-        this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier — `check <locator>` ticks a checkbox, it has no quantifier form');
+        this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
         return null;
       }
-      this.endLine();
-      return { type: 'TickStmt', locator: subject.locator, span: this.spanFrom(start) };
+      this.error(
+        Codes.UNKNOWN_MATCHER,
+        '`check <locator>` needs a matcher — the bare form used to tick a checkbox and no longer does',
+        this.spanFrom(start),
+        'to tick the box, write `tick field "…"`; to assert its state, write `check field "…" is checked`. `check` is the soft assertion now and only that, so a forgotten matcher can no longer turn one into a click (SPEC §9.1)',
+      );
+      return null;
     }
     if (quantifier && subject.type !== 'BodySubject' && subject.type !== 'BodyCsvSubject') {
       this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
@@ -2624,10 +2640,11 @@ class Parser {
     return { type: 'TickStmt', locator, span: this.spanFrom(start) };
   }
 
-  /** `untick <locator>` — and, for B1 step 1 only, its outgoing spelling `uncheck`. */
+  /** `untick <locator>` (FS-04) — the sibling of `parseTickStep`; `uncheck` is retired and refused
+   * at dispatch. */
   private parseUntickStep(): Step | null {
     const start = this.peek().span.start;
-    this.advance(); // `untick` / `uncheck`
+    this.advance(); // `untick`
     const locator = this.parseLocator();
     if (!locator) return null;
     this.endLine();

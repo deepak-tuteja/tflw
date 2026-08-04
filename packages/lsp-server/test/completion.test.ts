@@ -191,6 +191,16 @@ test('FS-05: `think` is not offered by completion — a retired spelling must no
   assert.ok(labels.includes('threshold'), `expected the real \`th\` keyword to still be offered: ${JSON.stringify(labels)}`);
 });
 
+test('FS-04: `uncheck` is not offered by completion, but `untick` is', () => {
+  const source = 'test "ok"\n  un';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(ctx, { kind: 'step', prefix: 'un' });
+  assert.deepEqual(
+    getCompletions(ctx).map((c) => c.label),
+    ['untick'],
+  );
+});
+
 test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at the start of a scenario body line', () => {
   const rampSource = 'test "checkout burst"\n  ra';
   const rampCtx = getCompletionContext(rampSource, rampSource.length)!;

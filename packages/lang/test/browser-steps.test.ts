@@ -79,8 +79,8 @@ test('`select "..." from field "..."` parses a SelectStmt', () => {
   assert.equal(step.value.value, 'Widget');
 });
 
-test('`uncheck field "..."` always parses as the action (no assertion form exists)', () => {
-  const step = firstStep('test "ok"\n  uncheck field "Accept terms"\n') as { type: string; locator: { kind: string } };
+test('`untick field "..."` always parses as the action (no assertion form exists)', () => {
+  const step = firstStep('test "ok"\n  untick field "Accept terms"\n') as { type: string; locator: { kind: string } };
   assert.equal(step.type, 'UntickStmt');
   assert.equal(step.locator.kind, 'field');
 });
@@ -151,10 +151,10 @@ test('an unknown locator keyword is a diagnosed error with a suggestion, not a s
   assert.match(diagnostics[0]!.hint ?? '', /did you mean `button`/);
 });
 
-// ---- `check` dual grammar (SPEC §9.1) --------------------------------------
+// ---- `check` is the soft assertion only (SPEC §9.1, FS-04) -----------------
 
-test('`check <locator>` with nothing after it is the checkbox action (TickStmt)', () => {
-  const step = firstStep('test "ok"\n  check field "Accept terms"\n') as { type: string; locator: { kind: string; value: { value: string } } };
+test('`tick <locator>` with nothing after it is the checkbox action (TickStmt)', () => {
+  const step = firstStep('test "ok"\n  tick field "Accept terms"\n') as { type: string; locator: { kind: string; value: { value: string } } };
   assert.equal(step.type, 'TickStmt');
   assert.equal(step.locator.kind, 'field');
   assert.equal(step.locator.value.value, 'Accept terms');

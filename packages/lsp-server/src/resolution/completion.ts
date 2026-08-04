@@ -36,7 +36,9 @@ export interface CompletionSources {
 // the same over-broad-but-harmless tradeoff already baked into every other entry in this list.
 const STEP_KEYWORDS = [
   'api', 'expect', 'check', 'let', 'capture', 'log', 'wait', 'give',
-  'open', 'click', 'double', 'right', 'fill', 'select', 'tick', 'untick', 'uncheck', 'press', 'hover', 'scroll',
+  // FS-04: `uncheck` is retired, and a retired spelling must not be offered back as valid — the
+  // same rule `RETIRED_STATEMENT_KEYWORDS` holds the parser's own suggest vocabulary to.
+  'open', 'click', 'double', 'right', 'fill', 'select', 'tick', 'untick', 'press', 'hover', 'scroll',
   'within', 'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
   'pause', 'ramp', 'threshold', 'cleanup', 'hold', 'step', 'spike', 'run',
 ] as const;
