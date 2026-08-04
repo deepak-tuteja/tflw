@@ -23,6 +23,7 @@ import {
   importInsertionOffset,
   collectMigrations,
   applyMigrations,
+  CLI_FLAGS,
   type Program,
   type Diagnostic,
   type EvidenceLevel,
@@ -164,6 +165,35 @@ function requireNonEmpty(value: string, flag: string): void {
   );
 }
 
+/**
+ * An unrecognised `--flag` used to be pushed into the file list and surface, several layers later,
+ * as a raw Node `ENOENT` naming an absolute path that does not exist — `tflw run --verbos` reported
+ * a missing *file* called `--verbos`, and `tflw init --lod` scaffolded silently without the thing
+ * the flag asked for (M61, review finding B6-11). A mistyped flag is the most ordinary mistake
+ * there is, in a tool whose stated pillar is teaching diagnostics and which already does exactly
+ * this for `tflw docs <topic>`.
+ *
+ * **Rejection needs no list.** A `--`-prefixed token that reaches the fall-through branch of a
+ * parser's `if/else` chain is, by construction, one that parser does not know — so there is no
+ * second enumeration of accepted flags to drift out of step with the first. Only the *suggestion*
+ * needs names, and those come from `CLI_FLAGS`, which `tflw --help` and the docs-site reference
+ * page are both already checked against in both directions (`e2e.test.ts`). Single-dash tokens are
+ * left alone deliberately, matching `flagValue`: a `-`-prefixed value is legitimate here.
+ *
+ * Thrown, like every other usage error in this file, so `main`'s `.catch` prints `error: …` and
+ * exits `EXIT_USAGE`.
+ */
+function unknownFlag(command: string, arg: string): never {
+  const name = arg.split('=')[0]!;
+  const known = CLI_FLAGS.filter((f) => f.command === command || f.command === 'global').flatMap((f) => [...f.flag.matchAll(/(--[a-z][a-z-]*)/g)].map((m) => m[1]!));
+  const hint = suggest(name, known);
+  throw new Error(
+    `unknown flag \`${name}\` for \`tflw ${command}\`.` +
+      (hint ? `\n  did you mean \`${hint}\`?` : '') +
+      `\n  run \`tflw --help\` for every flag \`tflw ${command}\` takes.`,
+  );
+}
+
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   switch (command) {
@@ -227,6 +257,15 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
     const a = argv[i]!;
     if (a === '--browser') browser = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browser = inlineFlagValue(a, '--browser');
+    // This loop had no `else` at all, so an unknown flag was silently dropped — the quiet variant
+    // of B6-11, and worse than the noisy one: `tflw install-browsers --browsr firefox` downloaded
+    // Chromium and exited 0. The command takes no positional argument either, so a bare word here
+    // is just as certainly a mistake (`tflw install-browsers firefox`).
+    else if (a.startsWith('--')) unknownFlag('install-browsers', a);
+    else {
+      err(`unexpected argument \`${a}\`. Usage: tflw install-browsers [--browser ${SUPPORTED_BROWSER_ENGINES.join('|')}]`);
+      return EXIT_USAGE;
+    }
   }
   if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browser)) {
     err(`unknown --browser \`${browser}\` — expected one of: ${SUPPORTED_BROWSER_ENGINES.join(', ')}.`);
@@ -259,6 +298,9 @@ async function pickCommand(argv: string[]): Promise<number> {
     const a = argv[i]!;
     if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
+    // Before the `url === undefined` case, or a mistyped flag becomes the URL and is reported as
+    // "isn't an absolute URL" — B6-11's third shape.
+    else if (a.startsWith('--')) unknownFlag('pick', a);
     else if (url === undefined) url = a;
     else {
       err(`unexpected argument \`${a}\`. Usage: tflw pick <url> [--browser chromium|firefox|webkit]`);
@@ -349,6 +391,7 @@ function parseWatchArgs(argv: string[]): WatchArgs {
     else if (a === '--seed') seedRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--seed=')) seedRaw = inlineFlagValue(a, '--seed');
     else if (a === '--no-color') noColor = true;
+    else if (a.startsWith('--')) unknownFlag('watch', a);
     else files.push(a);
   }
   return { files, env, browserRaw, seedRaw, noColor };
@@ -624,6 +667,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--log-output=')) logOutputRaw = inlineFlagValue(a, '--log-output');
     else if (a === '--log-level') logLevelRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--log-level=')) logLevelRaw = inlineFlagValue(a, '--log-level');
+    else if (a.startsWith('--')) unknownFlag('run', a);
     else files.push(a);
   }
   // A `--tag` value made only of separators (`,,`, ` , `) survives the empty check in
@@ -1534,7 +1578,9 @@ interface CheckArgs {
   readonly format?: string | undefined;
 }
 
-function parseCheckArgs(argv: string[]): CheckArgs {
+/** Shared by `tflw check` and `tflw migrate`, which take the same flags — `command` is passed only
+ * so an unknown one is reported against the subcommand the user actually typed. */
+function parseCheckArgs(argv: string[], command: 'check' | 'migrate'): CheckArgs {
   const files: string[] = [];
   let env: string | undefined;
   let noColor = false;
@@ -1546,6 +1592,7 @@ function parseCheckArgs(argv: string[]): CheckArgs {
     else if (a === '--no-color') noColor = true;
     else if (a === '--format') format = flagValue(argv, ++i, a);
     else if (a.startsWith('--format=')) format = inlineFlagValue(a, '--format');
+    else if (a.startsWith('--')) unknownFlag(command, a);
     else files.push(a);
   }
   return { files, env, noColor, format };
@@ -1555,7 +1602,7 @@ function parseCheckArgs(argv: string[]): CheckArgs {
  * anything (decision 75) — teaching diagnostics, no HTTP traffic, no secrets required. For CI/
  * pre-commit: lint a suite without touching a live API. */
 async function checkCommand(argv: string[]): Promise<number> {
-  const args = parseCheckArgs(argv);
+  const args = parseCheckArgs(argv, 'check');
   const cwd = process.cwd();
 
   if (args.format !== undefined && args.format !== 'json') {
@@ -1710,7 +1757,7 @@ async function refactorCommand(argv: string[]): Promise<number> {
  * split) so a plain `tflw migrate` run needs no separate checker invocation of its own.
  */
 async function migrateCommand(argv: string[]): Promise<number> {
-  const args = parseCheckArgs(argv);
+  const args = parseCheckArgs(argv, 'migrate');
   const cwd = process.cwd();
   const color = args.noColor ? false : process.stdout.isTTY === true;
 
@@ -2095,6 +2142,9 @@ async function initCommand(argv: string[]): Promise<number> {
   // deferred: it only needs the `ramp`/`threshold` grammar this milestone already builds (M50,
   // D93-D95: written inside an ordinary `test` body, not a separate `scenario` keyword), and
   // scaffolds the **open** (`ramp to N rps`) workload form, matching D17's "docs lead with it".
+  // `initCommand` never inspected argv beyond this one `includes`, so `tflw init --lod` scaffolded
+  // without `load.tflw` and exited 0 without mentioning the flag (B6-11's quiet variant).
+  for (const a of argv) if (a.startsWith('--') && a !== '--load') unknownFlag('init', a);
   const load = argv.includes('--load');
   const loadPath = join(cwd, 'load.tflw');
 

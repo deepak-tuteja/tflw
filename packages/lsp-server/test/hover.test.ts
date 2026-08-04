@@ -113,8 +113,14 @@ test('getHover: an active diagnostic at the offset shows its live message + hint
   assert.match(result!.contents, /error\[TF014\]/);
   assert.match(result!.contents, /unknown matcher `eq`/);
   // OBS-04 (B1): the fallback line names the value matchers, the comparison forms and the states —
-  // it used to omit `equals` and every state word, which is what made it unhelpful here.
-  assert.match(result!.contents, /expected a value matcher \(equals, contains, matches …\)/);
+  // it used to omit `equals` and every state word, which is what made it unhelpful here. Asserted
+  // by the words it must contain rather than by its exact prose: M61 rebuilt the line from the
+  // parser's own vocabulary constants, and `parser.test.ts`'s own coverage of it is the place that
+  // pins the wording. Here the point is only that the live hint reaches hover intact.
+  assert.match(result!.contents, /expected a value matcher \(equals, /);
+  for (const word of ['contains', 'has', 'greater than', 'less than', 'visible', 'checked']) {
+    assert.ok(result!.contents.includes(word), `hover must carry the whole fallback vocabulary, missing \`${word}\``);
+  }
   assert.match(result!.contents, /unrecognised matcher/);
   assert.match(result!.contents, /Example:/);
 });

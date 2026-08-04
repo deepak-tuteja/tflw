@@ -879,6 +879,15 @@ actually reaches for. For UI, a negated state matcher retries until the conditio
 `expect text "Spinner" is not visible` polls until the spinner is gone rather than failing on the
 first look.
 
+There are **no negated state words**: `invisible`, `unchecked`, `unhidden` are not matchers, and
+writing one is an error that teaches `not <state>` (M61). This is a diagnostic the language owes
+you rather than a nicety. Every negated spelling a user reaches for is exactly one edit from its
+own *positive* twin and further from anything else, so a plain did-you-mean answered
+`expect button "Go" is invisible` with "did you mean `visible`?" — and following the suggestion
+produced a green test asserting the exact opposite of what was written. Edit distance cannot see
+meaning; the negation prefix is detected outright instead. If a `not` was already typed, the advice
+inverts accordingly: `is not invisible` is told to write `visible`, not to add a second `not`.
+
 ### 6.2.1 Contract validation — `matches schema "Name" from "src"` (PLAN decision 102a,
 enterprise arc cluster 3, closes TFLW-GAPS.md gap #6)
 
@@ -1724,6 +1733,16 @@ widened the run from the requested subset to the entire suite at exit 0, while `
 correctly failed. Nobody types that by hand; a shell interpolates it, from
 `tflw run --tag "$SUITE_TAGS"` with the variable unset. A `--tag` value made only of separators
 (`--tag=,,`) names no tags and is refused for the same reason.
+
+And a `--`-prefixed token no subcommand recognises is an **unknown flag** (exit 2), named as one,
+with the nearest documented flag offered — `tflw run --verbos` → ``unknown flag `--verbos` for
+`tflw run` ‖ did you mean `--verbose`?`` (M61). Every `parse*Args` used to funnel an unrecognised
+token into the *file* list, so this surfaced several layers later as a raw
+`ENOENT: no such file or directory, open '/…/--verbos'`, naming a file nobody asked for; the two
+commands with no fall-through branch at all were quieter and worse — `tflw install-browsers
+--browsr firefox` downloaded Chromium at exit 0, and `tflw init --lod` scaffolded without
+`load.tflw` and never mentioned the flag. Single-dash tokens are untouched, matching the value rule
+above.
 Every flag listed above also appears in `tflw --help`, and a test enforces that (`CLI_FLAGS` in
 `packages/lang/src/spec-data.ts` is the list this table, the docs-site reference page, and
 `--help` are all checked against).

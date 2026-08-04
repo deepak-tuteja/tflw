@@ -76,11 +76,21 @@ export const Codes = {
 // "did you mean" — Levenshtein-based nearest keyword.
 // ---------------------------------------------------------------------------
 
-function levenshtein(a: string, b: string): number {
+/**
+ * Optimal string alignment distance — Levenshtein plus a one-step **transposition**, so a swapped
+ * pair of adjacent characters costs 1 edit instead of 2 (M61, review finding A4-08, secondary).
+ * That single case earns its keep here: a transposition is what hand-typing produces (`nmae` for
+ * `name`, `ordreId` for `orderId`), and under plain Levenshtein it cost the same as two unrelated
+ * wrong letters — which pushed it past the threshold for exactly the short names it happens to
+ * most, so `{nmae}` against a `name` column got the generic fallback and no suggestion at all.
+ */
+function editDistance(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
   if (m === 0) return n;
   if (n === 0) return m;
+  // Three rolling rows rather than two: the transposition case reads the row *two* back.
+  let prev2 = new Array<number>(n + 1).fill(0);
   let prev = new Array<number>(n + 1);
   let curr = new Array<number>(n + 1);
   for (let j = 0; j <= n; j++) prev[j] = j;
@@ -88,9 +98,11 @@ function levenshtein(a: string, b: string): number {
     curr[0] = i;
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(prev[j]! + 1, curr[j - 1]! + 1, prev[j - 1]! + cost);
+      let best = Math.min(prev[j]! + 1, curr[j - 1]! + 1, prev[j - 1]! + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) best = Math.min(best, prev2[j - 2]! + 1);
+      curr[j] = best;
     }
-    [prev, curr] = [curr, prev];
+    [prev2, prev, curr] = [prev, curr, prev2];
   }
   return prev[n]!;
 }
@@ -98,6 +110,20 @@ function levenshtein(a: string, b: string): number {
 /**
  * The closest candidate to `word` within an edit distance threshold that scales with word
  * length, or `undefined` if nothing is close enough. Used to produce "did you mean" hints.
+ *
+ * Matching is case-insensitive but a **case-only** difference is a suggestion, not a non-answer
+ * (M61, review finding A4-08). This used to require `bestDist > 0`, which read a distance of zero
+ * as "the user already typed a candidate, there is nothing to say" — true of the *lowercased*
+ * word, and false of the one on screen. So `orderid` for `orderId`, `userid` for `userId`,
+ * `productID` for `productId` all fell through to the generic fallback while a one-character
+ * deletion got a hint. Capture names are camelCase by convention and interpolations are hand-typed,
+ * which makes case drift *the* characteristic typo of this language — and the hole was language-
+ * wide, since `TF011`/`TF012`/`TF013`/`TF014`/`TF020`/`TF026`/`TF027`/`TF028`/`TF030` all come
+ * through here. `SPEC.md` §17's own worked `TF030` example — propagated into the docs site and LSP
+ * hover by `gen-spec-tables.mjs` — was of a case-only typo, and could not be reproduced.
+ *
+ * A word that *exactly* equals a candidate still gets nothing: the caller is erroring for some
+ * other reason, and "did you mean `x`?" about the `x` already typed is noise.
  */
 export function suggest(word: string, candidates: readonly string[]): string | undefined {
   const w = word.toLowerCase();
@@ -105,14 +131,14 @@ export function suggest(word: string, candidates: readonly string[]): string | u
   let best: string | undefined;
   let bestDist = Infinity;
   for (const cand of candidates) {
-    const d = levenshtein(w, cand.toLowerCase());
+    if (cand === word) return undefined;
+    const d = editDistance(w, cand.toLowerCase());
     if (d < bestDist) {
       bestDist = d;
       best = cand;
     }
   }
-  if (best !== undefined && bestDist > 0 && bestDist <= threshold) return best;
-  return undefined;
+  return best !== undefined && bestDist <= threshold ? best : undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -12,4 +12,4 @@ error[TF014]: unknown matcher `blergh`
 4 |   expect status blergh 200
   |                 ^^^^^^
   |
-  = help: expected a value matcher (equals, contains, matches …), `is greater than`/`is less than`, or a state (visible/hidden/enabled/disabled/checked)
+  = help: expected a value matcher (equals, contains, matches, has, connects, fails, was), `greater than`/`less than`, or a state (visible/hidden/enabled/disabled/checked) — any of them optionally prefixed with `is`/`not`

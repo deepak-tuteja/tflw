@@ -226,16 +226,60 @@ const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think', 'uncheck'];
 const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
-const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'is', 'connects', 'fails', 'was', 'not'] as const;
+const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'connects', 'fails', 'was'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
-/** Every word that may legally *start* a matcher, for `suggest`. After FS-08 made `is` an optional
- * copula, `greater`/`less` and the state words can appear with no `is` in front of them, so a typo'd
- * `vissible` has to be reachable from the same list as a typo'd `equalz` — there is no longer an
- * `is` branch with its own narrower vocabulary. */
+/** `is` and `not` sit in *front* of a matcher; neither is one. `parseMatcher`'s prefix loop consumes
+ * both before the switch below ever sees a token, so a word that reaches the unknown-matcher error
+ * is standing in the matcher slot — and offering "did you mean `not`?" there recommends a spelling
+ * that cannot complete the statement (M61, review finding A3-20: `expect status nut 200` suggested
+ * `not`, and `expect status not 200` is a fresh error). Same shape as `RETIRED_STATEMENT_KEYWORDS`
+ * above — a word the grammar knows, deliberately held out of the did-you-mean pool, and named in
+ * the fallback help line instead, where saying it is true. */
+const MATCHER_PREFIX_KEYWORDS = ['is', 'not'] as const;
+/** Every word that may legally *complete* a matcher, for `suggest`. After FS-08 made `is` an
+ * optional copula, `greater`/`less` and the state words can appear with no `is` in front of them, so
+ * a typo'd `vissible` has to be reachable from the same list as a typo'd `equalz` — there is no
+ * longer an `is` branch with its own narrower vocabulary. */
 const MATCHER_VOCABULARY = [...MATCHER_KEYWORDS, 'greater', 'less', ...STATE_WORDS] as const;
+/** The last word on an unknown matcher, when `suggest` finds nothing close enough — so it has to
+ * name the whole vocabulary, and name it *completely*. Built from the constants rather than written
+ * out, because the hand-written version drifted: it omitted `equals`, the most-used matcher in the
+ * language, from a line that presents itself as the option set (review finding OBS-04). */
+const MATCHER_VOCABULARY_HELP =
+  `expected a value matcher (${MATCHER_KEYWORDS.join(', ')}), \`greater than\`/\`less than\`, or a state ` +
+  `(${STATE_WORDS.join('/')}) — any of them optionally prefixed with \`${MATCHER_PREFIX_KEYWORDS.join('`/`')}\``;
+/** The negation morphemes a user reaches for when they want the *absence* of a state — `invisible`,
+ * `unchecked`, `unhidden`, `notvisible`. There are no negated state words in this grammar: negation
+ * is the `not` prefix, once, in front of the positive word. See `negatedStateWord`. */
+const NEGATION_PREFIXES = ['not', 'non', 'un', 'in', 'im', 'dis'] as const;
 /** `has no [<severity>] a11y violations` (M3e, SPEC §9.8) — increasing severity, matching axe-core's
  * own `impact` scale (`A11ySeverity`, ast.ts). */
 const A11Y_SEVERITY_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
+/** As `MATCHER_VOCABULARY_HELP`, for the three-word `a11y violations` construct (review finding
+ * A3-15) — every one of its failure modes used to be a bare `expectKw`, naming one keyword of three
+ * and never the severity vocabulary sitting in the constant directly above. */
+const A11Y_MATCHER_HELP =
+  `expected \`a11y violations\`, optionally with a severity floor in front ` +
+  `(${A11Y_SEVERITY_WORDS.join('/')}) — e.g. \`has no serious a11y violations\``;
+
+/**
+ * The state word hiding behind a negation prefix (`invisible` → `visible`), or `undefined`.
+ *
+ * Every negated state word a user is likeliest to reach for lands, by edit distance, on its own
+ * positive twin — so `expect button "Go" is invisible` answered "did you mean `visible`?", and a
+ * user who took the suggestion shipped a green test asserting the exact **opposite** of what they
+ * wrote (M61, review finding A3-02, the sharp one in this cluster). Edit distance cannot see
+ * meaning; a morpheme it can. Detecting the prefix lets the parser say what is actually true —
+ * write `not visible` — instead of letting a spelling metric answer a question about negation.
+ */
+function negatedStateWord(word: string): string | undefined {
+  const w = word.toLowerCase();
+  for (const prefix of NEGATION_PREFIXES) {
+    const rest = w.startsWith(prefix) ? w.slice(prefix.length) : undefined;
+    if (rest !== undefined && (STATE_WORDS as readonly string[]).includes(rest)) return rest;
+  }
+  return undefined;
+}
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport', 'log'] as const;
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
@@ -250,6 +294,28 @@ const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
 const DURATION_UNITS = ['ms', 's', 'm'] as const;
 const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
 const QUANTIFIERS = ['any', 'all'] as const;
+
+/**
+ * Every closed vocabulary a `did you mean` in this file draws from, keyed by the position it
+ * belongs to. Exported solely for `suggestions.test.ts`'s round-trip guard (M61): **whatever the
+ * parser offers as a suggestion, typing it must not produce a fresh error where it was offered.**
+ *
+ * That property is what `A3-20` broke — `not` sat in the matcher pool, so `expect status nut 200`
+ * answered "did you mean `not`?", and `expect status not 200` is a fresh error. It is not a
+ * property any single fixture can hold, because the bug is a *word in a list*, not a code path: the
+ * guard has to walk the whole list, and it has to fail when a word is added to one of these without
+ * a worked example proving it can complete a statement. Hence the exported map rather than a
+ * hand-copied one in the test, which would drift the moment the two disagreed — precisely the way
+ * `M81`'s round-trip stopped one layer short of the checker and let `B5-01` through.
+ */
+export const SUGGESTION_VOCABULARIES = {
+  matcher: MATCHER_VOCABULARY,
+  locator: LOCATOR_KEYWORDS,
+  logLevel: LOG_LEVELS,
+  logDestination: LOG_DESTINATIONS,
+  a11ySeverity: A11Y_SEVERITY_WORDS,
+  statement: SUGGESTABLE_STATEMENT_KEYWORDS,
+} as const satisfies Record<string, readonly string[]>;
 
 class Parser {
   private pos = 0;
@@ -2353,7 +2419,20 @@ class Parser {
     }
     const tok = this.peek();
     if (tok.type !== 'ident') {
-      this.error(Codes.UNKNOWN_MATCHER, `expected a matcher, found ${describeToken(tok)}`, tok.span);
+      // `expect status is 200` — the likeliest single mistake in the language, and until M61 it
+      // produced this line with no `help` at all (review finding OBS-04, whose pre-FS-08 form was
+      // a help line that listed four comparison/state forms and left out `equals`). `is` is a
+      // copula, not a comparison, so a bare value in the matcher slot is a *missing matcher*, and
+      // the one meant is almost always `equals`. Naming it in place beats naming the vocabulary:
+      // the suggested text is insertable as-is, before the value already typed, and composes with
+      // whatever prefix was consumed above (`is equals 200`, `not equals 200` both parse).
+      const literal = tok.type === 'string' ? `"${tok.value}"` : tok.type === 'number' ? tok.value : undefined;
+      this.error(
+        Codes.UNKNOWN_MATCHER,
+        `expected a matcher, found ${describeToken(tok)}`,
+        tok.span,
+        literal === undefined ? MATCHER_VOCABULARY_HELP : `a value needs a matcher in front of it — did you mean \`equals ${literal}\`?`,
+      );
       return null;
     }
     const mk = (name: MatcherName, value: Value | null): Matcher => ({ type: 'Matcher', name, negated, value, span: this.spanFrom(start) });
@@ -2459,18 +2538,24 @@ class Parser {
           this.advance();
           return mk(tok.value as MatcherName, null);
         }
-        // OBS-04: the fallback line used to omit `equals` and every other value matcher, and after
-        // FS-08 it must also name the copula forms — it is the only help a reader gets when
-        // `suggest` finds nothing close enough.
+        // A3-02: answered *before* `suggest`, because for exactly these words edit distance gives a
+        // confident, fluent and meaning-inverting answer. `invisible`/`unchecked`/`unhidden` are
+        // each one edit from their own positive twin and further from everything else, so the
+        // did-you-mean was always the antonym of what the user asked for.
+        const negatedState = negatedStateWord(tok.value);
+        if (negatedState) {
+          this.error(
+            Codes.UNKNOWN_MATCHER,
+            `unknown matcher \`${tok.value}\``,
+            tok.span,
+            negated
+              ? `\`not ${tok.value}\` is a double negative — write \`${negatedState}\`.`
+              : `state words are never negated by spelling — write \`not ${negatedState}\`. (\`${negatedState}\` on its own asserts the opposite.)`,
+          );
+          return null;
+        }
         const hint = suggest(tok.value, MATCHER_VOCABULARY);
-        this.error(
-          Codes.UNKNOWN_MATCHER,
-          `unknown matcher \`${tok.value}\``,
-          tok.span,
-          hint
-            ? `did you mean \`${hint}\`?`
-            : 'expected a value matcher (equals, contains, matches …), `is greater than`/`is less than`, or a state (visible/hidden/enabled/disabled/checked)',
-        );
+        this.error(Codes.UNKNOWN_MATCHER, `unknown matcher \`${tok.value}\``, tok.span, hint ? `did you mean \`${hint}\`?` : MATCHER_VOCABULARY_HELP);
         return null;
       }
     }
@@ -2486,8 +2571,24 @@ class Parser {
     if (sevTok.type === 'ident' && (A11Y_SEVERITY_WORDS as readonly string[]).includes(sevTok.value)) {
       a11ySeverity = this.advance().value as A11ySeverity;
     }
-    if (!this.expectKw('a11y')) return null;
-    if (!this.expectKw('violations')) return null;
+    // A3-15: both keywords were bare `expectKw`s, so all three ways to get this construct wrong
+    // reported one keyword of a three-word phrase and never the vocabulary — `expect page has no
+    // violations` (the likeliest slip: `a11y` forgotten) said ``expected `a11y`, found
+    // `violations` ``, with `A11Y_SEVERITY_WORDS` and `suggest` both in scope and neither used.
+    // The `log … to <dest>` branch below has always done this properly; nothing here is different.
+    for (const kw of ['a11y', 'violations'] as const) {
+      const tok = this.peek();
+      if (this.isKw(tok, kw)) {
+        this.advance();
+        continue;
+      }
+      // A severity is still legal in front of `a11y`, so it belongs in the candidate pool — but
+      // only until one has been read, after which it is no longer a thing the user may write here.
+      const candidates = kw === 'a11y' && a11ySeverity === undefined ? [...A11Y_SEVERITY_WORDS, kw] : [kw];
+      const hint = tok.type === 'ident' ? suggest(tok.value, candidates) : undefined;
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`${kw}\`, found ${describeToken(tok)}`, tok.span, hint ? `did you mean \`${hint}\`?` : A11Y_MATCHER_HELP);
+      return null;
+    }
     return { type: 'Matcher', name: 'hasNoA11yViolations', negated, value: null, a11ySeverity, span: this.spanFrom(start) };
   }
 
@@ -2911,7 +3012,24 @@ class Parser {
     this.advance(); // `log`
     let level: LogLevel = 'info';
     const levelTok = this.peek();
-    if (levelTok.type === 'ident' && (LOG_LEVELS as readonly string[]).includes(levelTok.value)) {
+    // A3-16: an unrecognised bare word here used to fall straight through to the message-string
+    // expectation, so `log trace "x"` reported that a *string* was expected — pointing at the
+    // quoted message the user did write correctly and away from the word they got wrong, while
+    // `LOG_LEVELS` sat unused three lines up. An optional lookahead is not a licence to stay
+    // silent: the only other thing legal in this slot is a quoted string, so a bare identifier
+    // here can only be an attempt at a level. `to` is the exception — it means the message itself
+    // is missing, and the expectation below already says so better than this branch could.
+    if (levelTok.type === 'ident' && !this.isKw(levelTok, 'to')) {
+      if (!(LOG_LEVELS as readonly string[]).includes(levelTok.value)) {
+        const hint = suggest(levelTok.value, LOG_LEVELS);
+        this.error(
+          Codes.UNEXPECTED_TOKEN,
+          `expected a log level, found ${describeToken(levelTok)}`,
+          levelTok.span,
+          hint ? `did you mean \`${hint}\`?` : `expected one of: ${LOG_LEVELS.join(', ')} — or omit it, which is \`info\``,
+        );
+        return null;
+      }
       level = this.advance().value as LogLevel;
     }
     const message = this.expectString('a log message, e.g. `log "order {orderId} created"`');

@@ -425,6 +425,69 @@ test('a value-taking flag with no value is a usage error, not a silent fall-back
   }
 });
 
+test('B6-11: a mistyped flag is a teaching diagnostic, not a raw Node ENOENT (M61)', async () => {
+  // The fourth way a flag went wrong without a word, and the most ordinary one: it was simply
+  // misspelled. Every `parse*Args` funnelled an unrecognised token into the *file* list, so
+  // `tflw run --verbos` surfaced, several layers later, as `ENOENT: no such file or directory,
+  // open '/…/--verbos'` — an absolute path to a file nobody named, in a tool whose stated pillar
+  // is teaching diagnostics and which already does this properly for `tflw docs <topic>`.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-unknown-flag-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+    // The rule belongs to the flag surface, not to one subcommand — including the two that were
+    // *quiet* rather than noisy: `install-browsers` dropped an unknown flag on the floor and
+    // downloaded Chromium at exit 0, and `init` never inspected argv beyond `includes('--load')`,
+    // so `--lod` scaffolded without the file it asked for and said nothing.
+    for (const args of [
+      ['run', '--verbos'],
+      ['run', '--verbos=1'],
+      ['check', '--strict'],
+      ['watch', '--strict'],
+      ['migrate', '--strict'],
+      ['pick', 'http://127.0.0.1:1', '--browsr', 'firefox'],
+      ['install-browsers', '--browsr', 'firefox'],
+      ['init', '--lod'],
+    ] as const) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, ...args], { cwd: dir }),
+        (e: unknown) => {
+          const { code, stderr } = e as { code?: number; stderr: string };
+          assert.equal(code, 2, `${args.join(' ')} must exit 2\n${stderr}`);
+          assert.match(stderr, /unknown flag `--[a-z-]+` for `tflw /, stderr);
+          assert.doesNotMatch(stderr, /ENOENT|EISDIR/, `${args.join(' ')} must not surface a raw Node error\n${stderr}`);
+          return true;
+        },
+        `${args.join(' ')} must be a usage error`,
+      );
+    }
+
+    // The half that makes it teaching rather than merely refusing: a near miss is named, drawn
+    // from CLI_FLAGS — the same registry `--help` and the docs-site reference page generate from,
+    // already guarded in both directions by the two tests above, so the suggestion pool cannot
+    // drift from the documented surface without one of them failing.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'run', '--verbos'], { cwd: dir }),
+      (e: unknown) => /did you mean `--verbose`\?/.test((e as { stderr: string }).stderr),
+      '`--verbos` must name `--verbose`',
+    );
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'init', '--lod'], { cwd: dir }),
+      (e: unknown) => /did you mean `--load`\?/.test((e as { stderr: string }).stderr),
+      '`--lod` must name `--load`',
+    );
+
+    // And nothing legitimate got caught in it: a real flag, a real file, and a `-`-prefixed *value*
+    // (which `flagValue` deliberately allows) all still work.
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color', 'health.tflw'], { cwd: dir });
+    assert.match(stdout, /no problems found/);
+    await execFileAsync('node', [cliEntry, 'check', '--format=json', 'health.tflw'], { cwd: dir });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('B6-01: an empty `--tag`/`--only` is a usage error, not a silent run of the whole suite (M70)', async () => {
   // The third way a value goes missing, after M63 closed the two above: present and empty. Both
   // filters were read for truthiness downstream, so `""` meant "no filter" — a *narrowing* flag
