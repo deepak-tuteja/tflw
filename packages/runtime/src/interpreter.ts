@@ -2258,7 +2258,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'ApiStep': {
           const catchConnectionError = requestAssertionApiIndices.has(stepIndex);
           try {
-            let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents);
+            let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents);
             // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
             // just `oauth2`) gets this: a revoked/expired-early credential shouldn't fail every
             // remaining step of a test that's otherwise unrelated to auth. Retried at most once per
@@ -2268,7 +2268,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
               const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
               results.push(...refresh.steps);
               if (refresh.ok) {
-                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents));
+                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents));
               }
             }
             lastResponse = trace.response;
@@ -2278,7 +2278,11 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // actually retried says so right in its own report line, not just silently in the
             // final status.
             const retrySuffix = retryAfterAttempts > 0 ? `, retried ${retryAfterAttempts}x honoring Retry-After (waited ${retryAfterWaitedMs}ms total)` : '';
-            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}`, redacted.request, redacted.response, apiStepIdentity(step));
+            // D-M88-12 — same channel as `retrySuffix` for the same reason: something the author
+            // needs to see about *this* request belongs on this request's own line, not in a
+            // separate diagnostic stream.
+            const cookieSuffix = cookieScopeNote !== undefined ? `, ${cookieScopeNote}` : '';
+            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}${cookieSuffix}`, redacted.request, redacted.response, apiStepIdentity(step));
           } catch (err) {
             // Not opted in (no `request connects`/`fails` assertion follows this request, decision
             // 18.2) — rethrow unchanged, caught by this function's own outer `catch` below exactly
@@ -2726,6 +2730,12 @@ interface ApiExec {
    * total honoring the header; both `0` when `spec.retryAfter` is null or never triggered. */
   readonly retryAfterAttempts: number;
   readonly retryAfterWaitedMs: number;
+  /** D-M88-12 — set only when the jar had nothing to send to *this* origin while holding cookies
+   * for others, i.e. the one case where "no `Cookie` header" means "scoped elsewhere" rather than
+   * "never logged in". Informational: it carries no verdict, so unlike a `tflw check` rule it
+   * cannot false-positive on a bearer-auth suite (which is why it is a trace line and not a
+   * rule — see the decision). */
+  readonly cookieScopeNote?: string;
 }
 
 /** `cert`/`key` file *contents*, keyed by resolved path pair — read once per run, not once per
@@ -2767,8 +2777,12 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   for (const [k, v] of Object.entries(ctx.sessionHeaders)) setHeader(headers, k, v);
   // Cookie jar (SPEC §3.3, P#33): applied before any per-step header, so an explicit `header
   // "Cookie" is …` on this step still wins (setHeader replaces, it never sits alongside).
-  const jarCookie = ctx.cookieJar.serialize();
+  // …and scoped to this request's own origin since M88c2 (`B4-06`, D-M88-7): a cookie set by the
+  // app under test is no longer replayed to every other service the suite talks to.
+  const requestOrigin = originOf(url);
+  const jarCookie = ctx.cookieJar.serialize(requestOrigin);
   if (jarCookie) setHeader(headers, 'Cookie', jarCookie);
+  const cookieScopeNote = jarCookie ? undefined : cookieScopeNoteFor(ctx, requestOrigin);
   for (const h of spec.headers) setHeader(headers, h.name.value, stringify(evalValue(h.value, ctx)));
 
   let sendBody: BodyInit | undefined;
@@ -2814,17 +2828,40 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
     }
   }
 
-  // Every `Set-Cookie` the *final* response carried is folded into the jar here, unconditionally —
-  // the next request in this same scope (session block, or this test's own subsequent steps) sees
-  // it automatically, with no `capture`/`header` replay needed (SPEC §3.3, P#33).
-  ctx.cookieJar.applySetCookie(response.headers['set-cookie']);
+  // Every `Set-Cookie` this chain carried is folded into the jar here, unconditionally — the next
+  // request in this same scope (session block, or this test's own subsequent steps) sees it
+  // automatically, with no `capture`/`header` replay needed (SPEC §3.3, P#33). Per *hop*, not per
+  // response: the commonest login shape sets its cookie on a 302 (`B4-15`), and after a
+  // cross-origin redirect the origin that set a cookie is not the one this step named (D-M88-8).
+  ctx.cookieJar.applyCookieEvents(response.cookieEvents);
 
   return {
     trace: { request, response },
     redacted: { request: redactRequest(request, redactor, config), response: redactResponse(response, redactor, config) },
     retryAfterAttempts,
     retryAfterWaitedMs,
+    ...(cookieScopeNote !== undefined ? { cookieScopeNote } : {}),
   };
+}
+
+/** The `scheme://host:port` a request is addressed to — the cookie jar's scope key (D-M88-7).
+ * Falls back to the whole URL for anything unparseable, which `resolveBaseUrl` + `checkHostAllowed`
+ * have already made unreachable in practice; an odd key confines a cookie, it never widens it. */
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+}
+
+/** D-M88-12 — "the jar's silence is shown, not diagnosed". Only speaks when the jar holds cookies
+ * for *other* origins, so an ordinary bearer-auth or anonymous suite never sees it; when it does
+ * speak, it names the origins and never a value. */
+function cookieScopeNoteFor(ctx: EvalCtx, requestOrigin: string): string | undefined {
+  const elsewhere = ctx.cookieJar.originsWithCookies().filter((o) => o !== requestOrigin);
+  if (elsewhere.length === 0) return undefined;
+  return `no cookies for ${requestOrigin} (jar holds cookies for ${elsewhere.join(', ')})`;
 }
 
 /** Parses a `Retry-After` header value into a wait duration in ms: all-digits is seconds

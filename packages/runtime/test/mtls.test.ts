@@ -15,7 +15,7 @@ import { parseSource, parseConfigSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
-import { testConfig } from './support.js';
+import { testConfig, startFixtureServer } from './support.js';
 
 let server: Server;
 let baseUrl: string;
@@ -72,6 +72,13 @@ before(async () => {
       // is the one that would have been left behind.
       if (req.url === '/login') {
         res.writeHead(302, { location: '/dashboard', 'set-cookie': ['sid=mtls-session; Path=/', 'csrf=mtls-token'] }).end();
+        return;
+      }
+      // M88c2 (`B4-05`): two `Set-Cookie`s on one ordinary 200, so the worker's *response header
+      // map* can be compared against the pooled path's. The `Expires` comma is the point — it is
+      // what makes `Headers.forEach`'s `, `-joined string unsplittable by any consumer.
+      if (req.url === '/dual-cookie') {
+        res.writeHead(200, { 'set-cookie': ['a=1; Path=/; Expires=Fri, 01 Jan 2100 00:00:00 GMT', 'b=2'] }).end('{}');
         return;
       }
       const peerCert = (req.socket as TLSSocket).getPeerCertificate();
@@ -236,6 +243,27 @@ test('the mTLS worker reports a cookie set on an intermediate redirect hop', asy
   // makes no difference to any of it (`B4-14`'s shape, third path).
   const guarded = await sendRequest({ ...opts, allowHosts: ['127.0.0.1'] });
   assert.deepEqual(guarded.cookieEvents, res.cookieEvents);
+});
+
+// M88c2 (`B4-05`) — parity, not a literal: what matters is that a `capture header "set-cookie"`
+// reads the same thing whichever transport ran the step, so the assertion is against the pooled
+// path's own answer on an identical response. The negative control reproduces the defect exactly as
+// the ledger described it: with `forEach` building the header map, this assertion sees `b=2` alone —
+// `a=1` overwritten and gone, a dual-cookie login silently down to one cookie.
+test('the mTLS worker reports multiple Set-Cookie headers the same way the pooled path does', async () => {
+  const mtls = { cert: readFileSync(clientCertPath, 'utf8'), key: readFileSync(clientKeyPath, 'utf8') };
+  const overMtls = await sendRequest({ method: 'GET', url: `${baseUrl}/dual-cookie`, headers: {}, timeoutMs: 5000, followRedirects: true, mtls });
+
+  const plain = await startFixtureServer({
+    '/dual-cookie': (_req, res) => res.writeHead(200, { 'set-cookie': ['a=1; Path=/; Expires=Fri, 01 Jan 2100 00:00:00 GMT', 'b=2'] }).end('{}'),
+  });
+  const overPooled = await sendRequest({ method: 'GET', url: `${plain.baseUrl}/dual-cookie`, headers: {}, timeoutMs: 5000, followRedirects: true });
+
+  assert.equal(overMtls.headers['set-cookie'], overPooled.headers['set-cookie']);
+  assert.equal(overMtls.headers['set-cookie'], 'a=1; Path=/; Expires=Fri, 01 Jan 2100 00:00:00 GMT\nb=2', 'decision 61: the join is a newline, never a comma');
+  assert.equal(overMtls.headers['set-cookie']!.split('\n').length, 2, 'and the two lines must still come apart');
+
+  await plain.close();
 });
 
 test('`cert` without a matching `key` is rejected once `defaults`+`env` are merged (decision 3b)', () => {

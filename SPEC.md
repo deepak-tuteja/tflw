@@ -192,11 +192,23 @@ session shopper
 
 - Every `Set-Cookie` a response carries is folded into the jar (by name, last-value-wins);
   `Max-Age`/`Expires` are honored (`Max-Age` wins when a line has both, RFC 6265 §5.3), and
-  `Max-Age <= 0` deletes the cookie immediately, same as a real logout.
+  `Max-Age <= 0` deletes the cookie immediately, same as a real logout. Every hop of a redirect
+  chain counts, not just the response that finally answered — the commonest login shape sets its
+  cookie on the `302`.
+- Cookies are **scoped by origin** (`scheme://host:port`), and filed under the origin that *set*
+  them, which after a redirect need not be the one the step named. A cookie the app under test
+  issues is therefore never replayed to a second `api <name>` service on another host or port —
+  including the case where both names in `env` point at one app (`api` and `api root`), which is
+  one origin and one jar. `Domain=` is honored and matched against the setting host, so a cookie
+  issued by `login.example.com` for `Domain=example.com` still reaches `api.example.com`; a
+  `Domain=` the setting host does not itself belong to is narrowed to that host rather than
+  dropped.
 - The jar auto-attaches a bare `name=value; name2=value2` `Cookie` header to every subsequent
-  request in the same scope — no `capture`/`header` replay needed, and no risk of the newline-
-  joined multi-`Set-Cookie` capture (§5.4) landing in a `Cookie` header value, which real HTTP
-  clients reject outright.
+  request to that origin in the same scope — no `capture`/`header` replay needed, and no risk of
+  the newline-joined multi-`Set-Cookie` capture (§5.4) landing in a `Cookie` header value, which
+  real HTTP clients reject outright. When a request goes out with no `Cookie` header *because* the
+  jar's cookies belong to a different origin, its step line says so — an informational trace note,
+  never a failure.
 - A test opting into `as <session>` starts with a **clone** of that session's own jar, not the live
   instance — the test's own subsequent cookie updates never leak back into the session cache
   (shared for the run's lifetime) or into a concurrently-running sibling test under `--parallel
@@ -207,11 +219,12 @@ session shopper
   is never removed) — precedence is config headers → session headers (already merged across every
   opted-in session, if more than one) → jar (already merged the same way) → per-step headers, each
   later source replacing rather than appending.
-- Deliberately narrower than a real browser's jar: no `Domain`/`Path` scoping (a jar already
-  belongs to one session/test talking to one logical app, not arbitrary origins) and no
-  `Secure`/`HttpOnly`/`SameSite` enforcement (those constrain a *browser* deciding whether to
-  attach a cookie to a browser-initiated request; a test client deliberately replays whatever the
-  server just told it to remember) — a closed, smaller feature set on purpose (P#13).
+- Still deliberately narrower than a real browser's jar: no `Path` scoping (it would partition
+  *within* an origin, which is exactly the `api`/`api root` split origin scoping is written to
+  keep together) and no `Secure`/`HttpOnly`/`SameSite` enforcement (those constrain a *browser*
+  deciding whether to attach a cookie to a browser-initiated request; a test client deliberately
+  replays whatever the server just told it to remember) — a closed, smaller feature set on
+  purpose (P#13).
 
 "Which attempt's report shows the session's steps" is resolved **once per test, per session
 name**, not once per retry attempt (PLAN decision 68) — so a `retry`-ing test running `as

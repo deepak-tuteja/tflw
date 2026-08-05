@@ -127,6 +127,19 @@ export async function runMtlsWorkerProcess(): Promise<void> {
         res.headers.forEach((value, key) => {
           headers[key] = value;
         });
+        // `Headers.forEach` hands back several `Set-Cookie`s as one `, `-joined string, which is
+        // both unsplittable (a cookie's `Expires` attribute contains its own comma) and not what
+        // the other three clients report: decision 61 fixed `\n` as the join, so a
+        // `capture header "set-cookie"` reads the same thing whichever transport ran the step.
+        // `getSetCookie()` is the only accessor that keeps the lines apart (`B4-05`, M88c2).
+        // `Headers.forEach` yields `Set-Cookie` *once per line* (the Fetch standard's one exception
+        // to header combining, because a comma is legal inside an `Expires` attribute) — so writing
+        // `headers[key] = value` keeps the last cookie and drops the rest. A dual-cookie login over
+        // mTLS reached `capture header "set-cookie"` as its second cookie alone. `http.ts`'s
+        // `setCookieLines` has said exactly this since decision 61; the worker is the path that
+        // never got the fix (`B4-05`, M88c2), which is the whole of cluster C2 in miniature.
+        const setCookie = res.headers.getSetCookie();
+        if (setCookie.length > 0) headers['set-cookie'] = setCookie.join('\n');
         let json: unknown;
         try {
           json = bodyText.length > 0 ? JSON.parse(bodyText) : undefined;
