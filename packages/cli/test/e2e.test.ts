@@ -3297,3 +3297,49 @@ test('`tflw check` catches a `pause` reached through an `action` from a function
     }
   });
 });
+
+// M87 (review cluster C6) — the CLI half of call resolution. `checkCalls` is unit-tested in
+// `@tflw/lang`, but the *world* it resolves against is assembled out here: the checker never
+// touches a filesystem, so `importedActions` is per-call-site wiring, and per-call-site wiring is
+// exactly what M60 found had silently drifted between the CLI, the language server and the docs
+// site. A unit test on the pass cannot tell whether anyone remembered to pass it a resolved world.
+test('`tflw check` resolves an imported action and reports a wrong-arity call against it (M87, A4-03)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m87-arity-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await mkdir(join(dir, 'shared'), { recursive: true });
+      await writeFile(join(dir, 'shared', 'orders.tflw'), 'action create order(name)\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      await writeFile(join(dir, 't.tflw'), 'import "./shared/orders.tflw"\n\ntest "t"\n  create order("Widget", "extra")\n', 'utf8');
+
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      assert.equal(failure.code, 2);
+      assert.match(failure.stderr, /TF038/);
+      assert.match(failure.stderr, /action "create order" expects 1 argument, got 2/);
+      // The hint names the file it was imported from — only reachable if the import was genuinely
+      // read off disk, which is the wiring this test exists to prove.
+      assert.match(failure.stderr, /imported from "\.\/shared\/orders\.tflw"/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`tflw check` stays silent on an unresolvable world rather than calling a name unknown (M87)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m87-open-world-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // A JS helper (`use`) can export any name, and enumerating those names means executing the
+      // module — which the checker does not do. So `whatever(...)` is undecidable here, and the
+      // file must check clean rather than be condemned on a guess.
+      await writeFile(join(dir, 'helpers.mjs'), 'export function whatever() { return 1; }\n', 'utf8');
+      await writeFile(join(dir, 't.tflw'), 'use "./helpers.mjs"\n\ntest "t"\n  let x = whatever()\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+      assert.match(stdout, /no problems found/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -8,6 +8,7 @@ import type {
   ActionDecl,
   ApiBody,
   ApiRequestSpec,
+  CallExpr,
   ConfigEntry,
   ConfigFile,
   EnvBlock,
@@ -38,6 +39,25 @@ import { parseStringParts } from './parser.js';
 export interface ProgramCheckOptions {
   readonly knownServices?: readonly string[];
   readonly knownSessions?: readonly string[];
+  /** Actions this file's `import` lines bring into scope (M87), resolved by the caller because the
+   * checker itself never touches the filesystem. Same `undefined`-vs-`[]` distinction as the two
+   * above, and it carries more weight here than anywhere else: with `[]` a call matching no local
+   * action is provably unresolvable, while with `undefined` the file's imports were simply not
+   * read, and `checkCalls` must not claim a name is unknown when it never looked. A file with no
+   * `import` line at all is closed either way — see `checkCalls` for the full closed-world rule. */
+  readonly importedActions?: readonly KnownAction[];
+}
+
+/** One action a call could resolve to: its name, how many arguments it takes, and where it was
+ * declared. `from` is the `import "…"` path it came in through, or `null` for one declared in the
+ * file being checked — a diagnostic reads very differently depending on which ("declared at line
+ * 3" vs. "imported from ./shared/orders.tflw"). */
+export interface KnownAction {
+  readonly name: string;
+  readonly arity: number;
+  readonly from: string | null;
+  /** Declaration line, for a local action only (`from === null`). */
+  readonly line?: number;
 }
 
 /**
@@ -64,6 +84,8 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
     ...checkWorkloadTests(program),
+    ...checkCalls(program, opts),
+    ...checkResponseScopes(program),
   ];
 }
 
@@ -374,6 +396,272 @@ export function checkActionDecls(program: Program): Diagnostic[] {
     });
   }
   return diags;
+}
+
+// ---------------------------------------------------------------------------
+// Call resolution (M87, review cluster C6 — `A4-03`, `FU-08`).
+// ---------------------------------------------------------------------------
+
+/**
+ * Every `CallExpr` in the program, found structurally rather than by walking the step grammar.
+ *
+ * The obvious implementation is a switch over `Step`, and it is the wrong one: `directCalls` (M60)
+ * is exactly that, and it misses `api POST /x body { id: f() }` because `ApiStep` isn't in its
+ * list. A pass that answers "is this call legal *here*" cannot afford to be blind to a position —
+ * silence would read as approval. So this recurses over the AST's own object graph and reports
+ * every node whose `type` is `CallExpr`, wherever it sits. A step or value shape added later is
+ * covered the day it parses, with nothing to remember — which is the property §15's additive-only
+ * grammar freeze needs from a check like this.
+ *
+ * `span` is skipped only to avoid walking position records that can never hold a node.
+ */
+function eachCall(node: unknown, visit: (call: CallExpr) => void): void {
+  if (Array.isArray(node)) {
+    for (const el of node) eachCall(el, visit);
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+  const rec = node as Record<string, unknown>;
+  if (rec.type === 'CallExpr') visit(rec as unknown as CallExpr);
+  for (const key of Object.keys(rec)) {
+    if (key === 'span') continue;
+    eachCall(rec[key], visit);
+  }
+}
+
+/** The calls the interpreter actually evaluates: a bare call step, and the *whole* right-hand side
+ * of a `let`. Collected by node identity rather than by shape, so `let x = f() + "y"` — where the
+ * call is a sub-expression of a `BinaryExpr` and never runs — is correctly excluded. */
+function evaluatedCalls(program: Program): Set<CallExpr> {
+  const out = new Set<CallExpr>();
+  const fromSteps = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      switch (step.type) {
+        case 'CallStmt':
+          out.add(step.call);
+          break;
+        case 'LetStmt':
+          if (step.value.type === 'CallExpr') out.add(step.value);
+          break;
+        case 'WithinBlock':
+        case 'SwitchToNewTabBlock':
+        case 'DownloadBlock':
+          fromSteps(step.body);
+          break;
+        default:
+          break;
+      }
+    }
+  };
+  for (const test of program.tests) fromSteps(test.body);
+  for (const action of program.actions) fromSteps(action.body);
+  for (const hook of program.hooks) fromSteps(hook.body);
+  return out;
+}
+
+/**
+ * Resolve every call against the actions in scope (M87, `A4-03`/`FU-08` and `TF040`).
+ *
+ * Until this existed the checker walked a call's *arguments* and never looked at its callee, so a
+ * wrong-arity call to an action declared three lines above lint-passed, and so did a typo'd name.
+ * Both die at the first step of a real run — `FU-08` filed the typo; `A4-03` is the root cause and
+ * covers the arity case too.
+ *
+ * Three questions, deliberately answered under different amounts of certainty:
+ *
+ *  - **Is a call legal here at all** (`TF040`) — always answerable, since it is about position, not
+ *    names. Reported alone: a call in a dead position gets no `TF037`/`TF038` piled on top, because
+ *    its position is the thing to fix and the rest may well evaporate with it.
+ *  - **Does this call pass the right number of arguments** (`TF038`) — answerable whenever the name
+ *    matches a known action, and sound even when the rest of the world is murky: the interpreter
+ *    resolves actions before helpers (`execCall`), and an action name is unique across the whole
+ *    registry (`TF035` here, `buildRegistry` at run time both refuse a duplicate), so a name that
+ *    matches a declared action *is* that action.
+ *  - **Does this call resolve to anything** (`TF037`) — a negative, and the only one of the three
+ *    that has to earn the right to be asked. Two conditions, and both were found the hard way:
+ *
+ *    *A closed world*: every `import` resolved by the caller, and no `use` at all. Enumerating a JS
+ *    helper module's exports means importing it, and the checker does not execute the code it
+ *    checks, so a single `use` line makes this undecidable for that file. It stays useful
+ *    regardless — 124 of the dogfood suite's 155 files have neither an `import` nor a `use`.
+ *
+ *    *A frame whose registry is knowable*: a `test` or hook body, never an `action` body. Calls are
+ *    resolved **late, against the entry file's registry** — an action's body can call a name that
+ *    only the file importing it defines, and that runs (verified against a real run, not inferred).
+ *    A `test` is safe because an imported file's tests never execute — `buildRegistry` takes only
+ *    `actions` from an import — so a test body always runs under its own file's registry. An
+ *    `action` body is not, and reporting there would fail every shared library file in a suite.
+ *    `shared/root.tflw` in the dogfood repo is exactly that shape, and the day this rule was
+ *    written it was the *only* thing in 155 files this pass had to say — see the note in PROGRESS
+ *    for why it is a language gap and not that file's mistake.
+ */
+export function checkCalls(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+
+  const known = new Map<string, KnownAction>();
+  for (const action of program.actions) {
+    // First declaration wins, matching `buildRegistry`'s insertion order; a second one is
+    // `TF035`'s to report, and re-reporting it here as an arity mismatch would be noise.
+    if (!known.has(action.name)) {
+      known.set(action.name, { name: action.name, arity: action.params.length, from: null, line: action.span.start.line });
+    }
+  }
+  for (const imported of opts.importedActions ?? []) {
+    if (!known.has(imported.name)) known.set(imported.name, imported);
+  }
+
+  const importsResolved = program.imports.length === 0 || opts.importedActions !== undefined;
+  const closedWorld = importsResolved && program.uses.length === 0;
+
+  const evaluated = evaluatedCalls(program);
+  const visit = (root: unknown, registryKnowable: boolean): void => eachCall(root, (call) => {
+    if (!evaluated.has(call)) {
+      diags.push({
+        code: Codes.CALL_NOT_EVALUATED,
+        severity: 'error',
+        message: 'a call in this position is never evaluated',
+        span: call.span,
+        hint: `bind it first — \`let result = ${call.name}(…)\` — then use \`{result}\` here; a call only runs as its own step or as the whole value of a \`let\``,
+      });
+      return;
+    }
+
+    const action = known.get(call.name);
+    if (action) {
+      if (call.args.length !== action.arity) {
+        diags.push({
+          code: Codes.CALL_ARITY,
+          severity: 'error',
+          message: `action "${call.name}" expects ${plural(action.arity, 'argument')}, got ${call.args.length}`,
+          span: call.span,
+          hint: action.from === null ? `declared at line ${action.line}` : `imported from "${action.from}"`,
+        });
+      }
+      return;
+    }
+
+    if (!closedWorld || !registryKnowable) return;
+    const near = suggest(call.name, [...known.keys()]);
+    diags.push({
+      code: Codes.UNKNOWN_CALL,
+      severity: 'error',
+      message: `unknown call \`${call.name}(...)\` — no \`action\` or JS helper (\`use\`) defines it`,
+      span: call.span,
+      ...(near
+        ? { hint: `did you mean \`${near}\`?` }
+        : known.size > 0
+          ? { hint: `this file can call: ${[...known.keys()].map((n) => `\`${n}\``).join(', ')}` }
+          : { hint: 'declare it with `action` here, `import "…"` an action from another file, or `use "…"` a JS helper' }),
+    });
+  });
+
+  for (const test of program.tests) visit(test, true);
+  for (const hook of program.hooks) visit(hook, true);
+  for (const action of program.actions) visit(action, false);
+
+  return diags;
+}
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+// ---------------------------------------------------------------------------
+// Response scoping (M87, review cluster C6 — `A4-16`, `FU-12`).
+// ---------------------------------------------------------------------------
+
+/** Subjects that read the last `api` step's response, and so require one to exist. The complement
+ * is not "everything else": the interpreter routes UI locator subjects, the `page` a11y subject and
+ * `request to "…"` network observations away from the response path entirely (`execSteps`'s
+ * `ExpectStmt` case), so those are legal with no `api` step anywhere in sight. */
+function readsResponse(subject: Subject): boolean {
+  switch (subject.type) {
+    case 'StatusSubject':
+    case 'DurationSubject':
+    case 'HeaderSubject':
+    case 'BodySubject':
+    case 'BodyTextSubject':
+    case 'BodyBytesSubject':
+    case 'BodyCsvSubject':
+    case 'BodyPdfTextSubject':
+    case 'RequestSubject':
+      return true;
+    case 'NetworkRequestSubject':
+    case 'LocatorSubject':
+    case 'PageSubject':
+      return false;
+  }
+}
+
+/**
+ * An assertion or `capture` that runs before any response exists (M87, `A4-16`; `FU-12` is the same
+ * defect seen from the caller's side). Statically decidable, and it currently costs a whole run to
+ * find out.
+ *
+ * The unit is a **response scope**, which is narrower than a test. `lastResponse` is a local of the
+ * interpreter's `execSteps`, so every frame that function opens starts with no response and cannot
+ * see its caller's — and it opens one for each `test`/`action`/hook body *and* for each nested
+ * `within` / `switch to new tab` / `download` body. Three consequences, all verified against a real
+ * run rather than read off the source:
+ *
+ *  - Calling an `action` that performs an `api` step does **not** give the caller a response
+ *    (`FU-12`). The action's own steps assert against it; the caller's next `expect status` does not.
+ *  - A `before` hook's `api` step is invisible to the test body, and `before file`'s doubly so.
+ *  - `wait until api` *does* establish one (`execSteps` assigns `lastResponse` from its result),
+ *    so it counts alongside `api` here.
+ *
+ * Only the steps *preceding* the first establishing step in a scope are flagged; the check has
+ * nothing to say about anything after it, which is `A4-06`/`A4-15`'s territory.
+ */
+export function checkResponseScopes(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+
+  const scope = (steps: readonly Step[]): void => {
+    let established = false;
+    for (const step of steps) {
+      switch (step.type) {
+        case 'ApiStep':
+        case 'WaitUntilApiStmt':
+          established = true;
+          break;
+        case 'ExpectStmt':
+          if (!established && readsResponse(step.subject)) {
+            diags.push(noResponse(step.subject, step.span, step.soft ? 'check' : 'expect'));
+          }
+          break;
+        case 'CaptureStmt':
+          // Every `capture` reads the response — `resolveSubject` rejects the two subjects that
+          // don't (`page`, `request to "…"`) outright as uncapturable, so there is no subject for
+          // which a `capture` before an `api` step is meaningful.
+          if (!established) diags.push(noResponse(step.subject, step.span, 'capture'));
+          break;
+        case 'WithinBlock':
+        case 'SwitchToNewTabBlock':
+        case 'DownloadBlock':
+          // Its own `execSteps` frame, so its own response scope — an `api` step *outside* the
+          // block does not carry into it, and one inside does not carry back out.
+          scope(step.body);
+          break;
+        default:
+          break;
+      }
+    }
+  };
+
+  for (const test of program.tests) scope(test.body);
+  for (const action of program.actions) scope(action.body);
+  for (const hook of program.hooks) scope(hook.body);
+  return diags;
+}
+
+function noResponse(subject: Subject, span: Span, kind: 'expect' | 'check' | 'capture'): Diagnostic {
+  return {
+    code: Codes.NO_RESPONSE_YET,
+    severity: 'error',
+    message: 'no response yet — an `api` step must run before this assertion/capture',
+    span,
+    hint: `\`${subjectKeyword(subject)}\` reads the last \`api\` step's response, and no \`api\`/\`wait until api\` step runs before this \`${kind}\` in this body — a response never crosses out of an \`action\` or a hook into the body that called it`,
+  };
 }
 
 /**

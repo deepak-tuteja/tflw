@@ -71,6 +71,10 @@ export const Codes = {
   THRESHOLD_SCOPE_UNKNOWN: 'TF034',
   DUPLICATE_ACTION: 'TF035',
   ALLOW_HOSTS_EXCLUDES_BASE_URL: 'TF036',
+  UNKNOWN_CALL: 'TF037',
+  CALL_ARITY: 'TF038',
+  NO_RESPONSE_YET: 'TF039',
+  CALL_NOT_EVALUATED: 'TF040',
 } as const;
 
 // ---------------------------------------------------------------------------

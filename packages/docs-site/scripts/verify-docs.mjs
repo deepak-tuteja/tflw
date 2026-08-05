@@ -64,7 +64,16 @@ for (const b of blocks) {
  */
 function materialise(block, source, startLine) {
   if (block.kind === 'file') return { source, lineOffset: 0, startLine };
-  const preamble = ['test "docs fragment"', ...block.binds.map((name) => `  let ${name} = "docs-fixture"`)];
+  // The synthetic `api` step is the same kind of scaffolding as the `threshold` below, for M87's
+  // `TF039`: a fragment teaching `expect body …` or `capture …` is *about* a response, and the
+  // request that produced it is exactly the enclosing context the page omits on purpose. Supplied
+  // unconditionally rather than behind a directive — every fragment is checked as steps inside a
+  // real test, and a real test made a request before it asserted on one.
+  const preamble = [
+    'test "docs fragment"',
+    '  api GET /docs-fixture',
+    ...block.binds.map((name) => `  let ${name} = "docs-fixture"`),
+  ];
   const body = source.split('\n').map((line) => (line.trim() === '' ? line : '  ' + line));
   // A workload excerpt is one line of a *workload-bearing* test, and such a test with no
   // `threshold` can never fail (M60/A4-01, TF033). Supplying one here checks the excerpt as what

@@ -26,6 +26,7 @@ export {
 export {
   checkProgram,
   type ProgramCheckOptions,
+  type KnownAction,
   validateConfig,
   checkServices,
   checkSessionServices,
@@ -36,6 +37,8 @@ export {
   checkUnknownVariables,
   checkRequestAssertions,
   checkWorkloadTests,
+  checkCalls,
+  checkResponseScopes,
 } from './checker.js';
 export { hostMatchesAllowPattern } from './allowHostsPattern.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';

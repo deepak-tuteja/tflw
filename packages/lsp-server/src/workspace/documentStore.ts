@@ -14,6 +14,7 @@
 // services/sessions resolved from the *project's* `tflw.config` on disk (not itself being edited in
 // the common case).
 
+import { readFile } from 'node:fs/promises';
 import { dirname, basename } from 'node:path';
 import {
   parseSource,
@@ -28,7 +29,7 @@ import {
   type Program,
   type SymbolTable,
 } from '@tflw/lang';
-import { ConfigError, selectEnv, resolveConfig } from '@tflw/runtime';
+import { ConfigError, selectEnv, resolveConfig, resolveImportedActions } from '@tflw/runtime';
 import { findProjectRoot } from './project.js';
 import { loadProjectConfig } from './configResolution.js';
 
@@ -123,7 +124,17 @@ export class DocumentStore {
     }
     // The CLI's own pass list, verbatim — one shared entry point, so the server can't fall behind it
     // again (M60). It ran four of the CLI's six until now.
-    const diagnostics = [...parsed.diagnostics, ...checkProgram(parsed.program, { knownServices, knownSessions })];
+    //
+    // `importedActions` (M87) is resolved through the same shared function the CLI calls, with a
+    // reader that prefers an open buffer: an imported `shared/orders.tflw` being edited in another
+    // tab is more current on screen than on disk, and squiggling the file in *this* tab against a
+    // stale copy of that one is exactly the sort of "the editor disagrees with the CLI" gap M60
+    // closed. Falls back to disk for anything not open.
+    const importedActions = await resolveImportedActions(doc.absPath, parsed.program, async (absPath) => {
+      const open = [...this.docs.values()].find((d) => d.absPath === absPath);
+      return open ? open.text : readFile(absPath, 'utf8');
+    });
+    const diagnostics = [...parsed.diagnostics, ...checkProgram(parsed.program, { knownServices, knownSessions, importedActions })];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), baseDir };
   }
 

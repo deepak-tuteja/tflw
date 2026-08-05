@@ -165,3 +165,38 @@ test('analyze: a duplicate action name is reported by the server too (checkActio
     );
   });
 });
+
+// M87 (review cluster C6) — the language server's own resolved world. `checkCalls` needs the
+// actions a file's `import` lines bring in, and the checker cannot read them itself, so each caller
+// supplies them. That is the shape M60 found had drifted: one shared pass list, but per-call-site
+// inputs, and the editor silently answering a narrower question than the CLI.
+test('analyze: an imported action is resolved off disk, so a wrong-arity call squiggles (M87)', async () => {
+  await withTmpProject(CLEAN_CONFIG, async (dir) => {
+    await writeFile(join(dir, 'orders.tflw'), 'action create order(name)\n  api GET /health\n  expect status equals 200\n', 'utf8');
+    const store = new DocumentStore();
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), 'import "./orders.tflw"\n\ntest "t"\n  create order("a", "b")\n');
+    const analysis = await store.analyze(uri, undefined);
+    assert.equal(analysis?.diagnostics.length, 1);
+    assert.equal(analysis?.diagnostics[0]!.code, 'TF038');
+    assert.match(analysis!.diagnostics[0]!.message, /expects 1 argument, got 2/);
+  });
+});
+
+test('analyze: an imported file open in another buffer is read from that buffer, not from disk (M87)', async () => {
+  await withTmpProject(CLEAN_CONFIG, async (dir) => {
+    // On disk the action takes one parameter, so the call below is correct. In the editor it has
+    // just been given a second one and not yet saved. The squiggle must follow what is on screen —
+    // otherwise the editor disagrees with itself across two tabs, which is the failure mode the
+    // buffer-first reader exists to prevent.
+    await writeFile(join(dir, 'orders.tflw'), 'action create order(name)\n  api GET /health\n  expect status equals 200\n', 'utf8');
+    const store = new DocumentStore();
+    store.open('file:///orders.tflw', join(dir, 'orders.tflw'), 'action create order(name, qty)\n  api GET /health\n  expect status equals 200\n');
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), 'import "./orders.tflw"\n\ntest "t"\n  create order("a")\n');
+    const analysis = await store.analyze(uri, undefined);
+    assert.equal(analysis?.diagnostics.length, 1);
+    assert.equal(analysis?.diagnostics[0]!.code, 'TF038');
+    assert.match(analysis!.diagnostics[0]!.message, /expects 2 arguments, got 1/);
+  });
+});

@@ -37,6 +37,7 @@ import {
 } from '@tflw/lang';
 import {
   runProgram,
+  resolveImportedActions,
   runLoadShard,
   mergeLoadShardReports,
   spliceLoadReportIntoRunReport,
@@ -895,6 +896,7 @@ async function loadAndValidate(
     const checkDiags = checkProgram(parsed.program, {
       knownServices: Object.keys(resolved.services),
       knownSessions,
+      importedActions: await resolveImportedActions(file, parsed.program),
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
