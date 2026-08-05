@@ -9,7 +9,10 @@
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
 import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises';
-import { watch as fsWatch } from 'node:fs';
+import { watch as fsWatch, readFileSync } from 'node:fs';
+// M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
+// `npx --yes` fetch an unpinned one from the registry.
+import { createRequire } from 'node:module';
 import { join, resolve, relative, dirname, basename } from 'node:path';
 import {
   parseSource,
@@ -324,9 +327,23 @@ async function main(argv: string[]): Promise<number> {
 /**
  * `playwright` is an optional peer (D5): browser step support only activates once the consuming
  * project installs it themselves (`npm install -D playwright`) and downloads a browser binary via
- * this command. Shells out to the `playwright` CLI that ships inside that same npm package (via
- * `npx`, so it resolves the consumer's own installed version) rather than reaching into any
- * private Playwright API — the well-supported, documented install path.
+ * this command. Runs the `playwright` CLI that ships inside that same npm package rather than
+ * reaching into any private Playwright API — the well-supported, documented install path.
+ *
+ * M92b (review `B6-09`) — this used to be `npx --yes playwright install`, and this docblock used to
+ * credit `npx` with resolving "the consumer's own installed version". It did not. Run in a project
+ * with no `playwright`, `--yes` suppresses npx's install prompt, npx downloads an **unpinned**
+ * `playwright` from the registry into its own cache, and that ephemeral copy downloads hundreds of
+ * MB of browser builds — exiting **0**. The user is then left with a green install command and a
+ * browser test that still fails, because `loadPlaywright()` resolves against *their* project, which
+ * still has none. Two commands disagreeing about whether playwright is installed, the expensive one
+ * being the one that was wrong.
+ *
+ * So the resolution happens here, explicitly, against the consumer's own working directory. Note
+ * the route: `playwright/cli.js` is deliberately *not* in playwright's `exports` map (resolving it
+ * raises `ERR_PACKAGE_PATH_NOT_EXPORTED`), but `playwright/package.json` is — so the manifest's own
+ * `bin` field is both the working path and the version-agnostic one, since it is where a future
+ * playwright would rename its entry point.
  */
 async function installBrowsersCommand(argv: string[]): Promise<number> {
   let browser: string = 'chromium'; // D11: Chromium default
@@ -348,15 +365,44 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
     err(`unknown --browser \`${browser}\` — expected one of: ${SUPPORTED_BROWSER_ENGINES.join(', ')}.`);
     return EXIT_USAGE;
   }
+  let playwrightCli: string;
+  try {
+    playwrightCli = resolvePlaywrightCli();
+  } catch {
+    // The same sentence `loadPlaywright()` gives when a browser step runs without the peer, in this
+    // command's voice — a user can hit this wall from either direction and reads one explanation.
+    // Nothing is downloaded: refusing is the whole point of the change.
+    err(
+      `\`playwright\` isn't installed in this project, so there is nothing to download browsers for.\n` +
+        `  Install the optional peer first, then re-run this command:\n` +
+        `    npm install -D playwright\n` +
+        `    tflw install-browsers${browser === 'chromium' ? '' : ` --browser ${browser}`}`,
+    );
+    return EXIT_USAGE;
+  }
   const code = await new Promise<number>((resolvePromise) => {
-    const child = spawn('npx', ['--yes', 'playwright', 'install', browser], { stdio: 'inherit', shell: process.platform === 'win32' });
+    const child = spawn(process.execPath, [playwrightCli, 'install', browser], { stdio: 'inherit' });
     child.on('error', (e) => {
-      err(`could not run \`npx playwright install ${browser}\`: ${e.message}\n  make sure \`playwright\` is installed (\`npm install -D playwright\`) and \`npx\` is on PATH.`);
+      err(`could not run \`playwright install ${browser}\`: ${e.message}\n  resolved the playwright CLI to ${playwrightCli}.`);
       resolvePromise(EXIT_USAGE);
     });
     child.on('exit', (exitCode) => resolvePromise(exitCode ?? EXIT_USAGE));
   });
   return code === 0 ? EXIT_OK : EXIT_USAGE;
+}
+
+/** The consumer's own `playwright` CLI entry point, or a throw. Resolved from `process.cwd()`
+ * rather than from this bundle's location: `tflw` is normally a project-local devDependency, but it
+ * is also legitimately run via a global install or `npx tflw`, and in both of those the peer that
+ * matters is still the *project's*. Throws rather than returning undefined so the one caller can't
+ * accidentally treat "not installed" as a path. */
+function resolvePlaywrightCli(): string {
+  const requireFrom = createRequire(join(process.cwd(), 'noop.js'));
+  const manifestPath = requireFrom.resolve('playwright/package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { bin?: string | Record<string, string> };
+  const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.playwright;
+  if (!bin) throw new Error(`playwright's package.json at ${manifestPath} declares no \`playwright\` bin`);
+  return join(dirname(manifestPath), bin);
 }
 
 // ---- tflw pick <url> (M5, SPEC §12) -----------------------------------------

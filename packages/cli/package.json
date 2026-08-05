@@ -11,6 +11,14 @@
     "node": ">=22"
   },
   "files": ["dist", "THIRD-PARTY-NOTICES.md"],
+  "peerDependencies": {
+    "playwright": ">=1.40.0",
+    "axe-core": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": { "optional": true },
+    "axe-core": { "optional": true }
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepak-tuteja/tflw.git"

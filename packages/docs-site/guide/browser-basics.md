@@ -2,9 +2,11 @@
 
 Browser steps live in the same `.tflw` file as API steps — a login → seed-via-API → drive-UI →
 assert-backend-state test stays one readable file. `playwright` is an optional peer, dynamically
-installed and imported only once a suite actually runs a browser step:
+imported only once a suite actually runs a browser step — install it yourself, then let tflw
+download the browser binaries for it:
 
 ```sh
+npm install -D playwright
 npx tflw install-browsers
 ```
 

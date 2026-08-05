@@ -11,7 +11,7 @@ import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { mkdtemp, mkdir, writeFile, rm, readFile, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -485,6 +485,42 @@ test('B6-11: a mistyped flag is a teaching diagnostic, not a raw Node ENOENT (M6
     await execFileAsync('node', [cliEntry, 'check', '--format=json', 'health.tflw'], { cwd: dir });
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('B6-09/C15: `install-browsers` refuses, and downloads nothing, when the project has no playwright (M92b)', async () => {
+  // What this replaced: `spawn('npx', ['--yes', 'playwright', 'install', browser])`. In a project
+  // with no `playwright`, `--yes` suppresses npx's prompt, npx fetches an **unpinned** playwright
+  // from the registry, and that ephemeral copy downloads hundreds of MB of browser builds — exit
+  // **0**. Observed end-to-end while probing C15, right down to Playwright's own "you are running
+  // 'npx playwright install' without first installing your project's dependencies" wall. The user
+  // ends up with a green install command and a browser test that still fails, because
+  // `loadPlaywright()` resolves against *their* project, which still has none.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-no-playwright-'));
+  const npmCache = await mkdtemp(join(tmpdir(), 'tflw-e2e-npm-cache-'));
+  try {
+    // A bare directory under the OS temp root: nothing above it carries a `node_modules`, so the
+    // consumer-side resolution genuinely fails here rather than finding this repo's own copy.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'install-browsers'], {
+        cwd: dir,
+        // Redirecting npm's cache is what makes the *downloads nothing* half checkable rather than
+        // merely asserted: a regression that reinstates `npx --yes` populates this directory.
+        env: { ...process.env, npm_config_cache: npmCache },
+      }),
+      (e: unknown) => {
+        const { code, stderr } = e as { code?: number; stderr: string };
+        assert.equal(code, 2, `install-browsers without the peer must be a usage error, not a success\n${stderr}`);
+        assert.match(stderr, /`playwright` isn't installed in this project/, stderr);
+        assert.match(stderr, /npm install -D playwright/, 'the refusal must say how to fix it');
+        return true;
+      },
+      'install-browsers must refuse when the optional peer is absent',
+    );
+    assert.deepEqual(await readdir(npmCache), [], 'nothing may be fetched from the registry — refusing is the point, and `npx --yes` is what made this directory fill up');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    await rm(npmCache, { recursive: true, force: true });
   }
 });
 
