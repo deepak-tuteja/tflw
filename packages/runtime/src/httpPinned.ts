@@ -99,7 +99,9 @@ function isTimeoutError(err: unknown): boolean {
  * `redirect: 'follow'` — `node:http`/`node:https` never auto-follows a 3xx — sharing this call's
  * one `start` timestamp across every hop so a redirected request's reported duration matches what
  * `sendRequest`'s single `await fetch()` would have measured for the same chain, not just its
- * final hop. 301/302/303 downgrade a POST to a bodyless GET, dropping the body's own headers with
+ * final hop, and (M88b) one *deadline* across every hop for the same reason: a measured duration
+ * and the budget it is measured against have to cover the same thing.
+ * 301/302/303 downgrade a POST to a bodyless GET, dropping the body's own headers with
  * it (matching `fetch`'s own behavior and every browser); 307/308 alone preserve method + body; a
  * hop that leaves the origin drops the
  * credential headers `fetch` would drop (`CROSS_ORIGIN_STRIPPED_HEADERS`, M80/B4-01). Every one of
@@ -109,101 +111,127 @@ function isTimeoutError(err: unknown): boolean {
 export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedAgents): Promise<ResponseTrace> {
   const start = performance.now();
   let current = opts;
-  for (let redirects = 0; ; redirects++) {
-    const url = new URL(current.url);
-    const isHttps = url.protocol === 'https:';
-    const lib = isHttps ? https : http;
-    const agent = isHttps ? agents.https : agents.http;
-    const bodyBuffer = current.body === undefined ? undefined : Buffer.from(current.body, 'utf8');
-    const headers: Record<string, string> = { ...current.headers };
-    if (bodyBuffer !== undefined && !hasHeaderCI(headers, 'content-length') && !hasHeaderCI(headers, 'transfer-encoding')) {
-      headers['content-length'] = String(bodyBuffer.length);
-    }
 
-    // D81 (PLAN_BROWSER_PERF_SECURITY.md §2.2x) — a plain setTimeout/clearTimeout hard deadline
-    // replaces AbortSignal.timeout(opts.timeoutMs). An isolated diagnostic (60k requests/side
-    // against a zero-work local server, 7 interleaved rounds) found AbortSignal.timeout()
-    // attached a real, reproducible tail cost — a 7-18ms single-request stall in 5/7 rounds,
-    // absent in 0/7 no-signal rounds — with avg/p50/p95/p99 unaffected either way (a rare,
-    // per-request-object/timer-bookkeeping event, not a systemic cost). AbortController/
-    // AbortSignal wraps EventTarget + internal listener bookkeeping that plain setTimeout doesn't
-    // pay for; a manual timer reproduced in the same isolated test showed no such spike (max
-    // stayed in the ~1ms no-signal band across 5/5 rounds). `req.destroy()` (no argument) on an
-    // in-flight request surfaces as a generic ECONNRESET/"socket hang up" on `error` — not a
-    // distinguishable code — so timeout detection here uses a closure flag (`timedOut`), not the
-    // caught error's shape (confirmed via the same diagnostic, not assumed).
-    let res: http.IncomingMessage;
-    let timedOut = false;
-    // Hoisted above the Promise executor — the deadline must span both the request AND the body
-    // read below (matching AbortSignal.timeout()'s original scope: it stays attached to `req`
-    // until destroyed, so a slow body drip past `timeoutMs` was aborted too, not just a slow
-    // time-to-first-byte). Cleared exactly once, in whichever of the two try/catch blocks below
-    // finishes the operation (success or error), never on the `response` event alone.
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      res = await new Promise<http.IncomingMessage>((resolve, reject) => {
-        const req = lib.request(url, { method: current.method, headers, agent }, resolve);
-        // D76/D77 (PLAN_BROWSER_PERF_SECURITY.md §2.17) — unlike undici (fetch's own connect.js
-        // calls socket.setNoDelay(true) unconditionally) and unlike Go's net.Dial (k6, TCP_NODELAY
-        // on by default), node:http/https leaves Nagle's algorithm ON unless the caller opts out.
-        // Nagle + a peer's delayed-ACK timer (~40ms) is a well-documented cause of intermittent
-        // head-of-line stalls when headers and a small body are written in separate socket.write()
-        // calls — exactly this path's shape, and exactly a p95-tail symptom, not a throughput one.
-        req.setNoDelay(true);
-        timer = setTimeout(() => {
-          timedOut = true;
-          req.destroy();
-        }, opts.timeoutMs);
-        req.on('error', reject);
-        if (bodyBuffer !== undefined) req.end(bodyBuffer);
-        else req.end();
-      });
-    } catch (err) {
-      clearTimeout(timer);
-      if (timedOut || isTimeoutError(err)) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
-      throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
-    }
+  // D81 (PLAN_BROWSER_PERF_SECURITY.md §2.2x) — a plain setTimeout/clearTimeout hard deadline
+  // replaces AbortSignal.timeout(opts.timeoutMs). An isolated diagnostic (60k requests/side
+  // against a zero-work local server, 7 interleaved rounds) found AbortSignal.timeout()
+  // attached a real, reproducible tail cost — a 7-18ms single-request stall in 5/7 rounds,
+  // absent in 0/7 no-signal rounds — with avg/p50/p95/p99 unaffected either way (a rare,
+  // per-request-object/timer-bookkeeping event, not a systemic cost). AbortController/
+  // AbortSignal wraps EventTarget + internal listener bookkeeping that plain setTimeout doesn't
+  // pay for; a manual timer reproduced in the same isolated test showed no such spike (max
+  // stayed in the ~1ms no-signal band across 5/5 rounds). `req.destroy()` (no argument) on an
+  // in-flight request surfaces as a generic ECONNRESET/"socket hang up" on `error` — not a
+  // distinguishable code — so timeout detection here uses a closure flag (`timedOut`), not the
+  // caught error's shape (confirmed via the same diagnostic, not assumed).
+  //
+  // M88b (`B4-04`, D-M88-2) — armed **once, out here**, not per hop. It used to live inside the
+  // loop, so every redirect got a fresh `timeoutMs` and `timeout step 1s` meant "no single hop
+  // exceeds 1s" on this path while meaning "the step finishes within 1s" on the other two
+  // (`http.ts:159` holds one `AbortController` across `fetch`'s whole follow; `mtlsWorker.ts:80`
+  // hoists its own above its own loop). A 3-hop chain at 400ms/hop therefore failed functionally
+  // and *passed* under a workload, which then reported p95 1210ms — 21% over its own configured
+  // deadline — as healthy. The pooled path is normative (D-M88-1); this is now what it does.
+  // Which hop is in flight changes, so the timer destroys whichever one is (`inFlight`) rather
+  // than closing over a single `req`.
+  let timedOut = false;
+  let inFlight: http.ClientRequest | undefined;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    inFlight?.destroy();
+  }, opts.timeoutMs);
+  // Phrased from the original request on every hop, like the redirect-cap message (M88a): it is
+  // the request the author wrote, and it is all native `redirect: 'follow'` would have known.
+  const timeoutError = (): RuntimeError => new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
 
-    const chunks: Buffer[] = [];
-    try {
-      for await (const chunk of res) chunks.push(chunk as Buffer);
-      clearTimeout(timer);
-    } catch (err) {
-      clearTimeout(timer);
-      if (timedOut || isTimeoutError(err)) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
-      throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
-    }
-    const bodyBytes = Buffer.concat(chunks);
-    const status = res.statusCode ?? 0;
+  // Cleared exactly once, on every exit — success, timeout, refusal or cap. Leaving it armed past
+  // a `return` would hold the VU's event loop open for the rest of `timeoutMs` on every request a
+  // workload makes, which is the one thing this path cannot afford.
+  try {
+    for (let redirects = 0; ; redirects++) {
+      // The deadline can also expire *between* hops — while the previous hop's body was draining,
+      // or in the turn after it finished. `inFlight` is a completed request by then, so destroying
+      // it does nothing, and without this check the loop would open a fresh connection to the next
+      // hop having already blown the budget. Everything from here to `lib.request` below is
+      // synchronous, so no timer can slip in after the check and before the connection.
+      if (timedOut) throw timeoutError();
 
-    if (current.followRedirects && isRedirectStatus(status) && res.headers.location) {
-      // The cap was `redirects < MAX_REDIRECTS` folded into this same condition, so hitting it fell
-      // through to the `return` below and handed the 21st hop's 3xx back as an ordinary response —
-      // a workload could loop forever and still report a 0% error rate (M88a, `B4-09`). The pooled
-      // path is normative (D-M88-1) and `fetch` throws here.
-      if (redirects >= MAX_REDIRECTS) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
-      const hop = nextRedirectHop(current, status, res.headers.location);
-      // The guardrail, one hop at a time (M85, C1/`B4-02`). `execApi` checked the URL *this step
-      // names*; nothing checked where a 3xx then sent it, so an allowlisted staging host that
-      // redirects to prod reached prod on both client paths. Refusing here is what makes SPEC
-      // §3.7's "no connection ever attempted" true of the whole chain and not just its first link:
-      // the next `lib.request` never happens.
-      if (!isHostAllowed(hop.url, current.allowHosts)) {
-        throw new AllowHostsError(allowHostsRefusal(hop.url, current.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }));
+      const url = new URL(current.url);
+      const isHttps = url.protocol === 'https:';
+      const lib = isHttps ? https : http;
+      const agent = isHttps ? agents.https : agents.http;
+      const bodyBuffer = current.body === undefined ? undefined : Buffer.from(current.body, 'utf8');
+      const headers: Record<string, string> = { ...current.headers };
+      if (bodyBuffer !== undefined && !hasHeaderCI(headers, 'content-length') && !hasHeaderCI(headers, 'transfer-encoding')) {
+        headers['content-length'] = String(bodyBuffer.length);
       }
-      current = { ...current, url: hop.url, headers: hop.headers, method: hop.method, body: hop.dropBody ? undefined : current.body };
-      continue;
-    }
 
-    const durationMs = Math.round(performance.now() - start);
-    const bodyText = bodyBytes.toString('utf8');
-    const responseHeaders = buildHeaderMap(res.headers);
-    let json: unknown;
-    try {
-      json = bodyText.length > 0 ? JSON.parse(bodyText) : undefined;
-    } catch {
-      json = undefined;
+      let res: http.IncomingMessage;
+      try {
+        res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+          const req = lib.request(url, { method: current.method, headers, agent }, resolve);
+          inFlight = req;
+          // D76/D77 (PLAN_BROWSER_PERF_SECURITY.md §2.17) — unlike undici (fetch's own connect.js
+          // calls socket.setNoDelay(true) unconditionally) and unlike Go's net.Dial (k6, TCP_NODELAY
+          // on by default), node:http/https leaves Nagle's algorithm ON unless the caller opts out.
+          // Nagle + a peer's delayed-ACK timer (~40ms) is a well-documented cause of intermittent
+          // head-of-line stalls when headers and a small body are written in separate socket.write()
+          // calls — exactly this path's shape, and exactly a p95-tail symptom, not a throughput one.
+          req.setNoDelay(true);
+          req.on('error', reject);
+          if (bodyBuffer !== undefined) req.end(bodyBuffer);
+          else req.end();
+        });
+      } catch (err) {
+        if (timedOut || isTimeoutError(err)) throw timeoutError();
+        throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
+      }
+
+      // The deadline still spans the body read as well as the request, which is what
+      // AbortSignal.timeout() gave for free (it stayed attached to `req` until destroyed, so a
+      // slow body drip past `timeoutMs` was aborted too, not just a slow time-to-first-byte) —
+      // it just now spans every hop's body read rather than restarting for each.
+      const chunks: Buffer[] = [];
+      try {
+        for await (const chunk of res) chunks.push(chunk as Buffer);
+      } catch (err) {
+        if (timedOut || isTimeoutError(err)) throw timeoutError();
+        throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
+      }
+      const bodyBytes = Buffer.concat(chunks);
+      const status = res.statusCode ?? 0;
+
+      if (current.followRedirects && isRedirectStatus(status) && res.headers.location) {
+        // The cap was `redirects < MAX_REDIRECTS` folded into this same condition, so hitting it fell
+        // through to the `return` below and handed the 21st hop's 3xx back as an ordinary response —
+        // a workload could loop forever and still report a 0% error rate (M88a, `B4-09`). The pooled
+        // path is normative (D-M88-1) and `fetch` throws here.
+        if (redirects >= MAX_REDIRECTS) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
+        const hop = nextRedirectHop(current, status, res.headers.location);
+        // The guardrail, one hop at a time (M85, C1/`B4-02`). `execApi` checked the URL *this step
+        // names*; nothing checked where a 3xx then sent it, so an allowlisted staging host that
+        // redirects to prod reached prod on both client paths. Refusing here is what makes SPEC
+        // §3.7's "no connection ever attempted" true of the whole chain and not just its first link:
+        // the next `lib.request` never happens.
+        if (!isHostAllowed(hop.url, current.allowHosts)) {
+          throw new AllowHostsError(allowHostsRefusal(hop.url, current.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }));
+        }
+        current = { ...current, url: hop.url, headers: hop.headers, method: hop.method, body: hop.dropBody ? undefined : current.body };
+        continue;
+      }
+
+      const durationMs = Math.round(performance.now() - start);
+      const bodyText = bodyBytes.toString('utf8');
+      const responseHeaders = buildHeaderMap(res.headers);
+      let json: unknown;
+      try {
+        json = bodyText.length > 0 ? JSON.parse(bodyText) : undefined;
+      } catch {
+        json = undefined;
+      }
+      return { status, statusText: res.statusMessage ?? '', headers: responseHeaders, bodyText, bodyBytes, json, durationMs };
     }
-    return { status, statusText: res.statusMessage ?? '', headers: responseHeaders, bodyText, bodyBytes, json, durationMs };
+  } finally {
+    clearTimeout(timer);
   }
 }
