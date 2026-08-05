@@ -471,6 +471,10 @@ env staging
   chains are then followed hop-by-hop rather than by `fetch` itself, and browser requests are
   routed through an interception handler. Both are opt-in with the key and both are held to the
   unguarded behavior by tests; a run that never declares `allow hosts` is byte-for-byte unaffected.
+  What a hop-by-hop chain *decides* is held to the unguarded path too, and deliberately so: until
+  M88a, declaring this key flipped a redirect-loop test from failing to passing (§5.1's 20-hop cap),
+  which made a security directive a change of verdict. A guardrail may change how a request is made;
+  it may never change what the test means.
 
 ### 3.8 Logging defaults — `log destination`/`log level` (M27, PLAN_LOG.md) ✅
 
@@ -710,6 +714,12 @@ Grammar: `api [<service>] <METHOD> <path>[?query] [<body-form>] [timeout <dur>] 
   rules `fetch` and every browser follow, and they hold identically whether or not the step runs
   under a workload — which client a step runs on is a performance decision, never a
   credential-disclosure one (M80).
+  A chain that has not reached a final response after **20 redirects** (`fetch`'s own cap) is a
+  **step failure**, not a result: the last 3xx is never handed back as if the request had landed,
+  because a test asserting on it would then pass against an endless loop. This holds on all three
+  client paths and with or without `allow hosts` — the guardrail changes how a chain is walked
+  (§3.7), never what walking off the end of one means (M88a, review cluster C2). `without
+  redirects` is unaffected: a chain that is never followed cannot be too long.
 - `retry honoring "Retry-After" up to N` (PLAN decision 102b, enterprise arc cluster 3, closes
   TFLW-GAPS.md gap #5): a line under the api step, alongside `header`. Re-issues *this one
   request* — not the whole test, unlike `retry N` on `test` (§4.4) — whenever its response

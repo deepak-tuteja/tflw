@@ -7,7 +7,7 @@
 import { RuntimeError } from './eval.js';
 import { sendMtlsRequest } from './mtlsWorker.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, isRedirectStatus, nextRedirectHop } from './redirect.js';
+import { MAX_REDIRECTS, RedirectLimitError, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { ResponseTrace } from './types.js';
 
 export interface SendRequestOptions {
@@ -63,7 +63,15 @@ async function fetchFollowingGuardedRedirects(opts: SendRequestOptions, signal: 
   for (let redirects = 0; ; redirects++) {
     const res = await fetch(current.url, { method: current.method, headers: current.headers, body: current.body, signal, redirect: 'manual' });
     const location = res.headers.get('location');
-    if (!isRedirectStatus(res.status) || !location || redirects >= MAX_REDIRECTS) return res;
+    if (!isRedirectStatus(res.status) || !location) return res;
+    if (redirects >= MAX_REDIRECTS) {
+      // Not `return res` (M88a, `B4-09`/`B4-14`). Handing back the 21st hop's 3xx makes an endless
+      // chain indistinguishable from a deliberate `without redirects` — an infinite loop passed
+      // `expect status equals 302` and reported a 0% error rate. Native `redirect: 'follow'`, which
+      // the same request would have used without `allow hosts`, throws here; so does this now.
+      await res.arrayBuffer().catch(() => undefined);
+      throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
+    }
     const hop = nextRedirectHop(current, res.status, location);
     if (!isHostAllowed(hop.url, opts.allowHosts)) {
       // Drained before throwing: this hop's own response is a 3xx we are choosing not to follow,
@@ -139,6 +147,11 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
       // the finished sentence, so wrapping it yields `request failed: … — host "x" is not in …`,
       // which frames a request that was deliberately never sent as a transport failure.
       if (err instanceof AllowHostsError) throw err;
+      // Both shapes the worker can send back for a chain that never terminated: its guarded loop
+      // labels it (`redirectLimit`, arriving already typed), its unguarded `redirect: 'follow'`
+      // buries it in undici's cause the same way the pooled path does (M88a, `B4-09`/`B4-10`).
+      if (err instanceof RedirectLimitError) throw err;
+      if (isRedirectLimitCause(err)) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
       if ((err as { timedOut?: boolean }).timedOut) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
       throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
     }
@@ -177,6 +190,12 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     // sentence the author needs behind a transport framing that isn't what happened (no request
     // failed; one was deliberately not sent).
     if (err instanceof AllowHostsError) throw err;
+    // Likewise a chain that never terminated — thrown by the guarded loop above already typed, or
+    // buried by native `redirect: 'follow'` in undici's own cause (M88a, `B4-09`/`B4-10`). The two
+    // producing the *same* sentence is the point: `allow hosts` decides which of them ran, and a
+    // security directive must not decide what a redirect loop means (`B4-14`).
+    if (err instanceof RedirectLimitError) throw err;
+    if (isRedirectLimitCause(err)) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
     if (controller.signal.aborted) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
     throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
   } finally {
