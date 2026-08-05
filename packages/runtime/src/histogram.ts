@@ -8,7 +8,7 @@
 // error) — real HDR histograms make the exact same tradeoff for the exact same reason. Percentiles
 // therefore carry that bounded rounding error; `min`/`max`/`avg` are tracked as exact running
 // scalars alongside the buckets, so those three numbers are never approximated, only the
-// percentiles are. This is used uniformly by every `runLoad`/`runLoadShard` scenario accumulator,
+// percentiles are. This is used uniformly by every scenario accumulator,
 // single-process or sharded — single-process runs never need to merge anything, but they pay the
 // same (negligible, sub-millisecond-at-typical-latencies) bucketing cost so there is exactly one
 // code path for "how does a scenario accumulate durations," not two.

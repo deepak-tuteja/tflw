@@ -1,8 +1,8 @@
-// M29/M30/M31 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D28/D29): the `runLoad` engine — a
+// M29/M30/M31 (PLAN_BROWSER_PERF_SECURITY.md D16-D19/D24a/D26/D28/D29): the workload engine — a
 // single-process VU loop over both workload models (D17), `pause`-excluded duration metrics,
 // threshold evaluation (D24a), per-iteration error handling (D18: an iteration's `expect` failure
 // is counted, never thrown), session establishment once before the loop (not per iteration), M30's
-// concurrent multi-scenario scheduling with combined-vs-per-scenario metrics (D29, R6), and M31's
+// concurrent multi-scenario scheduling with per-scenario metrics (D29, R6), and M31's
 // multi-process building blocks: workload/sub-seed striping (`shareOfWorkloadTarget`/
 // `globalIterationIndex`), `runLoadShard`, and `mergeLoadShardReports` (D19, R4).
 
@@ -12,10 +12,10 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseSource, parseConfigSource } from '@tflw/lang';
-import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff, workloadOf, type LoadTest } from '../src/interpreter.js';
+import { runProgram, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff, workloadOf, type LoadTest, type RunOptions } from '../src/interpreter.js';
 import { LatencyHistogram } from '../src/histogram.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
-import type { LoadIterationResult, LoadShardResult, SelfDiagnosis, SerializedHistogram } from '../src/types.js';
+import type { LoadIterationResult, LoadShardResult, RunReport, SelfDiagnosis, SerializedHistogram, WorkloadTestResult } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 const HEALTHY_DIAGNOSIS: SelfDiagnosis = { avgEventLoopLagMs: 1, maxEventLoopLagMs: 2, cpuPercent: 5, saturated: false };
@@ -28,13 +28,36 @@ const HEALTHY_DIAGNOSIS: SelfDiagnosis = { avgEventLoopLagMs: 1, maxEventLoopLag
  * was forgotten, not as an error naming the field. */
 const allSucceeded = (h: LatencyHistogram): SerializedHistogram => ({ iterations: h.count, sum: h.sum, min: h.min, max: h.max, histogram: h.toBuckets() });
 
+/**
+ * Drives the shipped single-process path (`runProgram` → `runProgramInner`) and presents the
+ * workload rows the run report actually carries, as `scenarios`.
+ *
+ * M91a (review finding `B3-06`, `D-M91-2`): every test below used to call `runLoad` — an entry
+ * point with **no production caller**, returning a `LoadReport` shape no artifact ships. 46 of
+ * them, which is what made "1,607 tests green" a weaker signal than it read as (`OBS-02`). The
+ * helper deliberately *reads* `report.tests` rather than rebuilding a view from the accumulators:
+ * the whole point of the finding is that a test must observe what production produced.
+ *
+ * `ok` is therefore `RunReport.ok` — "every row in this report passed". Every fixture here is
+ * workload-only, so that is the same verdict `LoadReport.ok` gave (each scenario's own thresholds,
+ * `entry.ok`), counted over report rows instead of over scenarios.
+ */
+async function runWorkload(
+  program: Parameters<typeof runProgram>[0],
+  config: Parameters<typeof runProgram>[1],
+  opts: RunOptions,
+): Promise<RunReport & { readonly scenarios: readonly WorkloadTestResult[] }> {
+  const { report } = await runProgram(program, config, opts);
+  return { ...report, scenarios: report.tests.filter((t): t is WorkloadTestResult => t.kind === 'workload') };
+}
+
 test('a closed (`ramp to N users`) workload runs iterations and reports clean metrics', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "Health burst"\n  ramp to 3 users over 200ms\n  api GET /health\n  expect status equals 200\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.equal(report.scenarios.length, 1);
@@ -46,8 +69,6 @@ test('a closed (`ramp to N users`) workload runs iterations and reports clean me
   assert.equal(s.metrics.errorRate, 0);
   assert.deepEqual(s.thresholds, []);
   assert.equal(s.ok, true);
-  // A single-scenario run's combined metrics are exactly that scenario's own metrics.
-  assert.deepEqual(report.combined, s.metrics);
 
   await server.close();
 });
@@ -57,7 +78,7 @@ test('an open (`ramp to N rps`) workload schedules arrivals independent of compl
   const source = 'test "Ramp"\n  ramp to 40 rps over 400ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
@@ -65,7 +86,6 @@ test('an open (`ramp to N rps`) workload schedules arrivals independent of compl
   // area under a 0→40rps linear ramp over 0.4s = 40*0.4/2 = 8 arrivals — exact by construction.
   assert.equal(s.metrics.iterations, 8);
   assert.equal(s.metrics.failures, 0);
-  assert.equal(report.combined.iterations, 8);
 
   await server.close();
 });
@@ -81,7 +101,7 @@ test('a failing `expect` inside a scenario fails that iteration and counts towar
   const source = 'test "Flaky"\n  ramp to 4 users over 200ms\n  api GET /flaky\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   const s = report.scenarios[0]!;
   assert.ok(s.metrics.iterations >= 4, JSON.stringify(s.metrics));
@@ -95,7 +115,7 @@ test('an `error rate` threshold fails the run when breached, passes when met', a
   const alwaysFail = await startFixtureServer({ '/fail': (_req, res) => res.writeHead(500).end() });
   const failSource = 'test "AllFail"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n  threshold error rate is less than 50%\n';
   const { program: failProgram } = parseSource(failSource);
-  const failReport = await runLoad(failProgram, testConfig(alwaysFail.baseUrl), { source: failSource });
+  const failReport = await runWorkload(failProgram, testConfig(alwaysFail.baseUrl), { source: failSource });
   assert.equal(failReport.ok, false);
   assert.equal(failReport.scenarios[0]!.ok, false);
   assert.equal(failReport.scenarios[0]!.thresholds[0]!.ok, false);
@@ -105,7 +125,7 @@ test('an `error rate` threshold fails the run when breached, passes when met', a
   const alwaysOk = await startFixtureServer({ '/ok': (_req, res) => json(res, 200, { ok: true }) });
   const okSource = 'test "AllOk"\n  ramp to 3 users over 150ms\n  api GET /ok\n  expect status equals 200\n  threshold error rate is less than 50%\n';
   const { program: okProgram } = parseSource(okSource);
-  const okReport = await runLoad(okProgram, testConfig(alwaysOk.baseUrl), { source: okSource });
+  const okReport = await runWorkload(okProgram, testConfig(alwaysOk.baseUrl), { source: okSource });
   assert.equal(okReport.ok, true);
   assert.equal(okReport.scenarios[0]!.ok, true);
   assert.equal(okReport.scenarios[0]!.thresholds[0]!.ok, true);
@@ -118,7 +138,7 @@ test('a `pNN duration` threshold reads the exact requested percentile, not just 
   // evaluates an arbitrary percentile (not just the four baked into LoadDurationStats).
   const source = 'test "S"\n  ramp to 2 users over 100ms\n  api GET /health\n  expect status equals 200\n  threshold p1 duration is less than 5000ms\n';
   const { program } = parseSource(source);
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   assert.equal(report.scenarios[0]!.thresholds[0]!.label, 'p1 duration');
   assert.equal(report.scenarios[0]!.thresholds[0]!.ok, true);
   await server.close();
@@ -133,7 +153,7 @@ test('`pause` time is excluded from the reported iteration duration', async () =
   // prove pause time is excluded both passed against a program containing no pause at all.
   assert.deepEqual(diagnostics, []);
   const seen: LoadIterationResult[] = [];
-  const report = await runLoad(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
   assert.ok(seen.length >= 1);
   // Real wall time per iteration is >=300ms (the pause) + request time, but the *reported*
   // duration should be just the request — comfortably under the pause time itself.
@@ -145,21 +165,24 @@ test('`pause` time is excluded from the reported iteration duration', async () =
   await server.close();
 });
 
-test('`runLoad` throws when the program declares no workload-bearing `test` — and says so without naming a command (B3-08, M90c)', async () => {
+test('`runLoadShard` throws when the program declares no workload-bearing `test` — and says so without naming a command (B3-08, M90c)', async () => {
   // The message used to open ``\`tflw load\` needs …`` — a command `M53` removed. Naming `tflw run`
   // instead would have been a second lie in the same sentence: `tflw run` on such a file does not
   // error, it runs the functional tests. This is a library precondition and now reads as one.
   //
-  // Worth knowing what this test is and is not (`B5-13`): `runLoad` has **no production caller** —
-  // it is exported from `runtime/index.ts` and used only here and in `timeout-chain.test.ts` — and
-  // `runLoadShard`, the one production path, is only forked when a workload already exists. So this
-  // asserts a string no user can currently reach, through an entry point production does not use.
-  // Recorded rather than deleted: whether `runLoad` is public API or a leaked internal is C14's
-  // question (D-M90-6), and deleting a published export is itself a deprecation.
+  // What this test is and is not (`B5-13`, closed by M91a/`D-M91-3`): it used to drive the guard
+  // through `runLoad`, an entry point production never called — so it asserted a string no user
+  // could reach, via a path no user could take. `M91a` deleted `runLoad`; the guard's one
+  // surviving caller is `runLoadShard`, the forked `--workers N>1` worker, and the test drives it
+  // there now. The message is *still* unreachable in the shipped product — `cli.ts` checks
+  // `hasWorkload` before forking, so a zero-workload program never reaches a shard — but the guard
+  // stays: it is `runLoadShard`'s documented precondition, and it is now proved through the entry
+  // point production actually uses rather than through one invented for the test.
   const { program } = parseSource('test "not a load test"\n  api GET /health\n');
-  await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /no workload-bearing `test`/);
+  const shard = { index: 0, count: 1 };
+  await assert.rejects(() => runLoadShard(program, testConfig('http://127.0.0.1:1'), { source: '', shard }), /no workload-bearing `test`/);
   await assert.rejects(
-    () => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }),
+    () => runLoadShard(program, testConfig('http://127.0.0.1:1'), { source: '', shard }),
     (e: unknown) => {
       assert.doesNotMatch((e as Error).message, /tflw (load|run)/, 'a library precondition names no command');
       return true;
@@ -175,7 +198,7 @@ test('a `hold N users for <dur>` workload runs a flat population for the whole d
   const source = 'test "Steady"\n  hold 4 users for 300ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
@@ -190,7 +213,7 @@ test('a `hold N rps for <dur>` workload schedules a constant arrival rate', asyn
   const source = 'test "Steady RPS"\n  hold 20 rps for 400ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
@@ -206,7 +229,7 @@ test('a `step users` staircase runs more iterations at its higher stages than a 
   const source = 'test "Staircase"\n  step users\n    to 1 for 150ms\n    to 6 for 150ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
@@ -224,7 +247,7 @@ test('a `spike users` schedule ramps up, holds, and ramps back down without erro
     'test "Spike"\n  spike users\n    hold 1 for 100ms\n    to 5 over 150ms\n    hold 5 for 150ms\n    to 1 over 150ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
@@ -250,7 +273,7 @@ test('`run N iterations across M users` (shared pool) runs exactly N iterations 
   const source = 'test "SharedPool"\n  run 17 iterations across 4 users\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
@@ -266,7 +289,7 @@ test('`run N iterations per user across M users` runs exactly M*N iterations tot
   const source = 'test "PerVu"\n  run 5 iterations per user across 3 users\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
@@ -280,7 +303,7 @@ test('`pause` paces a `run … iterations …` body without being excluded from 
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.equal(report.scenarios[0]!.metrics.iterations, 3);
@@ -335,7 +358,7 @@ session admin
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, config, { source });
+  const report = await runWorkload(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.equal(logins, 1, 'session should establish exactly once, not per iteration');
@@ -384,7 +407,7 @@ session admin
   const source = 'test "Auth burst" as admin\n  ramp to 3 users over 300ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, config, { source });
+  const report = await runWorkload(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.ok(healthCalls > ROTATE_AT + 10, `expected many iterations after the rotation, got ${healthCalls} total health calls`);
@@ -436,7 +459,7 @@ session admin
   const source = 'test "Auth storm" as admin\n  ramp to 20 users over 250ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, config, { source });
+  const report = await runWorkload(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.equal(loginCount, 2, `expected exactly one real re-login beyond the initial (already-stale) establish, got ${loginCount}`);
@@ -463,7 +486,7 @@ test('two `parallel` scenarios in one file run concurrently — a fast scenario 
   assert.deepEqual(diagnostics, []);
 
   const seen: LoadIterationResult[] = [];
-  const report = await runLoad(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
 
   const firstFastIndex = seen.findIndex((r) => r.scenario === 'Fast');
@@ -477,7 +500,12 @@ test('two `parallel` scenarios in one file run concurrently — a fast scenario 
   await server.close();
 });
 
-test('combined metrics pool every scenario\'s iterations; each scenario\'s own metrics stay scoped to itself', async () => {
+// M91a (`B3-19`): this used to also assert that `report.combined` pooled both scenarios'
+// iterations and failures. `combined` was computed, dropped by `spliceLoadReportIntoRunReport`,
+// and read by nothing — so half this test's title described a number no user could observe. What
+// remains is the half that ships, and the half that can actually regress: one scenario's failures
+// must never leak into another's.
+test('each scenario\'s own metrics stay scoped to itself — one scenario\'s failures never leak into another\'s', async () => {
   const server = await startFixtureServer({
     '/ok': (_req, res) => json(res, 200, { ok: true }),
     '/fail': (_req, res) => res.writeHead(500).end(),
@@ -487,7 +515,7 @@ test('combined metrics pool every scenario\'s iterations; each scenario\'s own m
     'test "Bad"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.scenarios.length, 2);
   const good = report.scenarios.find((s) => s.name === 'Good')!;
@@ -495,9 +523,7 @@ test('combined metrics pool every scenario\'s iterations; each scenario\'s own m
   assert.equal(good.metrics.failures, 0, 'Good scenario\'s own failures must not include Bad\'s');
   assert.ok(bad.metrics.failures > 0, 'Bad scenario should have failures of its own');
   assert.equal(bad.metrics.failures, bad.metrics.iterations, 'every Bad iteration hits the always-500 endpoint');
-
-  assert.equal(report.combined.iterations, good.metrics.iterations + bad.metrics.iterations);
-  assert.equal(report.combined.failures, good.metrics.failures + bad.metrics.failures);
+  assert.equal(good.metrics.iterations, good.metrics.successful.iterations, 'Good ran clean');
 
   await server.close();
 });
@@ -512,7 +538,7 @@ test('each scenario\'s thresholds evaluate only against its own metrics — one 
     'test "Failing"\n  ramp to 3 users over 150ms\n  api GET /fail\n  expect status equals 200\n  threshold error rate is less than 1%\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   const passing = report.scenarios.find((s) => s.name === 'Passing')!;
   const failing = report.scenarios.find((s) => s.name === 'Failing')!;
@@ -550,7 +576,7 @@ session admin
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, config, { source });
+  const report = await runWorkload(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.equal(logins, 1, 'a session shared by two concurrent scenarios should still establish exactly once');
@@ -691,7 +717,7 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   // threshold, which only a genuinely merged (not per-shard) evaluation would catch.
   assert.equal(s.thresholds[0]!.ok, false, JSON.stringify(s.thresholds[0]));
   assert.equal(merged.ok, false);
-  assert.equal(merged.combined.iterations, 8);
+  assert.equal(s.metrics.iterations, 8, 'both shards\' iterations land in the merged scenario row');
 });
 
 test('mergeLoadShardReports: a shard missing a scenario entirely (its striped share rounded to 0) is tolerated, not an error', () => {
@@ -730,7 +756,7 @@ test('mergeLoadShardReports throws on an empty shard-results array', () => {
   assert.throws(() => mergeLoadShardReports(program, [], { startedAt: new Date().toISOString(), durationMs: 0, seed: 1, now: new Date().toISOString() }), /at least one shard/);
 });
 
-test('two real shards (runLoadShard against the same server) merge into a sane combined report', async () => {
+test('two real shards (runLoadShard against the same server) merge into one sane scenario row', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "S"\n  ramp to 4 users over 200ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
@@ -742,16 +768,15 @@ test('two real shards (runLoadShard against the same server) merge into a sane c
   const merged = mergeLoadShardReports(program, [shard0, shard1], { startedAt: new Date().toISOString(), durationMs: 200, seed: 7, now: new Date().toISOString() });
   assert.equal(merged.scenarios.length, 1);
   assert.equal(merged.scenarios[0]!.name, 'S');
-  assert.ok(merged.combined.iterations > 0, 'both shards together should have run at least one iteration');
-  assert.equal(merged.combined.iterations, merged.scenarios[0]!.metrics.iterations);
+  assert.ok(merged.scenarios[0]!.metrics.iterations > 0, 'both shards together should have run at least one iteration');
   await server.close();
 });
 
-test('`runLoad` reports a plausible selfDiagnosis (single-process, unsharded)', async () => {
+test('a workload run reports a plausible selfDiagnosis (single-process, unsharded)', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "S"\n  ramp to 1 users over 50ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   assert.equal(typeof report.selfDiagnosis.saturated, 'boolean');
   assert.ok(report.selfDiagnosis.avgEventLoopLagMs >= 0);
   assert.ok(report.selfDiagnosis.cpuPercent >= 0);
@@ -760,30 +785,31 @@ test('`runLoad` reports a plausible selfDiagnosis (single-process, unsharded)', 
 
 // ---- M32: metrics.histogram/timeline, inconclusive, partial-on-abort, progress ticks (R3-R5/R11) ----
 
-test('LoadMetrics carries its own histogram + timeline, both for a scenario and the combined view', async () => {
+test('LoadMetrics carries its own histogram + timeline, and the timeline accounts for every iteration', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "S"\n  ramp to 3 users over 200ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   assert.ok(s.metrics.histogram.length > 0, 'a scenario with iterations must have a non-empty histogram');
   assert.ok(s.metrics.timeline.length > 0, 'a scenario with iterations must have a non-empty timeline');
   assert.equal(s.metrics.timeline[0]!.offsetSeconds, 0);
-  assert.ok(report.combined.histogram.length > 0);
-  assert.ok(report.combined.timeline.length > 0);
+  // M91a (`B3-19`): asserted against `report.combined` until that field was deleted for being
+  // written twice and read nowhere. The invariant is real — `report.html`'s charts render from
+  // exactly these two arrays — so it moves to the metrics a report row actually carries.
   assert.equal(
-    report.combined.timeline.reduce((n, p) => n + p.count, 0),
-    report.combined.iterations,
-    'summing every timeline point\'s count must equal the total iteration count',
+    s.metrics.timeline.reduce((n, p) => n + p.count, 0),
+    s.metrics.iterations,
+    'summing every timeline point\'s count must equal the scenario\'s iteration count',
   );
   await server.close();
 });
 
-test('`runLoad`: inconclusive mirrors selfDiagnosis.saturated', async () => {
+test('a workload run: inconclusive mirrors selfDiagnosis.saturated', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "S"\n  ramp to 1 users over 20ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   assert.equal(report.inconclusive, report.selfDiagnosis.saturated);
   assert.equal(report.aborted, undefined, 'a run that reaches its planned end must not be flagged aborted');
   await server.close();
@@ -802,20 +828,20 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
   assert.equal(merged.inconclusive, true);
 });
 
-test('`runLoad` with an already-aborted signal runs zero iterations and flags aborted/abortedMessage', async () => {
+test('an already-aborted signal runs zero iterations and flags aborted/abortedMessage', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "S"\n  ramp to 5 users over 5000ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const controller = new AbortController();
   controller.abort();
-  const report = await runLoad(program, testConfig(server.baseUrl), { source, abortSignal: controller.signal });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source, abortSignal: controller.signal });
   assert.equal(report.aborted, true);
   assert.match(report.abortedMessage!, /^aborted at \d+s of 5s planned$/, report.abortedMessage);
-  assert.equal(report.combined.iterations, 0);
+  assert.equal(report.scenarios[0]!.metrics.iterations, 0);
   await server.close();
 });
 
-test('`runLoad`: aborting mid-run stops new iterations well short of the planned duration', async () => {
+test('aborting mid-run stops new iterations well short of the planned duration', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   // Long planned duration (5s) so "aborted well before the end" isn't a race against natural
   // completion — the abort fires at 100ms, under 1/40th of the plan.
@@ -824,11 +850,11 @@ test('`runLoad`: aborting mid-run stops new iterations well short of the planned
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 100);
   const start = Date.now();
-  const report = await runLoad(program, testConfig(server.baseUrl), { source, abortSignal: controller.signal });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source, abortSignal: controller.signal });
   const wallMs = Date.now() - start;
   assert.equal(report.aborted, true);
   assert.ok(wallMs < 2000, `abort should stop the run well under the 5s plan (took ${wallMs}ms)`);
-  assert.ok(report.combined.iterations > 0, 'iterations already in flight when the abort fired should still be counted');
+  assert.ok(report.scenarios[0]!.metrics.iterations > 0, 'iterations already in flight when the abort fired should still be counted');
   await server.close();
 });
 
@@ -837,7 +863,7 @@ test('onProgressTick fires roughly once a second with a cumulative, non-decreasi
   const source = 'test "S"\n  ramp to 5 users over 1300ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const ticks: { iterations: number; failures: number; elapsedMs: number }[] = [];
-  await runLoad(program, testConfig(server.baseUrl), { source, onProgressTick: (snapshot) => ticks.push(snapshot) });
+  await runWorkload(program, testConfig(server.baseUrl), { source, onProgressTick: (snapshot) => ticks.push(snapshot) });
   assert.ok(ticks.length >= 1, `expected at least one tick over a 1.3s run, got ${ticks.length}`);
   for (let i = 1; i < ticks.length; i++) {
     assert.ok(ticks[i]!.iterations >= ticks[i - 1]!.iterations, 'iterations must never decrease tick to tick');
@@ -848,7 +874,7 @@ test('onProgressTick fires roughly once a second with a cumulative, non-decreasi
 
 // -- M34 (D17, back-off/coordinated-omission diagnostic) — computeBackOff's pure logic gets ------
 // deterministic unit coverage (hand-built early/late totals, no real timing to flake on); a
-// handful of real end-to-end runs below confirm the wiring (runLoad/runLoadShard/
+// handful of real end-to-end runs below confirm the wiring (runProgram/runLoadShard/
 // mergeLoadShardReports) all actually reach it, the same split M31's shareOfWorkloadTarget/
 // globalIterationIndex unit tests and their own real-shard integration test already use.
 //
@@ -917,7 +943,7 @@ test('a real degrading server triggers a genuine backOff warning on a closed-mod
   // the late half alone fits roughly (700ms / 150ms) × 5 users ≈ 23 iterations.
   const source = 'test "Degrading"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   assert.ok(s.backOff, 'expected a defined backOff diagnosis on a closed-model scenario');
   assert.equal(s.backOff!.warning, true, `expected the back-off warning to fire, ratio was ${s.backOff!.ratio}`);
@@ -934,7 +960,7 @@ test('a uniformly fast server does not trigger a backOff warning', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 5) });
   const source = 'test "Healthy"\n  ramp to 5 users over 1500ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   if (s.backOff) assert.equal(s.backOff.warning, false, `unexpected back-off warning against a healthy server, ratio ${s.backOff.ratio}`);
   await server.close();
@@ -944,7 +970,7 @@ test('an open-model (`ramp to N rps`) real run never carries a backOff field', a
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "Open"\n  ramp to 40 rps over 400ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   assert.equal(report.scenarios[0]!.backOff, undefined);
   await server.close();
 });
@@ -985,7 +1011,7 @@ test('a scenario with two untagged `api` steps gets two automatic-identity endpo
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   assert.equal(s.endpoints.length, 2);
   assert.equal(s.endpoints[0]!.identity, 'GET /lookup');
@@ -1004,7 +1030,7 @@ test('an `as "label"` tag replaces the automatic identity entirely (k6-style)', 
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   assert.equal(s.endpoints.length, 1);
   assert.equal(s.endpoints[0]!.identity, 'checkout');
@@ -1016,7 +1042,7 @@ test('an identity declared in source but never reached (every iteration fails fi
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   assert.equal(s.ok, true, 'no thresholds declared, so a scenario with only failed iterations is still vacuously ok');
   assert.equal(s.metrics.failures, s.metrics.iterations, 'every iteration should have failed at the expect');
@@ -1043,7 +1069,7 @@ test('`threshold … for "label"` evaluates against only that endpoint, independ
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   assert.equal(s.thresholds.length, 2);
   const whole = s.thresholds.find((t) => t.label === 'p95 duration')!;
@@ -1081,7 +1107,7 @@ test('`mergeLoadShardReports` pools per-endpoint histograms across shards by ide
 // now pins one `node:http` connection per VU for that VU's whole lifetime instead of letting
 // `sendRequest`'s unpinned `fetch()` open (and, without keep-alive reuse, often re-open) one per
 // request. `httpPinned.test.ts` covers `sendPinnedRequest`/`createPinnedAgents` directly; these two
-// exercise the real wiring end to end through `runLoad` itself.
+// exercise the real wiring end to end through the shipped `runProgram` path itself.
 
 test('a closed-model scenario pins one connection per VU, reused across every iteration that VU runs', async () => {
   const ports: number[] = [];
@@ -1094,7 +1120,7 @@ test('a closed-model scenario pins one connection per VU, reused across every it
   const source = 'test "Pinned"\n  ramp to 2 users over 300ms\n  api GET /ping\n  expect status equals 200\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.ok(ports.length > 2, `expected more than one iteration per VU to actually run, got ${ports.length} total`);
@@ -1111,10 +1137,10 @@ test('an `upload` body under a closed-model load still passes — falls back to 
   const source = 'test "Upload burst"\n  ramp to 2 users over 200ms\n  api POST /uploads upload "./img.png" as "avatar"\n  expect status equals 201\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source, baseDir: dir });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source, baseDir: dir });
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
-  assert.equal(report.combined.failures, 0);
+  assert.equal(report.scenarios[0]!.metrics.failures, 0);
 
   await server.close();
   await rm(dir, { recursive: true, force: true });
@@ -1151,7 +1177,7 @@ test('M89a/`B3-02`: a duration threshold reads successful iterations only — fa
   const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix\n  expect status equals 200\n  threshold p95 duration is less than 60ms\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
 
   assert.equal(s.metrics.iterations, 20, 'every iteration is still counted');
@@ -1170,7 +1196,7 @@ test('M89a: `errorRate` still divides by *all* iterations — the denominator tr
   const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix\n  expect status equals 200\n  threshold error rate is less than 100%\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
 
   // Had the successful-only population been made by *narrowing* the one histogram rather than
@@ -1188,7 +1214,7 @@ test('M89a/D-M89-1: with zero successful iterations a duration threshold reports
   const source = 'test "S"\n  run 8 iterations across 2 users\n  api GET /mix\n  expect status equals 200\n  threshold p95 duration is less than 100ms\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
 
   assert.equal(s.metrics.successful.iterations, 0);
@@ -1202,12 +1228,12 @@ test('M89a/D-M89-1: with zero successful iterations a duration threshold reports
   await server.close();
 });
 
-test('M89a: `failures + successful.iterations === iterations`, at scenario, combined and endpoint scope, for both workload models', async () => {
+test('M89a: `failures + successful.iterations === iterations`, at scenario and endpoint scope, for both workload models', async () => {
   const server = await startFixtureServer(mixedServer(3, 5));
   for (const workload of ['run 12 iterations across 2 users', 'ramp to 3 users over 300ms', 'ramp to 20 rps over 300ms', 'hold 2 users for 300ms']) {
     const source = `test "S"\n  ${workload}\n  api GET /mix as "mix"\n  expect status equals 200\n  threshold error rate is less than 100%\n`;
     const { program } = parseSource(source);
-    const report = await runLoad(program, testConfig(server.baseUrl), { source });
+    const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
     for (const s of report.scenarios) {
       assert.equal(s.metrics.failures + s.metrics.successful.iterations, s.metrics.iterations, `${workload}: scenario scope`);
@@ -1215,7 +1241,6 @@ test('M89a: `failures + successful.iterations === iterations`, at scenario, comb
         assert.equal(e.metrics.failures + e.metrics.successful.iterations, e.metrics.iterations, `${workload}: endpoint "${e.identity}"`);
       }
     }
-    assert.equal(report.combined.failures + report.combined.successful.iterations, report.combined.iterations, `${workload}: combined scope`);
   }
   await server.close();
 });
@@ -1225,7 +1250,7 @@ test('M89a/`B3-02` at endpoint scope: a `threshold … for "label"` clause reads
   const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix as "mix"\n  expect status equals 200\n  threshold p95 duration for "mix" is less than 60ms\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   const mix = s.endpoints.find((e) => e.identity === 'mix')!;
 
@@ -1244,7 +1269,7 @@ test('M89a/`B3-13`: a per-endpoint timeline records real failures — it was har
   const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix as "mix"\n  expect status equals 200\n  threshold error rate is less than 100%\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const mix = report.scenarios[0]!.endpoints.find((e) => e.identity === 'mix')!;
 
   // `report.html` builds every per-endpoint error-rate chart from this series. With the literal
@@ -1266,7 +1291,7 @@ test('M89a/`B3-12`: a soft `check` failure is charged to the request it judged, 
   const source = 'test "S"\n  run 4 iterations across 1 users\n  api GET /first as "first"\n  check status equals 200\n  api GET /second as "second"\n  expect status equals 200\n  threshold error rate is less than 100%\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
   const first = s.endpoints.find((e) => e.identity === 'first')!;
   const second = s.endpoints.find((e) => e.identity === 'second')!;
@@ -1286,7 +1311,7 @@ test('M89a/`B3-12`: two failing `check`s after one request bill that request onc
   const source = 'test "S"\n  run 3 iterations across 1 users\n  api GET /one as "one"\n  check status equals 200\n  check body.name equals "expected"\n  threshold error rate is less than 100%\n';
   const { program } = parseSource(source);
 
-  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const one = report.scenarios[0]!.endpoints.find((e) => e.identity === 'one')!;
 
   // Counted with `++` this would be 6 failures against 3 requests — a 200 % endpoint error rate.

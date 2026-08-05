@@ -30,7 +30,7 @@ const MIN_SATURATION_WINDOW_MS = 300;
  * self-diagnosis live") computes the verdict from samples collected so far without stopping
  * anything, so the CLI's ~1Hz progress tick can show a saturating generator mid-run, not just at
  * the end; `stop()` ends sampling and returns the final verdict. Safe to call once per
- * `runLoad`/`runLoadShard` invocation — the timer is `unref`'d so it never itself keeps the process
+ * workload run — the timer is `unref`'d so it never itself keeps the process
  * alive. */
 export function startSelfDiagnosis(sampleMs = 100): { peek(): SelfDiagnosis; stop(): SelfDiagnosis } {
   const lags: number[] = [];
