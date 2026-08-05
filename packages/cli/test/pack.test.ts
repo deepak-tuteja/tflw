@@ -83,6 +83,33 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + packa
   assert.equal(pkg.private, undefined, '"private": true would make npm publish refuse outright (decision 74)');
 });
 
+test('the optional peer constraints that govern the runtime are the ones the tarball declares (M92b, review `B6-09`)', async () => {
+  // `@tflw/runtime` has always declared `playwright`/`axe-core` as optional peers — and is
+  // `"private": true` and bundled into `dist/cli.cjs`, so its package.json never reaches a consumer.
+  // The constraint existed as documentation for this repo only. It now ships on `tflw` itself.
+  //
+  // npm gives no way to inherit a peer range, so the range lives in two files and this asserts they
+  // are equal. Catching the drift rather than preventing it is the honest option when prevention
+  // isn't available — and saying so is better than a comment asking people to remember.
+  const runtimePkg = JSON.parse(await readFile(join(cliRoot, '..', 'runtime', 'package.json'), 'utf8')) as {
+    peerDependencies: Record<string, string>;
+    peerDependenciesMeta: Record<string, { optional?: boolean }>;
+  };
+  const { stdout: pkgText } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/package.json']);
+  const shipped = JSON.parse(pkgText) as {
+    peerDependencies?: Record<string, string>;
+    peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  };
+
+  assert.deepEqual(shipped.peerDependencies, runtimePkg.peerDependencies, 'the published peer ranges have drifted from @tflw/runtime, the package that actually imports them');
+  assert.deepEqual(shipped.peerDependenciesMeta, runtimePkg.peerDependenciesMeta);
+  // Optional is load-bearing, not decorative: a non-optional peer would make `npm install tflw`
+  // fail (or auto-install ~200 MB of playwright) for the API-only user who is the majority case.
+  for (const name of Object.keys(shipped.peerDependencies ?? {})) {
+    assert.equal(shipped.peerDependenciesMeta?.[name]?.optional, true, `\`${name}\` must be an *optional* peer — a required one breaks every API-only install`);
+  }
+});
+
 test('the tarball attributes every third-party package its own bundles inlined (M92a, review `B6-06`)', async () => {
   // The claim under test is *completeness*, not presence — a notice file that names eleven of
   // twelve packages reads exactly like a correct one. So the expected set is re-derived here from
