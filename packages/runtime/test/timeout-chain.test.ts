@@ -18,7 +18,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
-import { runProgram, runLoad } from '../src/interpreter.js';
+import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
 import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
@@ -115,7 +115,10 @@ test('the same step and the same `timeout` give the same verdict functionally an
   const workloadSource = `test "Chain"\n  run 1 iterations per user across 1 users\n${body}  threshold error rate is less than 50%\n`;
 
   const functional = await runProgram(parseSource(functionalSource).program, testConfig(server.baseUrl), { source: functionalSource });
-  const workload = await runLoad(parseSource(workloadSource).program, testConfig(server.baseUrl), { source: workloadSource });
+  // M91a (`B3-06`): was `runLoad`, an entry point with no production caller. The workload rows
+  // come out of the shipped `runProgram` path now, read off the report it actually returns.
+  const workloadRun = await runProgram(parseSource(workloadSource).program, testConfig(server.baseUrl), { source: workloadSource });
+  const workload = { ...workloadRun.report, scenarios: workloadRun.report.tests.filter((t) => t.kind === 'workload') };
 
   assert.equal(functional.report.ok, false, JSON.stringify(functional.report.tests, null, 2));
   assert.match(functional.report.tests[0]!.error ?? '', /timed out after 1000ms/);

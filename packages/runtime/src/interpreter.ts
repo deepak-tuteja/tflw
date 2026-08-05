@@ -178,8 +178,9 @@ export interface RunOptions {
   /** `--update-snapshots` (M4b, D15) — writes/overwrites baselines instead of just comparing
    * against them. Defaults to `false` (compare-only), same as every prior milestone's behavior. */
   readonly updateSnapshots?: boolean;
-  /** Phase 2b (D99) — `runProgram` now also drives this file's workload-bearing `test`s (formerly
-   * `runLoad`'s exclusive job); these four fields mirror `LoadOptions`' own and are only consulted
+  /** Phase 2b (D99) — `runProgram` drives this file's workload-bearing `test`s (which a separate
+   * `runLoad` entry point used to own, until M91a deleted it as unreachable — `B3-06`); these four
+   * fields mirror `LoadOptions`' own and are only consulted
    * when `program.tests` has at least one (`RunOutput.loadReport` stays `undefined` otherwise, same
    * as a file with no workload tests never populating one today). See each field's `LoadOptions`
    * twin for its full rationale — repeated here only where the meaning narrows. */
@@ -256,8 +257,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
   const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
   const cases = await expandTestCases(program, baseDir);
-  // Phase 2b (D99): `runProgram` now also drives every workload-bearing `test` in the file
-  // (formerly `runLoad`'s exclusive job, invoked separately) — `expandTestCases` above already
+  // Phase 2b (D99): `runProgram` drives every workload-bearing `test` in the file — this is the
+  // *only* single-process path, since M91a — `expandTestCases` above already
   // skips these (unchanged), so `cases`/`results` below stay purely functional, exactly as before.
   const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
   const hasWorkload = scenarios.length > 0;
@@ -532,9 +533,9 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
 // same `execSteps` every `test`/`action` body already reuses. M30 (D29) runs every `scenario` in
 // the file concurrently rather than just the file's one allowed scenario (M29's restriction); M31
 // (D19) layers optional multi-process scaling on top without changing this shape — `runLoadCore`
-// (below) is the one shared engine `runLoad` (single-process convenience) and `runLoadShard`
-// (invoked once per forked worker under `--workers N>1`) both call, parameterized by an optional
-// `shard`. A scenario's own duration/failure accumulation always goes through a `LatencyHistogram`
+// (below) is the engine `runLoadShard` (invoked once per forked worker under `--workers N>1`)
+// calls, parameterized by an optional `shard`. It had a second caller, `runLoad`, until M91a
+// deleted it: a single-process load entry point nothing shipped through (`B3-06`). A scenario's own duration/failure accumulation always goes through a `LatencyHistogram`
 // (`histogram.ts`) rather than a raw array — cheap enough that single-process runs pay it too
 // (there's exactly one accumulation code path, not a single-process one and a sharded one), and
 // it's what lets `runLoadShard`'s results ship compactly across a fork's IPC channel for
@@ -559,8 +560,8 @@ export interface LoadOptions {
   readonly onProgressTick?: (snapshot: LoadProgressSnapshot) => void;
   /** M32 (R5) — when aborted, no *new* iterations start (closed-model VU loops stop looping, open-
    * model arrival scheduling stops scheduling); iterations already in flight are allowed to finish
-   * naturally rather than being cut mid-request. `runLoad`/`runLoadShard` still return a full
-   * result built from whatever completed — `LoadReport.aborted`/`abortedMessage` (R5's "flush a
+   * naturally rather than being cut mid-request. The run still returns a full result built from
+   * whatever completed — `RunReport.aborted`/`abortedMessage` (R5's "flush a
    * partial report … stamped 'aborted at Ns of Nm planned'") is what the CLI's SIGINT handler
    * relies on to hand back real evidence instead of nothing. */
   readonly abortSignal?: AbortSignal;
@@ -1027,7 +1028,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       if (abortSignal?.aborted) break;
       // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion
       // (that's the whole point of "open") — its promise is still collected so this scenario's
-      // own task (and, transitively, `runLoad`) waits for every fired iteration.
+      // own task (and, transitively, the whole run) waits for every fired iteration.
       vuPromises.push(runIteration());
     }
   } else if (scenario.workload.type === 'HoldUsersWorkload') {
@@ -1132,9 +1133,10 @@ function partitionIntoBatches(tests: readonly TestDecl[]): TestDecl[][] {
   return batches;
 }
 
-/** The engine shared by `runLoad` and `runLoadShard` — everything through "every scenario's VUs
- * have finished," before either caller shapes the result differently (a full `LoadReport` vs. a
- * compact, IPC-ready `LoadShardResult`). Never throws for an iteration failure (D18: an `expect`
+/** The engine behind `runLoadShard` — everything through "every scenario's VUs have finished,"
+ * before the caller shapes the accumulators into a compact, IPC-ready `LoadShardResult`. It had a
+ * second caller, `runLoad`, which shaped them into a full `LoadReport` instead; M91a deleted that
+ * one (`B3-06` — no production path went through it). Never throws for an iteration failure (D18: an `expect`
  * inside a scenario aborts *that iteration*, counted toward its error rate, never the run) — only
  * a setup failure (bad session, zero scenarios) throws. All scenarios in one call share one
  * process, one `uniqueSeq`, and one `SessionCache` (a session named by two scenarios establishes
@@ -1148,12 +1150,13 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
     // `B3-08` (M90c): this used to name `tflw load`, a command M53 removed — and naming `tflw run`
     // instead would be a second lie in the same sentence, because `tflw run` on such a file does
     // not error, it runs the functional tests. It is a *library* precondition, so it names no
-    // command at all. `B5-13` records the sharper half the row understated: neither caller can
-    // reach this in the shipped product (`runLoad` has no production caller; `runLoadShard` is only
-    // forked when a workload already exists), so the message is unreachable and the test below
-    // exercises it through the entry point production does not use. Deleting `runLoad` is C14's,
-    // per D-M90-6 — it first needs an answer to whether `runLoad` is public API or a leaked
-    // internal, which is easier to give once `migrate` works.
+    // command at all. `B5-13` recorded the sharper half the row understated: the message is
+    // unreachable in the shipped product, and its only test drove it through `runLoad`, an entry
+    // point production never called. M91a (`D-M91-3`) closed that half — `runLoad` is deleted, and
+    // the guard's one surviving caller is `runLoadShard`, which is where the test drives it now.
+    // Still unreachable for a user (`cli.ts` checks `hasWorkload` before forking a shard), and the
+    // guard still stays: it is `runLoadShard`'s documented precondition, and a future third caller
+    // deserves it.
     throw new RuntimeError('this program has no workload-bearing `test` — a load run needs at least one `ramp to …` line, found 0');
   }
   const selfDiag = startSelfDiagnosis();
@@ -1512,72 +1515,20 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
   return `aborted at ${Math.round(elapsedMs / 1000)}s of ${Math.round(plannedMs / 1000)}s planned`;
 }
 
-/** Runs every `scenario` in the file (M30/D29 — names unique, checker-enforced, `checkScenarios`/
- * TF033) as one concurrent, single-process load test — the whole file, in this one process (see
- * `runLoadShard` for the multi-process, `--workers N>1` path). Each scenario's `threshold`s are
- * evaluated once against *its own* accumulated metrics (D24a); R6's combined-vs-per-scenario split
- * falls out of how results are pooled at the end, not out of separate runs. */
-/** Shapes a run's `ScenarioAccumulator`s into a full `LoadReport` — extracted from `runLoad`'s own
- * body (M50-era) so the unified per-file dispatch (`runProgramInner`, Phase 2b/D99) can build one
- * too, from its own D109-batched accumulators, without duplicating this finalization logic. */
 /** M56 (Phase 3) — finalizes one scenario's raw accumulator into its `LoadScenarioReport` (metrics,
- * evaluated thresholds, back-off diagnosis, per-endpoint breakdown). Extracted from
- * `buildLoadReport`'s own `.map()` body so `runProgramInner`'s unified dispatch can build one
- * `WorkloadTestResult` per workload test directly, without going through a full `LoadReport`
- * first — `buildLoadReport` below still uses it too, for the `--workers N>1` shard-merge path
- * (`mergeLoadShardReports`) that still needs a complete `LoadReport` shape internally. */
+ * evaluated thresholds, back-off diagnosis, per-endpoint breakdown). Two callers, both live:
+ * `runProgramInner`'s unified dispatch builds one `WorkloadTestResult` per workload test directly
+ * from it, and `mergeLoadShardReports` builds the `--workers N>1` merged `LoadReport` from it.
+ *
+ * It used to have a third, `buildLoadReport`, which M91a deleted along with `runLoad` (review
+ * finding `B3-06`): a single-process `LoadReport` had no production caller once M56 routed the
+ * shipped path through `runProgramInner`. */
 function finalizeScenario({ scenario, histogram, successHistogram, timeline, failures, early, late, endpoints }: ScenarioAccumulator): LoadScenarioReport {
   const metrics = buildLoadMetrics(histogram, successHistogram, failures, timeline);
   const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, successHistogram, failures }, endpoints);
   const backOff = computeBackOff(scenario, early, late);
   const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
   return { name: scenario.name.value, workload: workloadOf(scenario.workload), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
-}
-
-function buildLoadReport(
-  accumulators: readonly ScenarioAccumulator[],
-  info: {
-    readonly selfDiagnosis: SelfDiagnosis;
-    readonly runSeed: number;
-    readonly runClock: Date;
-    readonly runStart: number;
-    readonly aborted: boolean;
-    readonly plannedMs: number;
-    readonly startedAt: string;
-  },
-): LoadReport {
-  const scenarioReports: LoadScenarioReport[] = accumulators.map((acc) => finalizeScenario(acc));
-
-  const combinedHistogram = new LatencyHistogram();
-  const combinedSuccessHistogram = new LatencyHistogram();
-  const combinedTimeline = new Timeline();
-  let combinedFailures = 0;
-  for (const acc of accumulators) {
-    combinedHistogram.merge(acc.histogram);
-    combinedSuccessHistogram.merge(acc.successHistogram);
-    combinedTimeline.merge(acc.timeline);
-    combinedFailures += acc.failures;
-  }
-  const combined = buildLoadMetrics(combinedHistogram, combinedSuccessHistogram, combinedFailures, combinedTimeline);
-
-  const durationMs = Math.round(performance.now() - info.runStart);
-  return {
-    ok: scenarioReports.every((s) => s.ok),
-    scenarios: scenarioReports,
-    combined,
-    startedAt: info.startedAt,
-    durationMs,
-    seed: info.runSeed,
-    now: info.runClock.toISOString(),
-    selfDiagnosis: info.selfDiagnosis,
-    inconclusive: info.selfDiagnosis.saturated,
-    ...(info.aborted ? { aborted: true, abortedMessage: formatAbortedMessage(durationMs, info.plannedMs) } : {}),
-  };
-}
-
-export async function runLoad(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadReport> {
-  const { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted, plannedMs } = await runLoadCore(program, config, opts);
-  return buildLoadReport(accumulators, { selfDiagnosis, runSeed, runClock, runStart, aborted, plannedMs, startedAt });
 }
 
 /** M31 (D19) — runs one shard's striped share of every `scenario` in the file (`opts.shard`
@@ -1623,9 +1574,9 @@ export async function runLoadShard(program: Program, config: ResolvedConfig, opt
   return buildLoadShardResult(accumulators, selfDiagnosis);
 }
 
-/** M31 (D19/R4) — combines every forked worker's `LoadShardResult` into the exact same
- * `LoadReport` shape `runLoad` itself returns, so nothing downstream (CLI rendering,
- * `load-results.json`) needs to know how many processes actually ran. Matches shards to `program`'s
+/** M31 (D19/R4) — combines every forked worker's `LoadShardResult` into one `LoadReport`, which
+ * `spliceLoadReportIntoRunReport` immediately unpacks into the run's `RunReport`, so nothing
+ * downstream (CLI rendering, `results.json`) needs to know how many processes actually ran. Matches shards to `program`'s
  * scenarios by name (the parent parses the same file independently rather than shipping
  * `ThresholdDecl`s over IPC — cheap, and keeps threshold re-evaluation using the exact same
  * `evaluateThresholds` a single-process run does). A shard missing a given scenario entirely is
@@ -1685,17 +1636,10 @@ export function mergeLoadShardReports(
   // same "merge first, derive second" order R4's histogram/percentile design already established.
   const scenarioReports: LoadScenarioReport[] = perScenario.map((acc) => finalizeScenario(acc));
 
-  const combinedHistogram = new LatencyHistogram();
-  const combinedSuccessHistogram = new LatencyHistogram();
-  const combinedTimeline = new Timeline();
-  let combinedFailures = 0;
-  for (const { histogram, successHistogram, timeline, failures } of perScenario) {
-    combinedHistogram.merge(histogram);
-    combinedSuccessHistogram.merge(successHistogram);
-    combinedTimeline.merge(timeline);
-    combinedFailures += failures;
-  }
-  const combined = buildLoadMetrics(combinedHistogram, combinedSuccessHistogram, combinedFailures, combinedTimeline);
+  // M91a (`B3-19`, D-M91-1): this used to also pool every scenario's histograms and timeline into a
+  // `combined` metric — three merged histograms per merge, computed and then dropped by
+  // `spliceLoadReportIntoRunReport`, read by no reporter or CLI code, and documented against a
+  // `load-results.json` artifact M53/M56 stopped writing.
 
   const selfDiagnosis = mergeSelfDiagnosis(shardResults.map((s) => s.selfDiagnosis));
   // M52: a count-based scenario contributes 0 — there's no way to predict its wall-clock length in
@@ -1704,7 +1648,6 @@ export function mergeLoadShardReports(
   return {
     ok: scenarioReports.every((s) => s.ok),
     scenarios: scenarioReports,
-    combined,
     startedAt: meta.startedAt,
     durationMs: meta.durationMs,
     seed: meta.seed,
@@ -2763,7 +2706,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'PauseStmt': {
           // A fresh uniform draw per iteration for a ranged `pause`, off `ctx.rng` — reproducible
           // like every other generator (P#23), not `Math.random()`. Excluded from a load test's own
-          // `duration` threshold metric by the load engine (`runLoad` below, D24a) via this exact
+          // `duration` threshold metric by the load engine (`runLoadCore` below, D24a) via this exact
           // step's own `durationMs` — pacing is not system latency.
           const ms = step.maxMs !== null ? step.minMs + Math.floor(ctx.rng() * (step.maxMs - step.minMs + 1)) : step.minMs;
           await sleep(ms);

@@ -94,8 +94,8 @@ always started together) — wrong for batch 2 onward: a later `sequential` scen
 `runStart` already stale by however long the earlier batch took, so its entire scheduling window was
 already in the past the instant it actually started.
 
-The same unconditional-`Promise.all` shape also existed in `runLoadCore` (the engine behind both
-`runLoad` and `runLoadShard`, i.e. every `--workers N>1` forked child) — it ignored the `concurrency`
+The same unconditional-`Promise.all` shape also existed in `runLoadCore` (the engine behind
+`runLoadShard`, i.e. every `--workers N>1` forked child) — it ignored the `concurrency`
 field entirely, always running every workload test concurrently regardless of what the file
 declared. That's the asymmetry Table 3 describes as fixed: previously, `sequential` scenarios stayed
 apart in the main process but were silently raced together the moment `--workers N>1` forked any

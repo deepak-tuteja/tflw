@@ -219,7 +219,7 @@ export interface StepResult {
    * its `ApiStep.tag` (`as "label"`) when present, else the automatic `METHOD path.raw` derived
    * from the *source template*, not `request.url` (which is the resolved, interpolated URL and
    * would fragment identity across otherwise-identical requests, the exact normalization problem
-   * this field exists to avoid). Read by `runLoad`'s per-scenario endpoint accumulator to build
+   * this field exists to avoid). Read by the per-scenario endpoint accumulator to build
    * `LoadScenarioReport.endpoints`; unused (but harmless, negligible size) outside a load run. */
   readonly endpoint?: string;
   /** Set on an explicit `screenshot "<name>"` step, or best-effort on any step that failed while a
@@ -429,9 +429,9 @@ export interface LoadMetrics {
   /** Active (pause-excluded) iteration duration, ms — see `LoadIterationResult.durationMs`. */
   readonly durations: LoadDurationStats;
   /** M32 (R4) — this metric's own duration distribution, bucketed (not raw samples) — small enough
-   * to inline into `load-report.html` for the response-time distribution histogram chart, and
-   * reused verbatim by `load-results.json` consumers that want the full distribution rather than
-   * just the five summary percentiles in `durations`. */
+   * to inline into `report.html` for the response-time distribution histogram chart, and reused
+   * verbatim by `results.json` consumers that want the full distribution rather than just the five
+   * summary percentiles in `durations`. */
   readonly histogram: readonly HistogramBucket[];
   /** M32 (R3/R4) — one point per second of wall-clock run time this metric's iterations landed in
    * (`durations`' scope: combined = every scenario, a scenario report = just that scenario's own
@@ -569,7 +569,7 @@ export interface LoadScenarioReport {
    * covers only that one step's own `durationMs` across every iteration, e.g. `checkout-burst`'s
    * `for "checkout"` scoped threshold reads from the `"checkout"` entry here, not the scenario's
    * whole-iteration `metrics` above (which still sums every `api` step, unchanged). Additive field
-   * — existing `load-results.json` consumers are unaffected. Ordered by first appearance in source. */
+   * — existing `results.json` consumers are unaffected. Ordered by first appearance in source. */
   readonly endpoints: readonly { readonly identity: string; readonly metrics: LoadMetrics }[];
 }
 
@@ -589,6 +589,20 @@ export interface SelfDiagnosis {
   readonly saturated: boolean;
 }
 
+/**
+ * The `--workers N>1` shard-merge carrier: `mergeLoadShardReports` builds one, and
+ * `spliceLoadReportIntoRunReport` immediately unpacks it into the `RunReport` that actually ships.
+ * Not a user-visible artifact and no longer an entry point's return type — `M91a` deleted
+ * `runLoad` (review finding `B3-06`), leaving this shape with exactly one producer and one
+ * consumer, both internal.
+ *
+ * `M91a` also deleted its `combined` field (review finding `B3-19`, `D-M91-1`): "R6's combined
+ * axis" was computed twice — once here, once in the now-deleted `buildLoadReport` — and read
+ * nowhere. `spliceLoadReportIntoRunReport` dropped it, no reporter or CLI code ever referenced it,
+ * and its documented consumer (`load-results.json`) stopped existing when M53/M56 folded load
+ * reporting into the unified run. Pooled run-wide numbers, if they are ever wanted again, belong
+ * on `RunReport` where something can render them.
+ */
 export interface LoadReport {
   /** Every scenario's `ok` (vacuously `true` for a scenario with no `threshold`s). Independent of
    * `inconclusive` below — a saturated generator doesn't flip passing thresholds to failing, it
@@ -596,10 +610,6 @@ export interface LoadReport {
   readonly ok: boolean;
   /** One entry per `scenario` in the file, source order, all run concurrently (M30, D29). */
   readonly scenarios: readonly LoadScenarioReport[];
-  /** R6's "combined" axis — every scenario's iterations pooled into one set of metrics, the
-   * quotable run-wide numbers. Has no thresholds of its own: `threshold` is always declared, and
-   * evaluated, per scenario (a scenario's pass/fail must not depend on what else shares the run). */
-  readonly combined: LoadMetrics;
   readonly startedAt: string;
   readonly durationMs: number;
   readonly seed: number;
@@ -627,8 +637,9 @@ export interface LoadReport {
 // process. Each forked worker runs `runLoadShard` for an equal (±1) striped share of every
 // scenario's workload target and reports back a compact `LoadShardResult` (histograms, not raw
 // samples — R4) over the fork's built-in IPC channel; the parent merges every shard's result via
-// `mergeLoadShardReports` into the exact same `LoadReport` shape `runLoad` itself returns, so
-// nothing downstream (CLI rendering, `load-metrics.json`) needs to know how many processes ran.
+// `mergeLoadShardReports` into one `LoadReport` and splices it into the run's `RunReport`
+// (`spliceLoadReportIntoRunReport`), so nothing downstream (CLI rendering, `results.json`) needs
+// to know how many processes actually ran.
 
 /** One `scenario`'s contribution from a single shard (worker process) — a compact, IPC-safe
  * summary (a histogram's buckets are at most a few hundred entries regardless of how many
@@ -699,7 +710,7 @@ export interface LoadShardResult {
 }
 
 /** M32 (R5) — a coarse, cheap-to-compute cumulative snapshot fired roughly once a second while a
- * `runLoad`/`runLoadShard` call is in flight, for the CLI's live console line. Deliberately not the
+ * workload run is in flight, for the CLI's live console line. Deliberately not the
  * same shape as `LoadMetrics` (no percentiles here — computing one on every tick would defeat the
  * point of a lightweight tick); the CLI derives `rps`/`error rate` itself by diffing consecutive
  * snapshots. */
