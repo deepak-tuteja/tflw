@@ -42,7 +42,13 @@ test "checkout under load"
   ramp to 50 users over 30s
   checkout("widget-1")
   threshold p95 duration is less than 800ms
+  threshold error rate is less than 1%
 ```
+
+Both threshold lines are required, not stylistic: a duration threshold reads only the iterations
+that **succeeded**, so on its own it is satisfied by a service that fails half its requests
+quickly. The checker rejects a duration threshold that isn't paired with an error-rate one — see
+[Thresholds — the pass/fail gate](#thresholds-the-pass-fail-gate).
 
 **Not supported inside a workload-bearing `test` (v1):** browser steps (`open`/`click`/`fill`/…)
 and UI/network expect subjects. A browser VU is 50-100MB of memory each — running hundreds of them
@@ -202,6 +208,22 @@ exit `0`. The checker rejects that shape (`TF033`). If you want a workload for t
 than as a gate, say so out loud with a deliberately loose one — `threshold error rate is less than
 100%` reads as "I am not gating on this", where silence read as "this passed".
 
+**And a duration threshold needs an error-rate one beside it.** Requiring *a* threshold isn't
+enough, because a `duration` threshold structurally cannot observe failure — it reads the
+successful iterations. A service failing half its requests fast and serving the rest in 12ms
+satisfies `p95 duration is less than 5000ms` with `error rate: 50.00%` printed on the line directly
+above the `✓`. So `TF033` also rejects a workload whose only thresholds are on duration.
+
+The error-rate threshold must be the **unscoped** form. `threshold error rate for "checkout" is
+less than 1%` bounds one endpoint's own bucket, which leaves every other endpoint in the scenario
+free to fail — it reads like coverage without being it. Scope one if you want the extra detail,
+but the whole-scenario line is the one that decides the verdict.
+
+This makes an error-rate threshold *present*, not *meaningful*: `is less than 100%` still satisfies
+it, and an `api` step with no `expect` never fails at all, so the rate it bounds stays `0.00%` no
+matter what the server returns. A checker can require the line; only you can make it mean
+something.
+
 Every threshold also lands in the one `report/junit.xml` as its own `<testcase>` (named `test name
 — label op target`), interleaved with the functional suite's own `<testcase>`s in file-declaration
 order — no separate junit file to point CI at.
@@ -232,6 +254,7 @@ test "checkout under load" as customer
   ramp to 50 users over 30s
   api POST /cart/checkout body { productId: "widget-1" }
   threshold p95 duration is less than 800ms
+  threshold error rate is less than 1%
 ```
 
 The session establishes **once**, before the VU loop starts — never per iteration — and its
@@ -252,12 +275,14 @@ test "browsing" parallel
   api GET /products
   expect status equals 200
   threshold p95 duration is less than 300ms
+  threshold error rate is less than 1%
 
 test "checkout burst" parallel
   ramp to 10 users over 30s
   api POST /cart/checkout body { productId: "widget-1", qty: 1 }
   expect status equals 201
   threshold p95 duration is less than 800ms
+  threshold error rate is less than 1%
 ```
 
 A maximal run of *consecutive* `parallel` tests forms one concurrently-executed batch; a
