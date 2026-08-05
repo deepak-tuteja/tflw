@@ -665,7 +665,24 @@ test "checkout under load"
   `p99 duration` (a duration value) or `error rate` (a percentage). `for "<label>"` scopes the
   threshold to one `api` step's identity within the same test (its explicit `as "<label>"` tag, or
   its automatic `METHOD path.raw` identity when untagged) instead of the whole test's iterations
-  (M43, D70; checker-enforced resolution — `TF034`). **At least one `threshold` is required** on a
+  (M43, D70; checker-enforced resolution — `TF034`).
+
+  **A duration threshold reads only the iterations that succeeded** (M89a, `B3-02`, D-M89-0); an
+  error-rate threshold reads every iteration, which is its whole job. The asymmetry is deliberate:
+  a failing request is usually *fast* — an instant 5xx, a refused connection — so pooling failures
+  into a percentile drags it down, and a latency threshold then passes precisely *because* the
+  target is broken. A run of 1000 iterations at a 96 % error rate reported `p95 2ms ✓ < 100ms`,
+  `PASS`, exit 0. The console prints both populations whenever anything failed, labelled, and
+  `results.json` carries the successful-only one as `metrics.successful` alongside the unchanged
+  all-iterations `metrics.durations`. The same rule applies to a `for "<label>"`-scoped threshold,
+  reading that endpoint's own successful requests.
+
+  **With zero successful iterations there is no percentile**, so a duration threshold reports
+  `actual: null` — rendered `no successful iterations` — and **fails** (M89a, D-M89-1). Reporting
+  `0` was rejected: it reads as a passing 0 ms result that never happened, and would make "every
+  single request failed" the easiest possible way to satisfy a latency threshold.
+
+  **At least one `threshold` is required** on a
   workload-bearing test (M60/A4-01, `TF033`): the verdict is decided only by thresholds, so a test
   that declares none can never fail — a 100% error rate reported `✓`, `PASS`, and exit 0. To run a
   workload for the numbers alone rather than to gate on them, declare a deliberately loose one.

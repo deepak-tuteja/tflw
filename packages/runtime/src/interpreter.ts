@@ -103,6 +103,7 @@ import type {
   LoadShardScenarioResult,
   LoadThresholdResult,
   ReportEntry,
+  SerializedHistogram,
   RequestTrace,
   ResolvedConfig,
   ResponseTrace,
@@ -287,15 +288,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     group.cases.push(kase);
   });
 
-  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({
-    scenario,
-    histogram: new LatencyHistogram(),
-    timeline: new Timeline(),
-    failures: 0,
-    early: { count: 0, sum: 0 },
-    late: { count: 0, sum: 0 },
-    endpoints: new Map(),
-  }));
+  const accumulators: ScenarioAccumulator[] = scenarios.map(newScenarioAccumulator);
   const accumulatorByTest = new Map<TestDecl, ScenarioAccumulator>();
   for (const acc of accumulators) accumulatorByTest.set(acc.scenario, acc);
 
@@ -759,6 +752,14 @@ function filterWorkloadTests(tests: readonly TestDecl[]): LoadTest[] {
 interface ScenarioAccumulator {
   readonly scenario: LoadTest;
   readonly histogram: LatencyHistogram;
+  /** M89a (`B3-02`, D-M89-0) — the same durations, recorded only when the iteration **succeeded**;
+   * this is what a `threshold pNN duration` clause reads. Kept as a *second* histogram rather than
+   * by splitting the first, so `histogram.count` keeps meaning "iterations" everywhere it is
+   * already read as one — `buildLoadMetrics`'s `errorRate: failures / histogram.count`, the live
+   * progress tick, `LoadShardScenarioResult.iterations`. Splitting the first would have turned that
+   * denominator into `failures / successes` silently: 960 failures over 40 successes reports a
+   * 2400 % error rate. */
+  readonly successHistogram: LatencyHistogram;
   /** M32 (R3/R4) — this scenario's own per-second buckets, feeding `load-report.html`'s timeline
    * charts once shaped into `LoadMetrics.timeline`. */
   readonly timeline: Timeline;
@@ -774,7 +775,35 @@ interface ScenarioAccumulator {
    * `scenario.body` (a scenario can end every iteration early on a failure before reaching a later
    * step, and that's real data, not a gap to paper over). `buildLoadReportEndpoints` re-orders this
    * into source order and fills in a zero-sample entry for any declared identity never reached. */
-  readonly endpoints: Map<string, { histogram: LatencyHistogram; timeline: Timeline; failures: number }>;
+  readonly endpoints: Map<string, EndpointAccumulator>;
+}
+
+/** M43 (D67-D69) — one endpoint identity's own accumulators. M89a adds `successHistogram`, the
+ * per-endpoint half of `B3-02`: a `threshold … for "label"` clause reads that one, and it is the
+ * scope `checkout-burst` — the perf arc's own k6 acceptance benchmark — actually thresholds on. */
+interface EndpointAccumulator {
+  histogram: LatencyHistogram;
+  successHistogram: LatencyHistogram;
+  timeline: Timeline;
+  failures: number;
+}
+
+/** M89a — the one place a `ScenarioAccumulator` is born. Both call sites (`runProgramInner`'s
+ * unified per-file dispatch and `runLoadCore`) previously open-coded the same 8-line literal, so
+ * adding `successHistogram` would have needed both to be edited in step — two copies that must
+ * agree, in a milestone whose whole subject is two copies that did not (`B3-03`'s rival
+ * `describeWorkload`s). One function instead. */
+function newScenarioAccumulator(scenario: LoadTest): ScenarioAccumulator {
+  return {
+    scenario,
+    histogram: new LatencyHistogram(),
+    successHistogram: new LatencyHistogram(),
+    timeline: new Timeline(),
+    failures: 0,
+    early: { count: 0, sum: 0 },
+    late: { count: 0, sum: 0 },
+    endpoints: new Map(),
+  };
 }
 
 interface LoadCoreResult {
@@ -921,7 +950,13 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     }
     if (!result.ok) acc.failures++;
     acc.histogram.record(result.durationMs);
-    recordEndpointMetrics(acc, iterSteps, result.ok, runStart);
+    // M89a (`B3-02`, D-M89-0) — the line above keeps recording *every* iteration, so `iterations`,
+    // `failures` and `errorRate` are unchanged; this one is the population a `threshold pNN
+    // duration` clause reads. Until M89a the comment 4 lines up claimed this was already true and
+    // the code one line down falsified it — the claim was the correct design, so it is now
+    // implemented rather than deleted.
+    if (result.ok) acc.successHistogram.record(result.durationMs);
+    recordEndpointMetrics(acc, iterSteps, runStart);
     acc.timeline.record((performance.now() - runStart) / 1000, result.durationMs, result.ok);
     // M34 (D17) — which half of the scenario's own wall-clock window this iteration *started*
     // in, by real elapsed time (not request order — see `computeBackOff`'s doc for why an
@@ -1134,15 +1169,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // `globalIterationIndex` (M31) turns this shard-local counter into a cross-shard-unique id.
   let iterationIndex = 0;
 
-  const accumulators: ScenarioAccumulator[] = scenarios.map((scenario) => ({
-    scenario,
-    histogram: new LatencyHistogram(),
-    timeline: new Timeline(),
-    failures: 0,
-    early: { count: 0, sum: 0 },
-    late: { count: 0, sum: 0 },
-    endpoints: new Map(),
-  }));
+  const accumulators: ScenarioAccumulator[] = scenarios.map(newScenarioAccumulator);
 
   // M32 (R5) — a cumulative snapshot roughly once a second, for the CLI's live console line.
   // `unref()` so a tick left pending never keeps the process alive on its own (mirrors
@@ -1206,6 +1233,18 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   return { accumulators, selfDiagnosis, runSeed, runClock, startedAt, runStart, aborted: opts.abortSignal?.aborted ?? false, plannedMs };
 }
 
+/** M89a — one histogram's complete IPC form (buckets + the exact scalars `fromBuckets` needs).
+ * Paired with `deserializeHistogram` so the four successful-only sites (scenario/endpoint ×
+ * send/receive) cannot drift apart the way the four hand-written copies of this same shape already
+ * had to be kept in step. */
+function serializeHistogram(h: LatencyHistogram): SerializedHistogram {
+  return { iterations: h.count, sum: h.sum, min: h.min, max: h.max, histogram: h.toBuckets() };
+}
+
+function deserializeHistogram(s: SerializedHistogram): LatencyHistogram {
+  return LatencyHistogram.fromBuckets(s.histogram, { count: s.iterations, sum: s.sum, min: s.min, max: s.max });
+}
+
 function summarizeHistogram(h: LatencyHistogram): LoadDurationStats {
   return { min: h.min, max: h.max, avg: h.avg, p50: h.percentile(50), p90: h.percentile(90), p95: h.percentile(95), p99: h.percentile(99) };
 }
@@ -1213,34 +1252,64 @@ function summarizeHistogram(h: LatencyHistogram): LoadDurationStats {
 /** M32 (R3/R4) — shapes one accumulated histogram+timeline into a full `LoadMetrics`, used for
  * every metrics-shaped view a `LoadReport` has (each scenario's own, and the combined pool) —
  * exactly one place decides what a "metrics" object contains. */
-function buildLoadMetrics(histogram: LatencyHistogram, failures: number, timeline: Timeline): LoadMetrics {
+function buildLoadMetrics(histogram: LatencyHistogram, successHistogram: LatencyHistogram, failures: number, timeline: Timeline): LoadMetrics {
   return {
+    // M89a: still the *all*-iterations histogram, so `iterations` and the `errorRate` denominator
+    // below keep their exact prior meaning. This is the trap the milestone was most likely to walk
+    // into — had the split been done by narrowing this histogram instead of adding a second one,
+    // `errorRate` would silently have become `failures / successes` (960/40 = 2400 %).
     iterations: histogram.count,
     failures,
     errorRate: histogram.count > 0 ? failures / histogram.count : 0,
     durations: summarizeHistogram(histogram),
     histogram: histogram.toBuckets(),
     timeline: timeline.toSeries(),
+    successful: {
+      iterations: successHistogram.count,
+      durations: summarizeHistogram(successHistogram),
+      histogram: successHistogram.toBuckets(),
+    },
   };
 }
 
 /** M43 (D70) — `threshold … for "label"` reads from that one endpoint's own histogram/failures
  * instead of the scenario's whole-iteration ones. An unknown scope (shouldn't happen — TF034
- * catches it at check time) falls back to an empty histogram (`percentile`/`errorRate` both read
- * as 0 on zero samples), never a crash. */
+ * catches it at check time) falls back to an empty histogram (`errorRate` reads as 0 on zero
+ * samples; a duration reads as `null` per D-M89-1), never a crash.
+ *
+ * M89a (`B3-02`, D-M89-0/D-M89-1) — the two metric kinds read **different populations**, and that
+ * asymmetry is the whole point:
+ *
+ * - a **duration** percentile reads `successHistogram`, because a failing request is usually fast
+ *   (an instant 5xx, a refused connection) and mixing failures in drags the percentile *down* — so
+ *   a latency threshold passes *because* the target is broken. The probe that filed `B3-02` hit
+ *   `p95 2ms ✓ < 100ms` at a 96 % error rate.
+ * - an **error rate** reads the all-iterations count as its denominator, unchanged. It is the
+ *   metric whose entire job is to see the failures.
+ *
+ * With no successful samples there is no percentile to state, so `actual` is `null` and the
+ * threshold fails (D-M89-1) — `percentile()` returns `0` on an empty histogram, which would
+ * otherwise make "everything failed" the one case that passes a latency threshold most easily. */
 function evaluateThresholds(
   thresholds: readonly ThresholdDecl[],
-  whole: { readonly histogram: LatencyHistogram; readonly failures: number },
-  endpoints: ReadonlyMap<string, { readonly histogram: LatencyHistogram; readonly failures: number }>,
+  whole: { readonly histogram: LatencyHistogram; readonly successHistogram: LatencyHistogram; readonly failures: number },
+  endpoints: ReadonlyMap<string, { readonly histogram: LatencyHistogram; readonly successHistogram: LatencyHistogram; readonly failures: number }>,
 ): LoadThresholdResult[] {
   const empty = new LatencyHistogram();
   return thresholds.map((t) => {
     const scope = t.scope?.value;
-    const source = scope === undefined ? whole : (endpoints.get(scope) ?? { histogram: empty, failures: 0 });
-    const actual = t.metric.kind === 'errorRate' ? (source.histogram.count > 0 ? source.failures / source.histogram.count : 0) : source.histogram.percentile(t.metric.percentile);
+    const source = scope === undefined ? whole : (endpoints.get(scope) ?? { histogram: empty, successHistogram: empty, failures: 0 });
+    const actual =
+      t.metric.kind === 'errorRate'
+        ? source.histogram.count > 0
+          ? source.failures / source.histogram.count
+          : 0
+        : source.successHistogram.count > 0
+          ? source.successHistogram.percentile(t.metric.percentile)
+          : null;
     const baseLabel = t.metric.kind === 'errorRate' ? 'error rate' : `p${t.metric.percentile} duration`;
     const label = scope !== undefined ? `${baseLabel} for "${scope}"` : baseLabel;
-    const ok = t.op === 'lessThan' ? actual < t.value : actual > t.value;
+    const ok = actual === null ? false : t.op === 'lessThan' ? actual < t.value : actual > t.value;
     return { label, op: t.op, target: t.value, actual, ok };
   });
 }
@@ -1277,37 +1346,67 @@ function scenarioEndpointIdentities(scenario: LoadTest): string[] {
  * special-case a missing row. */
 function buildLoadReportEndpoints(
   scenario: LoadTest,
-  endpoints: ReadonlyMap<string, { readonly histogram: LatencyHistogram; readonly timeline: Timeline; readonly failures: number }>,
+  endpoints: ReadonlyMap<string, EndpointAccumulator>,
 ): readonly { readonly identity: string; readonly metrics: LoadMetrics }[] {
   return scenarioEndpointIdentities(scenario).map((identity) => {
     const bucket = endpoints.get(identity);
-    return { identity, metrics: bucket ? buildLoadMetrics(bucket.histogram, bucket.failures, bucket.timeline) : buildLoadMetrics(new LatencyHistogram(), 0, new Timeline()) };
+    return {
+      identity,
+      metrics: bucket
+        ? buildLoadMetrics(bucket.histogram, bucket.successHistogram, bucket.failures, bucket.timeline)
+        : buildLoadMetrics(new LatencyHistogram(), new LatencyHistogram(), 0, new Timeline()),
+    };
   });
 }
 
 /** M43 (D67-D69) — records one iteration's own `api`-kind step durations into this scenario's
  * per-endpoint accumulators. Runs on both a successful *and* a failed iteration (`steps` is the
  * scenario body's partial trace either way, see the `iterSteps` doc at its call site) — a failed
- * iteration's completed requests are still real samples. On failure, the *last* endpoint reached
- * absorbs the failure count: the most defensible single attribution without deeper call-graph
- * analysis of which assertion actually failed, and it's exactly the endpoint whose response the
- * failing `expect` was most likely judging. */
-function recordEndpointMetrics(acc: ScenarioAccumulator, steps: readonly StepResult[] | undefined, iterationOk: boolean, runStart: number): void {
+ * iteration's completed requests are still real samples.
+ *
+ * M89a (`B3-12`, `B3-13`) — **which request failed is derived, not read.** An `api` step's
+ * `StepResult.ok` is a literal `true` at both of its construction sites: an `api` step's job is
+ * only to *attempt* the request, and the following `expect`/`check` is what judges the outcome. So
+ * the accurate signal is positional. Execution is fail-fast (P#16, `execSteps`), so a failing step
+ * is pushed with `ok: false` and the trace ends there — the nearest **preceding** `api` step is the
+ * request that failed.
+ *
+ * That rule agrees with M43's original "the *last* endpoint reached absorbs the failure" in the
+ * ordinary case, and corrects it exactly where a soft **`check`** fails and lets the iteration run
+ * on to further requests: M43 billed the last of those, an endpoint that answered perfectly well.
+ * An iteration failing before any `api` step, or in an `after each` `cleanup` hook (whose steps
+ * never enter `iterSteps`), is now billed to nobody rather than to an innocent endpoint. So
+ * per-endpoint failures do **not** sum to the scenario's `failures`, by design: this axis counts
+ * **requests**, the scenario axis counts **iterations**. */
+function recordEndpointMetrics(acc: ScenarioAccumulator, steps: readonly StepResult[] | undefined, runStart: number): void {
   if (!steps) return;
-  let lastEndpoint: string | undefined;
+  // One entry per `api` request this iteration actually made, in order. Built first, recorded
+  // second: attribution needs to look *forward* from a request to the step that judged it, which a
+  // single record-as-you-go pass cannot do.
+  const requests: { readonly endpoint: string; readonly durationMs: number; ok: boolean }[] = [];
   for (const step of steps) {
-    if (step.kind !== 'api' || !step.endpoint) continue;
-    lastEndpoint = step.endpoint;
-    let bucket = acc.endpoints.get(step.endpoint);
-    if (!bucket) {
-      bucket = { histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 };
-      acc.endpoints.set(step.endpoint, bucket);
+    if (step.kind === 'api' && step.endpoint) {
+      requests.push({ endpoint: step.endpoint, durationMs: step.durationMs, ok: true });
+    } else if (!step.ok && requests.length > 0) {
+      // Assignment, never `++` — two soft `check`s failing after the same request must bill it
+      // once, or that endpoint reports a >100 % error rate against its own request count.
+      requests[requests.length - 1]!.ok = false;
     }
-    bucket.histogram.record(step.durationMs);
-    bucket.timeline.record((performance.now() - runStart) / 1000, step.durationMs, true);
   }
-  if (!iterationOk && lastEndpoint) {
-    acc.endpoints.get(lastEndpoint)!.failures++;
+  const offsetSeconds = (performance.now() - runStart) / 1000;
+  for (const req of requests) {
+    let bucket = acc.endpoints.get(req.endpoint);
+    if (!bucket) {
+      bucket = { histogram: new LatencyHistogram(), successHistogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 };
+      acc.endpoints.set(req.endpoint, bucket);
+    }
+    bucket.histogram.record(req.durationMs);
+    if (req.ok) bucket.successHistogram.record(req.durationMs);
+    else bucket.failures++;
+    // `B3-13`: this argument was the literal `true`, so `Timeline`'s own failure counter could
+    // never increment and every per-endpoint error-rate chart in `report.html` rendered a flat zero
+    // regardless of the run.
+    bucket.timeline.record(offsetSeconds, req.durationMs, req.ok);
   }
 }
 
@@ -1399,9 +1498,9 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
  * `WorkloadTestResult` per workload test directly, without going through a full `LoadReport`
  * first — `buildLoadReport` below still uses it too, for the `--workers N>1` shard-merge path
  * (`mergeLoadShardReports`) that still needs a complete `LoadReport` shape internally. */
-function finalizeScenario({ scenario, histogram, timeline, failures, early, late, endpoints }: ScenarioAccumulator): LoadScenarioReport {
-  const metrics = buildLoadMetrics(histogram, failures, timeline);
-  const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, failures }, endpoints);
+function finalizeScenario({ scenario, histogram, successHistogram, timeline, failures, early, late, endpoints }: ScenarioAccumulator): LoadScenarioReport {
+  const metrics = buildLoadMetrics(histogram, successHistogram, failures, timeline);
+  const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, successHistogram, failures }, endpoints);
   const backOff = computeBackOff(scenario, early, late);
   const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
   return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
@@ -1422,14 +1521,16 @@ function buildLoadReport(
   const scenarioReports: LoadScenarioReport[] = accumulators.map((acc) => finalizeScenario(acc));
 
   const combinedHistogram = new LatencyHistogram();
+  const combinedSuccessHistogram = new LatencyHistogram();
   const combinedTimeline = new Timeline();
   let combinedFailures = 0;
   for (const acc of accumulators) {
     combinedHistogram.merge(acc.histogram);
+    combinedSuccessHistogram.merge(acc.successHistogram);
     combinedTimeline.merge(acc.timeline);
     combinedFailures += acc.failures;
   }
-  const combined = buildLoadMetrics(combinedHistogram, combinedFailures, combinedTimeline);
+  const combined = buildLoadMetrics(combinedHistogram, combinedSuccessHistogram, combinedFailures, combinedTimeline);
 
   const durationMs = Math.round(performance.now() - info.runStart);
   return {
@@ -1461,7 +1562,7 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
  * Phase 2b/D111) can produce the exact same shape for its own shard-0 contribution when
  * `opts.shard` is set, without duplicating this mapping. */
 function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], selfDiagnosis: SelfDiagnosis): LoadShardResult {
-  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, timeline, failures, early, late, endpoints }) => ({
+  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, successHistogram, timeline, failures, early, late, endpoints }) => ({
     name: scenario.name.value,
     workload: workloadOf(scenario),
     iterations: histogram.count,
@@ -1470,6 +1571,7 @@ function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], self
     min: histogram.min,
     max: histogram.max,
     histogram: histogram.toBuckets(),
+    successful: serializeHistogram(successHistogram),
     timeline: timeline.toBuckets(),
     early,
     late,
@@ -1481,6 +1583,7 @@ function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], self
       min: e.histogram.min,
       max: e.histogram.max,
       histogram: e.histogram.toBuckets(),
+      successful: serializeHistogram(e.successHistogram),
       timeline: e.timeline.toBuckets(),
     })),
   }));
@@ -1510,16 +1613,21 @@ export function mergeLoadShardReports(
   const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
   const perScenario = scenarios.map((scenario) => {
     const histogram = new LatencyHistogram();
+    const successHistogram = new LatencyHistogram();
     const timeline = new Timeline();
     let iterations = 0;
     let failures = 0;
     const early = { count: 0, sum: 0 };
     const late = { count: 0, sum: 0 };
-    const endpoints = new Map<string, { histogram: LatencyHistogram; timeline: Timeline; failures: number }>();
+    const endpoints = new Map<string, EndpointAccumulator>();
     for (const shard of shardResults) {
       const match = shard.scenarios.find((s) => s.name === scenario.name.value);
       if (!match) continue;
       histogram.merge(LatencyHistogram.fromBuckets(match.histogram, { count: match.iterations, sum: match.sum, min: match.min, max: match.max }));
+      // M89a — merged, never re-derived: the parent knows how many iterations succeeded but not
+      // *which durations* were theirs, so a threshold evaluated on a parent-side reconstruction
+      // would quietly differ from the single-process answer for the same run.
+      successHistogram.merge(deserializeHistogram(match.successful));
       timeline.merge(Timeline.fromBuckets(match.timeline));
       iterations += match.iterations;
       failures += match.failures;
@@ -1532,15 +1640,16 @@ export function mergeLoadShardReports(
       for (const e of match.endpoints) {
         let bucket = endpoints.get(e.identity);
         if (!bucket) {
-          bucket = { histogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 };
+          bucket = { histogram: new LatencyHistogram(), successHistogram: new LatencyHistogram(), timeline: new Timeline(), failures: 0 };
           endpoints.set(e.identity, bucket);
         }
         bucket.histogram.merge(LatencyHistogram.fromBuckets(e.histogram, { count: e.iterations, sum: e.sum, min: e.min, max: e.max }));
+        bucket.successHistogram.merge(deserializeHistogram(e.successful));
         bucket.timeline.merge(Timeline.fromBuckets(e.timeline));
         bucket.failures += e.failures;
       }
     }
-    return { scenario, histogram, timeline, iterations, failures, early, late, endpoints };
+    return { scenario, histogram, successHistogram, timeline, iterations, failures, early, late, endpoints };
   });
 
   // M34 (D17): `finalizeScenario` recomputes back-off from whatever `early`/`late` totals it's
@@ -1549,14 +1658,16 @@ export function mergeLoadShardReports(
   const scenarioReports: LoadScenarioReport[] = perScenario.map((acc) => finalizeScenario(acc));
 
   const combinedHistogram = new LatencyHistogram();
+  const combinedSuccessHistogram = new LatencyHistogram();
   const combinedTimeline = new Timeline();
   let combinedFailures = 0;
-  for (const { histogram, timeline, failures } of perScenario) {
+  for (const { histogram, successHistogram, timeline, failures } of perScenario) {
     combinedHistogram.merge(histogram);
+    combinedSuccessHistogram.merge(successHistogram);
     combinedTimeline.merge(timeline);
     combinedFailures += failures;
   }
-  const combined = buildLoadMetrics(combinedHistogram, combinedFailures, combinedTimeline);
+  const combined = buildLoadMetrics(combinedHistogram, combinedSuccessHistogram, combinedFailures, combinedTimeline);
 
   const selfDiagnosis = mergeSelfDiagnosis(shardResults.map((s) => s.selfDiagnosis));
   // M52: a count-based scenario contributes 0 — there's no way to predict its wall-clock length in

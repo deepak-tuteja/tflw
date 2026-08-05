@@ -322,7 +322,9 @@ test('report.browserEngine renders a small header badge; its absence renders not
 
 // -- M56 (Phase 3, D120): a WorkloadTestResult entry, folded in from the old load-html.ts --------
 
-const emptyMetrics = { iterations: 0, failures: 0, errorRate: 0, durations: { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 }, histogram: [], timeline: [] };
+const zeroDurations = { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 };
+// M89a — `successful` is the successful-only duration population every `LoadMetrics` now carries.
+const emptyMetrics = { iterations: 0, failures: 0, errorRate: 0, durations: zeroDurations, histogram: [], timeline: [], successful: { iterations: 0, durations: zeroDurations, histogram: [] } };
 const metricsWithData = {
   iterations: 10,
   failures: 1,
@@ -330,6 +332,8 @@ const metricsWithData = {
   durations: { min: 5, max: 500, avg: 80, p50: 50, p90: 200, p95: 300, p99: 480 },
   histogram: [{ value: 5, count: 3 }],
   timeline: [{ offsetSeconds: 0, count: 5, failures: 1, rps: 5, errorRate: 0.2, min: 5, mean: 50, max: 100, p50: 40, p95: 90, p99: 100 }],
+  // 10 iterations, 1 failure -> 9 successful, and their percentiles are the ones the threshold read.
+  successful: { iterations: 9, durations: { min: 5, max: 500, avg: 82, p50: 52, p90: 205, p95: 300, p99: 480 }, histogram: [{ value: 5, count: 3 }] },
 };
 
 const workloadTest: WorkloadTestResult = {

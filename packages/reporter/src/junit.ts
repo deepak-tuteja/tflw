@@ -16,6 +16,7 @@
 
 import type { LoadThresholdResult, ReportEntry, RunReport, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { fileOf, groupByFile } from './group-by-file.js';
+import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 
 export function renderJunitXml(report: RunReport): string {
   const lines: string[] = [];
@@ -145,7 +146,10 @@ function renderThresholdTestCase(test: WorkloadTestResult, threshold: LoadThresh
     return `    <testcase ${attrs}>\n      <skipped message="tflw's own generator process saturated during this run — results are inconclusive"/>\n    </testcase>`;
   }
   if (threshold.ok) return `    <testcase ${attrs}/>`;
-  const message = esc(`threshold breached: actual ${threshold.actual} ${cmp === '<' ? 'was not less than' : 'was not greater than'} ${threshold.target}`);
+  // M89a — the same formatter the console and `report.html` use, so all three sinks agree on units
+  // and on how "no successful iterations" (D-M89-1's `actual: null`) is worded. Previously this
+  // interpolated the raw number, which would have rendered that case as the literal `null`.
+  const message = esc(`threshold breached: actual ${formatThresholdActual(threshold)} ${cmp === '<' ? 'was not less than' : 'was not greater than'} ${formatThresholdTarget(threshold)}`);
   return `    <testcase ${attrs}>\n      <failure message="${message}">${message}</failure>\n    </testcase>`;
 }
 

@@ -1,6 +1,7 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
-import type { LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
+import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
+import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 
 const C = {
   reset: '\x1b[0m',
@@ -54,9 +55,7 @@ function workloadLines(test: WorkloadTestResult, c: typeof C): string[] {
   for (const t of test.thresholds) {
     const tickMark = t.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
     const cmp = t.op === 'lessThan' ? '<' : '>';
-    const actual = t.label === 'error rate' ? `${(t.actual * 100).toFixed(2)}%` : `${Math.round(t.actual)}ms`;
-    const target = t.label === 'error rate' ? `${(t.target * 100).toFixed(2)}%` : `${t.target}ms`;
-    lines.push(`      ${tickMark} ${t.label} ${cmp} ${target} ${c.dim}(actual: ${actual})${c.reset}`);
+    lines.push(`      ${tickMark} ${t.label} ${cmp} ${formatThresholdTarget(t)} ${c.dim}(actual: ${formatThresholdActual(t)})${c.reset}`);
   }
   if (test.backOff?.warning) {
     const pct = (test.backOff.ratio * 100).toFixed(0);
@@ -73,11 +72,24 @@ function workloadLines(test: WorkloadTestResult, c: typeof C): string[] {
 }
 
 function metricsLines(metrics: LoadMetrics, c: typeof C): string[] {
-  const d = metrics.durations;
-  return [
-    `    ${c.dim}iterations: ${metrics.iterations}  failures: ${metrics.failures}  error rate: ${(metrics.errorRate * 100).toFixed(2)}%${c.reset}`,
-    `    ${c.dim}duration (ms, pause-excluded): min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}${c.reset}`,
-  ];
+  const lines = [`    ${c.dim}iterations: ${metrics.iterations}  failures: ${metrics.failures}  error rate: ${(metrics.errorRate * 100).toFixed(2)}%${c.reset}`];
+  // M89a (D-M89-0) — **both** populations, labelled. Thresholds read the successful-only line, so
+  // that one is what an author needs to reconcile a verdict against; the all-iterations line stays
+  // because it is the run that actually happened, and seeing the two diverge is itself the signal
+  // that failures are fast (`B3-02`'s whole mechanism). When nothing failed they are identical and
+  // the second line is suppressed — a run with no failures shouldn't pay for a distinction that
+  // has no content in it.
+  lines.push(`    ${c.dim}duration (ms, pause-excluded, all ${metrics.iterations}): ${durationDigits(metrics.durations)}${c.reset}`);
+  if (metrics.failures > 0) {
+    const s = metrics.successful;
+    const detail = s.iterations === 0 ? 'none — every iteration failed, so thresholds on duration cannot be evaluated' : durationDigits(s.durations);
+    lines.push(`    ${c.dim}duration (ms, successful ${s.iterations} — what thresholds read): ${detail}${c.reset}`);
+  }
+  return lines;
+}
+
+function durationDigits(d: LoadDurationStats): string {
+  return `min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`;
 }
 
 function describeWorkload(test: WorkloadTestResult): string {
