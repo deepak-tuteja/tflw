@@ -5,7 +5,7 @@
 // no matter the package's module type. `vscode` is external (supplied by the extension host at
 // runtime, not a real npm dependency to bundle).
 
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { collectNotices, renderNotices } from '../../../scripts/third-party-notices.mjs';
@@ -42,3 +42,12 @@ writeFileSync(
   JSON.stringify({ inputs: extensionBuild.metafile.inputs }),
   'utf8',
 );
+
+// LICENSE is copied from the monorepo root rather than hand-duplicated, so there is exactly one
+// copy to keep correct — the same source-of-truth rule as packages/cli/scripts/bundle.mjs
+// (decision 74e). It lives *here*, in the build, rather than in a separate script wired only to
+// `vscode:prepublish`: this file is gitignored, so a fresh checkout has it only if a build makes
+// it. Deferring the copy to publish time meant `npm run build && npm test` passed on a machine
+// that had once run `npm run package` and failed on any that had not — which is exactly what CI
+// caught when M92a's `files`-list test first ran there.
+copyFileSync(new URL('../../../LICENSE', import.meta.url), new URL('../LICENSE', import.meta.url));
