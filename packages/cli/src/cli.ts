@@ -240,7 +240,16 @@ async function checkFileArgs(cwd: string, typed: readonly string[], exclude: rea
       return EXIT_USAGE;
     }
     if (stats.isDirectory()) {
-      const inside = (await discovered()).filter((f) => f.startsWith(`${relative(cwd, full).split('\\').join('/')}/`));
+      // Walked from the directory itself rather than filtered out of `discovered()`, because that
+      // filter computed a different claim than the sentence below makes. `relative(cwd, full)` is
+      // `''` for the current directory, so the prefix tested was `/` and no cwd-relative path could
+      // ever match it: `tflw check .` answered "no `.tflw` files were found under it" standing in a
+      // directory holding six. The same false negative covered every directory *outside* `cwd`
+      // (nothing discovered under `cwd` starts with `../`) and every directory the config
+      // `exclude`s. `exclude` is deliberately not passed on here: this list answers "what could you
+      // have typed instead", and an explicit file arg inside an excluded path still runs (see
+      // `discoverTests`) — so an excluded directory's files are exactly the ones worth naming.
+      const inside = (await discoverTests(full)).map((f) => relative(cwd, f).split('\\').join('/'));
       err(
         `\`${arg}\` is a directory — tflw takes \`.tflw\` files here, not directories.` +
           (inside.length > 0

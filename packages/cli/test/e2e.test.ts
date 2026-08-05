@@ -533,6 +533,39 @@ test('B6-11/C5: a positional argument that is not a readable .tflw file is a tea
       );
     }
 
+    // The current directory is still a directory, and it was the one case the listing got wrong:
+    // `relative(cwd, resolve(cwd, '.'))` is `''`, so the old prefix filter tested `startsWith('/')`
+    // against cwd-relative paths and matched nothing — `tflw check .` claimed "no `.tflw` files were
+    // found under it" in a directory holding two. Asserted on `check` alone: that all four commands
+    // share this one rule is already proven by the loop above.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', '.'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stderr } = e as { code?: number; stderr: string };
+        assert.equal(code, 2, `check . must exit 2\n${stderr}`);
+        assert.match(stderr, /`\.` is a directory/, stderr);
+        assert.doesNotMatch(stderr, /no `\.tflw` files were found under it/, `the refusal must not deny files that are right there\n${stderr}`);
+        assert.match(stderr, /health\.tflw/, stderr);
+        return true;
+      },
+      'check . must be a usage error',
+    );
+
+    // Negative control for the assertion above: the "none found" arm is still reachable, and still
+    // the right thing to say, for a directory that genuinely holds no tests. Without this, deleting
+    // the arm outright would pass.
+    await mkdir(join(dir, 'empty'), { recursive: true });
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', 'empty'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stderr } = e as { code?: number; stderr: string };
+        assert.equal(code, 2, `check empty must exit 2\n${stderr}`);
+        assert.match(stderr, /no `\.tflw` files were found under it/, stderr);
+        return true;
+      },
+      'check empty must be a usage error',
+    );
+
     // `tflw run tflw.config` used to parse the config as a test file and report every line of it as
     // a grammar error — a wall of diagnostics blaming the user's syntax for their argument.
     await assert.rejects(
@@ -560,6 +593,38 @@ test('B6-11/C5: a positional argument that is not a readable .tflw file is a tea
     await execFileAsync('node', [cliEntry, 'check', '--no-color', 'health.tflw'], { cwd: dir });
     const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
     assert.match(stdout, /2 files checked/, stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a directory refusal lists the files inside an `exclude`d directory too', async () => {
+  // The other half of the same false negative: the listing used to be filtered out of the *bare
+  // discovery* walk, which honours `exclude` (D127), so naming an excluded directory was told there
+  // were no `.tflw` files under it. Exclusion scopes the no-args sweep and nothing else — an
+  // explicit file arg inside an excluded path still runs (see `discoverTests`) — so those files are
+  // precisely the ones the refusal should be naming.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-file-arg-excluded-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\nexclude "vendor"\n`, 'utf8');
+    await mkdir(join(dir, 'vendor'), { recursive: true });
+    await writeFile(join(dir, 'vendor', 'third-party.tflw'), `test "third party"\n  api GET /x\n  expect status equals 200\n`, 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', 'vendor'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stderr } = e as { code?: number; stderr: string };
+        assert.equal(code, 2, `check vendor must exit 2\n${stderr}`);
+        assert.match(stderr, /vendor\/third-party\.tflw/, stderr);
+        assert.doesNotMatch(stderr, /no `\.tflw` files were found under it/, stderr);
+        return true;
+      },
+      'check vendor must be a usage error',
+    );
+
+    // And the file it names does run when named, which is what makes naming it useful advice.
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color', 'vendor/third-party.tflw'], { cwd: dir });
+    assert.match(stdout, /1 file checked/, stdout);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
