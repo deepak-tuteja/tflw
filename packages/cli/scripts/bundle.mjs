@@ -6,7 +6,7 @@
 
 import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { build, formatMessages } from 'esbuild';
 import { collectNotices, renderNotices } from '../../../scripts/third-party-notices.mjs';
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -25,6 +25,66 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 // that `files: ["dist"]` would have to either ship (megabytes, for nobody) or omit (a dangling
 // reference — the exact overselling class this review exists for).
 const sourcemap = process.env.TFLW_BUNDLE_SOURCEMAP === '1';
+
+// M92c (review `FU-27`) — `npm pack` emitted three `empty-import-meta` warnings, from two sites
+// that are both correctly guarded and both already carry a comment explaining why esbuild is wrong
+// about them: `getVersion()`'s fallback (unreachable, `__TFLW_VERSION__` is a `define`) and
+// `resolveWorkerEntryPath()` (prefers `__dirname`, reaching `import.meta.url` only under real ESM).
+// esbuild raises this at parse time, before dead-code elimination, so it warns about code it then
+// deletes — both outputs contain zero occurrences of `import.meta`.
+//
+// `logOverride: { 'empty-import-meta': 'silent' }` alone would be the wrong fix and the tempting
+// one. The rule is per-*rule*, not per-site, so silencing it also silences a future, genuinely
+// unguarded `import.meta` — a live failure hidden by a suppression that reads as "handled".
+//
+// The first attempt at keeping the warning's meaning was to silence the rule and assert the emitted
+// file contains no `import.meta`. That check can never fail, and the negative control is what said
+// so: esbuild *substitutes* `import.meta` when targeting `cjs` (that is what "will be empty" means),
+// so a `cjs` output contains zero occurrences whether the source site was guarded or not. Measured
+// all three ways — an unguarded, reachable, non-tree-shaken `import.meta.url` produced a warning and
+// an output with no `import.meta` in it, exactly like the guarded ones.
+//
+// So the inspection happens on the *warnings*, which is where the information actually is:
+// `logLevel: 'silent'` keeps `result.warnings` populated (unlike `logOverride`, which drops the
+// message entirely), the known-guarded sites are allowed **by file and by count**, and anything else
+// is re-printed and throws. Net: quieter for the three false positives, and strictly louder than
+// esbuild's own warning for a real one, which was only ever advisory.
+const IMPORT_META_ALLOWED = new Map([
+  // `getVersion()`'s fallback — unreachable in the bundle, `__TFLW_VERSION__` is a `define`.
+  ['src/cli.ts', 1],
+  // `resolveWorkerEntryPath()` — prefers the real `__dirname`, reaching `import.meta.url` only under
+  // real ESM. Reached through the runtime's compiled `dist` from the CLI entry and through its `src`
+  // from the worker entry, so both spellings are the same guarded site.
+  ['../runtime/dist/mtlsWorker.js', 1],
+  ['../runtime/src/mtlsWorker.ts', 1],
+]);
+
+/** Re-implements esbuild's own log printing for everything that isn't an allowed
+ * `empty-import-meta`, then throws if any of the latter turned up. Counting per file, rather than
+ * only listing the file, is what stops a *second* unguarded site inside an already-listed file from
+ * riding in on the first one's allowance. */
+async function reportWarnings(label, result) {
+  const unexpected = [];
+  const other = [];
+  for (const w of result.warnings) {
+    if (w.id !== 'empty-import-meta') { other.push(w); continue; }
+    const file = w.location?.file ?? '(unknown)';
+    const budget = IMPORT_META_ALLOWED.get(file) ?? 0;
+    if (budget > 0) IMPORT_META_ALLOWED.set(file, budget - 1);
+    else unexpected.push(w);
+  }
+  for (const line of await formatMessages(other.concat(unexpected), { kind: 'warning', color: true, terminalWidth: 100 })) {
+    process.stderr.write(line);
+  }
+  if (unexpected.length > 0) {
+    throw new Error(
+      `bundle (${label}): ${unexpected.length} unguarded \`import.meta\` site(s) — see above.\n` +
+        `  \`import.meta\` is always empty in a \`cjs\` bundle, so this evaluates to nothing at runtime.\n` +
+        `  Guard it the way \`getVersion()\` and \`resolveWorkerEntryPath()\` do, or add it to\n` +
+        `  IMPORT_META_ALLOWED with a reason.`,
+    );
+  }
+}
 
 rmSync(new URL('../dist', import.meta.url), { recursive: true, force: true });
 
@@ -61,7 +121,9 @@ const cliBuild = await build({
   // leaves the `import('playwright')` call as a real runtime resolution against the consumer's own
   // `node_modules` — exactly the optional-peer behavior `browser.ts`'s `loadPlaywright()` expects.
   external: ['playwright'],
+  logLevel: 'silent',
 });
+await reportWarnings('dist/cli.cjs', cliBuild);
 
 // M35c — a genuinely separate bundle for the mTLS worker (`mtlsWorkerEntry.ts`, in
 // `@tflw/runtime`, not this package's own `src/`), forked as its own child process specifically so
@@ -80,7 +142,9 @@ const workerBuild = await build({
   target: 'node22',
   outfile: 'dist/mtls-worker.cjs',
   sourcemap,
+  logLevel: 'silent',
 });
+await reportWarnings('dist/mtls-worker.cjs', workerBuild);
 
 // M92a (review `B6-06`) — third-party attribution, from the union of *both* bundles' metafiles.
 //

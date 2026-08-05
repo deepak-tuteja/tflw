@@ -18,6 +18,7 @@
     "language-configuration.json",
     "icon.png",
     "LICENSE",
+    "README.md",
     "THIRD-PARTY-NOTICES.md"
   ],
   "engines": {

@@ -35,6 +35,27 @@ test('every entry in the extension\'s `files` list exists after a build', async 
   assert.ok(files.includes(icon), `\`${icon}\` is declared as the icon but is not in "files"`);
 });
 
+test('the extension ships a README — the Marketplace renders it as the entire detail page (M92c, `FU-28`)', async () => {
+  const { files } = await manifest();
+  assert.ok(files.includes('README.md'), 'README.md must be in "files" or `vsce package` leaves it out');
+  const readme = await readFile(join(pkgRoot, 'README.md'), 'utf8');
+
+  // Not a length check dressed up as a content check: the Marketplace page is the extension's only
+  // first impression, and an extension introducing a DSL nobody has seen needs to show the DSL and
+  // say what to install. Both were absent — there was no README at all.
+  assert.match(readme, /```tflw/, 'the page must show the language it exists for');
+  assert.match(readme, /npm install -D tflw/, 'the page must say what to install for the extension to do anything');
+
+  // The claims are checkable against the manifest, so they are checked — this milestone closes a
+  // cluster about surfaces overselling, and the first draft of this file claimed a workload snippet
+  // that does not exist.
+  const snippets = JSON.parse(await readFile(join(pkgRoot, 'snippets', 'tflw.json'), 'utf8')) as Record<string, unknown>;
+  for (const name of Object.keys(snippets)) {
+    const noun = name.toLowerCase().replace(/ hook$/, '').replace(/ table$/, '');
+    assert.match(readme.toLowerCase(), new RegExp(noun.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `the README's snippet list omits \`${name}\``);
+  }
+});
+
 test('the .vsix attributes every third-party package its bundle inlined (M92a, review `B6-16`)', async () => {
   const meta = JSON.parse(await readFile(join(pkgRoot, '.bundle-meta.json'), 'utf8')) as { inputs: Record<string, unknown> };
   const expected = (collectNotices(meta) as { name: string }[]).map((n) => n.name);
