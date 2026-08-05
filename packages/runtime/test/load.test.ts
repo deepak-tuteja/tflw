@@ -12,7 +12,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseSource, parseConfigSource } from '@tflw/lang';
-import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff, type LoadTest } from '../src/interpreter.js';
+import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff, workloadOf, type LoadTest } from '../src/interpreter.js';
 import { LatencyHistogram } from '../src/histogram.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import type { LoadIterationResult, LoadShardResult, SelfDiagnosis, SerializedHistogram } from '../src/types.js';
@@ -40,7 +40,7 @@ test('a closed (`ramp to N users`) workload runs iterations and reports clean me
   assert.equal(report.scenarios.length, 1);
   const s = report.scenarios[0]!;
   assert.equal(s.name, 'Health burst');
-  assert.deepEqual(s.workload, { kind: 'users', target: 3, overMs: 200 });
+  assert.deepEqual(s.workload, { shape: 'ramp', model: 'closed', target: 3, overMs: 200 });
   assert.ok(s.metrics.iterations > 0, 'expected at least one iteration to run');
   assert.equal(s.metrics.failures, 0);
   assert.equal(s.metrics.errorRate, 0);
@@ -61,7 +61,7 @@ test('an open (`ramp to N rps`) workload schedules arrivals independent of compl
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
-  assert.deepEqual(s.workload, { kind: 'rps', target: 40, overMs: 400 });
+  assert.deepEqual(s.workload, { shape: 'ramp', model: 'open', target: 40, overMs: 400 });
   // area under a 0→40rps linear ramp over 0.4s = 40*0.4/2 = 8 arrivals — exact by construction.
   assert.equal(s.metrics.iterations, 8);
   assert.equal(s.metrics.failures, 0);
@@ -162,7 +162,7 @@ test('a `hold N users for <dur>` workload runs a flat population for the whole d
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
-  assert.deepEqual(s.workload, { kind: 'users', target: 4, overMs: 300 });
+  assert.deepEqual(s.workload, { shape: 'hold', model: 'closed', target: 4, forMs: 300 });
   assert.ok(s.metrics.iterations >= 4, `expected several iterations from 4 flat VUs over 300ms, got ${s.metrics.iterations}`);
   assert.equal(s.metrics.failures, 0);
   await server.close();
@@ -177,7 +177,7 @@ test('a `hold N rps for <dur>` workload schedules a constant arrival rate', asyn
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
-  assert.deepEqual(s.workload, { kind: 'rps', target: 20, overMs: 400 });
+  assert.deepEqual(s.workload, { shape: 'hold', model: 'open', target: 20, forMs: 400 });
   // a constant 20rps for 0.4s should land close to 8 arrivals (poll-interval jitter at these small
   // scales, unlike `ramp`'s exact closed-form schedule — see `runOpenPopulationArrivals`'s doc).
   assert.ok(s.metrics.iterations >= 4 && s.metrics.iterations <= 12, `expected ~8 iterations, got ${s.metrics.iterations}`);
@@ -193,7 +193,10 @@ test('a `step users` staircase runs more iterations at its higher stages than a 
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
-  assert.deepEqual(s.workload, { kind: 'users', target: 6, overMs: 300 });
+  // M89b (`B3-03`) — the stages survive into the report. This used to assert
+  // `{ kind: 'users', target: 6, overMs: 300 }`: the peak and the total, which a `spike` with the
+  // same peak and span produced byte-identically.
+  assert.deepEqual(s.workload, { shape: 'step', model: 'closed', stages: [{ target: 1, durationMs: 150 }, { target: 6, durationMs: 150 }] });
   assert.ok(s.metrics.iterations >= 6, `expected the 6-VU second stage to contribute several iterations, got ${s.metrics.iterations}`);
   await server.close();
 });
@@ -208,7 +211,18 @@ test('a `spike users` schedule ramps up, holds, and ramps back down without erro
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
-  assert.deepEqual(s.workload, { kind: 'users', target: 5, overMs: 550 });
+  // M89b (`B3-03`) — `ramped` per stage, mirroring what `stageTargetAt` schedules: `hold N for`
+  // jumps, `to N over` ramps from the previous level.
+  assert.deepEqual(s.workload, {
+    shape: 'spike',
+    model: 'closed',
+    stages: [
+      { target: 1, durationMs: 100, ramped: false },
+      { target: 5, durationMs: 150, ramped: true },
+      { target: 5, durationMs: 150, ramped: false },
+      { target: 1, durationMs: 150, ramped: true },
+    ],
+  });
   assert.ok(s.metrics.iterations > 0);
   assert.equal(s.metrics.failures, 0);
   await server.close();
@@ -223,7 +237,9 @@ test('`run N iterations across M users` (shared pool) runs exactly N iterations 
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
-  assert.deepEqual(s.workload, { kind: 'users', target: 4, overMs: 0 });
+  // M89b (`B3-03`) — used to be `{ kind: 'users', target: 4, overMs: 0 }`, which rendered as
+  // `ramp to 4 users over 0ms`, a workload the grammar cannot express.
+  assert.deepEqual(s.workload, { shape: 'iterations', iterations: 17, vus: 4, perVu: false });
   assert.equal(s.metrics.iterations, 17);
   await server.close();
 });
@@ -640,11 +656,11 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   for (const v of [500, 520, 510]) slowHistogram.record(v);
 
   const shardFast: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), successful: allSucceeded(fastHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), successful: allSucceeded(fastHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const shardSlow: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), successful: allSucceeded(slowHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), successful: allSucceeded(slowHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
 
@@ -667,7 +683,7 @@ test('mergeLoadShardReports: a shard missing a scenario entirely (its striped sh
   const hA = new LatencyHistogram();
   hA.record(5);
   const shardWithOnlyA: LoadShardResult = {
-    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), successful: allSucceeded(hA), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'A', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), successful: allSucceeded(hA), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const merged = mergeLoadShardReports(program, [shardWithOnlyA], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -685,7 +701,7 @@ test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard satura
   const empty = new LatencyHistogram();
   empty.record(1);
   const shard = (saturated: boolean): LoadShardResult => ({
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), successful: allSucceeded(empty), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), successful: allSucceeded(empty), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated },
   });
   const merged = mergeLoadShardReports(program, [shard(false), shard(true)], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -762,7 +778,7 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
   const h = new LatencyHistogram();
   h.record(1);
   const shard: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
   };
   const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -1284,4 +1300,62 @@ test('M89a: the successful-only population survives the shard IPC boundary — a
   assert.equal(mix.metrics.failures + mix.metrics.successful.iterations, mix.metrics.iterations, 'and at endpoint scope across the merge');
 
   await server.close();
+});
+
+// ---- M89b (`B3-03`, D-M89-4): `workloadOf` maps 10 AST kinds onto 5 report shapes -------------
+//
+// The unit-level half of the CLI e2e test that runs all 10 for real. Table-driven over the
+// *source text*, not over hand-built AST nodes, so a grammar change that stops producing one of
+// these kinds fails here rather than passing against a node the parser no longer emits.
+
+/** Parses one workload-bearing test and hands back its report-side workload. */
+function workloadFrom(decl: string): ReturnType<typeof workloadOf> {
+  const source = `test "W"\n  ${decl}\n  api GET /health\n  expect status equals 200\n`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, [], `\`${decl}\` did not parse`);
+  const workload = program.tests[0]!.workload;
+  assert.ok(workload, `\`${decl}\` produced no workload`);
+  return workloadOf(workload);
+}
+
+test('`workloadOf` maps every workload kind onto its own report shape, losslessly', () => {
+  assert.deepEqual(workloadFrom('ramp to 3 users over 200ms'), { shape: 'ramp', model: 'closed', target: 3, overMs: 200 });
+  assert.deepEqual(workloadFrom('ramp to 40 rps over 400ms'), { shape: 'ramp', model: 'open', target: 40, overMs: 400 });
+  assert.deepEqual(workloadFrom('hold 3 users for 200ms'), { shape: 'hold', model: 'closed', target: 3, forMs: 200 });
+  assert.deepEqual(workloadFrom('hold 40 rps for 400ms'), { shape: 'hold', model: 'open', target: 40, forMs: 400 });
+  assert.deepEqual(workloadFrom('step users\n    to 2 for 100ms\n    to 5 for 150ms'), {
+    shape: 'step',
+    model: 'closed',
+    stages: [{ target: 2, durationMs: 100 }, { target: 5, durationMs: 150 }],
+  });
+  assert.deepEqual(workloadFrom('step rps\n    to 20 for 100ms\n    to 50 for 150ms'), {
+    shape: 'step',
+    model: 'open',
+    stages: [{ target: 20, durationMs: 100 }, { target: 50, durationMs: 150 }],
+  });
+  assert.deepEqual(workloadFrom('spike users\n    hold 1 for 100ms\n    to 5 over 150ms'), {
+    shape: 'spike',
+    model: 'closed',
+    stages: [{ target: 1, durationMs: 100, ramped: false }, { target: 5, durationMs: 150, ramped: true }],
+  });
+  assert.deepEqual(workloadFrom('spike rps\n    hold 10 for 100ms\n    to 50 over 150ms'), {
+    shape: 'spike',
+    model: 'open',
+    stages: [{ target: 10, durationMs: 100, ramped: false }, { target: 50, durationMs: 150, ramped: true }],
+  });
+  assert.deepEqual(workloadFrom('run 17 iterations across 4 users'), { shape: 'iterations', iterations: 17, vus: 4, perVu: false });
+  assert.deepEqual(workloadFrom('run 17 iterations per user across 4 users'), { shape: 'iterations', iterations: 17, vus: 4, perVu: true });
+});
+
+test('workloads that used to serialize identically no longer do', () => {
+  // Each pair produced byte-identical report data under the old flat `{ kind, target, overMs }`:
+  // the peak and the total span were all it kept, and the count-based kinds kept neither.
+  const pairs: readonly (readonly [string, string])[] = [
+    ['ramp to 4 users over 300ms', 'hold 4 users for 300ms'],
+    ['step users\n    to 2 for 150ms\n    to 6 for 150ms', 'spike users\n    hold 2 for 150ms\n    to 6 over 150ms'],
+    ['run 4 iterations across 4 users', 'run 4 iterations per user across 4 users'],
+  ];
+  for (const [a, b] of pairs) {
+    assert.notDeepEqual(workloadFrom(a), workloadFrom(b), `\`${a}\` and \`${b}\` still report the same thing`);
+  }
 });

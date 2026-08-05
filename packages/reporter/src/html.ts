@@ -18,6 +18,7 @@ import { LOG_LEVEL_ORDER } from '@tflw/runtime';
 import { assetHash } from './assets.js';
 import { esc } from './escape.js';
 import { fileOf, groupByFile } from './group-by-file.js';
+import { describeWorkload } from './workload-format.js';
 import { CHART_STYLE, renderErrorRateChart, renderHistogramChart, renderLatencyOverTimeChart, renderThroughputChart } from './load-charts.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 
@@ -191,7 +192,7 @@ ${test.steps.map((s) => renderStep(s, assetHrefs, logLevelThreshold)).join('\n')
 }
 
 /** M56 (Phase 3, D120) — a workload test's panel: the workload description in place of a duration
- * badge (no single "this took Nms" figure applies — `workload.overMs` is the *planned* span, not
+ * badge (no single "this took Nms" figure applies — a workload's declared span is *planned*, not
  * an outcome), then metrics/thresholds/charts reusing the same building blocks `load-report.html`
  * (pre-M56) rendered a whole scenario section with. `selfDiagnosis` (run-level, not per-test) is
  * shown once per workload panel rather than hoisted into the header — a reader looking at *this*
@@ -218,7 +219,7 @@ function renderGeneratorLine(d: SelfDiagnosis): string {
 function renderMetricsSection(workload: LoadScenarioReport['workload'] | undefined, metrics: LoadMetrics, thresholds: readonly LoadThresholdResult[], backOff?: BackOffDiagnosis): string {
   const d = metrics.durations;
   return `<div class="metrics-block">
-  ${workload ? `<p class="workload">${workload.kind === 'users' ? `ramp to ${workload.target} users` : `ramp to ${workload.target} rps`} over ${workload.overMs}ms</p>` : ''}
+  ${workload ? `<p class="workload">${esc(describeWorkload(workload))}</p>` : ''}
   <table class="stats">
     <tr><th>iterations</th><td>${metrics.iterations}</td><th>failures</th><td>${metrics.failures}</td><th>error rate</th><td>${(metrics.errorRate * 100).toFixed(2)}%</td></tr>
     <tr><th>min</th><td>${d.min}ms</td><th>avg</th><td>${Math.round(d.avg)}ms</td><th>max</th><td>${d.max}ms</td></tr>

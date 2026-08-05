@@ -339,7 +339,7 @@ const metricsWithData = {
 const workloadTest: WorkloadTestResult = {
   kind: 'workload',
   name: 'checkout burst',
-  workload: { kind: 'users', target: 10, overMs: 1000 },
+  workload: { shape: 'ramp', model: 'closed', target: 10, overMs: 1000 },
   metrics: metricsWithData,
   thresholds: [{ label: 'p95 duration', op: 'lessThan', target: 800, actual: 300, ok: true }],
   ok: true,
@@ -353,8 +353,24 @@ test('a workload entry renders its own panel with PASS/FAIL, the workload descri
   const html = renderReportHtml(report);
   assert.match(html, /<section class="test ok active"/);
   assert.match(html, /checkout burst/);
-  assert.match(html, /ramp to 10 users over 1000ms/);
+  assert.match(html, /ramp to 10 users over 1000ms \(closed\)/);
   assert.match(html, /<tr class="ok"><td>✓<\/td><td>p95 duration &lt; 800ms<\/td>/);
+});
+
+// M89b (`B3-03`) — the panel used to open-code `ramp to N users over Tms` for every kind, so a
+// `hold`/`step`/`spike`/`iterations` workload's own report described a run that did not happen.
+test('a non-ramp workload panel describes the workload it actually declared', () => {
+  const held: WorkloadTestResult = { ...workloadTest, workload: { shape: 'hold', model: 'open', target: 40, forMs: 5000 } };
+  const html = renderReportHtml({ ...baseReport, tests: [held] });
+  assert.match(html, /<p class="workload">hold 40 rps for 5000ms \(open\)<\/p>/);
+  assert.ok(!/<p class="workload">ramp/.test(html), 'a `hold` still renders as a ramp');
+});
+
+test('a count-based workload panel does not claim a zero-millisecond span', () => {
+  const counted: WorkloadTestResult = { ...workloadTest, workload: { shape: 'iterations', iterations: 50, vus: 2, perVu: false } };
+  const html = renderReportHtml({ ...baseReport, tests: [counted] });
+  assert.match(html, /<p class="workload">run 50 iterations across 2 users<\/p>/);
+  assert.ok(!/over 0ms/.test(html), 'a count-based workload still reports a span of 0ms');
 });
 
 test('a failing workload threshold marks the panel fail and the threshold row fail', () => {

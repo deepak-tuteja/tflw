@@ -719,6 +719,22 @@ there is no separate `load-*` report artifact. See §17 for `TF033`/`TF034`'s fu
 and the [load testing guide](/guide/load-testing) for the console/report shape, `--workers`, the
 generator self-diagnosis warning, and Ctrl-C/abort behavior.
 
+**A report states the workload it actually ran (M89b, D-M89-4/D-M89-5).** `results.json`'s
+`workload` object is a union discriminated on `shape` — `ramp` (`target`, `overMs`), `hold`
+(`target`, `forMs`), `step` (`stages[]` of `{target, durationMs}`), `spike` (`stages[]` of
+`{target, durationMs, ramped}`) and `iterations` (`iterations`, `vus`, `perVu`) — with `model:
+"closed" | "open"` on the first four. `iterations` carries no `model`: the count-based kinds have
+no `rps` form, so the field could only ever hold one value.
+
+It replaced a flat `{kind: "users"|"rps", target, overMs}` that could describe only a `ramp`, into
+which the other 8 kinds were squeezed and lost: `hold 4 users for 300ms` and `ramp to 4 users over
+300ms` serialized identically, as did a `step` and a `spike` sharing a peak and a span, and the two
+count-based kinds — which have no duration at all — reported `overMs: 0` and were rendered as `ramp
+to N users over 0ms`, a workload the grammar cannot express. **Every** description of a workload —
+the CLI's pre-run `scenario "…" — …` line, the run summary, `report.html`'s panel — is now one
+formatter over that one value, so the pre-run line and the summary line are the same string by
+construction rather than by two functions agreeing.
+
 ## 5. API steps (P#3, P#7, P#29, P#32, P#33) ✅
 
 ### 5.1 Request line
@@ -1883,8 +1899,9 @@ each one's failures to the other. A workload test's per-`threshold` `<testcase>`
 Counts are per level: each `<testsuite>` reports its own file's `tests`/`failures`/`skipped`, the
 root reports the run's. `time` differs by level too — a suite's is the sum of its own testcases'
 durations, the root's is the run's wall clock, because files run concurrently and summing the
-suites would report a run as slower than it was. A workload `<testcase>` contributes `0.000`
-(`workload.overMs` is the planned span, an input, not an elapsed time).
+suites would report a run as slower than it was. A workload `<testcase>` contributes `0.000` (a
+workload's declared span is an input, not an elapsed time — and two of the five shapes declare no
+span at all).
 
 `<properties>` (`env`, `seed`, `now`, and `aborted` when set) describe the run rather than any one
 file, but the JUnit schema only admits `<properties>` under a `<testsuite>`, so each suite repeats

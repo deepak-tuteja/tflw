@@ -102,6 +102,9 @@ import type {
   LoadShardResult,
   LoadShardScenarioResult,
   LoadThresholdResult,
+  LoadWorkloadRampableStage,
+  LoadWorkloadReport,
+  LoadWorkloadStage,
   ReportEntry,
   SerializedHistogram,
   RequestTrace,
@@ -1446,35 +1449,51 @@ export function computeBackOff(scenario: LoadTest, early: { readonly count: numb
   return { ratio, warning: ratio > BACK_OFF_WARNING_THRESHOLD };
 }
 
-/** M52 — `LoadReport`'s `workload` field still assumes one flat `{ kind, target, overMs }` shape
- * (a single number, a single duration): faithful for `ramp`/`hold`, but a lossy summary for
- * `step`/`spike` (their own per-stage schedule collapses to just the *peak* stage's target and the
- * *total* span) and for the 2 count-based kinds (no duration at all, reported as `overMs: 0`). A
- * real per-stage report breakdown is D101/Phase 3's job, not this milestone's — this is a
- * deliberately interim shape so today's report still renders *something* sensible for every kind
- * rather than crashing on a field that doesn't exist. */
-function workloadOf(scenario: LoadTest): LoadScenarioReport['workload'] {
-  const w = scenario.workload;
+/** M89b (`B3-03`, D-M89-4/D-M89-5) — the AST's 10 workload kinds projected onto the 5 report
+ * shapes, losslessly. This is the **only** place a declared workload becomes report data, and
+ * `describeWorkload` (reporter) is the only place that value becomes text; exported so the CLI's
+ * pre-run line formats the same value through the same formatter rather than switching over the
+ * AST a second time. Before M89b the CLI did exactly that, and its rival function was the *correct*
+ * one — the report's flat `{ kind, target, overMs }` had nowhere to put the answer, so both the
+ * summary and `report.html` open-coded `ramp to …` for all 10 kinds (`B3-03`).
+ *
+ * The old shape's lossiness was not cosmetic: `Math.max`/`reduce` over `stages` meant a `step` and
+ * a `spike` with the same peak and total span produced identical report data, and the count-based
+ * kinds reported `overMs: 0`. Per-stage data now survives, which is also what D101's per-stage
+ * breakdown will need. */
+export function workloadOf(w: Workload): LoadWorkloadReport {
   switch (w.type) {
     case 'RampUsersWorkload':
-      return { kind: 'users', target: w.users, overMs: w.overMs };
+      return { shape: 'ramp', model: 'closed', target: w.users, overMs: w.overMs };
     case 'RampRpsWorkload':
-      return { kind: 'rps', target: w.rps, overMs: w.overMs };
+      return { shape: 'ramp', model: 'open', target: w.rps, overMs: w.overMs };
     case 'HoldUsersWorkload':
-      return { kind: 'users', target: w.users, overMs: w.forMs };
+      return { shape: 'hold', model: 'closed', target: w.users, forMs: w.forMs };
     case 'HoldRpsWorkload':
-      return { kind: 'rps', target: w.rps, overMs: w.forMs };
+      return { shape: 'hold', model: 'open', target: w.rps, forMs: w.forMs };
     case 'StepUsersWorkload':
-    case 'SpikeUsersWorkload':
-      return { kind: 'users', target: Math.max(...w.stages.map((s) => s.target)), overMs: w.stages.reduce((sum, s) => sum + s.durationMs, 0) };
+      return { shape: 'step', model: 'closed', stages: jumpStages(w.stages) };
     case 'StepRpsWorkload':
+      return { shape: 'step', model: 'open', stages: jumpStages(w.stages) };
+    case 'SpikeUsersWorkload':
+      return { shape: 'spike', model: 'closed', stages: rampableStages(w.stages) };
     case 'SpikeRpsWorkload':
-      return { kind: 'rps', target: Math.max(...w.stages.map((s) => s.target)), overMs: w.stages.reduce((sum, s) => sum + s.durationMs, 0) };
+      return { shape: 'spike', model: 'open', stages: rampableStages(w.stages) };
     case 'SharedIterationsWorkload':
-      return { kind: 'users', target: w.vus, overMs: 0 };
+      return { shape: 'iterations', iterations: w.iterations, vus: w.vus, perVu: false };
     case 'PerVuIterationsWorkload':
-      return { kind: 'users', target: w.vus, overMs: 0 };
+      return { shape: 'iterations', iterations: w.iterationsPerVu, vus: w.vus, perVu: true };
   }
+}
+
+/** A `step` stage carries no `ramped` flag (it cannot be ramped — see `LoadWorkloadReport`), and
+ * the AST `Stage`'s `span` has no business in a report, so neither is copied through. */
+function jumpStages(stages: readonly Stage[]): readonly LoadWorkloadStage[] {
+  return stages.map((s) => ({ target: s.target, durationMs: s.durationMs }));
+}
+
+function rampableStages(stages: readonly Stage[]): readonly LoadWorkloadRampableStage[] {
+  return stages.map((s) => ({ target: s.target, durationMs: s.durationMs, ramped: s.mode === 'ramp' }));
 }
 
 /** "aborted at Ns of Nm planned" (R5) — `elapsedMs` is what actually ran, `plannedMs` the longest
@@ -1503,7 +1522,7 @@ function finalizeScenario({ scenario, histogram, successHistogram, timeline, fai
   const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, successHistogram, failures }, endpoints);
   const backOff = computeBackOff(scenario, early, late);
   const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
-  return { name: scenario.name.value, workload: workloadOf(scenario), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
+  return { name: scenario.name.value, workload: workloadOf(scenario.workload), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
 }
 
 function buildLoadReport(
@@ -1564,7 +1583,7 @@ export async function runLoad(program: Program, config: ResolvedConfig, opts: Lo
 function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], selfDiagnosis: SelfDiagnosis): LoadShardResult {
   const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, successHistogram, timeline, failures, early, late, endpoints }) => ({
     name: scenario.name.value,
-    workload: workloadOf(scenario),
+    workload: workloadOf(scenario.workload),
     iterations: histogram.count,
     failures,
     sum: histogram.sum,
