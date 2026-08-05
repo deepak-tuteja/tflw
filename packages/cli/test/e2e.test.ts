@@ -1150,9 +1150,29 @@ test('random values are stable under --seed regardless of --parallel concurrency
   assert.deepEqual(parallel, sequential, 'the same --seed must reproduce identical per-test random values in the same order regardless of --workers');
 });
 
-test('a `session` block in tflw.config runs once and its header applies to `as <session>` tests, redacted in the report (P#42)', async () => {
+// M91b (review finding `OBS-03`, `D-M91-4`). This test was titled `… redacted in the report
+// (P#42)` and asserted only `1/1 passed` plus `/reads orders/` in the HTML — never that anything
+// was masked. It is the direct reason `FU-01`, this review's worst finding, was invisible to a
+// green suite: anyone auditing coverage by test name concluded redaction was covered.
+//
+// Probing it found the title was false about the *product* too, not merely about the test. With
+// this fixture the token appears **7 times in plaintext** in `report.html` — login response body,
+// capture detail, session header detail, outgoing `Authorization` header, `/orders` response body,
+// and the `expect` step's code line and detail. And that is correct: value-based redaction (SPEC
+// §3.4) masks what entered via `env(...)`, this token entered via a `capture` from a response
+// body, and the fixture declares no `redact`. Nothing was ever supposed to be masked here — so
+// adding the "missing" assertion to *this* fixture would have failed.
+//
+// Hence two tests, one claim each. This one keeps the claim it actually proves; the one below
+// declares `redact body.token` and proves the other.
+/** The session fixture both tests below run against — one `session admin` that logs in and pins an
+ * `Authorization` header, and two tests that use it. `logins` counts how many times `/auth/login`
+ * was actually hit, which is how "runs once" stops being a claim and becomes an assertion. */
+async function startSessionFixture(): Promise<{ readonly baseUrl: string; logins(): number; close(): Promise<void> }> {
+  let logins = 0;
   const server: Server = createServer((req, res) => {
     if (req.url === '/auth/login' && req.method === 'POST') {
+      logins++;
       res.writeHead(200, { 'content-type': 'application/json' }).end('{"token":"secret-tok"}');
     } else if (req.url === '/orders') {
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ auth: req.headers['authorization'] ?? null }));
@@ -1163,24 +1183,76 @@ test('a `session` block in tflw.config runs once and its header applies to `as <
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    logins: () => logins,
+    close: async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    },
+  };
+}
 
+const sessionConfig = (baseUrl: string, extraEnvLines: readonly string[] = []): string =>
+  [
+    `env local default`,
+    `  api "${baseUrl}"`,
+    ...extraEnvLines,
+    ``,
+    `session admin`,
+    `  api POST /auth/login body { user: "a", pass: "b" }`,
+    `  capture body.token as token`,
+    `  header "Authorization" is "Bearer {token}"`,
+    ``,
+  ].join('\n');
+
+test('a `session` block in tflw.config runs once and its header applies to `as <session>` tests (P#42)', async () => {
+  const fixture = await startSessionFixture();
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-session-'));
   try {
+    await writeFile(join(dir, 'tflw.config'), sessionConfig(fixture.baseUrl), 'utf8');
+    // Two tests, both `as admin`: "runs **once**" is the half of this title that a single-test
+    // fixture left unproved — one test cannot distinguish once from per-test (M91b, `OBS-03`).
     await writeFile(
-      join(dir, 'tflw.config'),
+      join(dir, 'orders.tflw'),
       [
-        `env local default`,
-        `  api "${baseUrl}"`,
+        `test "reads orders" as admin`,
+        `  api GET /orders`,
+        `  expect status equals 200`,
+        `  expect body.auth equals "Bearer secret-tok"`,
         ``,
-        `session admin`,
-        `  api POST /auth/login body { user: "a", pass: "b" }`,
-        `  capture body.token as token`,
-        `  header "Authorization" is "Bearer {token}"`,
+        `test "reads orders again" as admin`,
+        `  api GET /orders`,
+        `  expect body.auth equals "Bearer secret-tok"`,
         ``,
       ].join('\n'),
       'utf8',
     );
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(stdout, /2\/2 passed/);
+    assert.equal(fixture.logins(), 1, 'the session block must establish once for the whole run, not once per test');
+
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    assert.match(html, /reads orders/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    await fixture.close();
+  }
+});
+
+test('a `redact`-covered `capture` in a `session` block masks that value everywhere in report.html (P#42, FS-03)', async () => {
+  // The claim `OBS-03`'s title made and its body never checked. `redact body.token` is what makes
+  // the session's captured token a secret (SPEC §3.4 — a `capture` whose subject is a covered
+  // position registers its value with the taint redactor); from there the value-based pass masks
+  // it wherever it flows, including the literal a test author wrote into their own `expect` line.
+  //
+  // Both halves are asserted deliberately. Absence alone would pass on an empty file, and presence
+  // alone would pass on a report that masked one occurrence and leaked six.
+  const fixture = await startSessionFixture();
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-session-redact-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), sessionConfig(fixture.baseUrl, ['  redact body.token']), 'utf8');
     await writeFile(
       join(dir, 'orders.tflw'),
       [
@@ -1197,11 +1269,11 @@ test('a `session` block in tflw.config runs once and its header applies to `as <
     assert.match(stdout, /1\/1 passed/);
 
     const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
-    assert.match(html, /reads orders/);
+    assert.doesNotMatch(html, /secret-tok/, 'the session token must not appear in report.html in plaintext');
+    assert.match(html, /•••\(token\)/, 'and its masked form must appear where it was');
   } finally {
     await rm(dir, { recursive: true, force: true });
-    server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    await fixture.close();
   }
 });
 
