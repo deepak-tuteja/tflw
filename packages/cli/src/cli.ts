@@ -107,6 +107,12 @@ const EXIT_ABORTED = 130; // M32/R5 — Ctrl-C during a `tflw run` with workload
 // falls back to reading package.json directly.
 declare const __TFLW_VERSION__: string | undefined;
 
+/** M92c (review `FU-17`) — user-facing surfaces cite `SPEC.md` and its §-numbers, and `SPEC.md` is
+ * not in the npm tarball: `docs-data.generated.ts` is cut from it at build time and *is* what ships.
+ * The citations are worth keeping — they say where a section came from — but a reader who wants the
+ * source had nowhere to go. One constant so the address is stated identically wherever it appears. */
+const SPEC_URL = 'https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md';
+
 async function getVersion(): Promise<string> {
   if (typeof __TFLW_VERSION__ === 'string') return __TFLW_VERSION__;
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
@@ -2003,6 +2009,10 @@ async function docsCommand(argv: string[]): Promise<number> {
     process.stdout.write(`tflw docs <topic> — print a SPEC.md cheatsheet section. Topics:\n\n`);
     for (const t of topics) process.stdout.write(`  ${t}\n`);
     process.stdout.write(`\nrun \`tflw docs <topic>\` to read one, e.g. \`tflw docs matchers\`.\n`);
+    // M92c (`FU-17`) — this is the one place that names SPEC.md *and* has room to say where it is.
+    // The npm package doesn't ship SPEC.md (`files: ["dist", "THIRD-PARTY-NOTICES.md"]`), so before
+    // this a reader who wanted the source these sections are cut from had nowhere to go.
+    process.stdout.write(`the full SPEC lives at ${SPEC_URL}.\n`);
     return EXIT_OK;
   }
 
@@ -2517,7 +2527,8 @@ function printUsage(): void {
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
       '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
       '  tflw install-browsers [--browser chromium|firefox|webkit]',
-      '                                                      download a browser binary for UI steps (SPEC §9); default chromium',
+      '                                                      download a browser binary for UI steps (SPEC §9); default chromium.',
+      '                                                      Needs the optional `playwright` peer installed first (npm install -D playwright)',
       '  tflw pick <url> [--browser chromium|firefox|webkit]',
       '                                                      click an element in a real browser window, print its best locator (SPEC §12, M5);',
       '                                                      runs until the window is closed or Ctrl+C — <url> must be absolute',
@@ -2534,6 +2545,12 @@ function printUsage(): void {
       '                                                      Works on files that do not parse; exits 2 if errors remain after the rewrite',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
+      '',
+      // M92c (`FU-17`) — several lines above cite SPEC.md and SPEC §-numbers, and the npm package
+      // does not ship SPEC.md. Naming the location once here is the whole fix: the citations
+      // themselves are provenance ("a SPEC.md cheatsheet section"), which is fine to keep, as long
+      // as the reader is told once where the thing being cited actually lives.
+      `  the SPEC these §-references point at: ${SPEC_URL}`,
       '',
     ].join('\n'),
   );
