@@ -11,6 +11,20 @@ import { build } from 'esbuild';
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url));
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
+// M86 (review `B6-08`) — the coverage build, and only the coverage build, emits a source map.
+//
+// Every CLI test spawns this bundle as a real subprocess (`e2e.test.ts`'s whole point), so all of
+// `cli.ts`, `env.ts`, `cli-summary.ts` and the three package barrels were executed *thousands* of
+// times per suite and reported at **0%** — c8 saw one `dist/cli.cjs` it had been told to exclude,
+// and had no map to attribute it back to source with. The number wasn't low, it was measuring
+// something else. `scripts/coverage.mjs` sets this; nothing else does.
+//
+// Gated rather than unconditional so the published artifact stays byte-identical to what has been
+// shipping, and so the tarball never carries a `//# sourceMappingURL=` line pointing at a `.map`
+// that `files: ["dist"]` would have to either ship (megabytes, for nobody) or omit (a dangling
+// reference — the exact overselling class this review exists for).
+const sourcemap = process.env.TFLW_BUNDLE_SOURCEMAP === '1';
+
 rmSync(new URL('../dist', import.meta.url), { recursive: true, force: true });
 
 // LICENSE is copied from the monorepo root rather than hand-duplicated, so there is exactly one
@@ -33,6 +47,7 @@ await build({
   format: 'cjs',
   target: 'node22',
   outfile: 'dist/cli.cjs',
+  sourcemap,
   define: { __TFLW_VERSION__: JSON.stringify(pkg.version) },
   // `playwright` (M3a, D5) is an optional peer of `@tflw/runtime`, dynamically imported only when
   // a test actually runs a browser step — it must NOT be inlined into this bundle: (a) it's often
@@ -59,4 +74,5 @@ await build({
   format: 'cjs',
   target: 'node22',
   outfile: 'dist/mtls-worker.cjs',
+  sourcemap,
 });

@@ -21,11 +21,30 @@ const execFileAsync = promisify(execFile);
 let scratchDir: string;
 let tarballPath: string;
 
+/** The environment a *publish* happens in, which is not necessarily the one the tests run in.
+ *
+ * `TFLW_BUNDLE_SOURCEMAP=1` (M86) makes `bundle.mjs` emit `.map` files so `npm run coverage` can
+ * attribute the spawned bundle's lines back to `cli.ts`. `scripts/coverage.mjs` sets it for the
+ * whole `npm test` tree — including this file, whose `npm pack` runs `prepack`, which re-runs
+ * `bundle.mjs`, which emitted maps that `files: ["dist"]` then shipped. Under coverage the tarball
+ * grew two members and this test failed; it was found by running it, having been argued away in a
+ * comment claiming the gate made it impossible.
+ *
+ * The lesson is the boundary, not the variable: an ambient env var that changes the build must be
+ * stripped by whatever builds the artifact that gets *published*, because publishing must not
+ * depend on who happened to be watching. Strip the key rather than pass a fixed env, for the same
+ * reason `envWithout` exists in `e2e.test.ts` — omitting an override means "inherit". */
+function publishEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.TFLW_BUNDLE_SOURCEMAP;
+  return env;
+}
+
 before(async () => {
   // `npm pack` runs `prepack` for us: rm -rf dist, rebuild @tflw/lang+runtime+reporter, then
   // esbuild-bundle src/cli.ts into one dist/cli.cjs.
   scratchDir = await mkdtemp(join(tmpdir(), 'tflw-pack-'));
-  execFileSync('npm', ['pack', '--pack-destination', scratchDir], { cwd: cliRoot, stdio: 'pipe' });
+  execFileSync('npm', ['pack', '--pack-destination', scratchDir], { cwd: cliRoot, stdio: 'pipe', env: publishEnv() });
   const entries = await readdir(scratchDir);
   const tgz = entries.find((f) => f.endsWith('.tgz'));
   if (!tgz) throw new Error('npm pack did not produce a .tgz in ' + scratchDir);
@@ -44,6 +63,16 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + packa
   // never imported by `dist/cli.cjs` itself (M35b: importing it, even unused, cripples this
   // process's own global `fetch()` by ~20x).
   assert.deepEqual(files, ['LICENSE', 'README.md', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
+
+  // The other half of the same property, and the half a file list cannot express (M86). Excluding
+  // `.map` files from the tarball is not by itself correct: a bundle built with source maps carries
+  // a trailing `//# sourceMappingURL=cli.cjs.map`, so dropping the map leaves every consumer's
+  // stack traces pointing at a file that was never published. Ship both or neither — this asserts
+  // neither, which is what `files: ["dist"]` plus the list above already commits us to.
+  for (const member of ['dist/cli.cjs', 'dist/mtls-worker.cjs']) {
+    const { stdout: js } = await execFileAsync('tar', ['-xzOf', tarballPath, `package/${member}`], { maxBuffer: 32 * 1024 * 1024 });
+    assert.doesNotMatch(js, /\/\/# sourceMappingURL=/, `${member} references a source map the tarball does not contain — it was built with TFLW_BUNDLE_SOURCEMAP set`);
+  }
 
   const { stdout: pkgText } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/package.json']);
   const pkg = JSON.parse(pkgText) as { dependencies?: Record<string, string>; private?: boolean };

@@ -249,6 +249,58 @@ async function checkInvocations(commands) {
   return count;
 }
 
+// ---------------------------------------------------------------------------
+// Flag prose — the cross-references inside `CLI_FLAGS`' own `effect` text (M86).
+// ---------------------------------------------------------------------------
+
+/** Flag spellings that no longer exist and are named in prose on purpose, each with the reason.
+ *  A name here that is *also* a live flag fails the run: the entry has outlived its excuse. */
+const RETIRED_FLAGS = new Map([
+  ['--skip-load', 'renamed to `--skip-workload` (M53/D110); the entry names the old spelling so a reader searching for it lands on the new one'],
+]);
+
+/**
+ * `checkInvocations` above validates flag names in *guide prose*. This validates flag names inside
+ * `CLI_FLAGS`' own `effect` strings — the fourth surface, and the one with the widest reach: the
+ * same sentence is printed by `tflw --help`, rendered on `reference/cli.md`, and quoted into
+ * `docs-data.generated.ts`. Nothing checked it, so a flag renamed in one place kept being named by
+ * its dead spelling in another's explanation.
+ *
+ * **What this cannot do, stated plainly.** It checks that every flag a flag's prose *names* exists.
+ * It cannot check that the prose is *true*. `B5-04` — `--workers`' description asserting what
+ * `--parallel` does — is invisible here and to every other name-based guard, because both names
+ * exist and both are spelled correctly. That class survived two `CLI_FLAGS` entries until M78 and
+ * would survive this guard too. The summary line says so rather than letting "docs verified" be
+ * read as "docs are right"; a guard that overstates its own reach is the defect it exists to catch.
+ */
+function checkFlagProse() {
+  const declared = new Set();
+  for (const entry of CLI_FLAGS) {
+    for (const m of entry.flag.matchAll(/(--[a-z][a-z-]*)/g)) declared.add(m[1]);
+  }
+
+  for (const [name, why] of RETIRED_FLAGS) {
+    if (declared.has(name)) {
+      fail('spec-data.ts CLI_FLAGS', `\`${name}\` is in RETIRED_FLAGS but is a live flag again`, `the exemption reads: ${why}`);
+    }
+  }
+
+  let references = 0;
+  for (const entry of CLI_FLAGS) {
+    for (const m of entry.effect.matchAll(/(?<![\w-])(--[a-z][a-z-]*)/g)) {
+      references++;
+      const name = m[1];
+      if (declared.has(name) || RETIRED_FLAGS.has(name)) continue;
+      fail(
+        `spec-data.ts CLI_FLAGS \`${entry.flag}\` (${entry.command})`,
+        `its description names \`${name}\`, which no flag declares`,
+        `\`tflw --help\` and reference/cli.md both print this sentence. If \`${name}\` was renamed, name the new flag; if the mention is deliberate history, add it to RETIRED_FLAGS with the reason.`,
+      );
+    }
+  }
+  return references;
+}
+
 /**
  * The strings on a page a reader would actually copy and run: a line inside a `sh` fence, and the
  * contents of any inline code span. Prose is deliberately excluded — `index.md` says "what tflw
@@ -297,6 +349,7 @@ const commands = await shippedCommands();
 let invocations = 0;
 if (commands === undefined) fail('tflw --help', 'could not read the shipped CLI\'s command list', 'the invocation check cannot run without it');
 else invocations = await checkInvocations(commands);
+const flagReferences = checkFlagProse();
 
 const count = (kind) => blocks.filter((b) => b.kind === kind).length;
 const files = new Set(blocks.map((b) => b.file)).size;
@@ -312,6 +365,8 @@ const report = [
   `  ${String(count('declared')).padStart(3)} declared unchecked: ${[...declaredBy].sort().map(([tag, n]) => `${n} ${tag}`).join(', ') || '(none)'}`,
   `  ${String(count('unclassified')).padStart(3)} unclassified`,
   `${invocations} documented \`tflw …\` invocations checked against CLI_FLAGS`,
+  `${flagReferences} flag references inside CLI_FLAGS' own descriptions checked — names, not effects:`,
+  `    a description that names a flag correctly and describes the wrong behaviour still passes (B5-04).`,
 ];
 
 if (problems.length > 0) {

@@ -26,7 +26,7 @@
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "coverage": "c8 npm test"
+    "coverage": "node scripts/coverage.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

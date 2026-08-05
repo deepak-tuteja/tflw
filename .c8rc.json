@@ -1,6 +1,7 @@
 {
   "all": true,
   "src": ["packages/lang/src", "packages/runtime/src", "packages/reporter/src", "packages/lsp-server/src", "packages/cli/src", "packages/vscode/src"],
+  "exclude-after-remap": true,
   "exclude": [
     "**/dist/**",
     "**/test/**",
@@ -9,5 +10,10 @@
     "**/node_modules/**"
   ],
   "reporter": ["text", "lcov"],
-  "reports-dir": "coverage"
+  "reports-dir": "coverage",
+  "check-coverage": true,
+  "statements": 94,
+  "lines": 94,
+  "branches": 88,
+  "functions": 94
 }
