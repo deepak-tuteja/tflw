@@ -156,8 +156,32 @@ function redactRequestTrace(r: RequestTrace, redactor: Redactor): RequestTrace {
   };
 }
 
+/** `B4-16` (M88c1) — field by field, never `{ ...r }`.
+ *
+ * The spread this replaced was safe for the fields that existed when it was written and unsafe for
+ * every field added afterwards: anything new on `ResponseTrace` passed through *unredacted* unless
+ * someone remembered to come back here, and the failure is silent in both directions — no type
+ * error, no test, just a secret in `report.html`. `redactRequestTrace`, three lines above, has
+ * always listed its fields explicitly and so had the opposite default; two functions in one file
+ * disagreeing about which way to fail is how a reviewer finds this, and the sibling that fails
+ * closed is the one to copy.
+ *
+ * `json` and `cookieEvents` are dropped rather than redacted, which is not this function's opinion:
+ * the report copy it receives (`interpreter.ts#redactResponse`) never carries either, so listing
+ * them would fabricate a field this pass has no redacted form for. `bodyBytes` is the gutted
+ * `NO_REPORT_BODY_BYTES` for the same reason — carried, because `ResponseTrace` requires it, and
+ * empty. */
 function redactResponseTrace(r: ResponseTrace, redactor: Redactor): ResponseTrace {
-  return { ...r, statusText: redactor.redact(r.statusText), headers: redactHeaders(r.headers, redactor), bodyText: redactor.redact(r.bodyText) };
+  return {
+    status: r.status,
+    statusText: redactor.redact(r.statusText),
+    headers: redactHeaders(r.headers, redactor),
+    bodyText: redactor.redact(r.bodyText),
+    bodyBytes: r.bodyBytes,
+    durationMs: r.durationMs,
+    finalUrl: redactor.redact(r.finalUrl),
+    cookieEvents: [],
+  };
 }
 
 function redactHeaders(headers: Readonly<Record<string, string>>, redactor: Redactor): Record<string, string> {

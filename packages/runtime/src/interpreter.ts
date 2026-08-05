@@ -91,6 +91,7 @@ import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
 import type {
   AttemptResult,
   BackOffDiagnosis,
+  CookieEvent,
   EventSink,
   LoadDurationStats,
   LoadIterationResult,
@@ -3649,10 +3650,20 @@ function redactRequest(req: RequestTrace, r: Redactor, config: ResolvedConfig): 
 // by `expect`/`capture` comes from the raw trace `execApi` returns alongside this, never from here.
 const NO_REPORT_BODY_BYTES = Buffer.alloc(0);
 
+// M88c1 — the report copy of a chain. `finalUrl` survives at every evidence level for the same
+// reason `RequestTrace.url` does (FS-03): it is a URL, it is nearly all that is left at `none`, and
+// when it differs from the request's it is the single most useful thing on the trace. `cookieEvents`
+// is the opposite — raw `Set-Cookie` values, i.e. credentials, whose place in a report is already
+// taken by `headers['set-cookie']` *after* `redactHeaderFields` has masked it. They exist to be
+// handed to the jar in-process and nowhere else, so this copy carries none, explicitly, rather than
+// relying on a spread not to pick them up (`B4-16` is that mistake made in the other file).
+const NO_REPORT_COOKIE_EVENTS: readonly CookieEvent[] = [];
+
 function redactResponse(res: ResponseTrace, r: Redactor, config: ResolvedConfig): ResponseTrace {
   const statusText = r.redact(res.statusText);
+  const finalUrl = redactUrlQuery(r.redact(res.finalUrl), config.redactPatterns);
   if (config.evidenceLevel === 'none') {
-    return { status: res.status, statusText, headers: {}, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
+    return { status: res.status, statusText, headers: {}, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs, finalUrl, cookieEvents: NO_REPORT_COOKIE_EVENTS };
   }
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(res.headers)) headers[k] = r.redact(v);
@@ -3660,10 +3671,10 @@ function redactResponse(res: ResponseTrace, r: Redactor, config: ResolvedConfig)
   // back is as much a credential as an `Authorization` going out.
   const masked = redactHeaderFields(headers, config.redactPatterns);
   if (config.evidenceLevel === 'headers-only') {
-    return { status: res.status, statusText, headers: masked, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
+    return { status: res.status, statusText, headers: masked, bodyText: EVIDENCE_OMITTED_BODY, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs, finalUrl, cookieEvents: NO_REPORT_COOKIE_EVENTS };
   }
   const bodyText = redactFields(r.redact(res.bodyText), config.redactPatterns);
-  return { status: res.status, statusText, headers: masked, bodyText, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs };
+  return { status: res.status, statusText, headers: masked, bodyText, bodyBytes: NO_REPORT_BODY_BYTES, durationMs: res.durationMs, finalUrl, cookieEvents: NO_REPORT_COOKIE_EVENTS };
 }
 
 // ---- helpers ---------------------------------------------------------------

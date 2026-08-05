@@ -16,8 +16,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuntimeError } from './eval.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, RedirectLimitError, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
-import type { ResponseTrace } from './types.js';
+import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
+import type { CookieEvent, ResponseTrace } from './types.js';
 import type { SendRequestOptions } from './http.js';
 
 type MtlsRequestMessage = {
@@ -50,6 +50,10 @@ type MtlsWorkerToParentMessage =
       readonly bodyBytes: Buffer;
       readonly json: unknown;
       readonly durationMs: number;
+      readonly finalUrl: string;
+      /** Structured-clonable as-is (plain objects, strings, arrays) — no `Buffer`-style special
+       * case needed to cross the IPC boundary (M88c1). */
+      readonly cookieEvents: readonly CookieEvent[];
     }
   | { readonly type: 'error'; readonly id: number; readonly message: string; readonly timedOut: boolean; readonly code?: string; readonly refused?: boolean; readonly redirectLimit?: boolean };
 
@@ -81,45 +85,40 @@ export async function runMtlsWorkerProcess(): Promise<void> {
       const agent = new Agent({ connect: mtlsConnectOptions(msg.mtls) });
       const start = performance.now();
       try {
-        // Same conditional split as the pooled path (`http.ts#mustFollowByHand`): without an
-        // `allow hosts` list this stays one native `redirect: 'follow'` call; with one, the chain
-        // is walked a hop at a time so the list can be checked before each connection (M85,
-        // C1/`B4-02`). The hop decision itself comes from `redirect.ts` — shared with the other two
-        // clients, because three clients silently disagreeing about redirects is review cluster C2
-        // and this milestone must not add a fourth opinion to it.
-        const guarded = msg.followRedirects && !!msg.allowHosts && msg.allowHosts.length > 0;
+        // The chain, walked a hop at a time — same shape as the pooled path's `fetchChain`, and
+        // unconditional for the same reason (M88c1, D-M88-14). It used to run only when an
+        // `allow hosts` list was present, native `redirect: 'follow'` handling every other request;
+        // but a native follow has no seam between hops, so an intermediate `Set-Cookie` is drained
+        // inside undici where nothing can see it (`B4-15`), and leaving the split in place would
+        // have made `allow hosts` decide whether a login survives a 302. The hop decision itself
+        // comes from `redirect.ts` — shared with the other two clients, because three clients
+        // silently disagreeing about redirects is review cluster C2 and this must not add a fourth
+        // opinion to it.
         let res!: Awaited<ReturnType<typeof undiciFetch>>;
-        if (!guarded) {
-          res = await undiciFetch(msg.url, {
-            method: msg.method,
-            headers: msg.headers,
-            body: msg.body,
-            signal: controller.signal,
-            redirect: msg.followRedirects ? 'follow' : 'manual',
-            dispatcher: agent,
-          });
-        } else {
-          let current: { url: string; method: string; headers: Record<string, string>; body?: string } = { url: msg.url, method: msg.method, headers: msg.headers, body: msg.body };
-          for (let redirects = 0; ; redirects++) {
-            res = await undiciFetch(current.url, { method: current.method, headers: current.headers, body: current.body, signal: controller.signal, redirect: 'manual', dispatcher: agent });
-            const location = res.headers.get('location');
-            if (!isRedirectStatus(res.status) || !location) break;
-            if (redirects >= MAX_REDIRECTS) {
-              // Not `break` (M88a, `B4-09`) — breaking here fell through to the `response` message
-              // below and reported the 21st hop's 3xx as an ordinary answer. The `!guarded` branch
-              // above, which is the same request without `allow hosts`, throws; so does this now.
-              await res.arrayBuffer().catch(() => undefined);
-              process.send?.({ type: 'error', id, message: redirectLimitMessage(msg.method, msg.url), timedOut: false, redirectLimit: true } satisfies MtlsWorkerToParentMessage);
-              return;
-            }
-            const hop = nextRedirectHop(current, res.status, location);
-            await res.arrayBuffer().catch(() => undefined); // release the socket either way
-            if (!isHostAllowed(hop.url, msg.allowHosts)) {
-              process.send?.({ type: 'error', id, message: allowHostsRefusal(hop.url, msg.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }), timedOut: false, refused: true } satisfies MtlsWorkerToParentMessage);
-              return;
-            }
-            current = { url: hop.url, method: hop.method, headers: hop.headers, body: hop.dropBody ? undefined : current.body };
+        const cookieEvents: CookieEvent[] = [];
+        let current: { url: string; method: string; headers: Record<string, string>; body?: string } = { url: msg.url, method: msg.method, headers: msg.headers, body: msg.body };
+        for (let redirects = 0; ; redirects++) {
+          res = await undiciFetch(current.url, { method: current.method, headers: current.headers, body: current.body, signal: controller.signal, redirect: 'manual', dispatcher: agent });
+          const event = cookieEventFor(current.url, res.headers.getSetCookie());
+          if (event) cookieEvents.push(event);
+          const location = res.headers.get('location');
+          if (!msg.followRedirects || !isRedirectStatus(res.status) || !location) break;
+          if (redirects >= MAX_REDIRECTS) {
+            // Not `break` (M88a, `B4-09`) — breaking here fell through to the `response` message
+            // below and reported the 21st hop's 3xx as an ordinary answer. Native
+            // `redirect: 'follow'`, which this request used to take without `allow hosts`, throws;
+            // so does this.
+            await res.arrayBuffer().catch(() => undefined);
+            process.send?.({ type: 'error', id, message: redirectLimitMessage(msg.method, msg.url), timedOut: false, redirectLimit: true } satisfies MtlsWorkerToParentMessage);
+            return;
           }
+          const hop = nextRedirectHop(current, res.status, location);
+          await res.arrayBuffer().catch(() => undefined); // release the socket either way
+          if (!isHostAllowed(hop.url, msg.allowHosts)) {
+            process.send?.({ type: 'error', id, message: allowHostsRefusal(hop.url, msg.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }), timedOut: false, refused: true } satisfies MtlsWorkerToParentMessage);
+            return;
+          }
+          current = { url: hop.url, method: hop.method, headers: hop.headers, body: hop.dropBody ? undefined : current.body };
         }
         const bodyBytes = Buffer.from(await res.arrayBuffer());
         const bodyText = bodyBytes.toString('utf8');
@@ -134,7 +133,7 @@ export async function runMtlsWorkerProcess(): Promise<void> {
         } catch {
           json = undefined;
         }
-        process.send?.({ type: 'response', id, status: res.status, statusText: res.statusText, headers, bodyText, bodyBytes, json, durationMs } satisfies MtlsWorkerToParentMessage);
+        process.send?.({ type: 'response', id, status: res.status, statusText: res.statusText, headers, bodyText, bodyBytes, json, durationMs, finalUrl: current.url, cookieEvents } satisfies MtlsWorkerToParentMessage);
       } catch (err) {
         const timedOut = controller.signal.aborted;
         const cause = (err as { cause?: { code?: unknown } } | undefined)?.cause;
@@ -199,7 +198,7 @@ function getChild(): ChildProcess {
     if (!entry2) return;
     pending.delete(msg.id);
     if (msg.type === 'response') {
-      entry2.resolve({ status: msg.status, statusText: msg.statusText, headers: msg.headers, bodyText: msg.bodyText, bodyBytes: msg.bodyBytes, json: msg.json, durationMs: msg.durationMs });
+      entry2.resolve({ status: msg.status, statusText: msg.statusText, headers: msg.headers, bodyText: msg.bodyText, bodyBytes: msg.bodyBytes, json: msg.json, durationMs: msg.durationMs, finalUrl: msg.finalUrl, cookieEvents: msg.cookieEvents });
     } else {
       // Left as a plain Error (not a RuntimeError) with `.cause.code`/`.timedOut` mirroring the
       // shape `sendRequest`'s own non-mTLS catch block already expects — `http.ts` formats the

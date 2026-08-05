@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseSource, parseConfigSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
+import { sendRequest } from '../src/http.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import { testConfig } from './support.js';
 
@@ -63,6 +64,14 @@ before(async () => {
       // about the cap, not the allowlist.
       if (req.url === '/loop') {
         res.writeHead(302, { location: '/loop' }).end();
+        return;
+      }
+      // M88c1 (review cluster C2 / `B4-15`): the login-by-302 — the hop that hands over the cookie
+      // is not the hop that answers. The worker is the fourth client path and the one hardest to
+      // reach from a test (a child process, behind a real TLS handshake), which is precisely why it
+      // is the one that would have been left behind.
+      if (req.url === '/login') {
+        res.writeHead(302, { location: '/dashboard', 'set-cookie': ['sid=mtls-session; Path=/', 'csrf=mtls-token'] }).end();
         return;
       }
       const peerCert = (req.socket as TLSSocket).getPeerCertificate();
@@ -206,6 +215,27 @@ test('an allowed host on the mTLS path is unaffected by declaring `allow hosts`'
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+});
+
+// M88c1 (review cluster C2 / `B4-15`) — the fourth client path reports an intermediate hop's
+// cookies too. Called through `sendRequest` rather than a `.tflw` program on purpose: `cookieEvents`
+// is deliberately stripped from the report copy (it is raw `Set-Cookie`), so a program-level
+// assertion could only ever confirm that stripping, never that the worker collected anything.
+test('the mTLS worker reports a cookie set on an intermediate redirect hop', async () => {
+  const mtls = { cert: readFileSync(clientCertPath, 'utf8'), key: readFileSync(clientKeyPath, 'utf8') };
+  const opts = { method: 'GET', url: `${baseUrl}/login`, headers: {}, timeoutMs: 5000, followRedirects: true, mtls } as const;
+
+  const res = await sendRequest(opts);
+
+  assert.equal(res.status, 200, res.bodyText);
+  assert.equal(res.headers['set-cookie'], undefined, 'sanity: the landing response sets nothing');
+  assert.deepEqual(res.cookieEvents, [{ origin: baseUrl, setCookie: ['sid=mtls-session; Path=/', 'csrf=mtls-token'] }]);
+  assert.equal(res.finalUrl, `${baseUrl}/dashboard`);
+
+  // And `allow hosts` — which until M88c1 decided whether this path walked its own chain at all —
+  // makes no difference to any of it (`B4-14`'s shape, third path).
+  const guarded = await sendRequest({ ...opts, allowHosts: ['127.0.0.1'] });
+  assert.deepEqual(guarded.cookieEvents, res.cookieEvents);
 });
 
 test('`cert` without a matching `key` is rejected once `defaults`+`env` are merged (decision 3b)', () => {

@@ -21,6 +21,7 @@
 // stay out (`B4-05`/`B4-06`, M88c).
 
 import { RuntimeError } from './eval.js';
+import type { CookieEvent } from './types.js';
 
 /** `fetch`'s own cap (Fetch §4.4 "HTTP-redirect fetch", step 5: redirect count 20). */
 export const MAX_REDIRECTS = 20;
@@ -51,7 +52,12 @@ export function redirectLimitMessage(method: string, url: string): string {
  * level down in `err.cause` — undici's `Error: redirect count exceeded`, which carries no `code` to
  * match on, so the message is the only signal there is. Recognising it is what lets the unguarded
  * pooled path (and the unguarded mTLS worker) say the same sentence the hand-walked loops say
- * instead of `request failed: … — fetch failed` (`B4-10`). */
+ * instead of `request failed: … — fetch failed` (`B4-10`).
+ *
+ * A backstop since M88c1: no client reaches native `redirect: 'follow'` any more (D-M88-14), so
+ * nothing should produce this cause today. Kept because the cost is one string comparison on an
+ * error path, and the day someone reintroduces a native follow — for a body shape the hand-walked
+ * loop can't carry, say — the message must not silently regress to `fetch failed`. */
 export function isRedirectLimitCause(err: unknown): boolean {
   const cause = (err as { cause?: { message?: unknown } } | undefined)?.cause;
   return typeof cause?.message === 'string' && cause.message === 'redirect count exceeded';
@@ -98,6 +104,28 @@ export interface RedirectHop {
   readonly headers: Record<string, string>;
   /** 301/302/303 turn a POST into a bodyless GET; 307/308 alone preserve method + body. */
   readonly dropBody: boolean;
+}
+
+/** The one entry a hop contributes to `ResponseTrace.cookieEvents`, or `undefined` when it set no
+ * cookie — which is almost every hop, so callers push only what this returns.
+ *
+ * Lives here, beside `nextRedirectHop`, for the reason this module exists at all: it is per-hop
+ * chain bookkeeping that all four clients must do identically, and the three that walk their chains
+ * by hand each reach it from a differently-shaped response object (`Headers.getSetCookie()`,
+ * `IncomingHttpHeaders['set-cookie']`, undici's `Headers`). Normalising the *shape* at each call
+ * site while sharing the *decision* — which URL is the origin, what an empty list means — is what
+ * keeps a fourth opinion from appearing (M88c1, `B4-15`). */
+export function cookieEventFor(hopUrl: string, setCookie: readonly string[] | undefined): CookieEvent | undefined {
+  if (!setCookie || setCookie.length === 0) return undefined;
+  // A URL this loop just successfully requested always parses; the fallback is for the theoretical
+  // caller that hands over something else, where losing the cookie would be worse than an odd key.
+  let origin: string;
+  try {
+    origin = new URL(hopUrl).origin;
+  } catch {
+    origin = hopUrl;
+  }
+  return { origin, setCookie: [...setCookie] };
 }
 
 /** Where a 3xx sends this request next, and what it may still carry when it gets there. */
