@@ -1,0 +1,259 @@
+# testFlow PLAN.md's M7 acceptance corpus (PLAN_WEBV2_TARGETS.md webV2-1): mixed UI/API coverage
+# against the SSR admin console (`env webv2Admin`'s `web` base, the Express/EJS app on :8091,
+# full-page-nav — a different flake class than the storefront SPA's client-side rehydration races,
+# per PLAN_WEBV2_TARGETS.md's own note: no auth race to guard against here, every navigation is a
+# real page load carrying the server session cookie).
+#
+# Both tests establish their own preconditions via real API calls (a dedicated product/review, a
+# dedicated ticket) rather than depending on data left over by other tests or by seed data —
+# following T3-T5's lesson in webv2-storefront.tflw (seed/other-test state is not a safe premise).
+#
+# **Lives in `.env-specific/`, not `tests/` (M7 acceptance finding)**: `env` selection is one value
+# for the *whole* `tflw run` invocation (SPEC §3.1) — there's no per-file/per-test override. This
+# file genuinely needs `web` pointed at :8091 (the admin console), which conflicts with
+# `webv2-storefront.tflw`'s need for :8090 (the storefront) within the very same suite. Left at
+# `tests/` root, the bare `npx tflw run`/`npm test` discovers it (SPEC's default-discovery walk
+# skips only dot-directories) and silently runs it against the *wrong* app under `env local`'s
+# default `web` — a real, confirmed failure mode this session hit directly, not a hypothetical.
+# Run explicitly instead: `npm run test:webv2-admin` (`tflw run --env webv2Admin
+# tests/.env-specific/webv2-admin.tflw`).
+#
+# `select`/`check field`/`fill form` (M40, PLAN_WEBV2_M40.md): the three admin EJS `<select>`s
+# (products/coupons/tickets list+form) and the ticket detail view's `isInternal` checkbox were
+# real, unexercised gaps in the coverage audit — closed below, each proven against a genuine
+# server-side effect (a GET-param filter, a role-filtered response body), not just "the control
+# didn't error". Every existing login block also now uses `fill form` instead of two bare
+# `fill field` lines, same sugar as `shared/webv2-login.tflw`'s storefront equivalent.
+
+@mixed
+test "admin replies to a review through the moderation view"
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  expect status equals 200
+  capture body.accessToken as adminToken
+  api GET /categories
+    header "Authorization" is "Bearer {adminToken}"
+  expect status equals 200
+  capture body[0].id as categoryId
+  api POST /products body { name: unique("Admin Reply Widget"), price: 9.99, stock: 5, categoryId: {categoryId} }
+    header "Authorization" is "Bearer {adminToken}"
+  expect status equals 201
+  capture body.id as productId
+
+  api POST /auth/login body { email: env(USER_B_EMAIL), password: env(USER_B_PW) }
+  expect status equals 200
+  capture body.accessToken as userBToken
+  api POST /products/{productId}/reviews body { rating: 3, comment: "Needs improvement." }
+    header "Authorization" is "Bearer {userBToken}"
+  expect status equals 201
+
+  open "/login"
+  fill form
+    | "Email"    | env(ADMIN_EMAIL) |
+    | "Password" | env(ADMIN_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/products/{productId}"
+  expect text "Needs improvement." is visible
+  fill field "Reply" with "Thanks — restocking soon."
+  click button "Post reply"
+  # a bare `text "…"` is ambiguous here — the just-posted reply's textarea now echoes the same
+  # string back as its (now pre-filled) value alongside the rendered "replied" paragraph; scope to
+  # the paragraph specifically.
+  expect css "p:has-text('Thanks — restocking soon.')" is visible
+
+@mixed
+test "a ticket's full lifecycle: created by a user, assigned by admin, worked by an agent"
+  api POST /auth/login body { email: env(USER_B_EMAIL), password: env(USER_B_PW) }
+  expect status equals 200
+  capture body.accessToken as userBToken
+  api POST /tickets body { subject: unique("Order never arrived"), description: "Placed 5 days ago, still shows pending." }
+    header "Authorization" is "Bearer {userBToken}"
+  expect status equals 201
+  capture body.id as ticketId
+
+  api POST /auth/login body { email: env(AGENT_A_EMAIL), password: env(AGENT_A_PW) }
+  expect status equals 200
+  capture body.accessToken as agentToken
+  api GET /auth/profile
+    header "Authorization" is "Bearer {agentToken}"
+  expect status equals 200
+  capture body.id as agentId
+
+  open "/login"
+  fill form
+    | "Email"    | env(ADMIN_EMAIL) |
+    | "Password" | env(ADMIN_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/tickets/{ticketId}"
+  fill field "Assign to (agent user id)" with {agentId}
+  click button "Assign"
+  expect text "{agentId}" is visible
+
+  click button "Log out"
+  fill form
+    | "Email"    | env(AGENT_A_EMAIL) |
+    | "Password" | env(AGENT_A_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/tickets/{ticketId}"
+  click button "Start"
+  expect text "in_progress" is visible
+  click button "Resolve"
+  # a bare `text "resolved"` is ambiguous — the status `.badge` and the ticket's own history log
+  # entry ("resolved — {actor} — {timestamp}") both contain it; scope to the badge's exact text.
+  expect css ".badge:text-is('resolved')" is visible
+  fill field "Add comment" with "Investigated and resolved — carrier confirmed delivery today."
+  click button "Post comment"
+  expect text "Investigated and resolved — carrier confirmed delivery today." is visible
+
+@mixed
+test "the products list's Category <select> really filters, combined with Search"
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  expect status equals 200
+  capture body.accessToken as adminToken
+  api GET /categories
+    header "Authorization" is "Bearer {adminToken}"
+  expect status equals 200
+  capture body[0].id as categoryId
+  capture body[0].name as categoryName
+  api POST /products body { name: unique("Admin Select Widget"), price: 9.99, stock: 5, categoryId: {categoryId} }
+    header "Authorization" is "Bearer {adminToken}"
+  expect status equals 201
+  capture body.name as productName
+
+  open "/login"
+  fill form
+    | "Email"    | env(ADMIN_EMAIL) |
+    | "Password" | env(ADMIN_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/products"
+  fill field "Search" with "{productName}"
+  select "{categoryName}" from field "Category"
+  click button "Filter"
+  expect text "{productName}" is visible
+
+@mixed
+test "creating a coupon exercises a Type <select> and a 5-field fill form"
+  open "/login"
+  fill form
+    | "Email"    | env(ADMIN_EMAIL) |
+    | "Password" | env(ADMIN_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/coupons"
+  select "fixed" from field "Type"
+  fill form
+    | "Code"                                             | unique("M40FixedCoupon") |
+    | "Value (percent: 0-100, fixed: currency amount)"    | "10.00"                 |
+    | "Expires at"                                        | "2027-01-01T10:00"      |
+    | "Minimum order amount"                              | "0"                     |
+    | "Usage limit"                                       | "5"                     |
+  click button "Create coupon"
+  expect css "tr:has(th:text-is('type')) td:text-is('fixed')" is visible
+
+@mixed
+test "the tickets list's Status <select> really filters, and check field-gated isInternal stays hidden from the ticket owner"
+  api POST /auth/login body { email: env(USER_B_EMAIL), password: env(USER_B_PW) }
+  expect status equals 200
+  capture body.accessToken as userBToken
+  api POST /tickets body { subject: unique("M40 Select Filter Ticket"), description: "Needs an internal escalation note." }
+    header "Authorization" is "Bearer {userBToken}"
+  expect status equals 201
+  capture body.id as ticketId
+  capture body.subject as ticketSubject
+
+  open "/login"
+  fill form
+    | "Email"    | env(ADMIN_EMAIL) |
+    | "Password" | env(ADMIN_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/tickets"
+  select "open" from field "Status"
+  click button "Filter"
+  expect text "{ticketSubject}" is visible
+
+  open "/tickets/{ticketId}"
+  check field "internal note (hidden from the ticket owner)"
+  fill field "Add comment" with "Internal note: escalate to L2."
+  click button "Post comment"
+  expect css "span.badge:text-is('internal')" is visible
+
+  # tickets.service.ts's findCommentsScoped filters `is_internal = false` for role USER — the real
+  # server-side effect `check field` above should have triggered, proven from the owner's own POV,
+  # not just that the admin's page rendered a badge.
+  api GET /tickets/{ticketId}/comments
+    header "Authorization" is "Bearer {userBToken}"
+  expect status equals 200
+  expect all body.text not equals "Internal note: escalate to L2."
+
+@mixed
+test "the admin product detail's Delete confirm() dialog: dismiss keeps it, accept really deletes it (204)"
+  # M43 (PLAN_WEBV2_M40.md decision 5): closes the `accept dialog`/`dismiss dialog` gap on this
+  # app's admin side. DELETE /categories/:id turned out to be a deliberate 405 stub
+  # (categories.controller.ts's `deleteNotSupported` — caught by reading the controller body before
+  # building against it) — DELETE /products/:id (admin-only, real 204) is the real destructive
+  # endpoint wired up instead, behind a confirm()-guarded form (EJS forms have no native DELETE
+  # verb, so this posts to a dedicated `/products/:id/delete` route that issues the real DELETE
+  # server-side and redirects).
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  expect status equals 200
+  capture body.accessToken as adminToken
+  api GET /categories
+    header "Authorization" is "Bearer {adminToken}"
+  expect status equals 200
+  capture body[0].id as categoryId
+  api POST /products body { name: unique("M43 Delete Widget"), price: 9.99, stock: 5, categoryId: {categoryId} }
+    header "Authorization" is "Bearer {adminToken}"
+  expect status equals 201
+  capture body.id as productId
+  capture body.name as productName
+
+  open "/login"
+  fill form
+    | "Email"    | env(ADMIN_EMAIL) |
+    | "Password" | env(ADMIN_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/products/{productId}"
+  dismiss dialog
+  click button "Delete product"
+  # dismissing cancels the form's own onsubmit — no navigation happens, so the detail page (and its
+  # heading) is still exactly what proves the product survived, not just that nothing errored.
+  expect css "h1:text-is('{productName}')" is visible
+
+  accept dialog
+  click button "Delete product"
+  expect css "h1:text-is('Products')" is visible
+  api GET /products/{productId}
+  expect status equals 404
+
+@mixed
+test "the dashboard's Download orders CSV link exercises a real browser download"
+  # M43 (PLAN_WEBV2_M40.md decision 5): closes the `download as <name>` gap — GET /orders/export
+  # (F1) was already real and admin-only, just unconsumed by any UI; this console had no route for
+  # it (every other admin route proxies apiV2 the same BFF way — `routes/orders.js`'s new
+  # `apiRequestRaw`, since the CSV body isn't JSON and can't go through `apiRequest`'s JSON.parse).
+  # The CSV's own content/columns are already thoroughly proven at the API level
+  # (tests/file-formats.tflw's `body csv` test) — re-asserting that here would be redundant, so this
+  # test's job is the browser download mechanics only: a real `download` event fires off a plain
+  # link click, binding the exact filename apiV2's own `Content-Disposition` sets.
+  open "/login"
+  fill form
+    | "Email"    | env(ADMIN_EMAIL) |
+    | "Password" | env(ADMIN_PW)    |
+  click button "Log in"
+  expect button "Log out" is visible
+
+  open "/"
+  download as file
+    click text "Download orders CSV"

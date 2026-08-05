@@ -1862,49 +1862,84 @@ async function migrateCommand(argv: string[]): Promise<number> {
   const cwd = process.cwd();
   const color = args.noColor ? false : process.stdout.isTTY === true;
 
-  const byFile = new Map<string, { source: string; diagnostics: Diagnostic[] }>();
-  const loaded = await loadAndValidate(cwd, args.files, args.env, color, (file, source, diagnostics) => {
-    byFile.set(file, { source, diagnostics: [...diagnostics] });
-  });
-  // A config-level failure — no `tflw.config`, an unresolvable env, a named file that isn't there,
-  // nothing discovered — is not something a splice can help with, and `loadAndValidate` has already
-  // printed it in full (the hook only intercepts *per-file* batches). `byFile` is the discriminator:
-  // the hook fires once for every file checked, clean or not, so an empty map alongside a numeric
-  // return means the run never reached a file at all.
-  if (typeof loaded === 'number' && byFile.size === 0) return loaded;
+  const changedFiles = new Set<string>();
+  let residualFiles = new Map<string, { source: string; diagnostics: Diagnostic[] }>();
+  let clean = false;
+  let hitCap = false;
 
-  const changedFiles: string[] = [];
-  for (const [file, { source, diagnostics }] of byFile) {
-    const edits = collectMigrations(diagnostics, source);
-    if (edits.length === 0) continue;
-    await writeFile(file, applyMigrations(source, edits), 'utf8');
-    changedFiles.push(relative(cwd, file));
+  // Repeat until a pass finds nothing left to rewrite (M90b). The plan predicted one pass would
+  // always suffice — "recovery is not a problem, `recoverTopLevel()` resyncs cleanly" — and a probe
+  // disproved it: `recoverTopLevel()` skips the *entire* offending block, so a `think` inside a
+  // `scenario` is invisible to the parser until `scenario` itself is fixed. One pass rewrote
+  // `scenario`→`test` and exited 2 pointing at a `think` it had not been able to see. That is
+  // honest, and it is still a tool that does half its job and tells you to run it again.
+  //
+  // Termination is structural rather than a hope: every edit replaces a removed keyword with a live
+  // one, the supply of removed keywords in a file is finite, and no rewrite can introduce one (all
+  // three replacements — `test`, `pause`, `untick` — are current grammar). The cap is a backstop for
+  // a future rule that breaks that property, not the mechanism.
+  const MAX_PASSES = 10;
+  for (let pass = 0; ; pass++) {
+    const byFile = new Map<string, { source: string; diagnostics: Diagnostic[] }>();
+    const loaded = await loadAndValidate(cwd, args.files, args.env, color, (file, source, diagnostics) => {
+      byFile.set(file, { source, diagnostics: [...diagnostics] });
+    });
+    // A config-level failure — no `tflw.config`, an unresolvable env, a named file that isn't there,
+    // nothing discovered — is not something a splice can help with, and `loadAndValidate` has
+    // already printed it in full (the hook only intercepts *per-file* batches). `byFile` is the
+    // discriminator: the hook fires once for every file checked, clean or not, so an empty map
+    // alongside a numeric return means the run never reached a file at all.
+    if (typeof loaded === 'number' && byFile.size === 0) return loaded;
+
+    // Whatever this pass saw describes the bytes currently on disk, since the hook is handed the
+    // source `loadAndValidate` just read. Keeping it is what lets the report below render residual
+    // diagnostics at post-splice offsets without parsing everything a second time.
+    residualFiles = byFile;
+    clean = typeof loaded !== 'number';
+    if (pass >= MAX_PASSES) {
+      hitCap = true;
+      break;
+    }
+
+    let edited = 0;
+    for (const [file, { source, diagnostics }] of byFile) {
+      const edits = collectMigrations(diagnostics, source);
+      if (edits.length === 0) continue;
+      await writeFile(file, applyMigrations(source, edits), 'utf8');
+      changedFiles.add(relative(cwd, file));
+      edited++;
+    }
+    if (edited === 0) break;
   }
 
-  if (changedFiles.length > 0) {
-    process.stdout.write(`migrated ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}:\n`);
-    process.stdout.write(`  ${changedFiles.sort().join('\n  ')}\n`);
+
+  if (changedFiles.size > 0) {
+    const names = [...changedFiles].sort();
+    process.stdout.write(`migrated ${names.length} file${names.length === 1 ? '' : 's'}:\n`);
+    process.stdout.write(`  ${names.join('\n  ')}\n`);
   } else {
     process.stdout.write('no deprecated syntax found — nothing to migrate.\n');
   }
 
-  // Nothing rewritten and nothing wrong: there is nothing left to say, and re-parsing files this
-  // pass already found clean would only cost time.
-  if (changedFiles.length === 0 && typeof loaded !== 'number') return EXIT_OK;
-
-  // The re-check. No hook this time — `loadAndValidate` renders straight to stderr, against the
-  // rewritten sources it re-reads, which is the whole point.
-  const after = await loadAndValidate(cwd, args.files, args.env, color);
-  if (typeof after !== 'number') {
-    if (changedFiles.length > 0) process.stdout.write('the rewritten suite checks clean.\n');
+  if (clean) {
+    if (changedFiles.size > 0) process.stdout.write('the rewritten suite checks clean.\n');
     return EXIT_OK;
   }
+
+  // Residual diagnostics, against what is on disk now. Rendered from the last pass rather than by
+  // re-running the pipeline: same bytes, same offsets, one fewer parse of the whole suite.
+  for (const [file, { source, diagnostics }] of residualFiles) {
+    if (diagnostics.length === 0) continue;
+    process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
+  }
   process.stdout.write(
-    changedFiles.length > 0
-      ? '\nevery rewrite migrate had was applied, and the suite still has errors — the diagnostics above are against the rewritten files.\n'
-      : '\nthe errors above are not deprecations, so migrate has no rewrite for them.\n',
+    hitCap
+      ? `\nstopped after ${MAX_PASSES} passes with rewrites still pending — that should be impossible, so please report it.\n`
+      : changedFiles.size > 0
+        ? '\nevery rewrite migrate had was applied, and the suite still has errors — the diagnostics above are against the rewritten files.\n'
+        : '\nthe errors above are not deprecations, so migrate has no rewrite for them.\n',
   );
-  return after;
+  return EXIT_USAGE;
 }
 
 // ---- tflw docs --------------------------------------------------------------

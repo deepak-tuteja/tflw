@@ -1,0 +1,12 @@
+# E2 (PLAN_ENTERPRISE_REGRESSION.md): the Accessibility demo's own top-level nav destination —
+# every existing test against this page (`tests/mixed/storefront.tflw`) reaches it via a hardcoded
+# `open "/a11y-demo"`; this is the one test in the suite that reaches it by actually clicking the
+# global nav link, proving the nav's own wiring rather than assuming the route.
+
+@ui
+test "navigating to the Accessibility demo via the top nav renders its accessible controls"
+  open "/"
+  click text "Accessibility demo"
+  expect field "Subscribe to updates" not is checked
+  check field "Subscribe to updates"
+  expect field "Subscribe to updates" is checked

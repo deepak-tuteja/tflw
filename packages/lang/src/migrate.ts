@@ -5,9 +5,13 @@
 // running the checker, and writing results; this module only knows how to turn a diagnostic with
 // a `deprecation` payload into a source-span edit and apply a batch of them safely.
 //
-// No checker rule produces a `deprecation`-tagged diagnostic yet (the grammar has been
-// additive-only since the first release, decision 45) — this exists ahead of the first real
-// deprecation on purpose. See `Diagnostic.deprecation`'s own doc comment for why.
+// Three checker rules produce a `deprecation`-tagged diagnostic (M90b, cluster C8): `scenario` →
+// `test` (M50/D93), `think` → `pause` (FS-05) and `uncheck` → `untick` (FS-04). Bare
+// `check <locator>` deliberately produces none — its two readings (`tick field "…"`, the old click,
+// versus `check field "…" is checked`, the assertion) are a human decision, and guessing wrong
+// writes a mutation into a test that keeps passing (D-M90-3). This header used to read "no checker
+// rule produces one yet … this exists ahead of the first real deprecation on purpose"; the engine
+// had in fact been waiting on one property, on three diagnostics, for four milestones.
 
 import type { Diagnostic } from './diagnostic.js';
 

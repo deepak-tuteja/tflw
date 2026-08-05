@@ -450,12 +450,26 @@ class Parser {
         else this.recoverTopLevel();
       } else if (this.isKw(tok, 'scenario')) {
         // D103 migration diagnostic: `scenario` was removed in M50 (D93) — a workload-bearing
-        // block is now just `test "…" { ramp to … }`, kind inferred from the workload clause.
-        this.error(
+        // block is now just `test "…"`, kind inferred from the workload clause it already contains.
+        //
+        // The message used to read ``write `test "…" { ramp to … }` instead`` (`A3-01`, D-M90-5).
+        // That brace form is a *parse error* in an indentation-based language — following the
+        // advice literally earns a `TF010` — and the `ramp to …` line it tells the user to write is
+        // already in their file: `parseScenarioDecl` made a workload line mandatory (verified at
+        // `a2c457c^`), so no legal old `scenario` ever lacked one. The instruction was noise on top
+        // of a syntax error. It is a one-word rename, and the payload below says so.
+        //
+        // That mandatory workload line is also why the splice is *total* rather than approximate:
+        // every legal old `scenario` becomes a workload-bearing `test`, never a functional one, so
+        // a silent load-test→functional-test demotion is structurally impossible. All three body
+        // constructs the old block allowed (`as admin, userA`, `threshold …`, `cleanup`) still
+        // parse inside `parseTest` today.
+        this.removedKeyword(
           Codes.LOAD_INVALID,
-          '`scenario` was removed — write `test "…" { ramp to … }` instead',
+          '`scenario` was removed — write `test` instead',
           tok.span,
           'a `test` block is a load test whenever it contains a workload line (`ramp to …`); there is no longer a separate keyword',
+          'test',
         );
         this.recoverTopLevel();
       } else {
@@ -1938,11 +1952,12 @@ class Parser {
         case 'untick':
           return this.parseUntickStep();
         case 'uncheck':
-          this.error(
+          this.removedKeyword(
             Codes.UNKNOWN_STATEMENT,
             '`uncheck` was renamed to `untick` — write `untick field "…"` instead',
             tok.span,
             'same step, same semantics; it moved with `check <locator>` → `tick <locator>`, which had to stop being a checkbox action so `check` means only the soft assertion (SPEC §9.1)',
+            'untick',
           );
           return null;
         case 'press':
@@ -1976,11 +1991,12 @@ class Parser {
         case 'think':
           // FS-05 migration diagnostic, D103 teaching style: name the replacement outright rather
           // than leaving a did-you-mean to bridge two words that share no letters.
-          this.error(
+          this.removedKeyword(
             Codes.LOAD_INVALID,
             '`think` was renamed to `pause` — write `pause 2s` / `pause 1s to 3s` instead',
             tok.span,
             'same semantics and the same workload-only restriction; `pause` describes the statement rather than the modelled user, and stays unambiguous against `wait until …`',
+            'pause',
           );
           return null;
         default: {
@@ -3850,7 +3866,14 @@ class Parser {
     return { start, end: this.previous().span.end };
   }
 
-  private error(code: string, message: string, span: Span, hint?: string, label?: string): void {
+  private error(
+    code: string,
+    message: string,
+    span: Span,
+    hint?: string,
+    label?: string,
+    deprecation?: { readonly replacement: string },
+  ): void {
     // Panic mode (M83, C11/`A3-17`, `A2-07`). Each production diagnoses the token it is looking at,
     // so one bad token gets reported once per production that looks at it — and productions nest.
     // `expect body.items[-1].id equals 1` reported the same `-` three times: as a missing array
@@ -3864,7 +3887,32 @@ class Parser {
     // from the next production up. Anything that genuinely consumed input reports normally.
     if (this.pos === this.lastErrorPos) return;
     this.lastErrorPos = this.pos;
-    this.diagnostics.push({ code, severity: 'error', message, span, ...(hint ? { hint } : {}), ...(label ? { label } : {}) });
+    this.diagnostics.push({
+      code,
+      severity: 'error',
+      message,
+      span,
+      ...(hint ? { hint } : {}),
+      ...(label ? { label } : {}),
+      ...(deprecation ? { deprecation } : {}),
+    });
+  }
+
+  /** A keyword this grammar removed or renamed, whose fix is a single-token splice at `span`
+   * (M90b, cluster C8). The payload is what makes `tflw migrate` able to act — and, via
+   * `renderDiagnostic`'s derived line (D-M90-4), what makes the diagnostic offer the tool at all.
+   *
+   * `parser.ts`'s keyword table keeps these dead words alive *specifically* so these diagnostics
+   * can fire (see the note on `SUGGESTABLE_STATEMENT_KEYWORDS`) — dropping them would surface as
+   * `TF011: unknown statement`, whose did-you-mean is an edit-distance search that will never reach
+   * `pause` from `think`. This is what that retention was for.
+   *
+   * Deliberately *not* used by `TF014`'s bare `check <locator>` (D-M90-3): that one has two honest
+   * readings — `tick field "…"` (the old click) and `check field "…" is checked` (the assertion) —
+   * and guessing wrong writes a mutation into a test that keeps passing. It stays a human decision,
+   * and the absence of a payload is the whole mechanism by which migrate declines it. */
+  private removedKeyword(code: string, message: string, span: Span, hint: string, replacement: string): void {
+    this.error(code, message, span, hint, undefined, { replacement });
   }
 }
 
