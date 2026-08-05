@@ -1145,7 +1145,16 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   // wants the workload-bearing subset of a file's `program.tests`.
   const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
   if (scenarios.length === 0) {
-    throw new RuntimeError('`tflw load` needs at least one workload-bearing `test` (a `ramp to …` line) in this file, found 0');
+    // `B3-08` (M90c): this used to name `tflw load`, a command M53 removed — and naming `tflw run`
+    // instead would be a second lie in the same sentence, because `tflw run` on such a file does
+    // not error, it runs the functional tests. It is a *library* precondition, so it names no
+    // command at all. `B5-13` records the sharper half the row understated: neither caller can
+    // reach this in the shipped product (`runLoad` has no production caller; `runLoadShard` is only
+    // forked when a workload already exists), so the message is unreachable and the test below
+    // exercises it through the entry point production does not use. Deleting `runLoad` is C14's,
+    // per D-M90-6 — it first needs an answer to whether `runLoad` is public API or a leaked
+    // internal, which is easier to give once `migrate` works.
+    throw new RuntimeError('this program has no workload-bearing `test` — a load run needs at least one `ramp to …` line, found 0');
   }
   const selfDiag = startSelfDiagnosis();
   const environ = opts.environ ?? process.env;

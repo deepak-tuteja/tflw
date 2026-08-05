@@ -162,10 +162,28 @@ Runs until Ctrl+C.
   </tbody>
 </table>
 
-Mechanically rewrites checker-flagged deprecations (a warning-severity diagnostic carrying its own
-exact replacement text) in place, then prints which files changed. No live deprecation exists in
-the grammar yet — it's been additive-only since the first internal milestone — so today this
-always reports `no deprecated syntax found — nothing to migrate.` and touches no files.
+Mechanically rewrites checker-flagged deprecations in place, then prints which files changed. Three
+rules carry a rewrite today — `scenario` → `test`, `think` → `pause`, `uncheck` → `untick`.
+
+**How to tell whether migrate can fix something: the diagnostic says so.** Any diagnostic that ends
+with `= fix: run `tflw migrate` to apply this automatically` is one it can act on. That line is
+derived from the rewrite itself rather than written next to each rule, so the offer and the
+capability cannot drift apart.
+
+**Bare `check <locator>` is deliberately not one of them.** It has two honest readings —
+`tick field "…"` (the old click) and `check field "…" is checked` (the assertion) — and guessing
+wrong turns an assertion into a mutation in a test that keeps passing. Migrate reports each one and
+leaves it to you; on the real migration this was built against, that was 5 of 7 sites.
+
+**It works on files that do not parse**, which is the only kind it exists for. It splices what it
+can, writes, re-checks the rewritten source, and prints whatever remains against the *new* line
+numbers — repeating until a pass finds nothing left, since a `think` nested inside a `scenario` is
+invisible to the parser until the `scenario` is fixed. Exit **0** if the suite is clean afterwards,
+**2** if errors remain, including when it did rewrite something and the file still fails: migrate's
+job is the rewrite, not the verdict.
+
+It rewrites *keywords*, not prose. A migrated file can be entirely correct code and still name the
+old keyword in its comments and `test "…"` names — this is not a rename-symbol refactor.
 
 ## `tflw refactor apply <id>`
 
