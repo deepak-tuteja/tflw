@@ -11,6 +11,16 @@ coverage/
 packages/cli/LICENSE
 packages/vscode/LICENSE
 
+# M92a (review `B6-06`) — third-party attribution, generated from each bundle's own esbuild
+# metafile by scripts/third-party-notices.mjs. Committing it would make it a second source of truth
+# that can disagree with the bundle, which is the drift the generator exists to remove.
+packages/cli/THIRD-PARTY-NOTICES.md
+packages/vscode/THIRD-PARTY-NOTICES.md
+# The metafile those are derived from — a build byproduct, kept outside `dist/` so `files: ["dist"]`
+# cannot ship it, and read by pack.test.ts so the guard needs no copy of the build config.
+packages/cli/.bundle-meta.json
+packages/vscode/.bundle-meta.json
+
 # Regenerated from SPEC.md by packages/cli/scripts/gen-docs.mjs (pretest/predev/bundle) — never
 # hand-edited, so it isn't a source of truth worth committing.
 packages/cli/src/docs-data.generated.ts

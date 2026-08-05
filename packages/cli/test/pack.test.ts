@@ -13,6 +13,9 @@ import { mkdtemp, mkdir, writeFile, rm, readdir, readFile, access } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// @ts-expect-error — a plain .mjs build script with no type declarations, deliberately shared with
+// `scripts/bundle.mjs` rather than reimplemented here (M92a).
+import { collectNotices } from '../../../scripts/third-party-notices.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cliRoot = join(here, '..');
@@ -62,7 +65,7 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + packa
   // esbuild output (bundle.mjs) specifically so `undici` (needed for its client-cert `Agent`) is
   // never imported by `dist/cli.cjs` itself (M35b: importing it, even unused, cripples this
   // process's own global `fetch()` by ~20x).
-  assert.deepEqual(files, ['LICENSE', 'README.md', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
+  assert.deepEqual(files, ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
 
   // The other half of the same property, and the half a file list cannot express (M86). Excluding
   // `.map` files from the tarball is not by itself correct: a bundle built with source maps carries
@@ -78,6 +81,42 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + packa
   const pkg = JSON.parse(pkgText) as { dependencies?: Record<string, string>; private?: boolean };
   assert.equal(pkg.dependencies, undefined, 'a published API-only tool should declare zero runtime dependencies (P#43)');
   assert.equal(pkg.private, undefined, '"private": true would make npm publish refuse outright (decision 74)');
+});
+
+test('the tarball attributes every third-party package its own bundles inlined (M92a, review `B6-06`)', async () => {
+  // The claim under test is *completeness*, not presence — a notice file that names eleven of
+  // twelve packages reads exactly like a correct one. So the expected set is re-derived here from
+  // the same esbuild metafile `bundle.mjs` generated the file from, via the same shared module.
+  // Nothing is hardcoded: adding a dependency that reaches either bundle changes both sides at
+  // once, and the test only fails when the *file* stops matching the *bundle*.
+  //
+  // What this can and cannot catch, established by running both controls rather than reasoning
+  // about them: hand-editing the shipped file proves nothing, because `before()`'s `npm pack` runs
+  // `prepack`, which regenerates it — a *stale* notice file is structurally impossible, which is
+  // the whole argument for generating it. What remains possible is a renderer that silently drops
+  // entries, and that is what fails here (verified: rendering `notices.slice(1)` fails this test
+  // naming the dropped package). The tarball-member assertion above covers the other direction —
+  // the file existing but never being packaged.
+  const meta = JSON.parse(await readFile(join(cliRoot, '.bundle-meta.json'), 'utf8')) as { inputs: Record<string, unknown> };
+  const expected = collectNotices(meta as never).map((n) => n.name);
+  assert.ok(expected.length > 0, 'the metafile should report inlined packages — a zero here means the guard is measuring nothing');
+
+  const { stdout: notices } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/THIRD-PARTY-NOTICES.md'], { maxBuffer: 4 * 1024 * 1024 });
+
+  for (const name of expected) {
+    assert.match(notices, new RegExp(`^## ${name.replace(/[/@.]/g, '\\$&')}@`, 'm'), `\`${name}\` is compiled into a shipped bundle but has no section in THIRD-PARTY-NOTICES.md`);
+  }
+  // The converse direction, so a stale entry for a package that has since left the bundle is caught
+  // too — an over-broad notice is a smaller wrong than an incomplete one, but it is still the file
+  // describing something other than what shipped.
+  const sections = [...notices.matchAll(/^## (\S+)@/gm)].map((m) => m[1]);
+  assert.deepEqual([...sections].sort(), [...expected].sort());
+
+  // Full license *text*, not a scraped copyright line (`D-M92-1`): MIT and its relatives require
+  // the permission notice as well as the notice of copyright, and `minimatch`'s license opens its
+  // copyright as a markdown heading, so a line-scraper is silently wrong on real inputs.
+  assert.match(notices, /Permission is hereby granted, free of charge/, 'the MIT permission notice must be reproduced, not summarized');
+  assert.match(notices, /Copyright \(c\) Matteo Collina and Undici contributors/, "undici is the largest thing in the tarball; its copyright line is the canary for the file being generated at all");
 });
 
 test('installing the tarball into a fresh project pulls in no @tflw/* packages, and the binary runs end-to-end', async () => {
