@@ -845,6 +845,38 @@ export function checkWorkloadTests(program: Program): Diagnostic[] {
         hint: "a workload's verdict comes only from its `threshold` lines against the run's aggregate metrics (SPEC §4.5) — with none, a 100% error rate still reports PASS. Add at least one, e.g. `threshold error rate is less than 1%`",
       });
     }
+    // M89c, `B3-14` (D-M89-6). The arm above catches a workload with *no* threshold; this one
+    // catches the far commoner shape it lets through — a workload whose only thresholds are on
+    // duration. Since M89a those percentiles read the iterations that **succeeded** (SPEC §12), so
+    // a service failing half its requests fast and serving the rest in 12ms satisfies
+    // `p95 duration is less than 5000ms` with `error rate: 50.00%` printed on the line directly
+    // above the `✓`. M60's rule asked for *a* threshold; a duration threshold alone is one that
+    // structurally cannot observe failure, which is what `B3-14` means by "not meaningful".
+    //
+    // The error-rate threshold must be **unscoped**. `threshold error rate for "ok" is less than 1%`
+    // constrains one endpoint's own bucket, so a scenario whose *other* endpoint fails half the time
+    // passes with both thresholds green — probed live, not assumed. Accepting a scoped one here
+    // would be covering one side of the branch, the mistake `M77`→`B3-11`→`M89a` has now made three
+    // times; the whole-scenario form is the one that actually decides the verdict.
+    //
+    // Honest limit, unchanged from D-M89-6 and widened by `B3-17`: this makes an error-rate
+    // threshold *present*, not *meaningful*. `is less than 100%` still satisfies it vacuously, and
+    // an `api` step with no assertions can never fail at all, so the error rate it bounds is
+    // structurally 0.00%. Both are recorded rather than fixed — see `B3-17`.
+    const durationThreshold = test.thresholds.find((t) => t.metric.kind === 'duration');
+    const scopedErrorRate = test.thresholds.filter((t) => t.metric.kind === 'errorRate' && t.scope);
+    const hasScenarioErrorRate = test.thresholds.some((t) => t.metric.kind === 'errorRate' && !t.scope);
+    if (durationThreshold && !hasScenarioErrorRate) {
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: `workload-bearing test "${name}" thresholds duration but not error rate, so a fast failure passes it`,
+        span: durationThreshold.span,
+        hint: scopedErrorRate.length
+          ? `\`error rate for ${scopedErrorRate.map((t) => `"${t.scope!.value}"`).join('`/`')}\` only bounds that endpoint's own bucket — the rest of the scenario can fail freely. A duration threshold reads only the iterations that succeeded (SPEC §12), so add the whole-scenario form too: \`threshold error rate is less than 1%\``
+          : 'a duration threshold reads only the iterations that *succeeded* (SPEC §12), so an endpoint that fails fast and succeeds slowly passes it with a 50% error rate. Pair it with `threshold error rate is less than 1%`',
+      });
+    }
   }
 
   const actionsByName = new Map<string, ActionDecl>();

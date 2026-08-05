@@ -296,21 +296,25 @@ test('checkWorkloadTests: `sequential` alongside a workload is never flagged', (
 });
 
 // -- M43 (D70/D72): `threshold … for "label"` scoping, TF034 --------------------------------
+//
+// Each fixture below carries an unscoped `threshold error rate …` it does not otherwise need. That
+// line is M89c's doing: a scoped *duration* threshold is still a duration threshold, so without it
+// these tests would each raise a second, unrelated TF033 and stop isolating TF034.
 
 test('checkWorkloadTests: `threshold … for "label"` matching an explicit `as "label"` tag is not flagged (TF034)', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkout" is less than 250ms\n  api POST /orders as "checkout"\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  threshold p95 duration for "checkout" is less than 250ms\n  api POST /orders as "checkout"\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
 
 test('checkWorkloadTests: `threshold … for "label"` matching an automatic `METHOD path.raw` identity is not flagged (TF034)', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold p95 duration for "GET /health" is less than 250ms\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  threshold p95 duration for "GET /health" is less than 250ms\n  api GET /health\n');
   const diags = checkWorkloadTests(program);
   assert.deepEqual(diags, []);
 });
 
 test('checkWorkloadTests: `threshold … for "label"` matching no step in the test is flagged (TF034)', () => {
-  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkotu" is less than 250ms\n  api POST /orders as "checkout"\n');
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  threshold p95 duration for "checkotu" is less than 250ms\n  api POST /orders as "checkout"\n');
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
   assert.equal(diags[0]!.code, 'TF034');
@@ -320,7 +324,7 @@ test('checkWorkloadTests: `threshold … for "label"` matching no step in the te
 
 test('checkWorkloadTests: a `for "label"` on one workload-bearing test does not see another one\'s identities (TF034 is per-test)', () => {
   const { program } = parseSource(
-    'test "A"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api POST /orders as "checkout"\n\ntest "B"\n  ramp to 1 users over 1s\n  threshold p95 duration for "checkout" is less than 250ms\n  api GET /health\n',
+    'test "A"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api POST /orders as "checkout"\n\ntest "B"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  threshold p95 duration for "checkout" is less than 250ms\n  api GET /health\n',
   );
   const diags = checkWorkloadTests(program);
   assert.equal(diags.length, 1);
@@ -369,16 +373,87 @@ test('checkWorkloadTests: a workload-bearing test with no `threshold` is flagged
   assert.equal(diags[0]!.span.start.line, 1, 'reported on the test declaration');
 });
 
-test('checkWorkloadTests: one `threshold` of any kind satisfies the rule', () => {
-  for (const line of ['  threshold error rate is less than 1%\n', '  threshold p95 duration is less than 800ms\n']) {
-    const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n' + line + '  api GET /health\n');
-    assert.deepEqual(checkWorkloadTests(program), [], `expected \`${line.trim()}\` to satisfy the rule`);
-  }
+// This test used to read "one `threshold` of any kind satisfies the rule" and assert that a
+// lone `threshold p95 duration …` was accepted — M60's own suite encoding `B3-14`, the defect
+// M89c closes. The duration case moved to the M89c block below; what survives here is the half
+// that was always true.
+test('checkWorkloadTests: a lone error-rate threshold satisfies the rule', () => {
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold error rate is less than 1%\n  api GET /health\n');
+  assert.deepEqual(checkWorkloadTests(program), []);
 });
 
 test('checkWorkloadTests: a functional test needs no threshold (the rule is workload-only)', () => {
   const { program } = parseSource('test "plain"\n  api GET /health\n  expect status equals 200\n');
   assert.deepEqual(checkWorkloadTests(program), []);
+});
+
+// -- M89c (B3-14, D-M89-6): *a* threshold is not a *meaningful* threshold ----------------------
+//
+// M60 stated its own goal as "a 100 % error rate still reports PASS" and then wrote a rule that
+// only requires some threshold to exist. Probing found the goal unmet in two live shapes and one
+// stale one:
+//
+//   1. duration-only, 50 % of requests failing fast → `error rate: 50.00%` printed on the line
+//      directly above `✓`, verdict PASS, exit 0. This is `B3-14`.
+//   2. duration + an error-rate threshold *scoped* to a healthy endpoint → both thresholds green,
+//      50 % scenario error rate, PASS. Requiring merely "an errorRate threshold" would have
+//      accepted this, which is why the rule requires the unscoped form.
+//   3. duration-only at a *100 %* error rate — the example `B3-14` was filed with — is already
+//      caught, by M89a's D-M89-1 (zero successful iterations → `actual: null` → fail), three
+//      commits before this one. The row is restated in REVIEW_FINDINGS.md rather than closed on
+//      evidence that no longer holds.
+
+test('checkWorkloadTests: a duration threshold with no error-rate threshold is flagged (TF033, M89c)', () => {
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  threshold p95 duration is less than 800ms\n  api GET /health\n');
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1, JSON.stringify(diags));
+  assert.equal(diags[0]!.code, 'TF033');
+  assert.equal(diags[0]!.severity, 'error', 'a warning changes no exit code (M60\'s own reasoning)');
+  assert.match(diags[0]!.message, /thresholds duration but not error rate/);
+  assert.match(diags[0]!.hint ?? '', /threshold error rate is less than 1%/, 'the hint must name a threshold that actually parses');
+  // Reported on the misleading line, not on the `test` line: the duration threshold is the thing
+  // that looks like coverage and isn't.
+  assert.equal(diags[0]!.span.start.line, 3, 'reported on the duration threshold');
+});
+
+test('checkWorkloadTests: a *scoped* error-rate threshold does not satisfy the rule (M89c — one side of the branch is not the branch)', () => {
+  const { program, diagnostics } = parseSource(
+    'test "S"\n  ramp to 1 users over 1s\n  threshold p95 duration is less than 800ms\n  threshold error rate for "ok" is less than 1%\n  api GET /health as "ok"\n  api GET /other as "flaky"\n',
+  );
+  assert.deepEqual(diagnostics, []);
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1, JSON.stringify(diags));
+  assert.equal(diags[0]!.code, 'TF033');
+  // The hint has to explain *why* the threshold they already wrote isn't enough, naming it — a
+  // bare "add an error-rate threshold" reads as a false negative to someone looking straight at one.
+  assert.match(diags[0]!.hint ?? '', /error rate for "ok"/);
+  assert.match(diags[0]!.hint ?? '', /only bounds that endpoint's own bucket/);
+});
+
+test('checkWorkloadTests: an unscoped error-rate threshold alongside a scoped one satisfies the rule (M89c)', () => {
+  const { program } = parseSource(
+    'test "S"\n  ramp to 1 users over 1s\n  threshold p95 duration is less than 800ms\n  threshold error rate for "ok" is less than 1%\n  threshold error rate is less than 2%\n  api GET /health as "ok"\n',
+  );
+  assert.deepEqual(checkWorkloadTests(program), [], 'the scoped one is extra detail, not a disqualifier');
+});
+
+test('checkWorkloadTests: the no-threshold and duration-only arms never both fire (M89c)', () => {
+  // A test with no thresholds has no duration threshold either, so the arms are mutually exclusive
+  // by construction. Asserted because "two diagnostics for one mistake" is the failure mode the
+  // parser-recovery cluster (C11) spent two milestones undoing.
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  api GET /health\n');
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1, JSON.stringify(diags));
+  assert.match(diags[0]!.message, /has no `threshold`/);
+});
+
+test('checkWorkloadTests: the rule keys off the metric, not the count — many duration thresholds still need one error-rate threshold (M89c)', () => {
+  const { program } = parseSource(
+    'test "S"\n  ramp to 1 users over 1s\n  threshold p50 duration is less than 100ms\n  threshold p95 duration is less than 800ms\n  threshold p99 duration is less than 2000ms\n  api GET /health\n',
+  );
+  const diags = checkWorkloadTests(program);
+  assert.equal(diags.length, 1, 'one diagnostic for the test, not one per duration threshold');
+  assert.equal(diags[0]!.span.start.line, 3, 'reported on the first duration threshold');
 });
 
 // -- M60 (A4-02): D18/D19 follow calls into actions --------------------------------------------

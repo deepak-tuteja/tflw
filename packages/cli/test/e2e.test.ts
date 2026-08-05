@@ -2663,6 +2663,10 @@ test('`tflw load`: a scenario with an untagged step and an `as "label"`-tagged s
         join(dir, 'load.tflw'),
         'test "checkout burst"\n' +
           '  ramp to 5 users over 200ms\n' +
+          // The unscoped error-rate line is M89c's doing, not this test's subject: a *scoped*
+          // duration threshold is still a duration threshold, so without it the file no longer
+          // checks clean and this test can't get to the endpoint breakdown it exists to assert.
+          '  threshold error rate is less than 1%\n' +
           '  threshold p95 duration for "checkout" is less than 5000ms\n' +
           '  api GET /health\n' +
           '  expect status equals 200\n' +
@@ -3284,7 +3288,11 @@ test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and ma
     // `selfDiagnosis.test.ts`'s own busy-block test proves saturation deterministically.
     await writeFile(
       join(dir, 'load.tflw'),
-      'use "./helpers.ts"\n\ntest "cpu burn"\n  ramp to 8 users over 600ms\n  let burned = burnCpu()\n  threshold p95 duration is less than 100000ms\n',
+      // The error-rate line is M89c's doing. It is also this suite's clearest instance of `B3-17`:
+      // with no `api` step, the only way an iteration here fails is `burnCpu()` throwing, so the
+      // threshold is satisfiable but near-unfalsifiable. M89c requires it to be *present*, which is
+      // all a static check can honestly require — see REVIEW_FINDINGS.md `B3-17`.
+      'use "./helpers.ts"\n\ntest "cpu burn"\n  ramp to 8 users over 600ms\n  let burned = burnCpu()\n  threshold p95 duration is less than 100000ms\n  threshold error rate is less than 1%\n',
       'utf8',
     );
 
@@ -3298,9 +3306,12 @@ test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and ma
     assert.equal(results.selfDiagnosis!.saturated, true);
 
     const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
-    assert.match(junit, /skipped="1"/);
+    // junit emits one `<testcase>` per threshold, so M89c's added line takes this from 1 to 2 —
+    // and only now does the "*every* threshold" in this test's own name mean anything. With a
+    // single threshold, "every" and "the one" were the same assertion.
+    assert.match(junit, /tests="2"[^>]*skipped="2"/);
+    assert.equal(junit.match(/<skipped message="[^"]*saturated[^"]*"\/>/g)?.length, 2, 'both thresholds skipped, not just the first');
     assert.doesNotMatch(junit, /<failure/);
-    assert.match(junit, /<skipped message="[^"]*saturated[^"]*"\/>/);
 
     const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
     assert.match(html, /generator process saturated/);
