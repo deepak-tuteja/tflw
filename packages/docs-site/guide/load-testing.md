@@ -48,7 +48,7 @@ test "checkout under load"
 Both threshold lines are required, not stylistic: a duration threshold reads only the iterations
 that **succeeded**, so on its own it is satisfied by a service that fails half its requests
 quickly. The checker rejects a duration threshold that isn't paired with an error-rate one — see
-[Thresholds — the pass/fail gate](#thresholds-the-pass-fail-gate).
+[Thresholds — the pass/fail gate](#thresholds-—-the-pass-fail-gate).
 
 **Not supported inside a workload-bearing `test` (v1):** browser steps (`open`/`click`/`fill`/…)
 and UI/network expect subjects. A browser VU is 50-100MB of memory each — running hundreds of them
