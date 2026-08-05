@@ -151,6 +151,39 @@ test('`has count` measures arrays and strings, and rejects everything else', asy
   await server.close();
 });
 
+test('FU-09: the two spellings the emptiness diagnostic recommends really do assert non-emptiness, both ways', async () => {
+  // `M88d`'s half of FU-09 is a *diagnostic* — three natural spellings for "not empty" now name
+  // `not has count 0` and `.length is greater than 0`. That advice is only worth printing if it is
+  // true, so this runs it: each form must pass on a populated collection and **fail** on an empty
+  // one. Without the failing direction, `expect body.items not has count 0` returning a silent
+  // green on `[]` would satisfy the passing half and make the hint actively harmful.
+  const server = await startFixtureServer({
+    '/full': (_req, res) => json(res, 200, { items: [1, 2, 3] }),
+    '/empty': (_req, res) => json(res, 200, { items: [] }),
+  });
+
+  for (const step of ['expect body.items not has count 0', 'expect body.items.length is greater than 0']) {
+    const passing = `test "non-empty"\n  api GET /full\n  ${step}\n`;
+    const { program: p1 } = parseSource(passing);
+    const { report: r1 } = await runProgram(p1, testConfig(server.baseUrl), { source: passing });
+    assert.equal(r1.ok, true, `${step} must pass on [1,2,3]: ${JSON.stringify(r1.tests[0], null, 2)}`);
+
+    const failing = `test "empty"\n  api GET /empty\n  ${step}\n`;
+    const { program: p2 } = parseSource(failing);
+    const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: failing });
+    assert.equal(r2.ok, false, `${step} must fail on []`);
+  }
+
+  // And the other direction the hint names — `has count 0` for the empty case — is a real
+  // assertion too, not just a spelling that parses.
+  const emptyCase = `test "empty is asserted"\n  api GET /empty\n  expect body.items has count 0\n`;
+  const { program: p3 } = parseSource(emptyCase);
+  const { report: r3 } = await runProgram(p3, testConfig(server.baseUrl), { source: emptyCase });
+  assert.equal(r3.ok, true);
+
+  await server.close();
+});
+
 // `expect`'s matcher value is a `Value` expression, and object *literals* only exist as a
 // `FieldValue` (inside `body { … }` / arrays / table cells) — there's no grammar for writing one
 // directly after `equals`. The realistic way `equals` ever compares two objects is a `capture`d

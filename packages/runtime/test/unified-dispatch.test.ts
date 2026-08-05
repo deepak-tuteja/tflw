@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram, runLoadShard } from '../src/interpreter.js';
-import type { ReportEntry, WorkloadTestResult } from '../src/types.js';
+import type { ReportEntry, RunEvent, WorkloadTestResult } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 function workloadEntries(tests: readonly ReportEntry[]): WorkloadTestResult[] {
@@ -325,6 +325,102 @@ test('a `before file` hook failure runs neither functional nor workload-bearing 
   assert.equal(report.tests[0]!.name, 'before file');
   assert.equal(workloadEntries(report.tests).length, 0);
   assert.equal(report.selfDiagnosis, undefined);
+  await server.close();
+});
+
+// ---- B3-11 (M88d): a workload-bearing test is a unit of work on the event stream too -----------
+//
+// D-M88-5 restates SPEC §13's first guarantee over *report rows* — every test counted in
+// `report.total` emits a `test:start`/`test:end` pair — because the old wording quantified over
+// pairs and a test emitting neither event satisfied it vacuously. These cover the interpreter's
+// half; `e2e.test.ts` covers the same contract through the real `--format ndjson` surface.
+
+test('B3-11: a workload-bearing test emits a `test:start`/`test:end` pair, carrying the very entry the report holds', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = ['test "burst"', '  ramp to 2 users over 200ms', '  api GET /health', '  expect status equals 200'].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const events: RunEvent[] = [];
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, emit: (ev) => events.push(ev) });
+
+  const starts = events.filter((e) => e.type === 'test:start');
+  const ends = events.filter((e) => e.type === 'test:end');
+  assert.equal(starts.length, 1, `the whole stream used to be run:start → run:end; got ${JSON.stringify(events.map((e) => e.type))}`);
+  assert.equal(ends.length, 1);
+  assert.equal(starts[0]!.type === 'test:start' && starts[0]!.name, 'burst');
+  // One finalization, two sinks: the entry is built once by the test's own task and handed to
+  // both, so the stream and the report cannot drift into disagreeing about iterations or
+  // thresholds the way two `finalizeScenario` calls over the same accumulator could. Deep, not
+  // reference, equality — `runProgram` returns the report through a final `redactReport` pass, so
+  // the returned entry is a laundered copy of the object that was streamed.
+  const end = ends[0]!;
+  assert.equal(end.type, 'test:end');
+  assert.deepEqual(end.type === 'test:end' ? end.result : undefined, report.tests[0]);
+  assert.equal(report.tests[0]!.kind, 'workload');
+  // No step timeline: a workload iteration's body runs silently by design (D24a/D26), so the pair
+  // is the whole of what `report.total` promises for this kind of test.
+  assert.equal(events.filter((e) => e.type === 'step:end').length, 0);
+  await server.close();
+});
+
+test('B3-11: a `before file` hook failure streams no workload pair — nothing ran, and nothing is counted', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = [
+    'before file',
+    '  api GET /missing',
+    '  expect status equals 200',
+    '',
+    'test "burst"',
+    '  ramp to 1 users over 100ms',
+    '  api GET /health',
+  ].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const events: RunEvent[] = [];
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, emit: (ev) => events.push(ev) });
+
+  // The other direction of the restated invariant, and the reason it is stated over report rows:
+  // the workload test emits nothing here and that is *correct*, because the failing hook meant it
+  // never ran and it is absent from `report.tests` too. Silence is a violation only when the
+  // report claims the test.
+  const names = events.filter((e) => e.type === 'test:start').map((e) => (e.type === 'test:start' ? e.name : ''));
+  assert.deepEqual(names, ['before file']);
+  assert.deepEqual(report.tests.map((t) => t.name), ['before file']);
+  await server.close();
+});
+
+test('B3-11 + D114: a workload test inside a `parallel` batch flushes its pair as one block, never split by its neighbor', async () => {
+  const server = await startFixtureServer({
+    '/slow': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 40),
+    '/fast': (_req, res) => json(res, 200, { ok: true }),
+  });
+  const source = [
+    'test "functional" parallel',
+    '  api GET /slow',
+    '  expect status equals 200',
+    '  api GET /slow',
+    '  expect status equals 200',
+    '',
+    'test "burst" parallel',
+    '  ramp to 2 users over 150ms',
+    '  api GET /fast',
+  ].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const seen: { name: string; type: string }[] = [];
+  const { report } = await runProgram(program, testConfig(server.baseUrl), {
+    source,
+    emit: (ev) => {
+      if (ev.type === 'test:start') seen.push({ name: ev.name, type: 'start' });
+      else if (ev.type === 'step:end') seen.push({ name: ev.test, type: 'step' });
+      else if (ev.type === 'test:end') seen.push({ name: ev.result.name, type: 'end' });
+    },
+  });
+
+  assert.equal(report.tests.length, 2);
+  const burst = seen.map((e, i) => (e.name === 'burst' ? i : -1)).filter((i) => i >= 0);
+  assert.deepEqual(burst.map((i) => seen[i]!.type), ['start', 'end'], 'a workload test contributes exactly its pair');
+  assert.equal(burst[1]! - burst[0]!, 1, `expected the pair to be contiguous, got ${JSON.stringify(seen)}`);
   await server.close();
 });
 

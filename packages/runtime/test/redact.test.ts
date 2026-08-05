@@ -149,6 +149,39 @@ test('the same late-secret run, replayed through the event stream: `redactEvent`
   await server.close();
 });
 
+test('M88d/B3-11: a workload `test:end` is redacted through the workload branch, not dropped by a functional-only cast', async () => {
+  // `RunEvent`'s `test:end` widened from `TestResult` to `ReportEntry` when workload tests started
+  // emitting a pair — so `redactEvent` had to make the same `kind` dispatch `redactReport` already
+  // makes over `report.tests`. A `WorkloadTestResult` has no `steps`, so the old
+  // `redactTestResult` would have walked nothing and returned the name unmasked; the only field
+  // that can carry a secret here is the interpolated test name, and it is the whole surface.
+  const server = await startFixtureServer({ '/login': (_req, res) => json(res, 200, { ok: true }) });
+  // A test name is never interpolated, so the only way one carries a secret is the way this one
+  // does: the author typed the value into the header, and some step later reveals it to the
+  // redactor via `env()`. That is precisely the ordering the final pass exists for.
+  const source = `test "burst for acme-tenant-secret"
+  ramp to 1 users over 100ms
+  api POST /login body { tenant: env(TENANT) }
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const collected: RunEvent[] = [];
+  const { redactor } = await runProgram(program, testConfig(server.baseUrl), {
+    source,
+    environ: { ...process.env, TENANT: 'acme-tenant-secret' },
+    emit: (e) => collected.push(e),
+  });
+
+  const end = collected.find((e) => e.type === 'test:end')!;
+  assert.equal(end.type === 'test:end' && end.result.kind, 'workload', 'sanity: this is the workload pair B3-11 added');
+  const masked = redactEvent(end, redactor);
+  const text = JSON.stringify(masked);
+  assert.doesNotMatch(text, /acme-tenant-secret/);
+  assert.match(text, /•••\(TENANT\)/, 'and the placeholder is really there — a dropped result would also satisfy the line above');
+
+  await server.close();
+});
+
 test('a short `require env` value is not substring-redacted, so it never corrupts unrelated report content (decision 64)', () => {
   const r = new Redactor();
   r.register('PORT', '3001'); // 4 chars — below the redaction floor

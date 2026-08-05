@@ -2166,11 +2166,14 @@ test('--format ndjson streams one JSON-parseable, file-tagged RunEvent per line,
   });
 });
 
-// ---- C4: the ndjson stream is a contract (M77 — `B3-05`, `B3-07`, `B5-03`) --------------------
+// ---- C4: the ndjson stream is a contract (M77 — `B3-05`, `B3-07`, `B5-03`; M88d — `B3-11`) ----
 //
 // SPEC §13 states three guarantees; before M77 all three were violated, and the existing ndjson
 // tests missed every one because they assert that specific events *appear*, never that the stream
-// is well-formed as a whole.
+// is well-formed as a whole. `B3-11` is the same lesson one layer down: M77's own regression tests
+// counted `test:start`/`test:end` for hooks and totals for workloads, so a workload test emitting
+// *neither* event slipped between them — an absence is only catchable by a test that says how many
+// there should be.
 
 test('C4/B3-05+B3-07: every `test:start` is paired, and `run:start.total` forecasts what `run:end` reports (M77)', async () => {
   await withFixtureServer(async (baseUrl) => {
@@ -2220,6 +2223,80 @@ test('C4/B3-07: a workload-bearing test is counted by `run:start`, not announced
       const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; total?: number; report?: { total: number } });
       assert.equal(events.find((e) => e.type === 'run:start')!.total, 1);
       assert.equal(events.find((e) => e.type === 'run:end')!.report!.total, 1, 'the forecast matched the result');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('C4/B3-11: a workload-bearing test emits its own `test:start`/`test:end` pair instead of streaming nothing (M88d)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-workload-pair-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // Deliberately the *same* file shape as the `B3-07` test directly above — which passed
+      // throughout, because it asserted `total` at both ends and never counted the events in
+      // between. The entire stream for this file used to be `run:start` then `run:end`.
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'test "burst"\n  ramp to 1 users over 100ms\n  threshold error rate is less than 100%\n  api GET /health\n',
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      interface Line {
+        readonly type: string;
+        readonly name?: string;
+        readonly report?: { readonly total: number };
+        readonly result?: { readonly kind: string; readonly name: string; readonly ok: boolean; readonly steps?: unknown; readonly metrics?: { readonly iterations: number } };
+      }
+      const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as Line);
+
+      const starts = events.filter((e) => e.type === 'test:start');
+      const ends = events.filter((e) => e.type === 'test:end');
+      // The restated guarantee (D-M88-5), quantified over report rows rather than over pairs —
+      // the old wording ("every `test:start` has a matching `test:end`") was satisfied by this
+      // exact stream when it contained neither event, which is how the defect survived M77.
+      assert.equal(events.find((e) => e.type === 'run:end')!.report!.total, 1);
+      assert.equal(starts.length, 1, `a test counted in report.total must emit a start — got ${stdout}`);
+      assert.equal(ends.length, 1, 'and its end');
+      assert.equal(starts[0]!.name, 'burst');
+
+      const result = ends[0]!.result!;
+      assert.equal(result.kind, 'workload', 'the pair carries the workload result, not a functional stand-in');
+      assert.equal(result.name, 'burst');
+      assert.ok((result.metrics?.iterations ?? 0) > 0, 'with the metrics the report will hold');
+      assert.equal(result.steps, undefined, 'and no step timeline — a workload iteration runs silently by design');
+      assert.equal(events.filter((e) => e.type === 'step:end').length, 0, 'so no `step:end` either');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('C4/B3-11: a file mixing a functional and a workload test emits exactly one pair per report row (M88d)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-mixed-pairs-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'mixed.tflw'),
+        'test "functional"\n  api GET /health\n  expect status equals 200\n\ntest "burst"\n  ramp to 1 users over 100ms\n  threshold error rate is less than 100%\n  api GET /health\n',
+        'utf8',
+      );
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; name?: string; result?: { name: string }; report?: { total: number; tests: { name: string }[] } });
+      const report = events.find((e) => e.type === 'run:end')!.report!;
+
+      // Row-for-row, both directions: no test in the report went unannounced, and nothing was
+      // announced that the report doesn't hold.
+      const started = events.filter((e) => e.type === 'test:start').map((e) => e.name);
+      const ended = events.filter((e) => e.type === 'test:end').map((e) => e.result!.name);
+      const rows = report.tests.map((t) => t.name);
+      assert.deepEqual(started, rows, 'one `test:start` per report row, in order');
+      assert.deepEqual(ended, rows, 'one `test:end` per report row, in order');
+      assert.equal(report.total, 2);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

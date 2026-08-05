@@ -94,8 +94,11 @@ export function redactEvent(event: RunEvent, redactor: Redactor): RunEvent {
       return { ...event, name: redactor.redact(event.name) };
     case 'step:end':
       return { ...event, test: redactor.redact(event.test), step: redactStepResult(event.step, redactor) };
+    // M88d (`B3-11`): `result` is a `ReportEntry` now — a workload test emits a pair like any
+    // other test, and its result has metrics where a functional one has steps. Same dispatch
+    // `redactReport` already makes over `report.tests`, reusing the same helper.
     case 'test:end':
-      return { ...event, result: redactTestResult(event.result, redactor) };
+      return { ...event, result: redactReportEntry(event.result, redactor) };
     case 'run:end':
       return { ...event, report: redactReport(event.report, redactor) };
   }
@@ -104,8 +107,9 @@ export function redactEvent(event: RunEvent, redactor: Redactor): RunEvent {
 function redactReportEntry(t: ReportEntry, redactor: Redactor): ReportEntry {
   // M56 (Phase 3): a workload test has no step timeline/request-response evidence to redact (D24a
   // — a load iteration's body executes silently, only aggregate metrics are kept) — only its own
-  // name could ever carry a secret (an interpolated `test "${env("...")}"` header, however
-  // unlikely in practice for a load test).
+  // name could ever carry a secret. A test header is never interpolated, so that means an author
+  // who typed the value into the name itself; the redactor is value-based (see this file's header),
+  // so it is masked all the same once some step reveals the value via `env()`.
   if (t.kind === 'workload') return redactWorkloadTestResult(t, redactor);
   return redactTestResult(t, redactor);
 }
