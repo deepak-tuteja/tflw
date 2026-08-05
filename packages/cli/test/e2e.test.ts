@@ -905,34 +905,84 @@ test('B5-12: `tflw migrate --format` is an unknown flag, not a silently ignored 
   }
 });
 
-test('B5-05: `tflw migrate` cannot rewrite a removed keyword either — the one migration a user would expect today (M76)', async () => {
-  // The row is "`tflw migrate` cannot do anything and is documented as if it can". `collectMigrations`
-  // acts only on a `severity: 'warning'` diagnostic carrying `deprecation.replacement`, and no rule
-  // emits one — so the command is honest at run time and oversold everywhere around it.
+test('B5-05, code half: `tflw migrate` now rewrites the removed keyword a user would actually reach for (M90b)', async () => {
+  // This test used to assert the opposite, and its own comment said why: "`think` → `pause` is a
+  // real, mechanical, one-word rename … it is exactly what someone would reach for this command to
+  // do. It cannot … This test pins that — including that the file is left alone — so wiring the two
+  // together has to move the `--help` text, `CLI_FLAGS` and SPEC §12 with it." It did exactly that
+  // job: M90b flipped the behaviour and this was the first thing to fail.
   //
-  // B1 sharpened this past what the review could see: `think` → `pause` is a real, mechanical,
-  // one-word rename that shipped days ago, and it is exactly what someone would reach for this
-  // command to do. It cannot, because D103 makes a removed keyword a hard *error* rather than a
-  // deprecation warning, and a file that does not parse never reaches the splice. This test pins
-  // that — including that the file is left alone — so wiring the two together has to move the
-  // `--help` text, `CLI_FLAGS` and SPEC §12 with it.
+  // The obstacle was never the splice engine — it was that `deprecation` was documented as
+  // "present only on a `severity: 'warning'` diagnostic" while all four pre-1.0 removals went
+  // straight to hard errors, so no rule could set it without un-removing the keyword (D-M90-0).
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-removed-kw-'));
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
-    const source = 'test "burst"\n  ramp to 1 users over 1s\n  threshold p95 duration is less than 1s\n  think 2s\n  api GET /x\n';
+    const source =
+      'test "burst"\n  ramp to 1 users over 1s\n  threshold p95 duration is less than 1s\n  threshold error rate is less than 1%\n  think 2s\n  api GET /x\n';
     await writeFile(join(dir, 'old.tflw'), source, 'utf8');
 
+    const { stdout } = await execFileAsync('node', [cliEntry, 'migrate', '--no-color'], { cwd: dir });
+    assert.match(stdout, /migrated 1 file/, stdout);
+    assert.match(stdout, /the rewritten suite checks clean\./, stdout);
+
+    const after = await readFile(join(dir, 'old.tflw'), 'utf8');
+    assert.equal(after, source.replace('think 2s', 'pause 2s'), 'exactly one token moved, nothing else');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('migrate keeps going until nothing is left: a `think` hidden inside a `scenario` block is rewritten in the same run (M90b)', async () => {
+  // PLAN_M90_MIGRATION.md §3.1 predicted one pass would always be enough — "recovery is not a
+  // problem … `recoverTopLevel()` resyncs cleanly. One migrate pass sees every occurrence; no
+  // fixpoint loop." A probe disproved it: `recoverTopLevel()` skips the *entire* offending block,
+  // so a `think` inside a `scenario` is invisible to the parser until `scenario` itself is fixed.
+  // One pass rewrote `scenario`→`test`, exited 2, and pointed at a `think` it had not been able to
+  // see — honest, and still a tool that does half its job and tells you to run it again.
+  //
+  // Termination is structural: every edit replaces a removed keyword with a live one, the supply
+  // per file is finite, and no replacement is itself removed syntax.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-nested-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    const source =
+      'scenario "burst"\n  ramp to 10 users over 5s\n  threshold p95 duration is less than 1s\n  threshold error rate is less than 1%\n  think 2s\n  api GET /x\n';
+    await writeFile(join(dir, 'old.tflw'), source, 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'migrate', '--no-color'], { cwd: dir });
+    assert.match(stdout, /migrated 1 file/, stdout);
+    assert.match(stdout, /the rewritten suite checks clean\./, `both rewrites, one run:\n${stdout}`);
+
+    const after = await readFile(join(dir, 'old.tflw'), 'utf8');
+    assert.match(after, /^test "burst"$/m, '`scenario` became `test`');
+    assert.match(after, /^ {2}pause 2s$/m, 'and the `think` it was hiding became `pause`');
+    assert.doesNotMatch(after, /scenario|think/, after);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('A3-01: the `scenario` diagnostic names the one-word rename, not a brace form the parser rejects (M90b, D-M90-5)', async () => {
+  // The row: "the `scenario` migration diagnostic tells the user to write syntax the parser
+  // rejects". It said ``write `test "…" { ramp to … }` instead`` — a `TF010` in an
+  // indentation-based language, confirmed live. Worse, the `ramp to …` line it instructed the user
+  // to add is *already in their file*: the old `parseScenarioDecl` made a workload line mandatory.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-a3-01-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'old.tflw'), 'scenario "burst"\n  ramp to 10 users over 5s\n  api GET /x\n', 'utf8');
+
     await assert.rejects(
-      execFileAsync('node', [cliEntry, 'migrate', '--no-color'], { cwd: dir }),
+      execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }),
       (e: unknown) => {
-        const { code, stdout } = e as { code?: number; stdout?: string };
-        assert.equal(code, 2, 'a removed keyword is an error, so migrate stops at validation');
-        assert.doesNotMatch(stdout ?? '', /migrated \d+ file/, 'and it must not claim to have migrated anything');
+        const { stderr } = e as { stderr: string };
+        assert.match(stderr, /`scenario` was removed — write `test` instead/, stderr);
+        assert.doesNotMatch(stderr, /\{ ramp to/, 'the brace form is a parse error and must not be advised');
+        assert.match(stderr, /= fix: run `tflw migrate` to apply this automatically/, `and the offer is derived from the payload:\n${stderr}`);
         return true;
       },
     );
-
-    assert.equal(await readFile(join(dir, 'old.tflw'), 'utf8'), source, '`think` is still `think` — nothing was rewritten');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

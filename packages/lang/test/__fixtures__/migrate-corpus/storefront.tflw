@@ -1,0 +1,395 @@
+# testFlow PLAN.md's M7 acceptance corpus (PLAN_WEBV2_TARGETS.md §4): mixed UI/API coverage
+# against the webV2 storefront (`env local`'s `web` base, the Vite+React SPA served on :8090),
+# walking the Tier A/B/C difficulty gradient webV2-0..3 built — see testFlow-tests/PROGRESS.md.
+# This is real, ongoing coverage (not a throwaway demo): every scenario here exercises a distinct
+# tflw browser capability against a real corner of a real app, no mocking of the app under test
+# (`stub` stays reserved for genuinely third-party dependencies, §9.7's house style).
+#
+# **Known, accepted flake**: the reviews test below submits alice's first-ever review of
+# "Bulk Item 1" itself (both the success and the duplicate-409 case, self-contained, in one test —
+# it doesn't rely on any pre-existing seeded review). A manual rerun against the same still-live
+# stack (no restart) will 409 on the *first* submission too, since that review now already exists.
+# A fresh `node cli.mjs stop && start` (or a single CI run) is clean every time.
+#
+# Product ids are **not** hardcoded: apiV2's seed script assigns fresh random UUIDs on every
+# restart (stable *names* like "Bulk Item 100", not stable ids), so tests that need a direct
+# `/products/{id}` URL look the id up via a real `api GET /products?q=…` first (mixed UI/API, the
+# same pattern authz.tflw already uses for its own dedicated-product setup).
+#
+# Home-catalog tests (T1/T2/reviews below) filter through the page's own `Search` field before
+# locating a row, rather than assuming "Bulk Item N" sits on page 1 of the *unfiltered* listing
+# (default sort is `product.name ASC`, apiV2's products.service.ts) — true in isolation, but not
+# guaranteed once this file runs alongside the rest of testFlow-tests' suite, where other files'
+# own ad-hoc products (e.g. authz.tflw's `unique("Authz Widget")`) can sort ahead of "Bulk Item…"
+# and push it off page 1. Filtering first is robust to that regardless of suite composition.
+
+import "../shared/webv2-checkout.tflw"
+import "../shared/webv2-login.tflw"
+import "../../shared/root.tflw"
+
+# M50 (PLAN_WEBV2_M45.md): `after file` had zero dogfood anywhere in this suite (only `before
+# file` did, examples/hooks-explained.tflw) despite a real, genuine use existing right here — user
+# A's cart is a persistent server-side resource (SPEC §10) that otherwise survives past this
+# file's own last test, same reasoning "cart rows are drag-drop reorderable…" already flushes it
+# mid-file for. Runs once, its own isolated scope, after every test in this file has finished.
+# Mirrors that same test's own flush step exactly (no `expect status` on the checkout call — a 201
+# or a 422 "cart is empty" are both a legitimate outcome depending on what's left in the cart).
+after file
+  api POST /auth/login body { email: env(USER_A_EMAIL), password: env(USER_A_PW) }
+  expect status equals 200
+  capture body.accessToken as cleanupToken
+  api POST /cart/checkout
+    header "Authorization" is "Bearer {cleanupToken}"
+
+@mixed
+test "row-scoped add-to-cart on a page of a dozen identical buttons, with its async toast"
+  root("Bulk Item 100")
+  within css "[aria-label='Bulk Item 100']"
+    click button "Add to cart"
+  expect text "Added 1 × Bulk Item 100 to your cart." is visible
+  log "row-scoped add-to-cart toast confirmed for Bulk Item 100"
+  # M50 (PLAN_WEBV2_M45.md): explicit `screenshot "<name>"` had zero dogfood anywhere — every
+  # screenshot this suite ever captured before was an implicit failure-screenshot. Captured here,
+  # a genuine passing moment worth a named artifact, not fabricated just to exercise the step.
+  screenshot "cart-toast"
+
+@mixed
+test "the Quick View modal traps focus, adds to cart, and closes on Escape"
+  root("Bulk Item 1")
+  within css "[aria-label='Bulk Item 1']"
+    click button "Quick view"
+  expect button "Close" is visible
+  within css "[role='dialog']"
+    fill field "Quantity" with "1"
+    click button "Add to cart"
+  expect text "Added 1 × Bulk Item 1 to your cart." is visible
+  press "Escape"
+  expect button "Close" is hidden
+
+@mixed
+test "a full checkout — product page, cart, the iframe payment widget, and the real network request"
+  api GET /products?q=Bulk%20Item%20100&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk100Id
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/products/{bulk100Id}"
+  expect button "Log out" is visible
+  within css "#product-heading"
+    expect text "Bulk Item 100" is visible
+  fill field "Quantity" with "1"
+  click button "Add to cart"
+  open "/cart"
+  expect css "th[scope='row']:text-is('Bulk Item 100')" is visible
+  checkout()
+  # webV2's cart page posts to `/cart/checkout` (CartPage.tsx's `handleCheckout`), not `/orders`
+  # directly — the server creates the order internally and the client only does a follow-up
+  # `GET /orders/{id}` to render the confirmation. `request to "…"` is a plain substring match
+  # (SPEC §9.7), so a bare "/orders" would actually match that *later* GET, not the checkout POST.
+  expect request to "/cart/checkout" with method "POST" was made
+  expect status of request to "/cart/checkout" with method "POST" equals 201
+
+@mixed
+test "the payment gateway's real fetch is stubbed — a method-mismatch passes through untouched, a failure surfaces for real"
+  # M46 (PLAN_WEBV2_M45.md): `stub` (SPEC §9.7) had zero dogfood anywhere before this — `checkout()`
+  # only ever proves a *success* stub works. This test proves `stub` genuinely changes behavior on
+  # every axis SPEC documents, against the payment widget's real (permanently-unreachable) fetch:
+  #   - a method-mismatched stub (GET, registered first) never intercepts the real POST — proven
+  #     indirectly: if it had, the widget would show its success state (this GET stub's 200 body),
+  #     not the 500 error the POST stub below actually produces.
+  #   - a stubbed 500 surfaces as a real page-level error inside the iframe, not silently swallowed.
+  #   - the stub's own response is still observable via `request to`/`status of request to`, exactly
+  #     like a real network response would be.
+  api GET /products?q=Bulk%20Item%20100&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk100Id
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/products/{bulk100Id}"
+  fill field "Quantity" with "1"
+  click button "Add to cart"
+  open "/cart"
+  stub GET "https://payments.example.test/v1/authorize" respond status 200 body { token: "tok_wrong_method" }
+  stub POST "https://payments.example.test/v1/authorize" respond status 500 body { error: "gateway down" }
+  within frame css "iframe[title='Payment']"
+    fill field "Card number" with "4111111111111111"
+    fill field "Expiry (MM/YY)" with "12/30"
+    fill field "CVC" with "123"
+    click button "Authorize payment"
+    expect text "The payment gateway declined this card (status 500)." is visible
+  expect request to "https://payments.example.test/v1/authorize" with method "POST" was made
+  expect status of request to "https://payments.example.test/v1/authorize" with method "POST" equals 500
+
+@mixed
+test "cart rows are drag-drop reorderable, verified row by row"
+  api GET /products?q=Bulk%20Item%20100&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk100Id
+  api GET /products?q=Bulk%20Item%2010&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk10Id
+  # user A's cart is a real, persistent server-side resource that survives across every test in
+  # this suite (SPEC §10's identity-not-state isolation) — an earlier test's own `add to cart`
+  # (e.g. T1) can leave a row already sitting in this cart, breaking this test's row-by-row
+  # position assertions. Flush it via the same API surface (not `checkout()`, which needs the UI's
+  # iframe payment widget); a 422 "cart is empty" is expected and fine when nothing carried over.
+  api POST /auth/login body { email: env(USER_A_EMAIL), password: env(USER_A_PW) }
+  expect status equals 200
+  capture body.accessToken as flushToken
+  api POST /cart/checkout
+    header "Authorization" is "Bearer {flushToken}"
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/products/{bulk100Id}"
+  expect button "Log out" is visible
+  fill field "Quantity" with "1"
+  click button "Add to cart"
+  expect text "Added 1 × Bulk Item 100 to your cart." is visible
+  open "/products/{bulk10Id}"
+  expect button "Log out" is visible
+  fill field "Quantity" with "1"
+  click button "Add to cart"
+  expect text "Added 1 × Bulk Item 10 to your cart." is visible
+  # `click` dispatches the click and moves on — it doesn't wait for the async `POST /cart/items`
+  # the handler fires, so the API check right below needs a real settle signal first (the same
+  # `role="status"` toast T1 waits on), or it can race the request and see only 1 item.
+  # apiV2's `GET /cart` has no `ORDER BY` on the items relation (cart.service.ts), so which product
+  # lands in row 1 vs row 2 isn't guaranteed to be insertion order — ask the API which is which
+  # rather than assuming, then verify the drag against whatever's really there.
+  api GET /cart
+    header "Authorization" is "Bearer {flushToken}"
+  expect status equals 200
+  capture body.items[0].product.name as row1Name
+  capture body.items[1].product.name as row2Name
+  open "/cart"
+  # a bare `text "{name}"` is ambiguous here (SPEC §9.3): each row repeats the product name inside
+  # its own "Quantity for …"/"Remove …" accessible names too, so every position check below scopes
+  # to the row header cell specifically via `th:text-is(…)` (exact match, not substring).
+  expect css "table tbody tr:nth-child(1) th:text-is('{row1Name}')" is visible
+  drag css ".drag-handle[aria-label='Drag to reorder {row1Name}']" to css "table tbody tr th:text-is('{row2Name}')"
+  expect css "table tbody tr:nth-child(1) th:text-is('{row2Name}')" is visible
+  expect css "table tbody tr:nth-child(2) th:text-is('{row1Name}')" is visible
+  checkout()
+
+@mixed
+test "reviews: a first submission succeeds, a duplicate 409s through the shadow-DOM rating widget"
+  root("Bulk Item 1")
+  within css "[aria-label='Bulk Item 1']"
+    click text "Reviews"
+  within css "star-rating:not([readonly])"
+    click button "5 stars"
+  fill field "Comment (optional)" with "Exactly as described."
+  click button "Submit review"
+  expect text "Exactly as described." is visible
+  within css "star-rating:not([readonly])"
+    click button "4 stars"
+  fill field "Comment (optional)" with "Still great."
+  click button "Submit review"
+  expect text "you have already reviewed this product" is visible
+
+@mixed
+test "the virtualized catalog filters through a placeholder-only field down to one row"
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/catalog/all"
+  fill field "Filter products…" with "Bulk Item 100"
+  expect css ".virtual-list-row" has count 1
+  expect text "Bulk Item 100" is visible
+
+@mixed
+test "the support page's drop-zone accepts a real file, surviving a per-render dynamic field id"
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/support"
+  fill field "Subject" with "M7 dogfood upload"
+  drop file "../payloads/sample.csv" onto css ".drop-zone"
+  expect text "sample.csv" is visible
+
+@mixed
+test "the Category <select> really filters the catalog, combined with Search"
+  # M40 (PLAN_WEBV2_M40.md): closes the `select "…" from field` gap — CatalogPage.tsx's Category
+  # <select> (a real <label>-associated element, tier 1) was never exercised by any test. Combined
+  # with Search rather than asserted alone, so a wrong category genuinely proves 0 results and the
+  # right one proves 1 — not just "the dropdown didn't error".
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/"
+  select "Books" from field "Category"
+  fill field "Search" with "Wireless Mouse"
+  expect css ".product-grid li" has count 0
+  select "Electronics" from field "Category"
+  expect css ".product-grid li" has count 1
+  expect text "Wireless Mouse" is visible
+
+@mixed
+test "double click and right click are real, distinct browser events — not just two clicks"
+  # M40: closes the zero-use gap for both steps. `double click`'s two clicks land at the *same*
+  # screen coordinate (Playwright resolves the target position once, not per-click) — the first
+  # opens the Quick View modal, whose full-viewport `.modal-overlay` (styles.css) then covers that
+  # same point; since the row's button sits off-center (the overlay only centers `.modal-dialog`,
+  # not the backdrop), the second click actually lands on the backdrop and closes it
+  # (`ProductQuickViewModal.tsx`'s `e.target === e.currentTarget` self-close check) — a real,
+  # observable proof the step fires two independent click events against the live DOM as it
+  # changes between them, not a single coalesced "double-click" gesture. A right click never
+  # dispatches a `click` event at all (browsers reserve it for `contextmenu`) — the add-to-cart
+  # toast never appearing is what proves that, not an assumption.
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/"
+  fill field "Search" with "Bulk Item 5"
+  within css "[aria-label='Bulk Item 5']"
+    double click button "Quick view"
+  expect button "Close" is hidden
+  fill field "Search" with "Bulk Item 6"
+  within css "[aria-label='Bulk Item 6']"
+    right click button "Add to cart"
+  expect text "Added 1 × Bulk Item 6 to your cart." is hidden
+
+@mixed
+test "the a11y-demo's accessible checkbox check/uncheck is real, after scroll to + hover"
+  # M40: closes check field/uncheck field/hover/scroll to together — a11y-demo's accessible
+  # checkbox (AccessibilityDemoPage.tsx) is real, labelled, and public (no login needed, App.tsx's
+  # route table). `scroll to` + `hover` land on its neighbouring "Save preferences" button first
+  # (a realistic "arrive, then act" sequence), then check/uncheck is verified against the field's
+  # actual `checked` state, not just "the click didn't error".
+  open "/a11y-demo"
+  expect field "Subscribe to updates" not is checked
+  scroll to button "Save preferences"
+  hover button "Save preferences"
+  check field "Subscribe to updates"
+  expect field "Subscribe to updates" is checked
+  uncheck field "Subscribe to updates"
+  expect field "Subscribe to updates" not is checked
+
+@mixed
+test "the render fixture: a masked snapshot absorbs a real checkbox change, unmasked catches it"
+  # M41 (PLAN_WEBV2_M40.md decision 4) first put this baseline on AccessibilityDemoPage's accessible
+  # half; M45 (PLAN_WEBV2_M45.md) moved it here after that page's inherited global `system-ui` font
+  # (styles.css) turned out to render differently across machines — the exact CI-vs-dev mismatch
+  # this test caught for real (960x141 baseline vs. CI's 960x133). `/render-fixture` exists purely
+  # to remove that variable: a self-hosted `.render-fixture` font (styles.css) instead of the host
+  # OS's system font, plus the same lowest-flake-risk shape M41 already chose — static markup, no
+  # seeded product data, no per-render dynamic ids, a public route (`webV2/src/App.tsx`) so no
+  # login/auth-rehydration race either.
+  #
+  # Proves `mask` genuinely changes the compare outcome rather than just being asserted in
+  # isolation — mirrors tflw's own M4b runtime test (`runtime/test/browser-steps.test.ts:1000`,
+  # "unmasked fails on the recolored region, masked passes despite it"). This page's only real
+  # source of visual state change is its checkbox: checking it unmasked genuinely differs from the
+  # unchecked baseline (caught below via `not matches snapshot`); masking that same region — plus
+  # the status-circle <img> — absorbs the change and still matches.
+  #
+  # Baselines were seeded once via `tflw run --update-snapshots --only "<this test's name>"` against
+  # a temporarily-neutralized copy of this test (checkbox left unchecked throughout, so both names'
+  # baselines capture the canonical unchecked state) — `--update-snapshots` overwrites on *every*
+  # `matches snapshot` call it sees (`snapshot.ts`'s `evaluateSnapshot`), so seeding this file's
+  # real, stateful version directly would let the later (checked-state) captures below clobber what
+  # the first capture of each name just wrote. Committed baselines under
+  # `tests/snapshots/webv2-storefront/…` are the product of that one-time seed; every ordinary
+  # `tflw run` after that only ever reads and compares.
+  open "/render-fixture"
+  expect css "section[aria-labelledby='render-fixture-heading']" matches snapshot "render-fixture-unmasked"
+  check field "Subscribe to updates"
+  expect css "section[aria-labelledby='render-fixture-heading']" not matches snapshot "render-fixture-unmasked"
+  uncheck field "Subscribe to updates"
+  expect css "section[aria-labelledby='render-fixture-heading']" matches snapshot "render-fixture-masked" mask field "Subscribe to updates" mask css "section[aria-labelledby='render-fixture-heading'] img"
+  check field "Subscribe to updates"
+  expect css "section[aria-labelledby='render-fixture-heading']" matches snapshot "render-fixture-masked" mask field "Subscribe to updates" mask css "section[aria-labelledby='render-fixture-heading'] img"
+
+@mixed
+test "the order confirmation page's receipt link genuinely opens a second browser tab"
+  # M43 (PLAN_WEBV2_M40.md decision 5): closes the `switch to new tab`/`switch to tab N`/`close tab`
+  # gap — GET /orders/:id/receipt (M32) was already real and owner-scoped, just unconsumed by any
+  # UI; wired up as a `target="_blank"` link on OrderConfirmationPage.tsx (nginx proxies `/v1/*`
+  # same-origin, so the session cookie rides along with no bearer token needed). The receipt's own
+  # PDF content/headers are already thoroughly proven at the API level (tests/order-receipts.tflw,
+  # tests/file-formats.tflw's `body pdf text`) — re-asserting that here would be redundant, so this
+  # test's job is the browser-tab mechanics only.
+  #
+  # Confirmed empirically before writing this for real (not assumed): a `target="_blank"` link to a
+  # `Content-Disposition: attachment` response still fires Playwright's popup event — the new Page
+  # opens before the browser's own download handling takes over — so `switch to new tab` genuinely
+  # arms and catches it here, same as tflw's own runtime fixture (`browser-steps.test.ts:495`).
+  api GET /products?q=Bulk%20Item%2050&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk50Id
+  api POST /auth/login body { email: env(USER_A_EMAIL), password: env(USER_A_PW) }
+  expect status equals 200
+  capture body.accessToken as token
+  api POST /orders body { items: [{ productId: {bulk50Id}, quantity: 1 }] }
+    header "Authorization" is "Bearer {token}"
+  expect status equals 201
+  capture body.id as orderId
+
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/orders/{orderId}"
+  expect text "Order confirmed" is visible
+  switch to new tab
+    click text "View receipt (PDF)"
+  switch to tab 1
+  expect text "Order confirmed" is visible
+  switch to tab 2
+  close tab
+  expect text "Order confirmed" is visible
+
+@mixed
+test "the cart's Remove confirm() dialog: dismiss keeps the item, accept removes it via a real DELETE"
+  # M43 (PLAN_WEBV2_M40.md decision 5): closes the `accept dialog`/`dismiss dialog` gap on the
+  # storefront side — DELETE /cart/items/:id was already real and owner-scoped, just never
+  # previously guarded by a native dialog. Dismissing first and confirming the row survives is what
+  # proves this is a genuine confirm()-guarded trap (Playwright otherwise auto-dismisses silently,
+  # SPEC §9.1), not just a click that happens to do nothing.
+  api POST /auth/login body { email: env(USER_A_EMAIL), password: env(USER_A_PW) }
+  expect status equals 200
+  capture body.accessToken as flushToken
+  api POST /cart/checkout
+    header "Authorization" is "Bearer {flushToken}"
+  # T4's own flush precondition (cart rows are drag-drop reorderable test, above): a 422 "cart is
+  # empty" here is expected and fine when nothing carried over from an earlier test.
+
+  root("Bulk Item 51")
+  within css "[aria-label='Bulk Item 51']"
+    click button "Add to cart"
+  expect text "Added 1 × Bulk Item 51 to your cart." is visible
+
+  open "/cart"
+  dismiss dialog
+  click button "Remove Bulk Item 51"
+  expect css "th[scope='row']:text-is('Bulk Item 51')" is visible
+
+  accept dialog
+  click button "Remove Bulk Item 51"
+  expect text "Your cart is empty." is visible
+  api GET /cart
+    header "Authorization" is "Bearer {flushToken}"
+  expect status equals 200
+  expect body.items has count 0
+
+@mixed
+test "the happy-path product and catalog pages have no accessibility violations"
+  api GET /products?q=Bulk%20Item%20100&pageSize=1
+  expect status equals 200
+  capture body[0].id as bulk100Id
+  login(env(USER_A_EMAIL), env(USER_A_PW))
+  open "/products/{bulk100Id}"
+  expect page has no a11y violations
+  open "/"
+  expect page has no a11y violations
+
+@mixed
+test "the a11y-demo's inaccessible section: the scanner catches real violations, and severity is a floor not an exact match"
+  # M48 (PLAN_WEBV2_M45.md): no test in this suite had ever proven the a11y scanner actually
+  # catches a real violation — the test above only ever scans clean happy-path pages — despite
+  # AccessibilityDemoPage.tsx being purpose-built with 4 deliberate violations for exactly this.
+  # Real axe-core severities probed empirically first, not guessed: color-contrast → serious,
+  # image-alt → critical, label → critical. (The 4th deliberate violation — a role-less clickable
+  # <div> standing in for a button — isn't flagged by axe-core's default ruleset at all; not every
+  # bad practice is a rule violation.)
+  #
+  # `not has no moderate a11y violations` is the real floor-vs-exact-match discriminator: zero
+  # violations here are literally tagged "moderate" — only serious/critical exist — so this only
+  # passes under genuine floor semantics (serious/critical count as "moderate or worse"); an
+  # exact-match bug would incorrectly report this floor clean. Same reasoning for `minor`. A
+  # genuinely-passing floor (a level above every real violation) isn't reachable on this page
+  # without new target-app content — critical is axe's own ceiling, and this page has critical
+  # violations — deliberately out of scope for this milestone (PLAN_WEBV2_M45.md: no target-app
+  # work for M48).
+  open "/a11y-demo"
+  expect page not has no a11y violations
+  expect page not has no minor a11y violations
+  expect page not has no moderate a11y violations
+  expect page not has no serious a11y violations
+  expect page not has no critical a11y violations

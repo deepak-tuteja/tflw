@@ -18,14 +18,24 @@ export interface Diagnostic {
   readonly label?: string;
   /** A `= help:` line, e.g. a "did you mean `expect`?" suggestion. */
   readonly hint?: string;
-  /** Present only on a `severity: 'warning'` deprecation diagnostic (decision 38: removed/renamed
-   * syntax spends ≥1 release as a checker warning before removal, never silent). `replacement` is
-   * the exact text `tflw migrate` (P#38, the 1.0-gate deliverable) splices in at `span` to
-   * mechanically upgrade the suite — the same "generate a fully-prepared rewrite alongside the
-   * diagnostic" shape the reuse pass (M6) already uses for its own hints. No checker rule sets
-   * this yet (the grammar has been additive-only since the very first release, decision 45) — the
-   * field and `tflw migrate`'s rewrite engine exist ahead of the first real deprecation on
-   * purpose, so the day one lands it's mechanical, not a scramble. */
+  /** Present on a diagnostic whose fix is a single-token rewrite: `replacement` is the exact text
+   * `tflw migrate` (P#38, the 1.0-gate deliverable) splices in at `span` to mechanically upgrade
+   * the suite — the same "generate a fully-prepared rewrite alongside the diagnostic" shape the
+   * reuse pass (M6) already uses for its own hints. `renderDiagnostic` derives migrate's offer from
+   * this field alone (D-M90-4), so a rule that sets it advertises the tool and a rule that doesn't
+   * stays quiet, with no second list to keep in step.
+   *
+   * **Any severity, not only `'warning'` (D-M90-0).** This used to say "present only on a
+   * `severity: 'warning'` deprecation diagnostic (decision 38)" — the lifecycle where removed
+   * syntax spends ≥1 release as a checker warning first. That lifecycle has never once been used:
+   * all four pre-1.0 removals (`scenario`, `think`, `uncheck`, bare `check <locator>`) went
+   * straight to hard errors, because there was no released version to spend a warning in. Honouring
+   * the old contract literally would have meant un-removing four keywords so they could parse and
+   * run again — shipping 1.0 with four zombie keywords and a promise to remove them in 2.0 — since
+   * a token-span splice needs a lexer, not a parse tree. Decision 38 is restated rather than
+   * abandoned: *a rename spends at least one release as a warning when there is a release to spend
+   * it in; a pre-1.0 removal is an error that carries its own replacement, and `tflw migrate`
+   * applies it.* */
   readonly deprecation?: { readonly replacement: string };
 }
 
@@ -236,6 +246,16 @@ export function renderDiagnostic(diag: Diagnostic, source: string, opts: RenderO
   if (diag.hint) {
     out.push(`${pad} ${c.blue('|')}`);
     out.push(`${pad} ${c.blue('=')} ${c.bold('help')}: ${diag.hint}`);
+  }
+  // D-M90-4: the offer to migrate is *derived* from the payload, never hand-written next to a
+  // rule. The advertisement and the capability become the same fact, so they cannot drift — which
+  // is exactly what cluster C8 was: four surfaces describing a `tflw migrate` that could not act.
+  // A rule that deliberately carries no payload (`TF014`'s bare `check <locator>`, D-M90-3, where
+  // the fix needs a human decision between `tick` and an assertion) therefore makes no offer, for
+  // free and without a second list to keep in step.
+  if (diag.deprecation) {
+    if (!diag.hint) out.push(`${pad} ${c.blue('|')}`);
+    out.push(`${pad} ${c.blue('=')} ${c.bold('fix')}: run \`tflw migrate\` to apply this automatically`);
   }
   return out.join('\n');
 }
