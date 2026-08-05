@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuntimeError } from './eval.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, isRedirectStatus, nextRedirectHop } from './redirect.js';
+import { MAX_REDIRECTS, RedirectLimitError, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { ResponseTrace } from './types.js';
 import type { SendRequestOptions } from './http.js';
 
@@ -51,7 +51,7 @@ type MtlsWorkerToParentMessage =
       readonly json: unknown;
       readonly durationMs: number;
     }
-  | { readonly type: 'error'; readonly id: number; readonly message: string; readonly timedOut: boolean; readonly code?: string; readonly refused?: boolean };
+  | { readonly type: 'error'; readonly id: number; readonly message: string; readonly timedOut: boolean; readonly code?: string; readonly refused?: boolean; readonly redirectLimit?: boolean };
 
 /** Server side — runs inside the forked child (`mtlsWorkerEntry.ts`), never in the main process.
  * `undici` is imported here, and *only* here — this file's whole reason to exist. */
@@ -103,7 +103,15 @@ export async function runMtlsWorkerProcess(): Promise<void> {
           for (let redirects = 0; ; redirects++) {
             res = await undiciFetch(current.url, { method: current.method, headers: current.headers, body: current.body, signal: controller.signal, redirect: 'manual', dispatcher: agent });
             const location = res.headers.get('location');
-            if (!isRedirectStatus(res.status) || !location || redirects >= MAX_REDIRECTS) break;
+            if (!isRedirectStatus(res.status) || !location) break;
+            if (redirects >= MAX_REDIRECTS) {
+              // Not `break` (M88a, `B4-09`) — breaking here fell through to the `response` message
+              // below and reported the 21st hop's 3xx as an ordinary answer. The `!guarded` branch
+              // above, which is the same request without `allow hosts`, throws; so does this now.
+              await res.arrayBuffer().catch(() => undefined);
+              process.send?.({ type: 'error', id, message: redirectLimitMessage(msg.method, msg.url), timedOut: false, redirectLimit: true } satisfies MtlsWorkerToParentMessage);
+              return;
+            }
             const hop = nextRedirectHop(current, res.status, location);
             await res.arrayBuffer().catch(() => undefined); // release the socket either way
             if (!isHostAllowed(hop.url, msg.allowHosts)) {
@@ -131,6 +139,13 @@ export async function runMtlsWorkerProcess(): Promise<void> {
         const timedOut = controller.signal.aborted;
         const cause = (err as { cause?: { code?: unknown } } | undefined)?.cause;
         const code = typeof cause?.code === 'string' ? cause.code : undefined;
+        // The `!guarded` branch's native `redirect: 'follow'` reports the cap as undici's opaque
+        // `fetch failed`; relabel it here so both branches cross the IPC boundary saying the same
+        // thing (M88a, `B4-10`) — the parent can't tell them apart once it's a bare message.
+        if (isRedirectLimitCause(err)) {
+          process.send?.({ type: 'error', id, message: redirectLimitMessage(msg.method, msg.url), timedOut: false, redirectLimit: true } satisfies MtlsWorkerToParentMessage);
+          return;
+        }
         process.send?.({ type: 'error', id, message: (err as Error).message, timedOut, code } satisfies MtlsWorkerToParentMessage);
       } finally {
         clearTimeout(timer);
@@ -193,9 +208,13 @@ function getChild(): ChildProcess {
       // …except an `allow hosts` refusal (M85), which isn't a transport failure to be formatted —
       // it's a finished sentence about a request that was deliberately never sent. A `RuntimeError`
       // is `sendRequest`'s signal to re-throw verbatim rather than wrap.
+      // A redirect-cap error is the same kind of thing as a refusal: a finished sentence about a
+      // chain, not a transport failure to be re-framed as "request failed: …" (M88a, `B4-09`).
       const e = msg.refused
         ? new AllowHostsError(msg.message)
-        : Object.assign(new Error(msg.message), { timedOut: msg.timedOut, cause: msg.code ? { code: msg.code } : undefined });
+        : msg.redirectLimit
+          ? new RedirectLimitError(msg.message)
+          : Object.assign(new Error(msg.message), { timedOut: msg.timedOut, cause: msg.code ? { code: msg.code } : undefined });
       entry2.reject(e);
     }
   });

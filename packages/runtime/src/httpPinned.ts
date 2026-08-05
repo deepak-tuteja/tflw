@@ -15,7 +15,7 @@ import * as https from 'node:https';
 import { RuntimeError } from './eval.js';
 import { fetchErrorHint } from './http.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, isRedirectStatus, nextRedirectHop } from './redirect.js';
+import { MAX_REDIRECTS, RedirectLimitError, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { ResponseTrace } from './types.js';
 
 export interface PinnedAgents {
@@ -176,7 +176,12 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
     const bodyBytes = Buffer.concat(chunks);
     const status = res.statusCode ?? 0;
 
-    if (current.followRedirects && isRedirectStatus(status) && res.headers.location && redirects < MAX_REDIRECTS) {
+    if (current.followRedirects && isRedirectStatus(status) && res.headers.location) {
+      // The cap was `redirects < MAX_REDIRECTS` folded into this same condition, so hitting it fell
+      // through to the `return` below and handed the 21st hop's 3xx back as an ordinary response —
+      // a workload could loop forever and still report a 0% error rate (M88a, `B4-09`). The pooled
+      // path is normative (D-M88-1) and `fetch` throws here.
+      if (redirects >= MAX_REDIRECTS) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
       const hop = nextRedirectHop(current, status, res.headers.location);
       // The guardrail, one hop at a time (M85, C1/`B4-02`). `execApi` checked the URL *this step
       // names*; nothing checked where a 3xx then sent it, so an allowlisted staging host that

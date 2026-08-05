@@ -57,6 +57,14 @@ before(async () => {
         res.writeHead(302, { location: 'https://unlisted.invalid/landing' }).end();
         return;
       }
+      // M88a (review cluster C2 / `B4-09`): a chain that never lands, so the worker's *own* two
+      // branches — native `redirect: 'follow'` and the hand-walked loop `allow hosts` selects —
+      // can be shown reaching the same verdict. It stayed an allowed host on purpose; this is
+      // about the cap, not the allowlist.
+      if (req.url === '/loop') {
+        res.writeHead(302, { location: '/loop' }).end();
+        return;
+      }
       const peerCert = (req.socket as TLSSocket).getPeerCertificate();
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ clientCn: peerCert.subject?.CN ?? null }));
     },
@@ -168,6 +176,27 @@ test('the mTLS worker refuses a redirect hop to an unlisted host, and says why a
   assert.match(error, /redirected to "https:\/\/unlisted\.invalid\/landing"/);
   assert.match(error, /host "unlisted\.invalid" is not in `allow hosts` \(127\.0\.0\.1\)/);
   assert.doesNotMatch(error, /request failed/, 'a refusal is the finished sentence, not a transport failure to re-frame');
+});
+
+// M88a (review cluster C2 / `B4-09`, `B4-14`) — the third client, and the one with two internal
+// redirect implementations of its own. Before M88a the hand-walked branch `break`ed at the cap and
+// reported the last 3xx as a response, so this exact program passed under `allow hosts` and failed
+// without it. The assertion is the *pair*: same program, same server, one config key apart.
+test('an endless redirect chain fails on the mTLS path too, identically with and without `allow hosts`', async () => {
+  const base = { ...testConfig(baseUrl), mtls: { certPath: clientCertPath, keyPath: clientKeyPath } };
+  const source = `test "follows a redirect loop"\n  api GET /loop\n  expect status equals 302\n`;
+  const { program } = parseSource(source);
+
+  const unguarded = await runProgram(program, base, { source });
+  const guarded = await runProgram(program, { ...base, allowHosts: ['127.0.0.1'] }, { source });
+
+  assert.equal(unguarded.report.ok, false, JSON.stringify(unguarded.report.tests, null, 2));
+  assert.equal(guarded.report.ok, unguarded.report.ok, '`allow hosts` must not flip a verdict');
+  assert.equal(guarded.report.tests[0]!.error, unguarded.report.tests[0]!.error);
+  assert.match(unguarded.report.tests[0]!.error ?? '', /too many redirects/);
+  // The cap crosses the IPC boundary as its own finished sentence, the way a refusal does — not
+  // re-framed as the transport failure the worker's error channel formats everything else into.
+  assert.doesNotMatch(unguarded.report.tests[0]!.error ?? '', /request failed/);
 });
 
 test('an allowed host on the mTLS path is unaffected by declaring `allow hosts`', async () => {

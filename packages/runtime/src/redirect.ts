@@ -13,14 +13,49 @@
 // hardcoded expectation. This module is those decisions lifted out of that file unchanged, so the
 // third path to need them adds a caller and not a fourth opinion.
 //
-// Note what is deliberately *not* here: response handling. Cookie jar behavior, multi-`Set-Cookie`
-// merging and what a chain that hits the cap should return are live divergences between the
-// clients (review cluster C2, `B4-05`/`B4-06`/`B4-09`) and settling them is that cluster's
-// decision, not this one. This module answers one question — where does the next hop go — and the
-// guardrail only ever needed that one.
+// M85 left response handling deliberately out — cookie jar behavior, multi-`Set-Cookie` merging and
+// what a chain that hits the cap should return were live divergences between the clients (review
+// cluster C2) and settling them was that cluster's decision, not the guardrail's. M88a settles the
+// third of those here, because "where does the next hop go" and "what happens when there is no
+// legitimate next hop" are the same question asked one step apart; the other two are the jar's, and
+// stay out (`B4-05`/`B4-06`, M88c).
+
+import { RuntimeError } from './eval.js';
 
 /** `fetch`'s own cap (Fetch §4.4 "HTTP-redirect fetch", step 5: redirect count 20). */
 export const MAX_REDIRECTS = 20;
+
+/** A chain that never terminates, distinguishable by type rather than by matching its text — the
+ * same reason `AllowHostsError` is (`allowHosts.ts:18-23`): the three layers between a client and
+ * the reporter each re-frame what they catch as "request failed: … — <message>", and this is
+ * already the finished sentence.
+ *
+ * Until M88a only the *unguarded* pooled path errored at all, and only because it delegates to
+ * native `redirect: 'follow'`; the three hand-written loops (`http.ts`, `httpPinned.ts`,
+ * `mtlsWorker.ts`) each `break`/`return`ed the last 3xx as if it were an ordinary response, which
+ * made an infinite redirect loop a **green** test on every path a real suite uses (`B4-09`). Worse,
+ * which of the two behaviours you got was decided by `allow hosts` — a *security* directive silently
+ * changing a verdict (`B4-14`). D-M88-1 makes the pooled path normative, so all four conform to
+ * `fetch`: the cap is an error, not a result. */
+export class RedirectLimitError extends RuntimeError {}
+
+/** Phrased from the *original* request only — the method and URL the step itself named, never the
+ * hop the chain happened to die on. That is not a simplification: native `fetch` knows nothing but
+ * the original, so anything richer could only be said by the hand-walked loops, and the two would
+ * disagree again on exactly the axis `B4-14` is about. Parity is the message. */
+export function redirectLimitMessage(method: string, url: string): string {
+  return `too many redirects: ${method} ${url} redirected more than ${MAX_REDIRECTS} times without landing on a final response — refusing to follow further (this is almost always a redirect loop; use \`without redirects\` if you meant to assert on the 3xx itself)`;
+}
+
+/** Node's `fetch` reports its own cap as a bare `TypeError: fetch failed` with the real reason one
+ * level down in `err.cause` — undici's `Error: redirect count exceeded`, which carries no `code` to
+ * match on, so the message is the only signal there is. Recognising it is what lets the unguarded
+ * pooled path (and the unguarded mTLS worker) say the same sentence the hand-walked loops say
+ * instead of `request failed: … — fetch failed` (`B4-10`). */
+export function isRedirectLimitCause(err: unknown): boolean {
+  const cause = (err as { cause?: { message?: unknown } } | undefined)?.cause;
+  return typeof cause?.message === 'string' && cause.message === 'redirect count exceeded';
+}
 
 /** Fetch §4.4 deletes these from the request's header list when the redirect leaves the request's
  * origin, and Node's own `fetch` (undici) implements exactly this list — `authorization` and
