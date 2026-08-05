@@ -931,6 +931,16 @@ produced a green test asserting the exact opposite of what was written. Edit dis
 meaning; the negation prefix is detected outright instead. If a `not` was already typed, the advice
 inverts accordingly: `is not invisible` is told to write `visible`, not to add a second `not`.
 
+**There is no `empty` matcher, and `has count` is equality only** (`FU-09`). "This collection is
+not empty" has two spellings, both of which work in both directions: `expect body.items not has
+count 0`, or the comparison moved onto the length — `expect body.items.length is greater than 0`,
+which takes `greater than`/`less than`/`equals` alike. The three spellings a user reaches for
+first (`is not empty`, `has at least 1`, `has count greater than 0`) are all errors, and the third
+used to be the worst kind: it fell out of the matcher grammar into call-parsing and answered with
+advice about **parens**, for a mistake that has nothing to do with calls. All three now name a
+working form. This was filed as a capability gap and re-probed as a discoverability one — the
+language could always express it, nothing pointed the way.
+
 ### 6.2.1 Contract validation — `matches schema "Name" from "src"` (PLAN decision 102a,
 enterprise arc cluster 3, closes TFLW-GAPS.md gap #6)
 
@@ -1940,13 +1950,27 @@ certify that anything is safe to share.
   concern" precedent as `TestResult.file`) so concurrent files' events stay distinguishable under
   `--parallel > 1`.
 
-  **What the stream guarantees** (cluster C4 — `B3-05`, `B3-07`, `B5-03`; each of these was
-  violated before M77, and each is a regression test now):
+  **What the stream guarantees** (cluster C4 — `B3-05`, `B3-07`, `B5-03`, `B3-11`; each of these
+  was violated before M77/M88d, and each is a regression test now):
 
-  1. **Every `test:start` has a matching `test:end`, on every path.** Including `before file` /
-     `after file` hooks, which emit a pair like any other unit of work. A *passing* file hook is
-     still absent from the final report's `tests` — a hook that worked is not a test result — so
-     pairing `test:start`/`test:end` tracks work in flight, and `total` is how you count tests.
+  1. **Every test counted in `run:end.report.total` emits a `test:start`/`test:end` pair** — a
+     functional test, a `with each` row-case, and a **workload-bearing test** alike, on every path.
+     `before file` / `after file` hooks emit a pair too, like any other unit of work; a *passing*
+     file hook is still absent from the final report's `tests` — a hook that worked is not a test
+     result — so pairing `test:start`/`test:end` tracks work in flight, and `total` is how you
+     count tests. This used to be stated the other way round ("every `test:start` has a matching
+     `test:end`"), which is a promise about *pairs*: a unit of work emitting **neither** event
+     satisfied it vacuously, and that is exactly how a workload-bearing test streamed nothing at
+     all for a full milestone without any regression test noticing (`B3-11`). Quantified over
+     report rows, silence is a violation.
+
+     A workload `test:end` carries a `WorkloadTestResult` (`kind: 'workload'`) — metrics and
+     evaluated thresholds, no `steps` and no `durationMs`, the same shape it has in
+     `report.tests` — so a consumer branches on `result.kind` exactly as it already does for the
+     report. It emits no `step:end` at all: a workload iteration's body executes silently by
+     design — only aggregate metrics are kept, which is why a `WorkloadTestResult` has no `steps`
+     in the first place — so there is no step timeline to stream, and the pair is the whole of
+     what `total` promises.
   2. **`run:start.total` counts the tests that are about to run** — functional cases *and*
      workload-bearing tests. It is a forecast, not a promise: a **failing** file hook adds one
      further entry, so `run:end`'s `total` may exceed it by the number of hooks that failed. It

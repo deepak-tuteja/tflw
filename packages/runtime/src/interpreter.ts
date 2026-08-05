@@ -346,6 +346,12 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     // its own row-cases sequentially internally (D112's last paragraph); each workload batch
     // member runs its own VU population loop exactly as `runLoadCore` always has.
     const functionalResults: (TestResult | undefined)[] = new Array(cases.length);
+    // M88d (review finding `B3-11`): a workload test's finished result, built the instant its own
+    // task resolves rather than in the file-order walk below, so its `test:end` can carry the very
+    // object the report will hold. The walk then reads from here instead of calling
+    // `finalizeScenario` a second time — one finalization per test, and the streamed result is
+    // `===` the report entry rather than a look-alike rebuilt from the same accumulator.
+    const workloadResults = new Map<TestDecl, WorkloadTestResult>();
     const batches = partitionIntoBatches(program.tests);
     for (const batch of batches) {
       // D114: a multi-member `parallel` batch's live events would otherwise interleave mid-block
@@ -366,7 +372,36 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
       const batchRunStart = performance.now();
       const batchScenarioCtx: ScenarioRunCtx = { ...scenarioCtx, runStart: batchRunStart };
       const tasks: Promise<void>[] = batch.map((test) => {
-        if (test.workload) return runScenarioTask(accumulatorByTest.get(test)!, batchScenarioCtx);
+        if (test.workload) {
+          // M88d (review finding `B3-11`): a workload-bearing test used to emit *nothing* on the
+          // live stream — no `test:start`, no `test:end` — while still being counted in
+          // `report.total`, so a consumer tailing `--format ndjson` saw a run begin, silence, then
+          // a finished report naming a test it had never been told about. `M77` taught this
+          // emitter about file *hooks* and stopped there; this is the same defect on the second
+          // surface, and worst on the longest-running kind of test, the one where streaming
+          // progress is the whole point. SPEC §16.1's guarantee was not *violated* — zero starts
+          // match zero ends — which is exactly how it hid; the invariant is now quantified over
+          // report rows instead (D-M88-5).
+          //
+          // Still no `step:end`: a workload iteration's body executes silently by design (D24a/
+          // D26 — only aggregate metrics are kept), so there is no step timeline to stream. The
+          // pair is what `report.total` promises; the steps were never part of that promise.
+          const acc = accumulatorByTest.get(test)!;
+          return (async () => {
+            // D114's buffering, for the same reason and by the same rule as a functional
+            // row-case: inside a multi-member `parallel` batch this test's two events flush
+            // together once its result is known, so a concurrent member's lines can't land
+            // between a `test:start` and its `test:end`.
+            const eventBuffer: RunEvent[] = [];
+            const scenarioEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
+            scenarioEmit({ type: 'test:start', name: test.name.value });
+            await runScenarioTask(acc, batchScenarioCtx);
+            const result: WorkloadTestResult = { ...finalizeScenario(acc), kind: 'workload', concurrency: test.concurrency };
+            workloadResults.set(test, result);
+            scenarioEmit({ type: 'test:end', result });
+            if (isBatched) for (const event of eventBuffer) emit(event);
+          })();
+        }
         const group = functionalGroups.get(test);
         if (!group) return Promise.resolve();
         return (async () => {
@@ -417,10 +452,11 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     // `mergeLoadShardReports` and splices it in (`spliceLoadReportIntoRunReport`).
     for (const test of program.tests) {
       if (test.workload) {
-        const acc = accumulatorByTest.get(test);
-        if (!acc) continue;
-        const scenarioReport = finalizeScenario(acc);
-        results.push({ ...scenarioReport, kind: 'workload', concurrency: test.concurrency });
+        // M88d: finalized by this test's own task the moment it finished (above), so what the
+        // report holds is the identical object its `test:end` already streamed.
+        const result = workloadResults.get(test);
+        if (!result) continue;
+        results.push(result);
       } else {
         const group = functionalGroups.get(test);
         if (!group) continue;

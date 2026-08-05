@@ -248,6 +248,35 @@ const MATCHER_VOCABULARY = [...MATCHER_KEYWORDS, 'greater', 'less', ...STATE_WOR
 const MATCHER_VOCABULARY_HELP =
   `expected a value matcher (${MATCHER_KEYWORDS.join(', ')}), \`greater than\`/\`less than\`, or a state ` +
   `(${STATE_WORDS.join('/')}) — any of them optionally prefixed with \`${MATCHER_PREFIX_KEYWORDS.join('`/`')}\``;
+/** FU-09 — the two spellings that actually assert a collection's size, named wherever a user
+ * reaches for one of the three that don't (`is not empty`, `has at least 1`,
+ * `has count greater than 0`). Both work in both directions at runtime; the gap was never
+ * capability, it was that no diagnostic pointed at either one. */
+const COUNT_BOUND_HELP =
+  'write `not has count 0` for "at least one" (`has count 0` for the empty case), or put the ' +
+  'comparison on the length instead — `expect body.items.length is greater than 0`, which takes ' +
+  '`greater than`/`less than`/`equals` alike';
+/** The size comparisons a user writes after `has count`/`has value`, where the grammar wants a
+ * value. `at` takes `least`/`most`; the rest take `than`. Rendered back as the whole phrase the
+ * user typed, so the message quotes their own words rather than one token of them (FU-09). */
+const BOUND_SECOND_WORDS: Readonly<Record<string, readonly string[]>> = {
+  greater: ['than'],
+  less: ['than'],
+  more: ['than'],
+  fewer: ['than'],
+  at: ['least', 'most'],
+};
+
+/** `greater than` / `at least` / … when a size comparison sits where a value belongs, else
+ * `undefined`. `tok` is the word itself and `after` the one behind it, so a partial phrase
+ * (`has count greater 0`) still reports the word rather than inventing the missing one. */
+function boundPhrase(tok: Token, after: Token): string | undefined {
+  if (tok.type !== 'ident') return undefined;
+  const seconds = BOUND_SECOND_WORDS[tok.value];
+  if (!seconds) return undefined;
+  return after.type === 'ident' && seconds.includes(after.value) ? `${tok.value} ${after.value}` : tok.value;
+}
+
 /** The negation morphemes a user reaches for when they want the *absence* of a state — `invisible`,
  * `unchecked`, `unhidden`, `notvisible`. There are no negated state words in this grammar: negation
  * is the `not` prefix, once, in front of the positive word. See `negatedStateWord`. */
@@ -2641,6 +2670,19 @@ class Parser {
         const next = this.peek();
         if (this.isKw(next, 'count')) {
           this.advance();
+          // FU-09: `has count greater than 0` is the spelling a user reaches for to say "at least
+          // one", and it used to fall straight out of the matcher grammar into `parseValue`'s
+          // call-parsing — answering ``\`greater\` looks like the start of a call but never reaches
+          // `(` `` with a hint about parens, for a mistake that has nothing to do with calls. Same
+          // C11-class mis-blame `M84` fixed elsewhere: the diagnostic named the grammar slot the
+          // parser fell into rather than the thing the user got wrong. Caught here, where the
+          // parser still knows the user was writing a *count* matcher and can name the two
+          // spellings that work.
+          const countBound = boundPhrase(this.peek(), this.peek(1));
+          if (countBound) {
+            this.error(Codes.UNKNOWN_MATCHER, `\`has count\` compares for equality — it cannot be followed by \`${countBound}\``, this.peek().span, COUNT_BOUND_HELP);
+            return null;
+          }
           // FS-07/A3-06: was `expect('number')`, a literal token — so the only array-length matcher
           // in the closed set could not be data-driven, and a `with each` table could supply a URL
           // but never an expected count. `Matcher.value` was already `Value`; only the parser was
@@ -2650,6 +2692,16 @@ class Parser {
         }
         if (this.isKw(next, 'value')) {
           this.advance();
+          // The same misfire, one branch over (FU-09). `has value` tests for an exact element, so
+          // there is no working spelling to point at the way there is for `count` — but naming the
+          // real mistake still beats handing back advice about parens. Fixing one side of this
+          // `if/else` and leaving the other is the `M61`→`M82`, `M77`→`B3-11` pattern this ledger
+          // keeps re-filing.
+          const valueBound = boundPhrase(this.peek(), this.peek(1));
+          if (valueBound) {
+            this.error(Codes.UNKNOWN_MATCHER, `\`has value\` compares for equality — it cannot be followed by \`${valueBound}\``, this.peek().span);
+            return null;
+          }
           const v = this.parseValue();
           return v ? mk('hasValue', v) : null;
         }
@@ -2657,7 +2709,17 @@ class Parser {
           this.advance();
           return this.parseA11yViolationsMatcher(start, negated);
         }
-        this.error(Codes.UNKNOWN_MATCHER, `expected \`count\`, \`value\`, or \`no\` after \`has\`, found ${describeToken(next)}`, next.span);
+        // FU-09's second spelling: `has at least 1` / `has more than 1`. The message was already
+        // right (`count`, `value` or `no` is genuinely what belongs here) and carried no hint at
+        // all, so a user who reached for a size comparison was told the vocabulary and left to
+        // work out which member of it expresses what they asked for.
+        const sizeWord = ['at', 'more', 'fewer', 'greater', 'less', 'least'].includes(next.value);
+        this.error(
+          Codes.UNKNOWN_MATCHER,
+          `expected \`count\`, \`value\`, or \`no\` after \`has\`, found ${describeToken(next)}`,
+          next.span,
+          sizeWord ? COUNT_BOUND_HELP : undefined,
+        );
         return null;
       }
       case 'greater': {
@@ -2676,6 +2738,14 @@ class Parser {
         if ((STATE_WORDS as readonly string[]).includes(tok.value)) {
           this.advance();
           return mk(tok.value as MatcherName, null);
+        }
+        // FU-09's first spelling, and the one a user is likeliest to try: `is not empty`. Answered
+        // before `suggest` for the same reason `negatedState` is — the vocabulary line below is
+        // true but useless here, because the answer isn't a near-miss on any matcher name, it's a
+        // different construction. Both directions are named, since `is empty` is the same reach.
+        if (tok.value === 'empty') {
+          this.error(Codes.UNKNOWN_MATCHER, `unknown matcher \`empty\``, tok.span, `there is no \`empty\` matcher — ${COUNT_BOUND_HELP}`);
+          return null;
         }
         // A3-02: answered *before* `suggest`, because for exactly these words edit distance gives a
         // confident, fluent and meaning-inverting answer. `invisible`/`unchecked`/`unhidden` are

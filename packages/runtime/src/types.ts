@@ -375,7 +375,12 @@ export type RunEvent =
   | { readonly type: 'run:start'; readonly total: number; readonly env: string; readonly file?: string }
   | { readonly type: 'test:start'; readonly name: string; readonly file?: string }
   | { readonly type: 'step:end'; readonly test: string; readonly step: StepResult; readonly file?: string }
-  | { readonly type: 'test:end'; readonly result: TestResult; readonly file?: string }
+  // `ReportEntry`, not `TestResult` (M88d, review finding `B3-11`): a workload-bearing test is a
+  // row in `report.tests` like any other, so it emits a `test:start`/`test:end` pair like any
+  // other, and the result it carries is the same `WorkloadTestResult` the report will hold —
+  // metrics and evaluated thresholds instead of a step timeline. Every consumer of this field has
+  // to branch on `result.kind` for the same reason `RunReport.tests`' consumers already do.
+  | { readonly type: 'test:end'; readonly result: ReportEntry; readonly file?: string }
   | { readonly type: 'run:end'; readonly report: RunReport; readonly file?: string };
 
 export type EventSink = (event: RunEvent) => void;

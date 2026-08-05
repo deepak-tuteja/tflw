@@ -2061,6 +2061,15 @@ function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActio
     return `  ${tick(color, ev.step.ok)} ${label} (${ev.step.durationMs}ms)`;
   }
   if (ev.type === 'test:end') {
+    // M88d (`B3-11`): a workload-bearing test emits a `test:start`/`test:end` pair now, but it
+    // renders on the *human* console through two purpose-built surfaces instead of this one — the
+    // live `\r`-updated progress line during the run (iterations/error rate/elapsed, which a
+    // newline-terminated tick line would land on top of and smear), and `renderCliSummary`'s
+    // workload block at the end (metrics, one tick per declared `threshold`, back-off warning,
+    // per-endpoint breakdown). A bare `✗ name` says strictly less than either and costs the
+    // progress line. The stream itself is unaffected: `--format ndjson` serializes `RunEvent`s
+    // directly and never reaches `formatEvent`, and that consumer is the whole of the finding.
+    if (ev.result.kind === 'workload') return undefined;
     const durSuffix = verbose ? ` (${ev.result.durationMs}ms)` : '';
     const closeGroup = grouping ? '\n::endgroup::' : '';
     if (!ev.result.ok) {
