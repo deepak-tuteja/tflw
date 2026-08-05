@@ -433,6 +433,21 @@ test('B3-11 + D114: a workload test inside a `parallel` batch flushes its pair a
 // test declared after an earlier batch inherited a `runStart` already stale by however long that
 // earlier batch took, so its entire ramp/arrival schedule was already in the past the instant it
 // started — observed as a hard 0 iterations, not merely degraded metrics.
+//
+// M91c (review finding `B3-10`, `D-M91-6`): the row filed this as a drift risk — "the batching
+// loop exists in two near-identical copies that must now be kept in sync by hand." Both halves of
+// that are stale. The part that encodes the *rule* (which tests batch together) is a shared helper,
+// `partitionIntoBatches`, extracted at M53; what is left unshared is a batch walk that differs
+// substantially — `runProgramInner`'s emits `test:start`/`test:end`, handles functional members and
+// their row-cases, and buffers events for multi-member batches (D114), while `runLoadCore`'s filters
+// to workload members and awaits. And the one invariant genuinely held by convention across both —
+// a fresh `runStart` per batch — is guarded by the two tests below, one per path.
+//
+// Which is the claim C14 exists to distrust, so it was checked rather than assumed. Reverting each
+// path's per-batch stamp to the file-global one, separately, fails exactly its own test and no
+// other (verified 2026-08-05). Both are real regression tests, not green decoration — so `B3-10`
+// closes restated, with no code change and no shared abstraction: forcing three lines behind a
+// callback would cost more clarity than the tested invariant is worth.
 
 test('a `sequential` workload test in the second batch still gets its own full iteration count, not 0 (regression)', async () => {
   const server = await startFixtureServer({ '/a': (_req, res) => json(res, 200, { ok: true }), '/b': (_req, res) => json(res, 200, { ok: true }) });
