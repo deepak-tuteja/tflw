@@ -19,6 +19,7 @@ import { assetHash } from './assets.js';
 import { esc } from './escape.js';
 import { fileOf, groupByFile } from './group-by-file.js';
 import { CHART_STYLE, renderErrorRateChart, renderHistogramChart, renderLatencyOverTimeChart, renderThroughputChart } from './load-charts.js';
+import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 
 /** A test's slot in the sidebar tree + `<main>`'s panel list — computed once, shared by both. */
 interface TestSlot {
@@ -252,9 +253,7 @@ function renderThresholdsTable(thresholds: readonly LoadThresholdResult[]): stri
   const rows = thresholds
     .map((t) => {
       const cmp = t.op === 'lessThan' ? '&lt;' : '&gt;';
-      const actual = t.label === 'error rate' ? `${(t.actual * 100).toFixed(2)}%` : `${Math.round(t.actual)}ms`;
-      const target = t.label === 'error rate' ? `${(t.target * 100).toFixed(2)}%` : `${t.target}ms`;
-      return `<tr class="${t.ok ? 'ok' : 'fail'}"><td>${t.ok ? '✓' : '✗'}</td><td>${esc(t.label)} ${cmp} ${esc(target)}</td><td>actual: ${esc(actual)}</td></tr>`;
+      return `<tr class="${t.ok ? 'ok' : 'fail'}"><td>${t.ok ? '✓' : '✗'}</td><td>${esc(t.label)} ${cmp} ${esc(formatThresholdTarget(t))}</td><td>actual: ${esc(formatThresholdActual(t))}</td></tr>`;
     })
     .join('');
   return `<table class="thresholds">${rows}</table>`;

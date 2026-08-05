@@ -207,7 +207,12 @@ test('a workload entry contributes one <testcase> per declared threshold, pass/f
   const xml = renderJunitXml({ ...report, tests: [workloadTest] });
   assert.match(
     xml,
-    /<testcase name="checkout — p95 duration &lt; 800" classname="load\/checkout\.tflw" time="0\.000">\s*<failure message="threshold breached: actual 950 was not less than 800">/,
+    // M89a: `950ms`, not `950`. All three sinks now format a threshold's numbers through
+    // `threshold-format.ts`, so junit's message carries the same units the console and
+    // `report.html` always have — and, more to the point, the same wording for D-M89-1's
+    // `actual: null` ("no successful iterations") instead of the literal `null` a raw
+    // interpolation would have produced.
+    /<testcase name="checkout — p95 duration &lt; 800" classname="load\/checkout\.tflw" time="0\.000">\s*<failure message="threshold breached: actual 950ms was not less than 800ms">/,
   );
   assert.match(xml, /<testcase name="checkout — error rate &lt; 0\.01" classname="load\/checkout\.tflw" time="0\.000"\/>/);
   // A workload test has no single duration, so its suite sums to nothing — the planned `overMs` is

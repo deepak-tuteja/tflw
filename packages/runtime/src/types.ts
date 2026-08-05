@@ -438,6 +438,25 @@ export interface LoadMetrics {
    * iterations) — the timeline SVGs (latency-over-time, throughput, error-rate) are built from
    * this, sorted ascending by `offsetSeconds`. Empty for a run with zero iterations. */
   readonly timeline: readonly TimelinePoint[];
+  /** M89a (`B3-02`, D-M89-0/D-M89-3) — the **successful-only** duration population, which is what a
+   * `threshold pNN duration` clause actually reads. `durations`/`histogram` above stay
+   * all-iterations and keep their exact prior meaning, so this field is purely additive: a
+   * `results.json` consumer that never looked here sees no change.
+   *
+   * The split exists because a failing request is usually *fast* — it 4xx/5xxs or refuses the
+   * connection long before a healthy one finishes — so mixing failures into the percentiles pulls
+   * them **down**, and a latency threshold then passes *because* the target is broken. The probe
+   * that filed `B3-02` reported `p95 2ms ✓ < 100ms` at a 96 % error rate.
+   *
+   * `iterations` here is the successful count, so `failures + successful.iterations === iterations`
+   * holds at every scope. Note deliberately **no `timeline`**: the timeline charts are about the
+   * whole run's shape over time, error rate included, and a successful-only series would make the
+   * error-rate chart unplottable from its own metrics object. */
+  readonly successful: {
+    readonly iterations: number;
+    readonly durations: LoadDurationStats;
+    readonly histogram: readonly HistogramBucket[];
+  };
 }
 
 export interface LoadThresholdResult {
@@ -446,7 +465,17 @@ export interface LoadThresholdResult {
   readonly op: 'lessThan' | 'greaterThan';
   /** ms for a duration threshold, a 0-1 fraction for an error-rate threshold — same units as `actual`. */
   readonly target: number;
-  readonly actual: number;
+  /** M89a (D-M89-1) — `null` when a **duration** threshold had **no successful iterations** to
+   * measure: there is no percentile, and saying so is the only honest answer. Such a threshold is
+   * never `ok`.
+   *
+   * `actual: 0` was rejected precisely because it reads as a passing 0 ms p95 that never happened,
+   * and a consumer holding only this field could not tell the difference. Passing was rejected for
+   * the same reason at the boundary: `LatencyHistogram.percentile` returns `0` on an empty
+   * histogram (`histogram.ts:85`), so `0 < 100ms` would reintroduce `B3-02`'s exact trap in the
+   * one case where *everything* failed. An error-rate threshold is never `null` — a 0-iteration run
+   * has a genuine, defined error rate of 0. */
+  readonly actual: number | null;
   readonly ok: boolean;
 }
 
@@ -573,6 +602,13 @@ export interface LoadShardScenarioResult {
   readonly min: number;
   readonly max: number;
   readonly histogram: readonly HistogramBucket[];
+  /** M89a (`B3-02`) — this shard's own successful-only duration population, shipped as its own
+   * bucket set + exact scalars exactly like the all-iterations one above. It has to cross the IPC
+   * boundary rather than being re-derived parent-side: the parent has the merged counts but not
+   * *which* durations belonged to successful iterations, and a threshold evaluated on a
+   * reconstruction would silently differ from the single-process answer. `mergeLoadShardReports`
+   * merges it with the same `merge first, derive second` order as everything else here. */
+  readonly successful: SerializedHistogram;
   /** M32 (R3/R4) — this shard's own per-second buckets; `Timeline.merge` combines them across
    * shards the same way the histogram merges, so the parent's timeline charts cover the whole run,
    * not just one shard's slice of it. */
@@ -598,7 +634,21 @@ export interface LoadShardScenarioResult {
     readonly max: number;
     readonly histogram: readonly HistogramBucket[];
     readonly timeline: readonly SerializedTimelineBucket[];
+    /** M89a — the per-endpoint half of the same split; a `threshold … for "label"` clause reads it. */
+    readonly successful: SerializedHistogram;
   }[];
+}
+
+/** M89a — one `LatencyHistogram`'s complete IPC-safe form: bucket counts plus the exact running
+ * scalars `LatencyHistogram.fromBuckets` needs to reconstruct `avg`/`min`/`max` without re-deriving
+ * them from rounded bucket keys. Named because the successful-only population now ships alongside
+ * the all-iterations one at both scenario and endpoint scope — four sites that must agree. */
+export interface SerializedHistogram {
+  readonly iterations: number;
+  readonly sum: number;
+  readonly min: number;
+  readonly max: number;
+  readonly histogram: readonly HistogramBucket[];
 }
 
 /** What one forked worker process sends back to the parent once its striped share of the run

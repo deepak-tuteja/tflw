@@ -15,10 +15,18 @@ import { parseSource, parseConfigSource } from '@tflw/lang';
 import { runLoad, runLoadShard, mergeLoadShardReports, shareOfWorkloadTarget, globalIterationIndex, computeBackOff, type LoadTest } from '../src/interpreter.js';
 import { LatencyHistogram } from '../src/histogram.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
-import type { LoadIterationResult, LoadShardResult, SelfDiagnosis } from '../src/types.js';
+import type { LoadIterationResult, LoadShardResult, SelfDiagnosis, SerializedHistogram } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 const HEALTHY_DIAGNOSIS: SelfDiagnosis = { avgEventLoopLagMs: 1, maxEventLoopLagMs: 2, cpuPercent: 5, saturated: false };
+
+/** M89a — `LoadShardScenarioResult.successful`, the successful-only duration population crossing
+ * the IPC boundary. Every hand-built shard fixture below describes a shard with `failures: 0`, so
+ * its successful population *is* its whole histogram. Written once rather than inlined into the
+ * five shard literals: the compile-time guard doesn't reach here (no tsconfig `include` covers
+ * `test/`), so a missing field on this type surfaces as a runtime TypeError in whichever fixture
+ * was forgotten, not as an error naming the field. */
+const allSucceeded = (h: LatencyHistogram): SerializedHistogram => ({ iterations: h.count, sum: h.sum, min: h.min, max: h.max, histogram: h.toBuckets() });
 
 test('a closed (`ramp to N users`) workload runs iterations and reports clean metrics', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
@@ -632,11 +640,11 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   for (const v of [500, 520, 510]) slowHistogram.record(v);
 
   const shardFast: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), successful: allSucceeded(fastHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const shardSlow: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), successful: allSucceeded(slowHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
 
@@ -659,7 +667,7 @@ test('mergeLoadShardReports: a shard missing a scenario entirely (its striped sh
   const hA = new LatencyHistogram();
   hA.record(5);
   const shardWithOnlyA: LoadShardResult = {
-    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'A', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), successful: allSucceeded(hA), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const merged = mergeLoadShardReports(program, [shardWithOnlyA], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -677,7 +685,7 @@ test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard satura
   const empty = new LatencyHistogram();
   empty.record(1);
   const shard = (saturated: boolean): LoadShardResult => ({
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), successful: allSucceeded(empty), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated },
   });
   const merged = mergeLoadShardReports(program, [shard(false), shard(true)], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -754,7 +762,7 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
   const h = new LatencyHistogram();
   h.record(1);
   const shard: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { kind: 'users', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
   };
   const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -1077,4 +1085,203 @@ test('an `upload` body under a closed-model load still passes — falls back to 
 
   await server.close();
   await rm(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------------------------
+// M89a (`B3-02`, `B3-12`, `B3-13`) — the population a threshold reads.
+//
+// The mechanism these tests exist for: a failing request is almost always *fast*. It 4xx/5xxs
+// immediately, or the connection is refused, while a healthy one does real work. So mixing
+// failures into a duration percentile drags it **down**, and a latency threshold then passes
+// *because* the target is broken. The probe that filed `B3-02` reported `p95 2ms ✓ < 100ms` at a
+// 96 % error rate, `PASS`, exit 0.
+// ---------------------------------------------------------------------------------------------
+
+/** A server whose `/mix` fails instantly for all but every `nth` request, and succeeds slowly —
+ * the `B3-02` shape in its purest form. `slowMs` has to clear the threshold under test on its own,
+ * so that a passing verdict can only ever come from the failures being counted. */
+function mixedServer(nth: number, slowMs: number) {
+  let n = 0;
+  return {
+    '/mix': (_req: unknown, res: import('node:http').ServerResponse) => {
+      n += 1;
+      if (n % nth !== 0) return json(res, 500, { ok: false });
+      setTimeout(() => json(res, 200, { ok: true }), slowMs);
+    },
+  };
+}
+
+test('M89a/`B3-02`: a duration threshold reads successful iterations only — fast failures no longer buy a passing latency verdict', async () => {
+  const server = await startFixtureServer(mixedServer(5, 120));
+  // 20 iterations: 16 fail in ~0ms, 4 succeed in ~120ms. Pre-M89a the pooled p95 landed among the
+  // instant failures and this threshold reported ✓; the successful-only p95 is ~120ms and fails.
+  const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix\n  expect status equals 200\n  threshold p95 duration is less than 60ms\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+
+  assert.equal(s.metrics.iterations, 20, 'every iteration is still counted');
+  assert.equal(s.metrics.failures, 16);
+  assert.equal(s.metrics.successful.iterations, 4);
+  assert.ok(s.metrics.durations.p95 <= s.metrics.successful.durations.p95, 'the all-iterations p95 must be the *lower* of the two — that is exactly why it was the wrong one to threshold on');
+  assert.ok(s.metrics.successful.durations.p95 >= 60, `successful-only p95 should clear 60ms, got ${s.metrics.successful.durations.p95}`);
+  assert.equal(s.thresholds[0]!.ok, false, `the threshold must fail: ${JSON.stringify(s.thresholds[0])}`);
+  assert.equal(report.ok, false);
+
+  await server.close();
+});
+
+test('M89a: `errorRate` still divides by *all* iterations — the denominator trap the split could have introduced', async () => {
+  const server = await startFixtureServer(mixedServer(5, 5));
+  const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix\n  expect status equals 200\n  threshold error rate is less than 100%\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+
+  // Had the successful-only population been made by *narrowing* the one histogram rather than
+  // adding a second, `errorRate` (`failures / histogram.count`) would have become
+  // `failures / successes` = 16/4 = 400 % here, and 2400 % on the 1000-iteration probe.
+  assert.equal(s.metrics.errorRate, 16 / 20, `expected 0.8, got ${s.metrics.errorRate}`);
+  assert.ok(s.metrics.errorRate <= 1, 'an error rate can never exceed 100%');
+  assert.equal(s.thresholds[0]!.actual, 16 / 20, 'an error-rate threshold reads the all-iterations denominator, not the successful one');
+
+  await server.close();
+});
+
+test('M89a/D-M89-1: with zero successful iterations a duration threshold reports `actual: null` and fails', async () => {
+  const server = await startFixtureServer({ '/mix': (_req, res) => json(res, 500, { ok: false }) });
+  const source = 'test "S"\n  run 8 iterations across 2 users\n  api GET /mix\n  expect status equals 200\n  threshold p95 duration is less than 100ms\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+
+  assert.equal(s.metrics.successful.iterations, 0);
+  // The negative control for this decision: `LatencyHistogram.percentile` returns 0 on an empty
+  // histogram, so reporting `actual: 0` would make "every single request failed" the *easiest*
+  // way to pass a latency threshold — `B3-02`'s trap, reintroduced at its own boundary.
+  assert.equal(s.thresholds[0]!.actual, null, 'no successful iterations means there is no percentile to state');
+  assert.equal(s.thresholds[0]!.ok, false);
+  assert.equal(report.ok, false);
+
+  await server.close();
+});
+
+test('M89a: `failures + successful.iterations === iterations`, at scenario, combined and endpoint scope, for both workload models', async () => {
+  const server = await startFixtureServer(mixedServer(3, 5));
+  for (const workload of ['run 12 iterations across 2 users', 'ramp to 3 users over 300ms', 'ramp to 20 rps over 300ms', 'hold 2 users for 300ms']) {
+    const source = `test "S"\n  ${workload}\n  api GET /mix as "mix"\n  expect status equals 200\n  threshold error rate is less than 100%\n`;
+    const { program } = parseSource(source);
+    const report = await runLoad(program, testConfig(server.baseUrl), { source });
+
+    for (const s of report.scenarios) {
+      assert.equal(s.metrics.failures + s.metrics.successful.iterations, s.metrics.iterations, `${workload}: scenario scope`);
+      for (const e of s.endpoints) {
+        assert.equal(e.metrics.failures + e.metrics.successful.iterations, e.metrics.iterations, `${workload}: endpoint "${e.identity}"`);
+      }
+    }
+    assert.equal(report.combined.failures + report.combined.successful.iterations, report.combined.iterations, `${workload}: combined scope`);
+  }
+  await server.close();
+});
+
+test('M89a/`B3-02` at endpoint scope: a `threshold … for "label"` clause reads that endpoint\'s successful requests only', async () => {
+  const server = await startFixtureServer(mixedServer(5, 120));
+  const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix as "mix"\n  expect status equals 200\n  threshold p95 duration for "mix" is less than 60ms\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  const mix = s.endpoints.find((e) => e.identity === 'mix')!;
+
+  assert.equal(mix.metrics.iterations, 20, 'every request is still a sample of the endpoint');
+  assert.equal(mix.metrics.successful.iterations, 4);
+  // The scoped form is what `checkout-burst` — the perf arc's own k6 acceptance benchmark —
+  // thresholds on, so fixing only the whole-iteration scope would have shipped a release where
+  // the unscoped threshold is honest and the scoped one is not.
+  assert.equal(s.thresholds[0]!.ok, false, `scoped threshold must fail too: ${JSON.stringify(s.thresholds[0])}`);
+
+  await server.close();
+});
+
+test('M89a/`B3-13`: a per-endpoint timeline records real failures — it was hardcoded to `ok: true`', async () => {
+  const server = await startFixtureServer(mixedServer(5, 5));
+  const source = 'test "S"\n  run 20 iterations across 2 users\n  api GET /mix as "mix"\n  expect status equals 200\n  threshold error rate is less than 100%\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const mix = report.scenarios[0]!.endpoints.find((e) => e.identity === 'mix')!;
+
+  // `report.html` builds every per-endpoint error-rate chart from this series. With the literal
+  // `true` it was flat zero for every endpoint of every run ever produced.
+  const chartedFailures = mix.metrics.timeline.reduce((n, p) => n + p.failures, 0);
+  assert.equal(chartedFailures, 16, `the endpoint's own error-rate series must carry its failures, got ${chartedFailures}`);
+  assert.equal(mix.metrics.failures, 16);
+
+  await server.close();
+});
+
+test('M89a/`B3-12`: a soft `check` failure is charged to the request it judged, not to whichever endpoint ran last', async () => {
+  const server = await startFixtureServer({
+    '/first': (_req, res) => json(res, 500, { ok: false }),
+    '/second': (_req, res) => json(res, 200, { ok: true }),
+  });
+  // `check` records and continues (P#16), so the iteration runs on to `/second` after failing on
+  // `/first`. M43 billed the *last* endpoint reached — `/second`, which answered 200 perfectly.
+  const source = 'test "S"\n  run 4 iterations across 1 users\n  api GET /first as "first"\n  check status equals 200\n  api GET /second as "second"\n  expect status equals 200\n  threshold error rate is less than 100%\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  const first = s.endpoints.find((e) => e.identity === 'first')!;
+  const second = s.endpoints.find((e) => e.identity === 'second')!;
+
+  assert.equal(first.metrics.failures, 4, 'the endpoint that actually failed its check owns the failure');
+  assert.equal(second.metrics.failures, 0, 'the innocent endpoint that answered 200 owns none');
+  assert.equal(second.metrics.successful.iterations, 4);
+  // Per-endpoint failures deliberately do *not* sum to the scenario's: this axis counts requests,
+  // the scenario axis counts iterations.
+  assert.equal(s.metrics.failures, 4);
+
+  await server.close();
+});
+
+test('M89a/`B3-12`: two failing `check`s after one request bill that request once, never twice', async () => {
+  const server = await startFixtureServer({ '/one': (_req, res) => json(res, 500, { ok: false, name: 'x' }) });
+  const source = 'test "S"\n  run 3 iterations across 1 users\n  api GET /one as "one"\n  check status equals 200\n  check body.name equals "expected"\n  threshold error rate is less than 100%\n';
+  const { program } = parseSource(source);
+
+  const report = await runLoad(program, testConfig(server.baseUrl), { source });
+  const one = report.scenarios[0]!.endpoints.find((e) => e.identity === 'one')!;
+
+  // Counted with `++` this would be 6 failures against 3 requests — a 200 % endpoint error rate.
+  assert.equal(one.metrics.failures, 3, `one request, at most one failure: got ${one.metrics.failures}`);
+  assert.equal(one.metrics.iterations, 3);
+  assert.equal(one.metrics.errorRate, 1);
+
+  await server.close();
+});
+
+test('M89a: the successful-only population survives the shard IPC boundary — a sharded run agrees with a single-process one', async () => {
+  const server = await startFixtureServer(mixedServer(4, 60));
+  const source = 'test "S"\n  run 24 iterations across 4 users\n  api GET /mix as "mix"\n  expect status equals 200\n  threshold p95 duration is less than 30ms\n';
+  const { program } = parseSource(source);
+  const config = testConfig(server.baseUrl);
+
+  const shards = [await runLoadShard(program, config, { source, shard: { index: 0, count: 2 } }), await runLoadShard(program, config, { source, shard: { index: 1, count: 2 } })];
+  const merged = mergeLoadShardReports(program, shards, { startedAt: new Date().toISOString(), durationMs: 1000, seed: 42, now: new Date().toISOString() });
+  const s = merged.scenarios[0]!;
+
+  assert.equal(s.metrics.failures + s.metrics.successful.iterations, s.metrics.iterations, 'the invariant holds after a merge too');
+  assert.ok(s.metrics.successful.iterations > 0, 'some iterations must have succeeded for this to be a real comparison');
+  // The merged population must be the *merged samples*, not a parent-side reconstruction from
+  // counts — a reconstruction would put the threshold on a distribution no shard ever measured.
+  assert.ok(s.metrics.successful.durations.p95 >= 30, `merged successful-only p95 should clear 30ms, got ${s.metrics.successful.durations.p95}`);
+  assert.equal(s.thresholds[0]!.ok, false, JSON.stringify(s.thresholds[0]));
+  const mix = s.endpoints.find((e) => e.identity === 'mix')!;
+  assert.equal(mix.metrics.failures + mix.metrics.successful.iterations, mix.metrics.iterations, 'and at endpoint scope across the merge');
+
+  await server.close();
 });
