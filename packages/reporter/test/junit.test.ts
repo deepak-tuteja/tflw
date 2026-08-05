@@ -193,7 +193,7 @@ const workloadTest: WorkloadTestResult = {
   kind: 'workload',
   name: 'checkout',
   file: 'load/checkout.tflw',
-  workload: { kind: 'users', target: 10, overMs: 1000 },
+  workload: { shape: 'ramp', model: 'closed', target: 10, overMs: 1000 },
   metrics: emptyMetrics,
   thresholds: [
     { label: 'p95 duration', op: 'lessThan', target: 800, actual: 950, ok: false },

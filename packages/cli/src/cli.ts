@@ -60,6 +60,7 @@ import {
   startPickSession,
   mergeSelfDiagnosis,
   shutdownMtlsWorker,
+  workloadOf,
   type BrowserEngine,
   type RunReport,
   type TestResult,
@@ -82,6 +83,7 @@ import {
   readLastRun,
   writeEventsNdjson,
   renderCliSummary,
+  describeWorkload,
 } from '@tflw/reporter';
 import { startServer } from '@tflw/lsp-server';
 import { buildEnviron } from './env.js';
@@ -1176,7 +1178,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
   if (anyWorkload && !ndjsonActive) {
     for (const { program } of runnable) {
       for (const test of program.tests) {
-        if (test.workload) out.write(withTimestamps(`scenario "${test.name.value}" — ${describeWorkload(test.workload)}`, !args.noTimestamps) + '\n');
+        if (test.workload) out.write(withTimestamps(`scenario "${test.name.value}" — ${describeWorkload(workloadOf(test.workload))}`, !args.noTimestamps) + '\n');
       }
     }
   }
@@ -1560,34 +1562,6 @@ function runShardInChildProcess(
       }
     });
   });
-}
-
-/** M52 — a one-line human description of any workload kind, for `tflw load`'s pre-run console
- * preview (`scenario "name" — <this>`). Mirrors `@tflw/runtime`'s own `totalDurationMs`/
- * `stageTargetAt` shape without importing runtime internals — this is display text, not execution. */
-function describeWorkload(workload: Workload): string {
-  switch (workload.type) {
-    case 'RampUsersWorkload':
-      return `ramp to ${workload.users} users over ${workload.overMs}ms (closed)`;
-    case 'RampRpsWorkload':
-      return `ramp to ${workload.rps} rps over ${workload.overMs}ms (open)`;
-    case 'HoldUsersWorkload':
-      return `hold ${workload.users} users for ${workload.forMs}ms (closed)`;
-    case 'HoldRpsWorkload':
-      return `hold ${workload.rps} rps for ${workload.forMs}ms (open)`;
-    case 'StepUsersWorkload':
-      return `step ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} users over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (closed)`;
-    case 'StepRpsWorkload':
-      return `step ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} rps over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (open)`;
-    case 'SpikeUsersWorkload':
-      return `spike ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} users over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (closed)`;
-    case 'SpikeRpsWorkload':
-      return `spike ${workload.stages.length} stage(s) up to ${Math.max(...workload.stages.map((s) => s.target))} rps over ${workload.stages.reduce((sum, s) => sum + s.durationMs, 0)}ms (open)`;
-    case 'SharedIterationsWorkload':
-      return `run ${workload.iterations} iterations across ${workload.vus} users`;
-    case 'PerVuIterationsWorkload':
-      return `run ${workload.iterationsPerVu} iterations per user across ${workload.vus} users`;
-  }
 }
 
 /** M52 — this workload's planned wall-clock span for the "aborted at Ns of Nm planned" message, or

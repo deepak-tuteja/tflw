@@ -2589,7 +2589,10 @@ interface WorkloadReportEntry {
   readonly kind: 'workload';
   readonly name: string;
   readonly ok: boolean;
-  readonly workload: { readonly kind: string; readonly target: number; readonly overMs: number };
+  // M89b (`B3-03`) — a structural echo of `LoadWorkloadReport`'s discriminated union, kept loose
+  // on purpose: this file reads `results.json` as an *external* consumer would, so it declares
+  // only the discriminator plus whatever a given assertion narrows to.
+  readonly workload: { readonly shape: string; readonly model?: string; readonly [k: string]: unknown };
   readonly metrics: { readonly iterations: number; readonly failures: number; readonly errorRate: number };
   readonly thresholds: { readonly label: string; readonly ok: boolean }[];
   readonly endpoints: { readonly identity: string; readonly metrics: { readonly iterations: number } }[];
@@ -2920,11 +2923,15 @@ test('`tflw load` runs a `hold` workload end-to-end: passes, prints a summary, w
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "steady load" — hold 4 users for 200ms \(closed\)/);
+      // M89b (`B3-03`) — the summary line used to read `ramp to 4 users over 200ms`, contradicting
+      // the pre-run line five seconds above it. Both now come from one `describeWorkload` over one
+      // `LoadWorkloadReport`.
+      assert.match(stdout, /✓ steady load \(workload — hold 4 users for 200ms \(closed\)\)/);
       assert.match(stdout, /PASS 1\/1 passed/);
 
       const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
       assert.equal(results.ok, true);
-      assert.deepEqual(workloadEntries(results)[0]!.workload, { kind: 'users', target: 4, overMs: 200 });
+      assert.deepEqual(workloadEntries(results)[0]!.workload, { shape: 'hold', model: 'closed', target: 4, forMs: 200 });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2945,6 +2952,81 @@ test('`tflw load` runs a `run N iterations across M users` workload end-to-end, 
       const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
       assert.equal(results.ok, true);
       assert.equal(workloadEntries(results)[0]!.metrics.iterations, 12);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// M89b (`B3-03`, D-M89-5) — all 10 workload kinds, in one run, through the real CLI.
+//
+// Three claims, and the third is the one that used to be false in a way no unit test could see:
+// every kind describes itself distinctly (8 of 10 used to collapse onto `ramp to N over Tms`, and
+// the 2 count-based ones onto the impossible `ramp to N users over 0ms`); `results.json` keeps them
+// distinguishable (`hold`/`ramp`, `step`/`spike`, and the 2 iteration forms used to serialize
+// byte-identically at the same target); and the pre-run line the CLI prints matches the summary
+// line the reporter prints, for every kind — no longer an agreement between two functions but the
+// same call, so a divergence here means the wiring was undone, not that the copies drifted.
+const ALL_TEN_WORKLOADS = [
+  ['k01-ramp-users', 'ramp to 3 users over 100ms'],
+  ['k02-ramp-rps', 'ramp to 5 rps over 100ms'],
+  ['k03-hold-users', 'hold 3 users for 100ms'],
+  ['k04-hold-rps', 'hold 5 rps for 100ms'],
+  ['k05-step-users', 'step users\n    to 2 for 50ms\n    to 4 for 50ms'],
+  ['k06-step-rps', 'step rps\n    to 4 for 50ms\n    to 8 for 50ms'],
+  ['k07-spike-users', 'spike users\n    hold 2 for 50ms\n    to 6 over 50ms'],
+  ['k08-spike-rps', 'spike rps\n    hold 4 for 50ms\n    to 10 over 50ms'],
+  ['k09-shared-iterations', 'run 6 iterations across 2 users'],
+  ['k10-per-vu-iterations', 'run 3 iterations per user across 2 users'],
+] as const;
+
+test('every workload kind describes itself distinctly, and the pre-run line is the summary line', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-kinds-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      const src = ALL_TEN_WORKLOADS.map(
+        ([name, decl]) => `test "${name}"\n  ${decl}\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 50%\n`,
+      ).join('\n');
+      await writeFile(join(dir, 'kinds.tflw'), src, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'kinds.tflw', '--no-color', '--no-timestamps'], { cwd: dir });
+
+      const preRun = new Map<string, string>();
+      const summary = new Map<string, string>();
+      for (const raw of stdout.split('\n')) {
+        const line = raw.trim();
+        const p = /^scenario "([^"]+)" — (.+)$/.exec(line);
+        if (p) preRun.set(p[1]!, p[2]!);
+        const s = /^✓ (\S+) \(workload — (.+)\)$/.exec(line);
+        if (s) summary.set(s[1]!, s[2]!);
+      }
+      assert.equal(preRun.size, 10, `expected a pre-run line per kind, got ${[...preRun.keys()].join(', ')}`);
+      assert.deepEqual([...summary.keys()].sort(), [...preRun.keys()].sort());
+      for (const [name, description] of preRun) {
+        assert.equal(summary.get(name), description, `"${name}" describes itself two ways`);
+      }
+      assert.equal(new Set(preRun.values()).size, 10, `10 kinds must produce 10 distinct descriptions, got ${JSON.stringify([...preRun.values()])}`);
+      // The two that used to render as a ramp over zero milliseconds, a workload the grammar
+      // cannot express.
+      assert.equal(preRun.get('k09-shared-iterations'), 'run 6 iterations across 2 users');
+      assert.equal(preRun.get('k10-per-vu-iterations'), 'run 3 iterations per user across 2 users');
+
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
+      const entries = workloadEntries(results);
+      assert.equal(entries.length, 10);
+      assert.equal(new Set(entries.map((e) => JSON.stringify(e.workload))).size, 10);
+      const byName = new Map(entries.map((e) => [e.name, e.workload]));
+      assert.deepEqual(byName.get('k03-hold-users'), { shape: 'hold', model: 'closed', target: 3, forMs: 100 });
+      assert.deepEqual(byName.get('k07-spike-users'), {
+        shape: 'spike',
+        model: 'closed',
+        stages: [
+          { target: 2, durationMs: 50, ramped: false },
+          { target: 6, durationMs: 50, ramped: true },
+        ],
+      });
+      assert.deepEqual(byName.get('k10-per-vu-iterations'), { shape: 'iterations', iterations: 3, vus: 2, perVu: true });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

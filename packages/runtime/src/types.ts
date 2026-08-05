@@ -296,7 +296,7 @@ export interface TestResult {
  * multi-process merge machinery (`mergeLoadShardReports`) still produces a `LoadReport` internally
  * before its scenarios get spliced into the final `RunReport` (`spliceLoadReportIntoRunReport`,
  * interpreter.ts). No `durationMs`/`steps` — a workload test has no single "this took Nms" figure
- * (its `workload.overMs` is the *planned* span, not an outcome) and no step timeline (D24a/D26: a
+ * (its declared span is *planned*, not an outcome, and two of the five shapes declare none) and no step timeline (D24a/D26: a
  * workload iteration's body executes silently, only aggregate metrics are kept). */
 export interface WorkloadTestResult extends LoadScenarioReport {
   readonly kind: 'workload';
@@ -513,11 +513,51 @@ export interface BackOffDiagnosis {
   readonly warning: boolean;
 }
 
+/** M89b (`B3-03`, D-M89-4) — how a scenario's declared workload appears in the report, and the
+ * one value every description of it is formatted from (`describeWorkload`, in the reporter).
+ *
+ * **Breaking change to `results.json`.** This replaced a flat `{ kind: 'users'|'rps', target,
+ * overMs }` that could describe only `ramp`, so the other 8 kinds were squeezed into it and lost:
+ * `hold 3 users for 600ms` and `ramp to 3 users over 600ms` serialized to *byte-identical* JSON,
+ * as did `step` vs `spike` at the same peak, and the two count-based kinds — which have no
+ * duration at all — reported `overMs: 0` and rendered as `ramp to 2 users over 0ms`, a workload
+ * the grammar cannot express. The union exists so that string is **unrepresentable**, not so it
+ * can be spelled better: `M85`'s state-the-rule-once and `M88d`'s one-finalization move.
+ *
+ * `model` is absent from `iterations` deliberately — `run N iterations across M users` has no
+ * `rps` form, so a `model` field there could only ever hold `'closed'` and would be a field
+ * carrying no information. A consumer asking "is this open-model?" writes
+ * `w.shape !== 'iterations' && w.model === 'open'`. Adding a constant field back later is
+ * additive; removing one is not.
+ *
+ * `stages` is per-stage, not the old peak-and-total summary. `step` stages have no `ramped` flag
+ * because the grammar gives them none — `parseStepStage` only ever produces `mode: 'jump'` (a
+ * `step` stage saying `over` is a parse error suggesting `spike`), while `spike` produces both,
+ * and that flag is exactly what `stageTargetAt` branches on when it schedules them. */
+export type LoadWorkloadReport =
+  | { readonly shape: 'ramp'; readonly model: 'closed' | 'open'; readonly target: number; readonly overMs: number }
+  | { readonly shape: 'hold'; readonly model: 'closed' | 'open'; readonly target: number; readonly forMs: number }
+  | { readonly shape: 'step'; readonly model: 'closed' | 'open'; readonly stages: readonly LoadWorkloadStage[] }
+  | { readonly shape: 'spike'; readonly model: 'closed' | 'open'; readonly stages: readonly LoadWorkloadRampableStage[] }
+  | { readonly shape: 'iterations'; readonly iterations: number; readonly vus: number; readonly perVu: boolean };
+
+/** One `step` stage: an instant jump to `target`, held for `durationMs`. */
+export interface LoadWorkloadStage {
+  readonly target: number;
+  readonly durationMs: number;
+}
+
+/** One `spike` stage — a `step` stage plus the flag that says whether it ramps to `target` from
+ * the previous stage's level (`to N over <dur>`) or jumps straight to it (`hold N for <dur>`). */
+export interface LoadWorkloadRampableStage extends LoadWorkloadStage {
+  readonly ramped: boolean;
+}
+
 /** One scenario's own slice of a `tflw load` run (R6's "per-scenario" axis) — every field scoped
  * to just this scenario's iterations, computed exactly the way a single-scenario M29 report was. */
 export interface LoadScenarioReport {
   readonly name: string;
-  readonly workload: { readonly kind: 'users' | 'rps'; readonly target: number; readonly overMs: number };
+  readonly workload: LoadWorkloadReport;
   readonly metrics: LoadMetrics;
   readonly thresholds: readonly LoadThresholdResult[];
   /** Every threshold *this scenario* declared passed (vacuously `true` when it declares none). */

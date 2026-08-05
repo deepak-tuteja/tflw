@@ -2,6 +2,7 @@
 
 import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
+import { describeWorkload } from './workload-format.js';
 
 const C = {
   reset: '\x1b[0m',
@@ -51,7 +52,7 @@ function testLine(test: TestResult, c: typeof C): string {
  * per-endpoint breakdown (M43/D69) when there's more than one identity to break down. */
 function workloadLines(test: WorkloadTestResult, c: typeof C): string[] {
   const mark = test.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
-  const lines = [`  ${mark} ${test.name} ${c.dim}(workload — ${describeWorkload(test)})${c.reset}`, ...metricsLines(test.metrics, c)];
+  const lines = [`  ${mark} ${test.name} ${c.dim}(workload — ${describeWorkload(test.workload)})${c.reset}`, ...metricsLines(test.metrics, c)];
   for (const t of test.thresholds) {
     const tickMark = t.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
     const cmp = t.op === 'lessThan' ? '<' : '>';
@@ -90,11 +91,6 @@ function metricsLines(metrics: LoadMetrics, c: typeof C): string[] {
 
 function durationDigits(d: LoadDurationStats): string {
   return `min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`;
-}
-
-function describeWorkload(test: WorkloadTestResult): string {
-  const unit = test.workload.kind === 'users' ? 'users' : 'rps';
-  return `ramp to ${test.workload.target} ${unit} over ${test.workload.overMs}ms`;
 }
 
 /** M31 (D19/D28): the generator's own event-loop-lag/CPU reading, once per run (not per workload

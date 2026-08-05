@@ -70,9 +70,10 @@ a run whose VUs spent a large share of wall time waiting rather than iterating, 
 silently distort your numbers:
 
 ```console
-✓ checkout under load (workload — ramp to 50 users over 30000ms)
+✓ checkout under load (workload — ramp to 50 users over 30000ms (closed))
     iterations: 812  failures: 3  error rate: 0.37%
-    duration (ms, pause-excluded): min 40  avg 210  p50 210  p90 480  p95 640  p99 910  max 1200
+    duration (ms, pause-excluded, all 812): min 40  avg 210  p50 210  p90 480  p95 640  p99 910  max 1200
+    duration (ms, successful 809 — what thresholds read): min 40  avg 211  p50 212  p90 482  p95 642  p99 912  max 1200
 ⚠ your load backed off — an estimated 41% of this test's available VU time was lost to the target
 system slowing down; results understate real latency
 ```
@@ -180,10 +181,20 @@ threshold p99 duration is less than 1500ms
 threshold error rate is less than 1%
 ```
 
-Evaluated once, after the whole run, against every iteration's outcome. `tflw run` exits `0` when
-every declared threshold passes, `1` when any is breached — the same signal a CI gate reads. An
-`expect` failure inside a workload-bearing test's body fails **that iteration** only, counted
-toward the error rate — it never aborts the run the way a functional test's failure would.
+Evaluated once, after the whole run. `tflw run` exits `0` when every declared threshold passes, `1`
+when any is breached — the same signal a CI gate reads. An `expect` failure inside a
+workload-bearing test's body fails **that iteration** only, counted toward the error rate — it
+never aborts the run the way a functional test's failure would.
+
+**A `duration` threshold reads the iterations that succeeded; `error rate` reads all of them.**
+A failing request is usually a *fast* one — an instant 5xx, a refused connection — so pooling
+failures into the latency population drags the percentile down, and a latency threshold can pass
+*because* the target is broken. That is why the console prints two duration lines whenever anything
+failed: the run that happened, and the successful subset the thresholds actually read. If they
+diverge, your failures are fast.
+
+If **nothing** succeeded there is no percentile to take, so a `duration` threshold **fails** and
+reports `actual: no successful iterations` rather than a `0ms` that would sail under any bound.
 
 **At least one threshold is required.** A workload-bearing test's verdict comes from nothing else,
 so one declaring none can never fail: a run with a 100% error rate would report `✓`, `PASS`, and

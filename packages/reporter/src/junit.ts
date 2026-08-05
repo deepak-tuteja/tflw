@@ -55,7 +55,7 @@ function countAttrs(name: string, counts: Counts, time: string, report: RunRepor
 
 /** One file's `<testsuite>`. Its `time` is the sum of its own testcases' durations — a workload
  * `<testcase>` contributes `0.000` (a workload test has no single "this took Nms" figure; its
- * `workload.overMs` is the planned span, not an outcome), exactly as it does at the testcase level. */
+ * a workload's declared span is planned, not an outcome), exactly as it does at the testcase level. */
 function renderSuite(file: string, tests: readonly ReportEntry[], report: RunReport, inconclusive: boolean): string[] {
   const time = (tests.reduce((ms, t) => ms + entryDurationMs(t), 0) / 1000).toFixed(3);
   const lines: string[] = [];
