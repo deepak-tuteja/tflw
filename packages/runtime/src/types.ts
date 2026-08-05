@@ -135,6 +135,29 @@ export interface RequestTrace {
   readonly body?: string;
 }
 
+/** One response in this request's redirect chain that carried `Set-Cookie` — the final response
+ * included, every earlier hop too (M88c1, `B4-15`/D-M88-11).
+ *
+ * Until M88c1 only the *final* response's headers survived the chain, every earlier hop being
+ * drained and discarded, so the commonest login shape there is — `POST /login` → `302` carrying
+ * `Set-Cookie` → `GET /dashboard` — lost its session cookie outright, and (headers being fixed once,
+ * before the chain starts) the hop to the protected page went out unauthenticated. Nothing in the
+ * run said so: the 200 from `/dashboard` looked like a successful login.
+ *
+ * `origin` is the origin of the response that set it, not of the request the step named — which is
+ * the same distinction, and matters for the same reason, as `Set-Cookie` scoping in a browser: a
+ * chain can end somewhere other than where it started, and a cookie handed over by host A must not
+ * be replayed to host B (D-M88-7/D-M88-8; the jar that consumes this lands in M88c2). */
+export interface CookieEvent {
+  /** `scheme://host:port` — `URL.origin`, so a default port normalizes away and the key is the same
+   * string whichever client produced it. */
+  readonly origin: string;
+  /** This hop's `Set-Cookie` values, one array entry per header line — never joined. The `\n`-joined
+   * form in `headers['set-cookie']` exists because a header map is `Record<string, string>`; here
+   * there is no such constraint, and a jar wants the lines anyway. */
+  readonly setCookie: readonly string[];
+}
+
 export interface ResponseTrace {
   readonly status: number;
   readonly statusText: string;
@@ -146,6 +169,24 @@ export interface ResponseTrace {
   /** Parsed JSON if the body parsed as JSON, else undefined. */
   readonly json?: unknown;
   readonly durationMs: number;
+  /** Where the chain actually ended — equal to the requested URL whenever nothing redirected.
+   *
+   * Reported, never addressable (D-M88-13): no `url` subject exists in SPEC §5.3 and none is added,
+   * because the question it would answer is already answered better by `without redirects` +
+   * `expect header "location"`, which asserts a *specific* hop instead of the terminus of an opaque
+   * chain. This is for the report and for diagnostics — and it is *not* how a cookie finds its
+   * origin, which is `cookieEvents`' job precisely because the terminus is the wrong answer for a
+   * cookie set three hops earlier. */
+  readonly finalUrl: string;
+  /** Every hop of this chain that carried `Set-Cookie`, in the order they arrived. Empty for the
+   * overwhelming majority of responses.
+   *
+   * Required, not optional, on purpose: four client paths have to produce this and D-M88-1 makes
+   * them conform to one another, so a path that forgets should fail to compile rather than quietly
+   * return a jar-shaped hole. Transport plumbing, not evidence — the report copy carries `[]` at
+   * every evidence level (`interpreter.ts#redactResponse`), since these are raw credentials with a
+   * redacted `headers['set-cookie']` already standing in for them. */
+  readonly cookieEvents: readonly CookieEvent[];
 }
 
 /** A captured page screenshot (M3c, SPEC §13) — raw PNG bytes, base64-encoded. Never redacted (the

@@ -15,8 +15,8 @@ import * as https from 'node:https';
 import { RuntimeError } from './eval.js';
 import { fetchErrorHint } from './http.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, RedirectLimitError, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
-import type { ResponseTrace } from './types.js';
+import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
+import type { CookieEvent, ResponseTrace } from './types.js';
 
 export interface PinnedAgents {
   readonly http: http.Agent;
@@ -87,8 +87,9 @@ function buildHeaderMap(resHeaders: http.IncomingHttpHeaders): Record<string, st
 // `DOWNGRADE_STRIPPED_HEADERS`, `isSameOrigin`, the 301/302/303-vs-307/308 split and the hop cap —
 // moved verbatim to `redirect.ts` in M85, unchanged. It was written here because `node:http` never
 // auto-follows a 3xx and so this file had to make the calls `fetch` makes for the pooled path; the
-// pooled path now has to make them too whenever `allow hosts` is enforced (C1/`B4-02`), and one
-// shared statement is the only way the two stay the same answer.
+// pooled path now has to make them too — at first only when `allow hosts` was enforced (M85,
+// C1/`B4-02`), and since M88c1 (D-M88-14) on every chain it follows — and one shared statement is
+// the only way the two stay the same answer.
 
 function isTimeoutError(err: unknown): boolean {
   const e = err as { name?: string; code?: string };
@@ -144,6 +145,11 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
   // the request the author wrote, and it is all native `redirect: 'follow'` would have known.
   const timeoutError = (): RuntimeError => new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
 
+  // M88c1 (`B4-15`) — every hop's `Set-Cookie`, not just the last one's. This loop was already the
+  // path with the *least* excuse for losing them: unlike native `redirect: 'follow'`, it has held
+  // `res.headers` for each hop all along and simply threw them away on `continue`.
+  const cookieEvents: CookieEvent[] = [];
+
   // Cleared exactly once, on every exit — success, timeout, refusal or cap. Leaving it armed past
   // a `return` would hold the VU's event loop open for the rest of `timeoutMs` on every request a
   // workload makes, which is the one thing this path cannot afford.
@@ -186,6 +192,11 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
         if (timedOut || isTimeoutError(err)) throw timeoutError();
         throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
       }
+      // Filed under the URL this hop was sent to, before the redirect branch below can `continue`
+      // past it — `current.url` is reassigned there, and after the loop it names the terminus, which
+      // is the wrong origin for a cookie set three hops earlier (D-M88-8).
+      const event = cookieEventFor(current.url, res.headers['set-cookie']);
+      if (event) cookieEvents.push(event);
 
       // The deadline still spans the body read as well as the request, which is what
       // AbortSignal.timeout() gave for free (it stayed attached to `req` until destroyed, so a
@@ -229,7 +240,7 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedA
       } catch {
         json = undefined;
       }
-      return { status, statusText: res.statusMessage ?? '', headers: responseHeaders, bodyText, bodyBytes, json, durationMs };
+      return { status, statusText: res.statusMessage ?? '', headers: responseHeaders, bodyText, bodyBytes, json, durationMs, finalUrl: current.url, cookieEvents };
     }
   } finally {
     clearTimeout(timer);

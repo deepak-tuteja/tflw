@@ -7,8 +7,8 @@
 import { RuntimeError } from './eval.js';
 import { sendMtlsRequest } from './mtlsWorker.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, RedirectLimitError, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
-import type { ResponseTrace } from './types.js';
+import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
+import type { CookieEvent, ResponseTrace } from './types.js';
 
 export interface SendRequestOptions {
   readonly method: string;
@@ -32,43 +32,62 @@ export interface SendRequestOptions {
   readonly allowHosts?: readonly string[] | null;
 }
 
-/** Whether this request has to follow its redirect chain by hand instead of letting `fetch` do it.
- *
- * `redirect: 'follow'` is a single `await` with no seam between hops, so there is nowhere to ask
- * "is *this* host allowed" before the connection to it — which is why `allow hosts` covered the URL
- * a step named and nothing the server then sent it to. Owning the loop is the only way to get that
- * seam, and owning the loop means restating what `fetch` decides for us (`redirect.ts`).
- *
- * So it is deliberately conditional: a run with no `allow hosts` — every run today, since the key
- * is opt-in — keeps native `redirect: 'follow'` byte for byte, and only a run that asked to be
- * guarded pays for being guarded. The cost of that split is that it *is* a split, and a guardrail
- * that quietly changes how requests are made is its own kind of surprise; `allow-hosts.test.ts`
- * pins the two paths against each other on the same chain (same status, headers, body, method
- * downgrade, credential stripping) so "guarded" can't come to mean "different". */
-function mustFollowByHand(opts: SendRequestOptions): boolean {
-  return opts.followRedirects && !!opts.allowHosts && opts.allowHosts.length > 0;
+/** The finished chain: the response a step gets to assert on, plus the two things only the walk
+ * itself knows — where it ended, and every `Set-Cookie` handed over along the way. */
+interface ChainResult {
+  readonly res: Response;
+  readonly finalUrl: string;
+  readonly cookieEvents: readonly CookieEvent[];
 }
 
-/** `redirect: 'follow'`, re-done a hop at a time with the allowlist checked between hops. Returns
- * the final response, exactly as `fetch` would have — the chain's own bookkeeping (method
- * downgrade, cross-origin header stripping, the 20-hop cap) comes from `redirect.ts`, shared with
- * the pinned path rather than invented here. */
-async function fetchFollowingGuardedRedirects(opts: SendRequestOptions, signal: AbortSignal): Promise<Response> {
+/** `redirect: 'follow'`, re-done a hop at a time. Returns the final response, exactly as `fetch`
+ * would have — the chain's own bookkeeping (method downgrade, cross-origin header stripping, the
+ * 20-hop cap) comes from `redirect.ts`, shared with the pinned path rather than invented here.
+ *
+ * **M88c1 (D-M88-14) — unconditional now.** This used to run only when `allow hosts` was set
+ * (`mustFollowByHand`), so an unguarded run — every run, the key being opt-in — kept native
+ * `redirect: 'follow'` byte for byte, and only a run that asked to be guarded paid for being
+ * guarded. That split cannot survive `B4-15`: `redirect: 'follow'` is a single `await` with no seam
+ * between hops, so an intermediate hop's `Set-Cookie` is drained and discarded inside undici where
+ * nothing can reach it. Keeping the split would have meant fixing the lost-session bug *only for
+ * runs that had opted into an unrelated security key* — `allow hosts` deciding whether a login
+ * works, which is `B4-14`'s own failure shape reappearing one milestone later.
+ *
+ * So the rule is now one line with no conditions: if this client follows a chain, it walks it. The
+ * seam that `allow hosts` needed (M85, C1/`B4-02`) and the seam that cookies need are the same seam,
+ * and there is no third configuration in which it is absent.
+ *
+ * What that costs is the oracle the split was accidentally providing — with both arms hand-walked,
+ * "guarded equals unguarded" no longer pins anything to `fetch`'s own answer. `cookie-events.test.ts`
+ * states that property directly instead, comparing this loop against a raw
+ * `fetch(url, { redirect: 'follow' })` on the same chain, which is what those tests were really
+ * asserting all along. */
+async function fetchChain(opts: SendRequestOptions, signal: AbortSignal): Promise<ChainResult> {
   let current: { url: string; method: string; headers: Record<string, string>; body?: BodyInit } = {
     url: opts.url,
     method: opts.method,
     headers: opts.headers,
     body: opts.body,
   };
+  const cookieEvents: CookieEvent[] = [];
   for (let redirects = 0; ; redirects++) {
     const res = await fetch(current.url, { method: current.method, headers: current.headers, body: current.body, signal, redirect: 'manual' });
+    // Recorded before anything can `return` or `throw` past it, and filed under the URL *this* hop
+    // was sent to — not `opts.url`, and not the terminus. A chain can cross origins, and the whole
+    // point of carrying an origin per event is that the jar (M88c2) must not replay host A's
+    // cookie to host B.
+    const event = cookieEventFor(current.url, setCookieLines(res.headers));
+    if (event) cookieEvents.push(event);
     const location = res.headers.get('location');
-    if (!isRedirectStatus(res.status) || !location) return res;
+    // `followRedirects: false` (`without redirects`) stops here with the 3xx itself intact and
+    // observable, which is the same thing the old `redirect: 'manual'` single call did.
+    if (!opts.followRedirects || !isRedirectStatus(res.status) || !location) return { res, finalUrl: current.url, cookieEvents };
     if (redirects >= MAX_REDIRECTS) {
       // Not `return res` (M88a, `B4-09`/`B4-14`). Handing back the 21st hop's 3xx makes an endless
       // chain indistinguishable from a deliberate `without redirects` — an infinite loop passed
       // `expect status equals 302` and reported a 0% error rate. Native `redirect: 'follow'`, which
-      // the same request would have used without `allow hosts`, throws here; so does this now.
+      // this request used to use whenever `allow hosts` was unset (until D-M88-14 made the walk
+      // unconditional), throws here; so does this.
       await res.arrayBuffer().catch(() => undefined);
       throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
     }
@@ -92,16 +111,18 @@ async function fetchFollowingGuardedRedirects(opts: SendRequestOptions, signal: 
  * session cookie *and* a CSRF cookie on one login response — with no error (decision 61). Use
  * `getSetCookie()` (WHATWG Headers, Node ≥ 18.14) to recover every value and join with `\n`,
  * a separator that can't appear inside a header value, so no cookie is silently dropped. */
+function setCookieLines(resHeaders: Headers): string[] {
+  const getSetCookie = (resHeaders as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  return getSetCookie ? getSetCookie.call(resHeaders) : [];
+}
+
 function buildHeaderMap(resHeaders: Headers): Record<string, string> {
   const headers: Record<string, string> = {};
   resHeaders.forEach((value, key) => {
     headers[key] = value;
   });
-  const getSetCookie = (resHeaders as Headers & { getSetCookie?: () => string[] }).getSetCookie;
-  if (getSetCookie) {
-    const cookies = getSetCookie.call(resHeaders);
-    if (cookies.length > 0) headers['set-cookie'] = cookies.join('\n');
-  }
+  const cookies = setCookieLines(resHeaders);
+  if (cookies.length > 0) headers['set-cookie'] = cookies.join('\n');
   return headers;
 }
 
@@ -160,15 +181,7 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
   const start = performance.now();
   try {
-    const res = mustFollowByHand(opts)
-      ? await fetchFollowingGuardedRedirects(opts, controller.signal)
-      : await fetch(opts.url, {
-          method: opts.method,
-          headers: opts.headers,
-          body: opts.body,
-          signal: controller.signal,
-          redirect: opts.followRedirects ? 'follow' : 'manual',
-        });
+    const { res, finalUrl, cookieEvents } = await fetchChain(opts, controller.signal);
     // Single read (gap #17): the body stream can only be consumed once, so `bodyText` is derived
     // from `bodyBytes` rather than a separate `res.text()` call — confirmed behavior-preserving,
     // `Buffer.from(bytes).toString('utf8')` matches `res.text()`'s own `TextDecoder` byte-for-byte,
@@ -183,7 +196,7 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     } catch {
       json = undefined;
     }
-    return { status: res.status, statusText: res.statusText, headers, bodyText, bodyBytes, json, durationMs };
+    return { status: res.status, statusText: res.statusText, headers, bodyText, bodyBytes, json, durationMs, finalUrl, cookieEvents };
   } catch (err) {
     // An `allow hosts` refusal from the guarded loop above is already the finished, teachable
     // message — re-wrapping it as `request failed: … — host "x" is not in …` would bury the one
