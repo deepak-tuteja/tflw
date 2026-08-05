@@ -824,6 +824,87 @@ test('`tflw migrate` against a real, checker-clean suite reports nothing to migr
   });
 });
 
+test('B5-11: `tflw migrate` on a file with an ordinary checker error says what is wrong instead of nothing at all (M90a)', async () => {
+  // The defect this milestone exists for: `migrateCommand` returned on `loadAndValidate`'s error
+  // path — before the splice loop, before any output — so *any* checker error, not just removed
+  // syntax, produced zero bytes on stdout, zero on stderr, and exit 2. On a clean file migrate
+  // explained itself; on a broken one, the only kind it exists for, it said nothing.
+  //
+  // The typo below is deliberately not a deprecation: migrate has no rewrite for it, which is the
+  // case that used to be silent. What it must do is behave like `tflw check` — render the
+  // diagnostics — and then say why it did not rewrite anything.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-b5-11-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    const source = 'test "t"\n  api GET /x\n  expct status equals 200\n';
+    await writeFile(join(dir, 'd.tflw'), source, 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'migrate', '--no-color'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout, stderr } = e as { code?: number; stdout: string; stderr: string };
+        assert.equal(code, 2, 'errors remain, so the exit code stays 2');
+        // The whole finding in one assertion: it is no longer silent on either stream.
+        assert.notEqual(stdout.length + stderr.length, 0, 'migrate must not exit 2 with zero bytes of output');
+        assert.match(stderr, /unknown step `expct`/, `the diagnostic \`check\` would print:\n${stderr}`);
+        assert.match(stderr, /did you mean `expect`\?/, stderr);
+        assert.match(stdout, /not deprecations, so migrate has no rewrite for them/, stdout);
+        return true;
+      },
+    );
+
+    assert.equal(await readFile(join(dir, 'd.tflw'), 'utf8'), source, 'and it rewrote nothing while saying so');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('B5-12: `tflw migrate --format` is an unknown flag, not a silently ignored one (M90a, D-M90-8)', async () => {
+  // It was accepted, ignored, *and* unvalidated: `--format xml` exited 0 having done nothing with
+  // the flag, while `check --format xml` rejects it. `CLI_FLAGS` never listed `--format` under
+  // `migrate`, so `--help` and the docs-site reference already agreed — only the parser did not.
+  //
+  // The negative half matters as much as the positive one: `B5-12` exists because nobody checked
+  // that the flag was *rejected* rather than merely absent. Both spellings, and `check` must keep
+  // its own (different) rejection.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-format-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'a.tflw'), 'test "t"\n  api GET /x\n  expect status equals 200\n', 'utf8');
+
+    for (const args of [
+      ['migrate', '--format', 'xml'],
+      ['migrate', '--format=json'],
+    ] as const) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, ...args], { cwd: dir }),
+        (e: unknown) => {
+          const { code, stderr } = e as { code?: number; stderr: string };
+          assert.equal(code, 2, `${args.join(' ')} must exit 2\n${stderr}`);
+          assert.match(stderr, /unknown flag `--format` for `tflw migrate`/, stderr);
+          return true;
+        },
+        `${args.join(' ')} must be a usage error`,
+      );
+    }
+
+    // `check` keeps `--format`, and keeps rejecting a bad *value* — a different error from a
+    // different place. Guards against "fixing" this by deleting the flag from both.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', '--format', 'xml'], { cwd: dir }),
+      (e: unknown) => {
+        const { stderr } = e as { stderr: string };
+        assert.match(stderr, /unknown --format `xml` — only `json` is supported/, stderr);
+        return true;
+      },
+    );
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--format', 'json'], { cwd: dir });
+    assert.match(stdout, /"file"/, `check --format json still works:\n${stdout}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('B5-05: `tflw migrate` cannot rewrite a removed keyword either — the one migration a user would expect today (M76)', async () => {
   // The row is "`tflw migrate` cannot do anything and is documented as if it can". `collectMigrations`
   // acts only on a `severity: 'warning'` diagnostic carrying `deprecation.replacement`, and no rule

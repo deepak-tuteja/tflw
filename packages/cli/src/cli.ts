@@ -1652,8 +1652,14 @@ interface CheckArgs {
   readonly format?: string | undefined;
 }
 
-/** Shared by `tflw check` and `tflw migrate`, which take the same flags — `command` is passed only
- * so an unknown one is reported against the subcommand the user actually typed. */
+/** Shared by `tflw check` and `tflw migrate`, which take *almost* the same flags — `command` is
+ * passed so an unknown one is reported against the subcommand the user actually typed, and so
+ * `--format` can be refused for `migrate` (D-M90-8/`B5-12`). It was accepted there, ignored, *and*
+ * unvalidated: `tflw migrate --format xml` exited 0 having done nothing with the flag, while
+ * `tflw check --format xml` rejects it. Migrate's output is a report of *edits*, a different shape
+ * from `check`'s diagnostics array; inventing that JSON contract with no consumer asking is the
+ * mistake that produced this cluster. `CLI_FLAGS` has never listed `--format` under `migrate`, so
+ * `--help` and the docs-site reference already agreed with this — only the parser didn't. */
 function parseCheckArgs(argv: string[], command: 'check' | 'migrate'): CheckArgs {
   const files: string[] = [];
   let env: string | undefined;
@@ -1664,9 +1670,10 @@ function parseCheckArgs(argv: string[], command: 'check' | 'migrate'): CheckArgs
     if (a === '--env') env = flagValue(argv, ++i, a);
     else if (a.startsWith('--env=')) env = inlineFlagValue(a, '--env');
     else if (a === '--no-color') noColor = true;
-    else if (a === '--format') format = flagValue(argv, ++i, a);
-    else if (a.startsWith('--format=')) format = inlineFlagValue(a, '--format');
-    else if (a.startsWith('--')) unknownFlag(command, a);
+    else if (a === '--format' || a.startsWith('--format=')) {
+      if (command !== 'check') unknownFlag(command, a);
+      format = a === '--format' ? flagValue(argv, ++i, a) : inlineFlagValue(a, '--format');
+    } else if (a.startsWith('--')) unknownFlag(command, a);
     else files.push(a);
   }
   return { files, env, noColor, format };
@@ -1819,16 +1826,36 @@ async function refactorCommand(argv: string[]): Promise<number> {
 // ---- tflw migrate (P#38, decision 45's 1.0-gate deliverable, SPEC §12) -----
 
 /**
- * Mechanically rewrites a suite past every checker-flagged deprecation (decision 38): a
- * `severity: 'warning'` diagnostic carrying a `deprecation.replacement` gets its exact source
- * span spliced with that replacement, file by file, the same widest-first ordering
- * `refactorCommand` already uses for its own edits. Unlike `refactor apply <id>`, there is no id
- * to pick — every deprecation the checker finds across the discovered files is applied in one
- * pass (a deprecation warning is never something to leave half-migrated on purpose).
+ * Mechanically rewrites a suite past every checker-flagged deprecation (decision 38): a diagnostic
+ * carrying a `deprecation.replacement` gets its exact source span spliced with that replacement,
+ * file by file, the same widest-first ordering `refactorCommand` already uses for its own edits.
+ * Unlike `refactor apply <id>`, there is no id to pick — every deprecation the checker finds
+ * across the discovered files is applied in one pass (a deprecation is never something to leave
+ * half-migrated on purpose).
  *
- * `loadAndValidate`'s own `onFileDiagnostics` hook is how this sees diagnostics: warning-only
- * files still reach it (and still end up in `parsedFiles`, per that function's error/warning
- * split) so a plain `tflw migrate` run needs no separate checker invocation of its own.
+ * `loadAndValidate`'s own `onFileDiagnostics` hook is how this sees diagnostics: it fires for every
+ * file checked, whatever the severity, so a plain `tflw migrate` run needs no separate checker
+ * invocation of its own.
+ *
+ * **Best-effort, then re-check (D-M90-1, `B5-11`).** This used to return the moment
+ * `loadAndValidate` reported a failure — before the splice loop and before any output — so a file
+ * containing *any* checker error produced **zero bytes on stdout, zero on stderr, and exit 2**. Not
+ * just a file containing removed syntax: an ordinary typo. On a clean file migrate explained itself
+ * politely; on a broken file, the only kind it exists for, it said nothing at all. The cause was
+ * that `onFileDiagnostics` *replaces* rendering rather than supplementing it, and this command's
+ * hook only filled a `Map`.
+ *
+ * So: splice everything that has a payload, write, then **re-run the whole pipeline against what is
+ * now on disk** and let it render whatever remains. Two rejected alternatives, both worse:
+ * all-or-nothing-per-file would make a tool whose purpose is unbreaking a file refuse *because* the
+ * file is broken (`B5-05` restated); splicing and then telling the user to run `tflw check` would
+ * print carets against pre-splice offsets, and two of the three renames change length
+ * (`scenario`→`test` is −4, `uncheck`→`untick` is −1), so those carets would underline the wrong
+ * text. Re-checking is the only way residual diagnostics point at the bytes the user will open.
+ *
+ * Exit contract: `0` when the file is clean afterwards, `2` when errors remain — **including when
+ * migrate successfully did work and the file still fails.** Unusual, correct, and documented in
+ * SPEC §12: migrate's job is the rewrite, not the verdict.
  */
 async function migrateCommand(argv: string[]): Promise<number> {
   const args = parseCheckArgs(argv, 'migrate');
@@ -1839,26 +1866,45 @@ async function migrateCommand(argv: string[]): Promise<number> {
   const loaded = await loadAndValidate(cwd, args.files, args.env, color, (file, source, diagnostics) => {
     byFile.set(file, { source, diagnostics: [...diagnostics] });
   });
-  if (typeof loaded === 'number') return loaded;
+  // A config-level failure — no `tflw.config`, an unresolvable env, a named file that isn't there,
+  // nothing discovered — is not something a splice can help with, and `loadAndValidate` has already
+  // printed it in full (the hook only intercepts *per-file* batches). `byFile` is the discriminator:
+  // the hook fires once for every file checked, clean or not, so an empty map alongside a numeric
+  // return means the run never reached a file at all.
+  if (typeof loaded === 'number' && byFile.size === 0) return loaded;
 
   const changedFiles: string[] = [];
   for (const [file, { source, diagnostics }] of byFile) {
     const edits = collectMigrations(diagnostics, source);
     if (edits.length === 0) continue;
-    const migrated = applyMigrations(source, edits);
-    await writeFile(file, migrated, 'utf8');
+    await writeFile(file, applyMigrations(source, edits), 'utf8');
     changedFiles.push(relative(cwd, file));
   }
 
-  if (changedFiles.length === 0) {
+  if (changedFiles.length > 0) {
+    process.stdout.write(`migrated ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}:\n`);
+    process.stdout.write(`  ${changedFiles.sort().join('\n  ')}\n`);
+  } else {
     process.stdout.write('no deprecated syntax found — nothing to migrate.\n');
-    return EXIT_OK;
   }
 
-  process.stdout.write(`migrated ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}:\n`);
-  process.stdout.write(`  ${changedFiles.sort().join('\n  ')}\n`);
-  process.stdout.write('re-run `tflw check` to confirm the rewritten suite is clean.\n');
-  return EXIT_OK;
+  // Nothing rewritten and nothing wrong: there is nothing left to say, and re-parsing files this
+  // pass already found clean would only cost time.
+  if (changedFiles.length === 0 && typeof loaded !== 'number') return EXIT_OK;
+
+  // The re-check. No hook this time — `loadAndValidate` renders straight to stderr, against the
+  // rewritten sources it re-reads, which is the whole point.
+  const after = await loadAndValidate(cwd, args.files, args.env, color);
+  if (typeof after !== 'number') {
+    if (changedFiles.length > 0) process.stdout.write('the rewritten suite checks clean.\n');
+    return EXIT_OK;
+  }
+  process.stdout.write(
+    changedFiles.length > 0
+      ? '\nevery rewrite migrate had was applied, and the suite still has errors — the diagnostics above are against the rewritten files.\n'
+      : '\nthe errors above are not deprecations, so migrate has no rewrite for them.\n',
+  );
+  return after;
 }
 
 // ---- tflw docs --------------------------------------------------------------
