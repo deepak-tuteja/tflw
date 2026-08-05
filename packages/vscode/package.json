@@ -17,7 +17,8 @@
     "snippets",
     "language-configuration.json",
     "icon.png",
-    "LICENSE"
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "engines": {
     "vscode": "^1.85.0"

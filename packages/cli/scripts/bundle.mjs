@@ -4,9 +4,10 @@
 // package.json read in the published artifact. A plain JS script (not a shell one-liner) so the
 // dist removal is portable across OSes (decision 79) and the version doesn't need shell quoting.
 
-import { copyFileSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { collectNotices, renderNotices } from '../../../scripts/third-party-notices.mjs';
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url));
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -31,11 +32,14 @@ rmSync(new URL('../dist', import.meta.url), { recursive: true, force: true });
 // source of truth (the same drift this project's own decision 71 fixed for a duplicated function).
 copyFileSync(new URL('../../../LICENSE', import.meta.url), new URL('../LICENSE', import.meta.url));
 
-await build({
+const cliBuild = await build({
   absWorkingDir: pkgRoot,
   entryPoints: ['src/cli.ts'],
   bundle: true,
   platform: 'node',
+  // M92a (`B6-06`) — the notice file is generated from this, so it describes the packages that
+  // actually got inlined rather than the ones somebody remembered to declare.
+  metafile: true,
   // `.cjs` (not `.js`+ESM) since decision 13 (enterprise arc) bundles `undici` in: undici's CJS
   // source has `require()` calls inside function bodies (lazy/conditional), which esbuild can't
   // hoist into static ESM `import`s — bundled into ESM output, those become a shim that throws
@@ -66,13 +70,33 @@ await build({
 // separate built-in global `fetch()` by ~20x. `mtlsWorker.ts`'s `getChild()` resolves this file by
 // path at runtime (sibling of `dist/cli.cjs`), falling back to the `.ts` source sibling when this
 // bundled file doesn't exist (`@tflw/runtime`'s own unit tests, run unbundled via `tsx`).
-await build({
+const workerBuild = await build({
   absWorkingDir: pkgRoot,
   entryPoints: ['../runtime/src/mtlsWorkerEntry.ts'],
   bundle: true,
   platform: 'node',
+  metafile: true,
   format: 'cjs',
   target: 'node22',
   outfile: 'dist/mtls-worker.cjs',
   sourcemap,
 });
+
+// M92a (review `B6-06`) — third-party attribution, from the union of *both* bundles' metafiles.
+//
+// The tarball ships `dist/cli.cjs` and `dist/mtls-worker.cjs`, so the notice must cover both; the
+// union is taken rather than the CLI bundle alone because a package reaching only the worker (as
+// `undici` nearly does — it is deliberately kept out of `dist/cli.cjs`, see M35c above) is still
+// redistributed and still owes its notice.
+const notices = collectNotices({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs } });
+writeFileSync(new URL('../THIRD-PARTY-NOTICES.md', import.meta.url), renderNotices(pkg.name, notices), 'utf8');
+
+// The metafile itself, for `test/pack.test.ts` to re-derive the same package set from — deliberately
+// *outside* `dist/`, so `files: ["dist"]` cannot ship a build byproduct, and gitignored. Writing it
+// is what keeps the guard from needing its own copy of the build config, which would be the drift
+// this whole milestone exists to remove.
+writeFileSync(
+  new URL('../.bundle-meta.json', import.meta.url),
+  JSON.stringify({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs } }),
+  'utf8',
+);
