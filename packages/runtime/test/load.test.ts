@@ -145,9 +145,26 @@ test('`pause` time is excluded from the reported iteration duration', async () =
   await server.close();
 });
 
-test('`runLoad` throws when the file declares no workload-bearing `test`', async () => {
+test('`runLoad` throws when the program declares no workload-bearing `test` — and says so without naming a command (B3-08, M90c)', async () => {
+  // The message used to open ``\`tflw load\` needs …`` — a command `M53` removed. Naming `tflw run`
+  // instead would have been a second lie in the same sentence: `tflw run` on such a file does not
+  // error, it runs the functional tests. This is a library precondition and now reads as one.
+  //
+  // Worth knowing what this test is and is not (`B5-13`): `runLoad` has **no production caller** —
+  // it is exported from `runtime/index.ts` and used only here and in `timeout-chain.test.ts` — and
+  // `runLoadShard`, the one production path, is only forked when a workload already exists. So this
+  // asserts a string no user can currently reach, through an entry point production does not use.
+  // Recorded rather than deleted: whether `runLoad` is public API or a leaked internal is C14's
+  // question (D-M90-6), and deleting a published export is itself a deprecation.
   const { program } = parseSource('test "not a load test"\n  api GET /health\n');
-  await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /at least one workload-bearing `test`/);
+  await assert.rejects(() => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }), /no workload-bearing `test`/);
+  await assert.rejects(
+    () => runLoad(program, testConfig('http://127.0.0.1:1'), { source: '' }),
+    (e: unknown) => {
+      assert.doesNotMatch((e as Error).message, /tflw (load|run)/, 'a library precondition names no command');
+      return true;
+    },
+  );
 });
 
 // M52 (Phase 2, PLAN_UNIFIED_TEST_WORKLOAD.md): the 4 new workload kinds Phase 1b (D97) only
