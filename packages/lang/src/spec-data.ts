@@ -7,34 +7,109 @@
 // to be hand-maintained prose tables); `packages/docs-site`'s Reference pages and a later LSP's
 // hover/signature-help (PLAN_ENTERPRISE.md decision 17.7) import this module directly.
 
+/**
+ * Which *kind* of subject a matcher may stand against (M97b, D140). Five kinds, deliberately
+ * coarse — this axis is decidable from the AST alone, and nothing finer is.
+ *
+ * `body bytes` is **not** a kind of its own, though SPEC's prose names it. The runtime's own test
+ * is `!(value instanceof Uint8Array)` — an inspection of a value that does not exist until a
+ * response arrives. That is the *shape* axis, and it stays where it can actually be evaluated.
+ */
+export type SubjectKind =
+  /** Anything carrying a value off the response or the variable scope: `status`, `duration`,
+   *  `header "…"`, `body`/`body text`/`body bytes`/`body csv`/`body pdf text`, `{variable}`. */
+  | 'value'
+  /** A UI locator — `button "Pay"`, `field "Email"`, `css "…"`, `text "…"`. */
+  | 'locator'
+  /** `page`. */
+  | 'page'
+  /** `request` — the connection attempt itself, carrying no response data (SPEC §6.2.2). */
+  | 'request'
+  /** `request to "<url>"` — an observed network request (SPEC §9.7). */
+  | 'network-request';
+
 /** One row of SPEC §6.2's matcher table. `syntax`/`appliesTo`/`example` are markdown-ready cell
  * text (inline backticks already embedded where the original hand-written table had them) so the
- * generated table is byte-identical to what it replaces. */
+ * generated table is byte-identical to what it replaces.
+ *
+ * `subjects`/`quantifiable` (M97b, D140) are the machine-readable half of `appliesTo`. Until now
+ * this table stated compatibility only as prose, so the runtime restated it by hand in five places
+ * and the checker stated it nowhere — `A4-11` and `A4-15` are both that gap. They are *not* a
+ * second copy of the prose: they are the part of it a program can act on, and
+ * `matcherSubjects.test.ts` holds the two in step.
+ *
+ * **Kind, not shape.** `contains` says "strings, arrays"; only the first word of that is knowable
+ * before the response exists. So `contains`' row claims `value` — every value-bearing subject —
+ * and its string-or-array requirement stays a runtime error, exactly where `body.msg` puts it
+ * today. Reading these as a whitelist over both axes would make the checker reject valid programs,
+ * which is the `A4-05` failure mode arriving as the fix for `A4-11`. */
 export interface MatcherEntry {
   readonly id: string;
   readonly syntax: string;
   readonly appliesTo: string;
   readonly example: string;
   readonly status: 'shipped' | 'planned';
+  /** Subject kinds this matcher may stand against. Sound by construction: a kind listed here is
+   *  one the runtime genuinely accepts, so rejecting anything else cannot reject a valid program. */
+  readonly subjects: readonly SubjectKind[];
+  /** May an `any`/`all` quantifier precede it? False for the two matchers that read an external
+   *  document (`matches schema`, `matches file`): element-by-element contract validation is not a
+   *  thing either one can do, and the runtime's own reports of that are poor — `matches schema`
+   *  throws a clear error, but `matches file` falls through to a message about UI matchers, and
+   *  under `any` it is swallowed entirely into "none of N elements matched". */
+  readonly quantifiable: boolean;
 }
 
 export const MATCHERS: readonly MatcherEntry[] = [
-  { id: 'equals', syntax: '`equals`', appliesTo: 'any value', example: '`expect status equals 201`', status: 'shipped' },
-  { id: 'contains', syntax: '`contains`', appliesTo: 'strings, arrays', example: '`expect body.msg contains "created"`', status: 'shipped' },
-  { id: 'matches-regex', syntax: '`matches "<regex>"`', appliesTo: 'strings', example: '`expect header "content-type" matches "json"`', status: 'shipped' },
-  { id: 'matches-subset', syntax: '`matches subset {...}`', appliesTo: 'objects', example: '`expect body matches subset { type: "about:blank", status: 422 }`', status: 'shipped' },
-  { id: 'matches-schema', syntax: '`matches schema "Name" from "src"`', appliesTo: 'objects', example: '`expect body matches schema "ProductResponseDto" from "/openapi.json"`', status: 'shipped' },
-  { id: 'matches-file', syntax: '`matches file "<path>"`', appliesTo: '`body bytes`', example: '`expect body bytes matches file "expected-receipt.pdf"`', status: 'shipped' },
-  { id: 'greater-less-than', syntax: '`is greater than` / `is less than`', appliesTo: 'numbers, `duration`', example: '`expect body.total is less than 100`', status: 'shipped' },
-  { id: 'has-count', syntax: '`has count <value>`', appliesTo: 'arrays, UI lists, `body bytes`', example: '`expect body.items has count 3`', status: 'shipped' },
-  { id: 'has-value', syntax: '`has value`', appliesTo: 'UI fields', example: '`expect field "Email" has value "a@b.c"`', status: 'shipped' },
-  { id: 'state-word', syntax: '`is visible/hidden/enabled/disabled/checked`', appliesTo: 'UI locators', example: '`expect button "Pay" is enabled`', status: 'shipped' },
-  { id: 'connects', syntax: '`connects`', appliesTo: '`request`', example: '`expect request connects`', status: 'shipped' },
-  { id: 'fails', syntax: '`fails` / `fails matching "<regex>"`', appliesTo: '`request`', example: '`expect request fails matching "certificate"`', status: 'shipped' },
-  { id: 'was-made', syntax: '`was made`', appliesTo: '`request to "<url>"`', example: '`expect request to "/api/orders" was made`', status: 'shipped' },
-  { id: 'has-no-a11y-violations', syntax: '`has no [minor/moderate/serious/critical] a11y violations`', appliesTo: '`page`', example: '`expect page has no critical a11y violations`', status: 'shipped' },
-  { id: 'matches-snapshot', syntax: '`matches snapshot "<name>" [mask <locator>]*`', appliesTo: '`page`, UI locators', example: '`expect page matches snapshot "checkout-page" mask css ".timestamp"`', status: 'shipped' },
+  { id: 'equals', syntax: '`equals`', appliesTo: 'any value', example: '`expect status equals 201`', status: 'shipped', subjects: ['value'], quantifiable: true },
+  { id: 'contains', syntax: '`contains`', appliesTo: 'strings, arrays', example: '`expect body.msg contains "created"`', status: 'shipped', subjects: ['value'], quantifiable: true },
+  { id: 'matches-regex', syntax: '`matches "<regex>"`', appliesTo: 'strings', example: '`expect header "content-type" matches "json"`', status: 'shipped', subjects: ['value'], quantifiable: true },
+  { id: 'matches-subset', syntax: '`matches subset {...}`', appliesTo: 'objects', example: '`expect body matches subset { type: "about:blank", status: 422 }`', status: 'shipped', subjects: ['value'], quantifiable: true },
+  { id: 'matches-schema', syntax: '`matches schema "Name" from "src"`', appliesTo: 'objects', example: '`expect body matches schema "ProductResponseDto" from "/openapi.json"`', status: 'shipped', subjects: ['value'], quantifiable: false },
+  { id: 'matches-file', syntax: '`matches file "<path>"`', appliesTo: '`body bytes`', example: '`expect body bytes matches file "expected-receipt.pdf"`', status: 'shipped', subjects: ['value'], quantifiable: false },
+  { id: 'greater-less-than', syntax: '`is greater than` / `is less than`', appliesTo: 'numbers, `duration`', example: '`expect body.total is less than 100`', status: 'shipped', subjects: ['value'], quantifiable: true },
+  { id: 'has-count', syntax: '`has count <value>`', appliesTo: 'arrays, UI lists, `body bytes`', example: '`expect body.items has count 3`', status: 'shipped', subjects: ['value', 'locator'], quantifiable: true },
+  { id: 'has-value', syntax: '`has value`', appliesTo: 'UI fields', example: '`expect field "Email" has value "a@b.c"`', status: 'shipped', subjects: ['locator'], quantifiable: false },
+  { id: 'state-word', syntax: '`is visible/hidden/enabled/disabled/checked`', appliesTo: 'UI locators', example: '`expect button "Pay" is enabled`', status: 'shipped', subjects: ['locator'], quantifiable: false },
+  { id: 'connects', syntax: '`connects`', appliesTo: '`request`', example: '`expect request connects`', status: 'shipped', subjects: ['request'], quantifiable: false },
+  { id: 'fails', syntax: '`fails` / `fails matching "<regex>"`', appliesTo: '`request`', example: '`expect request fails matching "certificate"`', status: 'shipped', subjects: ['request'], quantifiable: false },
+  { id: 'was-made', syntax: '`was made`', appliesTo: '`request to "<url>"`', example: '`expect request to "/api/orders" was made`', status: 'shipped', subjects: ['network-request'], quantifiable: false },
+  { id: 'has-no-a11y-violations', syntax: '`has no [minor/moderate/serious/critical] a11y violations`', appliesTo: '`page`', example: '`expect page has no critical a11y violations`', status: 'shipped', subjects: ['page'], quantifiable: false },
+  { id: 'matches-snapshot', syntax: '`matches snapshot "<name>" [mask <locator>]*`', appliesTo: '`page`, UI locators', example: '`expect page matches snapshot "checkout-page" mask css ".timestamp"`', status: 'shipped', subjects: ['page', 'locator'], quantifiable: false },
 ] as const;
+
+/**
+ * `MatcherName` (the AST's spelling) → the `MATCHERS` row that governs it. `MATCHERS` is keyed by
+ * *documentation* id, which is coarser: five state words share one `state-word` row because SPEC
+ * §6.2 shows them on one line, and `is greater than`/`is less than` likewise. The checker needs the
+ * finer key, so the fan-out is written here once rather than at each consumer.
+ *
+ * `matcherSubjects.test.ts` asserts this map is total over `MatcherName` and lands only on real
+ * `MATCHERS` ids — a new matcher then cannot reach the checker without someone saying which
+ * subjects it accepts.
+ */
+export const MATCHER_ROW_BY_NAME: Readonly<Record<string, string>> = {
+  equals: 'equals',
+  contains: 'contains',
+  matches: 'matches-regex',
+  matchesSubset: 'matches-subset',
+  matchesSchema: 'matches-schema',
+  matchesFile: 'matches-file',
+  greaterThan: 'greater-less-than',
+  lessThan: 'greater-less-than',
+  hasCount: 'has-count',
+  hasValue: 'has-value',
+  visible: 'state-word',
+  hidden: 'state-word',
+  enabled: 'state-word',
+  disabled: 'state-word',
+  checked: 'state-word',
+  connects: 'connects',
+  fails: 'fails',
+  wasMade: 'was-made',
+  hasNoA11yViolations: 'has-no-a11y-violations',
+  matchesSnapshot: 'matches-snapshot',
+};
 
 /** One row of SPEC §7's new generators quick-reference table (§7.2/§7.3 previously had no table,
  * prose only). `syntax`/`example` are markdown-ready cell text. */
@@ -115,13 +190,14 @@ export const DIAGNOSTICS: readonly DiagnosticEntry[] = [
   { code: 'TF032', meaning: 'Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (decision 22/M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run.', example: '`upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"`' },
   { code: 'TF033', meaning: 'Parser/checker (load, M29/M30, M50/D93-D96): a workload-bearing `test`\'s workload/threshold shape is invalid, two such tests in one file share a name (M30, D29 — names key each one\'s own metrics/threshold breakdown under concurrent multi-load-test runs), a `retry`/`with each` clause coexists with a workload (D96), a browser step appears inside a workload-bearing body (D19 — API-only in v1), `pause` appears outside one (D18), a workload-bearing `test` carries no `threshold` at all (M60/A4-01 — its verdict comes only from thresholds, so with none it can never fail), a workload-bearing `test` thresholds `duration` without pairing it with an **unscoped** `error rate` threshold (M89c/B3-14 — a duration threshold reads only the iterations that succeeded, so alone it is satisfied by a target that fails half its requests fast, and a *scoped* error-rate threshold bounds one endpoint while the rest of the scenario fails freely), or a removed keyword is found — `scenario` (D103 — write `test "…" { ramp to … }` instead) or `think` (FS-05 — renamed to `pause`). The `pause`/browser-step bans follow calls into `action`s (M60/A4-02) and report at the call site, since the same action is legal under a workload and illegal outside one. The `pause` hint names both ways out honestly (FS-05): a *condition* is `wait until …` / `wait until … for <dur>`, while genuinely elapsed time — a cache TTL, a token expiry — has no condition to poll and belongs in the JS escape hatch (§11).', example: '`pause 2s` inside a plain `test` → `\`pause\` is only legal inside a workload-bearing \`test\`` — or `think 2s` → `` `think` was renamed to `pause` ``' },
   { code: 'TF034', meaning: 'Checker (load, M43/D70): a `threshold … for "label"` clause references a label that matches no `api` step\'s identity (its explicit `as "label"` tag, or its automatic `METHOD path.raw` identity when untagged) within the same workload-bearing test.', example: '`threshold p95 duration for "checkotu" is less than 250ms` with only an `as "checkout"`-tagged step in scope → `threshold for "checkotu" matches no step in this test`' },
-  { code: 'TF035', meaning: 'Checker (M60/A2-01): two `action`s in one file share a name. Actions are file-scoped, so the second declaration shadows nothing — it is simply ambiguous, and the runtime refuses to build the file. Reported at the second declaration, pointing back at the first.', example: '`action fetch it()` declared twice → `duplicate action "fetch it"` with `already declared at line 1`' },
+  { code: 'TF035', meaning: 'Checker (M60/`A2-01`; widened M97b/`B5-02`): a name is declared as an `action` more than once in the namespace a file actually runs in. Two `action`s in one file is the original case — actions are file-scoped, so the second shadows nothing, it is simply ambiguous. As of M97b the same code also covers a name declared locally *and* brought in by an `import`, and a name two `import`s both provide: the runtime (`buildRegistry`) has always refused all three, and `TF035` used to see only the first — so the manifest, the checker and its test agreed with each other while missing what the runtime enforced. The imported halves are reported only when the imports were actually read (the same `undefined`-vs-`[]` rule `TF037` turns on): a name cannot be called a duplicate of something nobody looked at.', example: '`action fetch it()` declared twice → `duplicate action "fetch it"` with `already declared at line 3`; the same name also arriving via `import "./shared/orders.tflw"` → `duplicate action "fetch it" (imported from "./shared/orders.tflw")`' },
   { code: 'TF036', meaning: 'Checker (M85/A4-10): the **active** env\'s own `api`/`api <service>`/`web` base URL has a host that its own `allow hosts` list (accumulated across `defaults` + the env, SPEC §3.7) does not match — a statically decidable contradiction that costs a whole run to discover otherwise, one identical runtime refusal per step for one config line. Env-scoped like every other config check (`checkSessionServices`, `knownServices`): a contradiction in an env you have not selected is not this run\'s problem, and a suite may legitimately keep a deliberately-blocked env as a negative-case fixture. The hint names the consequence *that key* has — only the default `api` base takes the whole suite down; a named service takes its own calls, `web` takes the browser half. Only fully literal URLs are checked: a base URL containing `{…}` names a host this pass cannot decide, and is skipped rather than guessed at (note that `resolveConfig` takes such a URL literally today — the recorded `A2-12` gap — so skipping it neither hides a live behaviour nor pre-commits this check if config interpolation ever lands).', example: '`api "http://127.0.0.1:9099"` alongside `allow hosts "example.com"` → ``env `local`\'s `api` base URL is "http://127.0.0.1:9099", whose host "127.0.0.1" is not in its own `allow hosts` (example.com)``' },
   { code: 'TF037', meaning: 'Checker (M87/A4-03, `FU-08`): a call names neither an `action` nor a JS helper, so the run dies at that step with `unknown call`. Being a *negative* claim it is made only where it is sound, which is narrower than it first looks. **The world must be closed**: every `import` resolved, and no `use` at all — a JS helper module\'s exports cannot be enumerated without importing it, and the checker never executes the code it checks (P#2), so one `use` line makes this undecidable for that file. **And the frame\'s registry must be knowable**: a `test` or hook body, never an `action` body. Calls bind late, against the *entry* file\'s registry, so a shared action may legitimately call a name only its importer defines; a `test` is safe because an imported file\'s tests never run (`buildRegistry` takes only its `actions`). `TF038` is unaffected by either condition — it only ever fires on a name that already resolved.', example: '`creat order("Widget")` beside `action create order(name)` → ``unknown call `creat order(...)` — no `action` or JS helper (`use`) defines it`` with `did you mean `create order`?`' },
   { code: 'TF038', meaning: 'Checker (M87/A4-03): a call resolves to a known `action` but passes the wrong number of arguments. Sound regardless of `use`, unlike `TF037` — the runtime resolves actions before helpers (`execCall`), and an action name is unique across the whole registry (`TF035` and `buildRegistry` both refuse a duplicate), so a name that matches a declared action is that action and nothing else.', example: '`create order("Widget", "extra")` against `action create order(name)` → `action "create order" expects 1 argument, got 2`' },
   { code: 'TF039', meaning: 'Checker (M87/A4-16, `FU-12`): an `expect`/`check` on a response-backed subject (`status`/`duration`/`header`/`body …`/`request`), or any `capture`, appears before the first `api`/`wait until api` step **in its own response scope**. The scope is exactly one `execSteps` frame in the interpreter, which is narrower than it looks: a `test`/`action`/hook body is one, and so is each nested `within` / `switch to new tab` / `download` body. An `action` gets its own — calling one never publishes its response to the caller (that is `FU-12`) — and a `before` hook\'s response is likewise invisible to the test body. UI subjects (a locator, `page`) and `request to "…"` network observations are excluded: the interpreter routes those away from the response path entirely, so they never needed one. A `{variable}` subject (M96) is excluded for the same reason — it reads a `let`/`capture` binding, and an *unbound* one is already `TF030`.', example: '`expect status equals 200` as a test\'s first step → ``no response yet — an `api` step must run before this assertion``' },
   { code: 'TF040', meaning: 'Checker (M87, found while fixing `A4-03`): a call is written somewhere its value is never computed. The interpreter evaluates a `CallExpr` in exactly two places — a bare call step, and the *whole* right-hand side of a `let` — because running one is asynchronous and `evalValue` (which computes every other value) is synchronous by design. A call anywhere else parses, checks, and then silently yields nothing: `body { id: create thing() }` drops the field and sends `{}`, `[create thing()]` sends `[null]`, and `give create thing()` returns nothing — each at a green `✓`, testing a request nobody wrote. Reported alone for such a call: `TF037`/`TF038` are suppressed there, since the position is the thing to fix first.', example: '`api POST /orders body { id: create thing() }` → ``a call in this position is never evaluated`` with `` bind it first — `let id = create thing()` — then use `{id}` here ``' },
   { code: 'TF041', meaning: 'Checker (M96, `FU-11`): a `{variable}` subject stands somewhere a value cannot. Two cases. **A live-handle matcher** — `is visible`/`hidden`/`enabled`/`disabled`/`checked`, `has value`, `matches snapshot`, `has no … a11y violations`, `connects`/`fails`, `was made` — needs a browser element, a page, a connection attempt or an observed request; a bound value has no such state to observe, whatever its type. The *type*-constrained matchers (`equals`, `contains`, `matches "<regex>"`/`subset`/`schema`/`file`, `is greater/less than`, `has count`) are deliberately **not** checked here: a mismatch there is a runtime error for `body.<path>` today, and a captured value must not be stricter than the response it came from. **Inside `wait until api`** — that block re-issues its request and re-evaluates its expects each poll, and a value subject cannot change between polls, so the assertion either passes on the first attempt or times out blaming an endpoint that never controlled it. Distinct from `TF014` (an *unrecognised* matcher): `is visible` is recognised, just misplaced.', example: '`expect {orderId} is visible` → ``is visible` needs a live browser element, page, or request — not a value`' },
+  { code: 'TF042', meaning: 'Checker (M97b, `A4-11`/`A4-15`): a matcher used where its subject cannot be read, or an `any`/`all` quantifier on a matcher that cannot be applied element by element. The rule is over the subject\'s **kind** — a value, a UI locator, `page`, `request`, `request to "…"` — and is read straight off SPEC \u00a76.2\'s own table, so the checker and the reference are one statement. **Shape is deliberately not checked**: `contains` documents "strings, arrays", but whether `body.msg` is either is not knowable until the response arrives, so that stays a runtime error. The quantifier half covers the two matchers that fetch an external document (`matches schema`, `matches file`); `matches file` in particular used to fail with a message about UI matchers, and under `any` was swallowed into "none of N elements matched". Distinct from `TF041`, which is this same rule for a `{variable}` subject and says so in that case\'s own words. Was a documented gap in \u00a71 until M97b closed it.', example: '`expect status is visible` \u2192 ``is visible/hidden/enabled/disabled/checked` can\'t be used on a value`; `expect any body.items matches schema "W" from "/o.json"` \u2192 ``any` can\'t be combined with `matches schema "Name" from "src"``' },
 ] as const;
 
 export const CLI_FLAGS: readonly CliFlagEntry[] = [

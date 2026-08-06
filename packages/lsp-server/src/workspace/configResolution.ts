@@ -9,7 +9,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parseConfigSource, checkSessionServices, checkAllowHostsCoversBaseUrls, collectConfigSymbols, type ConfigFile, type Diagnostic, type SymbolTable } from '@tflw/lang';
+import { parseConfigSource, checkSessionBody, checkAllowHostsCoversBaseUrls, collectConfigSymbols, type ConfigFile, type Diagnostic, type SymbolTable } from '@tflw/lang';
 import { ConfigError, selectEnv, resolveConfig, type ResolvedConfig } from '@tflw/runtime';
 
 /** Synthetic code for a project-level resolution failure (no active env, `--env`-equivalent
@@ -23,7 +23,7 @@ export interface ProjectConfig {
   readonly configText: string;
   readonly config: ConfigFile;
   readonly symbols: SymbolTable;
-  /** Parse + `validateConfig` + `checkSessionServices` diagnostics (decision A) — a config-load
+  /** Parse + `validateConfig` + `checkSessionBody` diagnostics (decision A, widened in M97b) — a config-load
    * failure below (bad env selection) is *not* folded in here since it has no useful span; it
    * surfaces only via `resolutionError`. */
   readonly diagnostics: readonly Diagnostic[];
@@ -52,7 +52,7 @@ export async function loadProjectConfig(root: string, envSetting: string | undef
     const envBlock = selectEnv(parsed.config, { flag: undefined, envVar: envSetting ?? process.env.TFLW_ENV });
     resolved = resolveConfig(parsed.config, envBlock);
     sessionServiceDiags = [
-      ...checkSessionServices(parsed.config.sessions, Object.keys(resolved.services)),
+      ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services)),
       // `TF036` (M85) is env-scoped for the same reason every check here is: the editor squiggles
       // the env this workspace actually resolves to (`tflw.env`), not every env in the file.
       ...checkAllowHostsCoversBaseUrls(parsed.config, envBlock),
