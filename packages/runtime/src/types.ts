@@ -329,6 +329,13 @@ export interface RunReport {
   /** True when this run had `insecure true` active (TLS verification disabled) — surfaced as a
    * visible warning in the CLI summary and report header, never silently (decision 78). */
   readonly insecure: boolean;
+  /** Names declared secret — via `env(NAME)`/`require env`, or a `capture` whose subject a `redact`
+   * pattern covers — whose value was too short for `MIN_REDACTABLE_LENGTH` to mask safely, so it
+   * ships in the clear (review finding `A12-01`). Surfaced as a warning beside `insecure`'s, for
+   * the same reason: the run declining to protect a value it was told was a secret is exactly the
+   * kind of trade-off that must not be silent. Optional and omitted when empty, so the common case
+   * adds nothing to the report and every existing `RunReport` fixture keeps compiling. */
+  readonly unmaskableSecrets?: readonly string[];
   /** FS-01 (review finding V2-01) — the `evidence` level this run actually ran at, carried into the
    * report so `report.html`'s footer can describe what the file contains instead of asserting a
    * fixed claim about it. The reporter cannot infer this from the contents alone: "no screenshots"

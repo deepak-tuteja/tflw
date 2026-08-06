@@ -305,7 +305,19 @@ require env ADMIN_USER, ADMIN_PW
 
 A value shorter than `MIN_REDACTABLE_LENGTH` (6 characters) is never registered for substring
 redaction — a short/common secret (a numeric ID, a port number) would otherwise blot out every
-matching substring anywhere in the report, including unrelated fields (PLAN decision 64). If two
+matching substring anywhere in the report, including unrelated fields (PLAN decision 64). **A run
+that skips a value for this reason says so**, naming the variables (never their values) in the CLI
+summary and in `report.html`'s header, beside the `insecure: true` banner and for the same reason —
+declining to protect something you were told is a secret is not a silent trade-off:
+
+```console
+⚠ unmasked secret: SHORTPW — shorter than 6 characters, so too short to mask without corrupting
+unrelated report text; its value appears in full above and in report.html
+```
+
+An empty/unset variable is not named (there is nothing to hide), and neither is a name that *also*
+carried a maskable value somewhere in the same run — pointing a reader at a name that is in fact
+masked in the report they are holding would be worse than saying nothing. If two
 different `require env` vars (or a secret and a coincidentally-equal generated value) hold the
 same string, the redactor tracks every name registered for it and renders all of them —
 `•••(NAME1|NAME2)` — rather than silently keeping only whichever registered first (PLAN decision 72).

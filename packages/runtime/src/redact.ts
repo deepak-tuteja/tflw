@@ -20,17 +20,42 @@ export class Redactor {
    * reader about which credential is actually in play, even though nothing is ever leaked either way. */
   private readonly secrets = new Map<string, string[]>();
 
-  /** Register that `value` entered via `env(name)`. Empty values, and values shorter than
+  /** Names declared secret whose value was non-empty but below `MIN_REDACTABLE_LENGTH`, so nothing
+   * was registered for them (review finding `A12-01`). Decision 64's floor is right — substring-
+   * replacing a 4-character value would corrupt unrelated report content rather than hide a
+   * credential — but until this set existed the trade-off was taken *silently*: the tool knew the
+   * value had been declared a secret, knew it had chosen not to protect it, and reported success.
+   * Insertion-ordered and deduplicated, surfaced by the CLI summary and `report.html`'s header the
+   * same way `insecure: true` is. Empty values are deliberately absent: there is nothing to hide,
+   * so naming one would be noise, not a warning. */
+  private readonly tooShortToMask = new Set<string>();
+
+  /** Register that `value` entered via `env(name)` — or, at the fourth call site, that a `capture`
+   * whose subject a `redact` pattern covers produced it. Empty values, and values shorter than
    * `MIN_REDACTABLE_LENGTH` (decision 64), are ignored — nothing to hide, or too short to hide
-   * safely. Also registers the value's JSON-string-body encoding (quotes/backslashes/newlines
-   * escaped) — a secret embedded in a `body { … }` object is serialised through `JSON.stringify`
-   * before it ever reaches `redact()`, so a secret containing any of those characters would
-   * otherwise appear in its escaped form and dodge a plain substring match (P#46). */
+   * safely; the latter are recorded in `tooShortToMask` so the run can say so out loud. Also
+   * registers the value's JSON-string-body encoding (quotes/backslashes/newlines escaped) — a
+   * secret embedded in a `body { … }` object is serialised through `JSON.stringify` before it ever
+   * reaches `redact()`, so a secret containing any of those characters would otherwise appear in
+   * its escaped form and dodge a plain substring match (P#46). */
   register(name: string, value: string): void {
-    if (value.length < MIN_REDACTABLE_LENGTH) return;
+    if (value.length < MIN_REDACTABLE_LENGTH) {
+      if (value.length > 0) this.tooShortToMask.add(name);
+      return;
+    }
     this.addName(value, name);
     const jsonEscaped = JSON.stringify(value).slice(1, -1);
     if (jsonEscaped !== value) this.addName(jsonEscaped, name);
+  }
+
+  /** The names from `tooShortToMask`, for the run-level warning. A name that was *also* registered
+   * with a maskable value under a different `env`/`capture` is excluded: the same name carrying two
+   * values in one run (a `capture` inside a loop, say) is protected wherever the long one flows,
+   * and warning about it would point a reader at a name that is in fact masked in the report they
+   * are holding. */
+  unmaskableNames(): string[] {
+    const registered = new Set(this.entriesLongestFirst().flatMap(([, names]) => names));
+    return [...this.tooShortToMask].filter((name) => !registered.has(name));
   }
 
   private addName(value: string, name: string): void {

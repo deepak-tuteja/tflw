@@ -14,7 +14,7 @@
 // same sidebar/tab mechanism a functional test already used.
 
 import type { AttemptResult, BackOffDiagnosis, LoadMetrics, LoadScenarioReport, LoadThresholdResult, LogLevel, ReportEntry, RequestTrace, ResponseTrace, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
-import { LOG_LEVEL_ORDER } from '@tflw/runtime';
+import { LOG_LEVEL_ORDER, MIN_REDACTABLE_LENGTH } from '@tflw/runtime';
 import { assetHash } from './assets.js';
 import { esc } from './escape.js';
 import { fileOf, groupByFile } from './group-by-file.js';
@@ -58,6 +58,7 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
     <span>${esc(report.startedAt)}</span>
   </div>
   ${report.insecure ? '<div class="insecure-warning">⚠ insecure: true — TLS certificate verification was disabled for this run</div>' : ''}
+  ${renderUnmaskableWarning(report.unmaskableSecrets)}
   ${report.browserEngine ? `<div class="engine-badge">browser <code>${esc(report.browserEngine)}</code></div>` : ''}
   ${report.aborted ? `<div class="insecure-warning">⚠ ${esc(report.abortedMessage ?? 'aborted before its planned duration elapsed')} — every workload number below reflects only what completed before Ctrl-C.</div>` : ''}
   ${report.inconclusive ? '<div class="insecure-warning">⚠ tflw\'s own generator process saturated during this run — see any workload test\'s "generator" line below. These workload numbers reflect tflw contending with itself, not the system under test.</div>' : ''}
@@ -131,6 +132,18 @@ function anyStep(report: RunReport, pred: (s: StepResult) => boolean): boolean {
 function joinWithAnd(parts: readonly string[]): string {
   if (parts.length === 1) return parts[0]!;
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]!}`;
+}
+
+/** `A12-01` — the report-header half of the CLI summary's `⚠ unmasked secret(s)` line. This file is
+ * the artifact that gets attached to a ticket, so it is the one place the warning matters most: a
+ * reader deciding whether `report.html` is safe to share needs to be told, in the header, that a
+ * value the run was told to treat as a secret is sitting in the page in the clear. Names only —
+ * printing the value here would be the very leak being warned about, twice over. */
+function renderUnmaskableWarning(names: readonly string[] | undefined): string {
+  if (!names?.length) return '';
+  const plural = names.length === 1 ? '' : 's';
+  const rendered = joinWithAnd(names.map((n) => `<code>${esc(n)}</code>`));
+  return `<div class="insecure-warning">⚠ unmasked secret${plural}: ${rendered} — shorter than ${MIN_REDACTABLE_LENGTH} characters, so too short to mask without corrupting unrelated text in this report. ${names.length === 1 ? 'Its value appears' : 'Their values appear'} below in full.</div>`;
 }
 
 function renderSidebar(groups: ReadonlyMap<string, TestSlot[]>): string {
