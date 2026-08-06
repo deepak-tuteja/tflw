@@ -167,6 +167,43 @@ test('checkUnknownVariables: accepts a `capture`d variable referenced later', ()
   assert.deepEqual(checkUnknownVariables(program), []);
 });
 
+// The static half of review finding `A4-06` (M95). `capture`'s subject is the same `Subject` node
+// `expect`'s is, but until M95 `checkStepSequence`'s `CaptureStmt` case only bound the name and
+// never looked at it — so `capture` was the one statement in the language whose subject nothing
+// inspected, static or runtime. The asymmetry is the test: the same typo, in the same header
+// literal, one line apart, had to produce the same diagnostic and did not. The runtime half — a
+// subject that resolves to nothing at all — is in `packages/runtime/test/capture-nothing.test.ts`.
+
+test('checkUnknownVariables: flags a typo\'d `{var}` in a `capture` header subject (A4-06)', () => {
+  const { program } = parseSource(`test "bad"\n  api GET /x\n  capture header "X-{nope}" as v\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF030');
+  assert.match(diags[0]!.message, /unknown variable "nope"/);
+});
+
+test('checkUnknownVariables: `capture` and `expect` report the same typo identically (A4-06)', () => {
+  const capture = checkUnknownVariables(parseSource(`test "bad"\n  api GET /x\n  capture header "X-{nope}" as v\n`).program);
+  const expect = checkUnknownVariables(parseSource(`test "bad"\n  api GET /x\n  expect header "X-{nope}" equals "1"\n`).program);
+  assert.equal(capture.length, expect.length);
+  assert.equal(capture[0]!.code, expect[0]!.code);
+  assert.equal(capture[0]!.message, expect[0]!.message);
+});
+
+test('checkUnknownVariables: accepts a bound `{var}` in a `capture` subject (A4-06)', () => {
+  const { program } = parseSource(`test "ok"\n  let which = "trace"\n  api GET /x\n  capture header "X-{which}" as v\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables: a `capture` subject cannot see the name that `capture` itself binds (A4-06)', () => {
+  // The check runs *before* `bound.add(step.name)`, matching `LetStmt` — a step never sees its own
+  // not-yet-assigned name. Order-dependent, so it is the control for the two-line edit's ordering.
+  const { program } = parseSource(`test "bad"\n  api GET /x\n  capture header "X-{v}" as v\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.message, /unknown variable "v"/);
+});
+
 test('checkUnknownVariables: accepts an inline table column referenced in the test body (not just the name)', () => {
   const { program } = parseSource(`with each\n  | role  | email |\n  | "a"   | "b"   |\ntest "invite {role}"\n  api POST /invites body { role: {role}, email: {email} }\n`);
   assert.deepEqual(checkUnknownVariables(program), []);

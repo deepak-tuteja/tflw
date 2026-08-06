@@ -900,6 +900,17 @@ capture header "location" as orderUrl
 
 Binds response values to variables usable in later API **and** browser steps.
 
+**A `capture` that finds nothing fails the step** (`A4-06`). An absent header, an absent object key,
+an out-of-range index — anything that resolves to no value at all — is an error at the `capture`
+itself, not a variable quietly bound to `undefined`: a binding like that reaches later steps as the
+literal text `undefined`, and a target that answers `200` to `?v=undefined` would report a green
+suite that asserted nothing. `expect` has always failed on the same subject (`undefined` is not
+`"1"`); `capture` now agrees with it. An explicit JSON `null` is unaffected — that is a value the
+response really carried, and capturing it is meaningful.
+
+An interpolation typo *inside* the subject (`capture header "X-{noSuchVar}" as v`) is caught earlier
+still, by `tflw check`, with the same `TF030` `expect` gives for the identical subject.
+
 A response with multiple same-named headers (most commonly several `Set-Cookie`s) preserves every
 value rather than collapsing to whichever the Fetch API iterates last — `capture header
 "set-cookie" as token` sees all of them, newline-joined (PLAN decision 61). This raw capture stays
