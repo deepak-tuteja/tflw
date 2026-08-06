@@ -13,6 +13,7 @@ import type {
   ConfigFile,
   EnvBlock,
   ExpectStmt,
+  MatcherName,
   NetworkRequestRef,
   PathSegment,
   Program,
@@ -83,6 +84,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkActionDecls(program),
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
+    ...checkValueSubjects(program),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkResponseScopes(program),
@@ -590,6 +592,13 @@ function readsResponse(subject: Subject): boolean {
     case 'LocatorSubject':
     case 'PageSubject':
       return false;
+    // M96/`FU-11` — a value subject reads a `let`/`capture` binding out of the variable scope, not
+    // the response, so `TF039` has nothing to say about it. `expect {x} equals 1` as a test's very
+    // first step is legal and must stay legal. The exemption is only sound because an *unbound*
+    // `{x}` is already `TF030` (`checkUnknownVariables`), and because a `capture` that would have
+    // bound it is itself flagged here — so exempting the read cannot silently exempt the write.
+    case 'ValueSubject':
+      return false;
   }
 }
 
@@ -714,11 +723,13 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
       while (j < steps.length && steps[j]!.type === 'ExpectStmt') {
         const expect = steps[j] as ExpectStmt;
         // `NetworkRequestSubject` (M3d, `request to "…"`) reads the browser's observed network
-        // traffic, and `PageSubject` (M3e, `page has no … a11y violations`) reads the page's DOM —
-        // neither is this `api` step's own response/connection state, so both are orthogonal to the
-        // connects/fails restriction below and excluded from both buckets entirely rather than
-        // being misclassified as an incompatible response-based assertion.
-        if (expect.subject.type !== 'NetworkRequestSubject' && expect.subject.type !== 'PageSubject') {
+        // traffic, `PageSubject` (M3e, `page has no … a11y violations`) reads the page's DOM, and
+        // `ValueSubject` (M96) reads a `let`/`capture` binding — none is this `api` step's own
+        // response/connection state, so all three are orthogonal to the connects/fails restriction
+        // below and excluded from both buckets entirely rather than being misclassified as an
+        // incompatible response-based assertion. `expect request fails` followed by `expect
+        // {expectedCode} equals 7` is a perfectly coherent pair.
+        if (expect.subject.type !== 'NetworkRequestSubject' && expect.subject.type !== 'PageSubject' && expect.subject.type !== 'ValueSubject') {
           (expect.subject.type === 'RequestSubject' ? requestExpects : otherExpects).push(expect);
         }
         j++;
@@ -736,6 +747,108 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
       }
     }
   };
+  for (const test of program.tests) walk(test.body);
+  for (const action of program.actions) walk(action.body);
+  for (const hook of program.hooks) walk(hook.body);
+  return diags;
+}
+
+/**
+ * Matchers that need a **live handle** — a browser element, a page, a connection attempt, an
+ * observed network request — rather than a value (M96/D132, SPEC §6.2).
+ *
+ * This is the line the matcher table already draws, read off its "Applies to" column: everything
+ * *not* listed here is constrained by the value's **type** (`equals`, `contains`, `is greater
+ * than`, `has count`, `matches subset`/`schema`/`file`, `matches "<regex>"`), and a type mismatch
+ * has always been a runtime error — `expect body.name is greater than 3` on a string throws at run
+ * time today. A captured value must not be stricter than the response it came from, so the
+ * type-constrained half is deliberately *not* checked here.
+ *
+ * The live-handle half passes the admission test `checkRequestAssertions` states above: a
+ * structural reason, not a type guess. `expect {x} is visible` is not wrong-for-this-value; it is
+ * wrong for anything that is not a browser handle, whatever its type turns out to be.
+ *
+ * `matches file "<path>"` is pointedly **absent** — its "Applies to" reads `body bytes`, which looks
+ * browser-ish but is an ordinary capturable subject (SPEC §5.3). Allowing it is what lets a binary
+ * body outlive its request: `capture body bytes as receipt` … three requests later … `expect
+ * {receipt} matches file "expected.pdf"`.
+ */
+const LIVE_HANDLE_MATCHERS: ReadonlyMap<MatcherName, string> = new Map([
+  ['hasValue', 'has value'],
+  ['visible', 'is visible'],
+  ['hidden', 'is hidden'],
+  ['enabled', 'is enabled'],
+  ['disabled', 'is disabled'],
+  ['checked', 'is checked'],
+  ['connects', 'connects'],
+  ['fails', 'fails'],
+  ['wasMade', 'was made'],
+  ['hasNoA11yViolations', 'has no a11y violations'],
+  ['matchesSnapshot', 'matches snapshot'],
+]);
+
+/**
+ * Where a `{variable}` subject (M96, `FU-11`) may **not** stand. Two rules, one code (`TF041`):
+ *
+ *  - **A live-handle matcher** (`LIVE_HANDLE_MATCHERS` above, D132). Deliberately its own code
+ *    rather than folded into `TF014`: `TF014`'s registered meaning is an *unrecognised* matcher,
+ *    and `is visible` is recognised — it is misplaced. Reusing it would make the generated
+ *    codes-reference row false, which is the exact defect class `M92` spent a milestone on.
+ *  - **Inside `wait until api`** (D136a). That block re-issues its request and re-evaluates its
+ *    nested expects on every poll; a value subject is *constant across polls*, since nothing in the
+ *    loop can change `{orderId}`. So it is either true on the first attempt — a no-op dressed as a
+ *    wait condition — or false forever, timing out and blaming an endpoint for a condition it never
+ *    controlled. Same structural shape `checkRequestAssertions` already uses to reject
+ *    `RequestSubject` there.
+ */
+export function checkValueSubjects(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+
+  const checkExpect = (expect: ExpectStmt, inWaitUntil: boolean): void => {
+    if (expect.subject.type !== 'ValueSubject') return;
+    const name = refLabel(expect.subject.ref);
+    if (inWaitUntil) {
+      diags.push({
+        code: Codes.VALUE_SUBJECT_INVALID,
+        severity: 'error',
+        message: `\`{${name}}\` can't be asserted inside \`wait until api\``,
+        span: expect.span,
+        hint: `\`wait until api\` re-checks its expects on every poll, and \`{${name}}\` cannot change between polls — so this either passes immediately or times out. Assert it before or after the \`wait until api\` block`,
+      });
+      return;
+    }
+    const matcher = LIVE_HANDLE_MATCHERS.get(expect.matcher.name);
+    if (matcher) {
+      diags.push({
+        code: Codes.VALUE_SUBJECT_INVALID,
+        severity: 'error',
+        message: `\`${matcher}\` needs a live browser element, page, or request — not a value`,
+        span: expect.span,
+        hint: `\`{${name}}\` is a value you bound with \`let\`/\`capture\`; it has no on-screen or on-the-wire state to observe. Value matchers (\`equals\`, \`contains\`, \`is greater than\`, \`has count\`, \`matches …\`) do apply to it (SPEC §6.2)`,
+      });
+    }
+  };
+
+  const walk = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      switch (step.type) {
+        case 'ExpectStmt':
+          checkExpect(step, false);
+          break;
+        case 'WaitUntilApiStmt':
+          for (const expect of step.expects) checkExpect(expect, true);
+          break;
+        case 'WithinBlock':
+        case 'SwitchToNewTabBlock':
+        case 'DownloadBlock':
+          walk(step.body);
+          break;
+        default:
+          break;
+      }
+    }
+  };
+
   for (const test of program.tests) walk(test.body);
   for (const action of program.actions) walk(action.body);
   for (const hook of program.hooks) walk(hook.body);
@@ -1130,7 +1243,17 @@ function subjectKeyword(subject: Subject): string {
       return subject.locator.kind;
     case 'PageSubject':
       return 'page';
+    case 'ValueSubject':
+      return `{${refLabel(subject.ref)}}`;
   }
+}
+
+/** `orderId` / `items[2].price` — a value subject's path as the user wrote it inside the braces. */
+function refLabel(ref: readonly PathSegment[]): string {
+  return ref
+    .map((s) => (s.kind === 'prop' ? `.${s.name}` : `[${s.index}]`))
+    .join('')
+    .replace(/^\./, '');
 }
 
 /**
@@ -1365,6 +1488,10 @@ function checkSubject(subject: Subject, bound: Set<string>, diags: Diagnostic[])
   if (subject.type === 'HeaderSubject') checkStringLit(subject.name, bound, diags);
   if (subject.type === 'LocatorSubject') checkStringLit(subject.locator.value, bound, diags);
   if (subject.type === 'NetworkRequestSubject') checkNetworkRequestRef(subject.ref, bound, diags);
+  // M96 — the value subject is the one subject that *is* a `{var}`, so it is the one that can be
+  // unbound. Without this, `expect {typo} equals 1` would parse, check clean, and fail at run time
+  // with the very diagnostic (`TF030`) this pass exists to move earlier.
+  if (subject.type === 'ValueSubject') checkRefPath(subject.ref, subject.span, bound, diags);
   // `of request to "…"` (M3d) — carried on the ordinary response subjects; check it the same way
   // regardless of which subject it's attached to.
   if ((subject.type === 'StatusSubject' || subject.type === 'HeaderSubject' || subject.type === 'BodySubject' || subject.type === 'BodyTextSubject') && subject.of) {

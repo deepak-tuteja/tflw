@@ -85,6 +85,7 @@ export const Codes = {
   CALL_ARITY: 'TF038',
   NO_RESPONSE_YET: 'TF039',
   CALL_NOT_EVALUATED: 'TF040',
+  VALUE_SUBJECT_INVALID: 'TF041',
 } as const;
 
 // ---------------------------------------------------------------------------

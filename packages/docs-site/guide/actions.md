@@ -29,15 +29,23 @@ test "reuses an action and a JS helper"
   let widgetId = create widget("Gadget", price)
   let label = make label(widgetId, price)
 
+  # the helper's return value is an ordinary bound value — assert on it directly
+  expect {label} contains "widget"
+
   api POST /widgets body { name: "Gadget", price: {price}, description: {label} }
   expect status equals 201
-  expect body.description contains "widget"
 ```
 
-A JS helper's return value isn't itself an assertion subject — route it through a request `body`
-(or `header`) field and assert on that, same as any other captured value. Space-separated call
-names (`create widget(...)`, `make label(...)`) resolve to the action/export's camelCase name
-(`createWidget`/`makeLabel`) under the hood.
+Space-separated call names (`create widget(...)`, `make label(...)`) resolve to the action/export's
+camelCase name (`createWidget`/`makeLabel`) under the hood.
+
+::: tip This page used to say the opposite
+Until tflw 0.2 a bound value could not stand on the left of a matcher, and this page told you to
+route it through a request `body` or `header` field and assert on *that*. Don't. That workaround
+made the system under test carry back a value your test already had — an extra round-trip, and a
+real dependency, in order to check something local. Worse, it made the assertion pass or fail for
+reasons that had nothing to do with what you were checking. Use `expect {name} …`.
+:::
 
 ## Keywords never take a name away from you
 

@@ -6,15 +6,24 @@
 // come from the caller (Phase 3's I/O layer resolves `tflw.config`; `packages/lang` has no
 // notion of "the project" to fetch them itself).
 
-import { GENERATORS, MATCHERS, type CompletionContext } from '@tflw/lang';
+import { GENERATORS, MATCHERS, type CompletionContext, type Program, type Span, type SymbolTable } from '@tflw/lang';
 
 export interface CompletionCandidate {
   readonly label: string;
   readonly detail?: string;
+  /** What the client matches the typed prefix against, when that differs from `label`. Needed by
+   * the value subject (M96): the label is `{orderId}` because that is what has to end up in the
+   * buffer, but the user types `or` — with no `filterText` the client would drop the entry the
+   * moment they typed the first character. */
+  readonly filterText?: string;
 }
 
 export interface CompletionSources {
   readonly knownSessions?: readonly string[];
+  /** Names bound by `let`/`capture`/an action parameter and visible at the cursor (M96, `FU-11`).
+   * Same shape as `knownSessions`: `packages/lang` has no notion of "what is in scope *here*", so
+   * the caller (Phase 3's I/O layer, which holds the symbol table) resolves it. */
+  readonly knownVariables?: readonly string[];
 }
 
 // Independent copies of parser.ts's `STATEMENT_KEYWORDS`/`SUBJECT_KEYWORDS` (kept local rather
@@ -117,6 +126,41 @@ function generatorDetail(specId: string): string | undefined {
   return entry ? `${entry.notes} — ${entry.example}` : undefined;
 }
 
+/**
+ * Names a `{variable}` subject could legally refer to at `offset` (M96/D134) — `let`/`capture`
+ * bindings and action parameters, narrowed to the one `test`/`action`/hook body the cursor sits in.
+ *
+ * Scoped by **span containment**, not by re-deriving `symbols.ts`'s `scopeId` strings: those encode
+ * a decl's start offset in their text (`test:1234`), and reconstructing that format here would make
+ * this function break silently the day that format changes. Two deliberate imprecisions, both
+ * chosen to fail toward offering *less*:
+ *
+ *  - Only bindings **above** the cursor are offered. A `let` further down the same test is not yet
+ *    in scope at this line, and the checker would say so (`TF030`).
+ *  - A `before each` hook binds into every test body (`symbols.ts` walks it under the test's own
+ *    scope), so its names are added when the cursor is in a test — without the above-cursor rule,
+ *    since such a hook runs first whatever order it appears in the file. `before file` is *not*
+ *    included: its scope does not reach a test body at run time.
+ */
+export function variablesInScopeAt(program: Program, symbols: SymbolTable, offset: number): readonly string[] {
+  const contains = (span: Span, at: number): boolean => span.start.offset <= at && at <= span.end.offset;
+  const enclosingTest = program.tests.find((t) => contains(t.span, offset));
+  const enclosing: Span | undefined =
+    enclosingTest?.span ??
+    program.actions.find((a) => contains(a.span, offset))?.span ??
+    program.hooks.find((h) => contains(h.span, offset))?.span;
+  if (!enclosing) return [];
+
+  const beforeEach = enclosingTest ? program.hooks.filter((h) => h.scope === 'each' && h.when === 'before') : [];
+  const names = new Set<string>();
+  for (const def of symbols.defs) {
+    if (def.kind !== 'variable' && def.kind !== 'param') continue;
+    if (contains(enclosing, def.span.start.offset) && def.span.start.offset < offset) names.add(def.name);
+    else if (beforeEach.some((h) => contains(h.span, def.span.start.offset))) names.add(def.name);
+  }
+  return [...names].sort();
+}
+
 /** Candidates whose `label` starts with `ctx.prefix` — plain prefix filtering, no fuzzy matching
  * (the editor's own completion widget re-filters as the user keeps typing; this just avoids
  * shipping obviously-irrelevant entries on the first response). */
@@ -125,8 +169,21 @@ export function getCompletions(ctx: CompletionContext, sources: CompletionSource
   switch (ctx.kind) {
     case 'step':
       return STEP_KEYWORDS.filter(byPrefix).map((label) => ({ label }));
+    // M96/D134 — `FU-11`'s real failure mode was never that the grammar rejected `expect
+    // {orderId} …`; it was that nobody discovered the form. The subject list is a wall a user hits
+    // once and routes around permanently, and what they learn instead is the `actions.md`
+    // workaround. So this is load-bearing, not polish.
+    //
+    // Keywords rank ahead of variables without any `sortText` bookkeeping: a variable's label is
+    // `{orderId}`, and `{` sorts after every letter, so the default lexicographic order a client
+    // applies already puts `status` the response subject above someone's `let status = …`.
     case 'subject':
-      return SUBJECT_KEYWORDS.filter(byPrefix).map((label) => ({ label }));
+      return [
+        ...SUBJECT_KEYWORDS.filter(byPrefix).map((label) => ({ label })),
+        ...(sources.knownVariables ?? [])
+          .filter(byPrefix)
+          .map((name) => ({ label: `{${name}}`, filterText: name, detail: 'value bound with `let`/`capture`' })),
+      ];
     case 'matcher':
       return MATCHER_CANDIDATES.filter((c) => byPrefix(c.label)).map((c) => ({ label: c.label, detail: matcherDetail(c.specId) }));
     case 'unique':

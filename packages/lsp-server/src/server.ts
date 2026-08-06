@@ -34,7 +34,7 @@ import type { Diagnostic as TflwDiagnostic, Span } from '@tflw/lang';
 import { spanContains } from './resolution/findNodeAtOffset.js';
 import { findDefinition } from './resolution/definition.js';
 import { getHover } from './resolution/hover.js';
-import { getCompletions } from './resolution/completion.js';
+import { getCompletions, variablesInScopeAt } from './resolution/completion.js';
 import { findRenameTargets } from './resolution/rename.js';
 import { getSignatureHelp } from './resolution/signatureHelp.js';
 import { getCompletionContext, collectSemanticTokens } from '@tflw/lang';
@@ -198,7 +198,18 @@ export function startServer(options: StartServerOptions = {}): void {
       const project = await loadProjectConfig(info.root, envSetting).catch(() => undefined);
       knownSessions = project?.resolved ? Array.from(project.resolved.sessions.keys()) : undefined;
     }
-    return getCompletions(ctx, { knownSessions }).map((c) => ({ label: c.label, ...(c.detail ? { detail: c.detail } : {}) }));
+    let knownVariables: readonly string[] | undefined;
+    if (ctx.kind === 'subject') {
+      // Needs the symbol table, so it goes through `analyze` (as `onHover`/`onDefinition` do)
+      // rather than `store.get`, which only carries the document's identity.
+      const analysis = await store.analyze(params.textDocument.uri, envSetting);
+      if (analysis?.program) knownVariables = variablesInScopeAt(analysis.program, analysis.symbols, offset);
+    }
+    return getCompletions(ctx, { knownSessions, knownVariables }).map((c) => ({
+      label: c.label,
+      ...(c.detail ? { detail: c.detail } : {}),
+      ...(c.filterText ? { filterText: c.filterText } : {}),
+    }));
   });
 
   connection.onSignatureHelp(async (params): Promise<SignatureHelp | null> => {

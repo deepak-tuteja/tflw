@@ -5,7 +5,7 @@
 export { findNodeAtOffset, spanContains } from './resolution/findNodeAtOffset.js';
 export { findDefinition, type DefinitionResult } from './resolution/definition.js';
 export { getHover, type HoverResult } from './resolution/hover.js';
-export { getCompletions, type CompletionCandidate, type CompletionSources } from './resolution/completion.js';
+export { getCompletions, variablesInScopeAt, type CompletionCandidate, type CompletionSources } from './resolution/completion.js';
 export { findRenameTargets, type RenameResult } from './resolution/rename.js';
 export { getSignatureHelp, type SignatureHelpResult } from './resolution/signatureHelp.js';
 
