@@ -1,12 +1,28 @@
 // Token definitions for the testFlow M0 lexer. See GRAMMAR.md § Lexical.
 
-/** A 0-based byte/char offset into the source, plus 1-based line/column for humans. */
+/**
+ * A source location, in **UTF-16 code units** — the unit `String.prototype.slice` consumes and the
+ * unit LSP 3.x requires.
+ *
+ * M98a (`A1-14`, `A1-OS-04`): this used to be documented as "a 0-based byte/char offset", and both
+ * halves of that were wrong. `offset` is not a byte offset — for `  log "🚀" $` it reports 20 where
+ * the UTF-8 byte offset is 22 — and `column` is not a count of characters, nor of the columns a
+ * terminal would show. Nothing sliced a `Buffer` with it, so the cost was a wrong doc on a type
+ * exported from `@tflw/lang` and frozen at 1.0, inviting the next consumer to corrupt every
+ * non-ASCII source it touched.
+ *
+ * The unit is deliberately not changed: under an additive-only freeze, redefining a field's unit is
+ * not an additive change. A *display* column — tabs expanded, CJK and emoji counted as two cells,
+ * combining marks as none — is derived where it is needed, in `renderDiagnostic`'s `layoutLine`,
+ * and exists nowhere else.
+ */
 export interface Position {
-  /** 0-based offset into the source string. */
+  /** 0-based UTF-16 code-unit offset into the source string. **Not** a byte offset. */
   readonly offset: number;
   /** 1-based line number. */
   readonly line: number;
-  /** 1-based column (character within the line). */
+  /** 1-based UTF-16 code-unit column within the line. **Not** a display column — a tab counts 1
+   * here and a CJK character counts 1; see `renderDiagnostic` for the terminal-cell coordinate. */
   readonly column: number;
 }
 

@@ -115,13 +115,19 @@ test('a token after a closed multi-line bracket has the correct line/column (dec
   assert.deepEqual(expectKw.span.start, { offset: src.indexOf('expect'), line: 5, column: 3 });
 });
 
-test('a tab used as inline whitespace (not indentation) does not distort column tracking (decision 69)', () => {
+test('a tab counts as one code unit in the machine coordinate (decision 69, D147)', () => {
+  // M98a (`A1-OS-03`): this test was titled "a tab … does not distort column tracking", which is
+  // true of what it asserts and false of what a reader takes away. `Position.column` is a *machine*
+  // coordinate — UTF-16 code units, what `slice` and LSP want — and a tab is one of those. It is
+  // not a display column, and until M98a the renderer spent it as if it were, so the caret under
+  // this very line landed ~7 cells left of its target. The display half is asserted in
+  // `errors.test.ts` ("the caret lands under the offending character"), which is where a terminal
+  // coordinate is actually computed; this test's job is only to pin the machine one.
   const src = 'test "s"\n  api\tGET /x\n  expect status equals 200\n';
   const { tokens, diagnostics } = lex(src);
   assert.equal(diagnostics.length, 0);
   const getMethod = tokens.find((t) => t.type === 'ident' && t.value === 'GET')!;
-  // Columns count characters, not tab-expanded width: "  api" is 5 chars (0-4), the tab is index 5,
-  // so `GET` starts at index 6 → column 7.
+  // "  api" is 5 code units (0-4), the tab is index 5, so `GET` starts at index 6 → column 7.
   assert.deepEqual(getMethod.span.start, { offset: src.indexOf('GET'), line: 2, column: 7 });
 });
 
