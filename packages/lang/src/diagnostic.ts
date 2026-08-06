@@ -93,6 +93,7 @@ export const Codes = {
   EMPTY_TAG: 'TF046',
   UNKNOWN_ESCAPE: 'TF047',
   TAB_INDENT: 'TF048',
+  HIDDEN_CHAR: 'TF049',
 } as const;
 
 // ---------------------------------------------------------------------------

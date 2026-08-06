@@ -85,6 +85,15 @@ const INVISIBLE = /^(?:\p{Cf}|\p{Cc}|\p{Zs}|\p{Zl}|\p{Zp}|\p{Mn}|\p{Me})$/u;
  * that makes the message actionable. `﻿` is only reachable mid-line — `lexer.ts`'s whitespace
  * scan already strips a leading BOM (M59, `A1-04`). */
 const INVISIBLE_NAMES: Record<string, string> = {
+  '‪': 'LEFT-TO-RIGHT EMBEDDING',
+  '‫': 'RIGHT-TO-LEFT EMBEDDING',
+  '‬': 'POP DIRECTIONAL FORMATTING',
+  '‭': 'LEFT-TO-RIGHT OVERRIDE',
+  '‮': 'RIGHT-TO-LEFT OVERRIDE',
+  '⁦': 'LEFT-TO-RIGHT ISOLATE',
+  '⁧': 'RIGHT-TO-LEFT ISOLATE',
+  '⁨': 'FIRST STRONG ISOLATE',
+  '⁩': 'POP DIRECTIONAL ISOLATE',
   ' ': 'NO-BREAK SPACE',
   '­': 'SOFT HYPHEN',
   ' ': 'FIGURE SPACE',
@@ -115,6 +124,31 @@ function describeChar(ch: string): string {
  * nothing was truncated and saying so would be a guess. */
 const WORDLIKE = /^[\p{L}\p{M}\p{N}]$/u;
 
+/** The Trojan Source characters (M98d, `A1-17`, D165): the ones whose presence makes rendered source
+ * and parsed source two different texts. `bidi` reorders the glyphs after it, so a comment can be
+ * made to *display* as an assertion that is not the one being run; `zeroWidth` has no glyph at all,
+ * so `"admin​user"` and `"adminuser"` are indistinguishable on screen and unequal in a
+ * comparison. CVE-2021-42574; Rust, Go and the major C++ compilers all added a rule after it.
+ *
+ * `U+FEFF` is the third category and needs its own, because `BOM` is *deliberately* skipped as
+ * whitespace everywhere (M59, `A1-04`) — which is the very thing that makes it dangerous away from
+ * offset 0, where it can sit inside what reads as one name and split it into two tokens in silence.
+ * At offset 0 it is an ordinary byte-order mark and stays legal. */
+const HIDDEN: Record<string, 'bidi' | 'zeroWidth' | 'bom'> = {
+  '‪': 'bidi', '‫': 'bidi', '‬': 'bidi', '‭': 'bidi', '‮': 'bidi',
+  '⁦': 'bidi', '⁧': 'bidi', '⁨': 'bidi', '⁩': 'bidi',
+  '​': 'zeroWidth', '‌': 'zeroWidth', '‍': 'zeroWidth',
+  '﻿': 'bom',
+};
+
+/** Why each category is refused, and — since D166 makes this a rule with a legal alternative rather
+ * than a removed capability — how to write the character when the value genuinely needs it. */
+const HIDDEN_HELP: Record<'bidi' | 'zeroWidth' | 'bom', string> = {
+  bidi: 'this character has no glyph of its own; it reorders the text that follows it. A line containing one can display in an editor or a pull request as saying something quite different from what tflw reads, and the reader has no way to see the difference',
+  zeroWidth: 'this character has no glyph, so the text containing it renders exactly like the text without it — identical on screen, unequal in any comparison',
+  bom: 'a byte-order mark is only meaningful as the very first character of a file. Anywhere else tflw skips it as whitespace, so it can sit inside what reads as a single name and split it into two tokens with nothing to see',
+};
+
 class Lexer {
   private readonly tokens: Token[] = [];
   private readonly diagnostics: Diagnostic[] = [];
@@ -144,6 +178,12 @@ class Lexer {
    * unlexable input reached 3.6 GB and aborted the process. Past the cap the lexer keeps lexing
    * (recovery is unchanged) but stops accumulating, and says once that it has stopped. */
   private unexpectedChars = 0;
+  /** How many `TF049`s have been emitted (M98d). Bounded for the reason `unexpectedChars` is: a
+   * diagnostic renders a copy of its line plus O(n) caret padding, so one-per-character over a large
+   * hostile or machine-generated file is the same quadratic blow-up `A1-01` exists to prevent.
+   * Counted separately rather than sharing that budget, because a file with 50 ordinary typos must
+   * not be the reason a hidden character goes unreported. */
+  private hiddenChars = 0;
   /** Where the first tab-indented line was found, and how many more followed (M98c, `A1-12`, D161).
    *
    * The rule used to fire once per *line*, so one wrong editor setting produced 100 identical
@@ -222,9 +262,18 @@ class Lexer {
     }
     const firstNonWs = col;
 
+    // M98d: indentation is consumed without producing a token, so nothing downstream will ever look
+    // at it again. In practice only a `U+FEFF` can be in here — every other hidden character stops
+    // the loop above and falls through to recovery — but scanning the range is what makes that a
+    // consequence rather than an assumption.
+    this.scanHidden(line, 0, firstNonWs, lineStart, lineNo, 'the indentation');
+
     // Blank or comment-only lines carry no structure.
     const rest = line.slice(firstNonWs);
-    if (rest === '' || rest.startsWith('#')) return;
+    if (rest === '' || rest.startsWith('#')) {
+      if (rest !== '') this.scanHidden(line, firstNonWs, line.length, lineStart, lineNo, 'a comment');
+      return;
+    }
 
     // M98c (`A1-12`/`A1-13`, D161): recorded, not reported — see `tabIndent` and `reportTabIndent`.
     if (sawTab) {
@@ -244,7 +293,15 @@ class Lexer {
     // structure of its own (P#46 gap, found dogfooding restful-booker: a hand-formatted
     // multi-line `body { … }` must be usable, the way Python suppresses NEWLINE inside brackets).
     const continuingBracket = this.openBrackets.length > 0;
-    if (!continuingBracket) this.handleIndent(firstNonWs, lineStart, lineNo);
+    // M98d (`M98d-01`, found by this milestone's own BOM probe and **pre-existing** — measured
+    // failing identically on the M98c build). A byte-order mark is skipped as whitespace (M59,
+    // `A1-04`), but skipping it still *counted* it, so the first line of any UTF-8-with-BOM file
+    // measured one column of indentation and every such file failed to parse at all:
+    // `TF016: expected a `test` … found an indented block`, on a file whose first line starts at
+    // column 1. Windows editors and PowerShell redirection write that BOM by default. It is
+    // subtracted from the indent width only — the column of every token on the line is unchanged.
+    const bomCol = lineStart === 0 && line[0] === BOM ? 1 : 0;
+    if (!continuingBracket) this.handleIndent(firstNonWs - bomCol, lineStart, lineNo);
     const stop = this.lexContent(line, firstNonWs, lineStart, lineNo); // may open/close brackets
 
     // Only a logical end-of-line — i.e. we're not left inside an open `{`/`[` — gets a `newline`.
@@ -331,10 +388,18 @@ class Lexer {
       const ch = line[c]!;
 
       if (ch === ' ' || ch === '\t' || ch === BOM) {
+        // M98d: a `BOM` between two tokens is skipped as whitespace, which is exactly why it has to
+        // be reported here — `let a﻿b = 1` otherwise lexes as two idents and reads as one name.
+        if (ch === BOM) this.reportHidden(ch, lineStart + c, lineStart, lineNo, 'the middle of a line');
         c++;
         continue;
       }
-      if (ch === '#') return c; // trailing comment — `c` is where the code ends (D159)
+      if (ch === '#') {
+        // Trailing comment — `c` is where the code ends (D159). The text after it is discarded
+        // unexamined, which is half of `A1-17`'s root cause.
+        this.scanHidden(line, c, len, lineStart, lineNo, 'a comment');
+        return c;
+      }
 
       const startCol = c;
       const startPos = at(startCol);
@@ -576,6 +641,14 @@ class Lexer {
       }
       if (ch === '\\' && c + 1 < len) {
         const next = line[c + 1]!;
+        // M98d (D166): the braced form is not in `ESCAPES` because it is the only escape that takes
+        // an argument, so it is dispatched before the table lookup.
+        if (next === 'u') {
+          const u = this.lexUnicodeEscape(line, c, at);
+          value += u.text;
+          c = u.next;
+          continue;
+        }
         const decoded = ESCAPES[next];
         if (decoded === undefined) {
           this.diag(
@@ -594,6 +667,10 @@ class Lexer {
         c += 2;
         continue;
       }
+      // M98d (`A1-17`): string content was copied verbatim, which is the other half of the root
+      // cause. Scanned on the *raw* text, so a character written as `\u{200B}` — decoded above and
+      // never seen here — stays legal. That is the whole point of D166: the rule has an alternative.
+      this.reportHidden(ch, lineStart + c, lineStart, lineNo, 'a string');
       value += ch;
       c++;
     }
@@ -604,6 +681,109 @@ class Lexer {
     }
     this.push('string', value, raw, span);
     return c;
+  }
+
+  /**
+   * M98d (D166): `\u{XXXX}`, the escape hatch `TF049` requires in order to be a lint at all.
+   *
+   * The dependency is worth stating, because it is the reason this ships in the same milestone as
+   * the rule and not later. D157 (M98b) closed the escape set: an escape outside the table is an
+   * error. tflw had no `\u`. So the moment `TF049` rejects a literal zero-width character, there is
+   * **no way whatever** to put one in a `.tflw` string — and a rule with no legal alternative is not
+   * a lint, it is a capability being removed.
+   *
+   * Braced only. `\uXXXX` cannot express a character above U+FFFF except as a surrogate pair, which
+   * is an encoding detail leaking into a surface the author is supposed to read; `\u{1F600}` is one
+   * character written as one escape. `A1-05` measured users already reaching for the sequence —
+   * `"é"` was found producing `u00e9`, which is somebody having typed it and had the backslash eaten.
+   *
+   * Every failure here is `TF047`. That is a widening of one code rather than a second one, and the
+   * distinction from `TF003`'s split (M98c, D161) is the *fix*: `TF003` carried two conditions whose
+   * corrections were unrelated (re-indent a block vs. change an editor setting), while every case
+   * below is "the escape is not spelled the way tflw spells it", correctable by reading one row.
+   */
+  private lexUnicodeEscape(line: string, c: number, at: (off: number) => Position): { text: string; next: number } {
+    const len = line.length;
+    // Recovery contributes **nothing**, which is a deliberate departure from the unknown-escape
+    // recovery next door (D157: drop the backslash, keep the letter). That rule is safe only because
+    // every escape it covers is a single character; `\u{…}` is the one whose text contains braces,
+    // and braces are interpolation syntax. Keeping it verbatim made `"\u{ZZ}"` recover to `u{ZZ}`
+    // and produce a second, unrelated `TF030: unknown variable "ZZ"` — the checker reporting a name
+    // the author never wrote, which is the follow-on-noise class M98c spent `A1-16` removing.
+    const bad = (message: string, end: number, hint: string): { text: string; next: number } => {
+      this.diag(Codes.UNKNOWN_ESCAPE, 'error', message, { start: at(c), end: at(end) }, hint);
+      return { text: '', next: end };
+    };
+    const spelling = 'a `\\u` escape is written `\\u{...}` with the braces, holding hexadecimal digits up to `\\u{10FFFF}`.';
+
+    if (line[c + 2] !== '{') {
+      // The case JS, Java and C# authors' fingers produce. Worth its own sentence: the fix is
+      // mechanical and the reader is otherwise left comparing two nearly identical spellings.
+      const four = /^[0-9A-Fa-f]{4}/.exec(line.slice(c + 2))?.[0];
+      return bad('the `\\u` escape needs braces', c + 2 + (four?.length ?? 0), four ? `write \`\\u{${four}}\`. tflw has only the braced form, because it is the one that can also write a character above U+FFFF.` : spelling);
+    }
+    let e = c + 3;
+    while (e < len && /[0-9A-Fa-f]/.test(line[e]!)) e++;
+    const digits = line.slice(c + 3, e);
+    if (line[e] !== '}') return bad(digits === '' ? 'this `\\u{` is not closed' : `\`\\u{${digits}\` is not closed`, e, spelling);
+    const end = e + 1;
+    if (digits === '') return bad('`\\u{}` has no code point in it', end, spelling);
+    const cp = parseInt(digits, 16);
+    if (cp > 0x10ffff) return bad(`\`\\u{${digits}}\` is above the highest code point`, end, 'the largest character is `\\u{10FFFF}`.');
+    if (cp >= 0xd800 && cp <= 0xdfff) {
+      return bad(`\`\\u{${digits}}\` is half of a surrogate pair, not a character`, end, 'surrogates only exist inside UTF-16 encoding. Write the character itself — an emoji is a single `\\u{1F600}`, not two halves.');
+    }
+    return { text: String.fromCodePoint(cp), next: end };
+  }
+
+  /**
+   * M98d (`A1-17`, D165): report a Trojan Source character.
+   *
+   * **Called only from the paths that consume a character without turning it into a token** —
+   * indentation, inter-token whitespace, a comment, and the inside of a string. That is the whole
+   * placement rule, and it is deliberate rather than partial coverage. Everywhere else these
+   * characters are *already* rejected: none of them can start a token, so `isUnlexable` sends them
+   * to recovery, and `let a​ = 1`, `api GET /hea​lth` and `@sm​oke` were all measured
+   * reporting `TF001: unexpected character U+200B ZERO WIDTH SPACE` before this milestone existed.
+   * A whole-source pre-pass would have reported those a second time, which is the rule M98c had just
+   * finished establishing (D161, D163: one mistake, one diagnostic).
+   *
+   * The invariant is therefore split across two mechanisms, and a split invariant is how a hole
+   * reopens — so it is pinned by a test that asserts the *property* (no file containing one of these
+   * characters checks clean, in any position) rather than either mechanism.
+   *
+   * `U+FEFF` is the one that could not have been left to the other half: it is explicitly *not*
+   * unlexable, being skipped as whitespace since M59.
+   */
+  private reportHidden(ch: string, offset: number, lineStart: number, lineNo: number, where: string): void {
+    const kind = HIDDEN[ch];
+    // Offset 0 is a real byte-order mark, and stays legal — the carve-out that keeps `A1-04` fixed.
+    if (kind === undefined || (kind === 'bom' && offset === 0)) return;
+    this.hiddenChars += 1;
+    if (this.hiddenChars > MAX_UNEXPECTED_CHARS) return;
+    const span = { start: this.posAt(offset, lineStart, lineNo), end: this.posAt(offset + ch.length, lineStart, lineNo) };
+    if (this.hiddenChars === MAX_UNEXPECTED_CHARS) {
+      this.diag(Codes.HIDDEN_CHAR, 'error', `too many hidden characters — stopping after ${MAX_UNEXPECTED_CHARS}`, span, 'a file with this many is not a stray paste; treat the whole file as untrusted rather than fixing them one at a time.');
+      return;
+    }
+    const cp = ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0');
+    this.diag(
+      Codes.HIDDEN_CHAR,
+      'error',
+      `hidden character U+${cp} ${INVISIBLE_NAMES[ch] ?? ''}`.trimEnd() + ` in ${where}`,
+      span,
+      // D166: naming the escape is not politeness, it is what makes this a lint rather than a
+      // removed capability. Without `\u{…}` there would be no way at all to put one of these
+      // characters in a string, since D157 made every unknown escape an error.
+      `${HIDDEN_HELP[kind]}. Delete it — or, where the value genuinely needs the character, write it inside a string as \`\\u{${cp}}\`, which says so in plain sight.`,
+    );
+  }
+
+  /** `reportHidden` over a half-open range of one line. */
+  private scanHidden(line: string, from: number, to: number, lineStart: number, lineNo: number, where: string): void {
+    for (let i = from; i < to; i++) {
+      if (HIDDEN[line[i]!] !== undefined) this.reportHidden(line[i]!, lineStart + i, lineStart, lineNo, where);
+    }
   }
 
   // -- helpers ---------------------------------------------------------------
@@ -694,8 +874,7 @@ const ESCAPES: Record<string, string> = {
 /** The supported escapes, rendered for `TF047`'s help line. Derived from `ESCAPES` rather than typed
  * out, so a sixth escape cannot ship with a help line that denies it exists — which is exactly the
  * drift GRAMMAR.md had already accumulated, listing four of these five. */
-const ESCAPE_LIST = Object.keys(ESCAPES)
-  .map((k) => `\`\\${k}\``)
+const ESCAPE_LIST = [...Object.keys(ESCAPES).map((k) => `\`\\${k}\``), '`\\u{…}`']
   .join(', ')
   .replace(/, ([^,]*)$/, ' and $1');
 

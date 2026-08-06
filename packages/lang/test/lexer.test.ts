@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lex, type Token } from '../src/index.js';
+import { lex, parseSource, checkProgram, type Token } from '../src/index.js';
 import { assertGolden } from './helpers.js';
 
 function tokenStream(tokens: readonly Token[]): string {
@@ -491,4 +491,167 @@ test('A1-16: a rejected run stops at the next real token — the control M11 sho
     assert.equal(diagnostics.filter((d) => d.code === 'TF001').length, 1, `§${after}: one run, one diagnostic`);
     assert.equal(tokens[0]!.type, type, `§${after}: the run must stop at the ${type} that follows it`);
   }
+});
+
+// -- M98d: the characters that make rendered source and parsed source two different texts ---------
+// `A1-17`, D165/D166. Everything above this line assumes the reader of a `.tflw` can see what it
+// asserts. These are the characters for which that is false.
+
+test('A1-17: a bidi override in a comment is an error (the finding\'s first repro)', () => {
+  // Renders in most editors as though the *next* assertion read 500, when it reads 200. Before this
+  // the file was reported as `1 file checked, no problems found.`
+  const found = diags('test "t"\n  # \u202Eexpect status equals 500 \u202D\n  api GET /health\n').filter((d) => d.code === 'TF049');
+  assert.equal(found.length, 2, 'both the override and the pop are reported');
+  assert.match(found[0]!.message, /U\+202E RIGHT-TO-LEFT OVERRIDE in a comment/);
+});
+
+test('A1-17: a zero-width space inside a compared string is an error (second repro)', () => {
+  // `"admin\u200Buser"` renders identically to `"adminuser"` and compares unequal to it — the exact
+  // shape of an assertion that reads as passing for a reason it is not passing for.
+  const found = diags('test "t"\n  log "admin\u200Buser"\n').filter((d) => d.code === 'TF049');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /U\+200B ZERO WIDTH SPACE in a string/);
+});
+
+test('A1-17: no position accepts a hidden character — the pin on a split invariant', () => {
+  // The rule is enforced by *two* mechanisms: `TF049` in the four places a character is consumed
+  // without being lexed, and `TF001` everywhere else, since none of these can start a token. Neither
+  // mechanism is the invariant. The invariant is that no file containing one of these characters
+  // checks clean, and a split invariant is exactly how a hole reopens quietly — so it is asserted as
+  // a property over every position rather than against either half.
+  const positions: Array<[string, (c: string) => string]> = [
+    ['code', (c) => `test "t"\n  let a${c} = 1\n`],
+    ['string', (c) => `test "t"\n  log "a${c}b"\n`],
+    // A *trailing* comment and a comment-only line are read by two different call sites, and every
+    // case first written here was the second kind — so deleting the trailing-comment scan left the
+    // suite green. `api GET /health  # ‹override›` is the more dangerous of the two, being the one
+    // that sits beside real code.
+    ['trailing comment', (c) => `test "t"\n  log "x"  # a${c}b\n`],
+    ['comment-only line', (c) => `# a${c}b\ntest "t"\n  log "x"\n`],
+    ['path', (c) => `test "t"\n  api GET /hea${c}lth\n`],
+    ['tag', (c) => `@sm${c}oke\ntest "t"\n  log "x"\n`],
+    ['trailing whitespace', (c) => `test "t"\n  log "x" ${c}\n`],
+    // Reached by exactly one call site — the leading-whitespace scan — and only a BOM can survive
+    // the indentation loop to get there, so without this row that site can be deleted unnoticed.
+    ['indentation', (c) => `test "t"\n${c}  log "x"\n`],
+  ];
+  for (const ch of ['\u202E', '\u2066', '\u200B', '\u200D', '\uFEFF']) {
+    const cp = ch.codePointAt(0)!.toString(16).toUpperCase();
+    for (const [name, build] of positions) {
+      const found = diags(build(ch)).filter((d) => d.code === 'TF049' || d.code === 'TF001');
+      assert.ok(found.length > 0, `U+${cp} in ${name} must be rejected by one rule or the other`);
+    }
+  }
+});
+
+test('A1-17/D166: `\\u{…}` is the way to write one — the rule has a legal alternative', () => {
+  // Without this the milestone would not be shipping a lint. D157 made every unknown escape an
+  // error and tflw had no `\u`, so rejecting the literal character would have left *no* way at all
+  // to put a zero-width space in a string. The scan reads raw source, which is what makes the
+  // escaped form legal while the literal one is not.
+  const { tokens, diagnostics } = lex('test "t"\n  log "admin\\u{200B}user"\n');
+  assert.equal(diagnostics.length, 0, 'the escaped form is legal');
+  const str = tokens.filter((t) => t.type === 'string')[1]!;
+  assert.equal(str.value, 'admin\u200Buser', 'and it decodes to the character it names');
+});
+
+test('D166: `\\u{…}` decodes astral characters as one escape, which `\\uXXXX` cannot', () => {
+  const { tokens } = lex('test "t"\n  log "\\u{1F600}"\n');
+  assert.equal(tokens.filter((t) => t.type === 'string')[1]!.value, '\u{1F600}');
+});
+
+test('D166: every malformed `\\u` is TF047, each saying which way it is malformed', () => {
+  const cases: Array<[string, RegExp]> = [
+    ['\\u0041', /needs braces/],
+    ['\\u{}', /no code point/],
+    ['\\u{ZZ}', /not closed/],
+    ['\\u{41', /not closed/],
+    ['\\u{110000}', /above the highest code point/],
+    ['\\u{D800}', /half of a surrogate pair/],
+  ];
+  for (const [text, shape] of cases) {
+    const found = diags(`test "t"\n  log "${text}"\n`).filter((d) => d.code === 'TF047');
+    assert.equal(found.length, 1, `${text}: exactly one diagnostic`);
+    assert.match(found[0]!.message, shape);
+  }
+});
+
+test('D166: `\\u0041` is offered the exact braced spelling, not a rule to re-read', () => {
+  const found = diags('test "t"\n  log "\\u0041"\n').filter((d) => d.code === 'TF047');
+  assert.match(found[0]!.hint!, /write `\\u\{0041\}`/);
+});
+
+test('D166: malformed `\\u` recovery contributes nothing — braces are interpolation syntax', () => {
+  // The neighbouring unknown-escape recovery drops the backslash and keeps the letter, which is safe
+  // only because every escape it covers is one character. Keeping `\u{ZZ}` verbatim recovered to
+  // `u{ZZ}`, and the checker then reported `TF030: unknown variable "ZZ"` — a name the author never
+  // wrote, arriving as a second unrelated error.
+  //
+  // This assertion has to run the *checker*, not `diags` — `TF030` is a checker diagnostic, and the
+  // first version of this test looked only at `lex()`'s output, where it can never appear. Mutating
+  // the recovery back left the whole suite green: a control that cannot fail (M98c's lesson, twice
+  // over now). The same applied to `M98d-01` below, which asserted against a parser code.
+  const { program, diagnostics } = parseSource('test "t"\n  log "\\u{ZZ}"\n');
+  const all = [...diagnostics, ...checkProgram(program)];
+  assert.equal(all.filter((d) => d.code === 'TF030').length, 0, 'no invented variable');
+  assert.equal(all.filter((d) => d.code === 'TF047').length, 1, 'and the escape itself is still reported');
+});
+
+test('TF047\'s help line cannot deny that `\\u{…}` exists', () => {
+  // `ESCAPE_LIST` is derived from `ESCAPES`, and the braced form is the one escape that is not a key
+  // in that table — so it is the one that could silently drop out of the help while remaining legal.
+  const found = diags('test "t"\n  log "\\q"\n').filter((d) => d.code === 'TF047');
+  assert.match(found[0]!.hint!, /\\u\{…\}/);
+});
+
+test('A1-17: a BOM stays legal at offset 0 and only there', () => {
+  // The carve-out that keeps `A1-04` fixed, and a control that can actually fail: an implementation
+  // that simply added `U+FEFF` to the rejected set would break every UTF-8-with-BOM file.
+  assert.equal(diags('\uFEFFtest "t"\n  log "x"\n').filter((d) => d.code === 'TF049').length, 0);
+  const mid = diags('test "t"\n  let a\uFEFFb = 1\n').filter((d) => d.code === 'TF049');
+  assert.equal(mid.length, 1, 'the same character mid-line is not a byte-order mark');
+  assert.match(mid[0]!.message, /byte-order mark/);
+});
+
+test('M98d-01: a BOM at offset 0 no longer makes line 1 read as indented', () => {
+  // Pre-existing, found by this milestone's own probe and measured failing identically on the M98c
+  // build: the BOM was skipped as whitespace but still *counted* as a column, so the first line of
+  // every UTF-8-with-BOM file measured one level of indentation and the file failed to parse at all
+  // — `TF016: … found an indented block`, on a file whose first line starts at column 1.
+  // `parseSource`, not `diags`: `TF016` is a *parser* diagnostic, so a lexer-only assertion here
+  // was green whether the fix was present or not.
+  assert.deepEqual(parseSource('\uFEFFtest "t"\n  log "x"\n').diagnostics, []);
+  // The tokens on that line keep their true columns; only the indent width was ever wrong.
+  const first = lex('\uFEFFtest "t"\n  log "x"\n').tokens[0]!;
+  assert.equal(first.span.start.column, 2, 'the `test` still sits after the BOM, at column 2');
+});
+
+test('A1-17: TF049 is bounded, for the reason TF001 is', () => {
+  // A diagnostic renders a copy of its line plus O(n) caret padding, so one per character over a
+  // large hostile file is `A1-01`'s quadratic blow-up arriving through a new door — which is how it
+  // came back in M98c. Counted separately from `unexpectedChars` so that a file with 50 ordinary
+  // typos cannot be the reason a hidden character goes unreported.
+  const found = diags(`test "t"\n  log "${'\u200B'.repeat(5000)}"\n`).filter((d) => d.code === 'TF049');
+  assert.ok(found.length <= 50, `bounded, got ${found.length}`);
+  assert.match(found[found.length - 1]!.message, /too many hidden characters/);
+});
+
+test('A1-17: the ordinary corpus stays silent — a control with something to lose', () => {
+  // Not "clean source stays clean", which is unfalsifiable for a rule that only inspects specific
+  // code points (M98c's `M11` mutation survived exactly that shape). This puts the *visible*
+  // characters a hidden one would be mistaken for — a real space, a real hyphen, a real joiner word
+  // — in the positions the scan reads, and requires silence there.
+  const src = 'test "t"\n  # a normal comment - with punctuation\n  log "admin user-name"\n  api GET /health\n';
+  assert.deepEqual(diags(src).filter((d) => d.code === 'TF049'), []);
+});
+
+test('A1-17: a file full of ordinary typos does not use up TF049\'s budget', () => {
+  // The reason `hiddenChars` is its own counter rather than sharing `unexpectedChars`. Sharing reads
+  // as tidier and is wrong in one direction that matters: a file with enough unrelated garbage in it
+  // would exhaust the budget before the scan ran, and the character that changes what the file
+  // *means* would be the one that went unreported.
+  const noise = Array.from({ length: 60 }, (_, i) => `  let a${i} = §\n`).join('');
+  const found = diags(`test "t"\n${noise}  log "admin​user"\n`);
+  assert.ok(found.some((d) => d.code === 'TF001' && /stopping after/.test(d.message)), 'TF001 is exhausted');
+  assert.equal(found.filter((d) => d.code === 'TF049').length, 1, 'and TF049 still reports');
 });
