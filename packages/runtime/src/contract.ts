@@ -26,7 +26,15 @@ import { truncate, type MatchOutcome } from './matcher.js';
  * the shared Promise, and repeat assertions across many tests in one run never re-fetch. Only
  * *successes* are cached for the process lifetime: a rejected entry evicts itself (see
  * `loadSchemaDoc`), so the cache never turns a transient outage into a permanent one. */
-const schemaDocCache = new Map<string, Promise<Ajv>>();
+const schemaDocCache = new Map<string, Promise<LoadedSchemaDoc>>();
+
+/** A fetched-and-compiled OpenAPI document, plus what it cost to get — carried so the assertion
+ * that triggered the fetch can say so in its own detail line (review finding `A12-03`). */
+interface LoadedSchemaDoc {
+  readonly ajv: Ajv;
+  readonly durationMs: number;
+  readonly schemaCount: number;
+}
 
 /** Absolute (`http(s)://`) sources pass through; anything else is resolved against the default
  * service's base URL, the same convention a plain `api GET /path` step already uses with no
@@ -55,11 +63,19 @@ function normalizeOpenApiSchema(node: unknown): unknown {
   return out;
 }
 
-async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<Ajv> {
+/** Returns the compiled document and whether this call was the one that fetched it. `fetched` is
+ * what makes the round-trip visible downstream: `interpreter.ts:1884` states the principle in as
+ * many words — *"a retry is visible evidence in the report, never a silent, invisible extra round-
+ * trip (P#5/P#16)"* — and a fetch an assertion performs on the user's behalf is held to the same
+ * standard (review finding `A12-03`), the more so because it is `checkHostAllowed`-gated and
+ * therefore already understood to be security-relevant. */
+async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<{ doc: LoadedSchemaDoc; fetched: boolean }> {
   checkHostAllowed(url, config);
   let cached = schemaDocCache.get(url);
+  const fetched = !cached;
   if (!cached) {
     cached = (async () => {
+      const start = performance.now();
       const response = await sendRequest({ method: 'GET', url, headers: {}, timeoutMs: config.timeouts.step, followRedirects: true, allowHosts: config.allowHosts });
       if (response.status < 200 || response.status >= 300) {
         throw new RuntimeError(`could not load OpenAPI document at "${url}": got ${response.status}`);
@@ -73,7 +89,7 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<Ajv> 
       for (const [name, schema] of Object.entries(schemas)) {
         ajv.addSchema(normalizeOpenApiSchema(schema) as object, `#/components/schemas/${name}`);
       }
-      return ajv;
+      return { ajv, durationMs: Math.round(performance.now() - start), schemaCount: Object.keys(schemas).length };
     })();
     // Cache the *in-flight* promise (that's the point — concurrent assertions share one fetch),
     // but evict it the moment it rejects (M63, review finding A12-02). Caching a rejection made a
@@ -92,7 +108,7 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<Ajv> 
     });
     schemaDocCache.set(url, cached);
   }
-  return cached;
+  return { doc: await cached, fetched };
 }
 
 /** Runs `expect body matches schema "schemaName" from "source"` (and its negated form).
@@ -106,17 +122,34 @@ export async function evaluateSchemaMatch(
   negated: boolean,
 ): Promise<MatchOutcome> {
   const url = resolveSchemaSourceUrl(source, config);
-  const ajv = await loadSchemaDoc(url, config);
+  const { doc, fetched } = await loadSchemaDoc(url, config);
+  const { ajv } = doc;
   const key = `#/components/schemas/${schemaName}`;
   const validate: ValidateFunction | undefined = ajv.getSchema(key);
   if (!validate) {
-    throw new RuntimeError(`schema "${schemaName}" not found in "${source}"'s \`components.schemas\``);
+    throw new RuntimeError(`schema "${schemaName}" not found in "${source}"'s \`components.schemas\`${provenance(url, doc, fetched)}`);
   }
   const valid = validate(bodyValue);
   const ok = negated ? !valid : valid;
   const not = negated ? 'not ' : '';
   const expectation = `${subjectLabel} ${not}to match schema "${schemaName}"`;
-  if (ok) return { ok: true, message: expectation };
+  if (ok) return { ok: true, message: `${expectation}${provenance(url, doc, fetched)}` };
   const errorText = valid ? '(negated match unexpectedly succeeded)' : ajv.errorsText(validate.errors, { separator: '; ' });
-  return { ok: false, message: `expected ${expectation}, but: ${truncate(errorText)}` };
+  return { ok: false, message: `expected ${expectation}, but: ${truncate(errorText)}${provenance(url, doc, fetched)}` };
+}
+
+/** `A12-03` — the round-trip, said out loud, in the detail text of the step that caused it. A
+ * trailing clause on the existing message rather than a step of its own: it reaches report.html,
+ * `results.json`, `--format ndjson` and `junit.xml` in one move, and changes no event shape, so
+ * nothing consuming the stream as a contract (cluster C4) has to learn a new step kind for it.
+ *
+ * The distinction between the two forms is the useful part. `fetched` names the URL, the cost, and
+ * how many schemas came back — evidence that this assertion, and not some earlier one, paid for the
+ * document. A cache hit says so explicitly, which is also what gives `A12-02`'s reject-eviction an
+ * artifact trail at last: previously the *only* signal that assertions 2 and 3 did no I/O was their
+ * `1 ms` duration. */
+function provenance(url: string, doc: LoadedSchemaDoc, fetched: boolean): string {
+  if (!fetched) return ` (schema document from cache: "${url}")`;
+  const plural = doc.schemaCount === 1 ? '' : 's';
+  return ` (fetched schema document "${url}" — ${doc.schemaCount} schema${plural}, ${doc.durationMs}ms)`;
 }

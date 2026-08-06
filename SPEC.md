@@ -1030,6 +1030,22 @@ expect body matches schema "ProductResponseDto" from "/openapi.json"
   `allow hosts` (§3.7) gates this fetch the same as any `api` step's request.
   OpenAPI 3.0's `nullable: true` is understood (folded into a JSON-Schema `type` union before
   validating), since plain JSON-Schema doesn't have that keyword.
+- **The fetch is visible evidence, never a silent round-trip.** The assertion that actually paid
+  for the document says so in its own detail line — the URL, how many schemas came back, and how
+  long it took — and every later assertion served from the cache says *that*, in as many words.
+  Both forms reach `report.html`, `results.json`, `--format ndjson` and `junit.xml`, because the
+  detail text is one string shared by all four; no new step or event kind is introduced.
+
+  ```console
+  ✓ body to match schema "Widget" (fetched schema document "http://localhost:4001/openapi.json" — 2 schemas, 38ms)
+  ✓ body to match schema "Widget" (schema document from cache: "http://localhost:4001/openapi.json")
+  ```
+
+  This holds the matcher to the standard the runtime already states for `retry` — *a retry is
+  visible evidence in the report, never a silent, invisible extra round-trip* — which matters more
+  here, not less, because the fetch is `allow hosts`-gated and therefore security-relevant. It is
+  also the only artifact trail the cache has: previously the sole signal that a later assertion did
+  no I/O was its sub-millisecond duration.
 - The one matcher this codebase evaluates outside the ordinarily-pure, synchronous matcher
   set (P#13) — fetching an external document is I/O the other matchers never need. `any`/`all`
   quantifiers can't be combined with it (§6.3) — validating an array element-by-element against a
