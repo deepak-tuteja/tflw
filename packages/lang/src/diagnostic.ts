@@ -89,6 +89,9 @@ export const Codes = {
   MATCHER_SUBJECT_MISMATCH: 'TF042',
   MISSING_FILE: 'TF043',
   CALL_CYCLE: 'TF044',
+  UNBALANCED_BRACKET: 'TF045',
+  EMPTY_TAG: 'TF046',
+  UNKNOWN_ESCAPE: 'TF047',
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -232,6 +232,132 @@ test('A1-04: a leading UTF-8 BOM is invisible to the lexer', () => {
   assert.equal(diagnostics.length, 0);
 });
 
+// -- M98b: the facts the lexer computed and dropped ------------------------------------------
+// Each row here was a place where `lexer.ts` already knew something and said nothing, so `tflw
+// check` reported "no problems found" over a file that could not mean what it says. The tests
+// assert *where* the diagnostic lands and *what it teaches*, not merely that one exists — a
+// diagnostic pointing at the wrong token is most of the original complaint.
+
+function diags(src: string) {
+  return lex(src).diagnostics;
+}
+
+test('A1-10/TF045: an unclosed `{` is reported at the `{` itself, not at a synthesized dedent', () => {
+  // Before M98b the lexer tracked an open-bracket *count*, which is enough to decide line
+  // continuation and leaves nothing to point at. This file produced `TF010: expected a field name,
+  // found a dedent` with a caret on line 3 of a 2-line file, underlining nothing at all.
+  const src = 'test "x"\n  api POST /o body {\n';
+  const found = diags(src).filter((d) => d.code === 'TF045');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /is never closed/);
+  //   `  api POST /o body ` is 19 code units, so the `{` sits at index 19 → column 20.
+  assert.deepEqual(found[0]!.span.start, { offset: src.indexOf('{'), line: 2, column: 20 });
+  assert.match(found[0]!.hint ?? '', /continuation of the same step/, 'the hint must explain why the rest of the file vanished');
+});
+
+test('A1-10/TF045: only the innermost unclosed bracket is reported', () => {
+  // Three levels left open by one missing `}`. A diagnostic per level would be noise proportional
+  // to nesting depth, all of it naming the same typo; the innermost is the one nearest the mistake.
+  const src = 'test "x"\n  api POST /o body { a: [ { b: 1\n';
+  const found = diags(src).filter((d) => d.code === 'TF045');
+  assert.equal(found.length, 1);
+  assert.equal(found[0]!.span.start.offset, src.lastIndexOf('{'));
+});
+
+test('A1-20/TF045: a `}` that closes nothing is reported instead of being clamped away', () => {
+  // `push()` used to guard the decrement with `> 0` and say nothing — the count could not go
+  // negative, so the extra closer left no trace anywhere.
+  const found = diags('test "x"\n  api GET /a }\n').filter((d) => d.code === 'TF045');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /closes a bracket that was never opened/);
+});
+
+test('A1-10: a balanced multi-line literal stays silent — the negative control', () => {
+  // The control for the whole bracket rule. `TF045` fires from two sites that every well-formed
+  // multi-line body passes through, so a rule that over-fires here would break every hand-formatted
+  // `body { … }` in the corpus rather than producing a subtle wrong message.
+  const src = 'test "s"\n  api POST /o body {\n    tags: [\n      "a"\n    ]\n  }\n  expect status equals 201\n';
+  assert.deepEqual(diags(src), []);
+});
+
+test('A1-11/TF046: a tag with no usable name is rejected, and `@ smoke` is told about the space', () => {
+  // The consequence, which is why this is an error and not a lint: a tag that is not a writable
+  // identifier can never be named in a `--tag` expression, so the test carrying it is neither
+  // selectable nor excludable — a filter that appears to work and runs the wrong set.
+  const bare = diags('@\ntest "x"\n  api GET /a\n').filter((d) => d.code === 'TF046');
+  assert.equal(bare.length, 1);
+  assert.match(bare[0]!.message, /needs a name after the `@`/);
+
+  const spaced = diags('@ smoke\ntest "x"\n  api GET /a\n').filter((d) => d.code === 'TF046');
+  assert.equal(spaced.length, 1);
+  assert.match(spaced[0]!.hint ?? '', /delete the space/, 'the `@` is gone by the time the parser sees this — the hint has to be attached here');
+
+  const digits = diags('@123\ntest "x"\n  api GET /a\n').filter((d) => d.code === 'TF046');
+  assert.equal(digits.length, 1);
+  assert.match(digits[0]!.message, /not a usable tag name/);
+});
+
+test('A1-11: a well-formed tag stays silent — the negative control', () => {
+  for (const tag of ['@smoke', '@_internal', '@api2', '@Slow_path']) {
+    assert.deepEqual(diags(`${tag}\ntest "x"\n  api GET /a\n`), [], `unexpected diagnostic for ${tag}`);
+  }
+});
+
+test('A1-05/TF047: an unknown string escape is an error, not a silently deleted backslash', () => {
+  // `"^\d+$"` decoded to `^d+$` and the run then matched a pattern nobody wrote — the step echo
+  // printed the written form and the reason line the mangled one, with nothing connecting them.
+  const found = diags('test "x"\n  expect body.id matches "^\\d+$"\n').filter((d) => d.code === 'TF047');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /unknown escape `\\d`/);
+  assert.match(found[0]!.hint ?? '', /\\\\d/, 'a regex is where a backslash appears — the hint must show the doubled form');
+});
+
+test('A1-05: every supported escape stays silent, `\\r` included — the negative control', () => {
+  // `\r` is the one that matters: GRAMMAR.md § Lexical lists four escapes and the lexer has five,
+  // so a hand-typed help line or a hand-typed test would very likely have made `"\r"` an error.
+  // `TF047`'s help line is derived from `ESCAPES` for the same reason.
+  const src = 'test "x"\n  log "a\\nb\\tc\\rd\\"e\\\\f"\n';
+  assert.deepEqual(diags(src), []);
+  const str = lex(src).tokens.find((t) => t.type === 'string' && t.value.includes('a'))!;
+  assert.equal(str.value, 'a\nb\tc\rd"e\\f');
+});
+
+test('A1-18: the numeric notations tflw does not have are taught at the number', () => {
+  // `1e3` is the case worth the diagnostic: it lexes as `1` + `e3`, so the written value and the
+  // read value differ by 1000×, and the only report was `TF010: unexpected `e3` at end of step`
+  // with a help line pointing at the end of the line.
+  const cases: [string, RegExp, string][] = [
+    ['1e3', /exponent notation/, '1000'],
+    ['1e-3', /exponent notation/, '0.001'],
+    ['0xff', /hexadecimal/, '255'],
+    ['0b1010', /binary/, '10'],
+    ['0o17', /octal/, '15'],
+    ['1_000', /digit separators/, '1000'],
+  ];
+  for (const [literal, message, value] of cases) {
+    const found = diags(`test "x"\n  let n = ${literal}\n  api GET /a\n`).filter((d) => d.code === 'TF001');
+    assert.equal(found.length, 1, `expected exactly one TF001 for ${literal}`);
+    assert.match(found[0]!.message, message, `message for ${literal}`);
+    assert.match(found[0]!.hint ?? '', new RegExp(`\`${value.replace('.', '\\.')}\``), `the hint for ${literal} must name the decimal value to write`);
+  }
+});
+
+test('A1-18: a duration is not a foreign numeric notation — the control that shapes the rule', () => {
+  // The obvious rule — "a `number` followed directly by a name" — is wrong, and this is what says
+  // so: that pattern is exactly how *every duration in the language* lexes. Under the general rule
+  // each of these lines would have become an error, so the check is deliberately narrowed to the
+  // five shapes that can never be a duration unit.
+  for (const src of [
+    'test "x"\n  pause 30s\n  api GET /a\n',
+    'test "x"\n  timeout step 10s, expect 5s, wait 30s\n  api GET /a\n',
+    'test "x"\n  api GET /a\n  expect duration is less than 500ms\n',
+    'test "x"\n  pause 2m\n  api GET /a\n',
+    'test "x"\n  pause 0s\n  api GET /a\n',
+  ]) {
+    assert.deepEqual(diags(src), [], `a duration was diagnosed as a numeric notation:\n${src}`);
+  }
+});
+
 test('A1-01: unreadable input is bounded, not quadratic', () => {
   // 50 KB of unlexable bytes previously emitted one diagnostic per byte, each rendered with a full
   // copy of the line plus O(n) caret padding — 3.6 GB, then `Aborted (core dumped)`.

@@ -55,10 +55,16 @@ class Lexer {
   private readonly indentStack: number[] = [0];
   /** The last token pushed (of any type) — used to decide whether `/` starts a PATH. */
   private lastMeaningful: Token | null = null;
-  /** Open `{`/`[` count. While > 0, a physical line is a *continuation* of the same logical
-   * line: its own indentation is irrelevant (no `indent`/`dedent`), and no `newline` is emitted
-   * at its end — this is what lets an object/array literal span several hand-formatted lines. */
-  private bracketDepth = 0;
+  /** The `{`/`[` tokens opened and not yet closed. While non-empty, a physical line is a
+   * *continuation* of the same logical line: its own indentation is irrelevant (no
+   * `indent`/`dedent`), and no `newline` is emitted at its end — this is what lets an object/array
+   * literal span several hand-formatted lines.
+   *
+   * M98b (`A1-10`, `A1-20`): this used to be a bare `number`. A count is enough to decide
+   * *continuation*, and that is all it was ever asked, so a `{` that was never closed simply
+   * swallowed the rest of the file and the lexer had nothing left to point at. Keeping the opening
+   * tokens costs one array and makes `TF045` a lookup rather than an analysis. */
+  private readonly openBrackets: Token[] = [];
   /** How many "unexpected character" diagnostics have been emitted (M59, A1-01). Recovery skips a
    * single character and reports it, so a file the lexer cannot read at all — a binary blob, a
    * minified bundle, the wrong file extension — produced one diagnostic *per byte*, each rendered
@@ -94,6 +100,21 @@ class Lexer {
       lineStart = eol + 1;
       lineNo += 1;
       i = lineStart;
+    }
+
+    // M98b (`A1-10`, D154): anything still on the bracket stack at EOF was never closed. Report the
+    // **innermost** one only: while a bracket is open the lexer emits no `newline`/`indent`/`dedent`
+    // at all (see `processLine`), so a single stray `{` absorbs every line after it and the outer
+    // entries are almost certainly consequences of the same typo — one diagnostic per nesting level
+    // would be noise proportional to depth, all of it pointing at the same mistake.
+    //
+    // The caret used to land on a `dedent` synthesized at EOF: `printf 'test "x"\n  api POST /o body
+    // {\n'` reported `TF010: expected a field name, found a dedent` at line 3 of a 2-line file,
+    // underlining nothing. The opening bracket is the only position that names the actual mistake.
+    const unclosed = this.openBrackets[this.openBrackets.length - 1];
+    if (unclosed) {
+      const closer = unclosed.value === '{' ? '}' : ']';
+      this.diag(Codes.UNBALANCED_BRACKET, 'error', `this \`${unclosed.value}\` is never closed`, unclosed.span, `add the matching \`${closer}\`. While a \`{\` or \`[\` is open, tflw reads the following lines as a continuation of the same step rather than as steps of their own, so everything after this point was absorbed into it.`);
     }
 
     // Close any open indentation blocks, then EOF.
@@ -134,12 +155,12 @@ class Lexer {
     // A line continuing an already-open `{`/`[` from a previous line carries no indentation
     // structure of its own (P#46 gap, found dogfooding restful-booker: a hand-formatted
     // multi-line `body { … }` must be usable, the way Python suppresses NEWLINE inside brackets).
-    const continuingBracket = this.bracketDepth > 0;
+    const continuingBracket = this.openBrackets.length > 0;
     if (!continuingBracket) this.handleIndent(firstNonWs, lineStart, lineNo);
-    this.lexContent(line, firstNonWs, lineStart, lineNo); // may open/close brackets, changing bracketDepth
+    this.lexContent(line, firstNonWs, lineStart, lineNo); // may open/close brackets
 
     // Only a logical end-of-line — i.e. we're not left inside an open `{`/`[` — gets a `newline`.
-    if (this.bracketDepth === 0) {
+    if (this.openBrackets.length === 0) {
       const eolOffset = lineStart + line.length;
       const eolPos = this.posAt(eolOffset, lineStart, lineNo);
       this.push('newline', '', '', { start: eolPos, end: eolPos });
@@ -235,6 +256,7 @@ class Lexer {
         }
         const raw = line.slice(startCol, c);
         this.push('number', raw, raw, { start: startPos, end: at(c) });
+        this.checkNumberNotation(line, startCol, c, raw, at);
         continue;
       }
 
@@ -245,6 +267,26 @@ class Lexer {
         while (c < len && isIdentCont(line[c]!)) c++;
         const name = line.slice(nameStart, c);
         const raw = line.slice(startCol, c);
+        // M98b (`A1-11`, D156): the push used to be unconditional, so `@` alone produced `tag:""`
+        // and `tflw check` reported no problems. A tag that is not a writable name can never be
+        // named in a `--tag` expression, so the test carrying it can be neither selected nor
+        // excluded — silently. That is the failure class where a filter appears to work and runs the
+        // wrong set, which is worse than a filter that errors.
+        if (name === '' || !isIdentStart(name[0]!)) {
+          // The `@ smoke` case — one stray space — is worth its own help line. Left to the parser it
+          // becomes ``expected `test`, found `smoke``` with a caret on `smoke` and no mention of the
+          // `@` at all; the lexer is the last layer that can still see the two together.
+          const spaced = name === '' && /^[ \t]+[A-Za-z_]/.test(line.slice(c));
+          this.diag(
+            Codes.EMPTY_TAG,
+            'error',
+            name === '' ? 'a tag needs a name after the `@`' : `\`@${name}\` is not a usable tag name`,
+            { start: startPos, end: at(c) },
+            spaced
+              ? 'delete the space — a tag is written `@smoke`, with the name attached to the `@`.'
+              : 'a tag name starts with a letter or `_` and continues with letters, digits or `_`, so that `--tag` can name it.',
+          );
+        }
         this.push('tag', name, raw, { start: startPos, end: at(c) });
         continue;
       }
@@ -286,6 +328,65 @@ class Lexer {
     }
   }
 
+  /**
+   * M98b (`A1-18`, D158): teach the numeric notations tflw does not have, at the number itself.
+   *
+   * `1e3` lexes as `number:"1"` + `ident:"e3"` and reached the author as ``TF010: unexpected `e3` at
+   * end of step`` / `= help: expected end of line`. Diagnosed, so never silent — but this is the case
+   * where the lexed reading (`1`) and the intended reading (`1000`) differ by 1000×, and the help
+   * line pointed at the end of the line rather than at the number.
+   *
+   * **Deliberately narrow, and this is the whole design.** The obvious rule — "a `number` directly
+   * followed by an ident-start character" — is wrong here, because that is exactly how every
+   * *duration* in the language lexes: `pause 30s`, `timeout step 10s`, `expect duration is less than
+   * 500ms` are all `number` + adjacent `ident`, and all legal. So the check fires only on the five
+   * shapes that are unambiguously a foreign numeric notation and can never be a duration unit.
+   *
+   * **Recovery is unchanged**: the tokens are still `number` + `ident`, the parser behaves exactly as
+   * before, and no golden moves except by gaining a better message. The code is `TF001` rather than a
+   * fourth new one — this is "the lexer cannot read this" with a specific known cause, and §17's row
+   * carries the cause.
+   *
+   * `.5` is **not** covered: `dot` + `number` is a legal pair in a path and in a field access, and
+   * the lexer cannot tell `let a = .5` from a fragment of one without parser context.
+   */
+  private checkNumberNotation(line: string, startCol: number, numEnd: number, raw: string, at: (off: number) => Position): void {
+    const len = line.length;
+    let end = numEnd;
+    while (end < len && (isIdentCont(line[end]!) || line[end] === '_')) end++;
+    // An exponent's sign is not an ident character, so `1e-3` needs one extra look.
+    if (end === numEnd + 1 && /[eE]/.test(line[numEnd] ?? '') && /[+-]/.test(line[end] ?? '')) {
+      let signed = end + 1;
+      while (signed < len && isDigit(line[signed]!)) signed++;
+      if (signed > end + 1) end = signed;
+    }
+    if (end === numEnd) return;
+    const suffix = line.slice(numEnd, end);
+
+    let message: string | undefined;
+    let value: number | undefined;
+    if (/^[eE][+-]?\d+$/.test(suffix)) {
+      message = 'exponent notation is not supported';
+      value = Number(raw + suffix);
+    } else if (raw === '0' && /^[xX][0-9a-fA-F]+$/.test(suffix)) {
+      message = 'hexadecimal literals are not supported';
+      value = Number('0' + suffix);
+    } else if (raw === '0' && /^[bB][01]+$/.test(suffix)) {
+      message = 'binary literals are not supported';
+      value = Number('0' + suffix);
+    } else if (raw === '0' && /^[oO][0-7]+$/.test(suffix)) {
+      message = 'octal literals are not supported';
+      value = Number('0' + suffix);
+    } else if (/^_[\d_]*\d$/.test(suffix)) {
+      message = 'digit separators are not supported';
+      value = Number((raw + suffix).replace(/_/g, ''));
+    }
+    if (message === undefined) return;
+
+    const written = value !== undefined && Number.isFinite(value) ? `write the value out: \`${value}\`.` : 'write the value out in plain decimal digits.';
+    this.diag(Codes.UNEXPECTED_CHAR, 'error', `${message} — this reads as \`${raw}\` followed by the name \`${suffix}\``, { start: at(startCol), end: at(end) }, `tflw numbers are plain decimal digits with an optional \`.\` fraction; ${written}`);
+  }
+
   /** Lex a double-quoted string starting at `line[c] === '"'`. Returns the index past the string. */
   private lexString(line: string, c: number, lineStart: number, lineNo: number): number {
     const at = (off: number): Position => this.posAt(lineStart + off, lineStart, lineNo);
@@ -304,7 +405,21 @@ class Lexer {
       }
       if (ch === '\\' && c + 1 < len) {
         const next = line[c + 1]!;
-        value += ESCAPES[next] ?? next;
+        const decoded = ESCAPES[next];
+        if (decoded === undefined) {
+          this.diag(
+            Codes.UNKNOWN_ESCAPE,
+            'error',
+            `unknown escape \`\\${next}\` in a string`,
+            { start: at(c), end: at(c + 2) },
+            `tflw strings support ${ESCAPE_LIST}. To put a backslash in the string itself — a regular expression, a Windows path — write it twice: \`matches "^\\\\d+$"\` hands the pattern \`^\\d+$\` to the engine.`,
+          );
+        }
+        // Recovery is deliberately unchanged (the old `?? next`, i.e. drop the backslash). The value
+        // is now attached to an *error*, so nothing runs with it; keeping the old behaviour means
+        // this milestone changes exactly one thing — whether the fact is reported — and every token
+        // golden stays put.
+        value += decoded ?? next;
         c += 2;
         continue;
       }
@@ -344,8 +459,24 @@ class Lexer {
     const tok: Token = { type, value, raw, span };
     this.tokens.push(tok);
     this.lastMeaningful = tok;
-    if (type === 'lbrace' || type === 'lbracket') this.bracketDepth++;
-    else if ((type === 'rbrace' || type === 'rbracket') && this.bracketDepth > 0) this.bracketDepth--;
+    if (type === 'lbrace' || type === 'lbracket') {
+      this.openBrackets.push(tok);
+    } else if (type === 'rbrace' || type === 'rbracket') {
+      // M98b (`A1-20`): a closer at depth 0 used to be clamped out of the accounting and reported
+      // nowhere. It is the same fact as an unclosed opener — bracket accounting does not balance —
+      // seen from the other side, so it carries the same code (D155) rather than a second manifest
+      // row saying the same thing about a case the parser also catches downstream.
+      if (this.openBrackets.length > 0) this.openBrackets.pop();
+      else {
+        this.diag(
+          Codes.UNBALANCED_BRACKET,
+          'error',
+          `\`${value}\` closes a bracket that was never opened`,
+          span,
+          `every \`${value}\` needs a matching \`${value === '}' ? '{' : '['}\` before it — either delete this one or add the opener it was meant to close.`,
+        );
+      }
+    }
   }
 
   private diag(code: string, severity: 'error' | 'warning', message: string, span: Span, hint?: string): void {
@@ -371,6 +502,16 @@ const PUNCT: Record<string, TokenType | undefined> = {
   '%': 'percent',
 };
 
+/** The complete set of string escapes. M98b (`A1-05`, D157): an escape *outside* this table is an
+ * error (`TF047`), not a silently deleted backslash — `"^\d+$"` used to decode to `^d+$` and run
+ * against a pattern nobody wrote.
+ *
+ * The alternative worth naming, because it is the tempting one: *preserve* the backslash, so `"\d"`
+ * means `\d` and regexes just work. It is the one option that cannot be revised. Under it the
+ * meaning of `"\q"` depends on whether `q` is in this table, so every escape added here later would
+ * silently change the value of existing suites — while an error becoming legal is additive, which is
+ * the only direction a frozen 1.0 surface can move. Erroring also matches JS, Java and non-raw
+ * Python, which is what a `.tflw` author's fingers already know. */
 const ESCAPES: Record<string, string> = {
   n: '\n',
   t: '\t',
@@ -378,6 +519,14 @@ const ESCAPES: Record<string, string> = {
   '"': '"',
   '\\': '\\',
 };
+
+/** The supported escapes, rendered for `TF047`'s help line. Derived from `ESCAPES` rather than typed
+ * out, so a sixth escape cannot ship with a help line that denies it exists — which is exactly the
+ * drift GRAMMAR.md had already accumulated, listing four of these five. */
+const ESCAPE_LIST = Object.keys(ESCAPES)
+  .map((k) => `\`\\${k}\``)
+  .join(', ')
+  .replace(/, ([^,]*)$/, ' and $1');
 
 export function lex(source: string): LexResult {
   return new Lexer(source).lex();

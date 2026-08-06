@@ -35,7 +35,8 @@ but has no callable subject yet (e.g. `has value`/`is StateWord` outside a UI co
 NEWLINE     logical end-of-line (collapses blank + comment-only lines)
 INDENT      indentation increased vs. the enclosing block
 DEDENT      indentation decreased (one per level closed)
-STRING      "…"  with \" \\ \n \t escapes; may contain {interpolation}
+STRING      "…"  with \" \\ \n \r \t escapes; may contain {interpolation}
+                 any other escape is an error (TF047, M98b) — write \\ for a literal backslash
 NUMBER      digits, optional fraction: 200, 12.5
 IDENT       [A-Za-z_][A-Za-z0-9_]*        (also the keyword lexeme before classification)
 PATH        a run beginning with '/' over [A-Za-z0-9_\-./{}?=&:%~], ends at whitespace
