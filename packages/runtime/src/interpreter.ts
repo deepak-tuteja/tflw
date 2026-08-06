@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, resolve as resolvePath } from 'node:path';
-import { parseSource, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
+import { parseSource, quantifiable, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   A11ySeverity,
   ApiBody,
@@ -39,7 +39,7 @@ import type {
   WaitUntilUiStmt,
   Workload,
 } from '@tflw/lang';
-import { evalValue, interpolatePath, navigate, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
+import { evalValue, interpolatePath, navigate, resolveRef, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
 import { evalUiMatcherOnce } from './uiMatcher.js';
 import { runA11yScan } from './a11y.js';
@@ -3060,7 +3060,7 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
 
 async function execExpect(step: ExpectStmt, response: ResponseTrace | null, connectionError: string | null, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig, baseDir: string): Promise<StepResult> {
   const outcome = await evaluateExpect(step, response, connectionError, ctx, config, baseDir);
-  const message = maskExpectDetail(step, response, outcome.message, config);
+  const message = maskExpectDetail(step, response, outcome.message, config, ctx);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(message));
 }
 
@@ -3356,12 +3356,12 @@ function describeA11yOutcome(step: ExpectStmt, floor: A11ySeverity | null, viola
  * printed a field out of that same body verbatim one line below it — which is how a failing
  * assertion at `evidence none` still shipped a live JWT into `report.html`, `results.json` and
  * `junit.xml`. See `subjectValueSurvivesEvidenceLevel` for the rule. */
-function maskExpectDetail(step: ExpectStmt, response: ResponseTrace | null, message: string, config: ResolvedConfig): string {
+function maskExpectDetail(step: ExpectStmt, response: ResponseTrace | null, message: string, config: ResolvedConfig, ctx: EvalCtx): string {
   if (step.quantifier || !response) return message;
   const evidenceMasks = !subjectValueSurvivesEvidenceLevel(step.subject, config.evidenceLevel);
   const redactMasks = subjectMatchesRedactPattern(step.subject, config.redactPatterns);
   if (!evidenceMasks && !redactMasks) return message;
-  const { value } = resolveSubject(step.subject, response);
+  const { value } = resolveSubject(step.subject, response, ctx);
   return maskDetailValue(message, repr(value), evidenceMasks ? EVIDENCE_OMITTED_BODY : undefined);
 }
 
@@ -3397,6 +3397,13 @@ function subjectValueSurvivesEvidenceLevel(subject: Subject, level: EvidenceLeve
     case 'LocatorSubject':
     case 'PageSubject':
       return true;
+    // M96 — a value subject is a `let`/`capture` binding, not part of the request/response trace
+    // `evidence` governs, so lowering the evidence level must not blank it out. Same reasoning as
+    // the two browser subjects above. (This switch has a `default`, so the compiler did *not* flag
+    // the new union member here — it would have silently masked every value assertion's detail at
+    // any level below `full`.)
+    case 'ValueSubject':
+      return true;
     default:
       return false;
   }
@@ -3417,7 +3424,7 @@ function generatorTag(valueType: string): string {
 }
 
 function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, redactor: Redactor, config: ResolvedConfig): StepResult {
-  const { value, label } = resolveSubject(step.subject, response);
+  const { value, label } = resolveSubject(step.subject, response, ctx);
   // `A4-06` (M95) — the half the checker can never reach. A subject that resolves to nothing
   // (`response.headers[…]` for an absent header, `navigate`'s final segment for an absent JSON key
   // or an out-of-range index) used to bind `undefined` and report `✓`: the run then interpolated
@@ -3596,7 +3603,7 @@ async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, 
   // `matchesSchema` below bypasses `evalMatcher` for its own different reason.
   if (step.subject.type === 'RequestSubject') return evalRequestMatcher(step.matcher, connectionError, ctx);
   if (step.quantifier) return evaluateQuantified(step, response, ctx);
-  const { value, label } = resolveSubject(step.subject, response);
+  const { value, label } = resolveSubject(step.subject, response, ctx);
   // `matches schema` (SPEC, PLAN decision 102a, enterprise arc cluster 3) fetches an external
   // OpenAPI document, so it's the one matcher `evalMatcher` (pure, synchronous by design, P#13)
   // can't evaluate itself — dispatched here instead, bypassing it entirely.
@@ -3617,26 +3624,43 @@ async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, 
 /** `any`/`all` over an array found by walking the body path (P#14, SPEC §6.3): navigate segments
  * until a value is an array, then apply the remaining segments per element. */
 function evaluateQuantified(step: ExpectStmt, response: ResponseTrace | null, ctx: EvalCtx): MatchOutcome {
-  if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion');
-  if (step.subject.type !== 'BodySubject' && step.subject.type !== 'BodyCsvSubject') {
-    throw new RuntimeError('`any`/`all` only apply to a `body.<path>` or `body csv` subject');
+  if (!quantifiable(step.subject)) {
+    throw new RuntimeError('`any`/`all` only apply to a `body.<path>`, `body csv`, or `{variable}` subject');
+  }
+  // A value subject reads the variable scope, so — unlike the two body roots — it needs no response
+  // (M96/D131). The guard therefore moved *below* the subject check rather than staying first.
+  if (step.subject.type !== 'ValueSubject' && !response) {
+    throw new RuntimeError('no response yet — an `api` step must run before this assertion');
   }
   if (step.matcher.name === 'matchesSchema') {
     throw new RuntimeError('`any`/`all` cannot be combined with `matches schema` — validate the whole array element by element isn\'t supported for contract matching');
   }
-  const path = step.subject.path;
 
   // D19.8 — the root value to walk depends on the subject: JSON body for `body.<path>`, freshly
-  // parsed CSV rows for `body csv`. Everything from here (walk remaining path, find the first
-  // array, map + `evalMatcher` over elements) is already subject-agnostic once it has a root value.
+  // parsed CSV rows for `body csv`, the bound variable for `{name.path}`. Everything from here (walk
+  // remaining path, find the first array, map + `evalMatcher` over elements) is already
+  // subject-agnostic once it has a root value, exactly as D19.8 predicted when `body csv` was folded
+  // in as the second root.
   let current: unknown;
-  if (step.subject.type === 'BodyCsvSubject') {
-    current = parseCsv(response.bodyText);
+  let path: readonly PathSegment[];
+  let subjectLabel: string;
+  if (step.subject.type === 'ValueSubject') {
+    // The head segment names the variable; the rest is the path to quantify over — which is why
+    // D131 requires the array to be reachable *inside* the braces (`{items.price}`).
+    const head = step.subject.ref[0]!;
+    current = resolveRef([head], ctx);
+    path = step.subject.ref.slice(1);
+    subjectLabel = head.kind === 'prop' ? head.name : `[${head.index}]`;
+  } else if (step.subject.type === 'BodyCsvSubject') {
+    current = parseCsv(response!.bodyText);
+    path = step.subject.path;
+    subjectLabel = 'body csv';
   } else {
-    if (response.json === undefined) throw new RuntimeError('`any`/`all` need a JSON response body (use `body text` for non-JSON)');
-    current = response.json;
+    if (response!.json === undefined) throw new RuntimeError('`any`/`all` need a JSON response body (use `body text` for non-JSON)');
+    current = response!.json;
+    path = step.subject.path;
+    subjectLabel = 'body';
   }
-  const subjectLabel = step.subject.type === 'BodyCsvSubject' ? 'body csv' : 'body';
   let i = 0;
   while (i < path.length && !Array.isArray(current)) {
     current = navigate(current, path[i]!, pathLabel(path.slice(0, i + 1)));
@@ -3674,9 +3698,24 @@ function pathLabel(path: readonly PathSegment[]): string {
   return path.map((s) => (s.kind === 'prop' ? `.${s.name}` : `[${s.index}]`)).join('');
 }
 
+/** A value subject's label: `orderId`, `items[2].price` — the bare name, **not** `{orderId}`. The
+ * braces are interpolation syntax; a failure line reports a value, and every other subject labels
+ * itself the way the report reads rather than the way the source was typed (D136). */
+function refLabel(ref: readonly PathSegment[]): string {
+  return pathLabel(ref).replace(/^\./, '');
+}
+
 // ---- subjects --------------------------------------------------------------
 
-function resolveSubject(subject: Subject, response: ResponseTrace | null): { value: unknown; label: string } {
+function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: EvalCtx): { value: unknown; label: string } {
+  // M96/`FU-11` — a value subject reads the variable scope, not the response, so it resolves
+  // *before* the response-null guard below: `expect {orderId} is greater than 0` is legal as a
+  // test's first step, and `checkResponseScopes` exempts it for the same reason. `resolveRef`
+  // (eval.ts) is the same walk `{orderId}` gets in every other position; an unbound name throws
+  // there with the message `TF030` already gave statically.
+  if (subject.type === 'ValueSubject') {
+    return { value: resolveRef(subject.ref, ctx), label: refLabel(subject.ref) };
+  }
   // A network-observation subject (`request to "…"`/`of request to "…"`, M3d) needs the browser's
   // network log + a retry-until-timeout poll, neither of which this function has access to (it
   // only ever sees the last `api` step's response) — `execSteps`'s `ExpectStmt` case routes those

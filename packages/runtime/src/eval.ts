@@ -198,7 +198,11 @@ function evalParts(parts: readonly StringPart[], ctx: EvalCtx, encodeRefs = fals
   return out;
 }
 
-function resolveRef(ref: readonly PathSegment[], ctx: EvalCtx): unknown {
+/** Walk a `{name.path[0]}` reference against the variable scope. Exported for `resolveSubject`
+ * (M96/`FU-11`), which resolves the same shape in subject position — the value subject is
+ * *defined* as "an interpolation, standing where a response subject used to", so it has to resolve
+ * through the same function or the two readings could drift. */
+export function resolveRef(ref: readonly PathSegment[], ctx: EvalCtx): unknown {
   const first = ref[0];
   if (!first || first.kind !== 'prop') throw new RuntimeError('invalid reference');
   let current = lookupVar(first.name, ctx);

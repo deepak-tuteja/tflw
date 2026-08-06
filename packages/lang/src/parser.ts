@@ -149,6 +149,7 @@ import type {
   Workload,
   WorkersDecl,
 } from './ast.js';
+import { quantifiable } from './ast.js';
 
 export interface ParseResult {
   readonly program: Program;
@@ -225,6 +226,10 @@ export const STATEMENT_KEYWORDS = [
 const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think', 'uncheck'];
 const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
+/** What may stand in subject position, for the "expected …" half of every `TF013`. `{variable}` is
+ * *not* a keyword (M96/`FU-11`, D129 — one token of lookahead distinguishes it), so it cannot be
+ * appended to the joined list; it is named separately here so the two error sites can't drift. */
+const SUBJECT_EXPECTATION = `expected a subject (${SUBJECT_KEYWORDS.join(', ')}) or a \`{variable}\``;
 const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'connects', 'fails', 'was'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
@@ -2415,8 +2420,8 @@ class Parser {
     }
     const subject = this.parseSubject();
     if (!subject) return null;
-    if (quantifier && subject.type !== 'BodySubject' && subject.type !== 'BodyCsvSubject') {
-      this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
+    if (quantifier && !quantifiable(subject)) {
+      this.badQuantifier(quantifier, subject);
       return null;
     }
     const matcher = this.parseMatcher();
@@ -2427,14 +2432,35 @@ class Parser {
     return stmt;
   }
 
+  /** `expect` and `check` each parse their own quantifier, and `check`'s bare-locator branch has a
+   * third copy of the rejection — so the rule was spelled out three times and M96 would have had to
+   * widen all three by hand. One statement now, one message. */
+  private badQuantifier(quantifier: string, subject: Subject): void {
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      `\`${quantifier}\` only applies to a \`body.<path>\`, \`body csv\`, or \`{variable}\` subject`,
+      subject.span,
+      'drop the quantifier, or quantify over a body path or a captured array (SPEC §6.3)',
+    );
+  }
+
   private parseSubject(): Subject | null {
     if (this.completionMode && this.atCompletionPoint()) {
       this.completionResult = { kind: 'subject', prefix: this.completionPrefix() };
       return null;
     }
     const tok = this.peek();
+    // M96/`FU-11` — a `{ref}` in subject position is the value subject (D129). One token of
+    // lookahead is enough: `{` cannot begin any of the keyword subjects below, so this needs no
+    // marker word. It is the last position in the grammar that did not honour FS-07's `{` rule.
+    if (tok.type === 'lbrace') {
+      const start = tok.span.start;
+      const interp = this.parseInterp();
+      if (!interp) return null;
+      return { type: 'ValueSubject', ref: interp.ref, span: this.spanFrom(start) };
+    }
     if (tok.type !== 'ident') {
-      this.error(Codes.UNKNOWN_SUBJECT, `expected a subject (${SUBJECT_KEYWORDS.join(', ')}), found ${describeToken(tok)}`, tok.span);
+      this.error(Codes.UNKNOWN_SUBJECT, `${SUBJECT_EXPECTATION}, found ${describeToken(tok)}`, tok.span);
       return null;
     }
     const start = tok.span.start;
@@ -2515,7 +2541,12 @@ class Parser {
           Codes.UNKNOWN_SUBJECT,
           `unknown subject \`${tok.value}\``,
           tok.span,
-          hint ? `did you mean \`${hint}\`?` : `expected one of: ${SUBJECT_KEYWORDS.join(', ')}`,
+          // A bare word here is either a misspelled keyword or a value the user bound and expected
+          // to assert on (M96/`FU-11`). The did-you-mean wins when it exists — `statuss` is a typo,
+          // not a variable — so the brace hint is offered only when nothing was close enough.
+          hint
+            ? `did you mean \`${hint}\`?`
+            : `expected one of: ${SUBJECT_KEYWORDS.join(', ')} — or, if \`${tok.value}\` is a value you bound with \`let\`/\`capture\`, write \`{${tok.value}}\``,
         );
         return null;
       }
@@ -2833,6 +2864,21 @@ class Parser {
     }
     const start = tok.span.start;
     const kind = this.advance().value as LocatorKind;
+    // M96/D133 #3 — every locator keyword is also a plausible variable name, and M96 *creates* this
+    // trap: before `FU-11` nobody wrote `expect text equals "hi"` meaning a value, because no value
+    // was assertable. Now they will, and `text`/`list`/`field`/… silently mean a locator instead. A
+    // missing selector string is the only signal that happens, so the reading is named here rather
+    // than left to a bare "expected a string".
+    if (!this.check('string')) {
+      const at = this.peek();
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `expected a ${kind} name/selector, e.g. \`${kind} "…"\`, found ${describeToken(at)}`,
+        at.span,
+        `\`${kind}\` here is the UI locator (SPEC §9.4) — if you meant a value you bound with \`let\`/\`capture\`, write \`{${kind}}\``,
+      );
+      return null;
+    }
     const value = this.expectString(`a ${kind} name/selector, e.g. \`${kind} "…"\``);
     if (!value) return null;
     return { type: 'Locator', kind, value, span: this.spanFrom(start) };
@@ -2976,7 +3022,7 @@ class Parser {
     if (!subject) return null;
     if (subject.type === 'LocatorSubject' && this.atStatementEnd()) {
       if (quantifier) {
-        this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
+        this.badQuantifier(quantifier, subject);
         return null;
       }
       this.error(
@@ -2987,8 +3033,8 @@ class Parser {
       );
       return null;
     }
-    if (quantifier && subject.type !== 'BodySubject' && subject.type !== 'BodyCsvSubject') {
-      this.error(Codes.UNEXPECTED_TOKEN, `\`${quantifier}\` only applies to a \`body.<path>\` or \`body csv\` subject`, subject.span, 'drop the quantifier, or use a body path (SPEC §6.3)');
+    if (quantifier && !quantifiable(subject)) {
+      this.badQuantifier(quantifier, subject);
       return null;
     }
     const matcher = this.parseMatcher();
@@ -3218,6 +3264,21 @@ class Parser {
     this.advance(); // `capture`
     const subject = this.parseSubject();
     if (!subject) return null;
+    // M96/D130 — `capture` shares `parseSubject`, so `capture {orderId} as savedId` would have
+    // become legal *for free*. It is rejected: that statement is `let savedId = {orderId}` with a
+    // second name, arriving by inheritance rather than by anyone choosing it. `capture` is an API
+    // step (SPEC §5.4) whose job is reading a response — and M95's contract (a `capture` fails when
+    // its subject resolves to nothing) cannot fire here, since an unbound `{x}` is already `TF030`
+    // at check time. An inherited guard that cannot fire is a negative control that cannot fail.
+    if (subject.type === 'ValueSubject') {
+      this.error(
+        Codes.UNKNOWN_SUBJECT,
+        '`capture` reads a value out of a response, so its subject cannot be a `{variable}`',
+        subject.span,
+        'to give an existing value a second name, write `let savedId = {orderId}` — `capture` is for values the system under test hands back (SPEC §5.4)',
+      );
+      return null;
+    }
     if (!this.expectKw('as')) return null;
     const name = this.expect('ident', 'a variable name after `as`');
     if (!name) return null;

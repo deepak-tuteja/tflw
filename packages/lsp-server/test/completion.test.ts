@@ -3,8 +3,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getCompletionContext } from '@tflw/lang';
-import { getCompletions } from '../src/index.js';
+import { getCompletionContext, parseSource, collectSymbols } from '@tflw/lang';
+import { getCompletions, variablesInScopeAt } from '../src/index.js';
 
 test('getCompletions: step kind returns keyword candidates filtered by prefix', () => {
   const source = 'test "ok"\n  e';
@@ -227,4 +227,107 @@ test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at t
     getCompletions(cleanupCtx).map((c) => c.label),
     ['cleanup'],
   );
+});
+
+// ---- M96/D134: bound variables in subject position -------------------------
+//
+// `FU-11`'s real failure mode was never that the grammar rejected `expect {orderId} …` — it was
+// that nobody discovered the form. The subject list is a wall a user hits once and routes around
+// permanently, and what they learn instead is the `actions.md` workaround. So this is load-bearing,
+// not polish, and it gets the same test treatment as the grammar.
+
+test('getCompletions: subject kind offers bound variables alongside keywords (M96/D134)', () => {
+  // A one-letter prefix, not a bare `expect ` — with a trailing space `getCompletionContext` still
+  // reports `kind: 'step'` (`atCompletionPoint` fires only on an ident token or eof). Pre-existing,
+  // and orthogonal to M96.
+  const source = 'test "ok"\n  expect s';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.equal(ctx.kind, 'subject');
+  const labels = getCompletions(ctx, { knownVariables: ['sku', 'orderId'] }).map((c) => c.label);
+  assert.ok(labels.includes('{sku}'), 'the matching variable is offered');
+  assert.ok(!labels.includes('{orderId}'), 'and a non-matching one is filtered out');
+  assert.ok(labels.includes('status'), 'and the keywords are still there');
+});
+
+test('getCompletions: a variable candidate inserts braces but filters on the bare name (M96)', () => {
+  // The label has to be `{orderId}` because that is what must end up in the buffer; the user types
+  // `or`, so without `filterText` the client would drop the entry at the first keystroke.
+  const source = 'test "ok"\n  expect or';
+  const ctx = getCompletionContext(source, source.length)!;
+  const candidates = getCompletions(ctx, { knownVariables: ['orderId'] });
+  const v = candidates.find((c) => c.label === '{orderId}');
+  assert.ok(v, 'the prefix `or` matches the bare name, not the braced label');
+  assert.equal(v!.filterText, 'orderId');
+});
+
+test('getCompletions: keywords outrank variables of the same name (M96/D134)', () => {
+  // `status` the response subject must not be outranked by someone's `let status = …`. No sortText
+  // bookkeeping does this — `{` sorts after every letter, so default lexicographic order suffices.
+  const source = 'test "ok"\n  expect stat';
+  const ctx = getCompletionContext(source, source.length)!;
+  const labels = getCompletions(ctx, { knownVariables: ['status'] }).map((c) => c.label);
+  assert.deepEqual(labels, ['status', '{status}']);
+  assert.ok(labels.indexOf('status') < labels.indexOf('{status}'));
+});
+
+test('getCompletions: no variables in scope changes nothing (M96)', () => {
+  // The control: the new branch must be inert when the caller supplies nothing, so every existing
+  // subject-completion behaviour is untouched.
+  const source = 'test "ok"\n  expect r';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['request']);
+});
+
+// ---- M96/D134: what is actually in scope at the cursor ---------------------
+
+test('variablesInScopeAt: only bindings above the cursor, in the enclosing test (M96)', () => {
+  const source = [
+    'test "a"',
+    '  let early = 1',
+    '  expect ',
+    '  let late = 2',
+    'test "b"',
+    '  let other = 3',
+    '  expect status equals 200',
+  ].join('\n');
+  const offset = source.indexOf('  expect ') + '  expect '.length;
+  const { program } = parseSource(source);
+  const symbols = collectSymbols(program, source);
+  assert.deepEqual(variablesInScopeAt(program, symbols, offset), ['early']);
+});
+
+test('variablesInScopeAt: an action sees its own parameters (M96)', () => {
+  const source = ['action create order(name, qty)', '  expect ', ''].join('\n');
+  const offset = source.indexOf('  expect ') + '  expect '.length;
+  const { program } = parseSource(source);
+  const symbols = collectSymbols(program, source);
+  assert.deepEqual(variablesInScopeAt(program, symbols, offset), ['name', 'qty']);
+});
+
+test('variablesInScopeAt: a `before each` hook binds into every test body (M96)', () => {
+  // Such a hook runs before the test whatever order it appears in the file, so its names are not
+  // subject to the above-the-cursor rule the way a `let` in the test body is.
+  const source = ['before each', '  let token = "t"', '', 'test "a"', '  expect ', ''].join('\n');
+  const offset = source.indexOf('  expect ') + '  expect '.length;
+  const { program } = parseSource(source);
+  const symbols = collectSymbols(program, source);
+  assert.deepEqual(variablesInScopeAt(program, symbols, offset), ['token']);
+});
+
+test('variablesInScopeAt: a `before file` hook does NOT bind into a test body (M96)', () => {
+  // The paired control. `before file` has its own response scope and its own variable scope at run
+  // time (`runFileHooks` builds a fresh `Map`), so offering its names would suggest a completion
+  // the checker then rejects with `TF030` — a suggestion that cannot compile is worse than none.
+  const source = ['before file', '  let setup = "s"', '', 'test "a"', '  expect ', ''].join('\n');
+  const offset = source.indexOf('  expect ') + '  expect '.length;
+  const { program } = parseSource(source);
+  const symbols = collectSymbols(program, source);
+  assert.deepEqual(variablesInScopeAt(program, symbols, offset), []);
+});
+
+test('variablesInScopeAt: outside any test/action/hook, nothing is in scope (M96)', () => {
+  const source = ['test "a"', '  let x = 1', '  expect status equals 200', ''].join('\n');
+  const { program } = parseSource(source);
+  const symbols = collectSymbols(program, source);
+  assert.deepEqual(variablesInScopeAt(program, symbols, 0), []);
 });

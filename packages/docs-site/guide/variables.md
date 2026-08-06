@@ -11,6 +11,52 @@ test "creates a widget with a random price"
   expect body.price equals {price}
 ```
 
+## Asserting on a value
+
+A bound value can stand on the **left** of a matcher, not just the right:
+
+```tflw
+test "the refresh really rotates the token"
+  api POST /auth/login body { email: "a@b.c", password: "pw" }
+  capture body.accessToken as first
+
+  api POST /auth/refresh
+  capture body.accessToken as second
+  expect {second} not equals {first}
+```
+
+Without that last line the test passes even if the API hands back the *same* token and merely
+resets its expiry — green suite, rotation broken.
+
+Paths and array quantifiers work the same as on a response body, as long as the whole path lives
+inside the braces:
+
+```tflw fragment
+capture body.items as items
+expect {items[0].price} is greater than 0
+expect all {items.price} is greater than 0        # not `{items}.price`
+```
+
+Two things to know:
+
+- **The braces are required.** `expect total equals 5` is an error, because `text`, `status`,
+  `list`, `field`, `page`, `request` and `button` are subject keywords — a bare-name rule would
+  turn `let text = "hi"` into a UI assertion without telling you. tflw says so instead.
+- **Only a name.** `expect 2 equals 2` stays ungrammatical; bind it first with
+  `let sum = {a} + {b}`.
+
+### `capture` vs. `let`
+
+Both bind a name, and the difference is where the value came from:
+
+| | reads | fails when the value is missing |
+|---|---|---|
+| `capture body.id as orderId` | the system under test | **yes** — a response that didn't carry it is a real finding |
+| `let orderId = 7` | your test | no — you supplied the value |
+
+That is why `capture {orderId} as savedId` is rejected: it reads nothing from the system under
+test, so it is just `let savedId = {orderId}` with a second name.
+
 ## `unique` vs. `random`
 
 Two generator families with opposite guarantees — see the

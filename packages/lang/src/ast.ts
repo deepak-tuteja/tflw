@@ -516,13 +516,38 @@ export type Subject =
   | RequestSubject
   | NetworkRequestSubject
   | LocatorSubject
-  | PageSubject;
+  | PageSubject
+  | ValueSubject;
+
+/** `expect {orderId} is greater than 0` / `expect all {items.price} …` (M96, `FU-11`, SPEC §6.1) —
+ * a value the test already bound with `let`/`capture`, asserted *on* rather than only compared
+ * against. Subject position accepts an interpolation and nothing else (D129): a literal or an
+ * arithmetic expression would make `expect 2 equals 2` grammatical, and a bare identifier would
+ * collide with the seven single-word locator/response keywords (`text`, `status`, `list`, …), so a
+ * user's `let text = "hi"` would silently become a UI assertion.
+ *
+ * `ref` is the same `PathSegment[]` an `Interp` carries — head segment is the bound name, the rest
+ * navigate into it. The braces are syntax, not part of the name: failure labels read `orderId` /
+ * `items[2].price`, because the report shows a value. */
+export interface ValueSubject extends Node {
+  readonly type: 'ValueSubject';
+  readonly ref: readonly PathSegment[];
+}
+
+/** Which subjects an `any`/`all` quantifier may stand in front of (SPEC §6.3, D131). Lives here, on
+ * the AST, because the parser rejects the rest and `evaluateQuantified` re-asserts the same triple
+ * at run time — two statements of one rule that M96 would otherwise have widened independently. */
+export function quantifiable(subject: Subject): subject is BodySubject | BodyCsvSubject | ValueSubject {
+  return subject.type === 'BodySubject' || subject.type === 'BodyCsvSubject' || subject.type === 'ValueSubject';
+}
 
 /** A UI locator used as an `expect`/`check` subject (`expect button "Add to cart" is visible`,
- * SPEC §9.4, M3a). Only the state/value/count matchers of §6.2 are meaningful against it —
- * `checkUiMatcherSubject` (checker.ts) rejects the value-comparison matchers (`equals`/
- * `contains`/`matches`/…) statically, the same way `RequestSubject` already restricts itself to
- * `connects`/`fails`. */
+ * SPEC §9.4, M3a). Only the state/value/count matchers of §6.2 are meaningful against it.
+ *
+ * The value-comparison matchers (`equals`/`contains`/`matches`/…) are **not** rejected statically
+ * here — `checkRequestAssertions` is the only matcher↔subject check that is (see its doc for the
+ * admission test), and `ValueSubject`'s `TF041` is the second. A locator's incompatibilities are
+ * still found at run time. */
 export interface LocatorSubject extends Node {
   readonly type: 'LocatorSubject';
   readonly locator: Locator;

@@ -911,6 +911,13 @@ response really carried, and capturing it is meaningful.
 An interpolation typo *inside* the subject (`capture header "X-{noSuchVar}" as v`) is caught earlier
 still, by `tflw check`, with the same `TF030` `expect` gives for the identical subject.
 
+**`capture` reads the system under test; `let` names a value the test already has.** Both bind a
+name, and the split between them is deliberate — it is the provenance distinction the value subject
+(§6.1) depends on. `capture` fails when its subject resolves to nothing, because a response that
+did not carry the value is a real finding; `let` cannot fail that way, because the test supplied
+the value itself. So `capture` does **not** accept a `{variable}` subject: `capture {orderId} as
+savedId` is `let savedId = {orderId}` with a second name, and the diagnostic says so.
+
 A response with multiple same-named headers (most commonly several `Set-Cookie`s) preserves every
 value rather than collapsing to whichever the Fetch API iterates last — `capture header
 "set-cookie" as token` sees all of them, newline-joined (PLAN decision 61). This raw capture stays
@@ -955,8 +962,41 @@ expect <subject> [not] <matcher> [value]
 check  <subject> [not] <matcher> [value]     # soft twin (§6.4)
 ```
 
-Subjects: API (§5.3) and UI (§9.4). The matcher set is **closed** (P#13); custom logic goes
-through the JS escape hatch (§11).
+Subjects: API (§5.3), UI (§9.4), and any **bound value** — `{name}`, `{name.path}`, `{name[0]}`.
+The matcher set is **closed** (P#13); custom logic goes through the JS escape hatch (§11).
+
+**The value subject** (M96, `FU-11`). A value named by `let`, `capture`, or an `action` parameter
+can stand on the left of a matcher:
+
+```
+capture body.token as first
+api POST /auth/refresh
+capture body.token as second
+expect {second} not equals {first}          # the token really did rotate
+```
+
+Until 0.2 this was the one thing the language could not say. A bound value was legal as an
+*operand* (`expect body.total equals {orderId}`) but never as a subject, and the documented
+workaround was to route the value through a request `body` field and assert on that — making the
+system under test carry back a value the test already had. The rule was enforced by *position*
+while the principle it claimed ("assertions are about the system under test") was about
+*provenance*: it banned captured values, which are SUT-derived by construction, and permitted
+`2 + 2` smuggled through a request body.
+
+Three rules keep the form honest:
+
+- **Braces are required.** `expect n equals 5` is an error, not a value assertion. Seven subject
+  keywords (`text`, `status`, `list`, `field`, `page`, `request`, `button`) are also plausible
+  variable names, so a bare-identifier rule would make `let text = "hi"` silently assert on a UI
+  locator. The diagnostic names the fix.
+- **Only an interpolation.** Not a literal, not arithmetic, not a call — `expect 2 equals 2` stays
+  ungrammatical. Bind it first: `let sum = {a} + {b}`, then `expect {sum} equals 10`.
+- **`capture` does not take one.** `capture {x} as y` is `let y = {x}` with extra steps; `capture`
+  reads a *response* (§5.4). See §5.4 for the split.
+
+`any`/`all` extend to it (§6.3), and a value subject needs no preceding `api` step — it reads the
+variable scope, not the response. Matchers that need a **live handle** rather than a value are
+rejected statically as `TF041` (§6.2).
 
 ### 6.2 Matcher table
 
@@ -1145,7 +1185,11 @@ expect body bytes matches file "fixtures/expected-receipt.pdf"
 ```
 expect any body.items.name equals "Widget"
 expect all body.items.status equals "active"
+expect all {items.price} is greater than 0     # over a captured array (§6.1)
 ```
+
+Three subjects can carry a quantifier: `body.<path>`, `body csv`, and a value subject. For a value
+subject the array must be reachable **inside** the braces — `{items.price}`, never `{items}.price`.
 
 ### 6.3.1 Partial-object matching — `matches subset {...}` (P#14)
 
@@ -1312,6 +1356,9 @@ table cell, and *every* matcher operand alike, so `has count {expected}` works e
 - `{ref}`, `{ref.path}`, `{ref[0]}` — an **interpolation**, always. `{stock}` is the variable
   `stock`, never a one-field object.
 - `{key: value}`, `{"key": value}`, `{}` — an **object literal**, always.
+
+Since M96 the rule is **total**: subject position was the last place `{` did not honour it, and
+`expect {orderId} …` now reads the same way as every other `{orderId}` in the language (§6.1).
 
 The discriminator is two tokens (`{`, then an ident or string, then `:`), and the rule behind it is
 a promise rather than an implementation detail: **an object literal always requires `key: value`**.
@@ -2221,8 +2268,9 @@ require reading the source.
 | `TF036` | Checker (M85/A4-10): the **active** env's own `api`/`api <service>`/`web` base URL has a host that its own `allow hosts` list (accumulated across `defaults` + the env, SPEC §3.7) does not match — a statically decidable contradiction that costs a whole run to discover otherwise, one identical runtime refusal per step for one config line. Env-scoped like every other config check (`checkSessionServices`, `knownServices`): a contradiction in an env you have not selected is not this run's problem, and a suite may legitimately keep a deliberately-blocked env as a negative-case fixture. The hint names the consequence *that key* has — only the default `api` base takes the whole suite down; a named service takes its own calls, `web` takes the browser half. Only fully literal URLs are checked: a base URL containing `{…}` names a host this pass cannot decide, and is skipped rather than guessed at (note that `resolveConfig` takes such a URL literally today — the recorded `A2-12` gap — so skipping it neither hides a live behaviour nor pre-commits this check if config interpolation ever lands). | `api "http://127.0.0.1:9099"` alongside `allow hosts "example.com"` → ``env `local`'s `api` base URL is "http://127.0.0.1:9099", whose host "127.0.0.1" is not in its own `allow hosts` (example.com)`` |
 | `TF037` | Checker (M87/A4-03, `FU-08`): a call names neither an `action` nor a JS helper, so the run dies at that step with `unknown call`. Being a *negative* claim it is made only where it is sound, which is narrower than it first looks. **The world must be closed**: every `import` resolved, and no `use` at all — a JS helper module's exports cannot be enumerated without importing it, and the checker never executes the code it checks (P#2), so one `use` line makes this undecidable for that file. **And the frame's registry must be knowable**: a `test` or hook body, never an `action` body. Calls bind late, against the *entry* file's registry, so a shared action may legitimately call a name only its importer defines; a `test` is safe because an imported file's tests never run (`buildRegistry` takes only its `actions`). `TF038` is unaffected by either condition — it only ever fires on a name that already resolved. | `creat order("Widget")` beside `action create order(name)` → ``unknown call `creat order(...)` — no `action` or JS helper (`use`) defines it`` with `did you mean `create order`?` |
 | `TF038` | Checker (M87/A4-03): a call resolves to a known `action` but passes the wrong number of arguments. Sound regardless of `use`, unlike `TF037` — the runtime resolves actions before helpers (`execCall`), and an action name is unique across the whole registry (`TF035` and `buildRegistry` both refuse a duplicate), so a name that matches a declared action is that action and nothing else. | `create order("Widget", "extra")` against `action create order(name)` → `action "create order" expects 1 argument, got 2` |
-| `TF039` | Checker (M87/A4-16, `FU-12`): an `expect`/`check` on a response-backed subject (`status`/`duration`/`header`/`body …`/`request`), or any `capture`, appears before the first `api`/`wait until api` step **in its own response scope**. The scope is exactly one `execSteps` frame in the interpreter, which is narrower than it looks: a `test`/`action`/hook body is one, and so is each nested `within` / `switch to new tab` / `download` body. An `action` gets its own — calling one never publishes its response to the caller (that is `FU-12`) — and a `before` hook's response is likewise invisible to the test body. UI subjects (a locator, `page`) and `request to "…"` network observations are excluded: the interpreter routes those away from the response path entirely, so they never needed one. | `expect status equals 200` as a test's first step → ``no response yet — an `api` step must run before this assertion`` |
+| `TF039` | Checker (M87/A4-16, `FU-12`): an `expect`/`check` on a response-backed subject (`status`/`duration`/`header`/`body …`/`request`), or any `capture`, appears before the first `api`/`wait until api` step **in its own response scope**. The scope is exactly one `execSteps` frame in the interpreter, which is narrower than it looks: a `test`/`action`/hook body is one, and so is each nested `within` / `switch to new tab` / `download` body. An `action` gets its own — calling one never publishes its response to the caller (that is `FU-12`) — and a `before` hook's response is likewise invisible to the test body. UI subjects (a locator, `page`) and `request to "…"` network observations are excluded: the interpreter routes those away from the response path entirely, so they never needed one. A `{variable}` subject (M96) is excluded for the same reason — it reads a `let`/`capture` binding, and an *unbound* one is already `TF030`. | `expect status equals 200` as a test's first step → ``no response yet — an `api` step must run before this assertion`` |
 | `TF040` | Checker (M87, found while fixing `A4-03`): a call is written somewhere its value is never computed. The interpreter evaluates a `CallExpr` in exactly two places — a bare call step, and the *whole* right-hand side of a `let` — because running one is asynchronous and `evalValue` (which computes every other value) is synchronous by design. A call anywhere else parses, checks, and then silently yields nothing: `body { id: create thing() }` drops the field and sends `{}`, `[create thing()]` sends `[null]`, and `give create thing()` returns nothing — each at a green `✓`, testing a request nobody wrote. Reported alone for such a call: `TF037`/`TF038` are suppressed there, since the position is the thing to fix first. | `api POST /orders body { id: create thing() }` → ``a call in this position is never evaluated`` with `` bind it first — `let id = create thing()` — then use `{id}` here `` |
+| `TF041` | Checker (M96, `FU-11`): a `{variable}` subject stands somewhere a value cannot. Two cases. **A live-handle matcher** — `is visible`/`hidden`/`enabled`/`disabled`/`checked`, `has value`, `matches snapshot`, `has no … a11y violations`, `connects`/`fails`, `was made` — needs a browser element, a page, a connection attempt or an observed request; a bound value has no such state to observe, whatever its type. The *type*-constrained matchers (`equals`, `contains`, `matches "<regex>"`/`subset`/`schema`/`file`, `is greater/less than`, `has count`) are deliberately **not** checked here: a mismatch there is a runtime error for `body.<path>` today, and a captured value must not be stricter than the response it came from. **Inside `wait until api`** — that block re-issues its request and re-evaluates its expects each poll, and a value subject cannot change between polls, so the assertion either passes on the first attempt or times out blaming an endpoint that never controlled it. Distinct from `TF014` (an *unrecognised* matcher): `is visible` is recognised, just misplaced. | `expect {orderId} is visible` → ``is visible` needs a live browser element, page, or request — not a value` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

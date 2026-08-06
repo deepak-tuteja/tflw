@@ -39,6 +39,7 @@ export {
   checkWorkloadTests,
   checkCalls,
   checkResponseScopes,
+  checkValueSubjects,
 } from './checker.js';
 export { hostMatchesAllowPattern } from './allowHostsPattern.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
