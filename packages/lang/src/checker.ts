@@ -28,6 +28,7 @@ import type {
 import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import { hostMatchesAllowPattern } from './allowHostsPattern.js';
+import { MATCHERS, MATCHER_ROW_BY_NAME, type SubjectKind } from './spec-data.js';
 import { parseStringParts } from './parser.js';
 
 /** What a caller of `checkProgram` knows about the project around the file being checked. Each
@@ -76,19 +77,37 @@ export interface KnownAction {
  * Cross-file checks that need the *config* tree rather than a program (`validateConfig`,
  * `checkSessionServices`) stay separate — they run once per project, not once per test file.
  */
+/**
+ * Order a pass's worth of diagnostics the way a reader reads the file (`A4-14`, M97b).
+ *
+ * Composed output is grouped by *check function*, which is an implementation detail of this file
+ * leaking into every consumer: `tflw check` prints a line-9 error above a line-8 one, and the LSP's
+ * problem panel lists them the same way. It was cheap to leave alone while one milestone touched
+ * one pass; M97b adds a pass and rewires two composition points, so the alternative was re-touching
+ * this same output later purely to reorder it.
+ *
+ * Sorted by offset only, and `sort` is stable — so two diagnostics on the same span keep the pass
+ * order they were composed in, which is the one place that order still carries meaning (`TF037` is
+ * suppressed alongside `TF040`, `TF041` before `TF042`).
+ */
+function byPosition(diags: Diagnostic[]): Diagnostic[] {
+  return diags.sort((a, b) => a.span.start.offset - b.span.start.offset);
+}
+
 export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
-  return [
+  return byPosition([
     ...(opts.knownServices ? checkServices(program, opts.knownServices) : []),
     ...checkDataTables(program),
     ...(opts.knownSessions ? checkSessions(program, opts.knownSessions) : []),
-    ...checkActionDecls(program),
+    ...checkActionDecls(program, opts),
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
     ...checkValueSubjects(program),
+    ...checkMatcherSubjects(program),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkResponseScopes(program),
-  ];
+  ]);
 }
 
 /** Keys valid only in `defaults`, only in `env`, or in both. */
@@ -318,6 +337,76 @@ export function checkSessionServices(sessions: readonly SessionDecl[], knownServ
   return diags;
 }
 
+/**
+ * `A4-04` (M97b, D142) — every step-level pass a `session` body gets, composed once.
+ *
+ * A `session` body is a body of steps: it makes requests, captures out of them, asserts on them.
+ * At run time it is one `execSteps` frame, exactly like a hook. But it lives in `tflw.config`
+ * rather than a `.tflw` file, so it never reached `checkProgram`, and the only thing anyone had
+ * ever wired to it was `checkSessionServices`. `expect status is visible`, a `{typo}`, an
+ * assertion before the first request — all silent, in the one block whose failure takes every test
+ * that names it down with it.
+ *
+ * **Not a synthetic `Program`.** Wrapping the body in a fake `TestDecl` would make it visible to
+ * `checkWorkloadTests` (which reasons about `workload`/`table`, neither of which a session has)
+ * and would give `TF039` a test's framing rather than a hook's. That trades a missing check for a
+ * wrong one — a false positive in config, which every run reads.
+ *
+ * Every pass, triaged one at a time (`sessionPassCoverage.test.ts` holds this list to the source,
+ * so the next pass added cannot skip the question — and proves each row below actually fires,
+ * because a manifest claiming coverage nothing exercises is worse than no manifest):
+ *
+ *  - `checkServices` — already covered, via `checkSessionServices`; folded in here so there is one
+ *    entry point rather than two things a caller must remember.
+ *  - `checkUnknownVariables` — the row's own repro. A session body is its own scope: it can bind
+ *    with `let`/`capture` and read those back, and nothing from a test reaches it.
+ *  - `checkRequestAssertions` — it runs `api` steps followed by `expect`s, so both halves apply.
+ *  - `checkResponseScopes` — `runSession` is one `execSteps` frame, so `TF039` applies exactly as
+ *    it does to a hook.
+ *  - `checkMatcherSubjects` — the pass added by this same milestone, and the reason the coverage
+ *    test earns its place: it would otherwise have shipped with sessions out of scope.
+ *  - `checkValueSubjects` — a session captures and then asserts on what it captured, so `TF041`
+ *    applies here exactly as in a test. This one was nearly filed N/A on the assumption that
+ *    sessions do not use value subjects; being made to write the *reason* is what caught it.
+ *  - `checkCalls` — **inverted**. In a test file a call resolves against the file's `action`s; the
+ *    config dialect has no `action` declarations at all (`TF021` bans `test`, and there is nothing
+ *    to declare one against), so a call here can *never* resolve. It is not "unknown", it is
+ *    impossible, and the hint has to say the second thing.
+ *  - `checkDataTables`, `checkSessions`, `checkActionDecls`, `checkWorkloadTests` — N/A: they walk
+ *    `program.tests`/`program.actions`, which a session has none of. Recorded as N/A with that
+ *    reason rather than silently omitted.
+ */
+export function checkSessionBody(sessions: readonly SessionDecl[], knownServices: readonly string[]): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const session of sessions) {
+    for (const step of session.body) checkStepService(step, knownServices, diags);
+    checkStepSequence(session.body, new Set<string>(), diags);
+    checkRequestAssertionsInSteps(session.body, diags);
+    checkResponseScopeInSteps(session.body, diags);
+    checkValueSubjectsInSteps(session.body, diags);
+    checkMatcherSubjectsInSteps(session.body, diags);
+    checkNoCallsInSteps(session.body, session.name, diags);
+  }
+  return byPosition(diags);
+}
+
+/** `checkCalls` inverted for a session body (M97b, D142) — see `checkSessionBody`. */
+function checkNoCallsInSteps(steps: readonly Step[], sessionName: string, diags: Diagnostic[]): void {
+  for (const step of steps) {
+    if (step.type === 'CallStmt') {
+      diags.push({
+        code: Codes.UNKNOWN_CALL,
+        severity: 'error',
+        message: `\`${step.call.name}\` can't be called from a \`session\` block`,
+        span: step.span,
+        hint: `\`action\`s are declared in \`.tflw\` files, and \`tflw.config\` has no access to them — so no call from \`session ${sessionName}\` can ever resolve. Write the steps out here, or move them into a \`before file\` hook in the test file that needs them`,
+      });
+    } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+      checkNoCallsInSteps(step.body, sessionName, diags);
+    }
+  }
+}
+
 function checkStepService(step: Step, knownServices: readonly string[], diags: Diagnostic[]): void {
   if (step.type === 'ApiStep') checkService(step.service, step.span, knownServices, diags);
   else if (step.type === 'WaitUntilApiStmt') checkService(step.request.service, step.span, knownServices, diags);
@@ -380,13 +469,16 @@ export function checkDataTables(program: Program): Diagnostic[] {
  * Reported at the *second* declaration, pointing back at the first: the first one is not the
  * mistake, and a rename/delete happens at the duplicate.
  */
-export function checkActionDecls(program: Program): Diagnostic[] {
+export function checkActionDecls(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
   const diags: Diagnostic[] = [];
-  const seen = new Map<string, ActionDecl>();
+  /** Where a name was first claimed, phrased for a hint — mirrors `buildRegistry`'s insertion
+   *  order exactly: this file's own actions in declaration order, then each import in turn. */
+  const seen = new Map<string, string>();
+
   for (const action of program.actions) {
     const first = seen.get(action.name);
     if (!first) {
-      seen.set(action.name, action);
+      seen.set(action.name, `at line ${action.span.start.line}`);
       continue;
     }
     diags.push({
@@ -394,9 +486,41 @@ export function checkActionDecls(program: Program): Diagnostic[] {
       severity: 'error',
       message: `duplicate action "${action.name}"`,
       span: action.span,
-      hint: `already declared at line ${first.span.start.line} — actions are file-scoped, so rename this one or delete it`,
+      hint: `already declared ${first} — actions are file-scoped, so rename this one or delete it`,
     });
   }
+
+  // `B5-02`, half 1 (M97b, D143): the imported case. `buildRegistry` has always refused a name that
+  // arrives twice — including once locally and once through an `import` — while `TF035` saw only
+  // the same-file half. So the manifest, the checker and its test all agreed with each other and
+  // all missed what the runtime enforces, which is the finding that stated D138's thesis before it
+  // was adopted.
+  //
+  // Gated on `importedActions !== undefined`, the same `undefined`-vs-`[]` distinction `checkCalls`
+  // turns on: `[]` means the imports were read and brought nothing, `undefined` means they were
+  // never read, and a name cannot be called a duplicate of something nobody looked at. (`use` is
+  // irrelevant here — it brings JS helpers, whose own duplicate rule is a separate throw.)
+  if (opts.importedActions !== undefined) {
+    const importSpan = new Map(program.imports.map((imp) => [imp.path.value, imp.span]));
+    for (const imported of opts.importedActions) {
+      const first = seen.get(imported.name);
+      const where = imported.from ?? 'an import';
+      if (!first) {
+        seen.set(imported.name, `by \`import "${where}"\``);
+        continue;
+      }
+      const span = importSpan.get(imported.from ?? '');
+      if (!span) continue; // no line to point at — silence beats a diagnostic with a wrong span
+      diags.push({
+        code: Codes.DUPLICATE_ACTION,
+        severity: 'error',
+        message: `duplicate action "${imported.name}" (imported from "${where}")`,
+        span,
+        hint: `already declared ${first} — actions are file-scoped and an \`import\` shares that one namespace, so rename one of them. This is what \`tflw run\` refuses to start on`,
+      });
+    }
+  }
+
   return diags;
 }
 
@@ -624,43 +748,46 @@ function readsResponse(subject: Subject): boolean {
  */
 export function checkResponseScopes(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
-
-  const scope = (steps: readonly Step[]): void => {
-    let established = false;
-    for (const step of steps) {
-      switch (step.type) {
-        case 'ApiStep':
-        case 'WaitUntilApiStmt':
-          established = true;
-          break;
-        case 'ExpectStmt':
-          if (!established && readsResponse(step.subject)) {
-            diags.push(noResponse(step.subject, step.span, step.soft ? 'check' : 'expect'));
-          }
-          break;
-        case 'CaptureStmt':
-          // Every `capture` reads the response — `resolveSubject` rejects the two subjects that
-          // don't (`page`, `request to "…"`) outright as uncapturable, so there is no subject for
-          // which a `capture` before an `api` step is meaningful.
-          if (!established) diags.push(noResponse(step.subject, step.span, 'capture'));
-          break;
-        case 'WithinBlock':
-        case 'SwitchToNewTabBlock':
-        case 'DownloadBlock':
-          // Its own `execSteps` frame, so its own response scope — an `api` step *outside* the
-          // block does not carry into it, and one inside does not carry back out.
-          scope(step.body);
-          break;
-        default:
-          break;
-      }
-    }
-  };
-
+  const scope = (steps: readonly Step[]): void => checkResponseScopeInSteps(steps, diags);
   for (const test of program.tests) scope(test.body);
   for (const action of program.actions) scope(action.body);
   for (const hook of program.hooks) scope(hook.body);
   return diags;
+}
+
+/** One response scope — one `execSteps` frame — walked in isolation (M97b, D142). Lifted out of
+ *  `checkResponseScopes` so a `session` body, which is exactly one such frame at run time, can be
+ *  checked without inventing a synthetic `TestDecl` to wrap it in. */
+function checkResponseScopeInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
+  let established = false;
+  for (const step of steps) {
+    switch (step.type) {
+      case 'ApiStep':
+      case 'WaitUntilApiStmt':
+        established = true;
+        break;
+      case 'ExpectStmt':
+        if (!established && readsResponse(step.subject)) {
+          diags.push(noResponse(step.subject, step.span, step.soft ? 'check' : 'expect'));
+        }
+        break;
+      case 'CaptureStmt':
+        // Every `capture` reads the response — `resolveSubject` rejects the two subjects that
+        // don't (`page`, `request to "…"`) outright as uncapturable, so there is no subject for
+        // which a `capture` before an `api` step is meaningful.
+        if (!established) diags.push(noResponse(step.subject, step.span, 'capture'));
+        break;
+      case 'WithinBlock':
+      case 'SwitchToNewTabBlock':
+      case 'DownloadBlock':
+        // Its own `execSteps` frame, so its own response scope — an `api` step *outside* the
+        // block does not carry into it, and one inside does not carry back out.
+        checkResponseScopeInSteps(step.body, diags);
+        break;
+      default:
+        break;
+    }
+  }
 }
 
 function noResponse(subject: Subject, span: Span, kind: 'expect' | 'check' | 'capture'): Diagnostic {
@@ -695,7 +822,17 @@ function noResponse(subject: Subject, span: Span, kind: 'expect' | 'check' | 'ca
  */
 export function checkRequestAssertions(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
-  const walk = (steps: readonly Step[]): void => {
+  for (const test of program.tests) checkRequestAssertionsInSteps(test.body, diags);
+  for (const action of program.actions) checkRequestAssertionsInSteps(action.body, diags);
+  for (const hook of program.hooks) checkRequestAssertionsInSteps(hook.body, diags);
+  return diags;
+}
+
+/** One body's worth of `request`-assertion rules (M97b, D142). Lifted out of
+ *  `checkRequestAssertions` for the same reason as `checkResponseScopeInSteps`: a `session` body
+ *  runs the same `api`-then-`expect` sequences and was getting none of these checks. */
+function checkRequestAssertionsInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
+  {
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i]!;
       if (step.type === 'WaitUntilApiStmt') {
@@ -713,7 +850,7 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
         continue;
       }
       if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
-        walk(step.body); // M3a/M3b: these block-shaped steps can nest any step, incl. `api`/`expect`.
+        checkRequestAssertionsInSteps(step.body, diags); // M3a/M3b: these block-shaped steps can nest any step, incl. `api`/`expect`.
         continue;
       }
       if (step.type !== 'ApiStep') continue;
@@ -746,11 +883,7 @@ export function checkRequestAssertions(program: Program): Diagnostic[] {
         }
       }
     }
-  };
-  for (const test of program.tests) walk(test.body);
-  for (const action of program.actions) walk(action.body);
-  for (const hook of program.hooks) walk(hook.body);
-  return diags;
+  }
 }
 
 /**
@@ -803,8 +936,12 @@ const LIVE_HANDLE_MATCHERS: ReadonlyMap<MatcherName, string> = new Map([
  */
 export function checkValueSubjects(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
+  forEachExpect(program, (expect, inWaitUntil) => checkOneValueSubject(expect, inWaitUntil, diags));
+  return diags;
+}
 
-  const checkExpect = (expect: ExpectStmt, inWaitUntil: boolean): void => {
+function checkOneValueSubject(expect: ExpectStmt, inWaitUntil: boolean, diags: Diagnostic[]): void {
+  {
     if (expect.subject.type !== 'ValueSubject') return;
     const name = refLabel(expect.subject.ref);
     if (inWaitUntil) {
@@ -827,16 +964,40 @@ export function checkValueSubjects(program: Program): Diagnostic[] {
         hint: `\`{${name}}\` is a value you bound with \`let\`/\`capture\`; it has no on-screen or on-the-wire state to observe. Value matchers (\`equals\`, \`contains\`, \`is greater than\`, \`has count\`, \`matches …\`) do apply to it (SPEC §6.2)`,
       });
     }
-  };
+  }
+}
 
+/** One body's `{variable}` subjects (M97b, D142) — a `session` can `capture` and then assert on
+ *  what it captured, so `TF041` applies there exactly as it does in a test. */
+function checkValueSubjectsInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
+  forEachExpectInSteps(steps, (expect, inWaitUntil) => checkOneValueSubject(expect, inWaitUntil, diags));
+}
+
+/**
+ * Every `expect`/`check` in a program, including the ones nested inside `within`/`switch to new
+ * tab`/`download` bodies and the ones `wait until api` re-evaluates each poll (`inWaitUntil`).
+ *
+ * Extracted (M97b) because `checkValueSubjects` and `checkMatcherSubjects` are two views of one
+ * rule — see `checkMatcherSubjects` — and were about to hold two copies of this traversal. A block
+ * type added to the AST and to only one copy is the drift this milestone exists to make impossible;
+ * spending a helper to have one place to forget is cheaper than a test proving two walks agree.
+ */
+function forEachExpect(program: Program, visit: (expect: ExpectStmt, inWaitUntil: boolean) => void): void {
+  for (const test of program.tests) forEachExpectInSteps(test.body, visit);
+  for (const action of program.actions) forEachExpectInSteps(action.body, visit);
+  for (const hook of program.hooks) forEachExpectInSteps(hook.body, visit);
+}
+
+/** The same traversal over one body — what a `session` needs (M97b, D142). */
+function forEachExpectInSteps(steps0: readonly Step[], visit: (expect: ExpectStmt, inWaitUntil: boolean) => void): void {
   const walk = (steps: readonly Step[]): void => {
     for (const step of steps) {
       switch (step.type) {
         case 'ExpectStmt':
-          checkExpect(step, false);
+          visit(step, false);
           break;
         case 'WaitUntilApiStmt':
-          for (const expect of step.expects) checkExpect(expect, true);
+          for (const expect of step.expects) visit(expect, true);
           break;
         case 'WithinBlock':
         case 'SwitchToNewTabBlock':
@@ -848,11 +1009,103 @@ export function checkValueSubjects(program: Program): Diagnostic[] {
       }
     }
   };
+  walk(steps0);
+}
 
-  for (const test of program.tests) walk(test.body);
-  for (const action of program.actions) walk(action.body);
-  for (const hook of program.hooks) walk(hook.body);
+/** Which `SubjectKind` an AST subject is (M97b, D140). Exhaustive over `Subject` by construction —
+ *  the `satisfies` on the map means a new subject type fails to compile until it is classified,
+ *  which is the only way this stays sound as the grammar grows. */
+const SUBJECT_KINDS = {
+  StatusSubject: 'value',
+  DurationSubject: 'value',
+  HeaderSubject: 'value',
+  BodySubject: 'value',
+  BodyTextSubject: 'value',
+  BodyBytesSubject: 'value',
+  BodyCsvSubject: 'value',
+  BodyPdfTextSubject: 'value',
+  ValueSubject: 'value',
+  LocatorSubject: 'locator',
+  PageSubject: 'page',
+  RequestSubject: 'request',
+  NetworkRequestSubject: 'network-request',
+} satisfies Record<Subject['type'], SubjectKind>;
+
+/** How to say each kind in a diagnostic, in the words SPEC §6.2's table uses. */
+const KIND_LABELS: Readonly<Record<SubjectKind, string>> = {
+  value: 'a value',
+  locator: 'a UI locator',
+  page: '`page`',
+  request: '`request`',
+  'network-request': '`request to "…"`',
+};
+
+const MATCHER_ROWS = new Map(MATCHERS.map((m) => [m.id, m]));
+
+/**
+ * `A4-15` and `A4-11` (M97b, D140) — a matcher standing against a subject kind it cannot read, and
+ * an `any`/`all` quantifier on a matcher that cannot be applied per element. One code (`TF042`),
+ * because both say the same thing: *this matcher does not belong here*.
+ *
+ * SPEC §1 and §17 called this "a documented gap … a post-v0.1 item" and pointed at the runtime.
+ * That was honest but expensive: `expect status is visible` linted green, ran, and failed with
+ * `matcher \`visible\` is not supported on an API subject` — after the request, in the middle of a
+ * suite, for a mistake visible in the source text. Both SPEC statements are updated with this pass.
+ *
+ * **The rule is over subject *kind*, never value shape**, and the distinction is the whole design.
+ * `contains`' documented "strings, arrays" is not decidable here — `body.msg` could be either, or
+ * neither, and only the response says which. Reading `subjects` as a whitelist over shape as well
+ * would start rejecting correct programs, which is `A4-05`'s false-positive failure arriving as the
+ * fix for `A4-11`. So every value-bearing subject is one kind, and shape stays a runtime error.
+ *
+ * **Value subjects are `TF041`'s, not this pass's.** `checkValueSubjects` already rejects exactly
+ * the matchers whose rows exclude `value`, with a message written for that case
+ * (`` `{orderId}` is a value you bound with `let`/`capture` ``). The two are one rule with two
+ * presentations, and `matcherSubjects.test.ts` asserts the sets are identical rather than leaving
+ * that a coincidence M96 and M97b happened to share.
+ */
+export function checkMatcherSubjects(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  forEachExpect(program, (expect) => checkOneMatcherSubject(expect, diags));
   return diags;
+}
+
+/** One body's expects (M97b, D142) — a `session` asserts too, and got none of this. */
+function checkMatcherSubjectsInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
+  forEachExpectInSteps(steps, (expect) => checkOneMatcherSubject(expect, diags));
+}
+
+function checkOneMatcherSubject(expect: ExpectStmt, diags: Diagnostic[]): void {
+  {
+    const row = MATCHER_ROWS.get(MATCHER_ROW_BY_NAME[expect.matcher.name] ?? '');
+    if (!row) return;
+
+    // `TF041` owns this pairing, and says it better. Skipping is what keeps one mistake to one
+    // diagnostic — the alternative is every misplaced value subject reported twice.
+    if (expect.subject.type !== 'ValueSubject') {
+      const kind = SUBJECT_KINDS[expect.subject.type];
+      if (!(row.subjects as readonly SubjectKind[]).includes(kind)) {
+        diags.push({
+          code: Codes.MATCHER_SUBJECT_MISMATCH,
+          severity: 'error',
+          message: `${row.syntax} can't be used on ${KIND_LABELS[kind]}`,
+          span: expect.span,
+          hint: `${row.syntax} applies to ${row.appliesTo}. Either change the subject, or pick a matcher that reads ${KIND_LABELS[kind]} (SPEC §6.2)`,
+        });
+        return;
+      }
+    }
+
+    if (expect.quantifier && !row.quantifiable) {
+      diags.push({
+        code: Codes.MATCHER_SUBJECT_MISMATCH,
+        severity: 'error',
+        message: `\`${expect.quantifier}\` can't be combined with ${row.syntax}`,
+        span: expect.span,
+        hint: `${row.syntax} reads an external document, so it judges the subject whole rather than element by element. Drop the \`${expect.quantifier}\`, or assert on one element (SPEC §6.3)`,
+      });
+    }
+  }
 }
 
 const BROWSER_STEP_TYPES = new Set<Step['type']>([
@@ -1261,12 +1514,16 @@ function refLabel(ref: readonly PathSegment[]): string {
  * `{ref}` interpolation whose *base* name is provably never bound anywhere reachable in its scope
  * — a `let`, a `capture`, an action's own parameter, or (for a test with an *inline* `with each`
  * table) a declared column. File-backed tables are skipped (their columns aren't known statically
- * — SPEC §4.3) and matcher↔subject compatibility stays a runtime concern (SPEC §1's "static scope"
- * note) — this only catches the single most common authoring slip, a typo'd variable name, as a
- * compile-time squiggle instead of a runtime surprise.
+ * — SPEC §4.3) — this only catches the single most common authoring slip, a typo'd variable name,
+ * as a compile-time squiggle instead of a runtime surprise. (Matcher↔subject compatibility used to
+ * be disclaimed here as a runtime concern; `checkMatcherSubjects` decides it as of M97b.)
  *
  * Scope model (mirrors the interpreter, `runtime/src/interpreter.ts`):
- *  - `before file`/`after file` hooks run in their own isolated scope — checked independently.
+ *  - `before file` hooks share one scope in declaration order, and `after file` hooks share a
+ *    second — mirroring `runFileHooks`, which threads one scope through every hook of one label
+ *    and is called twice with nothing carried between the two. A `let` in the first `before file`
+ *    is visible to the second; one bound in `before file` is *not* visible in `after file`
+ *    (`A4-05`, D139).
  *  - `before`(each)/`after`(each) hooks share one scope with every test in the file; a `let` in
  *    `before` carries into that test's body and its `after` (P#10/19) — so, conservatively, every
  *    `before`(each) hook is checked (and its bindings accumulated) before each test, and every
@@ -1280,9 +1537,27 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
 
   const beforeEachHooks = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
   const afterEachHooks = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
-  const fileHooks = program.hooks.filter((h) => h.scope === 'file');
 
-  for (const hook of fileHooks) checkStepSequence(hook.body, new Set(), diags);
+  // `A4-05` (M97b, D139) — file hooks are grouped by `when`, not lumped together by `scope`.
+  //
+  // This used to be `hooks.filter(h => h.scope === 'file')` handing each member a fresh empty set,
+  // which differs from the interpreter in two ways at once: `runFileHooks` threads *one* scope
+  // through every hook of one label, and is called twice with nothing shared between the two. So a
+  // second `before file` reading the first's `let` was reported as an unknown variable — a false
+  // positive on code that runs correctly, which under clause 1 of the checker's contract is the
+  // one thing a checker must never do.
+  //
+  // The fix is deliberately **not** one shared set for all four hooks. That would trade this false
+  // positive for a false negative: a `let` bound in `before file` and read in `after file` really
+  // is unresolvable at run time, and the over-strict version catches it today by accident. Two
+  // accumulating sets keep that true positive and drop the false one. The each-scope path below
+  // was already right, and is the pattern here rather than the exception.
+  for (const when of ['before', 'after'] as const) {
+    const bound = new Set<string>();
+    for (const hook of program.hooks) {
+      if (hook.scope === 'file' && hook.when === when) checkStepSequence(hook.body, bound, diags);
+    }
+  }
 
   for (const test of program.tests) {
     // A file-backed table's columns aren't known statically (SPEC §4.3 — same reason

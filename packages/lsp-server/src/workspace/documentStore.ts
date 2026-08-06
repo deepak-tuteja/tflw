@@ -22,7 +22,7 @@ import {
   collectSymbols,
   collectConfigSymbols,
   checkProgram,
-  checkSessionServices,
+  checkSessionBody,
   checkAllowHostsCoversBaseUrls,
   type ConfigFile,
   type Diagnostic,
@@ -94,7 +94,7 @@ export class DocumentStore {
         const resolved = resolveConfig(parsed.config, envBlock);
         diagnostics = [
           ...diagnostics,
-          ...checkSessionServices(parsed.config.sessions, Object.keys(resolved.services)),
+          ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services)),
           // `TF036` (M85) — same env scope as everything else here: the env this workspace
           // resolves to, not every env the file declares.
           ...checkAllowHostsCoversBaseUrls(parsed.config, envBlock),

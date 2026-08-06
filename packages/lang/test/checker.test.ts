@@ -326,6 +326,61 @@ test('checkUnknownVariables: a `before file`/`after file` hook has its own isola
   assert.match(diags[0]!.message, /unknown variable "token"/);
 });
 
+test('checkProgram: diagnostics come back in source order, not grouped by pass (A4-14)', () => {
+  // Composed output used to be ordered by *check function*, so `tflw check` printed a line-9 error
+  // above a line-8 one and the LSP's problem panel listed them the same way — this file's internal
+  // structure leaking into every consumer.
+  // Control: drop the `byPosition` wrapper and this comes back [30, 42, 37] — pass order, which is
+  // three errors reported in three different orders from the one a reader reads them in.
+  const { program } = parseSource(
+    `test "t"\n  api GET /health\n  expect status is visible\n  expect body.x equals {nope}\n  get thing()\n`,
+  );
+  const diags = checkProgram(program);
+  assert.deepEqual(
+    diags.map((d) => d.span.start.line),
+    [...diags.map((d) => d.span.start.line)].sort((a, b) => a - b),
+  );
+  assert.ok(diags.length >= 3, `expected several diagnostics to order, got ${diags.length}`);
+});
+
+// ---- `A4-05` (M97b, D139): file hooks group by `when`, not by `scope` ------
+//
+// Three tests, and the middle one is why the obvious fix is wrong. Merging all file hooks into one
+// shared set would make the first pass and the second fail — trading a false positive for a false
+// negative on code that genuinely breaks at run time.
+
+test('checkUnknownVariables: a second `before file` sees the first\'s bindings (A4-05)', () => {
+  // The filed repro. `runFileHooks` threads one scope through every hook of one label, so this runs
+  // correctly — and the checker used to hand each hook a fresh empty set and call it unknown.
+  // Control: on reverted source this returns 1 diagnostic, `unknown variable "token"`.
+  const { program } = parseSource(
+    `before file\n  let token = "abc"\n  api GET /health\n\nbefore file\n  api GET /orders/{token}\n\ntest "ok"\n  api GET /health\n`,
+  );
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables: `after file` still cannot see a `before file` binding (A4-05)', () => {
+  // The true positive the over-strict version caught by accident, kept deliberately. `runFileHooks`
+  // is called twice with a fresh `scope` each time, so this really is unresolvable.
+  // Control: use one shared set for all file hooks — the natural over-correction — and this
+  // silently returns [], which is the false negative D139 exists to refuse.
+  const { program } = parseSource(
+    `before file\n  let token = "abc"\n  api GET /health\n\nafter file\n  api GET /orders/{token}\n\ntest "ok"\n  api GET /health\n`,
+  );
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.message, /unknown variable "token"/);
+});
+
+test('checkUnknownVariables: a second `after file` sees the first\'s bindings too (A4-05)', () => {
+  // The same rule on the other label — `runFileHooks` does not care which one it was handed.
+  // Control: split on `when === 'before'` only and this stays broken while the first test passes.
+  const { program } = parseSource(
+    `after file\n  let token = "abc"\n  api GET /health\n\nafter file\n  api GET /orders/{token}\n\ntest "ok"\n  api GET /health\n`,
+  );
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
 test('checkUnknownVariables: an action\'s own scope never sees a caller\'s or another action\'s variables', () => {
   const { program } = parseSource(
     `action create order(name)\n  api POST /orders body { name: {name} }\n  give name\n\naction other()\n  api GET /orders/{name}\n  give true\n`,
@@ -529,6 +584,62 @@ test('checkActionDecls: two actions with the same name is flagged (TF035) at the
   assert.match(diags[0]!.message, /duplicate action "fetch it"/);
   assert.deepEqual(diags[0]!.span, program.actions[1]!.span, 'reported at the duplicate, not the original');
   assert.match(diags[0]!.hint ?? '', /already declared at line 1/);
+});
+
+// -- `B5-02` half 1 (M97b, D143): TF035 covers the imported case the runtime always refused ------
+//
+// The finding stated D138's thesis before it was adopted: `spec-data.ts` documented `TF035` as "two
+// `action`s in one file share a name", which was exactly as narrow as the implementation — so the
+// manifest, the checker and this test all agreed with each other and all missed what
+// `buildRegistry` enforces. `tflw run` has always refused to start on these.
+
+const imported = (name: string, from: string, arity = 0) => ({ name, arity, from });
+
+test('checkActionDecls: a local action colliding with an imported one is flagged (B5-02)', () => {
+  // Control: on reverted source this returns [] — and `tflw run` then dies at registry-build time
+  // with `duplicate action "login" (imported from "./shared/auth.tflw")`, before any test runs.
+  const { program } = parseSource('import "./shared/auth.tflw"\n\naction login()\n  give 1\n\ntest "t"\n  login()\n');
+  const diags = checkActionDecls(program, { importedActions: [imported('login', './shared/auth.tflw')] });
+  assert.equal(diags.length, 1);
+  assert.equal(diags[0]!.code, 'TF035');
+  assert.match(diags[0]!.message, /duplicate action "login" \(imported from "\.\/shared\/auth\.tflw"\)/);
+  assert.deepEqual(diags[0]!.span, program.imports[0]!.span, 'reported at the `import`, which is the line that brought the collision in');
+  assert.match(diags[0]!.hint ?? '', /already declared at line 3/);
+});
+
+test('checkActionDecls: two imports providing the same name is flagged (B5-02)', () => {
+  // `resolveImportedActions` deliberately does not dedupe — its own doc says a cross-file duplicate
+  // is "`TF035`'s business, not this function's". Until now nothing took it up on that.
+  // Control: on reverted source, [].
+  const { program } = parseSource('import "./a.tflw"\nimport "./b.tflw"\n\ntest "t"\n  api GET /health\n');
+  const diags = checkActionDecls(program, {
+    importedActions: [imported('login', './a.tflw'), imported('login', './b.tflw')],
+  });
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.hint ?? '', /already declared by `import "\.\/a\.tflw"`/);
+  assert.deepEqual(diags[0]!.span, program.imports[1]!.span, 'reported at the second import');
+});
+
+test('checkActionDecls: an unresolved import world reports no imported duplicate (B5-02)', () => {
+  // The `undefined`-vs-`[]` rule, and the soundness half of this change. `undefined` means the
+  // imports were never read — a name cannot be a duplicate of something nobody looked at, and
+  // guessing here would be a false positive in the one direction clause 1 forbids.
+  //
+  // Honest note on the control, because the first one written for this was wrong: today the two
+  // cases coincide *structurally* — with `undefined` there is nothing to iterate, so removing the
+  // explicit guard changes no behaviour, and a control that mutates the guard does not fail. This
+  // test is therefore not a control on the guard; it pins the *contract*, and it fails the day
+  // someone gives the unresolved case a fallback world to compare against (reading the filesystem
+  // here, or defaulting to a cached registry). That is the change worth catching, and it is the
+  // only one this can catch.
+  const { program } = parseSource('import "./shared/auth.tflw"\n\naction login()\n  give 1\n\ntest "t"\n  login()\n');
+  assert.deepEqual(checkActionDecls(program, {}), []);
+  assert.deepEqual(checkActionDecls(program, { importedActions: [] }), []);
+});
+
+test('checkActionDecls: an imported name that collides with nothing is never flagged (B5-02)', () => {
+  const { program } = parseSource('import "./shared/auth.tflw"\n\naction checkout()\n  give 1\n\ntest "t"\n  checkout()\n');
+  assert.deepEqual(checkActionDecls(program, { importedActions: [imported('login', './shared/auth.tflw')] }), []);
 });
 
 test('checkActionDecls: distinct action names, and a name shared with a test, are never flagged', () => {

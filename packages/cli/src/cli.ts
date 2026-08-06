@@ -19,7 +19,7 @@ import {
   parseConfigSource,
   renderDiagnostics,
   checkProgram,
-  checkSessionServices,
+  checkSessionBody,
   checkAllowHostsCoversBaseUrls,
   suggest,
   detectReuse,
@@ -924,7 +924,7 @@ async function loadAndValidate(
   // and with the same scope — it is a `tflw.config` rule about the env that was just selected, not
   // about every env the file happens to declare (see `checkAllowHostsCoversBaseUrls`).
   const configEnvDiags = [
-    ...checkSessionServices(parsedConfig.config.sessions, Object.keys(resolved.services)),
+    ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services)),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
   ];
   if (configEnvDiags.length > 0) {

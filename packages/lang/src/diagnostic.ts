@@ -86,6 +86,7 @@ export const Codes = {
   NO_RESPONSE_YET: 'TF039',
   CALL_NOT_EVALUATED: 'TF040',
   VALUE_SUBJECT_INVALID: 'TF041',
+  MATCHER_SUBJECT_MISMATCH: 'TF042',
 } as const;
 
 // ---------------------------------------------------------------------------

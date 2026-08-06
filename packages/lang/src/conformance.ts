@@ -468,8 +468,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'duplicate action',
     decidable: 'static',
     checkerCode: 'TF035',
-    filedRow: 'B5-02',
-    note: 'the runtime rejects the *imported* duplicate too; `TF035` sees only same-file. Widened in M97b (D143 half 1) — this is the live example of a code and a filed row on one row',
+    note: 'Closed by M97b (D143 half 1). Was the live example of a code and a filed row on one row: `TF035` existed but saw only the same-file half, while this throw refuses the imported duplicate too. `B5-02`\'s halves 2 and 3 are about `refactor apply`, not this rule, and stay open under that row',
   },
   {
     id: 'import-unreadable',
@@ -584,15 +583,15 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'interpreter.ts',
     excerpt: '\\`any\\`/\\`all\\` are not supported against a \\`request to',
     decidable: 'static',
-    filedRow: 'M97a-07',
-    note: 'quantifier × subject, both in the AST — named in the M97 plan triage as unfiled; folded into D140’s pass in M97b',
+    checkerCode: 'TF010',
+    note: 'Already decided, and `M97a-07` was wrong to say otherwise — M97b withdrew it. The *parser* rejects this via `quantifiable()` before the checker ever runs (`expect any request to "…" was made` is `TF010`), and the AST comment on `quantifiable` says as much: the parser rejects, and `evaluateQuantified` re-asserts the same triple at run time. Filing it as an unchecked gap read the throw as evidence of absence. A runtime throw for a rule the parser already enforces is defence in depth, not a hole',
   },
   {
     id: 'matcher-vs-request-to',
     file: 'interpreter.ts',
     excerpt: "isn't valid against \\`request to",
     decidable: 'static',
-    filedRow: 'M97a-08',
+    checkerCode: 'TF042',
     note: 'matcher × subject kind. `TF031` covers two *other* request rules (inside `wait until api`, and combining with `connects`/`fails`) — not this one',
   },
   {
@@ -615,7 +614,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'interpreter.ts',
     excerpt: "isn't valid against \\`page\\`",
     decidable: 'static',
-    filedRow: 'A4-15',
+    checkerCode: 'TF042',
     note: 'matcher × subject kind; folded into D140’s pass in M97b',
   },
   {
@@ -629,8 +628,8 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'matches-file-body-bytes-only',
     file: 'interpreter.ts',
     excerpt: '\\`matches file\\` is only valid on a',
-    decidable: 'static',
-    filedRow: 'M97a-10',
+    decidable: 'needs-values',
+    
     note: 'matcher × subject kind. M96’s D132 deliberately widened this to admit the value subject, which is why D145 sequences M96 before this manifest — the row would otherwise have been written and immediately rewritten',
   },
   {
@@ -655,7 +654,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'interpreter.ts',
     excerpt: '\\`any\\`/\\`all\\` cannot be combined with \\`matches schema\\`',
     decidable: 'static',
-    filedRow: 'A4-11',
+    checkerCode: 'TF042',
     note: 'quantifier × matcher, both in the AST; folded into D140’s pass in M97b',
   },
   {
@@ -753,7 +752,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'matcher.ts',
     excerpt: 'is only valid on a \\`request\\` subject',
     decidable: 'static',
-    filedRow: 'M97a-17',
+    checkerCode: 'TF042',
     note: 'matcher × subject **kind** — the canonical D140 rule, and the reason the scan had to leave `interpreter.ts`',
   },
   {
@@ -761,7 +760,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'matcher.ts',
     excerpt: 'is not supported on an API subject',
     decidable: 'static',
-    filedRow: 'M97a-18',
+    checkerCode: 'TF042',
     note: 'matcher × subject kind',
   },
   {
@@ -769,7 +768,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'matcher.ts',
     excerpt: 'is not valid on a \\`request\\` subject',
     decidable: 'static',
-    filedRow: 'M97a-19',
+    checkerCode: 'TF042',
     note: 'matcher × subject kind',
   },
   {
@@ -826,7 +825,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'uiMatcher.ts',
     excerpt: 'is not supported on a UI locator subject',
     decidable: 'static',
-    filedRow: 'M97a-21',
+    checkerCode: 'TF042',
     note: 'matcher × subject kind — the UI twin of `matcher-request-only`',
   },
 ];

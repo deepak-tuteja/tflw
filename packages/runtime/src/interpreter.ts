@@ -3226,9 +3226,11 @@ function evaluateNetworkExpect(step: ExpectStmt, matched: CapturedNetworkRequest
   const subject = step.subject;
   const label = networkSubjectLabel(subject, urlPattern);
   if (subject.type === 'NetworkRequestSubject') {
-    // Existence-only; `wasMade` is the only matcher meaningful here. The checker doesn't statically
-    // enforce this (SPEC §1: matcher↔subject compatibility stays a runtime concern, mirroring every
-    // other subject) — a mismatched matcher gets a direct, clear error instead of nonsense output.
+    // Existence-only; `wasMade` is the only matcher meaningful here. As of M97b the checker rejects
+    // this before the run (`TF042`, D140) — it is decidable from the AST, and this comment used to
+    // cite SPEC §1's "stays a runtime concern", which was true when written and is no longer. The
+    // throw stays: `checkMatcherSubjects` is the checker's half of one rule, and the runtime does
+    // not assume it ran (a `tflw run` on a suite is not obliged to have passed `tflw check` first).
     if (step.matcher.name !== 'wasMade') {
       throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`request to "…"\` — only \`was made\` (SPEC §9.7)`);
     }

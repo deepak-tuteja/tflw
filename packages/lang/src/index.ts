@@ -30,6 +30,7 @@ export {
   type KnownAction,
   validateConfig,
   checkServices,
+  checkSessionBody,
   checkSessionServices,
   checkAllowHostsCoversBaseUrls,
   checkDataTables,
@@ -41,6 +42,7 @@ export {
   checkCalls,
   checkResponseScopes,
   checkValueSubjects,
+  checkMatcherSubjects,
 } from './checker.js';
 export { hostMatchesAllowPattern } from './allowHostsPattern.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
