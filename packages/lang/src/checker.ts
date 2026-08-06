@@ -122,6 +122,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkReferencedFiles(program, opts),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
+    ...checkActionCycles(program),
     ...checkResponseScopes(program),
   ]);
 }
@@ -706,6 +707,90 @@ export function checkCalls(program: Program, opts: ProgramCheckOptions = {}): Di
 
 function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+// ---------------------------------------------------------------------------
+// Action call cycles (M97d, D141 — review row `A4-13`).
+// ---------------------------------------------------------------------------
+
+/** Every action a cycle passes through, in call order, ending back where it started (`a → b → a`),
+ * paired with the call site that closes it — which is where the diagnostic points, because that is
+ * the one line a reader can delete to break the cycle. */
+interface CallCycle {
+  readonly path: readonly string[];
+  readonly closedBy: CallExpr;
+}
+
+/** `A4-13`: an `action` that can reach itself. **tflw has no conditionals** — there is no `IfStmt`
+ * in the AST and no branching keyword in the parser — so a cycle in the call graph is not
+ * *potentially* infinite but unconditionally so: no input terminates it, and the only way such a
+ * run can end is by failing. That is what makes rejecting it statically *sound*, which is the
+ * checker contract's first clause (D137) and the reason this is an error rather than a warning.
+ *
+ * **Same-file only, and deliberately not gated on `checkCalls`' closed world.** An edge here joins
+ * two actions declared in *this* file, and a same-file name can never be shadowed by an imported
+ * one: `buildRegistry` throws on a duplicate (`interpreter.ts:1759`) and `TF035` — widened to the
+ * imported case in M97b — reports it statically. So the edge is real no matter what the file's
+ * `import`s or `use`s turn out to hold, and requiring a closed world would have skipped this check
+ * in every suite that loads a JS helper. Cross-file cycles are a filed follow-up; they need
+ * `KnownAction` to carry a body, and until then they are the runtime guard's job (D141). */
+export function checkActionCycles(program: Program): Diagnostic[] {
+  const declared = new Map<string, ActionDecl>();
+  // First declaration wins, as in `checkCalls`/`buildRegistry`; a second is `TF035`'s to report.
+  for (const action of program.actions) if (!declared.has(action.name)) declared.set(action.name, action);
+
+  // Only calls the interpreter actually evaluates are edges — `let x = f() + "y"` never runs `f`,
+  // so treating it as one would reject a program the runtime is perfectly happy to complete.
+  const evaluated = evaluatedCalls(program);
+  const edges = new Map<string, CallExpr[]>();
+  for (const [name, action] of declared) {
+    const out: CallExpr[] = [];
+    eachCall(action, (call) => {
+      if (evaluated.has(call) && declared.has(call.name)) out.push(call);
+    });
+    edges.set(name, out);
+  }
+
+  const cycles: CallCycle[] = [];
+  const reported = new Set<string>();
+  const finished = new Set<string>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+
+  const walk = (name: string): void => {
+    stack.push(name);
+    onStack.add(name);
+    for (const call of edges.get(name) ?? []) {
+      if (onStack.has(call.name)) {
+        const path = [...stack.slice(stack.indexOf(call.name)), call.name];
+        // One diagnostic per cycle, not one per member: `a → b → a` is reachable from both `a` and
+        // `b`, and reporting it twice would make a two-line mistake look like two mistakes. The key
+        // is the member *set*, so the same cycle entered at a different point is recognised.
+        const key = [...new Set(path)].sort().join(' ');
+        if (!reported.has(key)) {
+          reported.add(key);
+          cycles.push({ path, closedBy: call });
+        }
+        continue;
+      }
+      if (!finished.has(call.name)) walk(call.name);
+    }
+    onStack.delete(name);
+    stack.pop();
+    finished.add(name);
+  };
+  // Declaration order, so which member of a cycle gets named first is stable across runs.
+  for (const name of declared.keys()) if (!finished.has(name)) walk(name);
+
+  return cycles.map(({ path, closedBy }) => ({
+    code: Codes.CALL_CYCLE,
+    severity: 'error' as const,
+    message: `this call completes a cycle: \`${path.join(' → ')}\``,
+    span: closedBy.span,
+    hint: path.length === 2
+      ? 'tflw has no conditionals, so an action that calls itself has no exit — extract the steps that should run once into a second action'
+      : 'tflw has no conditionals, so an action that can reach itself has no exit — extract the shared steps into a third action that calls neither',
+  }));
 }
 
 // ---------------------------------------------------------------------------

@@ -88,6 +88,7 @@ export const Codes = {
   VALUE_SUBJECT_INVALID: 'TF041',
   MATCHER_SUBJECT_MISMATCH: 'TF042',
   MISSING_FILE: 'TF043',
+  CALL_CYCLE: 'TF044',
 } as const;
 
 // ---------------------------------------------------------------------------

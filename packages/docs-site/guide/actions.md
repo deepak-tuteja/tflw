@@ -77,6 +77,38 @@ A `check` failing *inside* an imported action propagates back to the caller as s
 caller's own later steps still run, and the whole test only fails at the end, exactly as if the
 `check` had been written inline.
 
+## An action can't call itself
+
+Not directly, and not the long way round:
+
+```console
+error[TF044]: this call completes a cycle: `retry login → retry login`
+ --> login.tflw:2:3
+  |
+2 |   retry login()
+  |   ^^^^^^^^^^^^^
+  |
+  = help: tflw has no conditionals, so an action that calls itself has no exit — extract
+          the steps that should run once into a second action
+```
+
+Most languages let you write this and trust you to add a base case. tflw can't, because it has no
+`if` — no branching construct of any kind. There is nowhere to put the base case, so a cycle here
+isn't *potentially* infinite, it always is, and `tflw check` refuses it before the run rather than
+letting it end in a stack overflow.
+
+The checker sees cycles that stay inside one file. One that leaves through an `import` and comes
+back is caught when you run it, reported the same way:
+
+```console
+✗ t (1 ms)
+    action "a" failed: this call completes a cycle: `a → b → a` — an action that reaches itself never terminates
+```
+
+If you were reaching for recursion to repeat work, use `with each` over a data table
+([Data & hooks](/guide/data-and-hooks)) or a `workload` ([Load testing](/guide/load-testing)) —
+both loop a known number of times, which is the shape a test suite actually wants.
+
 ## Finding & extracting duplication automatically
 
 Writing steps by hand and only extracting an `action` once you've noticed the duplication yourself

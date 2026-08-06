@@ -534,9 +534,18 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
   {
     id: 'action-failed',
     file: 'interpreter.ts',
-    excerpt: 'action "${call.name}" failed:',
+    excerpt: 'renderActionFailure(path, inner.root), path, inner.root',
     decidable: 'propagation',
-    note: 'D141: this is the site whose unbounded prefix wrapping produces a 15,465-character single-line error on a cycle. M97d bounds it',
+    note: 'D141: was `action "${call.name}" failed: ${exec.error}` — prefixing its own caller\'s already-prefixed string, unbounded, which is what turned one failing step into a 14,505-character line at 671 frames. M97d made the frames an array and renders the string once, elided past 6',
+  },
+  {
+    id: 'call-cycle',
+    file: 'interpreter.ts',
+    excerpt: 'an action that reaches itself never terminates',
+    decidable: 'static',
+    checkerCode: 'TF044',
+    filedRow: 'M97d-01',
+    note: 'D141: `TF044` decides the same-file case; this guard catches the residue — a cycle that leaves the file through an `import` and comes back, which the checker cannot see because `KnownAction` discards imported bodies. Detecting a repeat on the live call stack rather than counting to a depth limit is what lets both halves name the same cycle in the same notation',
   },
   {
     id: 'unknown-call',

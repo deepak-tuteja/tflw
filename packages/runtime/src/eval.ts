@@ -21,9 +21,21 @@ export interface BrowserAttemptContext {
 }
 
 export class RuntimeError extends Error {
-  constructor(message: string) {
+  /** The `action` frames this failure surfaced through, outermost first — empty for a failure that
+   * happened directly in a test, a hook or a session body (M97d, D141). It exists so `execCall` can
+   * record its frame *structurally* instead of prefixing `action "x" failed: ` onto the message at
+   * every level: that prefixing was unbounded, and a 671-frame recursion turned one failing step
+   * into a 14,505-character single line, a 32 KB `results.json` and a 55 KB `report.html`. */
+  readonly actionPath: readonly string[];
+  /** The failure's own message, with no action framing around it — what `renderActionFailure`
+   * re-renders against `actionPath` one frame up. Equal to `message` when `actionPath` is empty. */
+  readonly rootMessage: string;
+
+  constructor(message: string, actionPath: readonly string[] = [], rootMessage: string = message) {
     super(message);
     this.name = 'RuntimeError';
+    this.actionPath = actionPath;
+    this.rootMessage = rootMessage;
   }
 }
 
@@ -74,6 +86,12 @@ export interface EvalCtx {
    * directly without one) — a browser step reaching that case throws a clear internal error
    * instead of a null-deref (see `requireBrowserCtx` in `interpreter.ts`). */
   readonly browser?: BrowserAttemptContext;
+  /** The `action` names currently executing, outermost first — `execCall` pushes one frame per
+   * call and refuses a call whose name is already on it (M97d, D141). Absent means "no frames yet",
+   * which is the right answer at every root: a test body, a hook, a session's own run and a load
+   * iteration all begin with an empty stack, and the one child context that isn't a root
+   * (`within`) is built by spreading its parent, so it inherits. */
+  readonly callStack?: readonly string[];
 }
 
 export function evalValue(value: Value, ctx: EvalCtx): unknown {

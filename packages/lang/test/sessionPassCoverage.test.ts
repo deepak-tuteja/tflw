@@ -93,6 +93,11 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
   checkDataTables: { verdict: 'n/a', reason: 'walks `program.tests` for `with each` columns; a session has no tests and no table' },
   checkSessions: { verdict: 'n/a', reason: 'validates that a `test … as <name>` names a declared session — about tests referencing sessions, the opposite direction' },
   checkActionDecls: { verdict: 'n/a', reason: 'walks `program.actions`; the config dialect declares none (see `checkCalls` above)' },
+  checkActionCycles: {
+    verdict: 'n/a',
+    reason:
+      'M97d/D141. Both halves of the pass are unreachable from a session: it walks `program.actions`, which the config dialect never declares, and its edges are calls, which a session body can never make at all — `runSession` builds an empty registry by construction, so `checkCalls` inverted (`unknown call` is *always* right there) is the rule that applies, and it already does. A cycle needs two frames; a session body cannot get to one',
+  },
   checkWorkloadTests: { verdict: 'n/a', reason: 'reasons about `workload`/`threshold` on a `test`; a session has neither' },
   checkReferencedFiles: {
     verdict: 'n/a',

@@ -44,6 +44,7 @@ export {
   checkValueSubjects,
   checkMatcherSubjects,
   checkReferencedFiles,
+  checkActionCycles,
   collectFileReferences,
   fileReferenceDrift,
   type FileReference,
