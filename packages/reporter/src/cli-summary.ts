@@ -1,5 +1,6 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
+import { MIN_REDACTABLE_LENGTH } from '@tflw/runtime';
 import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 import { describeWorkload } from './workload-format.js';
@@ -32,6 +33,14 @@ export function renderCliSummary(report: RunReport, color = true): string {
   // Never a silent trade-off: `insecure true` disables TLS certificate verification for the whole
   // run (decision 78) — every summary says so, loudly, in red, not just in `tflw.config`.
   if (report.insecure) lines.push(`${c.red}${c.bold}⚠ insecure: true${c.reset}${c.dim} — TLS certificate verification was disabled for this run${c.reset}`);
+  // `A12-01`, same principle one row down: a value declared secret but too short to substring-mask
+  // safely (decision 64's `MIN_REDACTABLE_LENGTH`) ships in the clear. The floor is deliberate; the
+  // silence was not. Naming the vars is the whole point — "some secret was too short" would send a
+  // reader hunting through their env, and the value itself must obviously never be printed.
+  if (report.unmaskableSecrets?.length) {
+    const names = report.unmaskableSecrets.join(', ');
+    lines.push(`${c.red}${c.bold}⚠ unmasked secret${report.unmaskableSecrets.length === 1 ? '' : 's'}: ${names}${c.reset}${c.dim} — shorter than ${MIN_REDACTABLE_LENGTH} characters, so too short to mask without corrupting unrelated report text; ${report.unmaskableSecrets.length === 1 ? 'its value appears' : 'their values appear'} in full above and in report.html${c.reset}`);
+  }
   if (report.selfDiagnosis) lines.push(generatorLine(report.selfDiagnosis, c));
   if (report.inconclusive) lines.push(`${c.red}${c.bold}⚠ inconclusive${c.reset}${c.dim} — tflw itself is the bottleneck; workload numbers above reflect tflw contending with itself, not the system under test${c.reset}`);
   if (report.aborted) lines.push(`${c.red}${c.bold}⚠ aborted${c.reset}${c.dim} — ${report.abortedMessage ?? 'stopped before its planned duration elapsed'}${c.reset}`);

@@ -538,3 +538,35 @@ test('a report whose assets were written out beside it stops calling itself one 
   assert.match(footerOf(renderReportHtml(report, hrefs)), /copy the whole report directory, not just this file/);
   assert.doesNotMatch(footerOf(renderReportHtml(report)), /copy the whole report directory/, 'an inlined-only report really is one file');
 });
+
+// A12-01. `report.html` is the artifact that gets attached to a ticket, which makes it the one
+// sink where "a value you told me was a secret is sitting in this page in the clear" has to be
+// said in the header rather than left for the reader to discover. Modelled on `insecure: true`'s
+// banner, and asserted the same way — on the element, not a bare substring, since the embedded
+// stylesheet mentions `.insecure-warning` unconditionally.
+test('report.html warns in its header when a declared secret was too short to mask, naming the vars (A12-01)', () => {
+  const html = renderReportHtml({ ...baseReport, unmaskableSecrets: ['SHORTPW', 'PIN'] });
+  const banner = html.match(/<div class="insecure-warning">⚠ unmasked secrets[\s\S]*?<\/div>/)?.[0];
+  assert.ok(banner, 'the header must carry an unmasked-secret banner');
+  assert.match(banner, /<code>SHORTPW<\/code> and <code>PIN<\/code>/, 'every named var, not just the first');
+  assert.match(banner, /shorter than 6 characters/);
+  // The value itself must never appear here — printing it would be the very leak being warned about.
+  assert.doesNotMatch(banner, /hunt2/);
+});
+
+test('report.html says nothing about unmasked secrets when there are none (A12-01)', () => {
+  assert.doesNotMatch(renderReportHtml(baseReport), /unmasked secret/);
+  assert.doesNotMatch(renderReportHtml({ ...baseReport, unmaskableSecrets: [] }), /unmasked secret/);
+});
+
+test('the unmasked-secret banner is singular for one var (A12-01)', () => {
+  const html = renderReportHtml({ ...baseReport, unmaskableSecrets: ['PIN'] });
+  assert.match(html, /⚠ unmasked secret: <code>PIN<\/code>/);
+  assert.match(html, /Its value appears below in full/);
+});
+
+test('a var name with HTML metacharacters is escaped in the banner, not injected (A12-01)', () => {
+  const html = renderReportHtml({ ...baseReport, unmaskableSecrets: ['<img src=x onerror=alert(1)>'] });
+  assert.doesNotMatch(html, /<img src=x/, 'a name reaching the header must be escaped like every other value in this document');
+  assert.match(html, /&lt;img src=x/);
+});

@@ -499,6 +499,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   }
 
   const passed = results.filter((r) => r.ok).length;
+  const unmaskableSecrets = redactor.unmaskableNames();
   const rawReport: RunReport = {
     ok: results.every((r) => r.ok),
     env: config.envName,
@@ -512,6 +513,10 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     now: runClock.toISOString(),
     insecure: config.insecure,
     evidenceLevel: config.evidenceLevel,
+    // `A12-01` — read after every test has run, so a secret registered by the last step still
+    // counts. Omitted entirely when empty: the overwhelmingly common run has nothing to say here,
+    // and an always-present empty array would push the field into every fixture and artifact.
+    ...(unmaskableSecrets.length > 0 ? { unmaskableSecrets } : {}),
     ...(opts.browserManager ? { browserEngine: opts.browserManager.engine } : {}),
     ...(selfDiagnosis ? { selfDiagnosis, inconclusive } : {}),
     ...(aborted ? { aborted, abortedMessage } : {}),

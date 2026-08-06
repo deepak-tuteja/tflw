@@ -2099,6 +2099,11 @@ function mergeReports(
   const passed = tests.filter((t) => t.ok).length;
   const diagnoses = reports.map((r) => r.selfDiagnosis).filter((d): d is SelfDiagnosis => d !== undefined);
   const abortedReport = reports.find((r) => r.aborted);
+  // `A12-01`: union, not first-wins. The CLI shares one `Redactor` across every file, so in practice
+  // each file's report already carries the whole set — but a file that finished before a later one
+  // registered a short secret snapshotted an earlier state, and under `--workers N` the finishing
+  // order is not the starting order. Deduplicated, insertion-ordered.
+  const unmaskableSecrets = [...new Set(reports.flatMap((r) => r.unmaskableSecrets ?? []))];
   return {
     ok: tests.every((t) => t.ok),
     env: envName,
@@ -2113,6 +2118,7 @@ function mergeReports(
     insecure,
     evidenceLevel,
     browserEngine,
+    ...(unmaskableSecrets.length > 0 ? { unmaskableSecrets } : {}),
     ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
     ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),
   };

@@ -188,6 +188,77 @@ test('a short `require env` value is not substring-redacted, so it never corrupt
   assert.equal(r.redact('order id 3001 shipped'), 'order id 3001 shipped', 'a short secret must not blot out an unrelated matching field');
 });
 
+// A12-01. The test above and its unit twin assert the *intended* half of decision 64 — an unrelated
+// field equal to a short secret is not corrupted — and they are correct. Nobody wrote the mirror
+// assertion, because from the author's side declining to mask is the feature. It is a feature that
+// has to be audible: the tool knew the value was declared a secret, knew it chose not to protect
+// it, and said nothing. These four cover the whole rule, including the two things it must *not* say.
+test('a value too short to mask is named by `unmaskableNames`, so the run can say so out loud (A12-01)', () => {
+  const r = new Redactor();
+  r.register('SHORTPW', 'hunt2'); // 5 chars — below the floor, ships in the clear
+  assert.deepEqual(r.unmaskableNames(), ['SHORTPW']);
+});
+
+test('a maskable secret is not named as unmaskable — the warning must not cry wolf (A12-01)', () => {
+  const r = new Redactor();
+  r.register('LONGPW', 'hunter2extended');
+  assert.deepEqual(r.unmaskableNames(), [], 'a value the redactor actually masks must never appear in the warning');
+});
+
+test('an empty value is not named as unmaskable — there is nothing to hide (A12-01)', () => {
+  const r = new Redactor();
+  r.register('UNSET', '');
+  assert.deepEqual(r.unmaskableNames(), [], 'an unset/empty var leaks nothing, so warning about it would be noise');
+});
+
+test('a name carrying both a short and a maskable value is not named — it is masked where it matters (A12-01)', () => {
+  const r = new Redactor();
+  r.register('token', '7'); // e.g. a `capture` inside a loop, first iteration
+  r.register('token', 'eyJhbGciOiJIUzI1NiJ9');
+  assert.deepEqual(r.unmaskableNames(), [], 'pointing a reader at a name that *is* masked in the report they are holding is worse than silence');
+});
+
+test('a short `env()` secret is named in the report, and a long one alongside it is not (A12-01)', async () => {
+  const server = await startFixtureServer({ '/echo': (_req, res) => json(res, 200, { ok: true }) });
+
+  const source = `test "one short secret, one long one"
+  api POST /echo body { a: env(SHORTPW), b: env(LONGPW) }
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const environ = { ...process.env, SHORTPW: 'hunt2', LONGPW: 'hunter2extended' };
+  const config = { ...testConfig(server.baseUrl), requiredEnv: ['SHORTPW', 'LONGPW'] };
+  const { report } = await runProgram(program, config, { source, environ });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.deepEqual(report.unmaskableSecrets, ['SHORTPW'], 'the run must name the var it declined to protect, and only that one');
+
+  // The claim the warning makes has to be true, or it is worse than no warning at all: the short
+  // value really is in the clear, and the long one really is masked.
+  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  assert.match(apiStep.request!.body ?? '', /hunt2/, 'the short secret must genuinely be present — otherwise this test proves nothing');
+  assert.doesNotMatch(apiStep.request!.body ?? '', /hunter2extended/);
+
+  await server.close();
+});
+
+test('a run with nothing too short to mask omits `unmaskableSecrets` entirely (A12-01)', async () => {
+  const server = await startFixtureServer({ '/echo': (_req, res) => json(res, 200, { ok: true }) });
+
+  const source = `test "only a maskable secret"
+  api POST /echo body { a: env(LONGPW) }
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const environ = { ...process.env, LONGPW: 'hunter2extended' };
+  const config = { ...testConfig(server.baseUrl), requiredEnv: ['LONGPW'] };
+  const { report } = await runProgram(program, config, { source, environ });
+
+  assert.equal(report.unmaskableSecrets, undefined, 'the overwhelmingly common run must add nothing to the report');
+
+  await server.close();
+});
+
 test('a short secret is never registered end-to-end, so an unrelated response field that happens to equal it renders untouched (decision 64)', async () => {
   const server = await startFixtureServer({ '/orders/3001': (_req, res) => json(res, 200, { orderId: 3001, status: 'shipped' }) });
 
