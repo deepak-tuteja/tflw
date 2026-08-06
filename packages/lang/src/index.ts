@@ -12,6 +12,7 @@ export * from './token.js';
 export * from './ast.js';
 export * from './diagnostic.js';
 export * from './spec-data.js';
+export { RUNTIME_RULES, type RuntimeRule, type Decidability } from './conformance.js';
 export { lex, type LexResult } from './lexer.js';
 export {
   parse as parseTokens,
