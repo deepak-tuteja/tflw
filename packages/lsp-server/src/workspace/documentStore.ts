@@ -14,7 +14,7 @@
 // services/sessions resolved from the *project's* `tflw.config` on disk (not itself being edited in
 // the common case).
 
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { dirname, basename } from 'node:path';
 import {
   parseSource,
@@ -29,7 +29,7 @@ import {
   type Program,
   type SymbolTable,
 } from '@tflw/lang';
-import { ConfigError, selectEnv, resolveConfig, resolveImportedActions } from '@tflw/runtime';
+import { ConfigError, selectEnv, resolveConfig, resolveImportedActions, resolveMissingFiles } from '@tflw/runtime';
 import { findProjectRoot } from './project.js';
 import { loadProjectConfig } from './configResolution.js';
 
@@ -134,7 +134,18 @@ export class DocumentStore {
       const open = [...this.docs.values()].find((d) => d.absPath === absPath);
       return open ? open.text : readFile(absPath, 'utf8');
     });
-    const diagnostics = [...parsed.diagnostics, ...checkProgram(parsed.program, { knownServices, knownSessions, importedActions })];
+    // `TF043` (M97c, D144) — same shape, same reason, and the same open-buffer rule: a file the
+    // author created in another tab and has not saved yet exists as far as this editor session is
+    // concerned, and squiggling `import "./shared/orders.tflw"` red while that very file sits open
+    // two tabs over is the "the editor disagrees with the CLI" gap M60 closed, running backwards.
+    const missingFiles = await resolveMissingFiles(doc.absPath, parsed.program, async (absPath) => {
+      if ([...this.docs.values()].some((d) => d.absPath === absPath)) return true;
+      return stat(absPath).then(
+        () => true,
+        () => false,
+      );
+    });
+    const diagnostics = [...parsed.diagnostics, ...checkProgram(parsed.program, { knownServices, knownSessions, importedActions, missingFiles })];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), baseDir };
   }
 

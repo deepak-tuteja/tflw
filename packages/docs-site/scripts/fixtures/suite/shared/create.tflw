@@ -1,0 +1,10 @@
+# doc-truth fixture: the `shared/create.tflw` every `import "./shared/create.tflw"` in the guide
+# names. It exists so `TF043` (M97c) is satisfied honestly — and, because a readable import closes
+# `checkCalls`' world, so that a doc sample calling `create widget(...)` is checked against a real
+# declaration instead of being waved through. If a guide page starts calling this with a different
+# arity, that page now fails rather than shipping a call nobody could run.
+action create widget(name, price)
+  api POST /widgets body { name: {name}, price: {price} }
+  expect status equals 201
+  capture body.id as widgetId
+  give widgetId

@@ -41,6 +41,9 @@ import {
 import {
   runProgram,
   resolveImportedActions,
+  resolveMissingFiles,
+  type ReadText,
+  type PathExists,
   runLoadShard,
   mergeLoadShardReports,
   spliceLoadReportIntoRunReport,
@@ -960,6 +963,11 @@ async function loadAndValidate(
       knownServices: Object.keys(resolved.services),
       knownSessions,
       importedActions: await resolveImportedActions(file, parsed.program),
+      // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
+      // `importedActions` does: `@tflw/lang` does no I/O. Before this, `tflw check` printed `no
+      // problems found` for a file whose `import` named nothing, and `tflw run` then printed
+      // `✗ t.tflw (crashed) (0 ms)` and not one word more, `--verbose` included.
+      missingFiles: await resolveMissingFiles(file, parsed.program),
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
@@ -1844,6 +1852,9 @@ async function refactorCommand(argv: string[]): Promise<number> {
     byPath.set(occ.path, list);
   }
 
+  // Every byte this command would write, built in memory first — nothing reaches disk above the
+  // re-check below (`B5-02` half 3, M97c/D143).
+  const pending = new Map<string, string>([[actionFileAbs, hint.actionSource]]);
   const changedFiles: string[] = [];
   for (const [path, occs] of byPath) {
     const abs = join(cwd, path);
@@ -1863,16 +1874,73 @@ async function refactorCommand(argv: string[]): Promise<number> {
     edits.sort((a, b) => b.start - a.start);
     for (const e of edits) source = source.slice(0, e.start) + e.text + source.slice(e.end);
 
-    await writeFile(abs, source, 'utf8');
+    pending.set(abs, source);
     changedFiles.push(path);
   }
 
+  const rejected = await checkPendingRewrite(pending, loaded, color);
+  if (rejected !== undefined) return rejected;
+
   await mkdir(dirname(actionFileAbs), { recursive: true });
-  await writeFile(actionFileAbs, hint.actionSource, 'utf8');
+  for (const [abs, source] of pending) await writeFile(abs, source, 'utf8');
 
   process.stdout.write(`applied ${hint.id}: extracted \`action ${hint.actionName}(${hint.params.join(', ')})\` into ${hint.actionFile}\n`);
   process.stdout.write(`  updated: ${changedFiles.sort().join(', ')}\n`);
   return EXIT_OK;
+}
+
+/**
+ * Run the whole per-file checker over a rewrite that exists only in memory, and refuse it if the
+ * result would not check (`B5-02` half 3, M97c/D143). Returns an exit code when the rewrite is
+ * rejected — diagnostics already printed — or `undefined` when it is safe to write.
+ *
+ * **Why `refactor apply` owes this and `check` alone does not.** Half 1 (`TF035` widened to the
+ * imported case) and half 2 (`dedupeName` seeded with the suite's existing actions) each remove a
+ * way to *generate* a colliding extraction. Neither makes the tool verify its own output, and this
+ * is the only command besides `migrate` that mutates source. `B5-01` — an **S1** — was this command
+ * writing a suite that no longer checked, through reference channels the ledger enumerated as three
+ * and turned out to be five; `M81` fixed it by making the reuse pass share the checker's *walk*.
+ * This makes it share the checker's **verdict**, which is the only thing that covers the channel
+ * nobody has enumerated yet. Enumerating this command's failure modes has already been wrong once,
+ * at S1.
+ *
+ * It is refuse-*before*-write rather than write-then-rollback because that is already this
+ * command's doctrine: it refuses at exit 2 with nothing written when the id is unknown, and again
+ * when `shared/<name>.tflw` already exists. `migrate` splices, writes, then re-checks — the
+ * opposite order, correctly, because a file it is asked to fix is broken *before* it starts.
+ *
+ * Both overlays matter and neither is optional. `readText` answers imports out of `pending`, since
+ * the extracted `shared/<name>.tflw` is not on disk yet — without it every rewritten file reports
+ * the new action as an unknown call. `exists` does the same for `TF043` (M97c's own new rule),
+ * which would otherwise flag the `import` line this command just wrote.
+ */
+async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded: ValidatedProject, color: boolean): Promise<number | undefined> {
+  const cwd = process.cwd();
+  const knownServices = Object.keys(loaded.resolved.services);
+  const knownSessions = Array.from(loaded.resolved.sessions.keys());
+  const readPending: ReadText = async (absPath) => pending.get(absPath) ?? (await readFile(absPath, 'utf8'));
+  const existsPending: PathExists = async (absPath) => pending.has(absPath) || (await exists(absPath));
+
+  let rejected = false;
+  for (const [abs, source] of pending) {
+    const parsed = parseSource(source);
+    const diagnostics = [
+      ...parsed.diagnostics,
+      ...checkProgram(parsed.program, {
+        knownServices,
+        knownSessions,
+        importedActions: await resolveImportedActions(abs, parsed.program, readPending),
+        missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),
+      }),
+    ].filter((d) => d.severity === 'error');
+    if (diagnostics.length === 0) continue;
+    rejected = true;
+    process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, abs), color }) + '\n');
+  }
+  if (!rejected) return undefined;
+
+  err('applying this hint would leave a suite that does not check, so nothing was written. The diagnostics above are against the rewrite that was refused, not against your files on disk.');
+  return EXIT_USAGE;
 }
 
 // ---- tflw migrate (P#38, decision 45's 1.0-gate deliverable, SPEC §12) -----

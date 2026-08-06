@@ -48,6 +48,21 @@ export interface ProgramCheckOptions {
    * read, and `checkCalls` must not claim a name is unknown when it never looked. A file with no
    * `import` line at all is closed either way — see `checkCalls` for the full closed-world rule. */
   readonly importedActions?: readonly KnownAction[];
+  /**
+   * Which of this file's path literals name a file that is not there (M97c, D144, `A4-07`) — the
+   * *answers*, resolved and stat'd by the caller, keyed by the literal's own text.
+   *
+   * Shaped exactly like `importedActions`, and for the same reason: the filesystem work happens in
+   * `@tflw/runtime` (`resolveMissingFiles`), and the pure pass here turns the answers into
+   * diagnostics. Keying by literal text rather than by absolute path is what keeps this file free
+   * of `resolve`/`dirname` entirely — `checkProgram` runs on one file, so one literal has one
+   * resolution and there is nothing to disambiguate.
+   *
+   * The `undefined`-vs-empty-set distinction is the docs-site editor demo's, again: it runs in a
+   * browser, where the question cannot be asked at all. `undefined` skips the pass; an empty set
+   * says the caller looked and everything was there.
+   */
+  readonly missingFiles?: ReadonlySet<string>;
 }
 
 /** One action a call could resolve to: its name, how many arguments it takes, and where it was
@@ -104,6 +119,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkRequestAssertions(program),
     ...checkValueSubjects(program),
     ...checkMatcherSubjects(program),
+    ...checkReferencedFiles(program, opts),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkResponseScopes(program),
@@ -1966,4 +1982,155 @@ function keyName(entry: ConfigEntry): string {
     case 'LogLevelDecl':
       return 'log level';
   }
+}
+
+// ---------------------------------------------------------------------------
+// `TF043` — a referenced file that is not there (M97c, D144, `A4-07`)
+// ---------------------------------------------------------------------------
+
+/** One statically-known path literal in a program, tagged with the syntax that wrote it. The tag
+ * only ever phrases the diagnostic, so a reader is told `body from` rather than "a file". */
+export interface FileReference {
+  readonly syntax: string;
+  readonly path: StringLit;
+}
+
+/**
+ * Every AST node type that carries a file path, and the field it carries it in.
+ *
+ * Data rather than a `switch`, because this list is the thing that goes stale: the eighth entry
+ * arrives with whatever step reads a file next, and `fileReferenceDrift()` below fails the suite
+ * when it does. Same machine-checked-ledger shape as `M97a`'s runtime-rules scan and `M86`'s
+ * `Codes`↔`DIAGNOSTICS` guard — the third and fourth times one omission has cost a milestone here.
+ *
+ * `Matcher` is the odd row: `Matcher.filePath` is set only when `name === 'matchesFile'`, so the
+ * entry keys on the node type like every other and simply finds the field absent elsewhere.
+ *
+ * Two path-shaped things are deliberately *not* rows. `matches schema … from "src"` takes a URL or
+ * a path and cannot be told apart statically. `Locator`'s `css`/`xpath` values are selectors that
+ * merely look like paths. Neither is a file the runtime opens.
+ */
+const FILE_BEARING_NODES: readonly { readonly node: string; readonly field: string; readonly syntax: string }[] = [
+  { node: 'ImportDecl', field: 'path', syntax: 'import' },
+  { node: 'UseDecl', field: 'path', syntax: 'use' },
+  { node: 'FileDataTable', field: 'path', syntax: 'with each from' },
+  { node: 'FileBody', field: 'path', syntax: 'body from' },
+  { node: 'UploadBody', field: 'filePath', syntax: 'upload' },
+  { node: 'Matcher', field: 'filePath', syntax: 'matches file' },
+  { node: 'DropFileStmt', field: 'filePath', syntax: 'drop file' },
+];
+
+/**
+ * Collects the path literals a program names, wherever they sit — in declaration order, then in
+ * whatever order the walk reaches them (`checkProgram` sorts by position afterwards, so this
+ * function owes no ordering of its own).
+ *
+ * **A structural walk, deliberately, not a per-statement-kind one.** `symbols.ts` and this file
+ * both hand-roll a `walkSteps` that must name every block-bearing statement — `within`, `switch to
+ * new tab`, `download as`, `fill form`, `wait until` — to reach the steps inside it. A path literal
+ * nested inside a block kind such a walker had not been taught about is skipped in silence, and
+ * silence is exactly how `A4-07` presents to a user: `no problems found`. Walking the object graph
+ * and dispatching on `node.type` cannot miss one, because a new block kind is just another object
+ * with children. The cost is one traversal of an already-parsed tree, per file, at check time.
+ *
+ * **Interpolated paths are skipped, not reported.** `upload "./fixtures/{name}.png"` names no file
+ * until the run picks a `name`. That is `ProgramCheckOptions`' own `undefined`-vs-`[]` doctrine
+ * stated over a literal — *not knowable* is not *known-bad* — and inverting it would trade a
+ * checker that misses real errors for one that invents them, which is the strictly worse of the
+ * two under D137 clause 1.
+ */
+export function collectFileReferences(program: Program): FileReference[] {
+  const byNode = new Map(FILE_BEARING_NODES.map((e) => [e.node, e] as const));
+  const out: FileReference[] = [];
+  const seen = new Set<object>();
+
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    const nodeType = record['type'];
+    const entry = typeof nodeType === 'string' ? byNode.get(nodeType) : undefined;
+    if (entry) {
+      const lit = record[entry.field] as StringLit | null | undefined;
+      // `parts` is the interpolation-aware breakdown, so "every part is literal text" is the whole
+      // test for "this path is known statically".
+      if (lit && lit.parts.every((p) => p.kind === 'text')) out.push({ syntax: entry.syntax, path: lit });
+    }
+    for (const child of Object.values(record)) visit(child);
+  };
+
+  visit(program);
+  return out;
+}
+
+/**
+ * Nodes whose `path`/`filePath` is a `StringLit` but is *not* a file this pass may check, each with
+ * the reason — written out because "the guard found it and it was fine" has to be recorded
+ * somewhere, or the next person re-derives it or, worse, adds the row and ships false positives.
+ *
+ * The drift guard found all three on its first run, which is the argument for having written it.
+ */
+const NOT_A_CHECKABLE_FILE: Readonly<Record<string, string>> = {
+  // `open "/orders/{id}"` is a URL path against the env's `web` base URL. Nothing is opened on disk.
+  OpenStmt: 'a URL path, not a filesystem path',
+  // `cert "…"` / `key "…"` (SPEC §3.5) *are* real files the runtime reads, and they are genuinely
+  // unchecked — but they live in `tflw.config`, which is the config dialect: `collectFileReferences`
+  // walks a `Program` and never sees a `ConfigFile`. Checking them means the config stage of
+  // `loadAndValidate`, not this pass. Filed rather than bolted on here (D144 scoped the test dialect).
+  CertDecl: 'config dialect — a real gap, filed; needs the config check path, not `checkProgram`',
+  KeyDecl: 'config dialect — a real gap, filed; needs the config check path, not `checkProgram`',
+};
+
+/**
+ * Node types declared in `ast.ts` that carry a `path`/`filePath` `StringLit` and appear in neither
+ * `FILE_BEARING_NODES` nor `NOT_A_CHECKABLE_FILE`. Returns the names it found, so the drift test can
+ * say *what* drifted instead of only that something did.
+ *
+ * Takes `ast.ts`'s source as an argument rather than reading it: `@tflw/lang` does no I/O (that is
+ * the invariant this whole milestone turns on), so the test supplies the bytes.
+ */
+export function fileReferenceDrift(astSource: string): string[] {
+  const known = new Set([...FILE_BEARING_NODES.map((e) => e.node), ...Object.keys(NOT_A_CHECKABLE_FILE)]);
+  const drift: string[] = [];
+  for (const m of astSource.matchAll(/export interface (\w+) extends Node \{\n([\s\S]*?)\n\}/g)) {
+    const [, name = '', body = ''] = m;
+    if (known.has(name)) continue;
+    if (/^\s*readonly (path|filePath)\??: StringLit\b/m.test(body)) drift.push(name);
+  }
+  return drift;
+}
+
+/**
+ * `TF043` — a path literal naming a file that is not there.
+ *
+ * The pass is pure: `opts.missingFiles` already holds the answers, resolved and stat'd by
+ * `@tflw/runtime`'s `resolveMissingFiles` against the same `dirname(<test file>)` base the
+ * interpreter uses. That last part is the load-bearing one — a checker that resolved a path
+ * differently from the runtime would report files as missing that the run finds, which is D137
+ * clause 1's failure mode, not a stricter check.
+ *
+ * Reports the literal, not the resolved path, in the message: the user wrote the literal. The
+ * resolution goes in the hint, because the single most common cause of this error is believing
+ * paths are relative to the working directory.
+ */
+export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const missing = opts.missingFiles;
+  if (!missing || missing.size === 0) return [];
+  const diags: Diagnostic[] = [];
+  for (const ref of collectFileReferences(program)) {
+    if (!missing.has(ref.path.value)) continue;
+    diags.push({
+      code: Codes.MISSING_FILE,
+      severity: 'error',
+      message: `\`${ref.syntax}\` names a file that does not exist: "${ref.path.value}"`,
+      span: ref.path.span,
+      hint: 'paths resolve against the directory of the file that names them, not the directory `tflw` runs in',
+    });
+  }
+  return diags;
 }

@@ -274,3 +274,71 @@ test('renderCallSiteReplacement preserves original indentation and produces a we
   // M27 (PLAN_LOG.md): "the" prefix, same collision guard as above.
   assert.equal(replacement.text, `  the log in("alice", "secret1")\n`);
 });
+
+// ---- `B5-02` half 2 (M97c, D143): a proposed name the suite is already using ------------------
+//
+// `nextFreeName` kept two *hints* in one scan from proposing the same name and had nothing to say
+// about a name the suite already declared. Measured on the built CLI: a duplicated `api POST
+// /orders` sequence in a file that imported an `action post orders` proposed `action post orders`,
+// `tflw refactor apply` accepted it at exit 0, and `tflw check` then rejected the result with the
+// `TF035` M97b had just widened to cover exactly that imported case.
+
+const DUP_ORDERS = `test "one"
+  api POST /orders body { name: "a" }
+  expect status equals 201
+  api GET /orders
+  expect status equals 200
+
+test "two"
+  api POST /orders body { name: "a" }
+  expect status equals 201
+  api GET /orders
+  expect status equals 200
+`;
+
+test('a proposed action name never collides with one the suite already declares (B5-02 half 2)', () => {
+  const existing = entry('tests/actions.tflw', `action post orders()\n  api GET /health\n  expect status equals 200\n`);
+  const dup = entry('tests/dup.tflw', DUP_ORDERS);
+
+  // Control: without the declaring file in the scan, the pass proposes the bare name — so this
+  // test fails against unseeded `usedNames` rather than passing for an unrelated reason.
+  const alone = detectReuse([dup]);
+  assert.equal(alone.length, 1);
+  assert.equal(alone[0]!.actionName, 'post orders');
+
+  const together = detectReuse([existing, dup]);
+  assert.equal(together.length, 1);
+  assert.equal(together[0]!.actionName, 'post orders v2');
+  assert.equal(together[0]!.actionFile, 'shared/post-orders-v2.tflw');
+});
+
+test('a deduped action name is one tflw can actually parse (the bug half 2 surfaced)', () => {
+  // `nextFreeName`'s suffix convention is `base 2`, and `action post orders 2()` does not parse:
+  // an action name is a run of words, `2` is a number token, and the parser stops with `TF010`.
+  // `actionIsSelfContained` parses the action a hint would write and drops the hint when it fails,
+  // so *every* renamed proposal was being silently swallowed — reachable since M6 whenever two
+  // hints in one scan proposed one name, and invisible because a dropped hint looks exactly like a
+  // sequence that was not duplicated. Seeding made it the common case instead of the rare one.
+  const hints = detectReuse([entry('tests/actions.tflw', `action post orders()\n  api GET /health\n  expect status equals 200\n`), entry('tests/dup.tflw', DUP_ORDERS)]);
+  assert.equal(hints.length, 1, 'the hint must survive renaming — if it is dropped, the rendered action did not parse');
+
+  const written = parseSource(hints[0]!.actionSource);
+  assert.deepEqual(
+    written.diagnostics.map((d) => `${d.code}: ${d.message}`),
+    [],
+    'the `action …` this hint would write into shared/ must parse',
+  );
+  assert.deepEqual(
+    written.program.actions.map((a) => a.name),
+    ['post orders v2'],
+  );
+
+  // Control: the old convention, asserted to be the thing that was broken. If a future change makes
+  // `action post orders 2()` parse, this fails and the `v` suffix can be reconsidered on purpose
+  // rather than left as folklore.
+  const numbered = parseSource(`action post orders 2()\n  api GET /health\n  expect status equals 200\n`);
+  assert.ok(
+    numbered.diagnostics.some((d) => d.severity === 'error'),
+    'a numeric suffix in an action name is expected to be a parse error — that is why `nextFreeActionName` exists',
+  );
+});

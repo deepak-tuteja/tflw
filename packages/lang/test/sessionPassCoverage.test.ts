@@ -94,6 +94,11 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
   checkSessions: { verdict: 'n/a', reason: 'validates that a `test … as <name>` names a declared session — about tests referencing sessions, the opposite direction' },
   checkActionDecls: { verdict: 'n/a', reason: 'walks `program.actions`; the config dialect declares none (see `checkCalls` above)' },
   checkWorkloadTests: { verdict: 'n/a', reason: 'reasons about `workload`/`threshold` on a `test`; a session has neither' },
+  checkReferencedFiles: {
+    verdict: 'n/a',
+    reason:
+      'M97c/D144. Syntactically a session body *can* name a file (`api POST /auth/login body from "./creds.json"`), so this row was written expecting "applies" — and the runtime says otherwise. `runSession` executes the session body against the `TestCtx` of whichever **test file** triggered it (`interpreter.ts`: `runSession(decl, config, tc)` → `execSteps(decl.body, …, tc)`), and the CLI builds that `tc` with `baseDir: dirname(file)`. So one `tflw.config` line resolves to a different absolute path per test file, and there is no single answer for the checker to give. Filed as its own row rather than swallowed here: resolving a shared declaration against a per-caller base directory is a runtime bug in its own right, not just a checker gap',
+  },
 };
 
 /** Exported `check*` functions, read off the source so the list cannot go stale silently. */

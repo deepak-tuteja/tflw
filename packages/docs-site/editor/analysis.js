@@ -10,6 +10,13 @@ import { parseSource, collectSymbols, checkProgram } from '@tflw/lang';
 // omitting their options: there is no config in the browser, and checking against an empty list
 // would flag every `api <service>` reference here as unknown. Everything a single file can be
 // judged on by itself now runs.
+//
+// `missingFiles` (`TF043`, M97c/D144) is omitted for that same reason, and is recorded here rather
+// than left to be noticed: there is no filesystem in a browser, so "does `./data/invites.csv`
+// exist?" is not a question with a false answer — it is a question that cannot be asked. Omitting
+// the option skips the pass; passing an empty `Set` would assert every path in the demo resolves.
+// That is `ProgramCheckOptions`' `undefined`-vs-empty distinction, and honouring it is what keeps
+// this page's "the same code the language server runs" claim true. It has been false once already.
 export function analyze(source) {
   const parsed = parseSource(source);
   const symbols = collectSymbols(parsed.program, source);

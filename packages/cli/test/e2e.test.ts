@@ -773,6 +773,93 @@ test('`tflw refactor apply <unknown-id>` is a clear usage error, not a crash', a
   }
 });
 
+// ---- M97c (`PLAN_M97_CHECKER_CONTRACT.md`) — `A4-07` / `B5-02` halves 2-3 -------------------
+
+test('`tflw check` reports a referenced file that is not there (TF043, D144/`A4-07`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tf043-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'gone.tflw'), `import "./nowhere.tflw"\n\ntest "t"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+    // Control: the same suite with the import satisfied must check clean, or this test would pass
+    // against a checker that rejects everything.
+    await writeFile(join(dir, 'ok.tflw'), `test "t"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+    const clean = await execFileAsync('node', [cliEntry, 'check', 'ok.tflw', '--no-color'], { cwd: dir });
+    assert.match(clean.stdout, /1 file checked, no problems found/);
+
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', 'gone.tflw', '--no-color'], { cwd: dir }),
+      (e: unknown) => {
+        const err = e as { code?: number; stderr?: string };
+        // Before M97c this printed `1 file checked, no problems found.` at exit 0, and `tflw run`
+        // then printed `✗ gone.tflw (crashed) (0 ms)` and nothing else, `--verbose` included.
+        return err.code === 2 && /error\[TF043\]: `import` names a file that does not exist: "\.\/nowhere\.tflw"/.test(err.stderr ?? '');
+      },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw refactor apply` refuses a rewrite that would not check, and writes nothing (`B5-02` half 3)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-refactor-refuse-'));
+  try {
+    // The collision arrives through a file `detectReuse` never scans — `exclude` keeps it out of
+    // discovery — so half 2's name seeding structurally cannot see it. That is the point: half 3 is
+    // the backstop for the channel nobody has enumerated, and a control that half 2 already covers
+    // would prove nothing about it (`B5-01` was an S1 for exactly that reason).
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n\nexclude "external"\n`, 'utf8');
+    await mkdir(join(dir, 'external'), { recursive: true });
+    await mkdir(join(dir, 'tests'), { recursive: true });
+    await writeFile(join(dir, 'external', 'actions.tflw'), `action post orders()\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+    await writeFile(
+      join(dir, 'tests', 'dup.tflw'),
+      `import "../external/actions.tflw"
+
+test "one"
+  api POST /orders body { name: "a" }
+  expect status equals 201
+  api GET /orders
+  expect status equals 200
+  post orders()
+
+test "two"
+  api POST /orders body { name: "a" }
+  expect status equals 201
+  api GET /orders
+  expect status equals 200
+  post orders()
+`,
+      'utf8',
+    );
+
+    // Control: the hint is offered, so the refusal below is the re-check firing and not an absent
+    // hint or a usage error.
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+    assert.match(stdout, /proposed: action post orders\(\)/);
+
+    const before = await readFile(join(dir, 'tests', 'dup.tflw'), 'utf8');
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'refactor', 'apply', 'RF001'], { cwd: dir }),
+      (e: unknown) => {
+        const err = e as { code?: number; stderr?: string };
+        return (
+          err.code === 2 &&
+          /error\[TF035\]: duplicate action "post orders"/.test(err.stderr ?? '') &&
+          /applying this hint would leave a suite that does not check, so nothing was written/.test(err.stderr ?? '')
+        );
+      },
+    );
+
+    // Nothing written: not the extraction, not the rewritten call sites. Before M97c this exited 0,
+    // created `shared/post-orders.tflw`, and left a suite `tflw check` rejected at exit 2.
+    await assert.rejects(access(join(dir, 'shared', 'post-orders.tflw')), 'the extracted action file must not exist');
+    assert.equal(await readFile(join(dir, 'tests', 'dup.tflw'), 'utf8'), before, 'the occurrence file must be byte-identical');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`tflw --help` mentions `tflw refactor apply`', async () => {
   const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
   assert.match(stdout, /tflw refactor apply <id>/);
@@ -1145,7 +1232,12 @@ test('a runtime crash in one file still writes a report covering every file that
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-crash-'));
     try {
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
-      await writeFile(join(dir, 'a-crashes.tflw'), `import "./missing.tflw"\ntest "never runs"\n  api GET /health\n`, 'utf8');
+      // A crash that is still a *runtime* one after M97c: the helper is present and unloadable,
+      // rather than an `import` of a file that isn't there — `TF043` now catches the latter at
+      // check time, so it would never reach a run and this test would assert nothing. Same
+      // `buildRegistry` phase either way.
+      await writeFile(join(dir, 'broken-helper.ts'), 'export function boom() {}\nthis is not valid typescript(((\n', 'utf8');
+      await writeFile(join(dir, 'a-crashes.tflw'), `use "./broken-helper.ts"\ntest "never runs"\n  api GET /health\n`, 'utf8');
       await writeFile(join(dir, 'b-fine.tflw'), `test "runs fine"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
 
       await assert.rejects(
@@ -2615,6 +2707,11 @@ test('C4/B5-03: a crashed file appears in the stream instead of vanishing from i
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-crash-'));
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    // The helper exists and does not load. It used to be simply absent, which M97c's `TF043` now
+    // rejects at check time — a better outcome, and it would have made this test assert nothing
+    // about streaming. The crash has to stay a *runtime* one to be this test's subject, so the file
+    // is present and broken: same `buildRegistry` failure, same phase, still undecidable statically.
+    await writeFile(join(dir, 'nope.ts'), 'export function boom() {}\nthis is not valid typescript(((\n', 'utf8');
     await writeFile(join(dir, 'crash.tflw'), 'use "./nope.ts"\n\ntest "t"\n  log "hi"\n', 'utf8');
 
     await assert.rejects(
