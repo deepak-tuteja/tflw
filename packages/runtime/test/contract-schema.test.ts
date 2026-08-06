@@ -191,3 +191,72 @@ test "third assertion — still healthy, and now served from the cache"
     await server.close();
   }
 });
+
+// A12-03. `loadSchemaDoc` issues a real `sendRequest` that, until this milestone, appeared in no
+// step, no trace and no report — while `interpreter.ts` states the opposite principle in as many
+// words one screen away: "a retry is visible evidence in the report, never a silent, invisible
+// extra round-trip (P#5/P#16)". The fetch is `checkHostAllowed`-gated, i.e. already understood to
+// be security-relevant, and it is the *only* evidence that A12-02's cache is doing anything.
+//
+// Asserted on `step.detail` rather than on the fetch itself, deliberately: the finding is not "no
+// request is made" (one plainly is — the assertions pass) but "nothing a reader can see records
+// it". `detail` is the string that reaches report.html, results.json, --format ndjson and
+// junit.xml, so proving it there proves every sink at once.
+test('the schema-document fetch is visible evidence in the step that caused it, and a cache hit says so (A12-03)', async () => {
+  const server = await startWidgetServer();
+  const config = testConfig(server.baseUrl);
+  const source = `test "the assertion that pays for the document"
+  api GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+
+test "the assertion that rides on it"
+  api GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+`;
+  const { program } = parseSource(source);
+  try {
+    const { report } = await runProgram(program, config, { source });
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+
+    const detailOf = (i: number) => report.tests[i]!.steps.find((s) => s.kind === 'expect')!.detail!;
+
+    // The first assertion names the document, what it cost, and what came back — enough for a
+    // reader to tell that *this* step made the round-trip.
+    assert.match(detailOf(0), /fetched schema document "[^"]*\/openapi\.json"/);
+    assert.match(detailOf(0), /2 schemas/, 'the document has Widget and Address');
+    assert.match(detailOf(0), /\d+ms/);
+
+    // The second says the opposite, in as many words. Before this, the only signal that it did no
+    // I/O was its duration — a number nothing distinguishes from a fast fetch.
+    assert.match(detailOf(1), /from cache/);
+    assert.doesNotMatch(detailOf(1), /fetched schema document/);
+
+    // The control on the control: the two details must genuinely differ. A `provenance()` that
+    // returned one constant string would satisfy both `match`es above and prove nothing.
+    assert.notEqual(detailOf(0), detailOf(1));
+    assert.equal(server.received.get('/openapi.json')!.length, 1, 'and the claim must be true — one fetch, not two');
+  } finally {
+    await server.close();
+  }
+});
+
+test('a failing schema assertion still reports where the schema came from (A12-03)', async () => {
+  const server = await startWidgetServer();
+  const config = testConfig(server.baseUrl);
+  const source = `test "widget missing a required field"
+  api GET /widgets/bad
+  expect body matches schema "Widget" from "/openapi.json"
+`;
+  const { program } = parseSource(source);
+  try {
+    const { report } = await runProgram(program, config, { source });
+    assert.equal(report.ok, false);
+    const detail = report.tests[0]!.steps.find((s) => s.kind === 'expect')!.detail!;
+    // The failure path is where provenance matters most: "the response doesn't match the schema"
+    // is only actionable once you know *which* document was consulted, and when.
+    assert.match(detail, /fetched schema document "[^"]*\/openapi\.json"/);
+    assert.match(detail, /to match schema "Widget"/, 'the original message must survive, not be replaced');
+  } finally {
+    await server.close();
+  }
+});
