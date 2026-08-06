@@ -92,6 +92,7 @@ export const Codes = {
   UNBALANCED_BRACKET: 'TF045',
   EMPTY_TAG: 'TF046',
   UNKNOWN_ESCAPE: 'TF047',
+  TAB_INDENT: 'TF048',
 } as const;
 
 // ---------------------------------------------------------------------------

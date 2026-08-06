@@ -79,15 +79,23 @@ export interface Token {
   readonly span: Span;
 }
 
-/** Human-readable description of a token type, for diagnostics ("expected `,`, found …"). */
+/** Human-readable description of a token type, for diagnostics ("expected `,`, found …").
+ *
+ * M98c (`A1-15`/`A1-OS-06`, D162): "human-readable" was true of twenty of the twenty-two outputs,
+ * which is why the two that were not slipped through — `dedent` printed as "a dedent" and `indent`
+ * as "indentation", both reaching users verbatim and one of them locked in by a checked-in golden.
+ * `indent`/`dedent` are an implementation device (the offside rule, turned into synthetic tokens so
+ * the parser can stay indentation-agnostic); a `.tflw` author has no concept named "dedent" and
+ * nothing in SPEC.md or GRAMMAR.md introduces one. They are described here by the thing the author
+ * *did* write: a block that starts, and a block that ends. */
 export function describeTokenType(type: TokenType): string {
   switch (type) {
     case 'newline':
       return 'end of line';
     case 'indent':
-      return 'indentation';
+      return 'an indented block';
     case 'dedent':
-      return 'a dedent';
+      return 'the end of the block';
     case 'eof':
       return 'end of file';
     case 'ident':
@@ -135,15 +143,17 @@ export function describeTokenType(type: TokenType): string {
   }
 }
 
-/** A short quoted description of an actual token, for the "found …" half of an error. */
+/** A short quoted description of an actual token, for the "found …" half of an error. The
+ * `indent`/`dedent` wording is D162's — see `describeTokenType`; both functions reach users and
+ * fixing one would have left the other printing "a dedent". */
 export function describeToken(tok: Token): string {
   switch (tok.type) {
     case 'newline':
       return 'end of line';
     case 'indent':
-      return 'indentation';
+      return 'an indented block';
     case 'dedent':
-      return 'a dedent';
+      return 'the end of the block';
     case 'eof':
       return 'end of file';
     case 'string':

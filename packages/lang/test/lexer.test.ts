@@ -367,3 +367,128 @@ test('A1-01: unreadable input is bounded, not quadratic', () => {
   assert.match(last.message, /too many unreadable characters/);
   assert.match(last.hint ?? '', /not tflw source at all/, 'the cap must explain itself, not just stop');
 });
+
+// -- M98c: the diagnostics that fired and taught nothing ----------------------------------------
+// The M98b rows were facts the lexer withheld. These are facts it *stated* — at the wrong position,
+// in its own vocabulary, or once per line for a single mistake. A diagnostic that fires is not the
+// same as a diagnostic that helps, and every row here was already "covered" by a passing test.
+
+test('A1-09/D159: `newline` sits at the end of the code, not past a trailing comment', () => {
+  // `eolOffset = lineStart + line.length` is the *physical* end of the line, so every "found end of
+  // line" caret landed inside the comment: the missing path here belongs just after `GET`, and the
+  // caret was 63 columns further right, under the word "later".
+  const src = 'test "t"\n  api GET                                  # TODO fill in the path later\n';
+  const nl = lex(src).tokens.filter((t) => t.type === 'newline');
+  //   `  api GET` is 9 code units — the `newline` belongs at index 9 of the line, column 10.
+  assert.equal(nl[1]!.span.start.line, 2);
+  assert.equal(nl[1]!.span.start.column, 10);
+  assert.equal(nl[1]!.span.start.offset, src.indexOf('  api GET') + '  api GET'.length, 'the caret must not be in the comment');
+});
+
+test('A1-09: trailing whitespace is not part of the line either', () => {
+  // The same fix, for the case with no comment at all: a line with trailing spaces used to put the
+  // caret past the last visible character, which reads as pointing at nothing.
+  const { tokens } = lex('test "t"\n  api GET   \n');
+  const nl = tokens.filter((t) => t.type === 'newline');
+  assert.equal(nl[1]!.span.start.column, 10);
+});
+
+test('A1-09: a `#` inside a string is not a comment — the control that forces the return value', () => {
+  // This is why `lexContent` has to *return* where it stopped rather than the caller re-scanning for
+  // `#`: a scan would find this one and place `newline` in the middle of the step. The step ends
+  // after the closing quote.
+  const src = 'test "t"\n  log "a # b"\n';
+  const nl = lex(src).tokens.filter((t) => t.type === 'newline');
+  assert.equal(nl[1]!.span.start.offset, src.lastIndexOf('"') + 1);
+});
+
+test('A1-12/A1-13/TF048: the tab rule has its own code and fires once per file', () => {
+  // 100 lines, one editor setting, one mistake. It used to be 100 identical `TF003`s — and `TF003`
+  // is the *alignment* code, which is all `spec-data.ts` documented, so SPEC §17, the Reference page
+  // and LSP hover each described the wrong rule for half of that code's firings.
+  const src = 'test "t"\n' + Array.from({ length: 100 }, (_, i) => `\tlog "line ${i}"`).join('\n') + '\n';
+  const found = diags(src).filter((d) => d.code === 'TF048');
+  assert.equal(found.length, 1, 'one diagnostic per file, not per line');
+  assert.equal(found[0]!.span.start.line, 2, 'reported at the first offending line');
+  assert.match(found[0]!.hint ?? '', /99 more lines/, 'the count belongs in the help line, not in 99 more diagnostics');
+  assert.equal(diags(src).filter((d) => d.code === 'TF003').length, 0, '`TF003` must now mean exactly one thing');
+  // The negative control for over-firing is the rest of this suite: every other source in it is
+  // indented with spaces, so a `TF048` that fired on those would fail hundreds of assertions.
+});
+
+test('A1-13: `TF003` still fires for the condition it documents — the control for the split', () => {
+  // Splitting a code is only safe if the *other* meaning survives. A 3-space block inside a 2-space
+  // one closes to neither level, which is `TF003`'s one remaining meaning.
+  const found = diags('test "t"\n  api GET /a\n     log "x"\n   log "y"\n').filter((d) => d.code === 'TF003');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /does not match any enclosing block/);
+});
+
+test('A1-16/D163: one emoji is one diagnostic naming the character, not two naming surrogates', () => {
+  // `let a = 🚀` advanced one UTF-16 code unit at a time and reported `"\ud83d"` and `"\ude80"` —
+  // two diagnostics, neither of them a character anybody typed.
+  const found = diags('test "t"\n  let a = 🚀\n').filter((d) => d.code === 'TF001');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /🚀/);
+});
+
+test('A1-16: a run of rejected characters is one mistake', () => {
+  const found = diags('test "t"\n  let 名前 = 1\n').filter((d) => d.code === 'TF001');
+  assert.equal(found.length, 1, 'one word, one diagnostic');
+  assert.match(found[0]!.message, /unexpected characters "名前"/);
+});
+
+test('A1-16: an identifier cut short says so, where the truncation happened', () => {
+  // `let café = 1` emits a perfectly valid-looking `ident:"caf"` before the error, and that token
+  // goes on to the checker, which reports an unknown variable `caf` the author never wrote. The
+  // token is *kept* — recovery needs it — so the explanation has to travel with the character.
+  const { tokens, diagnostics } = lex('test "t"\n  let café = 1\n');
+  assert.ok(tokens.some((t) => t.type === 'ident' && t.value === 'caf'), 'recovery still emits the prefix');
+  const found = diagnostics.filter((d) => d.code === 'TF001');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.hint ?? '', /the name `caf` was cut short here/);
+});
+
+test('A1-16: an invisible character is named by code point, not quoted', () => {
+  // `unexpected character " "` for U+00A0 is a message whose evidence the reader cannot see. The
+  // negative control is in the same assertion: a *visible* character is still quoted, as before.
+  const nbsp = diags('test "t"\n  log "x"\n').filter((d) => d.code === 'TF001');
+  assert.equal(nbsp.length, 1);
+  assert.match(nbsp[0]!.message, /U\+00A0 NO-BREAK SPACE/);
+  const dollar = diags('test "t"\n  let a = $x\n').filter((d) => d.code === 'TF001');
+  assert.match(dollar[0]!.message, /unexpected character "\$"/, 'a visible character is still shown as itself');
+});
+
+test('A1-16: the coalesced run is bounded — the guard A1-01 caught the first time', () => {
+  // Coalescing without a cap put a whole 50 KB unlexable file inside one message: the same quadratic
+  // blow-up `A1-01` exists to prevent, re-entering through the message instead of the count. Both
+  // bounds are needed, and this asserts the one the run introduced.
+  const { diagnostics } = lex('§'.repeat(50_000));
+  for (const d of diagnostics) assert.ok(d.message.length < 200, `a single message grew to ${d.message.length} characters`);
+});
+
+test('A1-16: ordinary ASCII source produces no run diagnostics — the negative control', () => {
+  // `isUnlexable` is derived from `lexContent`'s branches, so a mistake in it would swallow real
+  // tokens as garbage. This exercises every character class the lexer has a branch for.
+  const src = 'test "t"\n  api POST /o?a=1,2 body { qty: 3, tags: ["x"] }\n  expect status equals 201\n  let r = (1 + 2) * 3 / 4 - 5\n  expect duration is less than 500ms\n';
+  assert.deepEqual(diags(src), []);
+});
+
+test('A1-16: a rejected run stops at the next real token — the control M11 showed was missing', () => {
+  // The first version of the ASCII control only asserted that *clean* source stays clean, which can
+  // never fail for a rule that only runs after every other branch has declined. Dropping `@` from
+  // `isUnlexable` — making the run swallow a token start — left the whole suite green. This is the
+  // case that catches it: garbage immediately followed by each kind of token the lexer recognises.
+  for (const [after, type] of [
+    ['"s"', 'string'],
+    ['12', 'number'],
+    ['@t', 'tag'],
+    ['ab', 'ident'],
+    ['{', 'lbrace'],
+    ['/p', 'slash'],
+  ] as const) {
+    const { tokens, diagnostics } = lex(`§${after}\n`);
+    assert.equal(diagnostics.filter((d) => d.code === 'TF001').length, 1, `§${after}: one run, one diagnostic`);
+    assert.equal(tokens[0]!.type, type, `§${after}: the run must stop at the ${type} that follows it`);
+  }
+});

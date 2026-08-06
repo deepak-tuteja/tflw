@@ -6,13 +6,13 @@ error[TF010]: expected a variable name, found end of line
   |
   = help: expected a name
 
-error[TF022]: expected `defaults`, `env`, `session`, `require`, or `exclude`, found indentation
+error[TF022]: expected `defaults`, `env`, `session`, `require`, or `exclude`, found an indented block
  --> tflw.config:5:3
   |
 5 |   USER_A_EMAIL, USER_A_PW
   |   ^
 
-error[TF022]: expected `defaults`, `env`, `session`, `require`, or `exclude`, found a dedent
+error[TF022]: expected `defaults`, `env`, `session`, `require`, or `exclude`, found the end of the block
  --> tflw.config:7:1
   |
 7 | env staging

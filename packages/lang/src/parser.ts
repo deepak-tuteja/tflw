@@ -341,8 +341,50 @@ const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 const LOG_DESTINATIONS = ['console', 'html', 'both'] as const;
 const RETRY_AFTER_HEADERS = ['Retry-After'] as const;
 const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
-const DURATION_UNITS = ['ms', 's', 'm'] as const;
-const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
+export const DURATION_UNITS = ['ms', 's', 'm'] as const;
+export const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
+
+type DurationUnit = (typeof DURATION_UNITS)[number];
+
+/** Spellings that can only have been meant as one of tflw's three time units, mapped to the one
+ * they meant (M98c, `A1-07`, D160).
+ *
+ * Enumerated rather than inferred, and that is the whole design. The alternative — treat *any* word
+ * adjacent to a number as an attempted unit — would claim `1e3` and `0xff` are durations, and the
+ * lexer already teaches those as numeric notations (`TF001`, M98b/D158): a second, wrong explanation
+ * underneath a correct one is worse than none. Anything outside this table keeps the generic
+ * "unexpected token", which is the right answer there.
+ *
+ * Every entry can name its replacement, which is what makes the diagnostic worth having: `2sec` is
+ * told to write `2s`, not merely that `sec` is unknown. Case is handled separately — `250MS`
+ * lower-cases into a *real* unit, so it is a spelling of `ms` and not a member of this table.
+ *
+ * The hour/day/week family is deliberately absent. tflw has no unit above `m`, and `2h` after a
+ * number is at least as likely to be a reach for `today + 2 hours` (`DATE_OFFSET_UNITS`, checked
+ * first) as for a duration — a confident "write `2m`" would be advice in the wrong construction. */
+export const UNIT_SPELLINGS: Record<string, DurationUnit> = {
+  msec: 'ms',
+  msecs: 'ms',
+  milli: 'ms',
+  millis: 'ms',
+  millisec: 'ms',
+  millisecs: 'ms',
+  millisecond: 'ms',
+  sec: 's',
+  secs: 's',
+  second: 's',
+  min: 'm',
+  mins: 'm',
+  minute: 'm',
+};
+
+/** The unit a mis-cased or mis-spelled unit word was reaching for, or `null` if it was not reaching
+ * for one at all. `MS` → `ms` (case), `sec` → `s` (spelling), `xyz` → `null`. */
+function nearestDurationUnit(word: string): DurationUnit | null {
+  const lower = word.toLowerCase();
+  if ((DURATION_UNITS as readonly string[]).includes(lower)) return lower as DurationUnit;
+  return UNIT_SPELLINGS[lower] ?? null;
+}
 const QUANTIFIERS = ['any', 'all'] as const;
 
 /**
@@ -1394,9 +1436,68 @@ class Parser {
         this.advance();
         return n * 60_000;
       default:
-        this.error(Codes.UNKNOWN_DURATION_UNIT, `unknown time unit \`${unitTok.value}\``, unitTok.span, 'expected ms, s, or m');
+        // D160: shared with the value path, so `pause 2sec` and `expect duration is less than 2sec`
+        // give the same answer. `reportBadDurationUnit` returns false only for a word that was never
+        // reaching for a unit, which in *this* position — a duration is the only thing the grammar
+        // allows — is still a wrong unit, so the old message stays as the fallback.
+        if (!this.reportBadDurationUnit(num, unitTok, true)) {
+          this.error(Codes.UNKNOWN_DURATION_UNIT, `unknown time unit \`${unitTok.value}\``, unitTok.span, 'expected `ms`, `s`, or `m`');
+        }
         return null;
     }
+  }
+
+  /**
+   * M98c (`A1-07`, D160): the duration diagnostics that already existed, made reachable from the
+   * value path.
+   *
+   * `250ms` and `250 ms` lex to the *identical* token sequence — the lexer has no duration token, so
+   * `parseAtom` reconstructs adjacency from offsets. When that check or the unit-set check failed it
+   * simply declined to build a `DurationLit` and let the leftover `ms` fall out of the step, so
+   * every wrong duration in value position arrived as ``TF010: unexpected `ms` at end of step`` /
+   * `= help: expected end of line`. `250 ms` (a space) and `250MS` (case) are the two likeliest
+   * first attempts and both were told the problem was the end of the line — while the *other*
+   * duration path, `parseDuration`, had the right words all along.
+   *
+   * Three cases, three different fixes, kept apart on purpose: a real unit written with a space, a
+   * word that means a unit tflw spells differently, and (returning `false`) a word that was never a
+   * unit at all.
+   *
+   * Returns whether it reported anything; the caller keeps its own error for `false`.
+   */
+  private reportBadDurationUnit(numTok: Token, unitTok: Token, adjacent: boolean): boolean {
+    const canonical = nearestDurationUnit(unitTok.value);
+    if (canonical === null) return false;
+    const span = { start: numTok.span.start, end: unitTok.span.end };
+    if (unitTok.value === canonical) {
+      // Only reachable when the two are *not* adjacent — an adjacent real unit is a duration.
+      //
+      // The hint is deliberately M84's wording verbatim (`trailingHint`, C11/`A3-09`), which already
+      // taught this one case from `endLine` and has a test asserting the exact sentence. Intercepting
+      // the case earlier moves it to a code and a message that name a duration instead of "end of
+      // step" — it must not quietly downgrade the hint M84 shipped.
+      this.error(
+        Codes.UNKNOWN_DURATION_UNIT,
+        'a duration unit must touch its number',
+        span,
+        `write \`${numTok.value}${canonical}\`, not \`${numTok.value} ${unitTok.value}\``,
+      );
+      return true;
+    }
+    const spacing = adjacent ? '' : ' with no space';
+    // `250MS` lower-cases into a real unit, so the mistake is the case and nothing else — saying
+    // "unknown time unit" and leaving the reader to spot the capitals is the hint doing half its job.
+    const why =
+      unitTok.value.toLowerCase() === canonical
+        ? 'time units are lowercase'
+        : `tflw's time units are \`ms\`, \`s\` and \`m\``;
+    this.error(
+      Codes.UNKNOWN_DURATION_UNIT,
+      `unknown time unit \`${unitTok.value}\``,
+      span,
+      `${why} — write \`${numTok.value}${canonical}\`${spacing}.`,
+    );
+    return true;
   }
 
   private parseWorkersDecl(): WorkersDecl | null {
@@ -3415,6 +3516,26 @@ class Parser {
           this.advance();
           const lit: DateOffsetLit = { type: 'DateOffsetLit', amount: Number(tok.value), unit: unitTok.value as DateOffsetUnit, span: { start: tok.span.start, end: unitTok.span.end } };
           return lit;
+        }
+        // M98c (`A1-07`, D160). Checked *after* both real constructions, so `3days` stays a date
+        // offset and only a genuinely broken duration reaches here.
+        if (unitTok.type === 'ident') {
+          const adjacent = unitTok.span.start.offset === tok.span.end.offset;
+          if (this.reportBadDurationUnit(tok, unitTok, adjacent)) {
+            // Consume the unit. The alternative — leave it for the caller — hands the same typo to
+            // `endLine`, which reports it a second time as ``unexpected `ms` at end of step``: the
+            // exact unteaching message this decision exists to remove. Recovery keeps the reading
+            // the author meant where it can (a spaced real unit is a duration with a space in it);
+            // where the unit is unknown there is no ms value to build, so the number stands alone.
+            this.advance();
+            const canonical = nearestDurationUnit(unitTok.value);
+            const span = { start: tok.span.start, end: unitTok.span.end };
+            if (canonical !== null && unitTok.value === canonical) {
+              const lit: DurationLit = { type: 'DurationLit', ms: toMs(Number(tok.value), canonical), span };
+              return lit;
+            }
+            return { type: 'NumberLit', value: Number(tok.value), raw: tok.raw, span };
+          }
         }
         return { type: 'NumberLit', value: Number(tok.value), raw: tok.raw, span: tok.span };
       }

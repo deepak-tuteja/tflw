@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, parseConfigSource } from '../src/index.js';
+import { DATE_OFFSET_UNITS, DURATION_UNITS, UNIT_SPELLINGS } from '../src/parser.js';
 
 /** The one diagnostic `source` produces, as `{message, hint}`. The count assert is deliberate: a
  * better hint attached to a cascade is not an improvement, and `M83` is what makes it one. */
@@ -203,4 +204,82 @@ test('A2-07b: no config-key suggestion, in either block, recommends something th
       }
     }
   }
+});
+
+// -- `A1-07` (M98c/D160): the duration messages, made reachable from value position ---------------
+// `A3-09` above fixed *one* of the five wrong-duration spellings, at `endLine`, via the trailing-
+// token lookup. The other four never reached a duration message at all: `250ms` and `250 ms` lex
+// identically, so `parseAtom` reconstructs adjacency from offsets, and when that check or the
+// unit-set check failed it simply declined to build a duration and let the leftover word fall out of
+// the step as ``unexpected `ms` at end of step``. Meanwhile `parseDuration` — the *other* duration
+// path — had the right words the whole time.
+
+test('A1-07: a spaced unit in value position keeps M84s exact wording, under a code that names durations', () => {
+  // The regression this guards is a downgrade, not a bug: M84 already taught this one case from
+  // `endLine`, so intercepting it earlier must not lose the sentence it shipped. What improves is
+  // the code and the message — `TF023` and "a duration unit must touch its number", rather than
+  // `TF010` and "unexpected `ms` at end of step".
+  const { message, hint } = only('test "a"\n  api GET /o\n  expect duration is less than 500 ms\n');
+  assert.match(message, /a duration unit must touch its number/);
+  assert.match(hint, /write `500ms`, not `500 ms`/);
+  clean('test "a"\n  api GET /o\n  expect duration is less than 500ms\n', 'the adjacent form the hint recommends must parse');
+});
+
+test('A1-07: a mis-cased unit is told it is the case, not merely that the unit is unknown', () => {
+  // `250MS` lower-cases into a real unit. "unknown time unit `MS`" is true and leaves the reader to
+  // spot the capitals themselves.
+  const { hint } = only('test "a"\n  api GET /o\n  expect duration is less than 250MS\n');
+  assert.match(hint, /time units are lowercase/);
+  assert.match(hint, /write `250ms`/);
+  clean('test "a"\n  api GET /o\n  expect duration is less than 250ms\n', 'the lowercase form must parse');
+});
+
+test('A1-07: a unit tflw spells differently is shown the spelling it uses', () => {
+  for (const [src, fix] of [
+    ['expect duration is less than 2sec', '`2s`'],
+    ['expect duration is less than 2min', '`2m`'],
+    ['expect duration is less than 2millis', '`2ms`'],
+  ] as const) {
+    const { message, hint } = only(`test "a"\n  api GET /o\n  ${src}\n`);
+    assert.match(message, /unknown time unit/, src);
+    assert.match(hint, new RegExp(`write ${fix.replace(/[`]/g, '`')}`), `${src} must name the spelling tflw uses`);
+  }
+  clean('test "a"\n  api GET /o\n  expect duration is less than 2s\n', 'the canonical spelling must parse');
+});
+
+test('A1-07: the same words give the same answer on the config path — that is why it is shared', () => {
+  // `parseDuration` and `parseAtom` are different productions reached by different syntax. Before
+  // D160 they disagreed about every spelling; a fix that improved only one would have replaced a
+  // bad message with an inconsistent one.
+  const { diagnostics } = parseConfigSource('defaults\n  timeout step 5sec\n');
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0]!.hint ?? '', /write `5s`/);
+});
+
+test('A1-07: a word that was never a unit keeps the generic error — the control that bounds the rule', () => {
+  // The whole design of D160 is the enumerated spelling table, and this is what it buys. Treating
+  // any adjacent word as an attempted unit would put "unknown time unit `e3`" underneath `TF001`'s
+  // correct explanation of `1e3`, and a second wrong answer under a right one is worse than none.
+  const { hint } = only('test "a"\n  api GET /o\n  expect duration is less than 250xyz\n');
+  assert.equal(hint, 'expected end of line');
+  const { diagnostics } = parseSource('test "a"\n  let n = 1e3\n');
+  assert.equal(diagnostics.filter((d) => d.code === 'TF023').length, 0, 'a numeric notation is not a duration');
+  assert.match(diagnostics[0]!.message, /exponent notation is not supported/);
+});
+
+test('A1-07: the duration spellings and the date-offset words are disjoint vocabularies', () => {
+  // Asserted structurally, and the reason is worth recording: **neither** of the two things that
+  // look like they protect `today + 3 days` protects it on its own. Running the date check first
+  // does not (with disjoint tables, swapping the order changes no output); the tables being disjoint
+  // does not either (the date check runs first, so it masks any overlap). Each was mutated
+  // separately and the suite stayed green both times. Only the *pair* of changes breaks anything,
+  // and no behavioural test can see one half of a two-change failure — so the invariant is pinned
+  // where it actually lives, in the tables.
+  const dateWords = new Set<string>(DATE_OFFSET_UNITS);
+  for (const spelling of Object.keys(UNIT_SPELLINGS)) {
+    assert.ok(!dateWords.has(spelling), `\`${spelling}\` is a date-offset word and must not also be a duration spelling`);
+  }
+  for (const unit of DURATION_UNITS) assert.ok(!dateWords.has(unit), `\`${unit}\` is both a time unit and a date-offset word`);
+  clean('test "a"\n  let d = today + 3 days\n  log "{d}"\n', '`today + 3 days` is a date offset');
+  clean('test "a"\n  let d = today + 3days\n  log "{d}"\n', 'adjacency is not what makes a date offset');
 });

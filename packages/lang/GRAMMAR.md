@@ -39,14 +39,21 @@ STRING      "…"  with \" \\ \n \r \t escapes; may contain {interpolation}
                  any other escape is an error (TF047, M98b) — write \\ for a literal backslash
 NUMBER      digits, optional fraction: 200, 12.5
 IDENT       [A-Za-z_][A-Za-z0-9_]*        (also the keyword lexeme before classification)
-PATH        a run beginning with '/' over [A-Za-z0-9_\-./{}?=&:%~], ends at whitespace
+PATH        a run beginning with '/' over every character RFC 3986 allows unescaped in a
+                 path or query (unreserved + sub-delims + '[' ']' '@'); ends at whitespace
+                 or at '#', which ends the path and starts a comment (TF001, M59/A1-OS-01)
 TAG         '@' IDENT
 ```
 
 - Comments: `#` to end of line. Blank and comment-only lines never emit `INDENT`/`DEDENT`.
-- While a `{`/`[` is open (bracket depth > 0), a physical line is a *continuation*: no
-  `INDENT`/`DEDENT`/`NEWLINE` for it, regardless of its own leading whitespace — this is what lets
-  an object/array literal (`body { … }`) span several hand-indented lines.
+- **Indentation is spaces.** A line indented with a tab is an error (`TF048`), reported once per
+  file however many lines are affected — the cause is one editor setting, not one mistake per line.
+  Whether tabs were ever accepted is not a question the language leaves open, so it is written here
+  rather than left to be discovered from the diagnostic (M98c, `A1-12`).
+- While a `{`/`[` is open, a physical line is a *continuation*: no `INDENT`/`DEDENT`/`NEWLINE` for
+  it, regardless of its own leading whitespace — this is what lets an object/array literal
+  (`body { … }`) span several hand-indented lines. A bracket left open at end of file is `TF045`,
+  reported at the bracket; so is a `}`/`]` that closes nothing (M98b).
 - Keywords are `IDENT` lexemes recognised by the parser in position (soft keywords, not reserved
   words) — see each production below for the keyword set it recognises. **A leading keyword never
   reserves that word for user-defined action names; disambiguation is always by what follows**
