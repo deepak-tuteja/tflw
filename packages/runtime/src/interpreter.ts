@@ -3417,7 +3417,20 @@ function generatorTag(valueType: string): string {
 }
 
 function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, redactor: Redactor, config: ResolvedConfig): StepResult {
-  const { value } = resolveSubject(step.subject, response);
+  const { value, label } = resolveSubject(step.subject, response);
+  // `A4-06` (M95) — the half the checker can never reach. A subject that resolves to nothing
+  // (`response.headers[…]` for an absent header, `navigate`'s final segment for an absent JSON key
+  // or an out-of-range index) used to bind `undefined` and report `✓`: the run then interpolated
+  // the literal text `"undefined"` into every later `{name}`, and a target that answers 200 to
+  // `?v=undefined` made the whole suite green. That is a false pass, not a lenient one — the
+  // sibling statement has always failed here, since `expect header "X-Missing" equals "1"` compares
+  // `undefined` against `"1"` and says so. `null` is deliberately *not* caught: an explicit JSON
+  // `null` is a value the response really carried, and capturing it is meaningful.
+  if (value === undefined) {
+    throw new RuntimeError(
+      `nothing to capture at ${label} — the response carried no such value, so \`${step.name}\` would bind \`undefined\` and every later \`{${step.name}}\` would send the literal text "undefined" (an explicit JSON \`null\` is capturable; this is an absent header/field)`,
+    );
+  }
   ctx.scope.set(step.name, value);
   // Gap #15 (TFLW-GAPS.md): `capture`'s own detail line renders the live value directly — mask it
   // the same way a `redact`-covered field is masked everywhere else, when this capture's subject

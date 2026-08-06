@@ -38,6 +38,11 @@ session admin
   header "Authorization" is "Bearer {token}"
 ```
 
+If the response has no such header or field, the `capture` **fails** rather than binding an empty
+value — otherwise every later `{name}` would carry the literal text `undefined`, and an endpoint
+that shrugs at `?id=undefined` would leave you with a passing suite that checked nothing. A JSON
+`null` is a real value and still captures fine.
+
 This one goes in `tflw.config`, not the test file — sessions are project-wide. `session` blocks
 like it run **once per run**, cached — a test opts in with `as admin` and
 gets the session's captured headers auto-applied, no repeated login boilerplate. More on this in

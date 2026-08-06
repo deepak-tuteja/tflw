@@ -1244,6 +1244,13 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         bound.add(step.name);
         break;
       case 'CaptureStmt':
+        // `A4-06` (M95): the subject is checked *before* the name is bound, for the same reason
+        // `LetStmt` above does it in that order — a step can never see its own not-yet-assigned
+        // name. Until M95 this case was the two lines without the first one, so a `capture` was
+        // the one statement in the language whose subject nothing inspected: `capture header
+        // "X-{typo}" as v` lint-checked clean while `expect header "X-{typo}" …` — the same
+        // `Subject` node, the same `checkSubject` call, three cases up — reported `TF030`.
+        checkSubject(step.subject, bound, diags);
         bound.add(step.name);
         break;
       case 'LogStmt':
