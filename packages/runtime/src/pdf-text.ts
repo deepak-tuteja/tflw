@@ -56,25 +56,79 @@ function findRootObjectNum(raw: string): number {
   return Number(m[1]!);
 }
 
+// A stream's extent comes from its dict's `/Length`, never from a scan of its bytes (D173,
+// `PLAN_M100_PDF_STREAM_LENGTH.md`). Stream data is *binary*, and locating its end by text has two
+// failure modes:
+//
+//  1. The EOL a writer puts before `endstream` is indistinguishable from data. This code used to
+//     slice to `endstream` and strip one trailing EOL; when the compressed data's own last byte is
+//     CR (0x0D) that strip eats the CR *and* the writer's LF, losing a real byte, and `inflateSync`
+//     throws `unexpected end of file`. **0.36% of receipt-shaped payloads end in CR** — measured,
+//     not estimated — which is how an order receipt failed testFlow-tests' CI and passed on the
+//     re-run. Not a flake: the draw changed, not the code.
+//  2. `endstream`/`endobj` occurring inside the compressed bytes. ~1e-11 per receipt, so it was
+//     never the cause here, but a scan has no way to tell it from the real terminator.
+//
+// `/Length` states the byte count, so neither has to be inferred. Scanning survives only as a
+// fallback for a dict with no usable `/Length` — where failure mode 1 is genuinely undecidable.
 function parseObjects(raw: string): Map<number, PdfObject> {
   const objects = new Map<number, PdfObject>();
-  const objRe = /(\d+)\s+0\s+obj\s*([\s\S]*?)endobj/g;
+  const headerRe = /(\d+)\s+0\s+obj\b/g;
   let m: RegExpExecArray | null;
-  while ((m = objRe.exec(raw)) !== null) {
+  while ((m = headerRe.exec(raw)) !== null) {
     const objNum = Number(m[1]!);
-    const body = m[2]!;
-    const streamKw = body.match(/stream\r?\n/);
+    const bodyStart = m.index + m[0].length;
+    const endobjIdx = raw.indexOf('endobj', bodyStart);
+    const streamKw = /stream\r?\n/.exec(raw.slice(bodyStart, endobjIdx === -1 ? undefined : endobjIdx));
     if (!streamKw) {
-      objects.set(objNum, { dict: body, stream: null });
+      objects.set(objNum, { dict: raw.slice(bodyStart, endobjIdx === -1 ? undefined : endobjIdx), stream: null });
       continue;
     }
-    const dataStart = streamKw.index! + streamKw[0].length;
-    const dict = body.slice(0, streamKw.index);
-    const endstreamIdx = body.indexOf('endstream', dataStart);
-    const rawData = endstreamIdx === -1 ? body.slice(dataStart) : body.slice(dataStart, endstreamIdx);
-    objects.set(objNum, { dict, stream: Buffer.from(rawData.replace(/\r?\n$/, ''), 'latin1') });
+    const dict = raw.slice(bodyStart, bodyStart + streamKw.index);
+    const dataStart = bodyStart + streamKw.index + streamKw[0].length;
+    const declared = streamLength(raw, dict);
+    let dataEnd: number;
+    if (declared !== null && raw.startsWith('endstream', skipEol(raw, dataStart + declared))) {
+      dataEnd = dataStart + declared;
+    } else {
+      const scanned = raw.indexOf('endstream', dataStart);
+      dataEnd = scanned === -1 ? raw.length : trimTrailingEol(raw, scanned);
+    }
+    objects.set(objNum, { dict, stream: Buffer.from(raw.slice(dataStart, dataEnd), 'latin1') });
+    // Resume *after* the stream: `N 0 obj` occurs inside binary data too, and a header matched
+    // there invents an object that shadows the real one in the map.
+    headerRe.lastIndex = dataEnd;
   }
   return objects;
+}
+
+/** `/Length` as a byte count, resolving the indirect `/Length N 0 R` spelling (the one a writer
+ * emits when it streams the object out before knowing its own size). `null` when absent or
+ * unresolvable, which sends the caller to the scan fallback. */
+function streamLength(raw: string, dict: string): number | null {
+  const indirect = dict.match(/\/Length\s+(\d+)\s+0\s+R/);
+  if (indirect) {
+    const target = raw.match(new RegExp(`(?:^|[^0-9])${indirect[1]!}\\s+0\\s+obj\\s*(\\d+)\\s*endobj`));
+    return target ? Number(target[1]!) : null;
+  }
+  const direct = dict.match(/\/Length\s+(\d+)/);
+  return direct ? Number(direct[1]!) : null;
+}
+
+/** Index of the first non-EOL character at or after `i` — the spec allows an EOL between the
+ * stream data and the `endstream` keyword, and writers differ on emitting it. */
+function skipEol(raw: string, i: number): number {
+  let j = i;
+  while (j < raw.length && (raw[j] === '\r' || raw[j] === '\n')) j++;
+  return j;
+}
+
+/** `end`, minus one trailing EOL. The scan fallback's equivalent of `skipEol`, and it carries the
+ * CR ambiguity described above: with no `/Length` there is no way to tell a writer's EOL from data
+ * that ends in one. Kept because guessing right ~99.6% of the time beats refusing the PDF. */
+function trimTrailingEol(raw: string, end: number): number {
+  if (raw[end - 1] === '\n') return raw[end - 2] === '\r' ? end - 2 : end - 1;
+  return end;
 }
 
 /** Recurses through `/Kids` arrays (an intermediate `/Pages` node) down to leaf `/Page` objects,
