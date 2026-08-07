@@ -86,6 +86,14 @@ export const Codes = {
   NO_RESPONSE_YET: 'TF039',
   CALL_NOT_EVALUATED: 'TF040',
   VALUE_SUBJECT_INVALID: 'TF041',
+  MATCHER_SUBJECT_MISMATCH: 'TF042',
+  MISSING_FILE: 'TF043',
+  CALL_CYCLE: 'TF044',
+  UNBALANCED_BRACKET: 'TF045',
+  EMPTY_TAG: 'TF046',
+  UNKNOWN_ESCAPE: 'TF047',
+  TAB_INDENT: 'TF048',
+  HIDDEN_CHAR: 'TF049',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -184,6 +192,108 @@ export interface RenderOptions {
 /** Widest source line `renderDiagnostic` will print in full (M59, A1-01). */
 const MAX_RENDERED_LINE = 200;
 
+// ---------------------------------------------------------------------------
+// The display coordinate (M98a, `A1-08` / D147-D151).
+//
+// tflw has two coordinate systems and used one type for both. `Position.column` is a **machine**
+// coordinate — a 1-based UTF-16 code-unit column, which is what `String.prototype.slice` and LSP
+// both want — and this renderer consumed it as a **display** coordinate, `' '.repeat(column - 1)`.
+// The two agree only on lines that are pure single-cell ASCII, so every caret under a tab, a CJK
+// run, an emoji or a combining mark was misaligned by exactly the difference.
+//
+// `Position` stays UTF-16 and is now documented as such (`token.ts`): it is a frozen exported type
+// under an additive-only freeze, and changing a field's unit is not an additive change. The display
+// coordinate is derived here instead, which is the only place that wants terminal cells — the LSP
+// publishes structured ranges and `report.html` renders in a proportional font, where counting
+// cells means nothing.
+// ---------------------------------------------------------------------------
+
+/** Cells a tab advances to. Eight is the near-universal terminal default. */
+const TAB_STOP = 8;
+
+/** Code points that occupy no cells: combining marks (`Mn`/`Me`, including variation selectors) and
+ * format characters (`Cf` — zero-width space/non-joiner/joiner, the bidi overrides, and `U+FEFF`).
+ *
+ * Expressed as Unicode property escapes rather than a hand-copied range table so it tracks the
+ * engine's Unicode version instead of the version whoever wrote it happened to have open. */
+const ZERO_WIDTH = /[\p{Mn}\p{Me}\p{Cf}]/u;
+
+/** Code points that occupy two cells — East Asian Wide and Fullwidth, plus the emoji planes.
+ *
+ * This one *is* a table: ECMAScript exposes General_Category and Script as property escapes but not
+ * `East_Asian_Width`, so there is nothing to delegate to. Ranges follow Unicode 15.1's `W`/`F`
+ * classes, condensed. */
+const WIDE_RANGES: readonly (readonly [number, number])[] = [
+  [0x1100, 0x115f], // Hangul Jamo initial consonants
+  [0x2e80, 0x303e], // CJK radicals, Kangxi, CJK symbols & punctuation
+  [0x3041, 0x33ff], // kana, Hangul compatibility jamo, CJK compatibility
+  [0x3400, 0x4dbf], // CJK Unified Ideographs Extension A
+  [0x4e00, 0x9fff], // CJK Unified Ideographs
+  [0xa000, 0xa4cf], // Yi
+  [0xa960, 0xa97f], // Hangul Jamo Extended-A
+  [0xac00, 0xd7a3], // Hangul syllables
+  [0xf900, 0xfaff], // CJK compatibility ideographs
+  [0xfe10, 0xfe19], // vertical forms
+  [0xfe30, 0xfe6f], // CJK compatibility forms, small form variants
+  [0xff00, 0xff60], // fullwidth forms
+  [0xffe0, 0xffe6], // fullwidth signs
+  [0x1f300, 0x1faff], // emoji: symbols & pictographs through extended-A
+  [0x20000, 0x2fffd], // CJK Extension B-F
+  [0x30000, 0x3fffd], // CJK Extension G+
+];
+
+/** Terminal cells one code point occupies. */
+function cellWidth(ch: string): number {
+  if (ZERO_WIDTH.test(ch)) return 0;
+  const cp = ch.codePointAt(0)!;
+  for (const [lo, hi] of WIDE_RANGES) {
+    if (cp < lo) break;
+    if (cp <= hi) return 2;
+  }
+  return 1;
+}
+
+/**
+ * Lay a source line out for the terminal: expand tabs to spaces, and translate the caret's
+ * code-unit range into a cell range.
+ *
+ * **Tabs are expanded rather than measured** (D150). Measuring alone is not enough: the printed
+ * line would still contain the raw tab, and where a terminal puts that tab depends on the tab stop
+ * *relative to the gutter prefix* (`2 | `), which this renderer does not control. Expanding makes
+ * the rendered line's geometry a property of the string instead of a property of the reader's
+ * terminal, and then the caret padding is exact by construction rather than by coincidence.
+ *
+ * Runs after `windowLine`, never before (D151): the 200-column cap exists to bound `A1-01`'s
+ * quadratic allocation, which is a code-unit concern. Capping in cells would make the bound depend
+ * on the content's script for no gain.
+ */
+function layoutLine(line: string, caretStart: number, caretLen: number): { text: string; caretCells: number; caretWidth: number } {
+  const caretEnd = caretStart + caretLen;
+  let text = '';
+  let cells = 0;
+  let units = 0;
+  let startCells = -1;
+  let endCells = -1;
+  // `for…of` iterates code points, so an astral character is one step, not two lone surrogates.
+  // The boundary tests are `>=` because a span could in principle start mid-surrogate.
+  for (const ch of line) {
+    if (startCells < 0 && units >= caretStart) startCells = cells;
+    if (endCells < 0 && units >= caretEnd) endCells = cells;
+    if (ch === '\t') {
+      const next = (Math.floor(cells / TAB_STOP) + 1) * TAB_STOP;
+      text += ' '.repeat(next - cells);
+      cells = next;
+    } else {
+      text += ch;
+      cells += cellWidth(ch);
+    }
+    units += ch.length;
+  }
+  if (startCells < 0) startCells = cells;
+  if (endCells < 0) endCells = cells;
+  return { text, caretCells: startCells, caretWidth: Math.max(1, endCells - startCells) };
+}
+
 /** Keep a diagnostic's rendered source line bounded (M59, A1-01).
  *
  * Rendering used to emit the whole line plus one space of caret padding per preceding column, so a
@@ -218,7 +328,9 @@ export function renderDiagnostic(diag: Diagnostic, source: string, opts: RenderO
   const rawCaretStart = start.column - 1;
   const sameLine = end.line === start.line;
   const rawCaretEnd = sameLine ? Math.max(end.column - 1, rawCaretStart + 1) : rawLine.length;
-  const { lineText, caretStart, caretLen } = windowLine(rawLine, rawCaretStart, rawCaretEnd);
+  const windowed = windowLine(rawLine, rawCaretStart, rawCaretEnd);
+  // M98a (`A1-08`): the caret is placed in terminal cells, not code units. See `layoutLine`.
+  const { text: lineText, caretCells, caretWidth } = layoutLine(windowed.lineText, windowed.caretStart, windowed.caretLen);
 
   const gutterWidth = String(start.line).length;
   const pad = ' '.repeat(gutterWidth);
@@ -235,7 +347,7 @@ export function renderDiagnostic(diag: Diagnostic, source: string, opts: RenderO
 
   const header = `${c.bold(`${diag.severity}[${diag.code}]`)}: ${diag.message}`;
   const locator = `${pad}${c.blue('-->')} ${filename}:${start.line}:${start.column}`;
-  const caretLine = ' '.repeat(caretStart) + c.red('^'.repeat(caretLen)) + (diag.label ? ' ' + c.red(diag.label) : '');
+  const caretLine = ' '.repeat(caretCells) + c.red('^'.repeat(caretWidth)) + (diag.label ? ' ' + c.red(diag.label) : '');
 
   const out: string[] = [
     header,

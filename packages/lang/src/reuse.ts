@@ -491,12 +491,29 @@ export function detectReuse(entries: readonly SuiteEntry[]): ReuseHint[] {
   // wouldn't survive `tflw check` is never offered, whatever channel the reference came through —
   // which is the property `tflw refactor apply` is supposed to have, stated once, instead of a
   // list of channels that has already been wrong once.
-  const usedNames = new Set<string>();
+  // Seeded with every `action` the suite already declares, not empty (`B5-02` half 2, M97c/D143).
+  //
+  // `nextFreeName` has always kept two *hints* in one scan from proposing the same name; it had
+  // nothing to say about a name the suite was already using. So a duplicated `api POST /orders`
+  // sequence proposed `action post orders` in a file that already imported an `action post orders`,
+  // and — measured on the built CLI — `tflw refactor apply` accepted it, exited 0, and left a suite
+  // that `tflw check` then rejected with the `TF035` M97b had just widened to cover exactly that
+  // imported case. Half 1 made the breakage visible; this is what stops it being written.
+  //
+  // Over-approximate on purpose: a name is claimed if *any* file in the scan declares it, even one
+  // that will never import the extraction. tflw's action namespace is per-file, so this can dedupe
+  // a name that would not actually have collided — and the cost of that is one suffix (`post orders
+  // 2`), against a suite that does not check as the cost of getting it wrong the other way.
+  //
+  // It cannot be complete, and half 3 is why that is acceptable: an `import` reaching a file outside
+  // the scanned set is invisible here, so `refactor apply` re-checks its own output before writing
+  // rather than trusting this to have seen everything.
+  const usedNames = new Set<string>(entries.flatMap((e) => e.program.actions.map((a) => a.name)));
   const hints: ReuseHint[] = [];
   for (const draft of drafts) {
     // Name first (it's in the rendered source), but claim it only if the hint survives, so a
     // dropped hint doesn't push a later one to "post notes 2".
-    const actionName = nextFreeName(draft.actionName, usedNames);
+    const actionName = nextFreeActionName(draft.actionName, usedNames);
     if (!actionIsSelfContained(renderActionSource(actionName, draft))) continue;
     usedNames.add(actionName);
     hints.push(finalizeHint(`RF${String(hints.length + 1).padStart(3, '0')}`, actionName, draft));
@@ -516,12 +533,34 @@ function actionIsSelfContained(actionSource: string): boolean {
 }
 
 /** First unused `base`, `base 2`, `base 3`, … — pure, so a caller that may yet discard the name
- * (the backstop above) doesn't consume it. */
+ * (the backstop above) doesn't consume it. Param names only; see `nextFreeActionName`. */
 function nextFreeName(base: string, used: ReadonlySet<string>): string {
   if (!used.has(base)) return base;
   let n = 2;
   while (used.has(`${base} ${n}`)) n++;
   return `${base} ${n}`;
+}
+
+/**
+ * The same, for an **action** name — `base`, `base v2`, `base v3`, … — because `base 2` is not one.
+ *
+ * Found by half 2 (M97c/D143) the moment seeding made deduping common: `action post orders 2()`
+ * does not parse. An action name is a run of words and `2` is a number token, so the parser stops
+ * with ``TF010: expected `(` after the action name, found `2` `` — and `actionIsSelfContained`,
+ * which parses the action a hint would write and drops the hint if it doesn't, was silently
+ * swallowing every renamed proposal. The suffix was reachable before this milestone (two hints in
+ * one scan proposing one name), so the second of those two hints has been vanishing rather than
+ * being offered under a second name for as long as the reuse pass has existed. It never surfaced
+ * because a dropped hint looks exactly like a sequence that wasn't duplicated.
+ *
+ * `nextFreeName` keeps the numeric form: its other caller is param names, which are camel-cased
+ * with spaces stripped immediately afterwards (`role 2` → `role2`), where it is already valid.
+ */
+function nextFreeActionName(base: string, used: ReadonlySet<string>): string {
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base} v${n}`)) n++;
+  return `${base} v${n}`;
 }
 
 /** `nextFreeName` plus the claim — for param names, which are always kept once generated. */

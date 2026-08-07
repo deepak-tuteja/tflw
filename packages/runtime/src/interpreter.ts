@@ -2292,6 +2292,12 @@ interface StepsExec {
   /** The value of this block's `give`, or undefined if it never ran one (a plain test, or an
    * action whose steps failed before reaching `give`). */
   readonly giveValue: unknown;
+  /** Set alongside `error` when a *hard* failure came up through one or more `action` frames
+   * (M97d, D141) — the unframed root message plus the frames it has passed so far, so `execCall`
+   * can add its own frame to a bounded array instead of prefixing a string that never stops
+   * growing. Absent when the failure happened directly in this block's own steps: `execCall` then
+   * starts the path with itself. */
+  readonly failure?: { readonly root: string; readonly path: readonly string[] };
 }
 
 /** Execute a step sequence — a test's body, or an action's body when it's called. Actions get
@@ -2765,7 +2771,13 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       }
       results.push(failed);
       tc.emit({ type: 'step:end', test: testName, step: failed });
-      return { steps: results, ok: false, error: redacted, giveValue };
+      // Carry the failure's structure up alongside the rendered string (M97d). A host refusal
+      // deliberately drops it: `refusalDuring` replaces the message entirely, so the frames that
+      // came with the original error no longer describe what is being reported.
+      const failure = refusalDuring === null && err instanceof RuntimeError && err.actionPath.length > 0
+        ? { root: tc.redactor.redact(err.rootMessage), path: err.actionPath }
+        : undefined;
+      return { steps: results, ok: false, error: redacted, giveValue, ...(failure ? { failure } : {}) };
     }
   }
 
@@ -2773,6 +2785,25 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
     return { steps: results, ok: false, soft: true, error: softFailures.join('\n'), giveValue };
   }
   return { steps: results, ok: true, giveValue };
+}
+
+/** How many `action` frames a failure message names before it elides the middle. The call path is
+ * already bounded — every recursion is refused, so no action appears on the stack twice — but a
+ * suite is free to nest twenty actions deep legitimately, and a reader gets nothing from frames
+ * eleven through nineteen. Elision keeps the ends, which are the two that identify the failure:
+ * where it surfaced and where it actually happened. */
+const MAX_NAMED_FRAMES = 6;
+
+/** Render an action-call failure once, from the root message and the frames it passed through.
+ * Single-frame output is exactly what it was before M97d — `action "x" failed: <reason>` — because
+ * that is the overwhelmingly common case and there was nothing wrong with it. */
+function renderActionFailure(path: readonly string[], root: string): string {
+  const head = `action "${path[0]}" failed: ${root}`;
+  if (path.length === 1) return head;
+  const shown = path.length <= MAX_NAMED_FRAMES
+    ? path
+    : [...path.slice(0, MAX_NAMED_FRAMES - 2), `… ${path.length - (MAX_NAMED_FRAMES - 1)} more`, path[path.length - 1]!];
+  return `${head} (call path ${shown.join(' → ')})`;
 }
 
 interface CallOutcome {
@@ -2794,6 +2825,19 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
   if (action) {
     if (args.length !== action.params.length) {
       throw new RuntimeError(`action "${call.name}" expects ${action.params.length} argument(s), got ${args.length}`);
+    }
+    // D141's residue guard. `TF044` rejects a cycle whose every action is declared in one file;
+    // this catches the rest — a cycle that leaves the file through an `import` and comes back,
+    // which the checker cannot see because `KnownAction` discards imported bodies. A name already
+    // on the stack means this action reaches itself, and with no conditionals in the language that
+    // never terminates, so failing here loses nothing a longer run would have produced. Detecting
+    // the repeat rather than counting to a depth limit means the message can name the actual cycle,
+    // and that it fires at frame 2 instead of frame 671.
+    const callerStack = callerCtx.callStack ?? [];
+    const repeatedAt = callerStack.indexOf(call.name);
+    if (repeatedAt !== -1) {
+      const cycle = [...callerStack.slice(repeatedAt), call.name].join(' → ');
+      throw new RuntimeError(`this call completes a cycle: \`${cycle}\` — an action that reaches itself never terminates`);
     }
     const scope = new Map<string, unknown>();
     action.params.forEach((p, i) => scope.set(p, args[i]));
@@ -2817,13 +2861,22 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       // when the run genuinely has a `BrowserManager`. Unexercised until M7 wrote the first action
       // whose body is browser steps (M3a-M6 actions were all API-era).
       browser: callerCtx.browser,
+      callStack: [...callerStack, call.name],
     };
     const exec = await execSteps(action.body, config, actionCtx, tc, `${call.name}(...)`, registry);
     // A hard failure inside the action (a failing `expect`, or a thrown error) still aborts the
     // caller immediately — but a *soft* one (`exec.soft`, decision 55) must propagate as soft, not
     // silently harden into a caller-aborting throw: `check`→`check` stays uniform even through an
     // imported action, per §6.4's closed soft-assertion semantics.
-    if (!exec.ok && !exec.soft) throw new RuntimeError(`action "${call.name}" failed: ${exec.error ?? 'a step failed'}`);
+    if (!exec.ok && !exec.soft) {
+      // D141's other half. This line used to be `action "x" failed: ${exec.error}`, and `exec.error`
+      // was itself the previous frame's already-prefixed string — so the message grew by one prefix
+      // per level with nothing bounding it. The frames now travel as an array and the string is
+      // rendered once, from the root message, at whatever depth it finally surfaces.
+      const inner = exec.failure ?? { root: exec.error ?? 'a step failed', path: [] };
+      const path = [call.name, ...inner.path];
+      throw new RuntimeError(renderActionFailure(path, inner.root), path, inner.root);
+    }
     const detail = tc.redactor.redact(`${call.name}(${args.map(repr).join(', ')}) = ${repr(exec.giveValue)}`);
     return {
       result: mkStep('call', src, call.span, exec.ok, start, detail),
@@ -3226,9 +3279,11 @@ function evaluateNetworkExpect(step: ExpectStmt, matched: CapturedNetworkRequest
   const subject = step.subject;
   const label = networkSubjectLabel(subject, urlPattern);
   if (subject.type === 'NetworkRequestSubject') {
-    // Existence-only; `wasMade` is the only matcher meaningful here. The checker doesn't statically
-    // enforce this (SPEC §1: matcher↔subject compatibility stays a runtime concern, mirroring every
-    // other subject) — a mismatched matcher gets a direct, clear error instead of nonsense output.
+    // Existence-only; `wasMade` is the only matcher meaningful here. As of M97b the checker rejects
+    // this before the run (`TF042`, D140) — it is decidable from the AST, and this comment used to
+    // cite SPEC §1's "stays a runtime concern", which was true when written and is no longer. The
+    // throw stays: `checkMatcherSubjects` is the checker's half of one rule, and the runtime does
+    // not assume it ran (a `tflw run` on a suite is not obliged to have passed `tflw check` first).
     if (step.matcher.name !== 'wasMade') {
       throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`request to "…"\` — only \`was made\` (SPEC §9.7)`);
     }

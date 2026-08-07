@@ -35,17 +35,31 @@ but has no callable subject yet (e.g. `has value`/`is StateWord` outside a UI co
 NEWLINE     logical end-of-line (collapses blank + comment-only lines)
 INDENT      indentation increased vs. the enclosing block
 DEDENT      indentation decreased (one per level closed)
-STRING      "…"  with \" \\ \n \t escapes; may contain {interpolation}
+STRING      "…"  with \" \\ \n \r \t \u{XXXX} escapes; may contain {interpolation}
+                 any other escape is an error (TF047, M98b) — write \\ for a literal backslash
+                 \u{XXXX} is 1-6 hex digits up to \u{10FFFF}, braced form only, no surrogate
+                 halves (M98d); it is also the way to write a character TF049 refuses literally
 NUMBER      digits, optional fraction: 200, 12.5
 IDENT       [A-Za-z_][A-Za-z0-9_]*        (also the keyword lexeme before classification)
-PATH        a run beginning with '/' over [A-Za-z0-9_\-./{}?=&:%~], ends at whitespace
+PATH        a run beginning with '/' over every character RFC 3986 allows unescaped in a
+                 path or query (unreserved + sub-delims + '[' ']' '@'); ends at whitespace
+                 or at '#', which ends the path and starts a comment (TF001, M59/A1-OS-01)
 TAG         '@' IDENT
 ```
 
 - Comments: `#` to end of line. Blank and comment-only lines never emit `INDENT`/`DEDENT`.
-- While a `{`/`[` is open (bracket depth > 0), a physical line is a *continuation*: no
-  `INDENT`/`DEDENT`/`NEWLINE` for it, regardless of its own leading whitespace — this is what lets
-  an object/array literal (`body { … }`) span several hand-indented lines.
+- **Bidi controls and zero-width characters are errors anywhere in a file** (`TF049`, M98d), comments
+  and strings included, along with a `U+FEFF` anywhere but offset 0. They are the characters that let
+  rendered source and parsed source say different things, and a test whose reviewer cannot see what
+  it asserts is the failure this language exists to prevent. Write `\u{200B}` where a value needs one.
+- **Indentation is spaces.** A line indented with a tab is an error (`TF048`), reported once per
+  file however many lines are affected — the cause is one editor setting, not one mistake per line.
+  Whether tabs were ever accepted is not a question the language leaves open, so it is written here
+  rather than left to be discovered from the diagnostic (M98c, `A1-12`).
+- While a `{`/`[` is open, a physical line is a *continuation*: no `INDENT`/`DEDENT`/`NEWLINE` for
+  it, regardless of its own leading whitespace — this is what lets an object/array literal
+  (`body { … }`) span several hand-indented lines. A bracket left open at end of file is `TF045`,
+  reported at the bracket; so is a `}`/`]` that closes nothing (M98b).
 - Keywords are `IDENT` lexemes recognised by the parser in position (soft keywords, not reserved
   words) — see each production below for the keyword set it recognises. **A leading keyword never
   reserves that word for user-defined action names; disambiguation is always by what follows**

@@ -16,7 +16,7 @@
 // See PLAN_DOC_TRUTH.md for the decisions (DT-01 … DT-09).
 
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -33,6 +33,7 @@ const ROOT = process.env.TFLW_DOCS_ROOT ?? join(here, '..');
 const CLI = join(here, '../../cli/dist/cli.cjs');
 const FIXTURE_CONFIG = join(here, 'fixtures/tflw.config');
 const FIXTURE_SESSIONS = join(here, 'fixtures/sessions.config');
+const FIXTURE_SUITE = join(here, 'fixtures/suite');
 
 const problems = [];
 const fail = (where, message, detail) => problems.push({ where, message, detail });
@@ -117,6 +118,15 @@ async function checkSamples() {
     const fixture = await readFile(FIXTURE_CONFIG, 'utf8');
     const sessions = await readFile(FIXTURE_SESSIONS, 'utf8');
     await writeFile(join(dir, 'tflw.config'), `${fixture}\n${sessions}`, 'utf8');
+
+    // The docs' *file* surface, alongside the fixture config's service/session surface (M97c).
+    // `TF043` checks that a path literal names something real, and a guide sample naming
+    // `./shared/create.tflw` is describing a project layout it expects the reader to have — so the
+    // sandbox gets that layout rather than the rule getting an exemption. Two things follow, both
+    // wanted: a doc that names a path with no fixture fails with `TF043` pointing at the line, and
+    // an `import` that now *resolves* closes `checkCalls`' world, so a sample calling an action the
+    // imported file does not declare is caught instead of waved through as "world unknown".
+    await cp(FIXTURE_SUITE, dir, { recursive: true });
 
     const prepared = await Promise.all(
       samples.flatMap((block) => expand(block).map((piece) => ({ block, ...piece }))).map(async (piece, i) => {
