@@ -285,6 +285,26 @@ test('checkUnknownVariables (M4b): flags a typo\'d `{var}` inside `matches snaps
   assert.match(diags[0]!.message, /unknown variable "stp"/);
 });
 
+test('checkUnknownVariables (M101): accepts a bound `{var}` inside `matches file "<path>"`', () => {
+  const { program } = parseSource(`test "ok"\n  let slug = "receipt-9"\n  api GET /r\n  expect body bytes matches file "./{slug}.bin"\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables (M101): flags a typo\'d `{var}` inside `matches file "<path>"`', () => {
+  const { program } = parseSource(`test "bad"\n  let slug = "receipt-9"\n  api GET /r\n  expect body bytes matches file "./{slgu}.bin"\n`);
+  const diags = checkUnknownVariables(program);
+  assert.equal(diags.length, 1);
+  assert.match(diags[0]!.message, /unknown variable "slgu"/);
+});
+
+test('checkUnknownVariables (M101/A4-OS-10): does NOT bind `{var}`s in `matches schema "<name>" from "<src>"` — both operands stay literal', () => {
+  // The negative half of the pair above. A schema name is an identifier inside a contract document
+  // and the source is resolved before variable scope exists, so braces there are ordinary characters
+  // and reporting them as unknown variables would be wrong, not merely noisy.
+  const { program } = parseSource(`test "ok"\n  api GET /r\n  expect body matches schema "{notAVar}" from "./{alsoNot}.json"\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
 test('checkUnknownVariables (M4b): flags a typo\'d `{var}` inside a `mask <locator>`', () => {
   const { program } = parseSource(`test "bad"\n  let region = ".timestamp"\n  expect page matches snapshot "checkout" mask css "{regoin}"\n`);
   const diags = checkUnknownVariables(program);

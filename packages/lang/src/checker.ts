@@ -1862,9 +1862,17 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
 function checkExpectStmt(step: ExpectStmt, bound: Set<string>, diags: Diagnostic[]): void {
   checkSubject(step.subject, bound, diags);
   if (step.matcher.value) checkValue(step.matcher.value, bound, diags);
-  // `matches snapshot "<name>"` (M4b) — interpolation-aware like `screenshot "<name>"`, unlike
-  // `matchesSchema`/`matchesFile`'s deliberately-plain `schemaName`/`filePath` (ast.ts).
+  // `matches snapshot "<name>"` (M4b) — interpolation-aware like `screenshot "<name>"`.
   if (step.matcher.snapshotName) checkStringLit(step.matcher.snapshotName, bound, diags);
+  // `matches file "<path>"` joined them in M101/D174. Until then the path was read literally at run
+  // time, so a `{var}` in it named nothing and checking it would have been checking a brace; now it
+  // is a variable reference like any other and an unbound name in it has to be caught here. Adding
+  // `evalValue` in the runtime without this line would have made `matches file "{typo}.bin"` the one
+  // interpolating operand in the language whose typos survive `check` — the M97 contract (D137-D146)
+  // is two-way, so a runtime that starts reading a value obliges the checker to start binding it.
+  //
+  // `schemaName`/`schemaSource` stay plain and stay unchecked, together — see `A4-OS-10`.
+  if (step.matcher.filePath) checkStringLit(step.matcher.filePath, bound, diags);
   for (const mask of step.masks) checkStringLit(mask.value, bound, diags);
 }
 

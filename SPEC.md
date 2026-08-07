@@ -1187,13 +1187,32 @@ expect body bytes matches file "fixtures/expected-receipt.pdf"
 ```
 
 - **Only on `body bytes`** — `matches file` on any other subject is a runtime error.
-- **Path is a plain string literal, never `{var}`-interpolated** — resolved against the test
-  file's own directory, the same convention `import`/`use`/`upload`/`cert`/`key` already use.
-  Deliberately consistent with `matches schema "Name" from "src"` (§6.2.1), which reads its own
-  `schemaName`/`schemaSource` operands the same direct, non-interpolated way.
-  Same reasoning: no byte-array or base64 literal syntax exists in the grammar, so an inline
-  binary expected value can't be spelled any other way — comparing against a real file on disk is
-  the only non-lossy option, and inventing a literal syntax is a separate, much bigger feature.
+- **Path interpolates `{var}` and resolves against the test file's own directory** — the same
+  convention `body from`/`upload`/`drop file` use, and the same `evalValue` call (M101, D174):
+
+  ```
+  capture body bytes as receiptBytes
+  let scratchPath = save temp file(receiptBytes)     # a `use`d JS action; writes the file
+  expect body bytes matches file "{scratchPath}"
+  ```
+
+  Through v0.1 this operand alone read its literal text, so the path above had to be written out a
+  second time by hand. That was documented here as deliberate and consistent with `matches schema
+  "Name" from "src"`, but the consistency argument was backwards: the three *other* file operands
+  in the language all interpolated, and this one carried the identical `StringLit`. `matches
+  schema`'s two operands still read their literal text, and that one is genuine — a schema name is
+  an identifier in a contract document, not a path (filed as `A4-OS-10`).
+
+  Interpolating is additive in practice: it changes the meaning of a path only if a `{` was meant
+  literally in a filename, which nothing in the corpus or acceptance suites does.
+
+  Because the path is now a variable reference, `tflw check` binds the names in it: `matches file
+  "./{slgu}.bin"` is a `TF030` at check time, exactly like the same typo in `screenshot "{name}"`.
+  `TF043` (does the file exist?) is the separate, opposite case — an interpolated path is not
+  statically known, so it is skipped rather than guessed at. Not-knowable is not known-bad.
+- **No inline expected value** — no byte-array or base64 literal syntax exists in the grammar, so a
+  binary expectation can't be spelled any other way. Comparing against a real file on disk is the
+  only non-lossy option, and inventing a literal syntax is a separate, much bigger feature.
 - **`hasCount` also widened** to accept `body bytes` (byte length), reusing the existing matcher —
   `expect body bytes hasCount 45296`.
 - **`equals`/`contains` are not supported** directly on `body bytes` for the same no-inline-literal
