@@ -102,7 +102,8 @@ one **verified** locator every time you click an element — not a best guess, t
 tflw's own resolver confirmed resolves to exactly that element, in the same `button "…"`/
 `field "…"`/`text "…"`/`css "…"` form a `.tflw` file uses. Clicking never navigates the page
 (picking is inert), so you can click around a real, already-logged-in app and paste locators
-straight into a test as you go. Runs until the window is closed or `Ctrl+C`.
+straight into a test as you go. Runs until the window is closed or `Ctrl+C` — including while the
+browser is still opening, which on a cold machine is the wait you are most likely to want out of.
 
 ## Lint before you run — `tflw check`
 
