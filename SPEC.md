@@ -1205,6 +1205,11 @@ expect body bytes matches file "fixtures/expected-receipt.pdf"
 
   Interpolating is additive in practice: it changes the meaning of a path only if a `{` was meant
   literally in a filename, which nothing in the corpus or acceptance suites does.
+
+  Because the path is now a variable reference, `tflw check` binds the names in it: `matches file
+  "./{slgu}.bin"` is a `TF030` at check time, exactly like the same typo in `screenshot "{name}"`.
+  `TF043` (does the file exist?) is the separate, opposite case — an interpolated path is not
+  statically known, so it is skipped rather than guessed at. Not-knowable is not known-bad.
 - **No inline expected value** — no byte-array or base64 literal syntax exists in the grammar, so a
   binary expectation can't be spelled any other way. Comparing against a real file on disk is the
   only non-lossy option, and inventing a literal syntax is a separate, much bigger feature.
