@@ -24,7 +24,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, checkProgram, Codes } from '../src/index.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { parseSource, parseConfigSource, checkProgram, Codes } from '../src/index.js';
 
 const parse = (source: string) => parseSource(source);
 
@@ -162,4 +164,101 @@ test('recoveredSpans is absent from every program that parses', () => {
   const recovering = parse(`test "t"\n  let a = create order\n`).program;
   assert.equal(Object.hasOwn(recovering, 'recoveredSpans'), true);
   assert.equal(recovering.recoveredSpans?.length, 1);
+});
+
+// ---- D169: `A3-08` — an optional value must be self-delimiting -----------------------------
+
+test('a keyword after `random password` is no longer eaten as the length', () => {
+  // `random password [N]` is the grammar's only optional *and unmarked* value position, so an
+  // `ident` there is ambiguous with the keyword that ends the enclosing production —
+  // `looksLikeValueStart` returned true for any ident, and `from` became the length.
+  //
+  // D167's back-off does not reach this: under back-off the length becomes `VarRef(from)`, `select`
+  // then expects `from` and finds `field`, and the blame moves one token without becoming right.
+  assert.deepEqual(errorsOf(`test "t"\n  open "/app"\n  select random password from field "pw"\n`), []);
+});
+
+test('the three working password spellings all still parse', () => {
+  // The narrowing keeps every intent expressible. 26 uses in the corpus, all bare, none with a
+  // length in either spelling — which is the measurement the freeze classification rests on.
+  for (const spelling of ['random password', 'random password 8', 'random password {n}']) {
+    assert.deepEqual(errorsOf(`test "t"\n  let n = 8\n  let p = ${spelling}\n`), [], spelling);
+  }
+});
+
+test('a bare ident as a password length is refused with advice, not with "end of step"', () => {
+  // Narrowing the set is only half a fix: `random password n` then falls through to the enclosing
+  // production, whose ``unexpected `n` at end of step`` teaches nothing. That is `M98c`'s own
+  // failure mode — a diagnostic that fires and leaves the author no better off.
+  const [diag, ...rest] = errorsOf(`test "t"\n  let p = random password n\n`);
+  assert.deepEqual(rest, []);
+  assert.match(diag?.hint ?? '', /a password length must be a number or a `\{var\}`/);
+  assert.match(diag?.hint ?? '', /random password \{n\}/);
+});
+
+test('control: the password advice expires like every other note', () => {
+  // The advice is taken on *every* `random password` with a following ident — including the valid
+  // `select random password from …`, where `select` consumes `from` and the note silently expires.
+  // If it did not expire, this file would carry password advice on an unrelated later error.
+  const diags = errorsOf(`test "t"\n  open "/app"\n  select random password from field "pw"\n  expect status equals 200 extra\n`);
+  assert.equal(diags.length, 1);
+  assert.doesNotMatch(diags[0]?.hint ?? '', /a password length must be/);
+});
+
+// ---- D170: `M98c-03` — one duration rule, both positions ------------------------------------
+
+/** Every syntax that reaches `parseDuration`, one spelling each. The point is the *set*: the check
+ * lives in `parseDuration` itself, so each of these inherits it by construction — and this list is
+ * what turns that claim into something a test can fail. */
+const DURATION_SITES: readonly (readonly [string, string])[] = [
+  ['pause', 'test "t"\n  pause 250 UNIT\n'],
+  ['pause … to', 'test "t"\n  pause 100ms to 250 UNIT\n'],
+  ['per-step timeout', 'test "t"\n  api GET /health timeout 250 UNIT\n  expect status equals 200\n'],
+  ['workload ramp … over', 'test "t"\n  ramp to 5 users over 250 UNIT\n  threshold error rate is less than 1%\n  api GET /health\n  expect status equals 200\n'],
+  ['workload hold … for', 'test "t"\n  hold 5 users for 250 UNIT\n  threshold error rate is less than 1%\n  api GET /health\n  expect status equals 200\n'],
+];
+
+for (const [label, template] of DURATION_SITES) {
+  test(`a duration unit must touch its number: ${label}`, () => {
+    // Control first, and it is the half that matters: the closed-up spelling must parse, or a
+    // "rejects the spaced form" assertion would stay green against a site that rejects *everything*
+    // — which is how a test proves nothing while looking thorough.
+    assert.deepEqual(errorsOf(template.replace('250 UNIT', '250ms')), [], `${label}: 250ms must parse`);
+
+    const spaced = errorsOf(template.replace('UNIT', 'ms'));
+    assert.equal(spaced.length > 0, true, `${label}: 250 ms must be refused`);
+    assert.equal(spaced[0]?.code, Codes.UNKNOWN_DURATION_UNIT, `${label}: refused by the duration rule, not by end-of-step`);
+    assert.match(spaced[0]?.message ?? '', /a duration unit must touch its number/);
+    assert.match(spaced[0]?.hint ?? '', /write `250ms`, not `250 ms`/);
+  });
+}
+
+test('a duration unit must touch its number: `timeout step` (config dialect)', () => {
+  // The 11th call site lives in the *config* parser, so it needs `parseConfigSource` rather than
+  // `parseSource` — the reason it is not in `DURATION_SITES` above. It is covered all the same:
+  // "both positions" in `M98c-03` means both dialects too, and a rule that stopped at the dialect
+  // boundary would be the same asymmetry one level up.
+  const errs = (src: string) => parseConfigSource(src).diagnostics.filter((d) => d.severity === 'error');
+  // Control first, same as the sites above.
+  assert.deepEqual(errs('env local default\n  api "http://x"\n\ndefaults\n  timeout step 250ms\n'), []);
+
+  const spaced = errs('env local default\n  api "http://x"\n\ndefaults\n  timeout step 250 ms\n');
+  assert.equal(spaced[0]?.code, Codes.UNKNOWN_DURATION_UNIT);
+  assert.match(spaced[0]?.message ?? '', /a duration unit must touch its number/);
+});
+
+test('the duration rule is shared, so a new caller cannot be written without it', () => {
+  // `M98c` shipped this rule in value position only and `M98c-03` recorded the asymmetry as
+  // unfixable under the freeze — a premise that was never measured (66 closed-up durations in the
+  // corpus, 0 spaced). The repair is that `parseDuration` asks the question itself rather than each
+  // caller remembering to. This guard is the drift half: a 12th call site added later is a
+  // deliberate act with a test to update, not a silent inheritance nobody checked.
+  const source = readFileSync(fileURLToPath(new URL('../src/parser.ts', import.meta.url)), 'utf8');
+  const callSites = [...source.matchAll(/this\.parseDuration\(\)/g)].length;
+  assert.equal(
+    callSites,
+    11,
+    'the number of `parseDuration` call sites changed — every one inherits the adjacency rule from ' +
+      'inside `parseDuration`, so confirm the new site does too and add it to DURATION_SITES above.',
+  );
 });

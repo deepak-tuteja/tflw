@@ -169,6 +169,25 @@ A systematic pre-`1.0.0` review of the whole surface. Highlights:
 - Diagnostic carets are placed in terminal cells rather than UTF-16 code units, so a line
   containing wide or combining characters underlines the span the reader can see.
 
+### Changed — what ends a value (M99)
+
+tflw has no reserved words, so a bare variable followed by a keyword was indistinguishable from a
+multi-word call name. The parser always guessed "call", and reported the variable as a missing paren.
+
+- **A bare name followed by a keyword is now a variable.** `let x = random number lo to hi`,
+  `random date between a and b`, `format d as "yyyy-MM-dd"` and `select size from field "Size"` all
+  parse; a word run that really was reaching for a call still says so. Braced `{x}` was always
+  accepted in these positions and is unchanged. SPEC §7.1.1 documents the bare form for the first
+  time — it has existed since `0.1` and was never written down.
+- **`random password`'s optional length must be a number or a `{var}`.** It is the only value in the
+  grammar that is both optional and unmarked, so a bare word there was taken as the length:
+  `select random password from field "pw"` consumed `from`. `random password n` is now an error
+  naming the three working spellings. No corpus program used it.
+- **A duration unit must touch its number in every position.** `pause 250 ms` was accepted while
+  `expect duration is less than 250 ms` was already an error; the check now lives in the shared
+  duration parser, so both positions and both dialects agree. No corpus program used the spaced
+  form.
+
 ## [0.1.0] — 2026-07-06
 
 First public draft. API-only — the browser half lands in `0.2.0`.
