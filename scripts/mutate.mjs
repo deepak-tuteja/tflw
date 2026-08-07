@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const LEXER = 'packages/lang/src/lexer.ts';
 const PARSER = 'packages/lang/src/parser.ts';
+const DIAG = 'packages/lang/src/diagnostic.ts';
 
 // The two adjacent branches in `parsePrimary`'s number path, verbatim, so the ordering mutation is a
 // swap of whole blocks rather than a hand-retyped approximation of them.
@@ -247,6 +248,75 @@ const MUTATIONS = [
     what: '`TF046` fires on every tag, well-formed or not (`A1-11`)',
     find: "        if (name === '' || !isIdentStart(name[0]!)) {",
     replace: '        if (true) {',
+  },
+
+  // --- M106 ------------------------------------------------------------------------------------
+  // Written *with* the milestone rather than reconstructed after it, which is the whole point of the
+  // file existing. Each of M106's eight controls has exactly one mutation that kills it and does not
+  // kill the two negative controls; the mapping is in `PLAN_M106_ZERO_EXTENT_CARET.md`.
+  {
+    id: 'anchor-never-moves',
+    milestone: 'm106',
+    file: DIAG,
+    what: 'the caret is never re-anchored — every end-of-source diagnostic back on the phantom line (`M98c-01`)',
+    find: 'if (start.offset !== end.offset) return here;',
+    replace: 'if (true) return here;',
+  },
+  {
+    id: 'anchor-ignores-extent',
+    milestone: 'm106',
+    file: DIAG,
+    what: 'the zero-extent guard is dropped, so a diagnostic with a real underline moves too (D192)',
+    find: 'if (start.offset !== end.offset) return here;',
+    replace: 'if (false) return here;',
+  },
+  {
+    id: 'anchor-blank-only',
+    milestone: 'm106',
+    file: DIAG,
+    what: 'the walk-back skips blank lines but not comments — the caret lands in prose (D193)',
+    find: "  return trimmed !== '' && !trimmed.startsWith('#');",
+    replace: "  return trimmed !== '';",
+  },
+  {
+    id: 'anchor-no-floor',
+    milestone: 'm106',
+    file: DIAG,
+    what: 'the walk-back has no floor and runs off the front of the array (D196)',
+    find: '  if (i < 0) return here;',
+    replace: '  if (false) return here;',
+  },
+  {
+    id: 'anchor-keeps-trailing-space',
+    milestone: 'm106',
+    file: DIAG,
+    what: 'the anchor column includes trailing whitespace instead of stopping at the code (D194)',
+    find: "  const afterCode = (line: string): number => line.replace(/[ \\t\\r]+$/, '').length + 1;",
+    replace: '  const afterCode = (line: string): number => line.length + 1;',
+  },
+  {
+    id: 'anchor-own-line-no-clamp',
+    milestone: 'm106',
+    file: DIAG,
+    what: 'a caret already on its own code line is not clamped back to the end of that code (D194b)',
+    find: 'return { line: start.line, column: Math.min(start.column, afterCode(atCaret)) };',
+    replace: 'return { line: start.line, column: start.column };',
+  },
+  {
+    id: 'anchor-locator-unmoved',
+    milestone: 'm106',
+    file: DIAG,
+    what: 'the caret moves but the `-->` locator stays behind, naming a line the snippet does not show (D195)',
+    find: "const locator = `${pad}${c.blue('-->')} ${filename}:${anchor.line}:${anchor.column}`;",
+    replace: "const locator = `${pad}${c.blue('-->')} ${filename}:${start.line}:${start.column}`;",
+  },
+  {
+    id: 'anchor-caret-width',
+    milestone: 'm106',
+    file: DIAG,
+    what: "a re-anchored caret takes its width from the line it left, spraying carets across the anchor line",
+    find: 'const rawCaretEnd = moved ? rawCaretStart + 1 :',
+    replace: 'const rawCaretEnd = false ? rawCaretStart + 1 :',
   },
 ];
 
