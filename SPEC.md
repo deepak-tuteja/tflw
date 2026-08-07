@@ -283,6 +283,15 @@ session billing oauth2
   secret (§3.4) — no separate redaction wiring needed.
 - Mutually exclusive with a hand-written body: a `session` block is either `oauth2` or a sequence
   of steps, never both.
+- **Relative paths in a session body resolve against `tflw.config`'s own directory**, not against
+  the test file that happened to trigger the session. This is the one deliberate exception to the
+  "relative to this file" convention `matches file`/`body from`/`upload`/`snapshots` otherwise
+  follow (§9.9 states that convention for snapshots), and it exists because a session has no test
+  file: it is declared once in `tflw.config` and shared by every file that says `as <name>`.
+  Resolving it against the caller would make one config line mean a different file per test file,
+  decided by run order — so
+  `body from "./creds.json"` in a session is always the `creds.json` sitting next to the
+  `tflw.config` you wrote it in, whichever suite, file, or worker establishes the session.
 
 ### 3.4 Secrets (P#30)
 
@@ -457,6 +466,10 @@ env staging
   bundled `undici` dispatcher instead (§15), since Node's `fetch` has no per-request client-cert
   hook. Every other request in a `.tflw` suite, mTLS-configured env or not, is unaffected.
 - Cert/key file contents are read once per run (cached by resolved path), not re-read per request.
+- A relative `cert`/`key` resolves against **`tflw.config`'s own directory** — the same rule as a
+  session body (§3.3), and for the same reason: these are config keys, not test-file keys, so the
+  example above means `<the directory holding tflw.config>/certs/client.pem` no matter which test
+  file's request is presenting the certificate.
 - `insecure true` (above) and `NODE_EXTRA_CA_CERTS` both still apply on an mTLS-configured env,
   read fresh on every connection rather than cached at the first one — deliberately more defensive
   here than Node's own default behavior for these two env vars, which are otherwise read only once

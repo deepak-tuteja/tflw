@@ -1347,6 +1347,10 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
             runProgram(program, resolved, {
               source,
               baseDir: dirname(file),
+              // `M97c-03` — `tflw.config` is read from exactly `join(cwd, 'tflw.config')` above, so cwd
+              // *is* its directory. Config-declared relative paths (a `session` body's files, mTLS
+              // `cert`/`key`) resolve against this rather than against the test file's own directory.
+              configDir: cwd,
               environ,
               redactor,
               sessionCache,
@@ -1385,6 +1389,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
           const out2 = await runProgram(program, resolved, {
             source,
             baseDir: dirname(file),
+            configDir: cwd,
             environ,
             redactor,
             sessionCache,
@@ -1566,6 +1571,7 @@ async function loadWorkerCommand(): Promise<number> {
           const result = await runLoadShard(program, resolved, {
             source,
             baseDir: dirname(file),
+            configDir: msg.cwd,
             seed: seedArg,
             now: msg.nowRaw,
             shard: { index: msg.shardIndex, count: msg.shardCount },

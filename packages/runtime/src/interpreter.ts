@@ -7,7 +7,7 @@
 //    request and to evaluate assertions are the real ones (P#30).
 
 import { readFile } from 'node:fs/promises';
-import { basename, resolve as resolvePath } from 'node:path';
+import { basename, join, resolve as resolvePath } from 'node:path';
 import { parseSource, quantifiable, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   A11ySeverity,
@@ -138,6 +138,15 @@ export interface RunOptions {
   readonly source: string;
   /** Directory the `.tflw` file lives in — file-backed bodies/uploads resolve relative to it. */
   readonly baseDir?: string;
+  /** Directory `tflw.config` lives in (`M97c-03`). Relative paths declared in the *config* —
+   * a `session` body's `body from`/`upload`/`matches file`, and per-env mTLS `cert`/`key` — resolve
+   * against this, not against `baseDir`. The two are the same directory in the common flat layout,
+   * which is why the difference stayed invisible: it only shows up once a suite puts its `.tflw`
+   * files in a subdirectory, or once two files in *different* directories opt into one session.
+   *
+   * Defaults to `process.cwd()` because that is not a guess — `cli.ts` reads the config from
+   * exactly `join(cwd, 'tflw.config')`, so cwd *is* the config's directory on every real run. */
+  readonly configDir?: string;
   readonly environ?: NodeJS.ProcessEnv;
   readonly emit?: EventSink;
   /** Reuse a redactor across files so all secrets are known everywhere. */
@@ -241,6 +250,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   }
   const emit = opts.emit ?? (() => {});
   const baseDir = opts.baseDir ?? process.cwd();
+  const configDir = opts.configDir ?? process.cwd();
   const lines = opts.source.split('\n');
   const startedAt = new Date().toISOString();
   const runStart = performance.now();
@@ -271,7 +281,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length + scenarios.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
@@ -414,7 +424,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -550,6 +560,9 @@ export interface LoadOptions {
   /** Source text of the file, for mirroring each step's line (mirrors `RunOptions.source`). */
   readonly source: string;
   readonly baseDir?: string;
+  /** `M97c-03` — see `RunOptions.configDir`. A load run establishes sessions and presents mTLS
+   * client certs exactly like a functional one, so it needs the same distinction. */
+  readonly configDir?: string;
   readonly environ?: NodeJS.ProcessEnv;
   readonly seed?: number;
   readonly now?: string;
@@ -1172,6 +1185,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
     if (value !== undefined) redactor.register(name, value);
   }
   const baseDir = opts.baseDir ?? process.cwd();
+  const configDir = opts.configDir ?? process.cwd();
   const lines = opts.source.split('\n');
   const runSeed = resolveRunSeed(opts.seed);
   const runClock = resolveRunClock(opts.now);
@@ -1180,7 +1194,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   const registry = await buildRegistry(program, baseDir);
   const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
   const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
-  const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, filePath: baseDir, updateSnapshots: false };
+  const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, configDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, filePath: baseDir, updateSnapshots: false };
 
   const startedAt = new Date().toISOString();
   const runStart = performance.now();
@@ -1799,6 +1813,10 @@ interface TestCtx {
   readonly emit: EventSink;
   readonly lines: readonly string[];
   readonly baseDir: string;
+  /** `M97c-03` — see `RunOptions.configDir`. Carried on every `TestCtx` (rather than threaded to
+   * the two sites that need it) because a session's establishment run *derives* a `TestCtx` from
+   * whichever caller triggered it, and that derivation is where the rebase happens. */
+  readonly configDir: string;
   readonly rng: () => number;
   readonly runSeed: number;
   readonly runClock: Date;
@@ -1936,14 +1954,39 @@ export class SessionCache {
  * by design (§7.4). */
 async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx): Promise<SessionOutcome> {
   if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, tc);
+  const sessionTc = sessionCtx(decl.name, tc);
   const headerSink: Record<string, string> = {};
   const scope = new Map<string, unknown>();
-  const sessionRng = mulberry32(subSeed(tc.runSeed, hashString(decl.name)));
   const cookieJar = new CookieJar();
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionRng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, cookieJar };
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, cookieJar };
   const emptyRegistry: CallRegistry = { actions: new Map(), helpers: new Map() };
-  const exec = await execSteps(decl.body, config, ctx, tc, `session ${decl.name}`, emptyRegistry);
+  const exec = await execSteps(decl.body, config, ctx, sessionTc, `session ${decl.name}`, emptyRegistry);
   return { headers: headerSink, cookieJar, ok: exec.ok, ...(exec.error ? { error: exec.error } : {}), steps: exec.steps };
+}
+
+/**
+ * The `TestCtx` a session's own establishment run executes under (`M97c-03`).
+ *
+ * `SessionCache.ensure()` hands `runSession` the `TestCtx` of whichever test happened to trigger
+ * the session first, and most of that context is exactly what a session body wants — the same
+ * environment, the same redactor, the same run seed and clock. Two fields are not: `baseDir` and
+ * `filePath` describe *the caller's test file*, and a session is not declared in a test file at
+ * all. It is declared in `tflw.config` and shared by every file that says `as <name>`.
+ *
+ * Left as the caller's, they made a shared declaration mean different things depending on run
+ * order: `body from "./creds.json"` resolved against `dirname(<whichever file won>)`, and a
+ * session's snapshot baseline landed under that file's `snapshots/` tree. Rebasing both onto the
+ * config's own directory is the only answer that does not depend on the race — and it is the answer
+ * the person who wrote the path was looking at.
+ *
+ * This is decision 53's rule applied to the two fields it left behind: that decision re-seeded a
+ * session's `rng` from the session's own *name* for exactly this reason, noting `tc.rng` "belongs
+ * to whichever test's `TestCtx` happened to win the race to establish the session first". Anything
+ * on a session's context that is derived from the caller rather than from the session is a bug
+ * waiting for a second test file to expose it.
+ */
+function sessionCtx(name: string, tc: TestCtx): TestCtx {
+  return { ...tc, baseDir: tc.configDir, filePath: join(tc.configDir, 'tflw.config'), rng: mulberry32(subSeed(tc.runSeed, hashString(name))) };
 }
 
 /** `session <name> oauth2 ...` — POSTs the client-credentials grant to `tokenUrl` and turns the
@@ -2387,7 +2430,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'ApiStep': {
           const catchConnectionError = requestAssertionApiIndices.has(stepIndex);
           try {
-            let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents);
+            let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, tc.pinnedAgents);
             // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
             // just `oauth2`) gets this: a revoked/expired-early credential shouldn't fail every
             // remaining step of a test that's otherwise unrelated to auth. Retried at most once per
@@ -2397,7 +2440,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
               const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
               results.push(...refresh.steps);
               if (refresh.ok) {
-                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.pinnedAgents));
+                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, tc.pinnedAgents));
               }
             }
             lastResponse = trace.response;
@@ -2482,7 +2525,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'WaitUntilApiStmt': {
-          const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, src, stepStart, tc.pinnedAgents);
+          const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, src, stepStart, tc.pinnedAgents);
           lastResponse = waited.response;
           // `wait until api` never opts into catching a connection failure (checker-enforced,
           // decision 18) — reaching here always means a real response came back (a genuine
@@ -2940,7 +2983,7 @@ async function loadMtlsCreds(config: ResolvedConfig, baseDir: string): Promise<{
   return p;
 }
 
-async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string, pinnedAgents?: PinnedAgents): Promise<ApiExec> {
+async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string, configDir: string, pinnedAgents?: PinnedAgents): Promise<ApiExec> {
   const baseUrl = resolveBaseUrl(spec.service, config);
   const path = interpolatePath(spec.path.raw, ctx, true);
   const url = baseUrl + ensureLeadingSlash(path);
@@ -2974,7 +3017,10 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
 
   const request: RequestTrace = { method: spec.method, url, headers, ...(traceBody !== undefined ? { body: traceBody } : {}) };
   const timeoutMs = spec.timeoutMs ?? config.timeouts.step;
-  const mtls = await loadMtlsCreds(config, baseDir);
+  // `M97c-03`: `cert`/`key` are `tflw.config` keys (SPEC §3.6), so they resolve against the
+  // config's directory — unlike `baseDir` just above, which is this *test file's* and is the right
+  // base for a `body from`/`upload` the test itself wrote.
+  const mtls = await loadMtlsCreds(config, configDir);
   // M45 (D75) — a load iteration's own VU-pinned connection is used whenever this request's shape
   // supports it (a string or absent body, no mTLS); `tflw run` never passes `pinnedAgents`, so this
   // is dead code there and `sendRequest`'s `fetch()` path is exactly what it always was.
@@ -3583,6 +3629,7 @@ async function execWaitUntilApi(
   ctx: EvalCtx,
   redactor: Redactor,
   baseDir: string,
+  configDir: string,
   src: string,
   start: number,
   pinnedAgents?: PinnedAgents,
@@ -3610,7 +3657,7 @@ async function execWaitUntilApi(
     // way past a short `wait <N>ms` budget.
     const requestTimeout = Math.max(1, Math.min(step.request.timeoutMs ?? config.timeouts.step, remainingMs));
     const request = { ...step.request, timeoutMs: requestTimeout };
-    const { trace, redacted } = await execApi(request, config, ctx, redactor, baseDir, pinnedAgents);
+    const { trace, redacted } = await execApi(request, config, ctx, redactor, baseDir, configDir, pinnedAgents);
     // `wait until api` never opts into catching a connection failure (`checkRequestAssertions`
     // statically forbids a `request` assertion here, decision 18) — `connectionError` is always
     // null; a real connection failure still throws out of `execApi` above and crashes the poll
