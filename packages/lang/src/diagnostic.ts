@@ -319,23 +319,111 @@ function windowLine(line: string, caretStart: number, caretEnd: number): { lineT
   };
 }
 
+// ---------------------------------------------------------------------------
+// The display line (M106, `M98c-01` / D191-D196).
+//
+// A zero-extent span is the *normal* case, not an anomaly: measured over every `.tflw` in
+// testFlow-tests and every line-boundary truncation of each — 19,143 parses — 89% of diagnostics
+// carry one, because "expected X, found end of line" points at a position rather than at a lexeme.
+// Nearly all of them render correctly, with the caret one cell past the last character of a real
+// line, which is how Rust prints "found EOF" too.
+//
+// The 801 that do not are the ones anchored at end-of-source — the `eof` push and the `dedent` loop
+// that closes open blocks, both at `posAt(n)`. `source.split('\n')` turns a file's trailing newline
+// into a phantom empty last element, so the caret lands on a line that is not in the file:
+//
+//   test "x"\n                          test "x"          ← the same program, no trailing newline
+//    --> x.tflw:2:1                      --> x.tflw:1:9
+//     |                                   |
+//   2 |                                 1 | test "x"
+//     | ^                                 |         ^
+//
+// Both are `TF015: this `test` has no steps`, and the right-hand one is already right. Every real
+// `.tflw` ends with a newline, so every author gets the left one. This is therefore not a new layout
+// design — it is the renderer being made to agree with itself, and the round-trip is the test:
+// `render(src)` and `render(src.replace(/\n$/, ''))` must produce the same snippet and column.
+//
+// Derived here rather than fixed by moving the token (D191), for the reason M98a derived the
+// terminal cell here rather than changing `Position`: `tflw check --format json` hands the raw
+// `Diagnostic` to its consumer, so moving a span to fix a human surface silently moves a machine
+// one. `diag.span` is untouched; `--format json` and the LSP are byte-identical across this change.
+// ---------------------------------------------------------------------------
+
+/** A line the caret may be anchored to: it has content, and that content is not a comment.
+ *
+ * The comment half is not decoration (D193). Blank-lines-only would leave **156 of 957** carets
+ * pointing past the end of a comment — several of them a hundred characters of prose — which is
+ * exactly the defect D159 fixed for `newline`, reproduced in a new place. The test is the lexer's
+ * own: `processLine` treats a line whose first non-whitespace character is `#` as comment-only
+ * *before* it looks at bracket continuation, so the two agree by construction rather than by a
+ * second copy of the rule. */
+function isCodeLine(line: string): boolean {
+  const trimmed = line.trimStart();
+  return trimmed !== '' && !trimmed.startsWith('#');
+}
+
+/** Where a diagnostic should be *shown*, as opposed to where its span is (M106, D191-D196).
+ *
+ * Returns `span.start`'s line/column unchanged for everything except a zero-extent span pointing at
+ * a line with no code, which is re-anchored past the last non-whitespace character of the nearest
+ * preceding line that has some. Exported so the LSP can adopt the same derivation; it deliberately
+ * does not yet (D197 — what an editor draws for a zero-width range past the last line has not been
+ * measured, and published ranges are what quick-fix positioning keys off).
+ *
+ * The trigger is what is under the caret, not which token produced it (D192): this function is
+ * handed a `Diagnostic` and a string and has no provenance, and a layout rule that reconstructed one
+ * would depend on lexer internals. Measurement says the two sets coincide exactly today.
+ *
+ * Total by construction (D196): a prefix that is entirely blank and comment lines has nothing to
+ * fall back to, so the original position is returned. Measured 0 times in the corpus, and reachable. */
+export function displayAnchor(span: Span, source: string): { readonly line: number; readonly column: number } {
+  const { start, end } = span;
+  const here = { line: start.line, column: start.column };
+  if (start.offset !== end.offset) return here;
+
+  const lines = source.split('\n');
+  // Past the last non-whitespace character, which is where D159 puts `newline` — matching it is what
+  // makes the two renderings above identical. `\r` is included because `split('\n')` leaves it on
+  // every line of a CRLF file while the lexer strips it before measuring columns.
+  const afterCode = (line: string): number => line.replace(/[ \t\r]+$/, '').length + 1;
+
+  const atCaret = lines[start.line - 1];
+  // D194b: a caret on its own code line still clamps to the end of that code. Trailing whitespace is
+  // the one thing that separates the two forms once the walk-back exists — `test "x"   ` with no
+  // final newline puts `eof` at `posAt(n)`, three cells into the spaces, while the same file *with*
+  // a final newline re-anchors and trims them. Measured 0 times across the corpus, because these
+  // files have no trailing whitespace; kept because a stated invariant with a known counterexample
+  // is the shape of claim this review has had to withdraw before. On the 1,355 spans that do land on
+  // their own code line the clamp is a no-op: `newline` already sits exactly there.
+  if (atCaret !== undefined && isCodeLine(atCaret)) return { line: start.line, column: Math.min(start.column, afterCode(atCaret)) };
+
+  let i = Math.min(start.line - 2, lines.length - 1);
+  while (i >= 0 && !isCodeLine(lines[i]!)) i--;
+  if (i < 0) return here;
+  return { line: i + 1, column: afterCode(lines[i]!) };
+}
+
 export function renderDiagnostic(diag: Diagnostic, source: string, opts: RenderOptions = {}): string {
   const filename = opts.filename ?? '<input>';
   const lines = source.split('\n');
   const { start, end } = diag.span;
-  const rawLine = lines[start.line - 1] ?? '';
+  const anchor = displayAnchor(diag.span, source);
+  const moved = anchor.line !== start.line || anchor.column !== start.column;
+  const rawLine = lines[anchor.line - 1] ?? '';
 
-  // Caret spans from the start column to the end column, clamped to this line.
-  const rawCaretStart = start.column - 1;
+  // Caret spans from the start column to the end column, clamped to this line. A re-anchored caret
+  // is always one cell wide: `displayAnchor` only moves a zero-extent span, so there is by
+  // definition no width to carry over, and `end.column` belongs to a different line.
+  const rawCaretStart = anchor.column - 1;
   const sameLine = end.line === start.line;
-  const rawCaretEnd = sameLine ? Math.max(end.column - 1, rawCaretStart + 1) : rawLine.length;
+  const rawCaretEnd = moved ? rawCaretStart + 1 : sameLine ? Math.max(end.column - 1, rawCaretStart + 1) : rawLine.length;
   const windowed = windowLine(rawLine, rawCaretStart, rawCaretEnd);
   // M98a (`A1-08`): the caret is placed in terminal cells, not code units. See `layoutLine`.
   const { text: lineText, caretCells, caretWidth } = layoutLine(windowed.lineText, windowed.caretStart, windowed.caretLen);
 
-  const gutterWidth = String(start.line).length;
+  const gutterWidth = String(anchor.line).length;
   const pad = ' '.repeat(gutterWidth);
-  const lineNo = String(start.line).padStart(gutterWidth);
+  const lineNo = String(anchor.line).padStart(gutterWidth);
 
   const c = opts.color
     ? {
@@ -347,7 +435,10 @@ export function renderDiagnostic(diag: Diagnostic, source: string, opts: RenderO
     : { red: (s: string) => s, bold: (s: string) => s, blue: (s: string) => s, cyan: (s: string) => s };
 
   const header = `${c.bold(`${diag.severity}[${diag.code}]`)}: ${diag.message}`;
-  const locator = `${pad}${c.blue('-->')} ${filename}:${start.line}:${start.column}`;
+  // D195: the locator moves with the caret. A `-->` naming a line the snippet does not print is
+  // incoherent, and the locator is what a terminal linkifies and an editor jumps to — a display
+  // coordinate as much as the caret is. `diag.span` still does not move.
+  const locator = `${pad}${c.blue('-->')} ${filename}:${anchor.line}:${anchor.column}`;
   const caretLine = ' '.repeat(caretCells) + c.red('^'.repeat(caretWidth)) + (diag.label ? ' ' + c.red(diag.label) : '');
 
   const out: string[] = [
