@@ -479,6 +479,14 @@ test('A1-16: a rejected run stops at the next real token — the control M11 sho
   // never fail for a rule that only runs after every other branch has declined. Dropping `@` from
   // `isUnlexable` — making the run swallow a token start — left the whole suite green. This is the
   // case that catches it: garbage immediately followed by each kind of token the lexer recognises.
+  //
+  // "Every kind" has to mean every clause of `isUnlexable`, not every clause that produces a token.
+  // The six below were the original six, and re-running these mutations after M99–M105 found that
+  // dropping `#` still survived: a comment is *skipped* rather than tokenised, so a swallowed `#`
+  // leaves `tokens[0]` exactly as it was and the run silently eats the comment marker — turning the
+  // rest of the line back into code. The message is what separates stopping from swallowing in
+  // every case (`"§"` against `"§#"`), so it is asserted for all of them and the table can now
+  // carry entries that produce no token of their own.
   for (const [after, type] of [
     ['"s"', 'string'],
     ['12', 'number'],
@@ -486,11 +494,22 @@ test('A1-16: a rejected run stops at the next real token — the control M11 sho
     ['ab', 'ident'],
     ['{', 'lbrace'],
     ['/p', 'slash'],
+    ['# c', 'newline'], // the comment is skipped; a swallowed `#` would lex `c` as an ident
+    [' ab', 'ident'],
+    ['\tab', 'ident'],
   ] as const) {
+    const label = JSON.stringify(`§${after}`);
     const { tokens, diagnostics } = lex(`§${after}\n`);
-    assert.equal(diagnostics.filter((d) => d.code === 'TF001').length, 1, `§${after}: one run, one diagnostic`);
-    assert.equal(tokens[0]!.type, type, `§${after}: the run must stop at the ${type} that follows it`);
+    const runs = diagnostics.filter((d) => d.code === 'TF001');
+    assert.equal(runs.length, 1, `${label}: one run, one diagnostic`);
+    assert.equal(runs[0]!.message, 'unexpected character "§"', `${label}: the run must not extend past the \`§\``);
+    assert.equal(tokens[0]!.type, type, `${label}: the run must stop at the ${type} that follows it`);
   }
+  // `BOM` is the tenth clause and is deliberately not in the table: at offset 0 the leading-
+  // whitespace scan consumes it before `isUnlexable` is consulted, and mid-line it is intercepted by
+  // the hidden-character check (`TF049`) before recovery runs. Removing it from `isUnlexable`
+  // produced byte-identical diagnostics on every probe — the clause is defensive, and a test
+  // asserting over it would be pinning a branch nothing reaches.
 });
 
 // -- M98d: the characters that make rendered source and parsed source two different texts ---------
