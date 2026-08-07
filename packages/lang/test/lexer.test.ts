@@ -655,3 +655,99 @@ test('A1-17: a file full of ordinary typos does not use up TF049\'s budget', () 
   assert.ok(found.some((d) => d.code === 'TF001' && /stopping after/.test(d.message)), 'TF001 is exhausted');
   assert.equal(found.filter((d) => d.code === 'TF049').length, 1, 'and TF049 still reports');
 });
+
+// -- M103: the characters that are visible and lie ------------------------------------------------
+// `M98d-02`, D178-D180. `TF049` above covers characters with no glyph. These have a glyph, and it is
+// somebody else's — a Cyrillic `а` is not a Latin `a` and renders identically to one.
+
+test('M98d-02: the vacuous-pass repro — a confusable in a `not equals` (the reason this is S2)', () => {
+  // The finding was filed on "these characters lie". What raised it is the *direction* of the lie.
+  // In a positive assertion a confusable makes the test fail, which is loud. In a negative one it
+  // makes the test **pass without asserting anything**, and `not equals`/`not contains` is the shape
+  // a leak-prevention assertion takes — the dogfood suite has one proving an internal comment is
+  // hidden from a non-owner. Measured before the fix: two files whose `expect` lines render
+  // identically, one FAIL 0/1 and one PASS 1/1, and `tflw check` silent on both.
+  const found = diags('test "t"\n  api GET /health\n  expect body.status not equals "\u043Ek"\n').filter((d) => d.code === 'TF050');
+  assert.equal(found.length, 1);
+  assert.match(found[0]!.message, /mixes Latin with Cyrillic — U\+043E/);
+  assert.match(found[0]!.hint ?? '', /passes without asserting anything/);
+});
+
+test('M98d-02/D178: the unit is a word, not a string — a bilingual label is legal', () => {
+  // The decision the rule stands on, and the one a naive port of Rust's `mixed_script_confusables`
+  // gets wrong. Rust may be per-token because its tokens are identifiers; a `.tflw` string is prose.
+  // This string holds two scripts and no mixed *word*, and a per-string rule flags it — so this test
+  // is not decoration: it goes red the moment the unit widens.
+  assert.deepEqual(diags('test "t"\n  log "Willkommen — добро пожаловать"\n').filter((d) => d.code === 'TF050'), []);
+  // Same shape, one word away: `добро` is untouched, `pаyment` is not.
+  const mixed = diags('test "t"\n  log "Willkommen — pаyment"\n').filter((d) => d.code === 'TF050');
+  assert.equal(mixed.length, 1, 'and the mixed word in the same string is still caught');
+  assert.match(mixed[0]!.message, /`pаyment`/);
+});
+
+test('M98d-02/D179: only scripts with Latin lookalikes count — CJK beside Latin is not a spoof', () => {
+  // The second load-bearing narrowing. "Any two scripts in a word" is the obvious rule and is wrong:
+  // Han has no Latin homoglyphs, so `東京Tower` deceives nobody. This case is what separates the two
+  // rules, and it fails under the wider one.
+  assert.deepEqual(diags('test "t"\n  log "東京Tower"\n').filter((d) => d.code === 'TF050'), []);
+  // Nor does a word with no Latin in it at all — it is not pretending to be Latin.
+  assert.deepEqual(diags('test "t"\n  log "привет"\n').filter((d) => d.code === 'TF050'), []);
+  // Greek is in the set, and a lone `Ω` in its own word still is not.
+  assert.deepEqual(diags('test "t"\n  log "Ω = 5 ohms"\n').filter((d) => d.code === 'TF050'), []);
+  assert.equal(diags('test "t"\n  log "l\u03BFgin"\n').filter((d) => d.code === 'TF050').length, 1, 'but Greek inside a Latin word is');
+});
+
+test('M98d-02/D180: `\\u{…}` is the escape hatch, and it yields the real character', () => {
+  // Same mechanism as D166 and for the same reason — a rule with no way to comply is a capability
+  // removed. It works because the scan reads *raw* source, where the escape is the all-Latin text
+  // `\u{0430}`. Asserting only that the file checks clean would leave the important half untested:
+  // that the value still contains the character the author asked for.
+  const { tokens, diagnostics } = lex('test "t"\n  log "\\u{0430}dmin"\n');
+  assert.deepEqual(diagnostics.filter((d) => d.code === 'TF050'), [], 'the escaped form is legal');
+  const str = tokens.filter((t) => t.type === 'string')[1]!;
+  assert.equal(str.value, '\u0430dmin', 'and it decodes to the Cyrillic letter, not to the escape text');
+  assert.notEqual(str.value, 'admin');
+});
+
+test('M98d-02/D180: a comment is out of scope, unlike TF049', () => {
+  // Deliberate asymmetry with the rule directly above, on two grounds. A comment has no `\u{…}`, so
+  // flagging it would be the removed-capability case D166 exists to prevent. And the harm differs in
+  // kind: a bidi control reorders the glyphs *after* it and can make a following line display as an
+  // assertion that is not the one being run, whereas a confusable letter misspells a comment.
+  assert.deepEqual(diags('# the \u0430dmin path is checked below\ntest "t"\n  log "x"\n').filter((d) => d.code === 'TF050'), []);
+});
+
+test('M98d-02: outside a string the other half of the invariant already holds', () => {
+  // The gap this milestone closes is exactly the string case, and that was measured rather than
+  // assumed: a confusable in a name, a tag, a path or a keyword cannot start a token, so it reaches
+  // the author as `TF001` — whose help already says "outside strings and comments, tflw source is
+  // ASCII". Asserted as the property, like `A1-17` above, because the invariant is again split
+  // across two mechanisms and neither one is it.
+  const positions: Array<[string, (c: string) => string]> = [
+    ['name', (c) => `test "t"\n  let ${c}dmin = 1\n`],
+    ['tag', (c) => `@sm${c}ke\ntest "t"\n  log "x"\n`],
+    ['path', (c) => `test "t"\n  api GET /${c}dmin\n`],
+    ['string', (c) => `test "t"\n  log "${c}dmin"\n`],
+  ];
+  for (const [name, build] of positions) {
+    const found = diags(build('\u0430')).filter((d) => d.code === 'TF050' || d.code === 'TF001');
+    assert.ok(found.length > 0, `a Cyrillic а in a ${name} must be rejected by one rule or the other`);
+  }
+});
+
+test('M98d-02: TF050 is bounded, on its own budget', () => {
+  // Same quadratic argument as `TF049`, and separate for the same reason in the other direction: a
+  // file full of invisible characters must not be why a spoofed word goes unreported.
+  const found = diags(`test "t"\n  log "${'\u0430b '.repeat(3000)}"\n`).filter((d) => d.code === 'TF050');
+  assert.ok(found.length <= 50, `bounded, got ${found.length}`);
+  assert.match(found[found.length - 1]!.message, /too many mixed-script words/);
+});
+
+test('M98d-02: the ordinary corpus stays silent — a control with something to lose', () => {
+  // Not "clean ASCII stays clean", which this rule could not fail. These are the strings a real
+  // suite holds that a *coarser* version of the rule flags: Latin with diacritics, Common-script
+  // punctuation, a generator render, and CJK. Measured over the real corpora too — 183 files and
+  // 73,931 words across testFlow and testFlow-tests, zero hits.
+  const src = 'test "t"\n  log "Zürich naïve café"\n  log "Order — 42 × items · §3 → ok"\n  log "SKU-1234-AB"\n  log "東京"\n';
+  assert.deepEqual(diags(src).filter((d) => d.code === 'TF050'), []);
+});

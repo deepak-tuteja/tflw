@@ -94,6 +94,7 @@ export const Codes = {
   UNKNOWN_ESCAPE: 'TF047',
   TAB_INDENT: 'TF048',
   HIDDEN_CHAR: 'TF049',
+  CONFUSABLE_WORD: 'TF050',
 } as const;
 
 // ---------------------------------------------------------------------------

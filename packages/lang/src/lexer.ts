@@ -149,6 +149,32 @@ const HIDDEN_HELP: Record<'bidi' | 'zeroWidth' | 'bom', string> = {
   bom: 'a byte-order mark is only meaningful as the very first character of a file. Anywhere else tflw skips it as whitespace, so it can sit inside what reads as a single name and split it into two tokens with nothing to see',
 };
 
+/** The other half of the Trojan Source class (M103, `M98d-02`, D178-D180): characters that are not
+ * invisible but are **not the letter they look like**. `TF049` can reject its set outright because
+ * nothing legitimate needs a zero-width space inline; a Cyrillic `а` is an ordinary letter in
+ * ordinary text, so this rule has to be about *context* rather than about a character list.
+ *
+ * The unit is one **word** — a maximal run of letters/marks/digits — and not one string (D178).
+ * A `.tflw` string is prose, and prose is legitimately multilingual: `"Willkommen — добро
+ * пожаловать"` is two scripts in one string with no mixed word in it. Rust's
+ * `mixed_script_confusables` gets to be per-token because its tokens are identifiers. */
+const WORD_RUN = /[\p{L}\p{M}\p{N}]+/gu;
+const HAS_LATIN = /\p{scx=Latn}/u;
+
+/** The scripts that actually contain Latin lookalikes, and therefore the only ones whose presence
+ * beside Latin *in the same word* is evidence of a spoof rather than of bilingual text (D179).
+ *
+ * Not "any two scripts": `"東京Tower"` mixes Latin and Han in one word and deceives nobody, because
+ * Han has no Latin homoglyphs. Restricting the non-Latin side to these four is what buys the rule a
+ * measured-zero false-positive rate on the corpora without shipping the UTS #39 confusables table.
+ * Common and Inherited are never counted — that is where `—`, `§`, `…`, `→` and `×` live. */
+const LOOKALIKE_SCRIPTS: readonly (readonly [string, RegExp])[] = [
+  ['Cyrillic', /\p{scx=Cyrl}/u],
+  ['Greek', /\p{scx=Grek}/u],
+  ['Cherokee', /\p{scx=Cher}/u],
+  ['Armenian', /\p{scx=Armn}/u],
+];
+
 class Lexer {
   private readonly tokens: Token[] = [];
   private readonly diagnostics: Diagnostic[] = [];
@@ -184,6 +210,11 @@ class Lexer {
    * Counted separately rather than sharing that budget, because a file with 50 ordinary typos must
    * not be the reason a hidden character goes unreported. */
   private hiddenChars = 0;
+  /** How many `TF050`s have been emitted (M103). Bounded, and counted separately from `hiddenChars`,
+   * for the same reasons that counter is separate from `unexpectedChars`: one diagnostic per word
+   * over a hostile or machine-generated file is the quadratic blow-up `A1-01` exists to prevent, and
+   * a file with 50 invisible characters must not be the reason a spoofed word goes unreported. */
+  private confusableWords = 0;
   /** Where the first tab-indented line was found, and how many more followed (M98c, `A1-12`, D161).
    *
    * The rule used to fire once per *line*, so one wrong editor setting produced 100 identical
@@ -675,6 +706,10 @@ class Lexer {
       c++;
     }
     const raw = line.slice(startCol, c);
+    // M103 (`M98d-02`): on `raw`, not on `value` — that is what makes `\u{0430}` the escape hatch,
+    // since the escape's own text is all-Latin. Scanned once over the finished string rather than
+    // per character like `TF049`, because the unit here is a word and a word spans characters.
+    this.scanConfusable(raw, startCol, lineStart, lineNo);
     const span: Span = { start: startPos, end: at(c) };
     if (!terminated) {
       this.diag(Codes.UNTERMINATED_STRING, 'error', 'string literal is missing a closing quote', span);
@@ -777,6 +812,57 @@ class Lexer {
       // characters in a string, since D157 made every unknown escape an error.
       `${HIDDEN_HELP[kind]}. Delete it — or, where the value genuinely needs the character, write it inside a string as \`\\u{${cp}}\`, which says so in plain sight.`,
     );
+  }
+
+  /**
+   * M103 (`M98d-02`, D178-D180): report a word that mixes Latin with a script that has Latin
+   * lookalikes.
+   *
+   * **Scanned on the raw text, and that is the escape hatch** — `"\u{0430}dmin"` reads here as the
+   * ASCII characters `\u{0430}dmin`, whose words are all-Latin, so a value that genuinely needs the
+   * character can still be written. Same mechanism `TF049` uses (D166), for the same reason: a rule
+   * with no way to comply is a capability removed, not a lint.
+   *
+   * **Strings only** (D180). `TF049` also fires in comments; this does not, because a comment has no
+   * escape hatch, and because the harm is different in kind — a bidi control reorders the glyphs of
+   * the text *after* it, so it can make a following line display as an assertion that is not the one
+   * being run, whereas a confusable letter in a comment misspells a comment.
+   *
+   * What this does **not** catch: a word written entirely in one non-Latin script that still reads
+   * as Latin (`"аԁmіn"` in all Cyrillic). That needs the UTS #39 confusables table, and by shape it
+   * is indistinguishable from legitimate Russian data. Recorded in the SPEC rather than left
+   * implied, so the guarantee is not read as wider than it is.
+   */
+  private scanConfusable(raw: string, rawStart: number, lineStart: number, lineNo: number): void {
+    for (const m of raw.matchAll(WORD_RUN)) {
+      const word = m[0];
+      // No Latin in the word at all means the word is not pretending to be Latin — `"привет"` and
+      // `"東京"` are data, not disguises. This clause is what keeps the rule off multilingual text.
+      if (!HAS_LATIN.test(word)) continue;
+      const script = LOOKALIKE_SCRIPTS.find(([, re]) => re.test(word))?.[0];
+      if (script === undefined) continue;
+      this.confusableWords += 1;
+      if (this.confusableWords > MAX_UNEXPECTED_CHARS) return;
+      const from = rawStart + m.index;
+      const span = { start: this.posAt(lineStart + from, lineStart, lineNo), end: this.posAt(lineStart + from + word.length, lineStart, lineNo) };
+      if (this.confusableWords === MAX_UNEXPECTED_CHARS) {
+        this.diag(Codes.CONFUSABLE_WORD, 'error', `too many mixed-script words — stopping after ${MAX_UNEXPECTED_CHARS}`, span, 'a file with this many is not a stray paste; treat the whole file as untrusted rather than fixing them one at a time.');
+        return;
+      }
+      // Name the offending characters by code point, not by quoting them. Quoting would print two
+      // spellings that look identical — the problem restated rather than the evidence the reader
+      // needs. `U+0430` is the only unambiguous way to say which letter is not what it seems, and it
+      // doubles as the text of the `\u{…}` that makes the word legal if it was deliberate.
+      const re = LOOKALIKE_SCRIPTS.find(([n]) => n === script)![1];
+      const points = [...new Set([...word].filter((ch) => re.test(ch)).map((ch) => ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')))];
+      this.diag(
+        Codes.CONFUSABLE_WORD,
+        'error',
+        `the word \`${word}\` mixes Latin with ${script} — ${points.map((p) => `U+${p}`).join(', ')}`,
+        span,
+        `${script} letters with Latin lookalikes render exactly like the all-Latin spelling and compare unequal to it, so the two are indistinguishable on screen and in a diff. In a \`not equals\`/\`not contains\` assertion that means the check passes without asserting anything. Retype the word in one script — or, where the value genuinely needs the character, write it as \`\\u{${points[0]}}\`, which says so in plain sight.`,
+      );
+    }
   }
 
   /** `reportHidden` over a half-open range of one line. */
