@@ -52,6 +52,13 @@ TAG         '@' IDENT
   and strings included, along with a `U+FEFF` anywhere but offset 0. They are the characters that let
   rendered source and parsed source say different things, and a test whose reviewer cannot see what
   it asserts is the failure this language exists to prevent. Write `\u{200B}` where a value needs one.
+- **Inside a string, a word may not mix Latin with a script that has Latin lookalikes** — Cyrillic,
+  Greek, Cherokee, Armenian (`TF050`, M103). Same failure as above with a visible character instead
+  of an invisible one: `"аdmin"` renders exactly like `"admin"` and compares unequal to it, so in a
+  `not equals`/`not contains` assertion it passes without asserting anything. The unit is one **word**,
+  so a bilingual string (`"Willkommen — добро пожаловать"`) is legal, and only lookalike scripts
+  count, so `"東京Tower"` is too. Strings only — a comment has no `\u{…}` to escape into. Write
+  `\u{0430}` where a value needs the character.
 - **Indentation is spaces.** A line indented with a tab is an error (`TF048`), reported once per
   file however many lines are affected — the cause is one editor setting, not one mistake per line.
   Whether tabs were ever accepted is not a question the language leaves open, so it is written here
