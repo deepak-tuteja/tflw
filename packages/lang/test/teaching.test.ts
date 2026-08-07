@@ -268,13 +268,25 @@ test('A1-07: a word that was never a unit keeps the generic error — the contro
 });
 
 test('A1-07: the duration spellings and the date-offset words are disjoint vocabularies', () => {
-  // Asserted structurally, and the reason is worth recording: **neither** of the two things that
-  // look like they protect `today + 3 days` protects it on its own. Running the date check first
-  // does not (with disjoint tables, swapping the order changes no output); the tables being disjoint
-  // does not either (the date check runs first, so it masks any overlap). Each was mutated
-  // separately and the suite stayed green both times. Only the *pair* of changes breaks anything,
-  // and no behavioural test can see one half of a two-change failure — so the invariant is pinned
-  // where it actually lives, in the tables.
+  // Asserted structurally, and what that buys was re-measured in full (`scripts/mutate.mjs`, ids
+  // `duration-table-gains-hours` / `date-check-before-duration` / `m98c-02-both-halves`) because the
+  // first version of this comment got the reason wrong.
+  //
+  // Right: with disjoint tables, swapping the two branches changes no output. A spaced date word
+  // fails the duration branch's adjacency test, an adjacent one fails its membership test, and an
+  // adjacent duration is not a date word — so order cannot matter, and the swap is measurably a
+  // no-op rather than half of a latent failure.
+  //
+  // Wrong: that `today + 3 days` is what the pair protects. It is not reachable from the duration
+  // rule in any combination — `today + …` parses through the value path, where adjacency decides,
+  // and `pause 3 hours` parses through `parseDuration`, a different function. Six configurations
+  // (each property, the pair, the adjacency guard removed, and that with the tables overlapping)
+  // all leave `today + 3 hours` clean.
+  //
+  // What disjointness actually protects is the *message*: with `hours` in both tables, `pause 3
+  // hours` stops saying ``unknown time unit `hours` `` — true, tflw has no unit above `m` — and
+  // starts saying `a duration unit must touch its number`, which points at a spelling that is still
+  // not a unit. That is worth pinning, and it is pinned here, where the invariant lives.
   const dateWords = new Set<string>(DATE_OFFSET_UNITS);
   for (const spelling of Object.keys(UNIT_SPELLINGS)) {
     assert.ok(!dateWords.has(spelling), `\`${spelling}\` is a date-offset word and must not also be a duration spelling`);

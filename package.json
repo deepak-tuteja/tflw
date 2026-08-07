@@ -26,7 +26,9 @@
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "coverage": "node scripts/coverage.mjs"
+    "coverage": "node scripts/coverage.mjs",
+    "verify:observability": "node scripts/verify-test-observability.mjs",
+    "verify:mutations": "node scripts/mutate.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

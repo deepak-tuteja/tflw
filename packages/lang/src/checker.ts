@@ -766,7 +766,7 @@ export function checkActionCycles(program: Program): Diagnostic[] {
         // One diagnostic per cycle, not one per member: `a → b → a` is reachable from both `a` and
         // `b`, and reporting it twice would make a two-line mistake look like two mistakes. The key
         // is the member *set*, so the same cycle entered at a different point is recognised.
-        const key = [...new Set(path)].sort().join(' ');
+        const key = [...new Set(path)].sort().join('\0');
         if (!reported.has(key)) {
           reported.add(key);
           cycles.push({ path, closedBy: call });
