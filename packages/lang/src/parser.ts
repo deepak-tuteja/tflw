@@ -533,7 +533,18 @@ class Parser {
       if (this.pos === before) this.advance();
       this.skipNewlines();
     }
-    const program: Program = { type: 'Program', imports, uses, actions, hooks, tests, span: this.spanFrom(startPos) };
+    const program: Program = {
+      type: 'Program',
+      imports,
+      uses,
+      actions,
+      hooks,
+      tests,
+      // Spread rather than assigned: see `Program.recoveredSpans` — a healthy program's AST must
+      // stay byte-identical, and every parser golden file is the assertion that it does.
+      ...(this.recoveredSpans.length > 0 ? { recoveredSpans: this.recoveredSpans } : {}),
+      span: this.spanFrom(startPos),
+    };
     return { program, diagnostics: this.diagnostics };
   }
 
@@ -3610,17 +3621,21 @@ class Parser {
       const expr: CallExpr = { type: 'CallExpr', name: nameParts.join(' '), args, span: this.spanFrom(start) };
       return expr;
     }
-    if (k > 1) {
-      this.advance(); // consume just the first ident so recovery makes progress
-      this.error(
-        Codes.UNEXPECTED_TOKEN,
-        `\`${first.value}\` looks like the start of a call but never reaches \`(\``,
-        first.span,
-        'multi-word calls need parens, e.g. `create order(...)`',
-      );
-      return null;
-    }
+    // D167 — the third branch. The scan above is a *lookahead*: it consumed nothing, so when the run
+    // misses `(` the parser can hand every ident but the first back to the enclosing production
+    // instead of declaring the whole run a malformed call. Before this, `random number lo to hi`
+    // reported ``TF010: `lo` looks like the start of a call`` — the parser had swallowed `to`, the
+    // keyword the enclosing production was waiting for, and then blamed the variable.
+    //
+    // No terminator vocabulary and no context threading, which is what makes it safe: a stop-word
+    // table would permanently forbid its words as the second word of a multi-word action name
+    // (`action submit form(…)`, `action upload file(…)` — and the corpus already has
+    // `action retry login`), and per-call-site stop words leave every site that forgets to opt in
+    // silently carrying today's bug. Both were rejected on that basis, not on taste.
     this.advance();
+    // After the advance, not before: the note's lifetime is "the cursor has not moved since", and
+    // the cursor's resting place is the leftover ident this back-off just declined to consume.
+    if (k > 1) this.noteCallBackOff(first);
     return { type: 'VarRef', name: first.value, span: first.span };
   }
 
@@ -4048,6 +4063,40 @@ class Parser {
     return { start, end: this.previous().span.end };
   }
 
+  /**
+   * D168 — the one-slot back-off note. `parseIdentOrCall` no longer diagnoses a word run that misses
+   * `(`; it backs off and lets the enclosing production speak. That is the right trade in the
+   * positions `A3-05` names, because there the enclosing production is *sharper*:
+   *
+   * | written | back-off produces |
+   * |---|---|
+   * | `select {size} extra from field "Size"` | ``expected `from`, found `extra` `` — sharper than paren advice |
+   * | `give create widget({id} extra)` | ``expected `)` to close the call`` — sharper |
+   * | `let a = create order` | ``unexpected `order` at end of step`` — **worse** |
+   *
+   * Exactly one shape degrades: a genuine missing paren at end of line, where the enclosing
+   * production has nothing to say but "expected end of line". So the message is relocated rather
+   * than deleted — recorded here, and re-attached by `error()` if the very next diagnostic is raised
+   * without the cursor having moved.
+   *
+   * **`at` is the whole lifetime mechanism.** `this.pos` only ever increases, so a note taken at one
+   * position can never match a diagnostic raised later in the file; and it is cleared on use, so it
+   * cannot be spent twice. The plan sketched the payload as `{ span, wordCount }` — `wordCount` is
+   * not carried because the message names only the first word, exactly as the message it replaces
+   * did, and a count nobody reads is a field that can drift.
+   */
+  private backOffNote: { readonly span: Span; readonly word: string; readonly at: number } | null = null;
+
+  /** See `Program.recoveredSpans` (D168b). Only ever appended to when a note is actually *spent* on
+   * a diagnostic — a back-off that the enclosing production went on to consume happily (the common
+   * case, `random number lo to hi`) leaves nothing here, because its `VarRef` is a real variable
+   * reference that must still be checked. */
+  private readonly recoveredSpans: Span[] = [];
+
+  private noteCallBackOff(first: Token): void {
+    this.backOffNote = { span: first.span, word: first.value, at: this.pos };
+  }
+
   private error(
     code: string,
     message: string,
@@ -4056,6 +4105,17 @@ class Parser {
     label?: string,
     deprecation?: { readonly replacement: string },
   ): void {
+    const note = this.backOffNote;
+    this.backOffNote = null;
+    if (note && note.at === this.pos && code === Codes.UNEXPECTED_TOKEN) {
+      message = `\`${note.word}\` looks like the start of a call but never reaches \`(\``;
+      span = note.span;
+      hint = 'multi-word calls need parens, e.g. `create order(...)`';
+      // Spending the note is exactly the moment the recovery `VarRef` is known to be junk: the
+      // enclosing production could not use the token the back-off left behind, so the word run was
+      // a malformed call after all. Recorded here and nowhere else — see `Program.recoveredSpans`.
+      this.recoveredSpans.push(note.span);
+    }
     // Panic mode (M83, C11/`A3-17`, `A2-07`). Each production diagnoses the token it is looking at,
     // so one bad token gets reported once per production that looks at it — and productions nest.
     // `expect body.items[-1].id equals 1` reported the same `-` three times: as a missing array

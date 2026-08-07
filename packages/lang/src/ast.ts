@@ -26,6 +26,30 @@ export interface Program extends Node {
    * `TestDecl.workload`, not carried in a separate array — `scenario` no longer exists as its own
    * keyword or AST node; `tflw run` walks this single array in order (D100). */
   readonly tests: readonly TestDecl[];
+  /**
+   * Spans the parser already diagnosed and then had to leave a **recovery node** behind at (M99a,
+   * D168b). Empty for every program that parses.
+   *
+   * `D167`'s back-off returns `VarRef(first)` when a word run misses `(`, which is right in the
+   * positions `A3-05` names — `random number lo to hi` needs `lo` to *be* a variable. But in the one
+   * shape that stays an error, `let a = create order`, that same `VarRef` is junk the parser
+   * invented to keep going, and `checkUnknownVariables` then reported ``unknown variable "create"``
+   * underneath the paren advice: one mistake, two errors, the second one nonsense. Before D167 the
+   * production returned `null`, so no node existed to misread.
+   *
+   * **It rides on the AST rather than through `ProgramCheckOptions` deliberately.** Every consumer
+   * already passes the `Program` — so unlike `missingFiles`, there is no second thing to remember at
+   * three call sites, which is the drift D146 exists to prevent. It is a *span* set rather than a
+   * name set because skipping by name would silence a genuine `create` bound elsewhere in the file.
+   *
+   * **Optional, and omitted entirely when there is nothing to record.** Written as a required field
+   * first, which changed the serialised AST of every program in the language and turned all 31
+   * parser golden files red — recovery metadata in the snapshot of a file that parses perfectly.
+   * Absent-when-empty keeps a healthy program's AST byte-identical to what it has always been, so
+   * the goldens still assert what they were written to assert, and the field appears only on the
+   * programs it actually describes.
+   */
+  readonly recoveredSpans?: readonly Span[];
 }
 
 /** `before`/`before file`/`after`/`after file` — file-scoped, no name, same body shape as a test
