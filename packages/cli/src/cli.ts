@@ -456,14 +456,68 @@ async function pickCommand(argv: string[]): Promise<number> {
     engine = browserRaw as BrowserEngine;
   }
 
-  process.stdout.write(`opening ${url} — click any element to print its locator. Close the window or press Ctrl+C to stop.\n`);
-
   let resolveClosed: () => void = () => {};
   const closed = new Promise<void>((res) => {
     resolveClosed = res;
   });
 
-  let session: PickSessionHandle;
+  // M105 (`PLAN_M105_PICK_INTERRUPT.md`, review `M104-02`) — the handler goes on **before** the
+  // banner and before the launch, and `interrupted` is what the failure path consults.
+  //
+  // Previously it attached only once `startPickSession` had resolved — real browser launched, real
+  // page navigated — which left the whole launch uncovered. Two windows, both measured:
+  //
+  //   * before Playwright spawns its browser (and so before *its* SIGINT handler exists): no
+  //     listener at all, so Node's default killed the process outright.
+  //   * after that, mid-`newPage`/`goto`: Playwright's handler tore the browser down, the in-flight
+  //     promise rejected, and the `catch` below reported it as `EXIT_USAGE` — the code documented
+  //     as "could not run" — with a red `error: page.goto: net::ERR_ABORTED` naming a Playwright
+  //     internal. tflw told the user their own deliberate Ctrl+C was a usage error.
+  //
+  // Attaching a listener is what suppresses Node's default kill, so the handler must also
+  // `resolveClosed()`: without it the first window stops crashing and starts *hanging* — the launch
+  // continues, a window the user just cancelled opens anyway, and `await closed` never returns.
+  //
+  // `interrupted`, not the error text. Whether the user pressed Ctrl+C is answerable here exactly;
+  // whether a Playwright message "looks like a teardown" is a guess that decays with every release.
+  // The distinction is load-bearing in the other direction too: a genuine launch failure (no browser
+  // installed, connection refused, no display) must still print and still exit `EXIT_USAGE`.
+  //
+  // Every way an interrupt can land, measured against this build rather than reasoned about
+  // (decision 189) — the flag fits five of the six, and the sixth is handled on its own line:
+  //
+  //   1. before this handler is attached (Node's own startup). Irreducible, and now milliseconds
+  //      rather than the seconds a browser launch takes. Node's default kill still applies.
+  //   2. attached, before Playwright's launch installs *its* handler → flag set, launch continues,
+  //      resolves or rejects into 5/6 below.
+  //   3. after Playwright's handler exists → **Playwright exits the process itself (130) and none
+  //      of the code below runs at all.** Observed 3/3 in the pre-spawn window. Fine, not a hole:
+  //      it closes what it spawned, and 130 satisfies this command's contract as squarely as 0.
+  //   4. mid-`goto` → the launch rejects, `catch` sees `interrupted` and stays silent. Observed 3/3.
+  //   5. after the session is up → `session.close()`, the path that already worked.
+  //   6. the launch *resolves* despite the interrupt → the `if (interrupted)` below. Never observed
+  //      (0/6 runs across both windows), kept because it is two lines and it is the only thing
+  //      standing between a Playwright behavior change and a genuinely orphaned window.
+  //
+  // The one case the flag does **not** fit is a second Ctrl+C. Attaching a listener removed Node's
+  // default kill, and with it the user's ability to escalate when a shutdown is wedged — so an
+  // impatient second press has to do explicitly what Node used to do implicitly. Not covered by a
+  // test: forcing a wedged teardown means stubbing Playwright, and a test that cannot reach the
+  // branch it names is worse than an honest comment saying so.
+  let interrupted = false;
+  let session: PickSessionHandle | undefined;
+  const onSigint = (): void => {
+    if (interrupted) process.exit(EXIT_ABORTED); // second Ctrl+C — the escape hatch, restored
+    interrupted = true;
+    void session?.close();
+    resolveClosed();
+  };
+  process.on('SIGINT', onSigint);
+
+  // Two lines, each true when it prints (decision 188). The first is *also* the guarantee that the
+  // handler above is installed, which is why it prints here rather than before `process.on`.
+  process.stdout.write(`opening ${url} — press Ctrl+C to stop.\n`);
+
   try {
     session = await startPickSession(
       url,
@@ -471,13 +525,22 @@ async function pickCommand(argv: string[]): Promise<number> {
       (picked) => process.stdout.write(`${picked.syntax}\n`),
       () => resolveClosed(),
     );
+    // Ctrl+C landed mid-launch and the launch nevertheless completed: nobody is waiting on this
+    // browser, so close it here or it is genuinely orphaned. Not currently reachable — Playwright
+    // closes its browsers on SIGINT, so an interrupted launch rejects rather than resolves — and
+    // deliberately left unproved rather than covered by a test that cannot fail (decision 190).
+    if (interrupted) void session.close();
+    else process.stdout.write('ready — click any element to print its locator. Close the window or press Ctrl+C to stop.\n');
   } catch (e) {
-    err(e instanceof Error ? e.message : String(e));
-    return EXIT_USAGE;
+    // The rejection *is* the interrupt when the user asked for it — reporting it would be tflw
+    // blaming the user for pressing the key the line above told them to press.
+    if (!interrupted) {
+      process.off('SIGINT', onSigint);
+      err(e instanceof Error ? e.message : String(e));
+      return EXIT_USAGE;
+    }
   }
 
-  const onSigint = (): void => void session.close();
-  process.on('SIGINT', onSigint);
   await closed;
   process.off('SIGINT', onSigint);
   return EXIT_OK;
