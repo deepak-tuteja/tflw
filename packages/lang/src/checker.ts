@@ -1694,8 +1694,18 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
   // test, e.g. a different inline table's columns), so a genuinely broken reference *inside* such
   // a hook — as opposed to the test body — would otherwise get reported once per test in the file.
   // Dedupe by (code, source offset): every one of those repeats points at the exact same span.
+  //
+  // The same filter drops any reference the *parser* already diagnosed and left a recovery node
+  // behind at (M99a, D168b). `let a = create order` parses to `VarRef(create)` purely so the parser
+  // could keep going after reporting ``\`create\` looks like the start of a call``; reporting
+  // ``unknown variable "create"`` underneath it is the same mistake told twice, the second time
+  // wrongly. Matched by span rather than by name, so a real `create` bound elsewhere in the file is
+  // untouched. `recoveredSpans` is empty for every program that parses, so this costs nothing on
+  // the path that matters.
+  const recovered = new Set((program.recoveredSpans ?? []).map((s) => s.start.offset));
   const seen = new Set<string>();
   return diags.filter((d) => {
+    if (d.code === Codes.UNKNOWN_VARIABLE && recovered.has(d.span.start.offset)) return false;
     const key = `${d.code}:${d.span.start.offset}`;
     if (seen.has(key)) return false;
     seen.add(key);
