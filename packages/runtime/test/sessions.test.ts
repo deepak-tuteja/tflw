@@ -486,3 +486,29 @@ test('an unknown session among several opted into fails clearly, even when the o
 
   await server.close();
 });
+
+test('M102/A4-OS-11: a session `header` line interpolates its NAME, not only its value', async () => {
+  // `header "Authorization" is "Bearer {token}"` above has interpolated its *value* since M2.6.
+  // The name was read literally until M102, so a session naming a header from a captured value —
+  // a per-tenant trace header, an API that names its key after the account — sent a header whose
+  // name contained braces, and the checker had been binding those `{var}`s the whole time.
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => json(res, 200, { token: 't0k', hdr: 'X-Acme-Key' }),
+    '/orders': (req, res) =>
+      json(res, 200, {
+        interpolated: req.headers['x-acme-key'] ?? null,
+        literal: req.headers['{keyName}'] ?? null,
+      }),
+  });
+
+  const config = configWithSession(
+    server.baseUrl,
+    `  api POST /auth/login body { user: "a", pass: "b" }\n  capture body.hdr as keyName\n  header "{keyName}" is "secret-value"\n`,
+  );
+  const source = `test "t" as admin\n  api GET /orders\n  expect body.interpolated equals "secret-value"\n  expect body.literal equals null\n`;
+  const { program } = parseSource(source);
+  const run = await runProgram(program, config, { source, seed: 1, sessionCache: new SessionCache() });
+
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+  await server.close();
+});

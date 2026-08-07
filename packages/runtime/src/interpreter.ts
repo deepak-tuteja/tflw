@@ -2505,7 +2505,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           return { steps: results, ok: true, giveValue };
         }
         case 'HeaderStmt': {
-          const name = step.name.value;
+          const name = String(evalValue(step.name, ctx)); // A4-OS-11/M102 — see `applyHeaders`
           const value = stringify(evalValue(step.value, ctx));
           if (ctx.headerSink) ctx.headerSink[name] = value;
           result = mkStep('header', src, step.span, true, stepStart, tc.redactor.redact(`header "${name}" is ${JSON.stringify(value)}`));
@@ -2959,7 +2959,9 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   const jarCookie = ctx.cookieJar.serialize(requestOrigin);
   if (jarCookie) setHeader(headers, 'Cookie', jarCookie);
   const cookieScopeNote = jarCookie ? undefined : cookieScopeNoteFor(ctx, requestOrigin);
-  for (const h of spec.headers) setHeader(headers, h.name.value, stringify(evalValue(h.value, ctx)));
+  // Both operands go through `evalValue` (A4-OS-11/M102). Until then this line read the name
+  // literally and the value as a value — one statement, two identical `StringLit`s, one evaluated.
+  for (const h of spec.headers) setHeader(headers, String(evalValue(h.name, ctx)), stringify(evalValue(h.value, ctx)));
 
   let sendBody: BodyInit | undefined;
   let traceBody: string | undefined;
@@ -3277,7 +3279,7 @@ function findLastMatchingRequest(log: readonly CapturedNetworkRequest[], urlPatt
 
 function evaluateNetworkExpect(step: ExpectStmt, matched: CapturedNetworkRequest | undefined, urlPattern: string, ctx: EvalCtx): MatchOutcome {
   const subject = step.subject;
-  const label = networkSubjectLabel(subject, urlPattern);
+  const label = networkSubjectLabel(subject, urlPattern, ctx);
   if (subject.type === 'NetworkRequestSubject') {
     // Existence-only; `wasMade` is the only matcher meaningful here. As of M97b the checker rejects
     // this before the run (`TF042`, D140) — it is decidable from the AST, and this comment used to
@@ -3297,16 +3299,18 @@ function evaluateNetworkExpect(step: ExpectStmt, matched: CapturedNetworkRequest
   if (!matched) {
     return { ok: false, message: `expected ${label}, but no matching request has been observed yet` };
   }
-  const { value } = resolveNetworkSubjectValue(subject, matched);
+  const { value } = resolveNetworkSubjectValue(subject, matched, ctx);
   return evalMatcher(label, value, step.matcher, ctx);
 }
 
-function resolveNetworkSubjectValue(subject: Subject, matched: CapturedNetworkRequest): { value: unknown; label: string } {
+function resolveNetworkSubjectValue(subject: Subject, matched: CapturedNetworkRequest, ctx: EvalCtx): { value: unknown; label: string } {
   switch (subject.type) {
     case 'StatusSubject':
       return { value: matched.status, label: 'status' };
-    case 'HeaderSubject':
-      return { value: matched.responseHeaders[subject.name.value.toLowerCase()], label: `header "${subject.name.value}"` };
+    case 'HeaderSubject': {
+      const name = String(evalValue(subject.name, ctx)); // A4-OS-11/M102, as in `resolveSubject`
+      return { value: matched.responseHeaders[name.toLowerCase()], label: `header "${name}"` };
+    }
     case 'BodyTextSubject':
       return { value: matched.responseBodyText, label: 'body text' };
     case 'BodySubject': {
@@ -3324,13 +3328,15 @@ function resolveNetworkSubjectValue(subject: Subject, matched: CapturedNetworkRe
   }
 }
 
-function networkSubjectLabel(subject: Subject, urlPattern: string): string {
+function networkSubjectLabel(subject: Subject, urlPattern: string, ctx: EvalCtx): string {
   const base = `request to ${JSON.stringify(urlPattern)}`;
   switch (subject.type) {
     case 'StatusSubject':
       return `status of ${base}`;
     case 'HeaderSubject':
-      return `header ${JSON.stringify(subject.name.value)} of ${base}`;
+      // A4-OS-11/M102 — the label has to name the header actually looked up, or a failure message
+      // sends the reader hunting for a header spelled the way the source is, not the way it ran.
+      return `header ${JSON.stringify(String(evalValue(subject.name, ctx)))} of ${base}`;
     case 'BodyTextSubject':
       return `body text of ${base}`;
     case 'BodySubject':
@@ -3414,7 +3420,7 @@ function describeA11yOutcome(step: ExpectStmt, floor: A11ySeverity | null, viola
 function maskExpectDetail(step: ExpectStmt, response: ResponseTrace | null, message: string, config: ResolvedConfig, ctx: EvalCtx): string {
   if (step.quantifier || !response) return message;
   const evidenceMasks = !subjectValueSurvivesEvidenceLevel(step.subject, config.evidenceLevel);
-  const redactMasks = subjectMatchesRedactPattern(step.subject, config.redactPatterns);
+  const redactMasks = subjectMatchesRedactPattern(step.subject, config.redactPatterns, ctx);
   if (!evidenceMasks && !redactMasks) return message;
   const { value } = resolveSubject(step.subject, response, ctx);
   return maskDetailValue(message, repr(value), evidenceMasks ? EVIDENCE_OMITTED_BODY : undefined);
@@ -3505,7 +3511,7 @@ function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: Eva
   // on its own line while the response body above it said `[omitted by evidence level]`. Same rule
   // as `maskExpectDetail`'s, from the same helper.
   const evidenceMasked = !subjectValueSurvivesEvidenceLevel(step.subject, config.evidenceLevel);
-  const redactMasked = subjectMatchesRedactPattern(step.subject, config.redactPatterns);
+  const redactMasked = subjectMatchesRedactPattern(step.subject, config.redactPatterns, ctx);
   if (redactMasked) registerCapturedSecret(step.name, value, redactor);
   const rendered = evidenceMasked ? EVIDENCE_OMITTED_BODY : redactMasked ? '[redacted]' : repr(value);
   return mkStep('capture', src, step.span, true, start, redactor.redact(`${step.name} = ${rendered} (captured)`));
@@ -3524,9 +3530,12 @@ function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: Eva
 /** Whether a `capture`/`expect` subject names a position covered by a `redact` pattern (FS-03) —
  * the two subject kinds a pattern can reach, dispatched to their own matchers so a header is never
  * matched as if it were a JSON path. */
-function subjectMatchesRedactPattern(subject: Subject, patterns: readonly RedactPattern[]): boolean {
+function subjectMatchesRedactPattern(subject: Subject, patterns: readonly RedactPattern[], ctx: EvalCtx): boolean {
   if (subject.type === 'BodySubject') return pathMatchesRedactPattern(subject.path, patterns);
-  if (subject.type === 'HeaderSubject') return headerMatchesRedactPattern(subject.name.value, patterns);
+  // A4-OS-11/M102, and the one site here with a security consequence: matched against the *literal*
+  // name, a `redact` pattern written for the interpolated header would miss, and a value the suite
+  // declared secret would print. Interpolate first, then match.
+  if (subject.type === 'HeaderSubject') return headerMatchesRedactPattern(String(evalValue(subject.name, ctx)), patterns);
   return false;
 }
 
@@ -3800,8 +3809,12 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
       return { value: response.status, label: 'status' };
     case 'DurationSubject':
       return { value: response.durationMs, label: 'duration' };
-    case 'HeaderSubject':
-      return { value: response.headers[subject.name.value.toLowerCase()], label: `header "${subject.name.value}"` };
+    case 'HeaderSubject': {
+      // A4-OS-11/M102: the name is a `StringLit` the checker binds `{var}`s in, so it is a value.
+      // Case-fold *after* interpolating — the interpolated text is what names the header.
+      const name = String(evalValue(subject.name, ctx));
+      return { value: response.headers[name.toLowerCase()], label: `header "${name}"` };
+    }
     case 'BodyTextSubject':
       return { value: response.bodyText, label: 'body text' };
     case 'BodyBytesSubject':
