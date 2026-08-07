@@ -66,6 +66,20 @@ test('collectFileReferences: finds every syntax that names a file', () => {
   assert.equal(refs.length, 7);
 });
 
+test('collectFileReferences: exactly `import` and `use` are the ones the checker opens itself', () => {
+  // D147's whole severity split reduces to this partition, so it is asserted as a partition rather
+  // than by spot-checking two rows: every syntax appears on exactly one side, and neither side is
+  // empty. A row added to FILE_BEARING_NODES without thinking about `neededBy` lands in whichever
+  // list is wrong and fails here by name.
+  const byTier = (tier: 'check' | 'run') =>
+    collectFileReferences(parsed(ALL_SEVEN))
+      .filter((r) => r.neededBy === tier)
+      .map((r) => r.syntax)
+      .sort();
+  assert.deepEqual(byTier('check'), ['import', 'use']);
+  assert.deepEqual(byTier('run'), ['body from', 'drop file', 'matches file', 'upload', 'with each from']);
+});
+
 test('collectFileReferences: reaches a path nested inside a block-bearing step', () => {
   // The reason the walk is structural rather than a hand-rolled per-statement switch: `symbols.ts`
   // and `checker.ts` both have a `walkSteps` that must name every block kind to descend into it,
@@ -107,6 +121,32 @@ test('checkReferencedFiles: reports TF043 for exactly the paths the caller repor
   );
   assert.match(diags[0]!.message, /`with each from` names a file that does not exist: "\.\/rows\.csv"/);
   assert.match(diags[1]!.message, /`matches file` names a file that does not exist: "\.\/golden\.bin"/);
+});
+
+test('checkReferencedFiles: a file only a step opens is a warning, so the suite still runs (D147)', () => {
+  const program = parsed(ALL_SEVEN);
+  // The regression this milestone exists for. M97c reported all seven at `'error'`, and
+  // `loadAndValidate` returns EXIT_USAGE on any error-severity diagnostic — so a suite whose
+  // earlier step *creates* the file it later reads became unrunnable with no override. That is
+  // D137 clause 1's failure mode, found by clause 1's own declared evidence (testFlow-tests'
+  // corpus) on the first CI run after the M97/M98 stack landed.
+  const stepTier = checkReferencedFiles(program, { missingFiles: new Set(['./golden.bin', './rows.csv', './payload.json', './avatar.png', './dropped.png']) });
+  assert.equal(stepTier.length, 5);
+  assert.deepEqual([...new Set(stepTier.map((d) => d.severity))], ['warning']);
+  // The message is unchanged — only the severity and the hint move. A user who could act on this
+  // before can still act on it; what they can no longer do is be blocked by it.
+  assert.match(stepTier[0]!.message, /`with each from` names a file that does not exist/);
+  assert.match(stepTier[0]!.hint!, /a warning, not an error, because this file is opened during the run/);
+
+  const checkTier = checkReferencedFiles(program, { missingFiles: new Set(['./imported.tflw', './helper.ts']) });
+  assert.deepEqual(
+    checkTier.map((d) => d.severity),
+    ['error', 'error'],
+  );
+  // Control: both halves are run against the *same* program and the same pass, so "warning" above
+  // cannot be a pass that lost its severity field or stopped firing — these two are the proof that
+  // it still emits, still at error, for the tier that kept it.
+  assert.match(checkTier[0]!.hint!, /not the directory `tflw` runs in$/);
 });
 
 test('checkReferencedFiles: undefined skips the pass, an empty set asserts everything was found', () => {

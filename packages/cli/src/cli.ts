@@ -861,6 +861,11 @@ interface ValidatedProject {
   readonly parsedConfig: ReturnType<typeof parseConfigSource>;
   readonly environ: NodeJS.ProcessEnv;
   readonly parsedFiles: { file: string; source: string; program: Program }[];
+  /** How many `severity: 'warning'` diagnostics were printed on the way here (M97e, D147). Carried
+   * out because `checkCommand`'s summary line is otherwise written from `parsedFiles.length` alone
+   * and says `no problems found` — which, the first time a shipped diagnostic actually took the
+   * warning branch, printed that sentence to stdout directly above a warning on stderr. */
+  readonly warningCount: number;
 }
 
 /** Config parse/resolve + per-file parse/check pipeline (P#46, decisions 57/66): a parse/check
@@ -954,6 +959,7 @@ async function loadAndValidate(
   const knownSessions = Array.from(resolved.sessions.keys());
   const parsedFiles: { file: string; source: string; program: Program }[] = [];
   let hadErrors = false;
+  let warningCount = 0;
   for (const file of files) {
     const source = await readFile(file, 'utf8');
     const parsed = parseSource(source);
@@ -972,11 +978,15 @@ async function loadAndValidate(
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
     // deprecation notices, `tflw migrate`'s own input) is advisory: printed/handed to the caller,
-    // but the file still runs. No diagnostic in the shipped checker uses `'warning'` yet (the
-    // grammar is additive-only, decision 45), so this branch is currently unreachable in practice
-    // — ready for the day a real deprecation rule exists rather than a scramble then.
+    // but the file still runs. This branch used to be documented here as unreachable in practice,
+    // no shipped diagnostic having used `'warning'`. **`TF043`'s run tier is its first real user**
+    // (D147): a file a *step* opens may be created by an earlier step, so "not there at check time"
+    // is a prediction, and a prediction must not make a valid suite unrunnable. Worth noting what
+    // that means for the code below — it had never once executed against a real diagnostic before
+    // the tests added in D147, so it was scaffolding believed to work, not scaffolding known to.
     const errors = diagnostics.filter((d) => d.severity === 'error');
     const warnings = diagnostics.filter((d) => d.severity === 'warning');
+    warningCount += warnings.length;
     if (errors.length > 0) {
       if (onFileDiagnostics) onFileDiagnostics(file, source, diagnostics);
       else process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
@@ -997,7 +1007,7 @@ async function loadAndValidate(
   }
   if (hadErrors) return EXIT_USAGE;
 
-  return { resolved, parsedConfig, environ, parsedFiles };
+  return { resolved, parsedConfig, environ, parsedFiles, warningCount };
 }
 
 /** `tflw watch`-only knobs (M5) — invisible to the real `tflw run` CLI path (`main()` always calls
@@ -1784,7 +1794,12 @@ async function checkCommand(argv: string[]): Promise<number> {
   if (typeof loaded === 'number') return loaded;
 
   const n = loaded.parsedFiles.length;
-  process.stdout.write(`${n} file${n === 1 ? '' : 's'} checked, no problems found.\n`);
+  // `no problems found` is only true when none were. Until D147 no shipped diagnostic used
+  // `'warning'`, so this line had never been reachable in a state it described wrongly — the first
+  // real warning printed it to stdout immediately below a `warning[TF043]` on stderr, which is the
+  // report-honesty defect class this review has been closing everywhere else.
+  const w = loaded.warningCount;
+  process.stdout.write(w === 0 ? `${n} file${n === 1 ? '' : 's'} checked, no problems found.\n` : `${n} file${n === 1 ? '' : 's'} checked, ${w} warning${w === 1 ? '' : 's'}.\n`);
 
   // The reuse pass (M6, P#2) — advisory only, never affects the exit code: `tflw check` already
   // established every file is individually clean, and a reuse hint is a suggestion, not a defect.

@@ -2078,6 +2078,9 @@ function keyName(entry: ConfigEntry): string {
 export interface FileReference {
   readonly syntax: string;
   readonly path: StringLit;
+  /** Whether `tflw check` **opens** this file to do its own job, or merely predicts that the run
+   * will. Sets the diagnostic's severity — see `checkReferencedFiles` (D147). */
+  readonly neededBy: 'check' | 'run';
 }
 
 /**
@@ -2094,15 +2097,22 @@ export interface FileReference {
  * Two path-shaped things are deliberately *not* rows. `matches schema … from "src"` takes a URL or
  * a path and cannot be told apart statically. `Locator`'s `css`/`xpath` values are selectors that
  * merely look like paths. Neither is a file the runtime opens.
+ *
+ * **`neededBy` is the severity, and the split is not a matter of taste** (D147). `import`/`use` are
+ * read by `resolveImportedActions` *during the check itself*: absent, the checker's own analysis is
+ * degraded and it will go on to report the calls they declare as unknown. The other five it never
+ * opens — it only `stat`s them, on behalf of a step that has not run yet. A step that has not run
+ * yet is one an earlier step, a hook, a `use`d JS action, or a fixture-build between `check` and
+ * `run` may be about to create, which makes "not there now" a prediction rather than a fact.
  */
-const FILE_BEARING_NODES: readonly { readonly node: string; readonly field: string; readonly syntax: string }[] = [
-  { node: 'ImportDecl', field: 'path', syntax: 'import' },
-  { node: 'UseDecl', field: 'path', syntax: 'use' },
-  { node: 'FileDataTable', field: 'path', syntax: 'with each from' },
-  { node: 'FileBody', field: 'path', syntax: 'body from' },
-  { node: 'UploadBody', field: 'filePath', syntax: 'upload' },
-  { node: 'Matcher', field: 'filePath', syntax: 'matches file' },
-  { node: 'DropFileStmt', field: 'filePath', syntax: 'drop file' },
+const FILE_BEARING_NODES: readonly { readonly node: string; readonly field: string; readonly syntax: string; readonly neededBy: 'check' | 'run' }[] = [
+  { node: 'ImportDecl', field: 'path', syntax: 'import', neededBy: 'check' },
+  { node: 'UseDecl', field: 'path', syntax: 'use', neededBy: 'check' },
+  { node: 'FileDataTable', field: 'path', syntax: 'with each from', neededBy: 'run' },
+  { node: 'FileBody', field: 'path', syntax: 'body from', neededBy: 'run' },
+  { node: 'UploadBody', field: 'filePath', syntax: 'upload', neededBy: 'run' },
+  { node: 'Matcher', field: 'filePath', syntax: 'matches file', neededBy: 'run' },
+  { node: 'DropFileStmt', field: 'filePath', syntax: 'drop file', neededBy: 'run' },
 ];
 
 /**
@@ -2144,7 +2154,7 @@ export function collectFileReferences(program: Program): FileReference[] {
       const lit = record[entry.field] as StringLit | null | undefined;
       // `parts` is the interpolation-aware breakdown, so "every part is literal text" is the whole
       // test for "this path is known statically".
-      if (lit && lit.parts.every((p) => p.kind === 'text')) out.push({ syntax: entry.syntax, path: lit });
+      if (lit && lit.parts.every((p) => p.kind === 'text')) out.push({ syntax: entry.syntax, path: lit, neededBy: entry.neededBy });
     }
     for (const child of Object.values(record)) visit(child);
   };
@@ -2202,6 +2212,27 @@ export function fileReferenceDrift(astSource: string): string[] {
  * Reports the literal, not the resolved path, in the message: the user wrote the literal. The
  * resolution goes in the hint, because the single most common cause of this error is believing
  * paths are relative to the working directory.
+ *
+ * **Severity is `ref.neededBy`, and that is D147 repairing a D137 clause 1 violation this very
+ * milestone shipped.** M97c emitted `'error'` for all seven syntaxes, which makes a valid suite
+ * unrunnable with no override — clause 1's exact failure mode, and the one `A4-05` was the worst
+ * row in the review for. The proof came from clause 1's own declared evidence, testFlow-tests'
+ * corpus, on the first CI run after the stack landed:
+ *
+ * ```
+ *   capture body bytes as receiptBytes
+ *   let scratchPath = save temp file(receiptBytes)      # a `use`d JS action; writes the file
+ *   …
+ *   expect body bytes matches file "../../.scratch/receipt-roundtrip.bin"
+ * ```
+ *
+ * That program runs, and ran for eleven milestones. The path is statically *known* — every part is
+ * literal text — and still names nothing at check time, because the run creates it. D144 drew the
+ * line at knowable-vs-unknowable and stopped one step short: a literal can be perfectly knowable
+ * and name a file that does not exist **yet**. The five run-tier syntaxes therefore warn — printed,
+ * caret and all, and the file still runs — while `import`/`use`, which the checker opens itself and
+ * no step can conjure, stay errors. The typo coverage D144 was built for survives in both tiers;
+ * only the exit code moves, and only where the checker was guessing.
  */
 export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
   const missing = opts.missingFiles;
@@ -2209,12 +2240,15 @@ export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions
   const diags: Diagnostic[] = [];
   for (const ref of collectFileReferences(program)) {
     if (!missing.has(ref.path.value)) continue;
+    const openedByTheChecker = ref.neededBy === 'check';
     diags.push({
       code: Codes.MISSING_FILE,
-      severity: 'error',
+      severity: openedByTheChecker ? 'error' : 'warning',
       message: `\`${ref.syntax}\` names a file that does not exist: "${ref.path.value}"`,
       span: ref.path.span,
-      hint: 'paths resolve against the directory of the file that names them, not the directory `tflw` runs in',
+      hint: openedByTheChecker
+        ? 'paths resolve against the directory of the file that names them, not the directory `tflw` runs in'
+        : 'paths resolve against the directory of the file that names them, not the directory `tflw` runs in — a warning, not an error, because this file is opened during the run, so an earlier step or hook may still create it',
     });
   }
   return diags;

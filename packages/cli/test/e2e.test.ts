@@ -801,6 +801,52 @@ test('`tflw check` reports a referenced file that is not there (TF043, D144/`A4-
   }
 });
 
+test('`tflw check` warns, at exit 0, for a file only a step opens (TF043 run tier, M97e/D147)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-tf043-warn-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    // The shape testFlow-tests hit: a path that is statically known and does not exist *yet*,
+    // because the run creates it. M97c made this suite unrunnable with no override — `check` and
+    // `run` both call `loadAndValidate`, which returns EXIT_USAGE on any error-severity diagnostic.
+    await writeFile(join(dir, 'later.tflw'), `test "t"\n  api GET /health\n  expect body bytes matches file "./written-during-the-run.bin"\n`, 'utf8');
+
+    const { stdout, stderr } = await execFileAsync('node', [cliEntry, 'check', 'later.tflw', '--no-color'], { cwd: dir });
+    // Exit 0 is the fix. The warning being *printed* is the other half — a diagnostic downgraded to
+    // silence would trade one defect for another, and this is the first time any shipped diagnostic
+    // has taken the CLI's `warnings.length > 0` branch at all, so it is proven here rather than
+    // assumed. It was written in M2.5 and had never once executed.
+    assert.match(stderr, /warning\[TF043\]: `matches file` names a file that does not exist: "\.\/written-during-the-run\.bin"/);
+    assert.match(stderr, /a warning, not an error, because this file is opened during the run/);
+    // And the summary line has to agree with the diagnostic above it. Making the warning branch
+    // reachable for the first time also made this line reachable in a state it got wrong: it is
+    // written from `parsedFiles.length` alone, so it printed `no problems found` to stdout with a
+    // `warning[TF043]` on stderr one line up.
+    assert.match(stdout, /1 file checked, 1 warning\./);
+    assert.doesNotMatch(stdout, /no problems found/);
+
+    // Control 1: the same command on a clean file prints no warning at all — otherwise the match
+    // above could be satisfied by a checker that warns unconditionally.
+    await writeFile(join(dir, 'clean.tflw'), `test "t"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+    const clean = await execFileAsync('node', [cliEntry, 'check', 'clean.tflw', '--no-color'], { cwd: dir });
+    assert.doesNotMatch(clean.stderr, /TF043/);
+
+    // Control 2 — the one that makes this test load-bearing. The *check* tier of the same rule,
+    // in the same command, must still exit 2. Without it, deleting the pass outright would pass
+    // every assertion above (no error, and `assert.match` on stderr would simply be dropped along
+    // with the diagnostic). A negative control that cannot fail is a passing test of nothing.
+    await writeFile(join(dir, 'imports.tflw'), `import "./nowhere.tflw"\n\ntest "t"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', 'imports.tflw', '--no-color'], { cwd: dir }),
+      (e: unknown) => {
+        const err = e as { code?: number; stderr?: string };
+        return err.code === 2 && /error\[TF043\]/.test(err.stderr ?? '');
+      },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`tflw refactor apply` refuses a rewrite that would not check, and writes nothing (`B5-02` half 3)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-refactor-refuse-'));
   try {

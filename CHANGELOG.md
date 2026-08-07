@@ -142,6 +142,27 @@ A systematic pre-`1.0.0` review of the whole surface. Highlights:
 - Documentation gained a mechanical guard: every fenced block in the docs site is classified, and
   every `tflw` sample is executed through the shipped `dist/cli.cjs` rather than trusted.
 
+### Fixed — launch review, checker & lexer contracts (M89–M98, M97e)
+
+- The checker's relationship to the runtime became a stated contract rather than an aspiration:
+  every rule the runtime enforces is either decided statically first or carries a written reason it
+  cannot be, checked by a source scan that fails when the two lists drift.
+- `tflw check` now reports a path literal that names a file which is not there (`TF043`) — covering
+  `import`, `use`, `with each from`, `body from`, `upload`, `matches file` and `drop file`. Before
+  this, a suite with a mistyped import checked clean and then printed `✗ t.tflw (crashed) (0 ms)`
+  as its *entire* run output, `--verbose` included.
+- **`TF043` reports at two severities.** `import`/`use` are an error — `tflw check` opens those
+  files itself. The five a *step* opens are a warning, because a file that is not there at check
+  time may be created by an earlier step, a hook or a fixture build before the step that reads it
+  runs. Reported at error severity for one release, this made a valid suite unrunnable with no
+  override; `tflw check`'s summary line counts warnings instead of claiming `no problems found`.
+- Lexer diagnostics report the fact they already had: an unclosed bracket points at the bracket
+  rather than at a synthesized dedent past end-of-file, an empty `@` tag is an error instead of an
+  unusable tag name, an unsupported string escape is refused rather than silently dropped, and tab
+  indentation and invisible/confusable characters are named for what they are.
+- Diagnostic carets are placed in terminal cells rather than UTF-16 code units, so a line
+  containing wide or combining characters underlines the span the reader can see.
+
 ## [0.1.0] — 2026-07-06
 
 First public draft. API-only — the browser half lands in `0.2.0`.
