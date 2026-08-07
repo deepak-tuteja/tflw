@@ -1436,6 +1436,18 @@ class Parser {
       return null;
     }
     const n = Number(num.value);
+    // D170 (`M98c-03`) — one duration rule, both positions. `M98c` shipped the adjacency rule in
+    // *value* position only, so `expect duration is less than 250 ms` was an error while `pause
+    // 250 ms` was accepted; this function had the right words all along and simply never asked the
+    // question, passing `adjacent: true` unconditionally below.
+    //
+    // `M98c-03` recorded the asymmetry as unfixable — *"the rejection is the correct rule; the
+    // acceptance is the old one, and removing it is a breaking change under the 1.0 freeze"* — and
+    // that premise was never measured. It is now: **66 closed-up durations in the corpus, 0 spaced
+    // ones.** The single grep hit for a spaced duration is inside a comment. There are no programs
+    // to break, so the narrowing costs nothing and the two positions stop disagreeing.
+    const adjacent = num.span.end.offset === unitTok.span.start.offset;
+    if (!adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;
     switch (unitTok.value) {
       case 'ms':
         this.advance();
@@ -1451,7 +1463,7 @@ class Parser {
         // give the same answer. `reportBadDurationUnit` returns false only for a word that was never
         // reaching for a unit, which in *this* position — a duration is the only thing the grammar
         // allows — is still a wrong unit, so the old message stays as the fallback.
-        if (!this.reportBadDurationUnit(num, unitTok, true)) {
+        if (!this.reportBadDurationUnit(num, unitTok, adjacent)) {
           this.error(Codes.UNKNOWN_DURATION_UNIT, `unknown time unit \`${unitTok.value}\``, unitTok.span, 'expected `ms`, `s`, or `m`');
         }
         return null;
@@ -3787,6 +3799,17 @@ class Parser {
         const lengthVal = this.parseValue();
         if (!lengthVal) return null;
         length = lengthVal;
+      } else if (this.peek().type === 'ident') {
+        // D169's other half. Narrowing the set above is only half a fix: `let p = random password n`
+        // now falls through to the enclosing production, which says ``unexpected `n` at end of
+        // step`` and teaches nothing — the exact `M98c` failure mode, a diagnostic that fires and
+        // leaves the author no better off. So the *site* leaves advice naming the spellings that
+        // work, on the same one-slot, position-keyed terms as D168's note.
+        //
+        // Conditional on the next token being an `ident` at all: after `select random password from
+        // field "pw"` the note is taken and then silently expires, because `select` consumes `from`
+        // and the cursor moves. Only the shape that actually fails ever sees it.
+        this.noteValueAdvice('a password length must be a number or a `{var}` — write `random password 8`, `random password {n}`, or `random password` for the default');
       }
       const expr: RandomPasswordExpr = { type: 'RandomPasswordExpr', length, span: this.spanFrom(start) };
       return expr;
@@ -3799,11 +3822,38 @@ class Parser {
     return null;
   }
 
-  /** Whether `tok` could plausibly start a `Value` production — used only where a trailing value
+  /**
+   * Whether `tok` could plausibly start a `Value` production — used only where a trailing value
    * is optional (`random password [N]`, decision 98) and we must decide, without committing,
-   * whether the next token belongs to this expression or to whatever follows it. */
+   * whether the next token belongs to this expression or to whatever follows it.
+   *
+   * **`ident` is deliberately not in this set (M99b, D169, `A3-08`).** `random password` is the
+   * grammar's only optional *and unmarked* value position, so an `ident` here is ambiguous with the
+   * keyword that ends the enclosing production, and the parser took it as the length:
+   *
+   * ```
+   * select random password from field "pw"
+   *                        ^^^^ consumed as the length
+   * ```
+   *
+   * `D167`'s back-off does not reach this. Under back-off the length becomes `VarRef(from)`,
+   * `select` then expects `from` and finds `field`, and the blame moves one token without becoming
+   * right. Nor does any local rule work: *"an ident starts a value only if the next token is not an
+   * ident"* accepts `random password n` at end of line and rejects it in
+   * `random password n from field "x"` — the same trap one position over.
+   *
+   * The ambiguity is unresolvable because the value is optional *and* unmarked, so the value is
+   * required to be self-delimiting. `random password`, `random password 8` and `random password {n}`
+   * all still work; only the bare `random password n` spelling goes.
+   *
+   * **Freeze classification: narrowing, blast radius 0.** 26 uses of `random password` in the
+   * corpus, all bare at end of line, none with a length in either spelling. Adding an explicit
+   * marker instead (`random password of 8`) was rejected: strictly additive and therefore safer, but
+   * it adds grammar surface to a form nobody uses while leaving the ambiguous spelling alive beside
+   * it — `A3-08` worked around rather than closed.
+   */
   private looksLikeValueStart(tok: Token): boolean {
-    return tok.type === 'string' || tok.type === 'number' || tok.type === 'lbrace' || tok.type === 'minus' || tok.type === 'ident';
+    return tok.type === 'string' || tok.type === 'number' || tok.type === 'lbrace' || tok.type === 'minus';
   }
 
   // -- transforms: base64 / hex / url encode/decode (decision 98) ------------
@@ -4097,6 +4147,16 @@ class Parser {
     this.backOffNote = { span: first.span, word: first.value, at: this.pos };
   }
 
+  /** D169's sibling of `backOffNote`: the enclosing production's *message* is fine, its **hint** is
+   * not, because only the site that just parsed knows what the author was reaching for. Same one
+   * slot, same position key, same expiry — and it never overrides `backOffNote`, which replaces the
+   * whole diagnostic rather than decorating it. */
+  private valueAdviceNote: { readonly hint: string; readonly at: number } | null = null;
+
+  private noteValueAdvice(hint: string): void {
+    this.valueAdviceNote = { hint, at: this.pos };
+  }
+
   private error(
     code: string,
     message: string,
@@ -4107,6 +4167,11 @@ class Parser {
   ): void {
     const note = this.backOffNote;
     this.backOffNote = null;
+    const advice = this.valueAdviceNote;
+    this.valueAdviceNote = null;
+    if (advice && advice.at === this.pos && code === Codes.UNEXPECTED_TOKEN && !(note && note.at === this.pos)) {
+      hint = advice.hint;
+    }
     if (note && note.at === this.pos && code === Codes.UNEXPECTED_TOKEN) {
       message = `\`${note.word}\` looks like the start of a call but never reaches \`(\``;
       span = note.span;

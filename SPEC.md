@@ -1274,6 +1274,45 @@ matches subset {...}` that unexpectedly succeeded still shows the ordinary whole
 `let orderId = create order("Widget")` — binds values from expressions, generators, action
 returns, `env(…)`.
 
+#### 7.1.1 Referring to a variable: `{x}` and the bare form (M99a)
+
+A variable is read as `{x}` — braced — in every position the language has, and that spelling always
+works. A **bare** name (`x`, no braces) is also a value, and this is the form the grammar had never
+written down: 36 sites in the corpus use it, and until M99a its one limitation was undocumented and
+therefore only ever found by hitting it.
+
+tflw has **no reserved words**. Every word lexes the same way and keywords are contextual, decided
+by whatever production consumes them — which is what lets `action create order(…)` name itself in
+plain English. The cost is that at a value position `random number lo to hi` and `create order(…)`
+look identical for two tokens: a variable followed by a keyword, and a multi-word call name.
+
+The rule that resolves it: **a run of bare words is a call if it reaches `(`, and otherwise the
+first word alone is a variable** — the rest goes back to the enclosing production. So all of these
+are variables, and all of them work:
+
+```
+let x = random number lo to hi
+let z = random date between a and b
+let f = format d as "yyyy-MM-dd"
+select size from field "Size"
+```
+
+and a word run that *was* reaching for a call still says so:
+
+```
+let a = create order
+  error[TF010]: `create` looks like the start of a call but never reaches `(`
+  help: multi-word calls need parens, e.g. `create order(...)`
+```
+
+**When to prefer `{x}`.** Inside a string it is the only form — `"/orders/{id}"` interpolates,
+`"/orders/id"` does not. Everywhere else the two are equivalent, and `{x}` reads unambiguously next
+to a keyword.
+
+**One position takes only a self-delimiting value** (§7.3): `random password`'s optional length is
+the grammar's only value that is both optional and unmarked, so a bare name cannot be told from the
+keyword that ends the enclosing expression. Write `random password 8` or `random password {n}`.
+
 ### 7.2 `unique` — collision-safe identity data (P#19, P#21)
 
 `unique("prefix")`, `unique email`, `unique number`, `unique like "ORD-######"`, `unique uuid`.
@@ -1306,7 +1345,14 @@ random like "SKU-####-??"       # = digit, ? = letter
 random uuid                     # v4, collisions allowed
 random password                 # default length 12
 random password 16              # custom length (min 4)
+random password {n}             # from a variable
 ```
+
+**The length must be a number or a `{var}`, never a bare name** (M99b). It is the only value in the
+grammar that is both optional and unmarked, so a bare word there cannot be told apart from the
+keyword that ends the enclosing expression — `select random password from field "pw"` consumed
+`from` as the length. `random password n` is therefore an error naming the three spellings above;
+`{n}` is the one to reach for.
 
 No built-in faker realism (names/addresses) — use `random of` with your own list, or JS (P#22).
 `random password` is not an exception to this — it satisfies a validation policy (at least one
