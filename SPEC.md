@@ -803,6 +803,13 @@ Grammar: `api [<service>] <METHOD> <path>[?query] [<body-form>] [timeout <dur>] 
 - Path is relative to the service's baseUrl in the active env; `{vars}` interpolate.
 - Headers: env/defaults headers apply automatically; per-step extras:
   `header "X-Trace" is "{traceId}"` lines directly under the api step.
+  **Both operands interpolate** — the name as well as the value (M102, D176), so
+  `header "X-{tenant}-Key" is "{apiKey}"` names the header the run computed. The same holds for a
+  `header` line in a `session` block and for `expect header "{name}"`/`capture header "{name}"`,
+  where the name is resolved *before* the case-insensitive lookup. Through v0.1 the name alone was
+  read literally, which `tflw check` had never agreed with: it binds `{var}`s in a header name and
+  reports `TF030` for a typo there, so the checker was validating an interpolation the runtime did
+  not perform (`A4-OS-11`).
 - `timeout <dur>` overrides the config request timeout for this step only.
 - Redirects are followed by default; `without redirects` leaves the 3xx observable (§6.2).
   A redirect that leaves the request's origin (scheme + host + port) drops `Authorization`,
@@ -1372,6 +1379,12 @@ grammar that is both optional and unmarked, so a bare word there cannot be told 
 keyword that ends the enclosing expression — `select random password from field "pw"` consumed
 `from` as the length. `random password n` is therefore an error naming the three spellings above;
 `{n}` is the one to reach for.
+
+**Patterns interpolate** (M102, D177) — `random like "{region}-####"` and `unique like "{region}-??"`
+resolve `{region}` first, then fill. Additive: `{` is a placeholder in neither pattern language
+(`#`/`?` here, `yyyy`/`MM`/`dd`/`HH`/`mm`/`ss` in `format … as …`), so a pattern without one renders
+exactly as before. Same reason as the header name above — `tflw check` already bound these `{var}`s
+while the runtime read the pattern literally (`A4-OS-13`).
 
 No built-in faker realism (names/addresses) — use `random of` with your own list, or JS (P#22).
 `random password` is not an exception to this — it satisfies a validation policy (at least one

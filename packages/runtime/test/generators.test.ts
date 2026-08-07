@@ -336,3 +336,112 @@ test('url decode rejects malformed percent-encoding', async () => {
   assert.equal(report.ok, false);
   assert.match(report.tests[0]!.error ?? '', /url decode\(\.\.\.\): "100% not valid" is not validly percent-encoded/);
 });
+
+// ---------------------------------------------------------------------------
+// M102 / A4-OS-11 + A4-OS-13 — a `StringLit` the checker binds `{var}`s in is a
+// value at run time too. Header names and generator patterns were the last four
+// operands where the checker and the runtime disagreed.
+// ---------------------------------------------------------------------------
+
+test('M102/A4-OS-11: a per-request header NAME interpolates', async () => {
+  const seen: Record<string, string | undefined>[] = [];
+  const server = await startFixtureServer({
+    '/orders': (req, res) => {
+      seen.push({ ...(req.headers as Record<string, string | undefined>) });
+      json(res, 201, { ok: true });
+    },
+  });
+
+  const source = `test "gen"
+  let tenant = "acme"
+  api POST /orders body { a: 1 }
+    header "X-Step-{tenant}" is "step-local"
+  expect status equals 201
+`;
+  const { program } = parseSource(source);
+  const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 1 });
+
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+  const sent = seen[0]!;
+  assert.equal(sent['x-step-acme'], 'step-local', 'the header must be sent under the interpolated name');
+  // The control: `x-step-{tenant}` is what this line sent before M102, and it is a legal header
+  // name, so asserting only the line above would still pass if interpolation ran but also left the
+  // literal behind.
+  assert.equal(sent['x-step-{tenant}'], undefined, 'the literal name must not be sent');
+
+  await server.close();
+});
+
+test('M102/A4-OS-11: `expect header "{var}"` reads the interpolated header, and says so when it fails', async () => {
+  const server = await startFixtureServer({
+    '/orders': (_req, res) => {
+      res.setHeader('X-Trace-Acme', 'abc123');
+      json(res, 201, { ok: true });
+    },
+  });
+
+  const source = `test "gen"
+  let tenant = "acme"
+  api POST /orders body { a: 1 }
+  expect header "X-Trace-{tenant}" equals "abc123"
+`;
+  const { program } = parseSource(source);
+  const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 1 });
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+
+  // Before M102 the lookup was `x-trace-{tenant}` — always `null`, so the assertion was decided
+  // against a header that cannot exist. Prove the failing message names the resolved header.
+  const badSource = `test "gen"
+  let tenant = "acme"
+  api POST /orders body { a: 1 }
+  expect header "X-Trace-{tenant}" equals "nope"
+`;
+  const bad = parseSource(badSource).program;
+  const badRun = await runProgram(bad, testConfig(server.baseUrl), { source: badSource, seed: 1 });
+  assert.equal(badRun.report.tests[0]!.ok, false);
+  const msg = badRun.report.tests[0]!.error ?? '';
+  assert.match(msg, /header "X-Trace-acme"/, 'the failure must name the header actually read');
+  assert.doesNotMatch(msg, /\{tenant\}/, 'the failure must not echo the un-interpolated literal');
+
+  await server.close();
+});
+
+test('M102/A4-OS-13: `random like`/`unique like`/`format` patterns interpolate', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 201, { ok: true }) });
+
+  const source = `test "gen"
+  let region = "EU"
+  let code = random like "{region}-####"
+  let sku = unique like "{region}-??"
+  api POST /orders body { a: 1 }
+  expect status equals 201
+`;
+  const { program } = parseSource(source);
+  const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 42 });
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+
+  const details = run.report.tests[0]!.steps.slice(0, 3).map((s) => s.detail ?? '');
+  // `#` → digit and `?` → letter still work, so the pattern language survives interpolation. The
+  // `{region}` half is the new behaviour; the `####` half is the guard that it stayed additive.
+  assert.match(details[1]!, /EU-\d{4}/, `random like: ${details[1]}`);
+  assert.match(details[2]!, /EU-[A-Z]{2}/, `unique like: ${details[2]}`);
+  for (const d of details) assert.doesNotMatch(d, /\{region\}/);
+
+  await server.close();
+});
+
+test('M102/A4-OS-13: a `like` pattern with no `{` renders byte-identically to before', async () => {
+  // The additivity claim, made checkable rather than asserted in a comment. `{` is not a
+  // placeholder in `renderLikePattern` (`#`/`?`) or `formatDate` (`yyyy`/`MM`/`dd`), so every
+  // pattern in the corpus is untouched by M102 — this pins that for the seeded case.
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 201, { ok: true }) });
+  const source = `test "gen"
+  let code = random like "SKU-####-??"
+  api POST /orders body { a: 1 }
+  expect status equals 201
+`;
+  const { program } = parseSource(source);
+  const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 42 });
+  assert.match(run.report.tests[0]!.steps[0]!.detail ?? '', /SKU-\d{4}-[A-Z]{2}/);
+  await server.close();
+});

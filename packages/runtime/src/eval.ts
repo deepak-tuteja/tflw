@@ -132,7 +132,10 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
     case 'FormatExpr': {
       const v = evalValue(value.value, ctx);
       if (!(v instanceof Date)) throw new RuntimeError('`format … as …` needs a date value (today/now, optionally with a date-math offset)');
-      return formatDate(v, value.pattern.value);
+      // A4-OS-13/M102: the checker binds `{var}`s in this pattern (`checker.ts`), so the runtime has
+      // to read it as a value. Additive — `{` is not a placeholder in `formatDate`'s language
+      // (`yyyy`/`MM`/`dd`/`HH`/`mm`/`ss`), so a pattern without one renders identically.
+      return formatDate(v, String(evalValue(value.pattern, ctx)));
     }
     case 'UniquePrefixExpr': {
       const prefix = String(evalValue(value.prefix, ctx));
@@ -146,7 +149,9 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
       // Random-looking but guaranteed distinct: each call gets its own local RNG keyed off the
       // monotonic counter, not the shared per-test `rng` stream (P#19, P#22).
       const localRng = mulberry32(subSeed(ctx.runSeed, ctx.uniqueSeq.next()));
-      return renderLikePattern(value.pattern.value, localRng);
+      // A4-OS-13/M102, as in `FormatExpr` above. `renderLikePattern`'s placeholders are `#` and `?`,
+      // so interpolating first cannot collide with the pattern language.
+      return renderLikePattern(String(evalValue(value.pattern, ctx)), localRng);
     }
     case 'UniqueUuidExpr':
       return uniqueUuid(ctx.uniqueSeq.next(), ctx.runSeed);
@@ -180,7 +185,7 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
       return randomAlnum(len, ctx.rng);
     }
     case 'RandomLikeExpr':
-      return renderLikePattern(value.pattern.value, ctx.rng);
+      return renderLikePattern(String(evalValue(value.pattern, ctx)), ctx.rng); // A4-OS-13/M102
     case 'RandomUuidExpr':
       return randomUuidV4(ctx.rng);
     case 'RandomPasswordExpr': {
