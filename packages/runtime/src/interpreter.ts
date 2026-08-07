@@ -3667,11 +3667,19 @@ async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, 
   }
   // `matches file "<path>"` (gap #17) reads a file off disk — same reason as `matchesSchema`
   // above, bypassing `evalMatcher` (pure, synchronous by design) entirely.
+  //
+  // The path goes through `evalValue`, so `{var}` holes interpolate (`A4-OS-09`, D174). It read
+  // `.value` for eleven milestones, which made this the one file operand in the language that did
+  // not — `body from`, `upload` and `drop file` have always called `evalValue` on the very same
+  // `StringLit` type. Nothing about a matcher justified the difference; it was an omission, and it
+  // read as deliberate only because the one corpus site that wanted it had written a comment
+  // explaining the workaround.
   if (step.matcher.name === 'matchesFile') {
     if (!(value instanceof Uint8Array)) {
       throw new RuntimeError('`matches file` is only valid on a `body bytes` subject');
     }
-    return evaluateFileMatch(label, Buffer.from(value), step.matcher.filePath!.value, baseDir, step.matcher.negated);
+    const filePath = String(evalValue(step.matcher.filePath!, ctx));
+    return evaluateFileMatch(label, Buffer.from(value), filePath, baseDir, step.matcher.negated);
   }
   return evalMatcher(label, value, step.matcher, ctx);
 }

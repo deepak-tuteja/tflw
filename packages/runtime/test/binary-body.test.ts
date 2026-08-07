@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseSource } from '@tflw/lang';
@@ -101,6 +101,112 @@ test('`matches file` on anything other than `body bytes` is a clear runtime erro
   assert.match(report.tests[0]!.error ?? '', /`matches file` is only valid on a `body bytes` subject/);
 
   await server.close();
+});
+
+// `matches file` interpolates its path (`A4-OS-09`, D174)
+// ---------------------------------------------------------------------------
+//
+// Every test below writes its fixture at the **interpolated** name and asserts, first, that
+// nothing exists at the literal one. That precondition is the whole calibration: `{slug}.bin` is a
+// perfectly legal filename on every filesystem tflw runs on, so a fixture written under the raw
+// literal would make all three of these pass against the pre-fix `.value` read — green, and
+// testing nothing. This is `M98`'s lesson applied before the fact rather than after: the assertion
+// that a control *can* fail belongs in the control.
+
+/** Fails the test if `name` exists in `dir` — the literal path these tests must never satisfy. */
+async function assertAbsent(dir: string, name: string): Promise<void> {
+  await assert.rejects(
+    () => access(join(dir, name)),
+    `"${name}" exists on disk, so this test would pass without interpolating anything`,
+  );
+}
+
+test('`matches file` interpolates `{var}` in its path, in both the plain and negated forms', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-binary-'));
+  await writeFile(join(dir, 'receipt-9.bin'), PNG_MAGIC);
+  await writeFile(join(dir, 'receipt-8.bin'), Buffer.from('some other receipt'));
+  await assertAbsent(dir, '{slug}.bin');
+  await assertAbsent(dir, '{other}.bin');
+
+  const server = await startFixtureServer({
+    '/image': (_req, res) => res.writeHead(200, { 'content-type': 'image/png' }).end(PNG_MAGIC),
+  });
+
+  const source = `test "a path built out of variables names the same file a literal would"
+  let slug = "receipt-9"
+  let other = "receipt-8"
+  api GET /image
+  expect status equals 200
+  expect body bytes matches file "./{slug}.bin"
+  expect body bytes not matches file "./{other}.bin"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('`matches file` interpolates a path captured from a response, which is the shape the corpus wanted', async () => {
+  // The dogfood site this row came from computes its path at run time — a `use`d JS action writes
+  // a scratch file and hands back where it put it. A `capture` stands in for that here: the point
+  // is that the value cannot exist until a step has run, which is exactly what `.value` could not
+  // express and why that suite had to write its path out twice.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-binary-'));
+  await writeFile(join(dir, 'scratch-a1b2.bin'), PNG_MAGIC);
+  await assertAbsent(dir, '{handle.name}.bin');
+
+  const server = await startFixtureServer({
+    '/handle': (_req, res) =>
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ name: 'scratch-a1b2' })),
+    '/image': (_req, res) => res.writeHead(200, { 'content-type': 'image/png' }).end(PNG_MAGIC),
+  });
+
+  const source = `test "the expected file's name is only known once a step has run"
+  api GET /handle
+  expect status equals 200
+  capture body.name as handle
+  api GET /image
+  expect body bytes matches file "./{handle}.bin"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('a failing `matches file` reports the interpolated path, not the literal the user typed', async () => {
+  // The control that pins the fix rather than merely exercising it. Both assertions below are
+  // about the *message*: it must name `./receipt-9.bin`, the path actually opened, and must not
+  // leak the `{slug}` spelling. A run that skipped interpolation cannot produce either — it would
+  // fail earlier, with `{slug}` verbatim in the text.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-binary-'));
+  await assertAbsent(dir, '{slug}.bin');
+
+  const server = await startFixtureServer({
+    '/image': (_req, res) => res.writeHead(200, { 'content-type': 'image/png' }).end(PNG_MAGIC),
+  });
+
+  const source = `test "the missing-file error names the resolved path"
+  let slug = "receipt-9"
+  api GET /image
+  expect body bytes matches file "./{slug}.bin"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
+
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /could not read file ".\/receipt-9\.bin" for `matches file`/);
+  assert.doesNotMatch(error, /\{slug\}/);
+
+  await server.close();
+  await rm(dir, { recursive: true, force: true });
 });
 
 test('`body bytes has count` measures raw byte length, distinct from `body text`\'s JS string length on multi-byte UTF-8', async () => {
