@@ -142,7 +142,13 @@ A systematic pre-`1.0.0` review of the whole surface. Highlights:
 - Documentation gained a mechanical guard: every fenced block in the docs site is classified, and
   every `tflw` sample is executed through the shipped `dist/cli.cjs` rather than trusted.
 
-### Fixed — launch review, checker & lexer contracts (M89–M98, M97e)
+### Fixed — launch review, checker & lexer contracts (M89–M98, M97e, M100)
+
+- `body pdf text` no longer fails on roughly 1 PDF in 300. A content stream's extent now comes from
+  its dict's `/Length` (including the indirect `/Length N 0 R` spelling) instead of from a scan of
+  its own binary bytes; the old code dropped a byte whenever the compressed data happened to end in
+  CR, and `expect body pdf text …` failed with `could not decompress content stream` (M100).
+
 
 - The checker's relationship to the runtime became a stated contract rather than an aspiration:
   every rule the runtime enforces is either decided statically first or carries a written reason it
