@@ -59,5 +59,10 @@ console.log('› bundling with source maps (TFLW_BUNDLE_SOURCEMAP=1)');
 const bundled = run(npm, ['run', 'bundle', '--prefix', 'packages/cli']);
 if (bundled !== 0) process.exit(bundled);
 
-console.log('› c8 npm test');
-process.exit(run(process.execPath, [require.resolve('c8/bin/c8.js'), npm, 'test']));
+// `test:raw`, not `test` — M107b made the root `npm test` a headcount wrapper that spawns npm a
+// second time, and this measures *code*, not the headcount. Going through the wrapper would put an
+// extra uninstrumented process between c8 and the suites for no gain; CI asserts the headcount in
+// its own `npm test` step. Keeping this path byte-identical also keeps the floor above comparable
+// to the reading it was pinned from.
+console.log('› c8 npm run test:raw');
+process.exit(run(process.execPath, [require.resolve('c8/bin/c8.js'), npm, 'run', 'test:raw']));

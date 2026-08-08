@@ -42,6 +42,11 @@ jobs:
       # after the Playwright-browser-install fix (978c4bb) got everything else passing: runtime
       # 306/306, lang 381/381, reporter 38/38, lsp-server 90/90, cli 87/90 — only the 3 headed
       # watch tests failed with "Missing X server or $DISPLAY").
+      # M107b (`M106-03`): the root `npm test` is `scripts/verify-test-counts.mjs`, which runs the
+      # suites (`test:raw`) and then asserts each workspace ran the number of tests it contains.
+      # `@tflw/lsp-server` was reporting 111/112/113 on an unchanged tree — `--test-force-exit`
+      # dropping the tail of a file, with the plan line and the summary agreeing on the smaller
+      # number, so nothing could go red. A test that never reports cannot fail.
       - run: xvfb-run -a npm test
 
       # A test naming a `TF0xx` code its harness cannot emit is a passing test of nothing — the
