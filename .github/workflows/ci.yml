@@ -21,16 +21,14 @@ jobs:
     #
     # M112: the registry grew, so this is that re-measurement. M111 added 7 mutations and — more
     # expensively — two packages the sweep had never baselined, one of them `tflw`, whose suite is
-    # ~119s locally against `@tflw/lang`'s 2s. The full 42-mutation sweep now measures **10m12s
-    # locally**, against a CI/local ratio of 1.5–2.4× on this repo's own steps (the whole 1,897-test
-    # `npm test` is 225s on CI vs ~150s here; the `@tflw/runtime` baseline 41s vs 21s), so the sweep
-    # alone is ~15–25m on a 2-core runner, plus ~6m of build/typecheck/test/links/coverage around
-    # it. Long leg ~21–31m, so 45 was down to ~1.4× headroom at the top of that range — under the
-    # 2× this number has always been chosen for, which is why the hang and the budget came due
-    # together.
+    # ~119s locally against `@tflw/lang`'s 2s. Measured on run 31277101858, the first Node 22 job
+    # to finish a full sweep after the fix: **job 26m59s**, of which the mutation step is **16m41s**
+    # (10m12s locally, so 1.64×) and `Coverage` a further 5m36s. The cli suite itself is 2m39s per
+    # run there against 119s here. So M111 cost the long leg ~11m, mostly in three cli suite runs
+    # (baseline + 2 mutations) that did not exist before it.
     #
-    # 60 restores it. The range is the weaker half of this: the upper end is extrapolation, not a
-    # completed run, so re-measure from the first Node 22 job that finishes a full sweep. Note
+    # 45 would have left 1.7× on a 27m job, under the 2× this number has always been chosen for —
+    # the hang and the budget came due in the same run. 60 gives 2.2×. Note
     # the backstop moved inward — `mutate.mjs` now bounds each suite at 10m and names the package
     # that hung, so this number no longer has to be the thing that catches a hang.
     timeout-minutes: 60
