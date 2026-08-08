@@ -24,9 +24,15 @@
 // M108 widened it again, past *source* files: a mutation may target a test file where the thing
 // being measured is a guard's kill power rather than a behaviour's coverage.
 //
+// M109 added the clearest case the runtime rule has had: `imports-drop-body` reverts
+// `resolveImportedActions` to dropping the imported body, which **no `@tflw/lang` test can see** —
+// every cross-file cycle test over there builds its `KnownAction[]` by hand and stays green. The
+// 21s buys the only signal that `packages/runtime/test/import-cycles.test.ts` tests the join it
+// names.
+//
 // **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-08, not from
-// memory: **30 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
-// 1 from M108.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
+// memory: **33 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
+// 1 from M108, 3 from M109.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
 // description plus the source it names; the other 11 of the plan's 31 are described at a level
 // ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
 // would produce a number rather than a measurement. They are listed at the bottom of this file as
@@ -49,6 +55,7 @@ const LEXER = 'packages/lang/src/lexer.ts';
 const PARSER = 'packages/lang/src/parser.ts';
 const DIAG = 'packages/lang/src/diagnostic.ts';
 const INTERP = 'packages/runtime/src/interpreter.ts';
+const CHECKER = 'packages/lang/src/checker.ts';
 
 /** M107 — a mutation names the workspace whose suite judges it, because the tool no longer only
  * mutates `@tflw/lang`. Defaulted rather than added to all 18 existing entries: the lang suite is
@@ -367,6 +374,36 @@ const MUTATIONS = [
     what: 'a test forgets `await server.close()`, so its file can never exit — the exact shape `--test-force-exit` used to hide',
     find: "  assert.ok(sceneB!.iterations > 0, 'a forked shard must not zero out a later-batch sequential scenario either');\n  await server.close();",
     replace: "  assert.ok(sceneB!.iterations > 0, 'a forked shard must not zero out a later-batch sequential scenario either');",
+  },
+  // --- M109 ------------------------------------------------------------------------------------
+  {
+    // The one mutation the `@tflw/lang` suite structurally cannot judge, which is why it is here and
+    // why it pays the runtime suite's ~21s: every cross-file cycle test in `actionCycles.test.ts`
+    // builds its `KnownAction[]` by hand, so all of them stay green with the resolver reverted to
+    // its pre-M109 self. If this survives, `import-cycles.test.ts` is not testing the join it names.
+    id: 'imports-drop-body',
+    milestone: 'm109',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/imports.ts',
+    what: '`resolveImportedActions` goes back to dropping the imported body, so `TF044` cannot cross a file boundary',
+    find: 'out.push({ name: action.name, arity: action.params.length, from: imp.path.value, body: action.body });',
+    replace: 'out.push({ name: action.name, arity: action.params.length, from: imp.path.value });',
+  },
+  {
+    id: 'cycle-imported-shadowing',
+    milestone: 'm109',
+    file: CHECKER,
+    what: 'an imported action overwrites a same-named local one, inverting `buildRegistry`\'s order and inventing cycles no run can reach',
+    find: 'if (imported.body !== undefined && !graph.has(imported.name)) graph.set(imported.name, { body: imported.body, from: imported.from });',
+    replace: 'if (imported.body !== undefined) graph.set(imported.name, { body: imported.body, from: imported.from });',
+  },
+  {
+    id: 'cycle-anchor-foreign-span',
+    milestone: 'm109',
+    file: CHECKER,
+    what: 'the cross-file diagnostic points at the closing call wherever it is, underlining an offset into another file\'s text',
+    find: 'const anchor = closing.localSite ? closing : cycleEdges.find((edge) => edge.localSite);',
+    replace: 'const anchor = closing;',
   },
 ];
 

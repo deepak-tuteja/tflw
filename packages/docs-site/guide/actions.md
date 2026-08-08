@@ -97,8 +97,23 @@ Most languages let you write this and trust you to add a base case. tflw can't, 
 isn't *potentially* infinite, it always is, and `tflw check` refuses it before the run rather than
 letting it end in a stack overflow.
 
-The checker sees cycles that stay inside one file. One that leaves through an `import` and comes
-back is caught when you run it, reported the same way:
+A cycle that leaves through an `import` and comes back is caught too, and reported against the call
+in *your* file that hands control out — the only line here you can delete to break it:
+
+```console
+error[TF044]: this call enters a cycle: `a → b → a`
+ --> checkout.tflw:4:3
+  |
+4 |   b()
+  |   ^^^
+  |
+  = help: `b` is imported from "./shared/orders.tflw" and calls `a` — tflw has no
+          conditionals, so an action that can reach itself has no exit; break the chain
+          here or in that file
+```
+
+The check needs the imported file to be readable — if it isn't, the run's own guard still stops the
+recursion at the second frame and prints the same path:
 
 ```console
 ✗ t (1 ms)

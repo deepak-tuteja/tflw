@@ -183,6 +183,27 @@ test('analyze: an imported action is resolved off disk, so a wrong-arity call sq
   });
 });
 
+test('analyze: a cycle through an imported action squiggles the local call (M109, `M97d-01`)', async () => {
+  // The third consumer of `importedActions`, and the one the row named alongside the checker. It
+  // needed no change here — the server has passed the resolved list since M87 and `checkProgram`
+  // now forwards it to the cycle pass — which is exactly why it is worth a test: nothing in this
+  // package would have failed if that forwarding had been left out, and the editor would have gone
+  // on showing a clean file that `tflw check` refuses.
+  await withTmpProject(CLEAN_CONFIG, async (dir) => {
+    await writeFile(join(dir, 'orders.tflw'), 'action b()\n  a()\n', 'utf8');
+    const store = new DocumentStore();
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), 'import "./orders.tflw"\n\naction a()\n  b()\n\ntest "t"\n  a()\n');
+    const analysis = await store.analyze(uri, undefined);
+    assert.equal(analysis?.diagnostics.length, 1, JSON.stringify(analysis?.diagnostics));
+    assert.equal(analysis?.diagnostics[0]!.code, 'TF044');
+    assert.match(analysis!.diagnostics[0]!.message, /`a → b → a`/);
+    // Line 4 of *this* buffer: the `b()` inside `action a()`. A span pointing into `orders.tflw`
+    // would squiggle whatever happens to sit at that offset here instead.
+    assert.equal(analysis?.diagnostics[0]!.span.start.line, 4);
+  });
+});
+
 test('analyze: an imported file open in another buffer is read from that buffer, not from disk (M87)', async () => {
   await withTmpProject(CLEAN_CONFIG, async (dir) => {
     // On disk the action takes one parameter, so the call below is correct. In the editor it has
