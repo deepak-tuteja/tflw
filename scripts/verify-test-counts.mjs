@@ -68,9 +68,17 @@ const status = await new Promise((resolve) => child.on('close', resolve));
 // to its baseline: do not attribute to one instrument what another has already found.
 if (status !== 0) process.exit(status);
 
-// npm prints `> @tflw/lang@0.1.0 test` before each workspace's command; the `# tests N` lines that
-// follow belong to it until the next such header. A suite that prints no `# tests` line at all
-// (crash, or a runner that never got to its summary) is a mismatch, not a skip.
+// npm prints `> @tflw/lang@0.1.0 test` before each workspace's command; the summary lines that
+// follow belong to it until the next such header. A suite that prints no summary at all (crash, or
+// a runner that never got to one) is a mismatch, not a skip.
+//
+// TWO SUMMARY FORMATS, BECAUSE THE DEFAULT REPORTER IS NOT THE SAME ON EVERY NODE. With no TTY,
+// Node 22 defaults to `tap` (`# tests 876`) and Node 24 defaults to `spec` (`ℹ tests 876`). The
+// first CI run of this script was green on 22 and red on 24 with all seven workspaces reported as
+// "printed no summary" — every count was in fact correct and present, in the other syntax. Matching
+// both is the fix; the counts themselves are identical because both reporters render the same
+// summary object. If a future Node ships a third default, this goes red naming every package rather
+// than passing quietly — which is the failure direction this script exists to have.
 const counted = {};
 let current = null;
 for (const line of captured.split('\n')) {
@@ -79,14 +87,14 @@ for (const line of captured.split('\n')) {
     current = header[1];
     continue;
   }
-  const tests = /^# tests (\d+)$/.exec(line);
+  const tests = /^(?:# |ℹ )tests (\d+)$/.exec(line);
   if (tests && current) counted[current] = (counted[current] ?? 0) + Number(tests[1]);
 }
 
 const problems = [];
 for (const [pkg, want] of Object.entries(EXPECTED)) {
   const got = counted[pkg];
-  if (got === undefined) problems.push(`${pkg}: expected ${want} tests, but the run printed no \`# tests\` line for it`);
+  if (got === undefined) problems.push(`${pkg}: expected ${want} tests, but the run printed no test-summary line for it (neither \`# tests N\` nor \`ℹ tests N\`)`);
   else if (got !== want) problems.push(`${pkg}: expected ${want} tests, ran ${got}${got < want ? ` — ${want - got} test(s) did not report` : ' — new tests, or a suite counted twice'}`);
 }
 for (const pkg of Object.keys(counted)) {
