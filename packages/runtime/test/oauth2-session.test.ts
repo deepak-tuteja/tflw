@@ -209,3 +209,58 @@ test("the oauth2 client secret never appears in the report's recorded evidence",
 
     await server.close();
   }));
+
+// `M111` (`FU-06`) — the `oauth2` arm was not merely carrying the caller's `lines`; it never saw
+// `sessionCtx` at all. `runSession` split on `decl.oauth2` *before* deriving the session's context,
+// so M97c-03's `baseDir`/`filePath` rebase applied only to hand-written sessions and this whole
+// branch kept the establishing test file's `baseDir`, `filePath` and text. Nothing in that
+// derivation is specific to a hand-written body — both arms declare their steps in `tflw.config`
+// and both report them — so M111 moved the split below the derivation, and this is the test that
+// says so. It is worth its own case because the two arms build their step through entirely
+// separate code (`execSteps` vs. `runOauth2Session`'s hand-rolled `mkStep`): fixing one says
+// nothing about the other.
+test('an oauth2 session step reports its own `tflw.config` line, not the establishing test file\'s', () =>
+  withClientCreds('id-1', 'secret-1', async () => {
+    const server = await startFixtureServer({
+      '/oauth/token': (_req, res) => json(res, 200, { access_token: 'tok-abc', expires_in: 3600 }),
+      '/orders': (_req, res) => json(res, 200, { ok: true }),
+    });
+    const configSource = `env test default
+  api "${server.baseUrl}"
+
+session admin oauth2
+  token url "${server.baseUrl}/oauth/token"
+  client id env(CLIENT_ID)
+  client secret env(CLIENT_SECRET)
+`;
+    const parsed = parseConfigSource(configSource);
+    assert.deepEqual(parsed.diagnostics, [], JSON.stringify(parsed.diagnostics));
+    const config = resolveConfig(parsed.config, selectEnv(parsed.config, {}));
+    const configLines = configSource.split(/\r?\n/);
+
+    // The oauth2 block's span starts at its `session admin oauth2` header — line 4 — so line 4 is
+    // the one that has to carry a decoy. The first draft of this test padded lines 5-7 and left 4
+    // blank, which made it **pass on the unfixed code**: the old behaviour read the test file's
+    // blank line 4, and `''` matched `tflw.config`'s own blank line 3. A control that cannot fail
+    // is a passing test of nothing, so every line from 4 down carries text now, and the assertion
+    // below names the one string it must be rather than asking for membership in a set that
+    // contains the empty string.
+    const source = `test "reads orders" as admin
+  api GET /orders
+  expect status equals 200
+# DECOY line 4 — belongs to the test file, never to a session step
+# DECOY line 5 — belongs to the test file, never to a session step
+# DECOY line 6 — belongs to the test file, never to a session step
+# DECOY line 7 — belongs to the test file, never to a session step
+`;
+    const { program } = parseSource(source);
+    const { report } = await runProgram(program, config, { source, configLines });
+
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+    const steps = report.tests[0]!.kind === 'functional' ? report.tests[0]!.steps : [];
+    const tokenStep = steps[0]!;
+    assert.equal(tokenStep.source, 'session admin oauth2');
+    assert.ok(configLines.map((l) => l.trim()).includes(tokenStep.source));
+
+    await server.close();
+  }));

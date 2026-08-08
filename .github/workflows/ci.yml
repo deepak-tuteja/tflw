@@ -18,7 +18,20 @@ jobs:
     # added mutation — a control that costs ~50s locally costs ~1m50s on a 2-core runner. So the
     # long leg is already 16m and 30 would have left under 2× headroom on the slowest job in the
     # matrix. Re-measure this when the mutation registry grows again; it is the step that moves.
-    timeout-minutes: 45
+    #
+    # M112: the registry grew, so this is that re-measurement. M111 added 7 mutations and — more
+    # expensively — two packages the sweep had never baselined, one of them `tflw`, whose suite is
+    # ~119s locally against `@tflw/lang`'s 2s. Measured on run 31277101858, the first Node 22 job
+    # to finish a full sweep after the fix: **job 26m59s**, of which the mutation step is **16m41s**
+    # (10m12s locally, so 1.64×) and `Coverage` a further 5m36s. The cli suite itself is 2m39s per
+    # run there against 119s here. So M111 cost the long leg ~11m, mostly in three cli suite runs
+    # (baseline + 2 mutations) that did not exist before it.
+    #
+    # 45 would have left 1.7× on a 27m job, under the 2× this number has always been chosen for —
+    # the hang and the budget came due in the same run. 60 gives 2.2×. Note
+    # the backstop moved inward — `mutate.mjs` now bounds each suite at 10m and names the package
+    # that hung, so this number no longer has to be the thing that catches a hang.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -69,9 +82,18 @@ jobs:
       # the first place, and how the `#` case was still uncovered five milestones later. ~40s
       # (18 × the 1.4s lang suite). Node 22 only: the mutations are source edits, identical under
       # every runtime, so the matrix would just pay for it twice.
+      #
+      # M112: `xvfb-run`, for the same reason `npm test` above has it. This step ran bare for
+      # fourteen milestones and it never mattered, because every mutation named `@tflw/lang`,
+      # `@tflw/runtime` or `@tflw/docs-site`. M111 added the first `pkg: 'tflw'` entries, and
+      # `mutate.mjs` baselines a package before its first mutation — so the cli suite ran here for
+      # the first time, without a display, and `pick.test.ts` (real headed Chromium through the
+      # real dist binary) blocked forever on a `tflw pick` child that could not start one. The
+      # job died on `timeout-minutes` after 31 minutes of silence (run 31273904180). The same
+      # suite passed under `xvfb-run` four steps earlier, on the same runner, in the same job.
       - name: Mutation controls
         if: matrix.node-version == 22
-        run: npm run verify:mutations
+        run: xvfb-run -a npm run verify:mutations
 
       # Every internal anchor on the docs site resolves to a real heading (M62/DT-07). Separate
       # from `npm test` because it reads heading ids out of `.vitepress/dist` — the root `npm run

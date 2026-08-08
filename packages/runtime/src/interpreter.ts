@@ -147,6 +147,21 @@ export interface RunOptions {
    * Defaults to `process.cwd()` because that is not a guess — `cli.ts` reads the config from
    * exactly `join(cwd, 'tflw.config')`, so cwd *is* the config's directory on every real run. */
   readonly configDir?: string;
+  /**
+   * `tflw.config`'s own source lines (`M111`, review row `FU-06`) — the document a `session`
+   * block's spans point into, exactly as `source` above is the document a test's spans point into.
+   *
+   * A step's reported `source` is sliced out of a line array by line number, and until M111 there
+   * was only one such array per run: the *test file's*. A session is declared in `tflw.config`, so
+   * every session step was rendered by taking its `tflw.config` line number and reading that line
+   * out of whichever `.tflw` file happened to trigger the session first — text from one document
+   * at coordinates from another.
+   *
+   * Optional, defaulting to `[]`, because `runProgram` is a library entry point plenty of callers
+   * reach with no config file at all. `[]` renders a session step's source as empty, which is the
+   * honest answer when the config's text was never supplied — never a line of unrelated text.
+   */
+  readonly configLines?: readonly string[];
   readonly environ?: NodeJS.ProcessEnv;
   readonly emit?: EventSink;
   /** Reuse a redactor across files so all secrets are known everywhere. */
@@ -251,6 +266,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const emit = opts.emit ?? (() => {});
   const baseDir = opts.baseDir ?? process.cwd();
   const configDir = opts.configDir ?? process.cwd();
+  const configLines = opts.configLines ?? [];
   const lines = opts.source.split('\n');
   const startedAt = new Date().toISOString();
   const runStart = performance.now();
@@ -281,7 +297,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length + scenarios.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
@@ -424,7 +440,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -563,6 +579,9 @@ export interface LoadOptions {
   /** `M97c-03` — see `RunOptions.configDir`. A load run establishes sessions and presents mTLS
    * client certs exactly like a functional one, so it needs the same distinction. */
   readonly configDir?: string;
+  /** `M111` (`FU-06`) — see `RunOptions.configLines`. A load run establishes sessions the same
+   * way, so its session steps are sliced out of the same wrong document without this. */
+  readonly configLines?: readonly string[];
   readonly environ?: NodeJS.ProcessEnv;
   readonly seed?: number;
   readonly now?: string;
@@ -1186,6 +1205,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   }
   const baseDir = opts.baseDir ?? process.cwd();
   const configDir = opts.configDir ?? process.cwd();
+  const configLines = opts.configLines ?? [];
   const lines = opts.source.split('\n');
   const runSeed = resolveRunSeed(opts.seed);
   const runClock = resolveRunClock(opts.now);
@@ -1194,7 +1214,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   const registry = await buildRegistry(program, baseDir);
   const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
   const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
-  const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, configDir, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, filePath: baseDir, updateSnapshots: false };
+  const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, filePath: baseDir, updateSnapshots: false };
 
   const startedAt = new Date().toISOString();
   const runStart = performance.now();
@@ -1817,6 +1837,10 @@ interface TestCtx {
    * the two sites that need it) because a session's establishment run *derives* a `TestCtx` from
    * whichever caller triggered it, and that derivation is where the rebase happens. */
   readonly configDir: string;
+  /** `M111` (`FU-06`) — see `RunOptions.configLines`. Carried here for the same reason `configDir`
+   * is: `sessionCtx` is where a session's context is derived from its caller's, and that is the one
+   * place that can swap `lines` for the document a session's spans actually index. */
+  readonly configLines: readonly string[];
   readonly rng: () => number;
   readonly runSeed: number;
   readonly runClock: Date;
@@ -1953,8 +1977,14 @@ export class SessionCache {
  * race (decision 53); `unique(...)`'s run-wide counter stays as-is — it was never seed-reproducible
  * by design (§7.4). */
 async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx): Promise<SessionOutcome> {
-  if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, tc);
+  // M111 (`FU-06`) — derive the session's context *before* the split, not inside one arm of it.
+  // The `oauth2` arm used to be handed the caller's raw `tc`, so M97c-03's rebase never reached it
+  // at all: an `oauth2` session's step was rendered from the caller's text, and its `baseDir` and
+  // `filePath` were the caller's too. Nothing in `sessionCtx` is specific to a hand-written body —
+  // both arms declare their steps in `tflw.config` and both report them, which is the whole reason
+  // the rebase exists. Applying it once, above the branch, is what makes that structural.
   const sessionTc = sessionCtx(decl.name, tc);
+  if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, sessionTc);
   const headerSink: Record<string, string> = {};
   const scope = new Map<string, unknown>();
   const cookieJar = new CookieJar();
@@ -1984,9 +2014,21 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
  * to whichever test's `TestCtx` happened to win the race to establish the session first". Anything
  * on a session's context that is derived from the caller rather than from the session is a bug
  * waiting for a second test file to expose it.
+ *
+ * **`lines` was a third such field, and M111 (`FU-06`) is that sentence coming true.** M97c-03
+ * rebased `baseDir` and `filePath` and left `lines` — the caller's *text*, kept alongside a
+ * `filePath` that now truthfully said `tflw.config`. A step's reported `source` is
+ * `lines[span.start.line - 1]`, so every session step was rendered by reading a `tflw.config` line
+ * number out of a `.tflw` file: text from one document at coordinates from another. What that
+ * prints depends entirely on how long the caller's file is — a plausible wrong line when it is long
+ * enough, an empty string when it is not. Measured on the `FU-06` repro, an `api` step's `source`
+ * read `expect status equals 200`: one record whose `kind` and whose text disagreed about what kind
+ * of statement it even was.
+ *
+ * It is visible on failure and wrong on success too, in every report tflw has ever written.
  */
 function sessionCtx(name: string, tc: TestCtx): TestCtx {
-  return { ...tc, baseDir: tc.configDir, filePath: join(tc.configDir, 'tflw.config'), rng: mulberry32(subSeed(tc.runSeed, hashString(name))) };
+  return { ...tc, lines: tc.configLines, baseDir: tc.configDir, filePath: join(tc.configDir, 'tflw.config'), rng: mulberry32(subSeed(tc.runSeed, hashString(name))) };
 }
 
 /** `session <name> oauth2 ...` — POSTs the client-credentials grant to `tokenUrl` and turns the

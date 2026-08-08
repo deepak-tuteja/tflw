@@ -38,8 +38,8 @@
 // so the kill line now says which it is.
 //
 // **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-08, not from
-// memory: **35 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
-// 1 from M108, 3 from M109, 2 from M110.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
+// memory: **42 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
+// 1 from M108, 3 from M109, 2 from M110, 7 from M111.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
 // description plus the source it names; the other 11 of the plan's 31 are described at a level
 // ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
 // would produce a number rather than a measurement. They are listed at the bottom of this file as
@@ -435,6 +435,69 @@ const MUTATIONS = [
     find: '## `tflw lsp`',
     replace: '## The language server',
   },
+  {
+    id: 'session-source-lines',
+    milestone: 'm111',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "a session's derived context goes back to carrying the *caller's* text, so every session step is rendered from the wrong document (`FU-06`)",
+    find: 'return { ...tc, lines: tc.configLines, baseDir: tc.configDir,',
+    replace: 'return { ...tc, baseDir: tc.configDir,',
+  },
+  {
+    id: 'oauth2-session-ctx',
+    milestone: 'm111',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the oauth2 arm goes back to bypassing `sessionCtx` entirely, as it did through all of M97c-03 (`FU-06`)',
+    find: 'if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, sessionTc);',
+    replace: 'if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, tc);',
+  },
+  {
+    id: 'aborted-badge',
+    milestone: 'm111',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/run-verdict.ts',
+    what: "an aborted run prints `PASS` again on all three sinks — the badge computed from `report.ok` alone (`FU-07`)",
+    find: "  if (report.aborted) return 'ABORTED';",
+    replace: '',
+  },
+  {
+    id: 'aborted-threshold-verdict',
+    milestone: 'm111',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/run-verdict.ts',
+    what: 'thresholds measured over a truncated sample get their ticks and their `junit.xml` pass back (`FU-07`)',
+    find: "  if (report.aborted) return 'aborted';",
+    replace: '',
+  },
+  {
+    id: 'browser-close-rethrow',
+    milestone: 'm111',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    what: 'teardown re-raises an already-reported launch failure, turning a complete report into exit 2 (`B6-03`)',
+    find: 'const browser = await this.browserPromise.catch(() => undefined);\n    if (browser) await browser.close();',
+    replace: 'const browser = await this.browserPromise;\n    await browser.close();',
+  },
+  {
+    id: 'log-file-mkdir',
+    milestone: 'm111',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`--log-file` stops creating its parent directory, so a passing run ends in `ENOENT` and exit 2 (`B6-05`)',
+    find: '  mkdirSync(dirname(resolve(logFile)), { recursive: true });\n',
+    replace: '',
+  },
+  {
+    id: 'log-file-stderr-mirror',
+    milestone: 'm111',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`--log-file` stops mirroring stderr, so every `error:` line and rendered diagnostic vanishes from the log (`B6-05`)',
+    find: '  logMirror = mirror;\n',
+    replace: '',
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
@@ -456,12 +519,39 @@ if (selected.length === 0) {
   process.exit(2);
 }
 
+// M112. Every suite run is bounded, because until now none of them was.
+//
+// `pick.test.ts` waits on a spawned `tflw pick` child that never exits when it cannot reach a
+// display. node:test sets no per-test timeout, `execSync` had no `timeout`, and the only bound in
+// the stack was the CI job's `timeout-minutes` — the one layer that cannot say *what* hung. It
+// duly killed the job after 31 minutes of silence and named nothing (run 31273904180).
+//
+// 10 minutes: the slowest suite is `tflw` at ~119s locally, and this repo's CI/local ratio runs
+// 1.5–2.4×, so ~3–5m on a 2-core runner — 2–3× headroom. It bounds a hang; it is not a performance
+// budget, and it must never be tightened toward the real suite time or it becomes one.
+//
+// Overridable so the guard can be watched firing — `TFLW_MUTATE_TIMEOUT_MS=500 node
+// scripts/mutate.mjs bom-col` makes every suite "hang". A bound nobody has ever seen trip is a
+// claim, not a control.
+const SUITE_TIMEOUT_MS = Number(process.env.TFLW_MUTATE_TIMEOUT_MS ?? 10 * 60_000);
+const TIMEOUT_LABEL = SUITE_TIMEOUT_MS >= 60_000 ? `${SUITE_TIMEOUT_MS / 60_000}m` : `${SUITE_TIMEOUT_MS}ms`;
+
 function runSuite(pkg) {
   try {
-    const out = execSync(`npm test -w ${pkg} 2>&1`, { cwd: ROOT, encoding: 'utf8' });
-    return { green: true, out };
+    const out = execSync(`npm test -w ${pkg} 2>&1`, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: SUITE_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+    });
+    return { green: true, out, timedOut: false };
   } catch (err) {
-    return { green: false, out: (err.stdout ?? '') + (err.stderr ?? '') };
+    // A timeout is NOT a red suite, and the difference is load-bearing: the `else` below prints
+    // `✓ killed … suite exited non-zero` for anything non-green, so without this flag a mutation
+    // whose suite hung would be credited with killing it. That is the vacuous-control shape —
+    // a control that passes because nothing ran — arrived at from the opposite direction.
+    const timedOut = err.code === 'ETIMEDOUT' || err.signal === 'SIGKILL';
+    return { green: false, out: (err.stdout ?? '') + (err.stderr ?? ''), timedOut };
   }
 }
 
@@ -475,6 +565,10 @@ function baseline(pkg) {
   if (baselined.has(pkg)) return;
   process.stdout.write(`baseline ${pkg} … `);
   const result = runSuite(pkg);
+  if (result.timedOut) {
+    console.error(`\n✗ ${pkg}'s suite hung — killed after ${TIMEOUT_LABEL} without finishing. Nothing below ran. This is a hang, not a red suite: the last test to report is the one before the one to look at.`);
+    process.exit(1);
+  }
   if (!result.green) {
     console.error(`\n✗ ${pkg} is red before any mutation (${failCount(result.out)} failing). Fix that first — every verdict below would be borrowed from it.`);
     process.exit(1);
@@ -523,7 +617,12 @@ for (const m of selected) {
   try {
     const result = runSuite(pkg);
     const fails = failCount(result.out);
-    if (result.green && m.equivalent) {
+    if (result.timedOut) {
+      // Not a kill and not a survival — the suite never reached a verdict, so neither has this
+      // mutation. Counted against the run so a hang can never leave the sweep exiting 0.
+      console.log(`✗ TIMED OUT ${m.id} (${m.milestone}) — ${pkg}'s suite hung; no verdict on: ${m.what}`);
+      survivors.push({ ...m, verdict: 'timeout' });
+    } else if (result.green && m.equivalent) {
       console.log(`· no-op     ${m.id} (${m.milestone}) — ${m.what}; survives because it changes nothing`);
     } else if (result.green) {
       console.log(`✗ SURVIVED  ${m.id} (${m.milestone}) — ${m.what}`);
@@ -546,7 +645,8 @@ for (const m of selected) {
   }
 }
 
-console.log(`\n${selected.length} mutation(s) run; ${survivors.filter((s) => s.verdict === 'survived').length} survived, ${survivors.filter((s) => s.verdict === 'stale').length} stale.`);
+const timedOut = survivors.filter((s) => s.verdict === 'timeout').length;
+console.log(`\n${selected.length} mutation(s) run; ${survivors.filter((s) => s.verdict === 'survived').length} survived, ${survivors.filter((s) => s.verdict === 'stale').length} stale${timedOut > 0 ? `, ${timedOut} timed out` : ''}.`);
 if (!arg) {
   console.log(`\n${UNRECONSTRUCTED.length} group(s) from the plan's 31 are NOT reconstructed here:`);
   for (const [ms, what] of UNRECONSTRUCTED) console.log(`    ${ms}: ${what}`);

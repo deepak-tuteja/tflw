@@ -181,3 +181,131 @@ test('a test body\'s own relative paths still resolve against the test file, not
     await rm(fileDir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// `M111` (`FU-06`) — the *third* field M97c-03 left behind on a session's derived context.
+//
+// M97c-03 (above) rebased `baseDir` and `filePath` off the caller and onto the config, and its own
+// closing sentence was "anything on a session's context that is derived from the caller rather than
+// from the session is a bug waiting for a second test file to expose it." `lines` is such a field,
+// and it stayed: the session's `filePath` truthfully said `tflw.config` while its `lines` were
+// still whichever `.tflw` file established it.
+//
+// A step's reported `source` is `lines[step.span.start.line - 1]`. A session's spans index
+// `tflw.config`. So every session step in every report tflw has ever written was rendered by
+// reading a `tflw.config` line *number* out of a `.tflw` file — text from one document at
+// coordinates from another. What that produced depended on nothing but the caller's length: a
+// plausible-looking wrong line if it was long enough, an empty string if it was not. On the `FU-06`
+// repro it produced an `api` step whose `source` read `expect status equals 200` — a single record
+// whose `kind` and whose text disagreed about what kind of statement it was describing.
+//
+// The decoys below are what makes these tests able to fail. A test file that merely differed from
+// the config would leave the old behaviour asserting `''` at those line numbers, which is wrong but
+// not *obviously* wrong; padding the caller so that the exact line numbers the session's spans
+// point at hold recognizable text is what turns the old behaviour into a loud, named mismatch.
+
+/** `tflw.config` whose `session` body sits at known line numbers: `api` on 5, `capture` on 6,
+ * `header` on 7. */
+function configWithInlineSession(baseUrl: string): { config: ResolvedConfig; lines: string[] } {
+  const source = `env test default
+  api "${baseUrl}"
+
+session admin
+  api POST /auth/login body { who: "config" }
+  capture body.token as token
+  header "Authorization" is "Bearer {token}"
+`;
+  const parsed = parseConfigSource(source);
+  assert.deepEqual(parsed.diagnostics, [], JSON.stringify(parsed.diagnostics));
+  return { config: resolveConfig(parsed.config, selectEnv(parsed.config, {})), lines: source.split(/\r?\n/) };
+}
+
+/** A test file padded so lines 5/6/7 — the exact lines the session's spans point at — hold text
+ * that could only ever come from *this* document. */
+function decoyTestFile(tag: string): string {
+  return `test "uses the session" as admin
+  api GET /orders
+  expect status equals 200
+
+# DECOY ${tag} line 5 — belongs to the test file, never to a session step
+# DECOY ${tag} line 6 — belongs to the test file, never to a session step
+# DECOY ${tag} line 7 — belongs to the test file, never to a session step
+`;
+}
+
+test('a session step reports its own `tflw.config` line, not the same-numbered line of whichever test file established it', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'tflw-sess-src-config-'));
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => json(res, 200, { token: 'tok' }),
+    '/orders': (_req, res) => json(res, 200, { ok: true }),
+  });
+
+  try {
+    const { config, lines: configLines } = configWithInlineSession(server.baseUrl);
+    const source = decoyTestFile('A');
+    const { program } = parseSource(source);
+    const { report } = await runProgram(program, config, { source, baseDir: configDir, configDir, configLines });
+
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    const steps = report.tests[0]!.kind === 'functional' ? report.tests[0]!.steps : [];
+
+    // The session's three steps are spliced in ahead of the test's own, in declared order.
+    const sessionSources = steps.slice(0, 3).map((s) => s.source);
+    assert.deepEqual(sessionSources, [
+      'api POST /auth/login body { who: "config" }',
+      'capture body.token as token',
+      'header "Authorization" is "Bearer {token}"',
+    ]);
+
+    // Stated the other way round, because this is the assertion that actually fails on the old
+    // code: not one session step reports a line of the document it was not declared in.
+    for (const step of steps.slice(0, 3)) {
+      assert.ok(!step.source.includes('DECOY'), `a session step reported the test file's text: ${step.source}`);
+      // `execSteps` trims what it slices, so compare against trimmed lines.
+      assert.ok(configLines.map((l) => l.trim()).includes(step.source), `a session step reported text found in no line of tflw.config: ${step.source}`);
+    }
+
+    // And the halves of one record agree about what kind of statement it describes — the exact
+    // contradiction the `FU-06` repro produced (`kind: 'api'`, source `expect status equals 200`).
+    assert.equal(steps[0]!.kind, 'api');
+    assert.ok(steps[0]!.source.startsWith('api '), `an \`api\` step whose source is not an api line: ${steps[0]!.source}`);
+  } finally {
+    await server.close();
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('the same session declaration reports the same source text whichever test file establishes it', async () => {
+  // The order-independence half, mirroring the `baseDir` test above. One declaration, two callers
+  // with deliberately different text at the session's own line numbers: a shared declaration must
+  // not read differently depending on who got there first.
+  const configDir = await mkdtemp(join(tmpdir(), 'tflw-sess-src-order-'));
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => json(res, 200, { token: 'tok' }),
+    '/orders': (_req, res) => json(res, 200, { ok: true }),
+  });
+
+  try {
+    const { config } = configWithInlineSession(server.baseUrl);
+
+    const sourcesFor = async (tag: string): Promise<string[]> => {
+      const source = decoyTestFile(tag);
+      const { program } = parseSource(source);
+      const { report } = await runProgram(program, config, {
+        source,
+        baseDir: configDir,
+        configDir,
+        configLines: configWithInlineSession(server.baseUrl).lines,
+        sessionCache: new SessionCache(),
+      });
+      assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+      const steps = report.tests[0]!.kind === 'functional' ? report.tests[0]!.steps : [];
+      return steps.slice(0, 3).map((s) => s.source);
+    };
+
+    assert.deepEqual(await sourcesFor('A'), await sourcesFor('B'));
+  } finally {
+    await server.close();
+    await rm(configDir, { recursive: true, force: true });
+  }
+});

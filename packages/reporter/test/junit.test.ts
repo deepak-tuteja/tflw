@@ -268,3 +268,44 @@ test('a file mixing functional and workload entries contributes testcases for bo
   assert.deepEqual(names, ['health check', 'checkout — error rate &lt; 0.01']);
   assert.equal([...xml.matchAll(/<testsuite /g)].length, 1, 'one file, one suite, regardless of entry kind');
 });
+
+// `M111` (`FU-07`) — the abort half of R11's question, which had never been asked here.
+//
+// The test above this one proves an `inconclusive` run reports `failures="0" skipped="2"`, so a CI
+// gate cannot read it as a clean pass. An **aborted** run reported `tests="1" failures="0"` with no
+// `skipped` at all, and recorded the abort only in a custom `<property>` — and no standard JUnit
+// consumer reads custom properties. `junit.xml` is the artifact CI actually gates on, so of the
+// three sinks this was the one where a run Ctrl-C'd at 6s of a 30s plan read as unambiguously
+// green. The `<property>` test that follows was the entire abort coverage, and it asserts the
+// abort is *recorded*, never that the verdict is honest.
+test('report.aborted marks every workload threshold <testcase> skipped, exactly as an inconclusive run does', () => {
+  const xml = renderJunitXml({ ...report, tests: [workloadTest], aborted: true, abortedMessage: 'aborted at 6s of 30s planned' });
+  assert.match(xml, /<testsuites name="tflw" tests="2" failures="0" errors="0" skipped="2"/);
+  assert.match(xml, /<testsuite name="load\/checkout\.tflw" tests="2" failures="0" errors="0" skipped="2"/);
+  assert.doesNotMatch(xml, /<failure/);
+  const skipped = [...xml.matchAll(/<skipped message="([^"]+)"/g)];
+  assert.equal(skipped.length, 2);
+  // The message says what happened and why the number below it cannot be read as a verdict.
+  assert.match(skipped[0]![1]!, /aborted at 6s of 30s planned/);
+  assert.match(skipped[0]![1]!, /partial sample/);
+});
+
+test('a run that is neither aborted nor inconclusive still reports real threshold verdicts', () => {
+  // The control for the two tests above. `<skipped/>` on a threshold has to be reachable *and*
+  // avoidable: a `noVerdict` that accidentally evaluated truthy for every run would make both of
+  // them pass while silently deleting every threshold verdict tflw has ever reported.
+  const xml = renderJunitXml({ ...report, tests: [workloadTest] });
+  assert.doesNotMatch(xml, /<skipped/);
+  assert.doesNotMatch(xml, /skipped="/);
+  assert.match(xml, /<failure message="threshold breached/);
+});
+
+test('an aborted run outranks an inconclusive one when a run is somehow both', () => {
+  // Both flags can be set on one report: a saturating generator is exactly the condition a user
+  // reaches for Ctrl-C under. The exit-code priority `runCommand` applies is `aborted > inconclusive`,
+  // and the message a reader gets should not disagree with the exit code they got.
+  const xml = renderJunitXml({ ...report, tests: [workloadTest], aborted: true, abortedMessage: 'aborted at 6s of 30s planned', inconclusive: true });
+  const skipped = [...xml.matchAll(/<skipped message="([^"]+)"/g)];
+  assert.match(skipped[0]![1]!, /aborted at 6s of 30s planned/);
+  assert.doesNotMatch(skipped[0]![1]!, /saturated/);
+});

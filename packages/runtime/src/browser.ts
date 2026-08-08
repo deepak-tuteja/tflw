@@ -146,10 +146,35 @@ export class BrowserManager {
     return computePlatformKey(this.engine, browser.version());
   }
 
+  /**
+   * `M111` (review row `B6-03`) — teardown never re-raises a launch that already failed.
+   *
+   * `getBrowser()` memoizes the launch *promise*, so a rejected launch stays on the field. The step
+   * that triggered it handled the rejection and failed its test normally; this then re-awaited the
+   * same rejected promise and threw it a second time. The CLI awaits `close()` **outside** the
+   * per-file `try/catch`, after the summary and every artifact write, so that second throw reached
+   * `main`'s top-level `.catch` → `err(message)` → `process.exit(EXIT_USAGE)`.
+   *
+   * Measured: one passing API test plus one browser test whose launch fails prints
+   * `FAIL 1/2 passed, 1 failed`, writes `report.html`, `junit.xml` and `results.json` in full — and
+   * then exits `2`, which `cli.ts` defines as "usage / config error — could not run". A run that
+   * produced a complete report demonstrably could. It also printed the same message a third time,
+   * after the summary, having already printed it live and in the failing step.
+   *
+   * The missing `playwright` peer is only the cheapest way to reach this; the repro that confirmed
+   * it used a **missing browser binary**, which is the far more common first-run case. Every
+   * `browser.launch()` failure takes this path: no binary downloaded, a sandbox refusal, a corrupt
+   * install.
+   *
+   * Swallowing is correct *here specifically* and nowhere else: this is teardown for a launch whose
+   * failure has already been reported through the step that requested it, so the only thing
+   * re-raising can add is a second, worse-attributed copy. A `browser.close()` that itself fails is
+   * a different event and still propagates.
+   */
   async close(): Promise<void> {
     if (!this.browserPromise) return;
-    const browser = await this.browserPromise;
-    await browser.close();
+    const browser = await this.browserPromise.catch(() => undefined);
+    if (browser) await browser.close();
   }
 }
 
