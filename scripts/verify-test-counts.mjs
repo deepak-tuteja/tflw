@@ -47,10 +47,10 @@ import { fileURLToPath } from 'node:url';
  * so adding a workspace cannot silently shift the comparison onto the wrong suite. */
 const EXPECTED = {
   '@tflw/lang': 884,
-  '@tflw/runtime': 565,
-  '@tflw/reporter': 96,
+  '@tflw/runtime': 570,
+  '@tflw/reporter': 104,
   '@tflw/lsp-server': 114,
-  tflw: 154,
+  tflw: 159,
   'tflw-vscode': 34,
   '@tflw/docs-site': 32,
 };

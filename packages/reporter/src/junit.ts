@@ -17,19 +17,23 @@
 import type { LoadThresholdResult, ReportEntry, RunReport, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { fileOf, groupByFile } from './group-by-file.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
+import { noVerdictMessage, noVerdictReason, type NoVerdictReason } from './run-verdict.js';
 
 export function renderJunitXml(report: RunReport): string {
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
 
-  const inconclusive = report.inconclusive ?? false;
+  // `M111` (`FU-07`) — R11's `inconclusive` treatment, generalized to every reason a threshold
+  // carries no verdict. An aborted run used to land here as `tests="1" failures="0"` with the abort
+  // recorded only in a custom `<property>`, so the one artifact CI gates on reported it as clean.
+  const noVerdict = noVerdictReason(report);
   const suites = groupByFile(report.tests, fileOf);
-  const totals = countsOf(report.tests, inconclusive);
+  const totals = countsOf(report.tests, noVerdict);
 
   // The root's `time` is the run's wall clock, not the sum of its suites': files run concurrently,
   // so the sum would overstate how long the run took.
   lines.push(`<testsuites ${countAttrs('tflw', totals, (report.durationMs / 1000).toFixed(3), report)}>`);
-  for (const [file, tests] of suites) lines.push(...renderSuite(file, tests, report, inconclusive));
+  for (const [file, tests] of suites) lines.push(...renderSuite(file, tests, report, noVerdict));
   lines.push('</testsuites>');
   return lines.join('\n') + '\n';
 }
@@ -40,11 +44,11 @@ interface Counts {
   readonly skipped: number;
 }
 
-function countsOf(entries: readonly ReportEntry[], inconclusive: boolean): Counts {
+function countsOf(entries: readonly ReportEntry[], noVerdict: NoVerdictReason | null): Counts {
   return {
     tests: entries.reduce((n, t) => n + testCaseCount(t), 0),
-    failures: entries.reduce((n, t) => n + testCaseFailureCount(t, inconclusive), 0),
-    skipped: inconclusive ? entries.filter((t) => t.kind === 'workload').reduce((n, t) => n + testCaseCount(t), 0) : 0,
+    failures: entries.reduce((n, t) => n + testCaseFailureCount(t, noVerdict), 0),
+    skipped: noVerdict !== null ? entries.filter((t) => t.kind === 'workload').reduce((n, t) => n + testCaseCount(t), 0) : 0,
   };
 }
 
@@ -56,12 +60,12 @@ function countAttrs(name: string, counts: Counts, time: string, report: RunRepor
 /** One file's `<testsuite>`. Its `time` is the sum of its own testcases' durations — a workload
  * `<testcase>` contributes `0.000` (a workload test has no single "this took Nms" figure; its
  * a workload's declared span is planned, not an outcome), exactly as it does at the testcase level. */
-function renderSuite(file: string, tests: readonly ReportEntry[], report: RunReport, inconclusive: boolean): string[] {
+function renderSuite(file: string, tests: readonly ReportEntry[], report: RunReport, noVerdict: NoVerdictReason | null): string[] {
   const time = (tests.reduce((ms, t) => ms + entryDurationMs(t), 0) / 1000).toFixed(3);
   const lines: string[] = [];
-  lines.push(`  <testsuite ${countAttrs(file, countsOf(tests, inconclusive), time, report)}>`);
+  lines.push(`  <testsuite ${countAttrs(file, countsOf(tests, noVerdict), time, report)}>`);
   lines.push(...renderProperties(report));
-  for (const t of tests) lines.push(...renderEntry(t, file, inconclusive));
+  for (const t of tests) lines.push(...renderEntry(t, file, report, noVerdict));
   lines.push('  </testsuite>');
   return lines;
 }
@@ -90,14 +94,14 @@ function testCaseCount(entry: ReportEntry): number {
   return entry.kind === 'workload' ? Math.max(1, entry.thresholds.length) : 1;
 }
 
-function testCaseFailureCount(entry: ReportEntry, inconclusive: boolean): number {
+function testCaseFailureCount(entry: ReportEntry, noVerdict: NoVerdictReason | null): number {
   if (entry.kind !== 'workload') return entry.ok ? 0 : 1;
-  if (inconclusive) return 0; // R11: inconclusive marks every threshold skipped, not failed
+  if (noVerdict !== null) return 0; // R11, extended by `FU-07`: no verdict means skipped, not failed
   return entry.thresholds.filter((t) => !t.ok).length;
 }
 
-function renderEntry(entry: ReportEntry, file: string, inconclusive: boolean): string[] {
-  return entry.kind === 'workload' ? renderWorkloadTestCases(entry, file, inconclusive) : [renderTestCase(entry, file)];
+function renderEntry(entry: ReportEntry, file: string, report: RunReport, noVerdict: NoVerdictReason | null): string[] {
+  return entry.kind === 'workload' ? renderWorkloadTestCases(entry, file, report, noVerdict) : [renderTestCase(entry, file)];
 }
 
 /** M65 (FS-09): `classname` is the source file verbatim — the same string as the enclosing
@@ -131,19 +135,22 @@ function renderTestCase(test: TestResult, file: string): string {
  * thresholds, so with none it reported `PASS` over a 100% error rate. The zero-threshold branch
  * stays — this is a library boundary and a caller can still hand one in — but it is no longer a
  * shape any `.tflw` file run through the CLI produces. */
-function renderWorkloadTestCases(test: WorkloadTestResult, file: string, inconclusive: boolean): string[] {
+function renderWorkloadTestCases(test: WorkloadTestResult, file: string, report: RunReport, noVerdict: NoVerdictReason | null): string[] {
   if (test.thresholds.length === 0) return [`    <testcase name="${esc(test.name)}" classname="${esc(file)}" time="0.000"/>`];
-  return test.thresholds.map((t) => renderThresholdTestCase(test, t, file, inconclusive));
+  return test.thresholds.map((t) => renderThresholdTestCase(test, t, file, report, noVerdict));
 }
 
-function renderThresholdTestCase(test: WorkloadTestResult, threshold: LoadThresholdResult, file: string, inconclusive: boolean): string {
+function renderThresholdTestCase(test: WorkloadTestResult, threshold: LoadThresholdResult, file: string, report: RunReport, noVerdict: NoVerdictReason | null): string {
   const cmp = threshold.op === 'lessThan' ? '<' : '>';
   const name = `${test.name} — ${threshold.label} ${cmp} ${threshold.target}`;
   const attrs = `name="${esc(name)}" classname="${esc(file)}" time="0.000"`;
   // R11: "an inconclusive run marks them skipped, not passed" — a saturated generator invalidates
-  // every threshold's verdict in this run, not just the ones that happened to fail.
-  if (inconclusive) {
-    return `    <testcase ${attrs}>\n      <skipped message="tflw's own generator process saturated during this run — results are inconclusive"/>\n    </testcase>`;
+  // every threshold's verdict in this run, not just the ones that happened to fail. `M111`
+  // (`FU-07`) applies the identical reasoning to an aborted run, whose sample is not the sample the
+  // workload planned to take; `<skipped/>` is the one JUnit element that means "no verdict", and it
+  // is what makes `failures="0"` stop reading as "everything passed".
+  if (noVerdict !== null) {
+    return `    <testcase ${attrs}>\n      <skipped message="${esc(noVerdictMessage(noVerdict, report))}"/>\n    </testcase>`;
   }
   if (threshold.ok) return `    <testcase ${attrs}/>`;
   // M89a — the same formatter the console and `report.html` use, so all three sinks agree on units

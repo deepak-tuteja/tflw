@@ -3960,3 +3960,159 @@ test('`tflw check` stays silent on an unresolvable world rather than calling a n
     }
   });
 });
+
+// -- `M111` (review row `B6-03`): a browser-launch failure is a test failure, not "could not run" --
+//
+// `exit 2` is `EXIT_USAGE`, defined at the top of `cli.ts` as "usage / config error — could not
+// run". A browser test whose launch fails produced a *complete* report — console summary,
+// `report.html`, `junit.xml`, `results.json`, the failing test correctly attributed — and then
+// exited 2 anyway, because `BrowserManager.close()` re-threw the already-reported launch rejection
+// past the per-file `try/catch` and onto `main`'s top-level handler.
+//
+// The exit code is the half of `B6-03` that no runtime-package test can see, which is why it lives
+// here and `browser-launch-failure.test.ts` holds the other half. A CI job that branches on
+// `2 = could not run` versus `1 = tests failed` — the distinction `cli.ts` documents and that this
+// project's own `PLAN.md` sells — reads "your config is broken" over a run whose report says
+// otherwise.
+test('a browser test whose launch fails exits 1 with a full report, not 2 ("could not run")', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-launchfail-'));
+    const emptyBrowsers = await mkdtemp(join(tmpdir(), 'tflw-e2e-nobrowsers-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n  web "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'api.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      await writeFile(join(dir, 'ui.tflw'), `test "a browser test"\n  open "/"\n  expect text "hello" is visible\n`, 'utf8');
+
+      // An empty browsers directory is a real launch failure with no network and no uninstall —
+      // and it is the *common* first-run shape, more so than the missing peer dependency `B6-03`
+      // used to reach it. Every `browser.launch()` failure rejects the same promise.
+      const env = { ...envWithout('GITHUB_ACTIONS'), PLAYWRIGHT_BROWSERS_PATH: emptyBrowsers };
+
+      const failure = await execFileAsync('node', [cliEntry, 'run', 'api.tflw', 'ui.tflw', '--no-color'], { cwd: dir, env }).then(
+        () => undefined,
+        (e: unknown) => e as { code?: number; stdout?: string },
+      );
+
+      assert.ok(failure, 'the run should have failed — the browser test cannot pass without a browser');
+      assert.equal(failure.code, 1, `expected exit 1 (tests failed), got ${failure.code}: 2 means "could not run", and it did`);
+      // The report the exit code has to agree with: one test passed, one failed, both counted.
+      assert.match(failure.stdout ?? '', /1\/2 passed, 1 failed/);
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { total: number };
+      assert.equal(results.total, 2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(emptyBrowsers, { recursive: true, force: true });
+    }
+  });
+});
+
+// -- `M111` (review row `B6-05`): `--log-file` must not fail a green run, or vanish when it matters --
+//
+// `--help` says `--log-file <path>` "duplicates console output to a file (plain text)". The test
+// above proves the one case that worked: an existing directory, a run that reaches the end, nothing
+// on stderr. Four cases did not, and each is a separate assertion below, because the old
+// implementation buffered the whole run in memory and wrote once — after the summary, after every
+// artifact, with no `mkdir`, no `try`, and no path from stderr into the buffer at all.
+//
+// The fix is structural, not four patches: the file is opened before the run and written through.
+
+test('--log-file creates its parent directory rather than failing a passing run with exit 2', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-mkdir-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      // `logs/` does not exist. It, `artifacts/` and `.tflw-logs/` are the paths a person picks.
+      // This used to print `PASS 1/1 passed`, write `report.html`, then hit `ENOENT` in the final
+      // `writeFile` — which reached `main`'s top-level catch and exited 2, i.e. "could not run",
+      // over a suite that had just run and passed.
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--no-timestamps', '--log-file', 'logs/run.log'], { cwd: dir });
+
+      assert.match(stdout, /1\/1 passed/);
+      assert.match(await readFile(join(dir, 'logs', 'run.log'), 'utf8'), /1\/1 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--log-file writes the log even when the run returns early on a parse error', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-early-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'bad.tflw'), `test "beta"\n  api GET\n`, 'utf8');
+
+      // The run returns from `loadAndValidate` long before the old `save()` at the end of the
+      // function, so this produced **no file at all** — in exactly the situation someone keeps a
+      // log for. And the diagnostic goes to stderr, which never passed through the log sink
+      // either, so even a run that did reach `save()` logged stdout only.
+      const failure = await execFileAsync('node', [cliEntry, 'run', 'bad.tflw', '--no-color', '--log-file', 'run.log'], { cwd: dir }).then(
+        () => undefined,
+        (e: unknown) => e as { code?: number },
+      );
+      assert.equal(failure?.code, 2);
+
+      const logged = await readFile(join(dir, 'run.log'), 'utf8');
+      assert.match(logged, /error\[TF010\]/);
+      assert.match(logged, /bad\.tflw:2/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--log-file mirrors stderr, so `error:` lines are in the log and not only on the terminal', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-stderr-'));
+    try {
+      // `require env` with the variable unset is an `err()` line, not a rendered diagnostic — the
+      // other of the two stderr paths that used to bypass the log.
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n\nrequire env DJ_TOKEN\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+      const env = envWithout('GITHUB_ACTIONS', 'DJ_TOKEN');
+      const failure = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--log-file', 'run.log'], { cwd: dir, env }).then(
+        () => undefined,
+        (e: unknown) => e as { code?: number; stderr?: string },
+      );
+      assert.equal(failure?.code, 2);
+
+      // Plain text, per `--help`'s own promise — and specifically without the `\x1b[31m` that
+      // `err()` used to emit unconditionally.
+      const logged = await readFile(join(dir, 'run.log'), 'utf8');
+      assert.match(logged, /error: missing required environment variable: DJ_TOKEN/);
+      assert.doesNotMatch(logged, /\x1b\[/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('--log-file into a genuinely unusable path fails before any test runs, which is what exit 2 means', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-unusable-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      // A regular file standing exactly where the log's parent directory would have to be.
+      await writeFile(join(dir, 'blocker'), 'not a directory', 'utf8');
+
+      // The soundness half of the first test in this group. Creating a missing directory must not
+      // have turned every bad `--log-file` into a silent success — an unusable path is still a
+      // usage error. What changed is *when*: it is now refused before anything runs, which is the
+      // one moment `EXIT_USAGE`'s own definition ("could not run") is a true statement about it.
+      const failure = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--log-file', 'blocker/run.log'], { cwd: dir }).then(
+        () => undefined,
+        (e: unknown) => e as { code?: number; stderr?: string },
+      );
+      assert.equal(failure?.code, 2);
+      assert.match(failure?.stderr ?? '', /--log-file blocker\/run\.log/);
+      // Nothing ran: no report directory, so the exit code and the artifacts agree.
+      await assert.rejects(() => access(join(dir, 'report')));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

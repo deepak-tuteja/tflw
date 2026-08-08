@@ -38,8 +38,8 @@
 // so the kill line now says which it is.
 //
 // **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-08, not from
-// memory: **35 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
-// 1 from M108, 3 from M109, 2 from M110.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
+// memory: **42 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
+// 1 from M108, 3 from M109, 2 from M110, 7 from M111.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
 // description plus the source it names; the other 11 of the plan's 31 are described at a level
 // ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
 // would produce a number rather than a measurement. They are listed at the bottom of this file as
@@ -434,6 +434,69 @@ const MUTATIONS = [
     what: 'the CLI reference loses its `tflw lsp` section — the state the page shipped in for eleven milestones',
     find: '## `tflw lsp`',
     replace: '## The language server',
+  },
+  {
+    id: 'session-source-lines',
+    milestone: 'm111',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "a session's derived context goes back to carrying the *caller's* text, so every session step is rendered from the wrong document (`FU-06`)",
+    find: 'return { ...tc, lines: tc.configLines, baseDir: tc.configDir,',
+    replace: 'return { ...tc, baseDir: tc.configDir,',
+  },
+  {
+    id: 'oauth2-session-ctx',
+    milestone: 'm111',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the oauth2 arm goes back to bypassing `sessionCtx` entirely, as it did through all of M97c-03 (`FU-06`)',
+    find: 'if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, sessionTc);',
+    replace: 'if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, tc);',
+  },
+  {
+    id: 'aborted-badge',
+    milestone: 'm111',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/run-verdict.ts',
+    what: "an aborted run prints `PASS` again on all three sinks — the badge computed from `report.ok` alone (`FU-07`)",
+    find: "  if (report.aborted) return 'ABORTED';",
+    replace: '',
+  },
+  {
+    id: 'aborted-threshold-verdict',
+    milestone: 'm111',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/run-verdict.ts',
+    what: 'thresholds measured over a truncated sample get their ticks and their `junit.xml` pass back (`FU-07`)',
+    find: "  if (report.aborted) return 'aborted';",
+    replace: '',
+  },
+  {
+    id: 'browser-close-rethrow',
+    milestone: 'm111',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    what: 'teardown re-raises an already-reported launch failure, turning a complete report into exit 2 (`B6-03`)',
+    find: 'const browser = await this.browserPromise.catch(() => undefined);\n    if (browser) await browser.close();',
+    replace: 'const browser = await this.browserPromise;\n    await browser.close();',
+  },
+  {
+    id: 'log-file-mkdir',
+    milestone: 'm111',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`--log-file` stops creating its parent directory, so a passing run ends in `ENOENT` and exit 2 (`B6-05`)',
+    find: '  mkdirSync(dirname(resolve(logFile)), { recursive: true });\n',
+    replace: '',
+  },
+  {
+    id: 'log-file-stderr-mirror',
+    milestone: 'm111',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`--log-file` stops mirroring stderr, so every `error:` line and rendered diagnostic vanishes from the log (`B6-05`)',
+    find: '  logMirror = mirror;\n',
+    replace: '',
   },
 ];
 

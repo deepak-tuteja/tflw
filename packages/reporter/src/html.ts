@@ -21,6 +21,7 @@ import { fileOf, groupByFile } from './group-by-file.js';
 import { describeWorkload } from './workload-format.js';
 import { CHART_STYLE, renderErrorRateChart, renderHistogramChart, renderLatencyOverTimeChart, renderThroughputChart } from './load-charts.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
+import { runBadgeText } from './run-verdict.js';
 
 /** A test's slot in the sidebar tree + `<main>`'s panel list — computed once, shared by both. */
 interface TestSlot {
@@ -46,10 +47,10 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
 <style>${STYLE}${CHART_STYLE}</style>
 </head>
 <body>
-<header class="run ${report.ok ? 'ok' : 'fail'}">
+<header class="run ${runBadgeText(report) === 'PASS' ? 'ok' : 'fail'}">
   <h1>testFlow report</h1>
   <div class="meta">
-    <span class="badge ${report.ok ? 'ok' : 'fail'}">${report.ok ? 'PASS' : 'FAIL'}</span>
+    <span class="badge ${runBadgeText(report) === 'PASS' ? 'ok' : 'fail'}">${runBadgeText(report)}</span>
     <span>${report.passed}/${report.total} passed${report.failed ? ` · ${report.failed} failed` : ''}</span>
     <span>env <code>${esc(report.env)}</code></span>
     <span>seed <code>${report.seed}</code></span>
