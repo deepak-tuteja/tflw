@@ -75,6 +75,18 @@ export interface KnownAction {
   readonly from: string | null;
   /** Declaration line, for a local action only (`from === null`). */
   readonly line?: number;
+  /**
+   * The imported action's own steps (M109, review row `M97d-01`) — what lets `checkActionCycles`
+   * follow a call out of this file and back in, which until now only the runtime could see.
+   *
+   * Optional, and the optionality is the same `undefined`-vs-`[]` doctrine as `importedActions`
+   * itself one level up: a caller that hands over a name and an arity but no body has not said
+   * "this action calls nothing", it has said nothing at all, and the cycle pass must treat that
+   * action as a node it cannot look inside rather than as a leaf. `resolveImportedActions` has
+   * always had the bodies — it ran a full `parseSource` on each imported file and then dropped
+   * `program.actions[].body` on the floor — so the field costs a reference, not a re-parse.
+   */
+  readonly body?: readonly Step[];
 }
 
 /**
@@ -122,7 +134,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkReferencedFiles(program, opts),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
-    ...checkActionCycles(program),
+    ...checkActionCycles(program, opts),
     ...checkResponseScopes(program),
   ]);
 }
@@ -577,6 +589,15 @@ function eachCall(node: unknown, visit: (call: CallExpr) => void): void {
  * call is a sub-expression of a `BinaryExpr` and never runs — is correctly excluded. */
 function evaluatedCalls(program: Program): Set<CallExpr> {
   const out = new Set<CallExpr>();
+  collectEvaluatedCalls(program.tests.map((t) => t.body).concat(program.actions.map((a) => a.body), program.hooks.map((h) => h.body)), out);
+  return out;
+}
+
+/** The same rule applied to bare step lists rather than a whole `Program` — an imported action's
+ * body arrives as `Step[]` with no program around it (M109). Split out rather than duplicated:
+ * `let x = f() + "y"` must be a non-edge on both sides of an `import`, and the day a new block
+ * step joins the `WithinBlock` list below, one definition is what keeps them agreeing. */
+function collectEvaluatedCalls(bodies: readonly (readonly Step[])[], out: Set<CallExpr>): void {
   const fromSteps = (steps: readonly Step[]): void => {
     for (const step of steps) {
       switch (step.type) {
@@ -596,10 +617,7 @@ function evaluatedCalls(program: Program): Set<CallExpr> {
       }
     }
   };
-  for (const test of program.tests) fromSteps(test.body);
-  for (const action of program.actions) fromSteps(action.body);
-  for (const hook of program.hooks) fromSteps(hook.body);
-  return out;
+  for (const body of bodies) fromSteps(body);
 }
 
 /**
@@ -713,12 +731,29 @@ function plural(n: number, noun: string): string {
 // Action call cycles (M97d, D141 — review row `A4-13`).
 // ---------------------------------------------------------------------------
 
+/** One node of the call graph a run would build: an action's steps, and where they were declared.
+ * `from` is the `import "…"` path an action came in through, or `null` for one declared in the file
+ * being checked — which is what decides whether a call inside it has a span this file can point
+ * at. */
+interface CycleNode {
+  readonly body: readonly Step[];
+  readonly from: string | null;
+}
+
+/** One call joining two nodes. `localSite` is the property the reporting turns on: a call written
+ * inside an imported body has a span into *that* file's text, so it can be named in a message but
+ * never underlined here. */
+interface CallEdge {
+  readonly to: string;
+  readonly call: CallExpr;
+  readonly localSite: boolean;
+}
+
 /** Every action a cycle passes through, in call order, ending back where it started (`a → b → a`),
- * paired with the call site that closes it — which is where the diagnostic points, because that is
- * the one line a reader can delete to break the cycle. */
+ * paired with the calls that join them — the last of which closes the cycle. */
 interface CallCycle {
   readonly path: readonly string[];
-  readonly closedBy: CallExpr;
+  readonly edges: readonly CallEdge[];
 }
 
 /** `A4-13`: an `action` that can reach itself. **tflw has no conditionals** — there is no `IfStmt`
@@ -727,26 +762,49 @@ interface CallCycle {
  * run can end is by failing. That is what makes rejecting it statically *sound*, which is the
  * checker contract's first clause (D137) and the reason this is an error rather than a warning.
  *
- * **Same-file only, and deliberately not gated on `checkCalls`' closed world.** An edge here joins
- * two actions declared in *this* file, and a same-file name can never be shadowed by an imported
+ * **Not gated on `checkCalls`' closed world.** A same-file name can never be shadowed by an imported
  * one: `buildRegistry` throws on a duplicate (`interpreter.ts:1759`) and `TF035` — widened to the
  * imported case in M97b — reports it statically. So the edge is real no matter what the file's
- * `import`s or `use`s turn out to hold, and requiring a closed world would have skipped this check
- * in every suite that loads a JS helper. Cross-file cycles are a filed follow-up; they need
- * `KnownAction` to carry a body, and until then they are the runtime guard's job (D141). */
-export function checkActionCycles(program: Program): Diagnostic[] {
-  const declared = new Map<string, ActionDecl>();
+ * `use`s turn out to hold, and requiring a closed world would have skipped this check in every suite
+ * that loads a JS helper.
+ *
+ * **Across `import`s too, when the caller resolved them (M109, `M97d-01`).** D141 shipped this
+ * same-file only, on the true statement that `KnownAction` carried no body, and left the residue to
+ * the runtime guard. The graph below is now the one a run would actually build: local actions, then
+ * whatever `opts.importedActions` brought in, first declaration winning exactly as `buildRegistry`
+ * and `checkCalls` have it. That merge *is* the reason the cross-file case is decidable at all —
+ * calls bind late, against the entry file's registry, so an imported body's `a()` means this file's
+ * `a` when this file declares one, and there is no second registry to disambiguate against.
+ *
+ * Two consequences worth stating, because both are limits rather than bugs:
+ *
+ *  - With `importedActions` `undefined` (imports present, unread or unparseable) the pass sees only
+ *    local edges, as before. That is the `undefined`-vs-`[]` doctrine again: a body nobody read is
+ *    not an empty body.
+ *  - A cycle whose every call site sits inside imported files is **not reported here**, because
+ *    there would be no span in this file to underline and a caret pointing into another file's text
+ *    is the defect M106 closed. It is a same-file cycle *of that file*, reported when it is checked
+ *    — `tflw check` and a bare `tflw run` both discover every `.tflw` under the cwd — and caught by
+ *    the runtime guard regardless. */
+export function checkActionCycles(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const graph = new Map<string, CycleNode>();
   // First declaration wins, as in `checkCalls`/`buildRegistry`; a second is `TF035`'s to report.
-  for (const action of program.actions) if (!declared.has(action.name)) declared.set(action.name, action);
+  for (const action of program.actions) if (!graph.has(action.name)) graph.set(action.name, { body: action.body, from: null });
+  for (const imported of opts.importedActions ?? []) {
+    if (imported.body !== undefined && !graph.has(imported.name)) graph.set(imported.name, { body: imported.body, from: imported.from });
+  }
 
   // Only calls the interpreter actually evaluates are edges — `let x = f() + "y"` never runs `f`,
-  // so treating it as one would reject a program the runtime is perfectly happy to complete.
+  // so treating it as one would reject a program the runtime is perfectly happy to complete. The
+  // rule applies inside an imported body exactly as it does here, hence the second pass.
   const evaluated = evaluatedCalls(program);
-  const edges = new Map<string, CallExpr[]>();
-  for (const [name, action] of declared) {
-    const out: CallExpr[] = [];
-    eachCall(action, (call) => {
-      if (evaluated.has(call) && declared.has(call.name)) out.push(call);
+  collectEvaluatedCalls([...graph.values()].filter((node) => node.from !== null).map((node) => node.body), evaluated);
+
+  const edges = new Map<string, CallEdge[]>();
+  for (const [name, node] of graph) {
+    const out: CallEdge[] = [];
+    eachCall(node.body, (call) => {
+      if (evaluated.has(call) && graph.has(call.name)) out.push({ to: call.name, call, localSite: node.from === null });
     });
     edges.set(name, out);
   }
@@ -755,42 +813,81 @@ export function checkActionCycles(program: Program): Diagnostic[] {
   const reported = new Set<string>();
   const finished = new Set<string>();
   const stack: string[] = [];
+  // Parallel to `stack`: the edge that pushed each frame, so a cycle can be reported at a call site
+  // other than the closing one. Only the DFS root's slot is `undefined`, and it is at index 0.
+  const stackEdges: (CallEdge | undefined)[] = [];
   const onStack = new Set<string>();
 
-  const walk = (name: string): void => {
+  const walk = (name: string, enteredBy: CallEdge | undefined): void => {
     stack.push(name);
+    stackEdges.push(enteredBy);
     onStack.add(name);
-    for (const call of edges.get(name) ?? []) {
-      if (onStack.has(call.name)) {
-        const path = [...stack.slice(stack.indexOf(call.name)), call.name];
+    for (const edge of edges.get(name) ?? []) {
+      if (onStack.has(edge.to)) {
+        const at = stack.indexOf(edge.to);
+        const path = [...stack.slice(at), edge.to];
         // One diagnostic per cycle, not one per member: `a → b → a` is reachable from both `a` and
         // `b`, and reporting it twice would make a two-line mistake look like two mistakes. The key
         // is the member *set*, so the same cycle entered at a different point is recognised.
         const key = [...new Set(path)].sort().join('\0');
         if (!reported.has(key)) {
           reported.add(key);
-          cycles.push({ path, closedBy: call });
+          // `at + 1 >= 1`, so the root's `undefined` slot is never in the slice.
+          cycles.push({ path, edges: [...(stackEdges.slice(at + 1) as CallEdge[]), edge] });
         }
         continue;
       }
-      if (!finished.has(call.name)) walk(call.name);
+      if (!finished.has(edge.to)) walk(edge.to, edge);
     }
     onStack.delete(name);
     stack.pop();
+    stackEdges.pop();
     finished.add(name);
   };
   // Declaration order, so which member of a cycle gets named first is stable across runs.
-  for (const name of declared.keys()) if (!finished.has(name)) walk(name);
+  for (const name of graph.keys()) if (!finished.has(name)) walk(name, undefined);
 
-  return cycles.map(({ path, closedBy }) => ({
-    code: Codes.CALL_CYCLE,
-    severity: 'error' as const,
-    message: `this call completes a cycle: \`${path.join(' → ')}\``,
-    span: closedBy.span,
-    hint: path.length === 2
+  return cycles.flatMap(({ path, edges: cycleEdges }) => {
+    const closing = cycleEdges[cycleEdges.length - 1]!;
+    // Where to point. The closing call is the one line a reader can delete to break the cycle, so
+    // it stays the anchor whenever it is in this file — every same-file cycle reports exactly where
+    // it did before M109. When the cycle closes inside an imported body there is no such line here,
+    // and the first local call in the cycle is the next best thing: the step that hands control out
+    // of this file. Neither: nothing to underline, so nothing to report (see the note above).
+    const anchor = closing.localSite ? closing : cycleEdges.find((edge) => edge.localSite);
+    if (anchor === undefined) return [];
+
+    const provenance = [...new Set(path)]
+      .map((name) => [name, graph.get(name)?.from] as const)
+      .filter((entry): entry is readonly [string, string] => typeof entry[1] === 'string')
+      .map(([name, from]) => `\`${name}\` is imported from "${from}"`)
+      .join(', ');
+
+    if (anchor !== closing) {
+      // The closing call is inside an imported body, so its source action is an imported one.
+      const closingSource = path[path.length - 2]!;
+      return [{
+        code: Codes.CALL_CYCLE,
+        severity: 'error' as const,
+        message: `this call enters a cycle: \`${path.join(' → ')}\``,
+        span: anchor.call.span,
+        hint: `\`${closingSource}\` is imported from "${graph.get(closingSource)!.from}" and calls \`${closing.to}\` — tflw has no conditionals, so an action that can reach itself has no exit; break the chain here or in that file`,
+      }];
+    }
+
+    const base = path.length === 2
       ? 'tflw has no conditionals, so an action that calls itself has no exit — extract the steps that should run once into a second action'
-      : 'tflw has no conditionals, so an action that can reach itself has no exit — extract the shared steps into a third action that calls neither',
-  }));
+      : 'tflw has no conditionals, so an action that can reach itself has no exit — extract the shared steps into a third action that calls neither';
+    return [{
+      code: Codes.CALL_CYCLE,
+      severity: 'error' as const,
+      message: `this call completes a cycle: \`${path.join(' → ')}\``,
+      span: anchor.call.span,
+      // Provenance only when the cycle actually leaves the file — a wholly local cycle's hint is
+      // unchanged, and appending an empty clause to it would be noise on the common case.
+      hint: provenance === '' ? base : `${base} (${provenance})`,
+    }];
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -66,7 +66,10 @@ export async function resolveImportedActions(
     const parsed = parseSource(text);
     if (parsed.diagnostics.some((d) => d.severity === 'error')) return undefined;
     for (const action of parsed.program.actions) {
-      out.push({ name: action.name, arity: action.params.length, from: imp.path.value });
+      // `body` (M109, `M97d-01`): the parse above already produced it and this loop used to drop it,
+      // which is the whole reason `TF044` could not decide a cycle that left the file. It is a
+      // reference into `parsed`, so carrying it costs nothing a re-parse would not have cost more.
+      out.push({ name: action.name, arity: action.params.length, from: imp.path.value, body: action.body });
     }
   }
   return out;

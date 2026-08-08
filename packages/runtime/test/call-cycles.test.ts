@@ -3,10 +3,16 @@
 // `TF044` rejects a cycle whose every action is declared in one file. This file is about the two
 // things that leaves behind, and D141 calls the second of them the load-bearing one:
 //
-//   1. **The residue guard.** A cycle that leaves the file through an `import` and comes back is
-//      invisible to the checker — `KnownAction` carries a name and an arity, not a body — and
-//      always will be until that changes. Clause 2 of the contract (D137) is bounded by
-//      decidability, so whatever the checker cannot reach is by construction the runtime's job.
+//   1. **The residue guard.** A cycle that leaves the file through an `import` and comes back was
+//      invisible to the checker — `KnownAction` carried a name and an arity, not a body. Clause 2
+//      of the contract (D137) is bounded by decidability, so whatever the checker cannot reach is
+//      by construction the runtime's job.
+//
+//      **M109 (`M97d-01`) moved that boundary**: `KnownAction` now carries the body, and `TF044`
+//      decides the cross-file case whenever the imports resolve. The guard is unchanged and still
+//      load-bearing — the tests below drive `runProgram` directly, with no check pass in front of
+//      it, which is also how a library consumer reaches it, and it remains the only answer for an
+//      unreadable import or a cycle sitting wholly inside imported files.
 //   2. **The bounded failure chain.** `execCall` used to prefix `action "x" failed: ` onto its
 //      callee's already-prefixed message, once per level, with nothing bounding it.
 //

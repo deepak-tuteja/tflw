@@ -544,8 +544,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'an action that reaches itself never terminates',
     decidable: 'static',
     checkerCode: 'TF044',
-    filedRow: 'M97d-01',
-    note: 'D141: `TF044` decides the same-file case; this guard catches the residue — a cycle that leaves the file through an `import` and comes back, which the checker cannot see because `KnownAction` discards imported bodies. Detecting a repeat on the live call stack rather than counting to a depth limit is what lets both halves name the same cycle in the same notation',
+    note: 'D141 shipped `TF044` same-file only and left the cross-file case to this guard; M109 (`M97d-01`, now closed) gave `KnownAction` a body, so the checker decides that case too whenever the imports resolve. What is left here is genuinely undecidable statically and so is exactly what clause 2 excludes: an import that cannot be read or parsed, a cycle whose every call site is inside imported files (no span in the file being checked), and `runProgram` driven as a library with no check pass in front of it. Detecting a repeat on the live call stack rather than counting to a depth limit is what lets both halves name the same cycle in the same notation',
   },
   {
     id: 'unknown-call',
