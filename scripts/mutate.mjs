@@ -7,20 +7,35 @@
 // question a written mutation cannot answer is whether the control that killed it still can.
 //
 // Each entry below is one exact-string edit to one source file. The runner applies it, runs the
-// `@tflw/lang` suite (~1.4s, tsx straight off source — no build step), records which tests died, and
-// reverts. A mutation that leaves the suite **green has survived**, and a survivor is a claim about
-// the tests, not about the code: nothing in the suite can tell that line from its opposite.
+// suite of the workspace that entry names (`pkg`, default `@tflw/lang` — ~1.4s, tsx straight off
+// source, no build step), records which tests died, and reverts. A mutation that leaves the suite
+// **green has survived**, and a survivor is a claim about the tests, not about the code: nothing in
+// the suite can tell that line from its opposite.
 //
 //   node scripts/mutate.mjs            run all
 //   node scripts/mutate.mjs m98d       run one milestone's
 //   node scripts/mutate.mjs bom-col    run one by id
 //
-// **Coverage, stated rather than implied.** 18 of the plan's 31 are reconstructed here — every one
-// whose target could be identified unambiguously from the plan's own description plus the source it
-// names. The remaining 13 are described in the plan at a level ("D159 reverted", "per-code-unit
-// recovery") that admits more than one edit, and guessing at them would produce a number rather than
-// a measurement. They are listed at the bottom of this file as `UNRECONSTRUCTED` so the gap is
-// visible in the tool and not only in a commit message.
+// M107 widened it past `@tflw/lang`: the first mutation outside the language packages targets the
+// runtime's back-off diagnostic, whose negative control had been passing for free. Its suite costs
+// ~21s rather than 1.4s, so a runtime mutation is worth adding only where the claim is about a
+// control's kill power and no cheaper subject exists.
+//
+// **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-08, not from
+// memory: **29 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from
+// M107.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
+// description plus the source it names; the other 11 of the plan's 31 are described at a level
+// ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
+// would produce a number rather than a measurement. They are listed at the bottom of this file as
+// `UNRECONSTRUCTED` so the gap is visible in the tool and not only in a commit message.
+//
+// Two numbers here were wrong until M107, in the one file whose whole subject is that a count
+// nobody re-measures stops being true. The paragraph shipped in #28 claiming "18 of 31" over a
+// `MUTATIONS` array that already held 20, and M106's 8 additions never touched it at all. Counted
+// rather than recalled this time. A third does not reconcile and is left visible rather than
+// rounded: 31 − 20 = 11 unreconstructed, but the five `UNRECONSTRUCTED` groups' own prose counts
+// (2 + 1 + 1 + 2 + 10) sum to 16. That disagreement is in `PLAN_M98_LEXER_POSITIONS.md`'s prose,
+// which is the only record of the 31, so it cannot be settled from this side.
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -30,6 +45,13 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const LEXER = 'packages/lang/src/lexer.ts';
 const PARSER = 'packages/lang/src/parser.ts';
 const DIAG = 'packages/lang/src/diagnostic.ts';
+const INTERP = 'packages/runtime/src/interpreter.ts';
+
+/** M107 — a mutation names the workspace whose suite judges it, because the tool no longer only
+ * mutates `@tflw/lang`. Defaulted rather than added to all 18 existing entries: the lang suite is
+ * still where nearly every mutation lives, and a field repeated 18 times to say "as before" is
+ * noise. Each distinct package is baselined once, on first use. */
+const DEFAULT_PKG = '@tflw/lang';
 
 // The two adjacent branches in `parsePrimary`'s number path, verbatim, so the ordering mutation is a
 // swap of whole blocks rather than a hand-retyped approximation of them.
@@ -318,6 +340,16 @@ const MUTATIONS = [
     find: 'const rawCaretEnd = moved ? rawCaretStart + 1 :',
     replace: 'const rawCaretEnd = false ? rawCaretStart + 1 :',
   },
+  // --- M107 ------------------------------------------------------------------------------------
+  {
+    id: 'backoff-hold-kind',
+    milestone: 'm107',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: 'the D17 back-off diagnostic stops applying to `hold N users` — its negative control has nothing left to check',
+    find: "const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'HoldUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);",
+    replace: "const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);",
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
@@ -339,9 +371,9 @@ if (selected.length === 0) {
   process.exit(2);
 }
 
-function runSuite() {
+function runSuite(pkg) {
   try {
-    const out = execSync('npm test -w @tflw/lang 2>&1', { cwd: ROOT, encoding: 'utf8' });
+    const out = execSync(`npm test -w ${pkg} 2>&1`, { cwd: ROOT, encoding: 'utf8' });
     return { green: true, out };
   } catch (err) {
     return { green: false, out: (err.stdout ?? '') + (err.stderr ?? '') };
@@ -351,17 +383,25 @@ function runSuite() {
 const failCount = (out) => Number(/^# fail (\d+)$/m.exec(out)?.[1] ?? -1);
 
 // A baseline first. A suite that is already red makes every "killed" verdict meaningless — the
-// mutation would be credited with failures it did not cause.
-process.stdout.write('baseline … ');
-const baseline = runSuite();
-if (!baseline.green) {
-  console.error(`\n✗ the suite is red before any mutation (${failCount(baseline.out)} failing). Fix that first — every verdict below would be borrowed from it.`);
-  process.exit(1);
+// mutation would be credited with failures it did not cause. One per package actually selected, so
+// running `mutate.mjs m98d` still pays for exactly one suite.
+const baselined = new Set();
+function baseline(pkg) {
+  if (baselined.has(pkg)) return;
+  process.stdout.write(`baseline ${pkg} … `);
+  const result = runSuite(pkg);
+  if (!result.green) {
+    console.error(`\n✗ ${pkg} is red before any mutation (${failCount(result.out)} failing). Fix that first — every verdict below would be borrowed from it.`);
+    process.exit(1);
+  }
+  console.log(`green, ${/^# pass (\d+)$/m.exec(result.out)?.[1] ?? '?'} passing`);
+  baselined.add(pkg);
 }
-console.log(`green, ${/^# pass (\d+)$/m.exec(baseline.out)?.[1] ?? '?'} passing\n`);
 
 const survivors = [];
 for (const m of selected) {
+  const pkg = m.pkg ?? DEFAULT_PKG;
+  baseline(pkg);
   const full = path.join(ROOT, m.file);
   const original = readFileSync(full, 'utf8');
   const edits = m.edits ?? [[m.find, m.replace]];
@@ -384,7 +424,7 @@ for (const m of selected) {
   }
   writeFileSync(full, mutated);
   try {
-    const result = runSuite();
+    const result = runSuite(pkg);
     const fails = failCount(result.out);
     if (result.green && m.equivalent) {
       console.log(`· no-op     ${m.id} (${m.milestone}) — ${m.what}; survives because it changes nothing`);
