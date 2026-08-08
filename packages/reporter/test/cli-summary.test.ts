@@ -56,3 +56,62 @@ test('colour is applied to the warning the same way `insecure`’s is (A12-01)',
   const out = renderCliSummary({ ...baseReport, unmaskableSecrets: ['PIN'] }, true);
   assert.match(out, /\x1b\[31m\x1b\[1m⚠ unmasked secret: PIN/, 'red + bold, matching the security warning above it');
 });
+
+// -- `M111` (`FU-07`): an aborted run must not print `PASS` -------------------------------------
+//
+// The badge was `report.ok ? 'PASS' : 'FAIL'`, and `report.ok` means "nothing that ran failed" —
+// which is true of a run Ctrl-C'd at 6s of a 30s plan and is not the same claim as "this run
+// passed". The `⚠ aborted` line four rows below was the only signal, and a skimming human or a
+// `grep -q PASS` CI step never reaches it. Exit code 130 was correct throughout; only what a reader
+// sees was wrong.
+
+const abortedWorkload: RunReport = {
+  ...baseReport,
+  aborted: true,
+  abortedMessage: 'aborted at 6s of 30s planned',
+  tests: [
+    {
+      kind: 'workload',
+      name: 'burst',
+      file: 'load/burst.tflw',
+      workload: { shape: 'ramp', model: 'closed', target: 5, overMs: 30_000 },
+      metrics: { iterations: 151_695, failures: 0, errorRate: 0, durations: { min: 0, max: 11, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 }, histogram: [], timeline: [] },
+      thresholds: [{ label: 'error rate', op: 'lessThan', target: 0.5, actual: 0, ok: true }],
+      ok: true,
+      endpoints: [],
+    },
+  ],
+};
+
+test('an aborted run prints ABORTED, not PASS', () => {
+  const out = renderCliSummary(abortedWorkload, false);
+  assert.match(out, /^ABORTED 1\/1 passed/m);
+  assert.doesNotMatch(out, /^PASS/m);
+  // The ⚠ line stays — the badge says *that* the run was cut short, the line says *where*.
+  assert.match(out, /⚠ aborted — aborted at 6s of 30s planned/);
+});
+
+test('an aborted run gives its thresholds no tick either way, because they measured a partial sample', () => {
+  // The deepest form of `FU-07`, and the one a reader is most likely to act on. `TF033`'s own help
+  // text says a workload-bearing test's verdict "comes only from its `threshold` lines against the
+  // run's aggregate metrics" — so a green ✓ beside a threshold computed over 6s of a 30s plan is
+  // not a lenient verdict, it is a verdict about a run that did not happen. `junit.xml` renders
+  // this same case as `<skipped/>`; both sinks now ask one function, so they cannot drift apart.
+  const out = renderCliSummary(abortedWorkload, false);
+  assert.match(out, /– error rate < 50\.00% \(actual: 0\.00%\) — no verdict, run aborted/);
+  assert.doesNotMatch(out, /✓ error rate/);
+  // And the test's own mark, one line up, stops claiming a pass it cannot support — as a dash,
+  // not an `✗`: the verdict was withdrawn, not decided against, and an `✗` would contradict the
+  // `1/1 passed` tally that `report.passed` still reports on the badge line.
+  assert.doesNotMatch(out, /✓ burst/);
+  assert.match(out, /– burst \(workload/);
+});
+
+test('a completed run still ticks its thresholds and still prints PASS', () => {
+  // The control. A `noVerdict` that evaluated truthy for every run would satisfy both tests above
+  // while deleting every threshold verdict tflw reports — this is what makes them mean something.
+  const out = renderCliSummary({ ...abortedWorkload, aborted: false, abortedMessage: undefined }, false);
+  assert.match(out, /^PASS 1\/1 passed/m);
+  assert.match(out, /✓ error rate < 50\.00% \(actual: 0\.00%\)$/m);
+  assert.doesNotMatch(out, /no verdict/);
+});

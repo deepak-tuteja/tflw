@@ -430,6 +430,25 @@ test('report.inconclusive/aborted render header banners', () => {
   assert.match(aborted, /aborted at 12s of 30s planned/);
 });
 
+// `M111` (`FU-07`) — the banner above was this file's entire abort coverage, and it asserts the
+// abort is *mentioned*. The badge eight lines higher up the page still read a green `PASS`, computed
+// from `report.ok` (= "nothing that ran failed") on a run that was cut short. A banner under a green
+// badge loses to the badge.
+test('an aborted run shows an ABORTED badge, not a green PASS', () => {
+  const html = renderReportHtml({ ...baseReport, aborted: true, abortedMessage: 'aborted at 6s of 30s planned' });
+  assert.match(html, /<span class="badge fail">ABORTED<\/span>/);
+  assert.doesNotMatch(html, />PASS</);
+  assert.match(html, /<header class="run fail">/);
+});
+
+test('a completed passing run still shows the green PASS badge', () => {
+  // The control: `ABORTED` has to be reachable and avoidable, or the test above passes on a badge
+  // that never says `PASS` for anyone.
+  const html = renderReportHtml(baseReport);
+  assert.match(html, /<span class="badge ok">PASS<\/span>/);
+  assert.match(html, /<header class="run ok">/);
+});
+
 test('a mixed file (functional + workload) renders both, in declaration order, sharing one sidebar', () => {
   const report: RunReport = {
     ...baseReport,

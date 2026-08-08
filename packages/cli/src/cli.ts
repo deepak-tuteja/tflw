@@ -9,7 +9,7 @@
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
 import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises';
-import { watch as fsWatch, readFileSync } from 'node:fs';
+import { watch as fsWatch, readFileSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
 import { createRequire } from 'node:module';
@@ -922,6 +922,11 @@ function parseRunArgs(argv: string[]): RunArgs {
 interface ValidatedProject {
   readonly resolved: ReturnType<typeof resolveConfig>;
   readonly parsedConfig: ReturnType<typeof parseConfigSource>;
+  /** `tflw.config`'s own source lines (`M111`, `FU-06`) — carried out beside `resolved` because
+   * this is the one place the config's *text* is read, and the runtime needs it to render a
+   * `session` step's source from the document that step's span actually indexes. Without it the
+   * runtime has only the test file's lines and slices session steps out of that. */
+  readonly configLines: readonly string[];
   readonly environ: NodeJS.ProcessEnv;
   readonly parsedFiles: { file: string; source: string; program: Program }[];
   /** How many `severity: 'warning'` diagnostics were printed on the way here (M97e, D147). Carried
@@ -964,7 +969,7 @@ async function loadAndValidate(
   }
   const parsedConfig = parseConfigSource(configText);
   if (parsedConfig.diagnostics.length > 0) {
-    process.stderr.write(renderDiagnostics(parsedConfig.diagnostics, configText, { filename: 'tflw.config', color }) + '\n');
+    writeStderr(renderDiagnostics(parsedConfig.diagnostics, configText, { filename: 'tflw.config', color }) + '\n');
     return EXIT_USAGE;
   }
 
@@ -999,7 +1004,7 @@ async function loadAndValidate(
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
   ];
   if (configEnvDiags.length > 0) {
-    process.stderr.write(renderDiagnostics(configEnvDiags, configText, { filename: 'tflw.config', color }) + '\n');
+    writeStderr(renderDiagnostics(configEnvDiags, configText, { filename: 'tflw.config', color }) + '\n');
     return EXIT_USAGE;
   }
 
@@ -1052,13 +1057,13 @@ async function loadAndValidate(
     warningCount += warnings.length;
     if (errors.length > 0) {
       if (onFileDiagnostics) onFileDiagnostics(file, source, diagnostics);
-      else process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
+      else writeStderr(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
       hadErrors = true;
       continue;
     }
     if (warnings.length > 0) {
       if (onFileDiagnostics) onFileDiagnostics(file, source, warnings);
-      else process.stderr.write(renderDiagnostics(warnings, source, { filename: relative(cwd, file), color }) + '\n');
+      else writeStderr(renderDiagnostics(warnings, source, { filename: relative(cwd, file), color }) + '\n');
     } else if (onFileDiagnostics) {
       // A clean file reaches the callback too, with an empty batch (M70, B6-07). It has nothing to
       // print, which is why the stderr side stays silent — but a *structured* consumer needs to
@@ -1070,7 +1075,7 @@ async function loadAndValidate(
   }
   if (hadErrors) return EXIT_USAGE;
 
-  return { resolved, parsedConfig, environ, parsedFiles, warningCount };
+  return { resolved, parsedConfig, configLines: configText.split(/\r?\n/), environ, parsedFiles, warningCount };
 }
 
 /** `tflw watch`-only knobs (M5) — invisible to the real `tflw run` CLI path (`main()` always calls
@@ -1088,11 +1093,46 @@ interface RunCommandWatchOptions {
   readonly keepBrowserOpen?: boolean;
 }
 
+/**
+ * `M111` (`B6-05`) — the wrapper exists so the log file is closed on **every** exit path, not just
+ * the one that reaches the end of a run. `runCommandCore` returns early from a dozen places (a
+ * parse error, a missing secret, a bad flag), and each of those is precisely the case a user keeps
+ * a log for. The content is already on disk either way — the writes are synchronous — but the
+ * descriptor and the module-level mirror have to be released, or `tflw watch`, which calls this
+ * once per file change, would accumulate one of each per keystroke.
+ */
 async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): Promise<number> {
+  try {
+    return await runCommandCore(argv, watchOpts);
+  } finally {
+    activeLog?.close();
+  }
+}
+
+/** The console currently mirroring to `--log-file`, so the wrapper above can close it whatever
+ * happens. `undefined` for a run without `--log-file`, which is the overwhelming majority. */
+let activeLog: { close: () => void } | undefined;
+
+async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions): Promise<number> {
   const args = parseRunArgs(argv);
   const color = args.noColor ? false : process.stdout.isTTY === true;
+  // `M111` (`B6-05`, case 4) — `err()` used to emit ANSI red no matter what. `--no-color` is the
+  // user saying "this output is going somewhere that does not render escapes", and it has to mean
+  // that for the error lines too, not only for everything else.
+  if (args.noColor) stderrColor = false;
   const cwd = process.cwd();
-  const out = makeConsole(args.logFile);
+  // `M111` (`B6-05`, case 1) — the log file is opened *here*, before a single test runs, so an
+  // unusable path fails at the one moment `EXIT_USAGE`'s own definition ("could not run") is true.
+  // It used to be written after the summary and every artifact, where an `ENOENT` turned a fully
+  // passing suite into exit 2.
+  let out: { write: (text: string) => void; close: () => void };
+  try {
+    out = makeConsole(args.logFile);
+    activeLog = args.logFile === undefined ? undefined : out;
+  } catch (e) {
+    err(`--log-file ${args.logFile}: ${(e as Error).message}`);
+    return EXIT_USAGE;
+  }
 
   // 0. Validate numeric flags up front — a usage error, never a silent bad-value coercion (P#46).
   let seedArg: number | undefined;
@@ -1177,7 +1217,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
 
   const loaded = await loadAndValidate(cwd, args.files, args.env, color);
   if (typeof loaded === 'number') return loaded;
-  const { parsedFiles, environ } = loaded;
+  const { parsedFiles, environ, configLines } = loaded;
   // `--evidence`/`--log-output`/`--log-level` each override one `tflw.config` key for this run
   // only (decisions 101c/121/122); `resolved` shadows `loaded.resolved` from here down so every
   // downstream use (the `runProgram` calls, the report write) sees the effective values with no
@@ -1414,6 +1454,9 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
               // *is* its directory. Config-declared relative paths (a `session` body's files, mTLS
               // `cert`/`key`) resolve against this rather than against the test file's own directory.
               configDir: cwd,
+              // `M111` (`FU-06`) — the document a `session` step's span indexes. Without it the
+              // runtime renders those steps out of `source` above, which is this test file.
+              configLines,
               environ,
               redactor,
               sessionCache,
@@ -1453,6 +1496,7 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
             source,
             baseDir: dirname(file),
             configDir: cwd,
+            configLines,
             environ,
             redactor,
             sessionCache,
@@ -1558,7 +1602,8 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
     out.write(withTimestamps(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}`, timestamps) + '\n');
   }
 
-  await out.save();
+  out.close(); // the wrapper closes it too; `close()` is idempotent, and flushing here keeps the
+  // log complete before the browser teardown below can throw.
   if (!watchOpts?.keepBrowserOpen) await browserManager.close(); // no-op if no test in this run ever used a browser step
 
   // Exit-code priority mirrors `tflw load`'s own (aborted > inconclusive > ok), now read straight
@@ -1629,12 +1674,13 @@ async function loadWorkerCommand(): Promise<number> {
             resolvePromise(EXIT_USAGE);
             return;
           }
-          const { resolved, parsedFiles, environ } = loaded;
+          const { resolved, parsedFiles, environ, configLines } = loaded;
           const { file, source, program } = parsedFiles[0]!;
           const result = await runLoadShard(program, resolved, {
             source,
             baseDir: dirname(file),
             configDir: msg.cwd,
+            configLines,
             seed: seedArg,
             now: msg.nowRaw,
             shard: { index: msg.shardIndex, count: msg.shardCount },
@@ -2019,7 +2065,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
     ].filter((d) => d.severity === 'error');
     if (diagnostics.length === 0) continue;
     rejected = true;
-    process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, abs), color }) + '\n');
+    writeStderr(renderDiagnostics(diagnostics, source, { filename: relative(cwd, abs), color }) + '\n');
   }
   if (!rejected) return undefined;
 
@@ -2134,7 +2180,7 @@ async function migrateCommand(argv: string[]): Promise<number> {
   // re-running the pipeline: same bytes, same offsets, one fewer parse of the whole suite.
   for (const [file, { source, diagnostics }] of residualFiles) {
     if (diagnostics.length === 0) continue;
-    process.stderr.write(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
+    writeStderr(renderDiagnostics(diagnostics, source, { filename: relative(cwd, file), color }) + '\n');
   }
   process.stdout.write(
     hitCap
@@ -2401,22 +2447,102 @@ function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
 
-/** Every piece of `tflw run`'s console output goes through this one write path so `--log-file`
+/**
+ * Every piece of `tflw run`'s console output goes through this one write path so `--log-file`
  * (PLAN decision 111/M17) can mirror it — always plain text, independent of what stdout itself is
- * doing. Buffers the whole run's output in memory rather than streaming to the file: a run's
- * console output is never large enough to justify a real file stream, and this keeps ordering
- * trivially correct without a second I/O lifecycle to manage. */
-function makeConsole(logFile: string | undefined): { write: (text: string) => void; save: () => Promise<void> } {
-  const chunks: string[] = [];
+ * doing.
+ *
+ * **`M111` (review row `B6-05`) rewrote how it writes, because "buffer it all and write once at the
+ * end" was the single cause of four separate defects**, each measured:
+ *
+ *  1. `--log-file logs/run.log` with no `logs/` directory: the run passed, printed
+ *     `PASS 1/1 passed`, wrote `report.html` — and then `writeFile` hit `ENOENT`, which reached
+ *     `main`'s top-level catch and made the whole invocation **exit 2**. A fully green suite
+ *     reported as "usage / config error — could not run". `logs/`, `artifacts/` and `.tflw-logs/`
+ *     are the paths a person actually picks.
+ *  2. `--log-file ok.log bad.tflw` where `bad.tflw` has a parse error: the run returns from
+ *     `loadAndValidate` long before the old `save()`, so **no file was produced at all** — in
+ *     exactly the case a user reaches for a log.
+ *  3. `err()` and `renderDiagnostics` write straight to `process.stderr` and never passed through
+ *     here, so even on a successful run "duplicates console output" meant *stdout only*. Every
+ *     error line — the thing a log is kept for — was missing.
+ *  4. `err()` hard-coded `\x1b[31m`, ignoring `--no-color` and whether stderr is even a terminal.
+ *
+ * The fix for all four is the same and is structural rather than four patches: **open the file
+ * before the run and write through it.** A path that cannot be opened now fails at exit 2 *before
+ * anything runs*, which is the one moment "could not run" is a true statement; a run that returns
+ * early has already written everything it printed; and `stderr` is mirrored through the same sink,
+ * so the log holds what the terminal held. Ordering stays trivially correct because the writes are
+ * synchronous, in the same order as the `process.stdout`/`process.stderr` writes beside them.
+ *
+ * A write that fails *mid-run* is reported once and then abandoned: by then the run is under way,
+ * and a failing side-channel must not be able to rewrite the verdict of the tests themselves.
+ */
+function makeConsole(logFile: string | undefined): { write: (text: string) => void; close: () => void } {
+  if (logFile === undefined) {
+    return { write: (text) => void process.stdout.write(text), close: () => {} };
+  }
+
+  // Throws to the caller, which turns it into `exit 2` before a single test runs. `mkdir -p` on the
+  // parent is deliberate: `--log-file logs/run.log` says where the log goes, and refusing to make
+  // one directory would be a distinction without a purpose — `report`'s own output directory is
+  // created the same way.
+  mkdirSync(dirname(resolve(logFile)), { recursive: true });
+  const fd = openSync(logFile, 'w');
+  let broken = false;
+  let closed = false;
+
+  const mirror = (text: string): void => {
+    if (broken) return;
+    try {
+      writeSync(fd, stripAnsi(text));
+    } catch (e) {
+      broken = true;
+      process.stderr.write(`\x1b[31merror\x1b[0m: --log-file ${logFile} stopped being writable mid-run (${(e as Error).message}); the run itself is unaffected\n`);
+    }
+  };
+
+  logMirror = mirror;
   return {
     write(text: string) {
       process.stdout.write(text);
-      if (logFile !== undefined) chunks.push(stripAnsi(text));
+      mirror(text);
     },
-    async save() {
-      if (logFile !== undefined) await writeFile(logFile, chunks.join(''), 'utf8');
+    close() {
+      if (closed) return; // idempotent: the run's own success path and the wrapper both call it
+      closed = true;
+      logMirror = undefined;
+      try {
+        closeSync(fd);
+      } catch {
+        // Nothing useful to say: everything worth logging is already on disk and on the terminal.
+      }
     },
   };
+}
+
+/**
+ * `M111` (`B6-05`) — where `stderr` goes in addition to `stderr`, while a `--log-file` run is in
+ * flight. Module-level rather than threaded because `err()` is called from 41 places and
+ * `renderDiagnostics` from 6, most of them in commands that have no console object at all; passing
+ * a sink to each would be a large diff whose only content is "and also this one".
+ *
+ * `undefined` outside a `--log-file` run, which is every other command.
+ */
+let logMirror: ((text: string) => void) | undefined;
+
+/**
+ * `M111` (`B6-05`) — whether `err()` emits ANSI. It used to emit red unconditionally: piping
+ * `tflw run` to a file or a CI log produced a literal `\x1b[31merror\x1b[0m:` in text that nothing
+ * was going to render, and `--no-color` — which every other output path in this file honours — did
+ * not reach it. Defaults to what the stream itself reports and is narrowed once flags are parsed.
+ */
+let stderrColor = process.stderr.isTTY === true;
+
+/** Everything written to stderr goes through here so `--log-file` mirrors it (`B6-05`, case 3). */
+function writeStderr(text: string): void {
+  process.stderr.write(text);
+  logMirror?.(text);
 }
 
 /** Tags every event a file's `runProgram` call emits with that file's relative path before it
@@ -2633,7 +2759,8 @@ async function exists(path: string): Promise<boolean> {
 }
 
 function err(message: string): void {
-  process.stderr.write(`\x1b[31merror\x1b[0m: ${message}\n`);
+  const label = stderrColor ? '\x1b[31merror\x1b[0m' : 'error';
+  writeStderr(`${label}: ${message}\n`);
 }
 
 function dim(color: boolean, s: string): string {

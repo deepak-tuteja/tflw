@@ -4,6 +4,7 @@ import { MIN_REDACTABLE_LENGTH } from '@tflw/runtime';
 import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 import { describeWorkload } from './workload-format.js';
+import { noVerdictReason, runBadgeText, type NoVerdictReason } from './run-verdict.js';
 
 const C = {
   reset: '\x1b[0m',
@@ -16,9 +17,10 @@ const C = {
 export function renderCliSummary(report: RunReport, color = true): string {
   const c = color ? C : { reset: '', dim: '', red: '', green: '', bold: '' };
   const lines: string[] = [];
+  const noVerdict = noVerdictReason(report);
   for (const test of report.tests) {
     if (test.kind === 'workload') {
-      lines.push(...workloadLines(test, c));
+      lines.push(...workloadLines(test, c, noVerdict));
       continue;
     }
     lines.push(testLine(test, c));
@@ -27,7 +29,12 @@ export function renderCliSummary(report: RunReport, color = true): string {
     }
   }
   const tally = `${report.passed}/${report.total} passed${report.failed ? `, ${report.failed} failed` : ''}`;
-  const badge = report.ok ? `${c.green}${c.bold}PASS${c.reset}` : `${c.red}${c.bold}FAIL${c.reset}`;
+  // `FU-07` — three states, not two. `report.ok` alone said `PASS` over a run that was Ctrl-C'd
+  // at 6s of a 30s plan; the `⚠ aborted` line four rows below is not where a skimming reader or a
+  // log-scraping CI job looks. Same red as `FAIL`, because the one thing an aborted run is not is
+  // a green one.
+  const badgeText = runBadgeText(report);
+  const badge = badgeText === 'PASS' ? `${c.green}${c.bold}PASS${c.reset}` : `${c.red}${c.bold}${badgeText}${c.reset}`;
   lines.push('');
   lines.push(`${badge} ${tally} ${c.dim}· env ${report.env} · seed ${report.seed} · now ${report.now} · ${report.durationMs} ms${c.reset}`);
   // Never a silent trade-off: `insecure true` disables TLS certificate verification for the whole
@@ -59,13 +66,21 @@ function testLine(test: TestResult, c: typeof C): string {
  * `renderLoadMetricsLine` printed per scenario, one tick-marked line per declared `threshold`
  * (empty when it declared none, matching `junit.ts`'s D119 "nothing to gate on" treatment), and a
  * per-endpoint breakdown (M43/D69) when there's more than one identity to break down. */
-function workloadLines(test: WorkloadTestResult, c: typeof C): string[] {
-  const mark = test.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
+function workloadLines(test: WorkloadTestResult, c: typeof C, noVerdict: NoVerdictReason | null): string[] {
+  // Not `✗` — a withdrawn verdict is not a failure, and marking it one would contradict the
+  // `N/N passed` tally on the badge line, which still counts what `report.passed` says ran. The
+  // dash is the same mark the thresholds below get, and means the same thing in both places.
+  const mark = noVerdict !== null ? `${c.dim}–${c.reset}` : test.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
   const lines = [`  ${mark} ${test.name} ${c.dim}(workload — ${describeWorkload(test.workload)})${c.reset}`, ...metricsLines(test.metrics, c)];
   for (const t of test.thresholds) {
-    const tickMark = t.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
     const cmp = t.op === 'lessThan' ? '<' : '>';
-    lines.push(`      ${tickMark} ${t.label} ${cmp} ${formatThresholdTarget(t)} ${c.dim}(actual: ${formatThresholdActual(t)})${c.reset}`);
+    // `FU-07`, and R11 one cause over: a threshold measured against a sample that was cut short
+    // (aborted) or that tflw's own generator distorted (inconclusive) has no verdict to report, so
+    // it gets neither tick. `junit.xml` renders exactly this case as `<skipped/>` — the three sinks
+    // agree because they now ask the same function.
+    const tickMark = noVerdict !== null ? `${c.dim}–${c.reset}` : t.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
+    const suffix = noVerdict !== null ? ` ${c.dim}— no verdict, run ${noVerdict}${c.reset}` : '';
+    lines.push(`      ${tickMark} ${t.label} ${cmp} ${formatThresholdTarget(t)} ${c.dim}(actual: ${formatThresholdActual(t)})${c.reset}${suffix}`);
   }
   if (test.backOff?.warning) {
     const pct = (test.backOff.ratio * 100).toFixed(0);
