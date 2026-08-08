@@ -4,7 +4,10 @@ title: CLI flags reference
 
 <script setup>
 import { CLI_FLAGS } from '../../lang/src/spec-data.ts';
-const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
+// Both markdown fences, doubled first — see reference/diagnostics.md for the failure a
+// single-fence regex has on a span containing a backtick of its own. This manifest carries no
+// doubled fence today, so the fix is pre-emptive: it is the same one line in four files.
+const code = (s) => s.replace(/``\s?([\s\S]+?)\s?``|`([^`]+)`/g, (_, doubled, single) => `<code>${doubled ?? single}</code>`);
 const runFlags = CLI_FLAGS.filter((f) => f.command === 'run');
 const checkFlags = CLI_FLAGS.filter((f) => f.command === 'check');
 const initFlags = CLI_FLAGS.filter((f) => f.command === 'init');

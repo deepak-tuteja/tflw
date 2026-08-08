@@ -24,13 +24,16 @@
 //
 // M110 closed each at its cause rather than by editing text. `TF022`'s list is now interpolated
 // from `CONFIG_DIRECTIVES`, the same array the parser builds its message from, so that pair cannot
-// disagree again. `TF027`'s row was narrowed to what the pass does. **What is still unguarded is
-// the general case** — nothing makes a row's `example` runnable and asserts it emits that row's
-// code, which is the check that would have caught `V4-05` mechanically. It is filed rather than
-// half-built: see `M110-01` in `REVIEW_FINDINGS.md`. All 41 codes are provably probeable — the
-// dogfood repo's `verify-check-diagnostics.mjs` already reaches every one with 34 file fixtures
-// and 8 inline config snippets — so the work is bounded, but it turns the `example` column from
-// prose into source across four rendered surfaces, and that is a manifest change, not a fix.
+// disagree again. `TF027`'s row was narrowed to what the pass does. **The general case is
+// `diagnosticExamples.test.ts`, shipped in M110b** (`M110-01`): every row's `example` is now
+// generated from probes that are executed, so a worked example producing a different code than its
+// heading is a red suite rather than four confidently wrong rendered surfaces. It found four rows
+// wrong on its first run, including `TF003` — the row documenting indentation — describing a shape
+// that emits `TF011`.
+//
+// **This test is still worth having, and is still only a floor.** It answers "is every code
+// written down?"; the examples test answers "is what is written down true of the code it sits
+// under?". Neither subsumes the other: a row can be present and wrong, or right and missing.
 //
 // The same completeness claim is made a second time in the *consumer* repo — testFlow-tests'
 // `scripts/verify-check-diagnostics.mjs` prints "All N assigned TF0xx diagnostic codes dogfooded",

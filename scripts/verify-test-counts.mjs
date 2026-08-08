@@ -46,7 +46,7 @@ import { fileURLToPath } from 'node:url';
  * irrelevant — blocks are matched by the package name npm prints above each one, not by position,
  * so adding a workspace cannot silently shift the comparison onto the wrong suite. */
 const EXPECTED = {
-  '@tflw/lang': 884,
+  '@tflw/lang': 891,
   '@tflw/runtime': 574,
   '@tflw/reporter': 104,
   '@tflw/lsp-server': 114,
