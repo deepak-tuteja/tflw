@@ -3228,7 +3228,12 @@ test('`tflw load`: a closed-model scenario against a degrading server prints and
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
     // 1400ms/5 users comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves —
     // runtime's load.test.ts has the full derivation of this margin.
-    await writeFile(join(dir, 'load.tflw'), 'test "degrading checkout"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
+    // `hold`, not `ramp`, since M107b (`M107-01`, D-M107-1): the diagnostic now requires one
+    // concurrency level for the whole window, because a rising target made a *healthy*
+    // finite-capacity service score 0.57 — higher than a genuinely degrading one. The trigger below
+    // is time-based, so this end-to-end proof of the warning is unchanged in what it demonstrates;
+    // under `ramp` it was partly demonstrating the artefact.
+    await writeFile(join(dir, 'load.tflw'), 'test "degrading checkout"\n  hold 5 users for 1400ms\n  api GET /slow\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
     assert.match(stdout, /⚠ your load backed off/);

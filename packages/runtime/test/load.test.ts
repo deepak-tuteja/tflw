@@ -322,6 +322,45 @@ test('computeBackOff: a `hold`/`step`/`spike` (closed/users) workload is eligibl
   }
 });
 
+// M107b (`M107-01`, D-M107-1) — the diagnostic requires one concurrency level for the whole window.
+//
+// The numbers that settled it are in `hasConstantConcurrency`'s doc: against a healthy
+// finite-capacity service, `ramp to 5 users over 1500ms` warned 8/8 at ratio 0.569-0.589, which is
+// *higher* than a genuinely leaking service scores under either shape (0.334-0.381). No threshold
+// separates them. Under `hold` the same three targets separate by two orders of magnitude.
+test('computeBackOff: undefined for a `ramp` — a rising target makes the two halves incomparable (M107-01, D-M107-1)', () => {
+  const ramp = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  // The most extreme input the arithmetic accepts — early mean 10ms against late mean 200ms, which
+  // on a `hold` produces ratio 0.95 and a warning two tests below. The point is that the shape
+  // decides, not the numbers: no early/late gap makes a ramp answerable.
+  assert.equal(computeBackOff(ramp, { count: 20, sum: 200 }, { count: 10, sum: 2000 }), undefined);
+});
+
+test('computeBackOff: a `step`/`spike` that changes its target is a ramp in disguise, and is equally undefined (M107-01)', () => {
+  const step = parseSource('test "S"\n  step users\n    to 2 for 1s\n    to 10 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const spike = parseSource('test "S"\n  spike users\n    hold 2 for 1s\n    hold 10 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const ramped = parseSource('test "S"\n  spike users\n    to 5 over 1s\n    hold 5 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  for (const scenario of [step, spike, ramped]) {
+    assert.equal(
+      computeBackOff(scenario, { count: 20, sum: 200 }, { count: 10, sum: 2000 }),
+      undefined,
+      `expected ${scenario.workload.type} with a varying target to be ineligible`,
+    );
+  }
+});
+
+test('computeBackOff: a `step`/`spike` holding one target throughout is a `hold` written long-hand, and stays eligible (M107-01)', () => {
+  // The control for the test above. Without it, "varying target → undefined" is also satisfied by
+  // dropping `step`/`spike` from the diagnostic altogether, which D98 deliberately added.
+  const step = parseSource('test "S"\n  step users\n    to 5 for 1s\n    to 5 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  const spike = parseSource('test "S"\n  spike users\n    hold 5 for 1s\n    hold 5 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
+  for (const scenario of [step, spike]) {
+    const backOff = computeBackOff(scenario, { count: 20, sum: 200 }, { count: 10, sum: 2000 });
+    assert.ok(backOff, `expected ${scenario.workload.type} at one target to stay eligible`);
+    assert.equal(backOff!.warning, true);
+  }
+});
+
 test('computeBackOff: undefined for every open (`rps`) or count-based kind — no "backing off" concept there (D17/D102)', () => {
   const holdRps = parseSource('test "S"\n  hold 100 rps for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
   const stepRps = parseSource('test "S"\n  step rps\n    to 100 for 1s\n  api GET /health\n').program.tests[0]! as LoadTest;
@@ -904,7 +943,9 @@ test('computeBackOff: undefined when a half has zero total duration — avoids d
 });
 
 test('computeBackOff: a healthy scenario (early and late means close together) reports a low ratio, no warning', () => {
-  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  // `hold`, not `ramp`: since M107b these three are about the ratio arithmetic, and `ramp` no
+  // longer reaches it (`M107-01`, D-M107-1).
+  const { program } = parseSource('test "S"\n  hold 5 users for 1s\n  api GET /health\n');
   // early mean 10ms, late mean 11ms — ordinary sample-to-sample variance, not a real slowdown.
   const backOff = computeBackOff((program.tests[0]! as LoadTest), { count: 20, sum: 200 }, { count: 20, sum: 220 });
   assert.ok(backOff, 'expected a defined BackOffDiagnosis');
@@ -913,7 +954,7 @@ test('computeBackOff: a healthy scenario (early and late means close together) r
 });
 
 test('computeBackOff: a scenario whose late half ran far slower than its early half reports a high ratio and warns', () => {
-  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  hold 5 users for 1s\n  api GET /health\n');
   // early mean 10ms, late mean 200ms — ratio = 1 - 10/200 = 0.95.
   const backOff = computeBackOff((program.tests[0]! as LoadTest), { count: 20, sum: 200 }, { count: 10, sum: 2000 });
   assert.ok(backOff, 'expected a defined BackOffDiagnosis');
@@ -922,7 +963,7 @@ test('computeBackOff: a scenario whose late half ran far slower than its early h
 });
 
 test('computeBackOff: a scenario that sped up (late half faster than early) reports ratio 0, not negative', () => {
-  const { program } = parseSource('test "S"\n  ramp to 5 users over 1s\n  api GET /health\n');
+  const { program } = parseSource('test "S"\n  hold 5 users for 1s\n  api GET /health\n');
   const backOff = computeBackOff((program.tests[0]! as LoadTest), { count: 20, sum: 2000 }, { count: 20, sum: 200 });
   assert.ok(backOff, 'expected a defined BackOffDiagnosis');
   assert.equal(backOff!.ratio, 0);
@@ -942,7 +983,13 @@ test('a real degrading server triggers a genuine backOff warning on a closed-mod
   });
   // 1400ms/5 users comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves —
   // the late half alone fits roughly (700ms / 150ms) × 5 users ≈ 23 iterations.
-  const source = 'test "Degrading"\n  ramp to 5 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
+  //
+  // `hold`, not `ramp`, since M107b (`M107-01`): the trigger here is time-based, so the premise is
+  // unchanged, but under `ramp` the diagnostic no longer applies at all — and worse, this test
+  // would have kept passing under `ramp` for the wrong reason. A rising target makes a healthy
+  // finite-capacity server score 0.57 all by itself, higher than this genuinely degrading one, so
+  // the assertion below was never evidence that the *server's* degradation was what fired it.
+  const source = 'test "Degrading"\n  hold 5 users for 1400ms\n  api GET /slow\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
@@ -983,6 +1030,44 @@ test('a real degrading server triggers a genuine backOff warning on a closed-mod
 // being a small fraction of it. That `ramp` reads a *healthy* system as backing off is a real
 // property of the shipped diagnostic, not a test artefact — filed as `M107-01`, not papered over
 // here.
+// M107b (`M107-01`, D-M107-1) — the finding itself, end to end, against the fixture that produced
+// the measurement rather than against a hand-built `early`/`late` pair.
+//
+// The server is a single-queue service of capacity 2: flat while it is not oversubscribed, latency
+// growing with the backlog beyond that. **It is healthy** — its behaviour never changes, it just
+// obeys Little's law like every finite-capacity system. Before this fix, `ramp` warned on it 8 runs
+// out of 8 at ratio 0.569-0.589.
+//
+// Both shapes are asserted in one test on purpose. `assert.equal(backOff, undefined)` alone is
+// satisfied by any change that stops the diagnostic running at all, so the `hold` half is the
+// control that says the diagnostic is still alive and still quiet on a healthy target.
+test('a rising target against a healthy finite-capacity server produces no diagnosis, while the same server under `hold` still gets one (M107-01)', async () => {
+  let inflight = 0;
+  const server = await startFixtureServer({
+    '/work': (_req, res) => {
+      inflight++;
+      const backlog = Math.max(0, inflight - 2);
+      setTimeout(() => {
+        inflight--;
+        json(res, 200, { ok: true });
+      }, 5 * (1 + backlog));
+    },
+  });
+  const run = async (workload: string) => {
+    const source = `test "Q"\n  ${workload}\n  api GET /work\n  expect status equals 200\n`;
+    const report = await runWorkload(parseSource(source).program, testConfig(server.baseUrl), { source });
+    return report.scenarios[0]!;
+  };
+
+  const ramp = await run('ramp to 5 users over 1500ms');
+  assert.equal(ramp.backOff, undefined, 'a `ramp` cannot answer "did the target slow down" — no two windows share a concurrency level');
+
+  const hold = await run('hold 5 users for 1500ms');
+  assert.ok(hold.backOff, 'expected `hold` to still carry a diagnosis — otherwise the assertion above proves nothing');
+  assert.equal(hold.backOff!.warning, false, `a healthy finite-capacity server must not warn under \`hold\`, ratio ${hold.backOff!.ratio}`);
+  await server.close();
+});
+
 test('a uniformly fast server does not trigger a backOff warning', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 5) });
   const source = 'test "Healthy"\n  hold 5 users for 1500ms\n  api GET /health\n  expect status equals 200\n';
@@ -1036,7 +1121,11 @@ test('two real shards each contribute their own early/late totals, and mergeLoad
       setTimeout(() => json(res, 200, {}), 150);
     },
   });
-  const source = 'test "Degrading"\n  ramp to 6 users over 1400ms\n  api GET /slow\n  expect status equals 200\n';
+  // `hold`, not `ramp`, since M107b (`M107-01`): what this test is about is that the *merge* path
+  // recomputes the diagnosis from summed halves rather than averaging two shards' ratios, and that
+  // needs a shape the diagnosis applies to at all. The slow trigger is time-based, so the premise
+  // is unchanged.
+  const source = 'test "Degrading"\n  hold 6 users for 1400ms\n  api GET /slow\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const config = testConfig(server.baseUrl);
   const [shardA, shardB] = await Promise.all([

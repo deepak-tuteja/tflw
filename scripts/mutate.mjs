@@ -373,6 +373,20 @@ const MUTATIONS = [
     find: "const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'HoldUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);",
     replace: "const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);",
   },
+  // --- M107b (`M107-01`) -------------------------------------------------------------------------
+  // The other direction. `backoff-hold-kind` above checks that removing the diagnostic from a kind
+  // that should have it turns something red; this checks that *restoring* it to a kind that should
+  // not gets caught too. Without it, D-M107-1's rule is protected only by tests asserting
+  // `undefined`, and an assertion that a value is absent is satisfied by a great many accidents.
+  {
+    id: 'backoff-constant-concurrency',
+    milestone: 'm107b',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: 'the back-off diagnostic is handed rising-target workloads again — a healthy service under `ramp` scores 0.57 and reads as backing off',
+    find: '  if (!hasConstantConcurrency(scenario.workload)) return undefined;',
+    replace: '',
+  },
   // --- M108 ------------------------------------------------------------------------------------
   // The first mutation of a *test* file rather than a source file, and it is the right subject: what
   // M107-03 shipped is a guard whose whole job is to notice a test that leaks. Deleting one

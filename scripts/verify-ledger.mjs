@@ -135,31 +135,46 @@ function shippedMilestones(ref = 'main') {
 const TALLY =
   /(\d+) open — S2 (\d+) · S3 (\d+) · S4 (\d+) — (\d+) closed, (\d+) deferred, (\d+) withdrawn, (\d+) total/g
 
+/** The marker that says which of the ledger's many tallies is the live one. */
+const CURRENT = '<!-- tally:current -->'
+
 /**
- * The newest published tally. Three things make this less trivial than a per-line regex, and all
- * three are properties of the real file rather than hypotheticals: a tally sentence **wraps across
- * lines** (both `M112`'s and `M113`'s do), it can sit **inside a blockquote** (`M113`'s does), and
- * the ledger deliberately keeps **every** milestone's tally as history — so "current" is the one
- * attached to the highest milestone number, not the first or last in file order. `M112`'s paragraph
- * physically precedes `M113`'s. A tally naming no milestone within reach is history, and is skipped.
+ * The current published tally — the one carrying `<!-- tally:current -->`.
+ *
+ * Two things make this less trivial than a per-line regex, and both are properties of the real file
+ * rather than hypotheticals: a tally sentence **wraps across lines** (`M112`'s and `M113`'s both do)
+ * and can sit **inside a blockquote** (`M113`'s does). The ledger deliberately keeps every
+ * milestone's tally as history, so most matches are archive.
+ *
+ * **The marker exists because inferring "newest" from the milestone number is wrong, and this
+ * function shipped with that bug for exactly one milestone.** `M113`'s first version took the
+ * highest `M<N>` near each match. Then `M107b` — a follow-up to `M107`, shipped *after* `M113` —
+ * published its tally, and the check went on silently validating `M113`'s: milestone names are not
+ * a total order, because a suffixed milestone revisits an old number. Found by using the tool,
+ * which is the only way this class is ever found. A marker also makes "two current tallies" a
+ * detectable state rather than a silent tie-break.
  */
 export function newestPublishedTally(text) {
-  const flat = text
-    .split('\n')
-    .map((l) => l.replace(/^>\s?/, ''))
-    .join(' ')
-  let best = null
-  for (const t of flat.matchAll(TALLY)) {
-    // The milestone is named just before the numbers ("ledger after `M113` is 76 open …"). Look
-    // back far enough to clear the sentence's own preamble, not so far as to catch the last one.
-    const ms = [...flat.slice(Math.max(0, t.index - 200), t.index).matchAll(/`M(\d+)`/g)].map((m) => Number(m[1]))
-    if (!ms.length) continue
-    const milestone = ms[ms.length - 1]
-    if (best && milestone <= best.milestone) continue
-    const [, open, s2, s3, s4, closed, deferred, withdrawn, total] = t.map(Number)
-    best = { milestone, open, s2, s3, s4, closed, deferred, withdrawn, total }
+  const found = []
+  // Scoped by paragraph, not by character distance. A first attempt used a ±300-char window and
+  // matched the *neighbouring* paragraph's tally as well — `M112`'s sits directly above `M113`'s,
+  // and 300 characters does not respect a blank line. A paragraph is what "this sentence's marker"
+  // actually means. Blockquote markers are stripped so a quoted tally reads like any other.
+  for (const para of text.split(/\n[ \t]*\n/)) {
+    const flat = para
+      .split('\n')
+      .map((l) => l.replace(/^>\s?/, ''))
+      .join(' ')
+    if (!flat.includes(CURRENT)) continue
+    for (const t of flat.matchAll(TALLY)) {
+      const [, open, s2, s3, s4, closed, deferred, withdrawn, total] = t.map(Number)
+      // Purely for the error message: the last milestone named before the numbers.
+      const labels = [...flat.slice(0, t.index).matchAll(/`(M\d+[a-z]?)`/g)]
+      found.push({ milestone: labels.at(-1)?.[1] ?? '?', open, s2, s3, s4, closed, deferred, withdrawn, total })
+    }
   }
-  return best
+  if (found.length > 1) return { ambiguous: found.length }
+  return found[0] ?? null
 }
 
 /** Derive the tally from the status column — the same arithmetic §6's awk performs. */
@@ -204,12 +219,17 @@ export function check({ ledger, plans, shipped }) {
 
   const derived = derive(rows)
   const published = newestPublishedTally(ledger)
-  if (!published) problems.push('no published tally found — every milestone writes one, so this is a drift of its own')
+  if (!published)
+    problems.push(
+      `no tally marked \`${CURRENT}\` — every milestone publishes one and marks it, so an unmarked ledger is a drift of its own`,
+    )
+  else if (published.ambiguous)
+    problems.push(`${published.ambiguous} tallies are marked \`${CURRENT}\` — at most one can be the live count`)
   else
     for (const k of ['open', 's2', 's3', 's4', 'closed', 'deferred', 'withdrawn', 'total'])
       if (published[k] !== derived[k])
         problems.push(
-          `the tally published for M${published.milestone} says ${k}=${published[k]}; the status column says ${k}=${derived[k]}`,
+          `the tally published for ${published.milestone} says ${k}=${published[k]}; the status column says ${k}=${derived[k]}`,
         )
 
   return { problems, derived, published, rows }

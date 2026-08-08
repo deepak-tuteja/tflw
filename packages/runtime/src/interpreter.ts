@@ -1486,12 +1486,69 @@ const MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF = 10;
  * closed kind *except* the 2 count-based ones (D102, no duration to back off against). */
 const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'HoldUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);
 
+/**
+ * M107b (`M107-01`, D-M107-1) — does this workload hold **one** concurrency level for its whole
+ * window? The back-off ratio compares the first half's mean iteration duration to the second
+ * half's, and that comparison only means "the target slowed down" if nothing else about the two
+ * halves differs. Under a rising target the halves differ by construction — a `ramp to N users
+ * over M` runs its second half at roughly 3× the concurrency of its first — and any system with a
+ * finite service rate answers more concurrent work more slowly. Little's law, not degradation.
+ *
+ * **Measured, 8 runs per cell, three fixture targets** (flat/infinite-capacity, a healthy
+ * single-queue service of finite capacity, and a genuinely leaking one whose service time grows
+ * with elapsed time regardless of load):
+ *
+ *                        ramp to 5 users over 1500ms      hold 5 users for 1500ms
+ *     flat (∞ capacity)  0/8 warned   ratio 0.000         0/8 warned   ratio ≤0.012
+ *     healthy queue      8/8 warned   ratio 0.569–0.589   0/8 warned   ratio ≤0.005
+ *     leaking (real)     8/8 warned   ratio 0.334–0.348   8/8 warned   ratio 0.359–0.381
+ *
+ * The healthy service under `ramp` does not merely trip the threshold — **it scores higher than
+ * the genuinely degrading one does under either shape**. There is no threshold that admits the
+ * leak (≤0.33) and rejects the healthy queue (≥0.56), so this was never a tuning problem. Under
+ * `hold` the same three targets separate perfectly, by two orders of magnitude, with the existing
+ * 0.2 threshold sitting in the middle of an empty gap.
+ *
+ * **Normalising by live VU count was rejected on the same numbers, not on taste.** A ramp's halves
+ * average `users/4` and `3·users/4` VUs, so the normalised ratio is `1 − 3·earlyMean/lateMean`;
+ * feeding the measured means through it clamps *every* cell above to 0 — including the leaking one.
+ * It does not correct the ramp diagnostic, it silently disables it, which is strictly worse than
+ * saying so.
+ *
+ * **And for `ramp` specifically the question is unanswerable, not merely hard**: the grammar gives
+ * a ramp no plateau (SPEC — "the scenario itself lasts exactly `overMs`, no separate hold stage"),
+ * so no two windows of the run ever share a concurrency level. There is no like-for-like comparison
+ * to make. That is why this returns `undefined` rather than a softened number, exactly as D17
+ * already does for the open model and D102 for the count-based kinds: *"a report never implies 'we
+ * checked and it's fine' for a model where the question doesn't apply."* This applies that existing
+ * rule to a case it had been getting wrong, rather than inventing a new one.
+ *
+ * A `step` or `spike` whose stages all name the same target and never ramp is a `hold` written
+ * long-hand, and stays eligible — the two existing D98 fixtures are exactly that shape.
+ */
+function hasConstantConcurrency(w: Workload): boolean {
+  switch (w.type) {
+    case 'HoldUsersWorkload':
+      return true;
+    case 'RampUsersWorkload':
+      return false;
+    case 'StepUsersWorkload':
+    case 'SpikeUsersWorkload':
+      return w.stages.every((s) => s.mode === 'jump' && s.target === w.stages[0]!.target);
+    default:
+      return false;
+  }
+}
+
 /** M34 (D17), extended by M52/D98 to every closed (`users`) kind — see `BackOffDiagnosis`'s doc
  * (types.ts) for the full design and why an early-half vs. late-half mean comparison was chosen
  * over an extremal-percentile "ideal pace" baseline. `undefined` for an open-model (`…RpsWorkload`)
  * or count-based scenario, or when either half has too few iterations to trust its own mean. */
 export function computeBackOff(scenario: LoadTest, early: { readonly count: number; readonly sum: number }, late: { readonly count: number; readonly sum: number }): BackOffDiagnosis | undefined {
   if (!CLOSED_USERS_KINDS.has(scenario.workload.type)) return undefined;
+  // M107b (`M107-01`, D-M107-1) — a rising target makes the two halves incomparable. See
+  // `hasConstantConcurrency` for the 8-runs-per-cell measurement that settled this.
+  if (!hasConstantConcurrency(scenario.workload)) return undefined;
   if (early.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF || late.count < MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF) return undefined;
   const earlyMean = early.sum / early.count;
   const lateMean = late.sum / late.count;

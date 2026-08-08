@@ -706,6 +706,16 @@ test "checkout under load"
   ones have finished — queues build under saturation instead of silently disappearing, the only
   model that honestly validates an SLA. The 2 iteration-count kinds skip the back-off diagnostic
   entirely (D102) — there's no duration to divide by, so it's structurally undefined, not withheld.
+- **The back-off diagnostic needs a flat target** (D-M107-1). It compares the run's first half
+  against its second, which reads as "the target slowed down" only when the two halves are otherwise
+  alike. Under a rising target they are not — a `ramp to N users over M` runs its second half at
+  roughly 3× the concurrency of its first, and every finite-capacity system answers more concurrent
+  work more slowly. Measured against a *healthy* service, `ramp` warned on 8 runs out of 8, scoring
+  higher than a genuinely degrading service did. So the diagnostic applies to `hold users`, and to a
+  `step`/`spike users` that names one target throughout; for `ramp users` and any changing-target
+  `step`/`spike` it is **absent, not `false`** — the same rule the open model and the count-based
+  kinds already follow. **To measure degradation, hold at the level you care about**: a ramp finds
+  capacity, a hold finds deterioration.
 - **`threshold <metric> [for "<label>"] is less than|greater than <value>`** — `p50`/`p90`/`p95`/
   `p99 duration` (a duration value) or `error rate` (a percentage). `for "<label>"` scopes the
   threshold to one `api` step's identity within the same test (its explicit `as "<label>"` tag, or

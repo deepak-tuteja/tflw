@@ -512,7 +512,22 @@ export interface LoadThresholdResult {
  * "back off": queues build under saturation instead of iterations silently disappearing, which is
  * D17's whole reason the open model "honestly validates an SLA." `undefined` there, not `false` /
  * a zeroed-out ratio, so a report never implies "we checked and it's fine" for a model where the
- * question doesn't apply. Report-only (like a saturated generator's warning): unlike `inconclusive`
+ * question doesn't apply.
+ *
+ * **M107b (`M107-01`, D-M107-1) — and, for the same reason, not a rising-target field either.**
+ * The early/late comparison only reads as "the target slowed down" if the two halves are otherwise
+ * alike, and under a rising target they are not: a `ramp to N users over M` runs its second half at
+ * roughly 3× the concurrency of its first, and every finite-capacity system answers more concurrent
+ * work more slowly. Measured against a *healthy* single-queue service, `ramp` warned 8 runs out of
+ * 8 at ratio 0.569-0.589 — **higher than a genuinely leaking service scores under either shape**
+ * (0.334-0.381), so no threshold separates them and this was never a tuning problem. For `ramp` the
+ * question is not hard but unanswerable: the grammar gives it no plateau, so no two windows of the
+ * run share a concurrency level and there is no like-for-like comparison to make. Eligible kinds
+ * are therefore `hold users`, and a `step`/`spike users` whose stages all name one target and never
+ * ramp — a `hold` written long-hand. To measure degradation under a rising load, hold at the level
+ * you care about; a ramp measures capacity, not deterioration. See `hasConstantConcurrency`
+ * (interpreter.ts) for the full 3×2 measurement and why normalising by live VU count was rejected
+ * on the same numbers. Report-only (like a saturated generator's warning): unlike `inconclusive`
  * (R11), a back-off warning never flips `LoadThresholdResult.ok` or a junit verdict — D17 only
  * asks the report to warn, not to invalidate a scenario's own threshold verdicts. */
 export interface BackOffDiagnosis {
