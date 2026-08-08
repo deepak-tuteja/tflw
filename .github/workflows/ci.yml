@@ -9,11 +9,16 @@ jobs:
   test:
     name: build + typecheck + test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
-    # M107-03. `@tflw/runtime` no longer runs under `--test-force-exit`, so a test that leaks a
-    # ref'd handle now hangs its file instead of being killed mid-report — the honest failure, but
-    # an unbounded one: GitHub's default job timeout is 6 hours. This bounds it. The whole job is
-    # ~8 minutes today, so 30 is a wide margin that still fails a hang inside one coffee break.
-    timeout-minutes: 30
+    # M108 (`M107-03`). `@tflw/runtime` no longer runs under `--test-force-exit`, so a test that
+    # leaks a ref'd handle now hangs its file instead of being killed mid-report — the honest
+    # failure, but an unbounded one: GitHub's default job timeout is 6 hours. This bounds it.
+    #
+    # 45, from measured job times rather than a guess: Node 24 runs ~5m, Node 22 ~14m before this
+    # milestone (runs 31262598051 and 31260733007, 14m14s and 14m20s) and **16m4s** with M108's
+    # added mutation — a control that costs ~50s locally costs ~1m50s on a 2-core runner. So the
+    # long leg is already 16m and 30 would have left under 2× headroom on the slowest job in the
+    # matrix. Re-measure this when the mutation registry grows again; it is the step that moves.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
