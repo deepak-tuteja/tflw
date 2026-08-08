@@ -10,8 +10,27 @@
 // simply never appear in the table every reader is pointed at.
 //
 // It is a coverage floor, not a correctness proof — exactly like `grammarCoverage.test.ts`. It
-// cannot tell a right explanation from a wrong one, only a *written* one from a missing one. That
-// is the failure mode that actually occurs: nobody writes a wrong §17 row, they forget to write one.
+// cannot tell a right explanation from a wrong one, only a *written* one from a missing one.
+//
+// **The sentence that used to end this paragraph was wrong.** It read: "That is the failure mode
+// that actually occurs: nobody writes a wrong §17 row, they forget to write one." Two rows in the
+// launch review say otherwise, both verified against the shipped binary at M110 and both wrong at
+// the time this comment was written. `V4-04`: `TF022`'s row named four config directives for the
+// five days after M58 shipped a fifth, so the manifest denied a directive the parser accepted.
+// `V4-05`: `TF027`'s row described a rule broader than `checkDataTables` implements, and its
+// worked example — a `{col}` typo in a test *body* — produces `TF030`, a different code, when run.
+// A wrong row is worse than a missing one: a missing row sends a reader to the source, a wrong row
+// sends them away confident.
+//
+// M110 closed each at its cause rather than by editing text. `TF022`'s list is now interpolated
+// from `CONFIG_DIRECTIVES`, the same array the parser builds its message from, so that pair cannot
+// disagree again. `TF027`'s row was narrowed to what the pass does. **What is still unguarded is
+// the general case** — nothing makes a row's `example` runnable and asserts it emits that row's
+// code, which is the check that would have caught `V4-05` mechanically. It is filed rather than
+// half-built: see `M110-01` in `REVIEW_FINDINGS.md`. All 41 codes are provably probeable — the
+// dogfood repo's `verify-check-diagnostics.mjs` already reaches every one with 34 file fixtures
+// and 8 inline config snippets — so the work is bounded, but it turns the `example` column from
+// prose into source across four rendered surfaces, and that is a manifest change, not a fix.
 //
 // The same completeness claim is made a second time in the *consumer* repo — testFlow-tests'
 // `scripts/verify-check-diagnostics.mjs` prints "All N assigned TF0xx diagnostic codes dogfooded",

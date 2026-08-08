@@ -269,6 +269,66 @@ async function checkInvocations(commands) {
 }
 
 // ---------------------------------------------------------------------------
+// Command coverage — every shipped subcommand is documented (M110, `V4-02`/`V4-03`).
+// ---------------------------------------------------------------------------
+
+/**
+ * `DT-05` above already refuses a documented command that does not exist. This is the other
+ * direction — a command that exists and is documented **nowhere** — and it is the one that was
+ * actually wrong.
+ *
+ * `tflw lsp` shipped in M13 and reached `--help`, the extension, and its own `/editor` page, but
+ * never got a row in SPEC §12 or a section in `reference/cli.md`. It stayed missing for eleven
+ * milestones because the command list is written out by hand six times (the `switch` in `cli.ts`,
+ * its unknown-command message, `printUsage()`, SPEC §12, this reference page, and
+ * `CliFlagEntry.command`'s union) and nothing compared any two of them. Three of the six were
+ * wrong, each differently.
+ *
+ * Both surfaces are read the way a reader meets them: the reference page as its own markdown, and
+ * SPEC §12 through `tflw docs cli` — the *shipped binary's* copy, per `DT-04`, since that is what
+ * `docs-data.generated.ts` bakes in and what a user without the repo actually gets.
+ *
+ * Symmetric on purpose. A command deleted from the dispatch but left in the docs is the M57 bug
+ * class (`spec-data.ts` documenting a `tflw load` that no longer existed), so an extra row fails
+ * here exactly like a missing one.
+ */
+async function checkCommandCoverage(commands) {
+  let page;
+  try {
+    page = readFileSync(join(ROOT, 'reference/cli.md'), 'utf8');
+  } catch {
+    // `DT-08`'s scratch corpora are a handful of pages, not the site; there is no reference page to
+    // cover. Reported as skipped rather than passed — a check that quietly returns green on an
+    // empty corpus is the thing this file exists to catch.
+    return null;
+  }
+  const sections = new Set([...page.matchAll(/^## `tflw ([a-z][a-z-]*)/gm)].map((m) => m[1]));
+
+  const { stdout, code } = await runCli(['docs', 'cli'], ROOT);
+  // Only the ✅ Shipped table counts: a command listed under 🔮 Planned is documented as *absent*,
+  // which is worse than silence for something that ships.
+  const shipped = code === 0 ? stdout.split(/\*\*🔮 Planned/)[0] : undefined;
+  const rows = shipped === undefined ? undefined : new Set([...shipped.matchAll(/^\| `tflw ([a-z][a-z-]*)/gm)].map((m) => m[1]));
+  if (rows === undefined) fail('tflw docs cli', 'could not read SPEC §12 out of the shipped binary', 'the command-coverage check cannot run without it');
+
+  for (const command of [...commands].sort()) {
+    if (!sections.has(command)) {
+      fail('reference/cli.md', `\`tflw ${command}\` ships but has no section here`, `add a \`## \\\`tflw ${command}\\\`\` heading — this page claims to cover every subcommand`);
+    }
+    if (rows !== undefined && !rows.has(command)) {
+      fail('SPEC.md §12', `\`tflw ${command}\` ships but has no row in the ✅ Shipped table`, 'SPEC §12 is what `tflw docs cli` prints, so a missing row is missing from the shipped binary too');
+    }
+  }
+  for (const documented of [...sections].sort()) {
+    if (!commands.has(documented)) fail('reference/cli.md', `\`tflw ${documented}\` is documented but not dispatched`, `\`tflw --help\` knows: ${[...commands].sort().join(', ')}`);
+  }
+  for (const documented of [...(rows ?? [])].sort()) {
+    if (!commands.has(documented)) fail('SPEC.md §12', `\`tflw ${documented}\` is in the ✅ Shipped table but not dispatched`, `\`tflw --help\` knows: ${[...commands].sort().join(', ')}`);
+  }
+  return commands.size;
+}
+
+// ---------------------------------------------------------------------------
 // Flag prose — the cross-references inside `CLI_FLAGS`' own `effect` text (M86).
 // ---------------------------------------------------------------------------
 
@@ -366,8 +426,12 @@ try {
 await checkSamples();
 const commands = await shippedCommands();
 let invocations = 0;
-if (commands === undefined) fail('tflw --help', 'could not read the shipped CLI\'s command list', 'the invocation check cannot run without it');
-else invocations = await checkInvocations(commands);
+let covered = null;
+if (commands === undefined) fail('tflw --help', 'could not read the shipped CLI\'s command list', 'the invocation and coverage checks cannot run without it');
+else {
+  invocations = await checkInvocations(commands);
+  covered = await checkCommandCoverage(commands);
+}
 const flagReferences = checkFlagProse();
 
 const count = (kind) => blocks.filter((b) => b.kind === kind).length;
@@ -384,6 +448,9 @@ const report = [
   `  ${String(count('declared')).padStart(3)} declared unchecked: ${[...declaredBy].sort().map(([tag, n]) => `${n} ${tag}`).join(', ') || '(none)'}`,
   `  ${String(count('unclassified')).padStart(3)} unclassified`,
   `${invocations} documented \`tflw …\` invocations checked against CLI_FLAGS`,
+  covered === null
+    ? 'command coverage skipped — this corpus has no reference/cli.md'
+    : `${covered} shipped subcommands, each with a reference/cli.md section and a SPEC §12 shipped row`,
   `${flagReferences} flag references inside CLI_FLAGS' own descriptions checked — names, not effects:`,
   `    a description that names a flag correctly and describes the wrong behaviour still passes (B5-04).`,
 ];

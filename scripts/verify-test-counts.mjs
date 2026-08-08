@@ -52,7 +52,7 @@ const EXPECTED = {
   '@tflw/lsp-server': 114,
   tflw: 154,
   'tflw-vscode': 34,
-  '@tflw/docs-site': 28,
+  '@tflw/docs-site': 32,
 };
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
