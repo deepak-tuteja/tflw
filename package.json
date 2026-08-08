@@ -23,7 +23,8 @@
     "packages/docs-site"
   ],
   "scripts": {
-    "test": "npm run test --workspaces --if-present",
+    "test": "node scripts/verify-test-counts.mjs",
+    "test:raw": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "coverage": "node scripts/coverage.mjs",

@@ -951,18 +951,70 @@ test('a real degrading server triggers a genuine backOff warning on a closed-mod
   await server.close();
 });
 
+// M107 (`M106-04`) — the negative control below, and its own positive twin. The pair is deliberate:
+// a control that says "no warning" is only worth reading if the *same* fixture, the same workload
+// shape and the same assertion do produce a warning when the server really degrades. Without the
+// twin, `warning === false` is satisfied by any change that stops the diagnostic running at all.
+//
+// WHY `hold`, NOT `ramp`. Until M107 the negative control ran `ramp to 5 users over 1500ms`, and it
+// went red on CI (run 31228677758, Node 22, the Coverage step only) with `ratio 0.2549` against a
+// server whose every response is a flat 5ms sleep. That was not jitter. Under `ramp`, the early
+// half runs at roughly *half* the concurrency of the late half by construction — VUs spawn linearly
+// across `overMs` — so the late half's iterations queue behind more concurrent work on the same
+// single-threaded client loop and the same single-threaded fixture server. Rising latency under
+// rising concurrency is Little's law, not a server backing off, and `computeBackOff` cannot tell
+// the two apart: `ramp` simply cannot express the premise "uniform load" that this control asserts.
+//
+// Measured rather than reasoned about (8 runs each, identical conditions — `c8` instrumentation on
+// a single contended core, which is what a CI runner executing the rest of the suite alongside this
+// one looks like):
+//
+//     ramp to 5 users over 1500ms   ratio 0.085 0.101 0.166 0.092 0.143 0.137 0.128 0.122
+//     hold 5 users for  1500ms      ratio 0.000 0.000 0.000 0.037 0.000 0.000 0.002 0.000
+//
+// Every `ramp` run is late-slower, never once the reverse, and the gap grows with contention — on
+// an idle box the same 8 runs sit at 0.01-0.09, which is why this only ever failed under coverage.
+// `hold` puts every VU live at t=0 (D97), so both halves run at identical concurrency and the
+// remaining spread is symmetric noise. The confound is removed, not merely diluted.
+//
+// The 5ms delay (rather than an instant response) is kept for the original reason: a sub-1ms
+// response swings 100%+ on jitter alone, so per-request noise would dominate the mean instead of
+// being a small fraction of it. That `ramp` reads a *healthy* system as backing off is a real
+// property of the shipped diagnostic, not a test artefact — filed as `M107-01`, not papered over
+// here.
 test('a uniformly fast server does not trigger a backOff warning', async () => {
-  // A small fixed delay (rather than a near-0ms instant response) keeps ordinary per-request
-  // jitter a small *relative* fraction of the mean instead of dominating it — a health-check
-  // response that's usually <1ms can swing 100%+ on jitter alone, which isn't a fair test of
-  // whether the diagnostic itself is stable against genuine health. A longer run (1500ms) also
-  // comfortably clears MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) on both halves with real margin.
   const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 5) });
-  const source = 'test "Healthy"\n  ramp to 5 users over 1500ms\n  api GET /health\n  expect status equals 200\n';
+  const source = 'test "Healthy"\n  hold 5 users for 1500ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
   const s = report.scenarios[0]!;
-  if (s.backOff) assert.equal(s.backOff.warning, false, `unexpected back-off warning against a healthy server, ratio ${s.backOff.ratio}`);
+  // Asserted, not `if (s.backOff)`-guarded as it was before M107. A guard makes this control pass
+  // for free the moment the diagnostic stops applying to this workload kind at all — dropping
+  // `HoldUsersWorkload` from `CLOSED_USERS_KINDS` used to leave it green (`backoff-hold-kind` in
+  // scripts/mutate.mjs, which now kills it). 1500ms at a flat 5ms clears
+  // MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) by two orders of magnitude on both halves.
+  assert.ok(s.backOff, 'expected a defined backOff diagnosis — a closed `hold` scenario carries one (D98)');
+  assert.equal(s.backOff!.warning, false, `unexpected back-off warning against a healthy server, ratio ${s.backOff!.ratio}`);
+  await server.close();
+});
+
+test('a degrading server under the same `hold` shape does trigger the warning — the control above can fail', async () => {
+  // The negative control's twin: identical workload shape, identical assertions, one difference —
+  // this server really does slow down halfway through. Time-based (not request-count-based) so it
+  // lines up with `computeBackOff`'s own early/late split at half the scenario's wall clock.
+  const runStart = Date.now();
+  const server = await startFixtureServer({
+    '/slow': (_req, res) => {
+      if (Date.now() - runStart < 750) return setTimeout(() => json(res, 200, {}), 5);
+      setTimeout(() => json(res, 200, {}), 150);
+    },
+  });
+  const source = 'test "Degrading"\n  hold 5 users for 1500ms\n  api GET /slow\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
+  const s = report.scenarios[0]!;
+  assert.ok(s.backOff, 'expected a defined backOff diagnosis on a closed `hold` scenario');
+  assert.equal(s.backOff!.warning, true, `expected the back-off warning to fire, ratio was ${s.backOff!.ratio}`);
   await server.close();
 });
 
