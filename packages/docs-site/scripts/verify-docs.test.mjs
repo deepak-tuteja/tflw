@@ -138,3 +138,48 @@ test('a tflw.config sample is validated, not just parsed', async () => {
   assert.equal(code, 1, stderr);
   assert.match(stderr, /tflw\.config sample is not valid/);
 });
+
+// --- command coverage (M110, `V4-02`) ---------------------------------------
+//
+// The direction `DT-05` never checked. Above, a *documented* command must exist; here, an existing
+// command must be documented. `tflw lsp` shipped in M13 and was absent from both reader-facing
+// surfaces for eleven milestones, because six hand-written copies of the command list existed and
+// nothing compared any two of them.
+//
+// A corpus with no `reference/cli.md` skips the check rather than passing it — asserted below,
+// because a skip that reads as a pass is how the gap survived in the first place.
+
+/** A reference page covering every command the shipped binary dispatches, minus `omit`. */
+const cliPage = (omit) =>
+  ['run', 'check', 'init', 'docs', 'lsp', 'install-browsers', 'pick', 'watch', 'refactor', 'migrate']
+    .filter((c) => c !== omit)
+    .map((c) => `## \`tflw ${c}\`\n\nProse.\n`)
+    .join('\n');
+
+test('a shipped subcommand with no section in the CLI reference fails', async () => {
+  const { code, stderr } = await guard({ 'index.md': '# x\n', 'reference/cli.md': cliPage('lsp') });
+  assert.equal(code, 1, stderr);
+  assert.match(stderr, /`tflw lsp` ships but has no section here/);
+});
+
+test('a CLI-reference section for a command that is not dispatched fails', async () => {
+  // The M57 bug class in the other direction: `spec-data.ts` documented a `tflw load` for weeks
+  // after M53 folded it into `tflw run`. An extra section is as wrong as a missing one.
+  const { code, stderr } = await guard({ 'index.md': '# x\n', 'reference/cli.md': `${cliPage()}\n## \`tflw load\`\n\nProse.\n` });
+  assert.equal(code, 1, stderr);
+  assert.match(stderr, /`tflw load` is documented but not dispatched/);
+});
+
+test('a complete CLI reference passes', async () => {
+  // NEGATIVE CONTROL for the two above. Without it they would both pass against a guard that
+  // rejected every corpus carrying a reference page at all.
+  const { code, stdout, stderr } = await guard({ 'index.md': '# x\n', 'reference/cli.md': cliPage() });
+  assert.equal(code, 0, stderr);
+  assert.match(stdout, /10 shipped subcommands/);
+});
+
+test('a corpus with no CLI reference reports the check as skipped, not as passed', async () => {
+  const { code, stdout } = await guard({ 'index.md': '# x\n' });
+  assert.equal(code, 0);
+  assert.match(stdout, /command coverage skipped/);
+});

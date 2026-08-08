@@ -148,6 +148,32 @@ export interface CliFlagEntry {
   readonly effect: string;
 }
 
+/**
+ * Every directive `tflw.config` accepts at its top level, in the order `TF022` should name them
+ * (M110, review row `V4-04`).
+ *
+ * This exists because the list was written down twice — once as the parser's branch chain and its
+ * `TF022` message, once as `TF022`'s `meaning` below — and the two disagreed for five days.
+ * `exclude` shipped in M58 as a fifth directive; the manifest row kept saying four, so
+ * `tflw docs diagnostic-codes`, SPEC §17, the docs-site reference page and LSP hover all told a
+ * reader that a directive the tool accepts is not one, while the tool's own error message listed
+ * it correctly. One stale string, four surfaces, because all four generate from this file.
+ *
+ * So neither copy is authored any more: `parser.ts` builds the `TF022` message from this array and
+ * carries a compile-time exhaustiveness check that it has a branch for every entry, and the
+ * `TF022` row's `meaning` interpolates it. Adding a sixth directive updates all five surfaces or
+ * fails the build; it cannot half-land again.
+ */
+export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require', 'exclude'] as const;
+
+export type ConfigDirective = (typeof CONFIG_DIRECTIVES)[number];
+
+/** `` `a`, `b`, or `c` `` — the directive list as `TF022`'s message and `meaning` both render it. */
+export function listConfigDirectives(): string {
+  const quoted = CONFIG_DIRECTIVES.map((d) => `\`${d}\``);
+  return `${quoted.slice(0, -1).join(', ')}, or ${quoted[quoted.length - 1]}`;
+}
+
 /** One row of SPEC §17's diagnostic codes table (decision 20.3, docs-site polish cluster 9) — the
  * single source of truth for what a `TF0xx` code *means* going forward. `packages/lang/src/
  * diagnostic.ts`'s `Codes` object stays the source of the code constants themselves (and every
@@ -177,12 +203,12 @@ export const DIAGNOSTICS: readonly DiagnosticEntry[] = [
   { code: 'TF016', meaning: 'Parser: top-level content that isn\'t a `test`/`action`/`import`/`use`/`before`/`after`.', example: 'a bare `expect …` line outside any block' },
   { code: 'TF020', meaning: 'Parser (config): an unrecognised key inside a config block.', example: '`headr "Accept" is "…"` → `did you mean `header`?`' },
   { code: 'TF021', meaning: 'Parser (config): a `test` appears in the declaration-only config dialect.', example: '`test "not allowed here"` inside `tflw.config`' },
-  { code: 'TF022', meaning: 'Parser (config): top-level config content that isn\'t `defaults`/`env`/`session`/`require`.', example: '`workers 3` at the top level of `tflw.config` (belongs inside a block)' },
+  { code: 'TF022', meaning: `Parser (config): top-level config content that isn't one of ${listConfigDirectives()} (M110, \`V4-04\` — this list is \`CONFIG_DIRECTIVES\` above, the same array the parser's own message is built from, so the two cannot drift again).`, example: '`workers 3` at the top level of `tflw.config` (belongs inside a block)' },
   { code: 'TF023', meaning: 'Parser: a duration whose unit is missing, mis-spelled, mis-cased, or spaced off its number. M98c (`A1-07`) made it reachable from **value** position — `expect duration is less than 250 ms` and `2sec` used to fall out of the step as ``TF010: unexpected `ms` at end of step`` / `= help: expected end of line`, because `250ms` and `250 ms` lex identically and the value path simply declined to build a duration when its adjacency or unit check failed. The three cases are kept apart because their fixes differ: a real unit written with a space, shown the closed-up spelling, a word that means a unit tflw spells differently (`sec` → `s`, `MS` → `ms`), and a word that was never a unit, which keeps the generic error. The known-spelling table is enumerated, not inferred, so `1e3` and `0xff` stay `TF001`\'s numeric-notation case rather than acquiring a second, wrong explanation.', example: '`timeout step 5x` → `unknown time unit `5x``; `expect duration is less than 2sec` → ``tflw\'s time units are `ms`, `s` and `m` — write `2s```' },
   { code: 'TF024', meaning: 'Checker (config): more than one `env` marked `default`, or a duplicate env name.', example: 'two `env … default` blocks in one `tflw.config`' },
   { code: 'TF025', meaning: 'Checker (config): a key used in the wrong block.', example: '`web "…"` inside `defaults` (belongs in an `env` block)' },
   { code: 'TF026', meaning: 'Checker: an `api <service>`/`wait until api <service>` name not declared in the active env — checked in test/action/hook bodies **and** inside `session` blocks (decision 66).', example: '`api billng POST /auth/login` → `did you mean `billing`?`' },
-  { code: 'TF027', meaning: 'Checker: a `{col}` reference not among an inline `with each` table\'s declared columns.', example: 'referencing `{prcie}` when the table\'s header column is `price`' },
+  { code: 'TF027', meaning: 'Checker: a `{col}` reference **in a test\'s name** that is not among its inline `with each` table\'s declared columns. Deliberately the name and nothing else (M110, `V4-05`): a bad `{col}` in the test *body* is indistinguishable from any other unbound variable at check time and is already `TF030`, which says the same thing with the same "did you mean" — a second code for it would split one mistake across two. **File-backed** tables (`with each from "…"`) are skipped entirely: their columns are not known until the file is read at run time, and `lang` does no I/O (`TF043` covers the file itself going missing).', example: '`test "checkout {prcie}"` over a table whose only column is `price` → ``unknown table column "prcie" referenced in the test name`` / `= help: did you mean `price`?`. The same typo in the body — `api GET /p/{prcie}` — is `TF030`, not this' },
   { code: 'TF028', meaning: 'Checker: a `test … as <session>[, <session>...]` name not declared by any `session` block — one diagnostic per unknown name.', example: '`test "…" as ghost` with no `session ghost` declared' },
   { code: 'TF029', meaning: 'Checker (config): a duplicate `session` name.', example: 'two `session admin` blocks in one `tflw.config`' },
   { code: 'TF030', meaning: 'Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that\'s *definitely* unreachable, never one that merely might be.', example: '`capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId`' },

@@ -2021,6 +2021,7 @@ helpers, faker-grade data, conditional logic, exotic protocols.
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkSessionServices`, then `checkProgram` — the one composed per-file pass list, `checkServices`/`checkDataTables`/`checkSessions`/`checkActionDecls`/`checkUnknownVariables`/`checkRequestAssertions`/`checkWorkloadTests` — shared verbatim with the language server and the docs-site editor demo since M60, so all three report the same thing), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints JSON instead, for editor and CI integrations: an array with **one `{ "file": "<path>", "diagnostics": [ … ] }` entry per file checked**, in discovery order, paths relative to the cwd and POSIX-separated. Clean files are listed with an empty `diagnostics` array — a consumer that draws diagnostics needs to know a file was checked and found clean in order to clear the ones it drew last time (M70; before that this was a flat `Diagnostic[]` concatenated across files, and `Diagnostic` carries a span but no file, so it only worked when exactly one file was named). A config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout — which under this shape means "nothing was checked" rather than being ambiguous with "everything was clean". Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this — a reuse hint is a cross-file suggestion carrying a diff preview, not a diagnostic anchored to a span, so it does not belong in a per-file diagnostics array |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
+| `tflw lsp` | run the Language Server over stdio, for editor integrations (M13, enterprise arc cluster 5). Speaks LSP on stdin/stdout and never writes to them otherwise, so it is not a command you run by hand — `packages/vscode`'s extension spawns exactly this, and any other LSP-capable editor can. It serves diagnostics, hover, go-to-definition, completion, document symbols and semantic tokens off the same `checkProgram` pass list `tflw check` runs (M60), which is what makes the squiggles and the CI exit code agree. Absent from this table until M110 (`V4-02`) — the one shipped command SPEC never listed, for eleven milestones |
 | `tflw install-browsers [--browser chromium\|firefox\|webkit]` | one-time browser binary download for UI steps (M3a, P#36, default chromium per D11) — runs the `playwright` CLI that ships inside the optional peer dependency itself, resolved from the consuming project (M92b, `B6-09`). It never installs `playwright`: with the peer absent it refuses and says how to add it, rather than fetching an unpinned copy the project won't then use |
 | `tflw pick <url> [--browser chromium\|firefox\|webkit]` | opens a real, visible browser at `<url>`; every click prints the best *verified* tflw locator for whatever was clicked (M5, §9.3) — walks the same resolution tiers (D6) the runtime itself uses and only ever prints a suggestion once it's confirmed to resolve to exactly the clicked element (D7), falling back to a generated CSS selector when nothing semantic round-trips. Picking is inert: `preventDefault`/`stopPropagation` stop a clicked link or submit button from actually navigating/submitting. Runs until the window is closed or Ctrl+C; `<url>` must be absolute (no `tflw.config` involved) |
 | `tflw watch [files] [--env E] [--seed S] [--browser chromium\|firefox\|webkit] [--no-color]` | save → the affected test re-runs headed (M5) — one shared, real browser window for the *whole watch session* (not relaunched per save), so it's still there to inspect after a failure. One seed, resolved once at startup (`--seed`, else freshly minted) and reused for every run for the life of the session — since it never changes, a run right after a fix trivially reuses the seed the failing run before it used. Saving a `.tflw` file re-runs *that file*; saving `tflw.config` re-runs the whole (requested) suite, since every file's resolved settings could have changed — no cross-file dependency tracking beyond that (a `.ts` helper behind `use "…"` isn't watched). Runs until Ctrl+C |
@@ -2248,7 +2249,7 @@ certify that anything is safe to share.
 
 ## 14. Architecture (P#1, P#12) 🔧
 
-✅ `lang`/`runtime` (fetch binding + Playwright binding, M3a)/`reporter`/`cli`/`vscode`, bundled via
+✅ `lang`/`runtime` (fetch binding + Playwright binding, M3a)/`reporter`/`cli`/`lsp-server`/`vscode`/`docs-site`, bundled via
 esbuild for publish (esbuild marks `playwright` external — M3a's optional peer must never be
 inlined into the single-file CLI bundle, both because it's often absent and because
 `playwright-core`'s own bundle references optional native-transport deps esbuild can't resolve
@@ -2260,14 +2261,25 @@ packages/
   runtime/   interpreter, fetch binding (M1) + Playwright binding (M3a), event stream,
              taint tracking, seed derivation
   reporter/  events → report.html + junit.xml + results.json (+ events.ndjson), redaction rendering
-  cli/       tflw run / check / init / docs / watch / pick / refactor / install-browsers
-  vscode/    highlighting + child-process diagnostics + run CodeLens (decision 94) — a thin
-             extension-host client of the CLI's `--format json`, not a wrap of lang/ (no LSP)
-tests/       dogfood .tflw suite (against automationTestPOC)
+  cli/       tflw run / check / init / docs / lsp / watch / pick / refactor / migrate /
+             install-browsers
+  lsp-server/ the Language Server (M13) — diagnostics, hover, go-to-definition, completion,
+             document symbols, semantic tokens; a pure wrap of lang/, no I/O of its own beyond
+             the LSP transport and reading imported files
+  vscode/    highlighting + run CodeLens (decision 94) + a `LanguageClient` that spawns
+             `tflw lsp` — the editor's diagnostics come from the language server, not from
+             parsing `tflw check --format json` output
+  docs-site/ the VitePress documentation site (decision 103), deployed to GitHub Pages; imports
+             lang/'s own manifests so its reference pages cannot drift from the tool
 ```
 
+The dogfood suite is not in this repo: it is the sibling `tflw-tests`, which installs `tflw` from
+a packed tarball the way a user would (M4/P#43). It replaced `automationTestPOC` on 2026-07-06.
+
 - Hand-rolled lexer + recursive-descent parser; no parser generator (diagnostics ownership, P#12).
-- `lang/` is a pure library so a real LSP can wrap it in v2.
+- `lang/` is a pure library, which is what let `lsp-server/` wrap it directly in M13 — the editor
+  and `tflw check` run the *same* `checkProgram` pass list (M60), so a squiggle and a CI failure
+  are the same computation rather than two implementations that agree by inspection.
 - Build order M0–M7 is API-first: `runtime/` had **no Playwright dependency until M3a** (P#34) —
   it's an optional peer dependency now (D5), dynamically imported only on a test's first browser
   step, so an API-only consumer's install/bundle is completely unaffected.
@@ -2290,9 +2302,11 @@ milestones and the eventual `1.0.0` publish — see decision 112).
   **contributions closed initially** — issues welcome, PRs not accepted yet, stated plainly in
   the README (P#80). Platform bar at 0.1: tested on Linux/macOS, Windows via WSL (P#79). A VS Code
   extension ships alongside 0.1 on its own Marketplace cadence (P#76): TextMate grammar, snippets,
-  child-process diagnostics (`tflw check --format json`), and a run CodeLens — not a real LSP
-  (decision 94 supersedes P#76's original "squiggles/LSP stay M5" deferral, since this pattern
-  didn't need to wait for a real LSP consumer to exist).
+  a run CodeLens, and diagnostics. Diagnostics arrived first as child-process
+  `tflw check --format json` parsing (decision 94, superseding P#76's "squiggles/LSP stay M5"
+  deferral — the CodeLens pattern didn't need to wait for a real LSP consumer to exist), and
+  **M13 replaced that path with a real language server**: the extension now spawns `tflw lsp`
+  (§12) via a `LanguageClient`. This paragraph said "not a real LSP" until M110 (`V4-03`).
 - **Install:** per-project `npm i -D tflw`, run via `npx tflw`; `tflw init` scaffolds.
   **Node ≥ 22** (P#43). `.ts` escape-hatch helpers load via native type stripping — no tsx/
   esbuild runtime dependency. Published tflw now bundles two real runtime dependencies:
@@ -2369,12 +2383,12 @@ require reading the source.
 | `TF016` | Parser: top-level content that isn't a `test`/`action`/`import`/`use`/`before`/`after`. | a bare `expect …` line outside any block |
 | `TF020` | Parser (config): an unrecognised key inside a config block. | `headr "Accept" is "…"` → `did you mean `header`?` |
 | `TF021` | Parser (config): a `test` appears in the declaration-only config dialect. | `test "not allowed here"` inside `tflw.config` |
-| `TF022` | Parser (config): top-level config content that isn't `defaults`/`env`/`session`/`require`. | `workers 3` at the top level of `tflw.config` (belongs inside a block) |
+| `TF022` | Parser (config): top-level config content that isn't one of `defaults`, `env`, `session`, `require`, or `exclude` (M110, `V4-04` — this list is `CONFIG_DIRECTIVES` above, the same array the parser's own message is built from, so the two cannot drift again). | `workers 3` at the top level of `tflw.config` (belongs inside a block) |
 | `TF023` | Parser: a duration whose unit is missing, mis-spelled, mis-cased, or spaced off its number. M98c (`A1-07`) made it reachable from **value** position — `expect duration is less than 250 ms` and `2sec` used to fall out of the step as ``TF010: unexpected `ms` at end of step`` / `= help: expected end of line`, because `250ms` and `250 ms` lex identically and the value path simply declined to build a duration when its adjacency or unit check failed. The three cases are kept apart because their fixes differ: a real unit written with a space, shown the closed-up spelling, a word that means a unit tflw spells differently (`sec` → `s`, `MS` → `ms`), and a word that was never a unit, which keeps the generic error. The known-spelling table is enumerated, not inferred, so `1e3` and `0xff` stay `TF001`'s numeric-notation case rather than acquiring a second, wrong explanation. | `timeout step 5x` → `unknown time unit `5x``; `expect duration is less than 2sec` → ``tflw's time units are `ms`, `s` and `m` — write `2s``` |
 | `TF024` | Checker (config): more than one `env` marked `default`, or a duplicate env name. | two `env … default` blocks in one `tflw.config` |
 | `TF025` | Checker (config): a key used in the wrong block. | `web "…"` inside `defaults` (belongs in an `env` block) |
 | `TF026` | Checker: an `api <service>`/`wait until api <service>` name not declared in the active env — checked in test/action/hook bodies **and** inside `session` blocks (decision 66). | `api billng POST /auth/login` → `did you mean `billing`?` |
-| `TF027` | Checker: a `{col}` reference not among an inline `with each` table's declared columns. | referencing `{prcie}` when the table's header column is `price` |
+| `TF027` | Checker: a `{col}` reference **in a test's name** that is not among its inline `with each` table's declared columns. Deliberately the name and nothing else (M110, `V4-05`): a bad `{col}` in the test *body* is indistinguishable from any other unbound variable at check time and is already `TF030`, which says the same thing with the same "did you mean" — a second code for it would split one mistake across two. **File-backed** tables (`with each from "…"`) are skipped entirely: their columns are not known until the file is read at run time, and `lang` does no I/O (`TF043` covers the file itself going missing). | `test "checkout {prcie}"` over a table whose only column is `price` → ``unknown table column "prcie" referenced in the test name`` / `= help: did you mean `price`?`. The same typo in the body — `api GET /p/{prcie}` — is `TF030`, not this |
 | `TF028` | Checker: a `test … as <session>[, <session>...]` name not declared by any `session` block — one diagnostic per unknown name. | `test "…" as ghost` with no `session ghost` declared |
 | `TF029` | Checker (config): a duplicate `session` name. | two `session admin` blocks in one `tflw.config` |
 | `TF030` | Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that's *definitely* unreachable, never one that merely might be. | `capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"`, did-you-mean `orderId` |

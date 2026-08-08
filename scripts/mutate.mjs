@@ -30,9 +30,16 @@
 // 21s buys the only signal that `packages/runtime/test/import-cycles.test.ts` tests the join it
 // names.
 //
+// M110 widened the *subject* rather than the package: `cli-reference-section` mutates a docs page,
+// not code. It is the only way to measure a documentation guard, and it exposed a reporting bug in
+// this file — `@tflw/docs-site`'s `npm test` chains `verify-docs.mjs` after node:test, so a kill by
+// the guard leaves the summary reading `# fail 0` and the runner printed "killed 0 failing". A
+// measured zero that is really "not counted this way" is the exact class this tool exists to find,
+// so the kill line now says which it is.
+//
 // **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-08, not from
-// memory: **33 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
-// 1 from M108, 3 from M109.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
+// memory: **35 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
+// 1 from M108, 3 from M109, 2 from M110.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
 // description plus the source it names; the other 11 of the plan's 31 are described at a level
 // ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
 // would produce a number rather than a measurement. They are listed at the bottom of this file as
@@ -56,6 +63,12 @@ const PARSER = 'packages/lang/src/parser.ts';
 const DIAG = 'packages/lang/src/diagnostic.ts';
 const INTERP = 'packages/runtime/src/interpreter.ts';
 const CHECKER = 'packages/lang/src/checker.ts';
+
+/** Tracked files a suite *rewrites as a side effect of running*, which therefore have to be
+ *  restored alongside the mutated file. SPEC.md is one: `@tflw/lang`'s `pretest` regenerates its
+ *  §6.2/§7/§17 tables from `spec-data.ts`. Anything gitignored (`docs-data.generated.ts`,
+ *  `dist/`) is deliberately absent — the next build reproduces it and no commit can carry it. */
+const SIDE_EFFECT_FILES = ['SPEC.md'];
 
 /** M107 — a mutation names the workspace whose suite judges it, because the tool no longer only
  * mutates `@tflw/lang`. Defaulted rather than added to all 18 existing entries: the lang suite is
@@ -405,6 +418,23 @@ const MUTATIONS = [
     find: 'const anchor = closing.localSite ? closing : cycleEdges.find((edge) => edge.localSite);',
     replace: 'const anchor = closing;',
   },
+  {
+    id: 'config-directive-list',
+    milestone: 'm110',
+    file: 'packages/lang/src/spec-data.ts',
+    what: '`TF022` goes back to naming four config directives while the parser accepts five — `V4-04` exactly, re-introduced at its single source',
+    find: "export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require', 'exclude'] as const;",
+    replace: "export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require'] as const;",
+  },
+  {
+    id: 'cli-reference-section',
+    milestone: 'm110',
+    pkg: '@tflw/docs-site',
+    file: 'packages/docs-site/reference/cli.md',
+    what: 'the CLI reference loses its `tflw lsp` section — the state the page shipped in for eleven milestones',
+    find: '## `tflw lsp`',
+    replace: '## The language server',
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
@@ -477,6 +507,18 @@ for (const m of selected) {
     survivors.push({ ...m, verdict: 'stale' });
     continue;
   }
+  // M110 — revert the *side effects* too, not only the edit.
+  //
+  // `@tflw/lang`'s `pretest` runs `docs:gen`, which regenerates SPEC.md's matcher/generator/
+  // diagnostic tables from `spec-data.ts`. So the first mutation ever to target that manifest
+  // (`config-directive-list`) had the suite rewrite SPEC.md from the *mutated* array, and the
+  // revert below — which only knows about `m.file` — left the mutation's output sitting in a
+  // tracked file. Caught by reading the diff, one commit from shipping the exact defect the
+  // mutation exists to prove is fixed: a `TF022` row naming four config directives.
+  //
+  // Snapshotted rather than regenerated afterwards, because "run the generator again" assumes the
+  // generator is the only writer, and this list is meant to hold whatever a suite touches.
+  const sideEffects = SIDE_EFFECT_FILES.map((rel) => [path.join(ROOT, rel), readFileSync(path.join(ROOT, rel), 'utf8')]);
   writeFileSync(full, mutated);
   try {
     const result = runSuite(pkg);
@@ -492,10 +534,15 @@ for (const m of selected) {
       console.log(`✗ NOT A NO-OP  ${m.id} (${m.milestone}) — killed ${fails} test(s); its \`equivalent\` claim is wrong`);
       survivors.push({ ...m, verdict: 'mislabelled' });
     } else {
-      console.log(`✓ killed    ${m.id} (${m.milestone}) — ${fails} failing`);
+      // M110: `# fail N` is node:test's summary, and not every workspace's `npm test` is only
+      // node:test — `@tflw/docs-site` chains a guard script after it, so a kill by that script
+      // leaves the summary reading `# fail 0`. Printing "killed 0 failing" would state a measured
+      // zero where the truth is "this suite does not count failures that way".
+      console.log(`✓ killed    ${m.id} (${m.milestone}) — ${fails > 0 ? `${fails} failing` : 'suite exited non-zero (a guard script, not a node:test assertion)'}`);
     }
   } finally {
     writeFileSync(full, original);
+    for (const [abs, before] of sideEffects) if (readFileSync(abs, 'utf8') !== before) writeFileSync(abs, before);
   }
 }
 

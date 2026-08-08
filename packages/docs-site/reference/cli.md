@@ -20,8 +20,11 @@ const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
 Generated from
 [`packages/lang/src/spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts)
 (this table used to live in README.md — it moved here as part of the docs-site cluster, decision
-16.10). For the subcommands themselves (`init`/`run`/`check`/`docs`), see
+16.10). For the full prose description of each subcommand, see
 [SPEC.md §12](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#12-cli-).
+
+Every subcommand the shipped `tflw` binary dispatches has a section on this page, and
+`verify-docs.mjs` fails the build if one is added without one (M110, `V4-02`).
 
 ```sh
 npx tflw run --env staging --parallel 4 --seed 42 --now 2026-01-01T00:00:00.000Z --no-color
@@ -184,6 +187,20 @@ job is the rewrite, not the verdict.
 
 It rewrites *keywords*, not prose. A migrated file can be entirely correct code and still name the
 old keyword in its comments and `test "…"` names — this is not a rename-symbol refactor.
+
+## `tflw docs [topic]`
+
+Prints one section of the SPEC as a terminal cheatsheet; with no topic, lists every section name.
+Takes no flags. The content is a static artifact regenerated from `SPEC.md` at build time rather
+than parsed at run time — `SPEC.md` itself is not shipped in the npm package.
+
+## `tflw lsp`
+
+Runs the [language server](/editor) over stdio. Takes no flags and is not meant to be typed by
+hand: stdin and stdout carry the LSP wire protocol, so an editor spawns it. `packages/vscode` does
+exactly this; any other LSP-capable editor can point at `npx tflw lsp`. Diagnostics come from the
+same `checkProgram` pass list `tflw check` runs, so an editor squiggle and a CI failure are the
+same computation.
 
 ## `tflw refactor apply <id>`
 

@@ -150,6 +150,7 @@ import type {
   WorkersDecl,
 } from './ast.js';
 import { quantifiable } from './ast.js';
+import { type ConfigDirective, listConfigDirectives } from './spec-data.js';
 
 export interface ParseResult {
   readonly program: Program;
@@ -1087,6 +1088,12 @@ class Parser {
     const excludes: ExcludeDecl[] = [];
     const sessions: SessionDecl[] = [];
     this.skipNewlines();
+    // M110 (`V4-04`) — the branch chain below and `TF022`'s message are the same list, and the
+    // message is now built from `CONFIG_DIRECTIVES`. This makes the *other* half of that pair
+    // checkable too: a directive added to the manifest with no branch here fails to compile, so
+    // the message can never promise to accept something this loop drops into the `else`.
+    const HANDLED: Record<ConfigDirective, true> = { defaults: true, env: true, session: true, require: true, exclude: true };
+    void HANDLED;
     while (!this.atEof()) {
       const before = this.pos;
       const tok = this.peek();
@@ -1119,7 +1126,7 @@ class Parser {
       } else {
         this.error(
           Codes.CONFIG_UNEXPECTED,
-          `expected \`defaults\`, \`env\`, \`session\`, \`require\`, or \`exclude\`, found ${describeToken(tok)}`,
+          `expected ${listConfigDirectives()}, found ${describeToken(tok)}`,
           tok.span,
         );
         this.synchronize();
