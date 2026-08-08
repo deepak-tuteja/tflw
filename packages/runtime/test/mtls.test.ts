@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { parseSource, parseConfigSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
+import { shutdownMtlsWorker } from '../src/mtlsWorker.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import { testConfig, startFixtureServer } from './support.js';
 
@@ -98,6 +99,12 @@ before(async () => {
 
 after(async () => {
   await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  // M108 (`M107-03`) — every mTLS request routes through a forked worker that is spawned once and reused
+  // for the rest of the process (`mtlsWorker.ts`), so *this* file is the one place in the suite
+  // that leaves a live child behind. `cli.ts`'s `main()` teardown already calls this; the test
+  // file was the only caller that didn't, and the child's open IPC pipe is what kept the process
+  // alive forever. A leaked child is also a leaked ~40MB Node process, not just a handle.
+  await shutdownMtlsWorker();
   delete process.env.NODE_EXTRA_CA_CERTS;
   rmSync(certDir, { recursive: true, force: true });
 });

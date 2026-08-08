@@ -307,6 +307,7 @@ test('`pause` paces a `run … iterations …` body without being excluded from 
 
   assert.equal(report.ok, true, JSON.stringify(report, null, 2));
   assert.equal(report.scenarios[0]!.metrics.iterations, 3);
+  await server.close();
 });
 
 // M52/D98: the D17 back-off diagnostic extends to every closed (`users`) kind, not just `ramp`.
@@ -1086,6 +1087,7 @@ test('an `as "label"` tag replaces the automatic identity entirely (k6-style)', 
   const s = report.scenarios[0]!;
   assert.equal(s.endpoints.length, 1);
   assert.equal(s.endpoints[0]!.identity, 'checkout');
+  await server.close();
 });
 
 test('an identity declared in source but never reached (every iteration fails first) still reports a zero-sample entry, not a missing one', async () => {
@@ -1131,6 +1133,7 @@ test('`threshold … for "label"` evaluates against only that endpoint, independ
   // should read close to the checkout leg alone, not the combined iteration.
   assert.ok(scoped.actual < whole.actual, `scoped p95 (${scoped.actual}) should read below the combined p95 (${whole.actual})`);
   assert.equal(scoped.ok, false);
+  await server.close();
 });
 
 test('`mergeLoadShardReports` pools per-endpoint histograms across shards by identity', async () => {

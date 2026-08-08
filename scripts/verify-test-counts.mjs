@@ -18,13 +18,20 @@
 // Identical to a file and to a pipe, so it is not lost stdout on exit. Whichever tests are dropped
 // are always the tail of the file in registration order.
 //
-// WHY THE FLAG IS NOT SIMPLY GONE. Measured per package, not assumed:
-//   · `@tflw/lsp-server` does not need it — 6/6 clean exits in ~1.26s without. Removed (M107b).
-//   · `@tflw/runtime` **does** — without it the suite never exits at all (killed at 120s, twice,
-//     no summary printed). Something it starts outlives the run; finding what is `M107-03`, and
-//     until then the flag stays and this script is what stands between a silent drop and a green.
+// THE FLAG IS NOW GONE FROM BOTH PACKAGES (M107-03). It was never a property of the suites, only
+// of five leaks:
+//   · `@tflw/lsp-server` never needed it — 6/6 clean exits in ~1.26s without. Removed (M107b).
+//   · `@tflw/runtime` looked like it did: without the flag the suite hung past 120s with no summary
+//     at all. Running each of its 50 files alone found exactly three that never exit —
+//     `load.test.ts`, `unified-dispatch.test.ts`, `mtls.test.ts` — and `process._getActiveHandles()`
+//     in an `unref`'d probe named the handle in one run each: four fixture servers still listening
+//     (three tests in `load.test.ts`, one in `unified-dispatch.test.ts` had simply forgotten
+//     `await server.close()`), and a live forked `mtlsWorkerEntry` child process that only
+//     `cli.ts`'s teardown was calling `shutdownMtlsWorker()` for. Fixed, flag removed, suite exits
+//     on its own; `test/support.ts` carries the watchdog that keeps it that way.
 //
-// So the guard is not "remove the flag" but "make the number load-bearing". Expected counts are
+// So this script is no longer the last line of defence, but it stays: it is the only thing that
+// notices a suite running fewer tests than it contains, whatever the cause. Expected counts are
 // checked in below and asserted after the suites run. Bump them in the same commit that adds or
 // removes tests — a count you have to update is the point, not the cost. If one moves and you did
 // not change any test, that is the bug this script exists to catch.
