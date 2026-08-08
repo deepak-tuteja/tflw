@@ -34,7 +34,7 @@ function ledger({ rows, tally = null, milestone = 'M99' }) {
     '',
     `**Ledger after \`${milestone}\` (re-derived with §6's own awk one-liner): ${t.open} open — S2 ${t.s2} ·`,
     `S3 ${t.s3} · S4 ${t.s4} — ${t.closed} closed, ${t.deferred} deferred, ${t.withdrawn} withdrawn,`,
-    `${t.total} total.**`,
+    `${t.total} total.** <!-- tally:current -->`,
     '',
     '## 6. Full index',
     '',
@@ -163,23 +163,52 @@ test('a published tally that disagrees with the column is caught', () => {
   assert.match(problems[0], /published for M99 says open=3; the status column says open=2/)
 })
 
-test('the newest tally wins even when an older one sits below it in the file', () => {
+test('the marked tally wins over unmarked history, wrapped across lines and inside a blockquote', () => {
   // Not hypothetical: `M112`'s paragraph physically precedes `M113`'s, and `M113`'s wraps across
-  // three lines inside a blockquote. Both properties are exercised here.
+  // lines inside a blockquote. Both properties are exercised here.
   const text = [
     '**Ledger after `M112`: 80 open — S2 19 · S3 43 · S4 18 — 159 closed, 3 deferred, 2 withdrawn, 244 total.**',
     '',
     '> Superseded by `M113`: the ledger is now 76 open — S2 16 · S3 44 · S4 16 — 164 closed,',
-    '> 3 deferred, 4 withdrawn, 247 total.',
+    '> 3 deferred, 4 withdrawn, 247 total. <!-- tally:current -->',
   ].join('\n')
   const t = newestPublishedTally(text)
-  assert.equal(t.milestone, 113)
+  assert.equal(t.milestone, 'M113')
   assert.equal(t.open, 76)
   assert.equal(t.total, 247)
 })
 
-test('a tally naming no milestone is treated as history, not as current', () => {
+test('a suffixed milestone that ships after a higher-numbered one is still found (the bug the marker replaced)', () => {
+  // `M107b` follows `M107` but shipped *after* `M113`. The first version of this function took the
+  // highest `M<N>` near each match and therefore went on validating `M113`'s stale numbers — silently,
+  // which is the one failure mode this whole file exists to prevent. Milestone names are not a total
+  // order; the marker is, so it is what decides.
+  const text = [
+    '> Ledger after `M113`: 77 open — S2 16 · S3 44 · S4 17 — 164 closed, 3 deferred, 4 withdrawn, 248 total.',
+    '',
+    '**Ledger after `M107b`: 76 open — S2 15 · S3 44 · S4 17 — 165 closed, 3 deferred, 4 withdrawn,',
+    '248 total.** <!-- tally:current -->',
+  ].join('\n')
+  const t = newestPublishedTally(text)
+  assert.equal(t.milestone, 'M107b')
+  assert.equal(t.open, 76)
+  assert.equal(t.closed, 165)
+})
+
+test('an unmarked tally is history, not the current count', () => {
   assert.equal(newestPublishedTally('Once: 9 open — S2 1 · S3 2 · S4 3 — 5 closed, 0 deferred, 0 withdrawn, 14 total.'), null)
+})
+
+test('two marked tallies are a problem — at most one can be live', () => {
+  const rows = CLEAN
+  const t = countOf(rows)
+  const one = `${t.open} open — S2 ${t.s2} · S3 ${t.s3} · S4 ${t.s4} — ${t.closed} closed, ${t.deferred} deferred, ${t.withdrawn} withdrawn, ${t.total} total. <!-- tally:current -->`
+  const text = ledger({ rows }).replace('# Review findings', `# Review findings\n\nAfter \`M1\`: ${one}\n\nAfter \`M2\`: ${one}`)
+  const { problems } = check(sound({ ledger: text }))
+  assert.ok(
+    problems.some((p) => /tallies are marked/.test(p)),
+    problems.join('\n'),
+  )
 })
 
 test('a ledger with no §6 rows is a problem, not a pass', () => {

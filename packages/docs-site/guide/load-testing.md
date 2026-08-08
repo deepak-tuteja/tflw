@@ -72,11 +72,15 @@ ramp to 50 users over 30s
 long as the run lasts. The trap: if the system under test slows down, a VU's iterations simply
 take longer, so it completes *fewer* of them — the load backs off exactly when you'd want it to
 push harder. This understates latency ("coordinated omission"). `tflw run`'s console/report flags
-a run whose VUs spent a large share of wall time waiting rather than iterating, so this doesn't
-silently distort your numbers:
+that, so it doesn't silently distort your numbers — **but only for a workload that holds one
+concurrency level**, which the ramp above does not. Hold instead:
+
+```tflw fragment workload
+hold 50 users for 30s
+```
 
 ```console
-✓ checkout under load (workload — ramp to 50 users over 30000ms (closed))
+✓ checkout under load (workload — hold 50 users for 30000ms (closed))
     iterations: 812  failures: 3  error rate: 0.37%
     duration (ms, pause-excluded, all 812): min 40  avg 210  p50 210  p90 480  p95 640  p99 910  max 1200
     duration (ms, successful 809 — what thresholds read): min 40  avg 211  p50 212  p90 482  p95 642  p99 912  max 1200
@@ -84,12 +88,25 @@ silently distort your numbers:
 system slowing down; results understate real latency
 ```
 
-A healthy run just shows the numbers, no warning line. The percentage compares how many iterations
-actually completed against how many the test's own fastest-observed pace would have allowed —
-unlike a saturated generator (below), this doesn't change `tflw run`'s exit code or a threshold's
-pass/fail: it's a warning about how to *read* the numbers, not a verdict on whether they're
-trustworthy. Switch to the open model if you want to measure the true degradation curve instead of
-being warned about it after the fact.
+A healthy run just shows the numbers, no warning line. The percentage compares the run's mean
+iteration duration in its **first half** against its **second half** — direct evidence that the
+target got slower partway through, rather than a comparison against a best-observed pace, which is
+always faster than typical by construction and so flags healthy runs.
+
+**Why a ramp gets no warning at all.** The same comparison is meaningless when the two halves ran
+at different concurrency: a `ramp to 50 users over 30s` puts roughly 3× as many VUs in its second
+half as its first, and every finite-capacity system answers more concurrent work more slowly —
+Little's law, not degradation. Measured against a *healthy* service, the ramp form warned on 8 runs
+out of 8 and scored **higher** than a genuinely degrading service did, so there is no threshold that
+tells them apart. A ramp also has no plateau, so no two windows of it share a concurrency level and
+there is nothing like-for-like to compare. The diagnostic is therefore **absent** (not `false`) for
+`ramp users` and for any `step`/`spike` that changes its target — the same way it is absent for the
+open model. **Use a ramp to find capacity and a hold to find deterioration.**
+
+Unlike a saturated generator (below), this warning doesn't change `tflw run`'s exit code or a
+threshold's pass/fail: it's a warning about how to *read* the numbers, not a verdict on whether
+they're trustworthy. Switch to the open model if you want to measure the true degradation curve
+instead of being warned about it after the fact.
 
 ```tflw fragment workload
 ramp to 200 rps over 30s
