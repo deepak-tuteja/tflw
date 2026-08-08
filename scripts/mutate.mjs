@@ -63,6 +63,7 @@ const PARSER = 'packages/lang/src/parser.ts';
 const DIAG = 'packages/lang/src/diagnostic.ts';
 const INTERP = 'packages/runtime/src/interpreter.ts';
 const CHECKER = 'packages/lang/src/checker.ts';
+const SPEC_DATA = 'packages/lang/src/spec-data.ts';
 
 /** Tracked files a suite *rewrites as a side effect of running*, which therefore have to be
  *  restored alongside the mutated file. SPEC.md is one: `@tflw/lang`'s `pretest` regenerates its
@@ -511,6 +512,22 @@ const MUTATIONS = [
     what: '`--log-file` stops mirroring stderr, so every `error:` line and rendered diagnostic vanishes from the log (`B6-05`)',
     find: '  logMirror = mirror;\n',
     replace: '',
+  },
+  {
+    id: 'diagnostic-example-wrong-code',
+    milestone: 'm110b',
+    file: SPEC_DATA,
+    what: "`TF003`'s worked example goes back to the shape it shipped with for fifty milestones — 3 spaces inside 2, which emits `TF011`, under a `TF003` heading on four rendered surfaces (`M110-01`, the `V4-05` class)",
+    find: `source: ['test "misaligned"', '    log "a"', '  log "b"']`,
+    replace: `source: ['test "misaligned"', '  log "a"', '   log "b"']`,
+  },
+  {
+    id: 'diagnostic-example-not-derived',
+    milestone: 'm110b',
+    file: SPEC_DATA,
+    what: 'the rendered example stops being computed from the probes, so a row can once again claim in prose what its source does not do — the vacuous-control class this milestone exists to close (`M110-01`)',
+    find: '  example: renderDiagnosticExample(row.probes),',
+    replace: "  example: row.probes[0]?.as ?? '',",
   },
 ];
 

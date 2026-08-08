@@ -7,7 +7,10 @@ import { MATCHERS } from '../../lang/src/spec-data.ts';
 // spec-data.ts's cell text uses markdown inline-code spans (`...`) — turn those into <code> tags
 // for the plain HTML table below rather than duplicating the manifest as a second, HTML-flavored
 // copy.
-const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
+// Both markdown fences, doubled first — see reference/diagnostics.md for the failure a
+// single-fence regex has on a span containing a backtick of its own. This manifest carries no
+// doubled fence today, so the fix is pre-emptive: it is the same one line in four files.
+const code = (s) => s.replace(/``\s?([\s\S]+?)\s?``|`([^`]+)`/g, (_, doubled, single) => `<code>${doubled ?? single}</code>`);
 </script>
 
 # Matchers reference
