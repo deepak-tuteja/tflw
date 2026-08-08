@@ -534,4 +534,5 @@ test('`runLoadShard` (the `--workers N>1` forked-process engine) also batches it
   const [sceneA, sceneB] = shardResult.scenarios;
   assert.ok(sceneA!.iterations > 0);
   assert.ok(sceneB!.iterations > 0, 'a forked shard must not zero out a later-batch sequential scenario either');
+  await server.close();
 });

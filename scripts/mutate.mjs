@@ -21,9 +21,12 @@
 // ~21s rather than 1.4s, so a runtime mutation is worth adding only where the claim is about a
 // control's kill power and no cheaper subject exists.
 //
+// M108 widened it again, past *source* files: a mutation may target a test file where the thing
+// being measured is a guard's kill power rather than a behaviour's coverage.
+//
 // **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-08, not from
-// memory: **29 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from
-// M107.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
+// memory: **30 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
+// 1 from M108.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
 // description plus the source it names; the other 11 of the plan's 31 are described at a level
 // ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
 // would produce a number rather than a measurement. They are listed at the bottom of this file as
@@ -349,6 +352,21 @@ const MUTATIONS = [
     what: 'the D17 back-off diagnostic stops applying to `hold N users` — its negative control has nothing left to check',
     find: "const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'HoldUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);",
     replace: "const CLOSED_USERS_KINDS = new Set<Workload['type']>(['RampUsersWorkload', 'StepUsersWorkload', 'SpikeUsersWorkload']);",
+  },
+  // --- M108 ------------------------------------------------------------------------------------
+  // The first mutation of a *test* file rather than a source file, and it is the right subject: what
+  // M107-03 shipped is a guard whose whole job is to notice a test that leaks. Deleting one
+  // `await server.close()` is exactly the defect it exists to catch, so its kill power is a claim
+  // this tool can keep re-checking rather than one the milestone asserts once. Costs the runtime
+  // suite (~21s) plus the watchdog's own 30s, and the 30s is only ever paid by a mutant.
+  {
+    id: 'leaked-fixture-server',
+    milestone: 'm108',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/test/unified-dispatch.test.ts',
+    what: 'a test forgets `await server.close()`, so its file can never exit — the exact shape `--test-force-exit` used to hide',
+    find: "  assert.ok(sceneB!.iterations > 0, 'a forked shard must not zero out a later-batch sequential scenario either');\n  await server.close();",
+    replace: "  assert.ok(sceneB!.iterations > 0, 'a forked shard must not zero out a later-batch sequential scenario either');",
   },
 ];
 
