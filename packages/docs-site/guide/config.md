@@ -23,6 +23,21 @@ env staging
 Active env selection: `--env <name>` flag > `TFLW_ENV` env var > the block marked `default`. No
 resolvable env is a startup error. Unknown config keys are checker errors, not silently ignored.
 
+## The demo service
+
+A freshly scaffolded config carries `api "tflw://demo"` instead of a real address:
+
+```tflw-config
+env local default
+  api "tflw://demo"          # ← swap for "http://localhost:3001", or wherever your API lives
+```
+
+`tflw://demo` is tflw's own bundled demo service — a small HTTP server `tflw run` starts on a
+loopback port for the duration of the run and stops afterwards, so a brand-new project is green
+before you have wired anything up. It answers `GET /health` and 404s everything else; `tflw check`
+never starts it. Runs against it are labelled `ℹ demo` in the summary and in `report.html`, because
+they prove nothing about your system — replacing that one line is the first thing to do.
+
 ## Named services
 
 ```tflw-config

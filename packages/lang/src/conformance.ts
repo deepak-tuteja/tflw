@@ -742,6 +742,14 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     checkerCode: 'TF026',
     note: 'services are declared in `tflw.config`',
   },
+  {
+    id: 'reserved-demo-scheme',
+    file: 'interpreter.ts',
+    excerpt: 'is not a real base URL',
+    decidable: 'static',
+    filedRow: 'M118-01',
+    note: "M118 (`FU-04`) — `tflw run` substitutes the real loopback address for `tflw://demo` before anything executes, so this only fires on a typo under the reserved scheme (`tflw://demoo`). A base URL is a `tflw.config` string literal, so the checker could say it at check time and doesn't; filed rather than folded in, since it wants a diagnostic code and M118 declared none",
+  },
 
   // -- matcher.ts ------------------------------------------------------------
   // The file D138's interpreter-only scan would have missed entirely, and the one that holds both

@@ -160,7 +160,16 @@ export function newestPublishedTally(text) {
   // matched the *neighbouring* paragraph's tally as well — `M112`'s sits directly above `M113`'s,
   // and 300 characters does not respect a blank line. A paragraph is what "this sentence's marker"
   // actually means. Blockquote markers are stripped so a quoted tally reads like any other.
-  for (const para of text.split(/\n[ \t]*\n/)) {
+  //
+  // **A `>`-only line separates paragraphs too, and missing that made "paragraph" meaningless for
+  // most of this file.** The milestone log is one continuous blockquote whose blank lines are `>`,
+  // not empty — so splitting on `\n\n` alone returned a single **17,000-character** "paragraph"
+  // holding five milestones' tallies. It passed anyway, by luck: the marker happened to sit in a
+  // window that contained exactly one tally, and it went red the first time a new entry pushed a
+  // second one inside the same run of lines (`M118`). The unit tests could not have caught it —
+  // their fixtures separate blockquote entries with genuinely empty lines, which the real file has
+  // never done. Same shape as the rest of this arc: an instrument that cannot show the thing.
+  for (const para of text.split(/\n[ \t]*>?[ \t]*\n/)) {
     const flat = para
       .split('\n')
       .map((l) => l.replace(/^>\s?/, ''))

@@ -7,7 +7,7 @@ import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -211,4 +211,45 @@ test('Ctrl+C (SIGINT) stops cleanly, closing the shared browser (no chromium pro
       await rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+/** The demo's port is ephemeral by design (D200), so the report is the only place it is knowable. */
+function demoPort(results: string): string {
+  const port = /127\.0\.0\.1:(\d+)/.exec(results)?.[1];
+  assert.ok(port, `expected the run to record a concrete loopback port\n${results.slice(0, 400)}`);
+  return port;
+}
+
+test('FU-04: watch stops each run’s demo service instead of accumulating one per save (M118, D203)', async () => {
+  // The lifetime that matters is not the one `e2e.test.ts` can see. A demo child dies on IPC
+  // `disconnect` (`demo-service.ts`), so once the CLI process exits its port closes whether or not
+  // anything called `stop()` — which means a probe *after exit* passes against a missing teardown.
+  // `watch` is the case where the CLI process outlives the run: one `runCommand` per save, one
+  // `startDemoService()` inside each, and with no teardown every earlier server stays up for the
+  // life of the session. So the probe here happens while watch is **still running**.
+  //
+  // Written because `demo-outlives-the-run` SURVIVED the M118 sweep. The mutation was real and the
+  // test was vacuous — and the comment on the e2e test had already named this scenario without
+  // testing it.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-watch-demo-'));
+  execFileSync('node', [cliEntry, 'init'], { cwd: dir, stdio: 'pipe' });
+  const watch = startWatch(dir);
+  try {
+    await watch.waitForRunsCompleted(1);
+    const first = demoPort(await readFile(join(dir, 'report', 'results.json'), 'utf8'));
+
+    const source = await readFile(join(dir, 'example.tflw'), 'utf8');
+    await writeFile(join(dir, 'example.tflw'), `${source}\n# resaved\n`, 'utf8');
+    await watch.waitForRunsCompleted(2);
+    const second = demoPort(await readFile(join(dir, 'report', 'results.json'), 'utf8'));
+
+    assert.notEqual(second, first, 'each run starts its own demo, so the port must change');
+    await assert.rejects(
+      fetch(`http://127.0.0.1:${first}/health`),
+      `the first run's demo is still listening on ${first} while watch is alive — one server leaks per save`,
+    );
+  } finally {
+    await watch.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

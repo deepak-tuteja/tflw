@@ -669,6 +669,61 @@ const MUTATIONS = [
     find: "                billFrom = performance.now() - firstAttemptMs;",
     replace: "                billFrom = stepStart;",
   },
+  {
+    id: 'demo-never-starts',
+    milestone: 'm118',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`api "tflw://demo"` is treated as an ordinary URL and nothing is started — `FU-04` restored exactly as filed, with the quickstart red in a clean directory. The control for the whole milestone: if this survives, the green-quickstart test is asserting something other than a run against a live demo server',
+    find: '  const usingDemo = usesDemoService(configured);',
+    replace: '  const usingDemo = false;',
+  },
+  {
+    id: 'demo-outlives-the-run',
+    milestone: 'm118',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    // This one SURVIVED on its first sweep, and was right to. The probe it was written against ran
+    // *after the CLI exited*, where the child's `disconnect` handler closes the port anyway — so the
+    // test passed with the teardown deleted. The leak is only observable while the CLI process is
+    // still alive, i.e. `watch`: one `runCommand` per save, one demo each, all but the last leaked.
+    // Now killed by `watch.test.ts`, which probes the first run's port during the second run.
+    what: 'the demo service is never stopped, so every `watch` rebuild leaks the previous run’s server — the port stays open for the life of the session, invisible to any probe that waits until the CLI has exited',
+    find: '    activeDemo?.stop();',
+    replace: '    void 0;',
+  },
+  {
+    id: 'demo-url-not-threaded-to-workers',
+    milestone: 'm118',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: "a forked load worker re-reads `tflw://demo` off disk instead of being told the concrete port — D200's whole reason for existing. Measured before the fix as *exactly* 50% failures at `--workers 2`, which is the shape a single-process test can never produce",
+    find: '          const resolved = msg.demoBaseUrl ? withDemoBaseUrls(loaded.resolved, msg.demoBaseUrl) : loaded.resolved;',
+    replace: '          const resolved = loaded.resolved;',
+  },
+  {
+    id: 'install-browsers-silent-success',
+    milestone: 'm118',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`install-browsers` goes back to saying nothing at all on success — `FU-03` as filed, and the state that measured 0 bytes on both streams after a ~120 MB download',
+    // The whole message, not just its first line: dropping one line would still leave `next:` on
+    // stdout, and `FU-03` was measured at **0 bytes on both streams**. Restoring the row as filed
+    // means restoring the silence exactly.
+    find:
+      "      `${browser} is ready — playwright ${playwright.version} in this project can launch it.\\n\\n` +\n" +
+      '        `next:\\n  add a browser step (e.g. \\`open "/login"\\`) to a .tflw file, then \\`tflw run\\`\\n`,',
+    replace: "      '',",
+  },
+  {
+    id: 'reserved-scheme-passes-through',
+    milestone: 'm118',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'a `tflw://…` base URL reaches the HTTP client instead of being rejected, so a typo inside the reserved scheme fails with whatever `fetch` says about an unknown protocol rather than with the one sentence naming the only legal spelling (`M118-01` is about moving this to *check* time; the runtime guard still has to exist)',
+    find: "  if (!url.startsWith('tflw://')) return url;",
+    replace: '  return url;',
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than

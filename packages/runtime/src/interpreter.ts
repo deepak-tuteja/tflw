@@ -4047,14 +4047,30 @@ export function checkHostAllowed(url: string, config: ResolvedConfig): void {
 export function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {
   if (service === null) {
     if (!config.apiBaseUrl) throw new RuntimeError(`env "${config.envName}" declares no default \`api\` base URL`);
-    return config.apiBaseUrl;
+    return guardDemoUrl(config.apiBaseUrl);
   }
   const url = config.services[service];
   if (!url) {
     const known = Object.keys(config.services);
     throw new RuntimeError(`unknown api service "${service}"${known.length ? ` (known: ${known.join(', ')})` : ''}`);
   }
-  return url;
+  return guardDemoUrl(url);
+}
+
+/**
+ * M118 (`FU-04`) — belt and braces for the one URL the runtime must never see.
+ *
+ * `tflw run` swaps `tflw://demo` for the real `http://127.0.0.1:<port>` before any of this executes
+ * (`startDemoService` in the CLI), so reaching here means either a typo under the reserved scheme
+ * (`tflw://demoo`) or a caller that skipped the substitution. Left alone, both arrive as `fetch
+ * failed` with an unsupported-protocol cause, which names neither the scheme nor the fix.
+ */
+function guardDemoUrl(url: string): string {
+  if (!url.startsWith('tflw://')) return url;
+  throw new RuntimeError(
+    `\`${url}\` is not a real base URL — \`tflw://demo\` is the only address under the reserved \`tflw://\` scheme, ` +
+      `and it is tflw's built-in demo service (started by \`tflw run\`). Fix the spelling, or point \`api\` at your own service.`,
+  );
 }
 
 /** Placeholder for a body dropped entirely by `evidence headers-only`/`none` (SPEC §13, PLAN

@@ -72,8 +72,21 @@ npx tflw init   # scaffolds tflw.config + example.tflw + .env.example + .gitigno
 npx tflw run    # runs it — green in seconds
 ```
 
-`tflw init` scaffolds a health-check test against `http://localhost:3001` — point `tflw.config`'s
-`api` line at your own service and edit `example.tflw` from there. A run always writes
+`tflw init` scaffolds a health-check test against **tflw's own demo service** — a small HTTP server
+that tflw starts for the run and stops after it — so that second command really is green in an empty
+directory, with nothing installed and nothing running. It answers `GET /health` and nothing else; a
+run against it is labelled as a demo run in the summary and in `report.html`, because it proves
+something about tflw and nothing about your system.
+
+Point `tflw.config`'s `api` line at your own service to test something real — one line, and it is
+the first thing the scaffolded config asks you to change:
+
+```
+env local default
+  api "tflw://demo"          # ← swap for "http://localhost:3001", or wherever your API lives
+```
+
+A run always writes
 `report/report.html` (open it in a browser — full request/response detail, redacted secrets),
 `report/junit.xml` (for CI), and `report/results.json` (the same redacted report as JSON).
 

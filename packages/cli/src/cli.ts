@@ -96,6 +96,14 @@ import {
 import { startServer } from '@tflw/lsp-server';
 import { buildEnviron } from './env.js';
 import { DOCS_TOPICS } from './docs-data.generated.js';
+import {
+  DEMO_BASE_URL,
+  demoServiceChild,
+  startDemoService,
+  usesDemoService,
+  withDemoBaseUrls,
+  type DemoService,
+} from './demo-service.js';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1; // a test failed
@@ -297,6 +305,11 @@ async function main(argv: string[]): Promise<number> {
       // into `tflw run`). Undocumented on purpose (no CLI_FLAGS entry, no --help mention) — it's a
       // process-boundary implementation detail, not user-facing surface.
       return loadWorkerCommand();
+    case '__demo-service':
+      // M118 (`FU-04`, D200) — the other side of `startDemoService`'s fork, and undocumented for the
+      // same reason as the branch above: a process boundary, not user-facing surface. Runs until the
+      // IPC channel to the parent closes, so it cannot outlive the run that wanted it.
+      return demoServiceChild();
     case 'init':
       return initCommand(rest);
     case 'check':
@@ -376,9 +389,9 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
     err(`unknown --browser \`${browser}\` — expected one of: ${SUPPORTED_BROWSER_ENGINES.join(', ')}.`);
     return EXIT_USAGE;
   }
-  let playwrightCli: string;
+  let playwright: { cli: string; version: string };
   try {
-    playwrightCli = resolvePlaywrightCli();
+    playwright = resolvePlaywrightCli();
   } catch {
     // The same sentence `loadPlaywright()` gives when a browser step runs without the peer, in this
     // command's voice — a user can hit this wall from either direction and reads one explanation.
@@ -392,28 +405,59 @@ async function installBrowsersCommand(argv: string[]): Promise<number> {
     return EXIT_USAGE;
   }
   const code = await new Promise<number>((resolvePromise) => {
-    const child = spawn(process.execPath, [playwrightCli, 'install', browser], { stdio: 'inherit' });
+    const child = spawn(process.execPath, [playwright.cli, 'install', browser], { stdio: 'inherit' });
     child.on('error', (e) => {
-      err(`could not run \`playwright install ${browser}\`: ${e.message}\n  resolved the playwright CLI to ${playwrightCli}.`);
+      err(`could not run \`playwright install ${browser}\`: ${e.message}\n  resolved the playwright CLI to ${playwright.cli}.`);
       resolvePromise(EXIT_USAGE);
     });
     child.on('exit', (exitCode) => resolvePromise(exitCode ?? EXIT_USAGE));
   });
-  return code === 0 ? EXIT_OK : EXIT_USAGE;
+  // `FU-03`/D204 — tflw opens and closes; Playwright's own progress output stays in between. Before
+  // M118 this command printed **zero bytes on both streams** when the binary was already present
+  // (measured: exit 0, 0 bytes out, 0 bytes err), which is indistinguishable from a no-op, a hang,
+  // or a command that does not exist. The `playwright <version>` on the success line is not
+  // decoration: it names *which* playwright now has a browser, which is exactly the confusion M92b
+  // (`B6-09`) existed to end — an unpinned npx copy downloading binaries the project never sees.
+  if (code === 0) {
+    process.stdout.write(
+      `${browser} is ready — playwright ${playwright.version} in this project can launch it.\n\n` +
+        `next:\n  add a browser step (e.g. \`open "/login"\`) to a .tflw file, then \`tflw run\`\n`,
+    );
+    return EXIT_OK;
+  }
+  // D205 — exit 2, not 1: `EXIT_FAIL` means a test failed, and nothing here was tested. Playwright's
+  // raw error (a stack dump, usually repeated once per retry) has already gone to the inherited
+  // stderr above; this is the sentence tflw owes beside it.
+  err(
+    `could not download the ${browser} browser binary — \`playwright install ${browser}\` exited ${code}.\n` +
+      `  Playwright's own output is above. This is nearly always one of:\n` +
+      `    · a proxy or firewall in front of the download host — set HTTPS_PROXY, or point\n` +
+      `      PLAYWRIGHT_DOWNLOAD_HOST at an internal mirror\n` +
+      `    · no network route at all\n` +
+      `    · not enough disk space for the browser cache\n` +
+      `  Nothing was installed; re-running is safe.`,
+  );
+  return EXIT_USAGE;
 }
 
-/** The consumer's own `playwright` CLI entry point, or a throw. Resolved from `process.cwd()`
- * rather than from this bundle's location: `tflw` is normally a project-local devDependency, but it
- * is also legitimately run via a global install or `npx tflw`, and in both of those the peer that
- * matters is still the *project's*. Throws rather than returning undefined so the one caller can't
- * accidentally treat "not installed" as a path. */
-function resolvePlaywrightCli(): string {
+/** The consumer's own `playwright` CLI entry point and its version, or a throw. Resolved from
+ * `process.cwd()` rather than from this bundle's location: `tflw` is normally a project-local
+ * devDependency, but it is also legitimately run via a global install or `npx tflw`, and in both of
+ * those the peer that matters is still the *project's*. Throws rather than returning undefined so
+ * the one caller can't accidentally treat "not installed" as a path.
+ *
+ * The version comes from the same manifest read that finds the bin — it is the success line's proof
+ * that the browser landed in the playwright this project will actually import (M118/`FU-03`). */
+function resolvePlaywrightCli(): { cli: string; version: string } {
   const requireFrom = createRequire(join(process.cwd(), 'noop.js'));
   const manifestPath = requireFrom.resolve('playwright/package.json');
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { bin?: string | Record<string, string> };
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    bin?: string | Record<string, string>;
+    version?: string;
+  };
   const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.playwright;
   if (!bin) throw new Error(`playwright's package.json at ${manifestPath} declares no \`playwright\` bin`);
-  return join(dirname(manifestPath), bin);
+  return { cli: join(dirname(manifestPath), bin), version: manifest.version ?? 'unknown version' };
 }
 
 // ---- tflw pick <url> (M5, SPEC §12) -----------------------------------------
@@ -1128,12 +1172,22 @@ async function runCommand(argv: string[], watchOpts?: RunCommandWatchOptions): P
     return await runCommandCore(argv, watchOpts);
   } finally {
     activeLog?.close();
+    // M118 (`FU-04`, D203) rides the same reasoning one line up: a run returns early from a dozen
+    // places, and each of those is exactly when a forked server would be left behind. `tflw watch`
+    // calls this once per save, so a leak here would be one stray process per keystroke.
+    activeDemo?.stop();
+    activeDemo = undefined;
   }
 }
 
 /** The console currently mirroring to `--log-file`, so the wrapper above can close it whatever
  * happens. `undefined` for a run without `--log-file`, which is the overwhelming majority. */
 let activeLog: { close: () => void } | undefined;
+
+/** The demo service forked for this run (M118, `FU-04`), so the same wrapper can kill it whatever
+ * happens. `undefined` for every run whose config points at a real service — which is every run
+ * past a user's first five minutes. */
+let activeDemo: DemoService | undefined;
 
 async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions): Promise<number> {
   const args = parseRunArgs(argv);
@@ -1246,7 +1300,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // separate threading needed. `--log-output` only ever reaches a bare `log "…"` call — `execLog`
   // (`interpreter.ts`) only falls back to `config.logDestination` when the statement itself gave
   // no `to …` clause, so an explicit per-statement destination is never touched here.
-  const resolved: ResolvedConfig = {
+  const configured: ResolvedConfig = {
     ...loaded.resolved,
     ...(evidenceArg !== undefined ? { evidenceLevel: evidenceArg } : {}),
     ...(logOutputArg !== undefined ? { logDestination: logOutputArg } : {}),
@@ -1255,18 +1309,41 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
 
   // `--forbid-insecure` (decision 101b): a CI policy gate — fail before any test runs, not partway
   // through, if `insecure true` is active for the env actually running.
-  if (args.forbidInsecure && resolved.insecure) {
-    err(`--forbid-insecure was set and env "${resolved.envName}" has \`insecure true\` active — refusing to run.`);
+  if (args.forbidInsecure && configured.insecure) {
+    err(`--forbid-insecure was set and env "${configured.envName}" has \`insecure true\` active — refusing to run.`);
     return EXIT_USAGE;
   }
 
   // Gate on secrets required to actually run (`check` never reaches this — no execution, no need
   // for real credentials).
-  const missing = missingRequiredEnv(resolved, environ);
+  const missing = missingRequiredEnv(configured, environ);
   if (missing.length > 0) {
     err(`missing required environment ${missing.length > 1 ? 'variables' : 'variable'}: ${missing.join(', ')}\n  set ${missing.length > 1 ? 'them' : 'it'} in your environment or a local .env file (see \`require env\` in tflw.config).`);
     return EXIT_USAGE;
   }
+
+  // M118 (`FU-04`, D198/D203) — the scaffolded `api "tflw://demo"` becomes a real server here, and
+  // **only here**: `tflw check` does no I/O by contract (P#75), which is the whole reason it runs in
+  // CI without secrets or a live API, so it must never start one. `tflw watch` gets this for free —
+  // it calls `runCommand`.
+  //
+  // Deliberately after both gates above: a run that is about to refuse for a missing secret should
+  // not have forked a server first. `resolved` shadows `configured` from here down, carrying the
+  // concrete `http://127.0.0.1:<port>`, so the runtime, the forked load workers and the report all
+  // see one ordinary URL and none of them need to know the demo exists.
+  const usingDemo = usesDemoService(configured);
+  if (usingDemo) {
+    try {
+      activeDemo = await startDemoService();
+    } catch (e) {
+      err(
+        `could not start tflw's demo service (\`api "${DEMO_BASE_URL}"\` in tflw.config): ${(e as Error).message}\n` +
+          `  point \`api\` at a service of your own, or re-run \`tflw init\` in an empty directory.`,
+      );
+      return EXIT_USAGE;
+    }
+  }
+  const resolved: ResolvedConfig = activeDemo ? withDemoBaseUrls(configured, activeDemo.baseUrl) : configured;
 
   // 5. Run files against a shared redactor (every secret masked everywhere), a shared session
   //    cache (each `session` block runs at most once, P#42), and one seed + one run-clock for the
@@ -1496,7 +1573,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
               ...(fileEmit ? { emit: fileEmit } : {}),
             }),
             ...Array.from({ length: loadWorkers - 1 }, (_unused, i2) =>
-              runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(seed), nowRaw: now }, i2 + 1, loadWorkers, {
+              runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(seed), nowRaw: now, demoBaseUrl: activeDemo?.baseUrl }, i2 + 1, loadWorkers, {
                 abortSignal: abortController.signal,
                 onProgress: (snapshot) => printShardProgress(i2 + 1, snapshot),
               }),
@@ -1605,7 +1682,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   //    a secret first registered by one file (e.g. running later, or concurrently under
   //    `--workers`) can still retroactively mask an earlier file's already-built report once
   //    everything is merged.
-  const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel), redactor);
+  const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo), redactor);
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
@@ -1651,6 +1728,11 @@ interface LoadWorkerStartMessage {
   readonly nowRaw?: string;
   readonly shardIndex: number;
   readonly shardCount: number;
+  /** M118 (`FU-04`) — the address of the demo service the *parent* already started, when the config
+   * says `api "tflw://demo"`. The child re-loads that config from disk and would otherwise resolve
+   * the reserved URL itself; it must never start a second server, or each shard would be measuring
+   * a different one. Absent for every run against a real service. */
+  readonly demoBaseUrl?: string;
 }
 
 /** M32 (R5) — sent by the parent once its own `abortSignal` fires (Ctrl-C), so a running child
@@ -1696,7 +1778,9 @@ async function loadWorkerCommand(): Promise<number> {
             resolvePromise(EXIT_USAGE);
             return;
           }
-          const { resolved, parsedFiles, environ, configLines } = loaded;
+          const { parsedFiles, environ, configLines } = loaded;
+          // M118 (`FU-04`) — the parent's already-running demo, not one of this shard's own.
+          const resolved = msg.demoBaseUrl ? withDemoBaseUrls(loaded.resolved, msg.demoBaseUrl) : loaded.resolved;
           const { file, source, program } = parsedFiles[0]!;
           const result = await runLoadShard(program, resolved, {
             source,
@@ -2314,6 +2398,7 @@ function mergeReports(
   insecure: boolean,
   browserEngine: BrowserEngine,
   evidenceLevel: EvidenceLevel,
+  demo: boolean,
 ): RunReport {
   const tests: ReportEntry[] = reports.flatMap((r) => r.tests);
   const passed = tests.filter((t) => t.ok).length;
@@ -2341,6 +2426,9 @@ function mergeReports(
     insecure,
     evidenceLevel,
     browserEngine,
+    // Omitted rather than `false` for an ordinary run (M118/D202): the flag exists to mark the
+    // unusual case, and every pre-M118 `RunReport` fixture stays valid without it.
+    ...(demo ? { demo: true } : {}),
     ...(unmaskableSecrets.length > 0 ? { unmaskableSecrets } : {}),
     ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
     ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),
@@ -2729,7 +2817,12 @@ const SCAFFOLD_CONFIG = `# testFlow config — declaration-only. Pick the active
 # \`default\` marker below. \`tflw run\` uses \`local\` unless you say otherwise.
 
 env local default
-  api "http://localhost:3001"
+  # tflw's own demo service — a real HTTP server on localhost, started for the run and stopped
+  # after it, so \`tflw run\` is green before you have wired anything up. Swap this one line for
+  # your service and \`example.tflw\` tests that instead:
+  #
+  #   api "http://localhost:3001"
+  api "${DEMO_BASE_URL}"
 
 # A second env, selected with \`tflw run --env staging\`. Secrets come from the environment
 # via env(NAME) — a local .env is auto-loaded for dev, real env vars win over it, and their
