@@ -2200,6 +2200,21 @@ certify that anything is safe to share.
 
 - `report/results.json` — always written (no flag), the exact same redacted `RunReport` that
   feeds `report.html`, so CI can read a run's outcome from a file instead of scraping stdout.
+
+  **`ok` answers "did this run pass?" — not "did nothing that ran fail?" (M114).** They are
+  different questions whenever a run reaches no verdict at all: `aborted` (Ctrl-C before the
+  planned duration elapsed) and `inconclusive` (tflw's own generator saturated, so the numbers
+  describe tflw rather than the system under test). Such a run is `ok: false` **with `failed: 0`**,
+  and that pair is not a contradiction — it reads "this run did not pass, and no test failed",
+  which is exactly what an abort is. The narrow question has its own field: `failed === 0`.
+
+  This makes the JSON agree with the exit code it ships beside. Before M114 an aborted run wrote
+  `{"ok": true, "passed": 1, "failed": 0, "aborted": true}` and exited `130` — the artifact said
+  clean, the process said cut short, and a CI job branching on the field named for the question
+  read the wrong one. `ok`, `aborted` and `inconclusive` now carry the same verdict the console
+  badge (`PASS`/`FAIL`/`ABORTED`/`INCONCLUSIVE`), `report.html`'s header and `junit.xml`'s
+  `<skipped/>` thresholds show, from one shared derivation. The same `RunReport` is what the
+  `run:end` ndjson event carries, so `--format ndjson` consumers get the identical answer.
 - `tflw run --failed` — re-runs only the previous run's failing tests. State lives in
   `report/.last-run.json` (always overwritten, every run, including `--failed` runs themselves —
   a test that failed on an earlier `retry` attempt but ultimately passed, i.e. `flaky`, is never

@@ -12,6 +12,7 @@ export { runLoadShard, mergeLoadShardReports, spliceLoadReportIntoRunReport, typ
 export { workloadOf } from './interpreter.js';
 export { resolveImportedActions, resolveMissingFiles, type ReadText, type PathExists } from './imports.js';
 export { mergeSelfDiagnosis } from './selfDiagnosis.js';
+export { finalizeVerdict, noVerdictReason, type NoVerdictReason } from './run-verdict.js';
 export { shutdownMtlsWorker } from './mtlsWorker.js';
 export { resolveRunSeed, resolveRunClock } from './seed.js';
 export { BrowserManager, SUPPORTED_BROWSER_ENGINES, type BrowserEngine, type BrowserManagerOptions } from './browser.js';

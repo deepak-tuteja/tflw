@@ -418,15 +418,17 @@ test('a workload entry with endpoints renders one collapsed <details> per identi
 test('report.selfDiagnosis renders a generator line on the workload panel; saturated shows a warning', () => {
   const html = renderReportHtml({ ...baseReport, tests: [workloadTest], selfDiagnosis: healthyDiagnosis });
   assert.match(html, /class="generator-line "/);
-  const saturated = renderReportHtml({ ...baseReport, tests: [workloadTest], selfDiagnosis: { ...healthyDiagnosis, saturated: true }, inconclusive: true });
+  const saturated = renderReportHtml({ ...baseReport, ok: false, tests: [workloadTest], selfDiagnosis: { ...healthyDiagnosis, saturated: true }, inconclusive: true });
   assert.match(saturated, /generator-line saturated/);
   assert.match(saturated, /tflw itself was the bottleneck/);
 });
 
 test('report.inconclusive/aborted render header banners', () => {
-  const inconclusive = renderReportHtml({ ...baseReport, inconclusive: true });
+  // `ok: false` on both, since `M114`: a run that reached no verdict is one the tool can no longer
+  // produce with `ok: true`, and a fixture is worth no more than the state it can stand for.
+  const inconclusive = renderReportHtml({ ...baseReport, ok: false, inconclusive: true });
   assert.match(inconclusive, /generator process saturated/);
-  const aborted = renderReportHtml({ ...baseReport, aborted: true, abortedMessage: 'aborted at 12s of 30s planned' });
+  const aborted = renderReportHtml({ ...baseReport, ok: false, aborted: true, abortedMessage: 'aborted at 12s of 30s planned' });
   assert.match(aborted, /aborted at 12s of 30s planned/);
 });
 
@@ -435,8 +437,18 @@ test('report.inconclusive/aborted render header banners', () => {
 // from `report.ok` (= "nothing that ran failed") on a run that was cut short. A banner under a green
 // badge loses to the badge.
 test('an aborted run shows an ABORTED badge, not a green PASS', () => {
-  const html = renderReportHtml({ ...baseReport, aborted: true, abortedMessage: 'aborted at 6s of 30s planned' });
+  const html = renderReportHtml({ ...baseReport, ok: false, aborted: true, abortedMessage: 'aborted at 6s of 30s planned' });
   assert.match(html, /<span class="badge fail">ABORTED<\/span>/);
+  assert.doesNotMatch(html, />PASS</);
+  assert.match(html, /<header class="run fail">/);
+});
+
+// `M114` (`M111-01`) — and the same page rendered a green `PASS` over an **inconclusive** run right
+// up until this milestone: the banner two tests up says the generator saturated, while the badge
+// above it said the run passed. `M111` fixed the badge for `aborted` only.
+test('an inconclusive run shows an INCONCLUSIVE badge, not a green PASS', () => {
+  const html = renderReportHtml({ ...baseReport, ok: false, inconclusive: true });
+  assert.match(html, /<span class="badge fail">INCONCLUSIVE<\/span>/);
   assert.doesNotMatch(html, />PASS</);
   assert.match(html, /<header class="run fail">/);
 });

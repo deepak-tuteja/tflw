@@ -3047,6 +3047,7 @@ interface WorkloadReportEntry {
 }
 interface UnifiedResultsJson {
   readonly ok: boolean;
+  readonly failed: number;
   readonly inconclusive?: boolean;
   readonly aborted?: boolean;
   readonly abortedMessage?: string;
@@ -3687,12 +3688,47 @@ test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing 
       assert.equal(results.aborted, true);
       assert.match(results.abortedMessage!, /^aborted at \d+s of 4s planned$/);
       assert.ok(workloadEntries(results)[0]!.metrics.iterations > 0, 'iterations completed before Ctrl-C must still be counted, not discarded');
+      // `M114` (`M111-01`) — the artifact a CI job branches on, and the last sink `FU-07` left
+      // dishonest. This file read `{"ok": true, "passed": 1, "failed": 0, "aborted": true}` while
+      // the very same run exited 130: the JSON and the exit code disagreed about whether the run
+      // passed, and only one of them is what a script reads. `failed` still says the narrow thing.
+      assert.equal(results.ok, false, 'an aborted run must not report a pass in the file CI reads');
+      assert.equal(results.failed, 0, '`ok: false` here means "no verdict", not "something failed" — that distinction is why no new field was added');
 
       const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
       assert.match(html, /insecure-warning/);
 
       const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
       assert.match(junit, /<property name="aborted" value="aborted at \d+s of 4s planned"\/>/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// `M114` (`M111-01`) — `results.json` is one of the two machine-readable sinks the row named; this
+// is the other. `report/events.ndjson` only exists under `--format ndjson`, which replaces the human
+// console output entirely, so the abort's `run:end` event needs its own run rather than another
+// assertion on the test above. Worth the extra 300ms: `--format ndjson` is the mode built to be
+// consumed by something other than a person, which is exactly who was being lied to.
+test('`--format ndjson`: an aborted run\'s `run:end` event carries `ok: false`, like every other sink', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-sigint-ndjson-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'load.tflw'), 'test "long"\n  ramp to 5 users over 4000ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
+
+      const { code } = await runLoadAndSigint(['load.tflw', '--format', 'ndjson'], dir, 300);
+      assert.equal(code, 130);
+
+      const runEnd = (await readFile(join(dir, 'report', 'events.ndjson'), 'utf8'))
+        .trimEnd()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { type: string; report?: { ok: boolean; failed: number; aborted?: boolean } })
+        .find((e) => e.type === 'run:end');
+      assert.equal(runEnd?.report?.aborted, true, 'the abort must reach the stream at all before its verdict can be checked');
+      assert.equal(runEnd?.report?.ok, false);
+      assert.equal(runEnd?.report?.failed, 0);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -3752,10 +3788,17 @@ test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and ma
     assert.equal(failure.code, 3);
     assert.match(failure.stdout, /⚠ tflw itself is the bottleneck/);
     assert.match(failure.stdout, /⚠ inconclusive/);
+    // `M114` (`M111-01`) — until this milestone the badge above those two warnings read a green
+    // `PASS 1/1 passed`, while this same run exited 3 and marked both its thresholds `<skipped/>`
+    // below. `M111` gave `aborted` a badge of its own and left its sibling cause printing a pass.
+    assert.match(failure.stdout, /INCONCLUSIVE 1\/1 passed/);
+    assert.doesNotMatch(failure.stdout, /PASS 1\/1 passed/);
 
     const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
     assert.equal(results.inconclusive, true);
     assert.equal(results.selfDiagnosis!.saturated, true);
+    assert.equal(results.ok, false, 'a run whose numbers tflw itself says are untrustworthy has not passed');
+    assert.equal(results.failed, 0);
 
     const junit = await readFile(join(dir, 'report', 'junit.xml'), 'utf8');
     // junit emits one `<testcase>` per threshold, so M89c's added line takes this from 1 to 2 —

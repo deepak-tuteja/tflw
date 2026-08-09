@@ -67,6 +67,12 @@ test('colour is applied to the warning the same way `insecure`’s is (A12-01)',
 
 const abortedWorkload: RunReport = {
   ...baseReport,
+  // `M114` (`M111-01`) — `ok: false` beside `passed: 1, failed: 0` is not a typo, and this fixture
+  // carried the tool's old `ok: true` until then. A run that reached no verdict did not pass; the
+  // narrow "nothing that ran failed" is what `failed` says. `finalizeVerdict` makes `ok: true` here
+  // a state the tool can no longer produce, so a fixture asserting against it would be asserting
+  // against nothing.
+  ok: false,
   aborted: true,
   abortedMessage: 'aborted at 6s of 30s planned',
   tests: [
@@ -107,10 +113,23 @@ test('an aborted run gives its thresholds no tick either way, because they measu
   assert.match(out, /– burst \(workload/);
 });
 
+test('an inconclusive run prints INCONCLUSIVE, not PASS', () => {
+  // `M114` (`M111-01`) — the sibling cause, and the one `M111` left behind. `runBadgeText`
+  // special-cased `aborted` alone, so a run whose own generator saturated printed a green
+  // `PASS 1/1 passed` while `junit.xml`, reading the same `noVerdictReason`, marked every one of its
+  // thresholds `<skipped/>`: the two sinks `M111` unified disagreed about one of the two reasons it
+  // unified them for. Found by running a saturating workload, not by re-reading the function.
+  const out = renderCliSummary({ ...abortedWorkload, aborted: false, abortedMessage: undefined, inconclusive: true }, false);
+  assert.match(out, /^INCONCLUSIVE 1\/1 passed/m);
+  assert.doesNotMatch(out, /^PASS/m);
+  assert.match(out, /– error rate < 50\.00% \(actual: 0\.00%\) — no verdict, run inconclusive/);
+  assert.match(out, /⚠ inconclusive/);
+});
+
 test('a completed run still ticks its thresholds and still prints PASS', () => {
   // The control. A `noVerdict` that evaluated truthy for every run would satisfy both tests above
   // while deleting every threshold verdict tflw reports — this is what makes them mean something.
-  const out = renderCliSummary({ ...abortedWorkload, aborted: false, abortedMessage: undefined }, false);
+  const out = renderCliSummary({ ...abortedWorkload, ok: true, aborted: false, abortedMessage: undefined }, false);
   assert.match(out, /^PASS 1\/1 passed/m);
   assert.match(out, /✓ error rate < 50\.00% \(actual: 0\.00%\)$/m);
   assert.doesNotMatch(out, /no verdict/);
