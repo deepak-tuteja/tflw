@@ -48,6 +48,7 @@ import {
   BrowserPageState,
   captureFailureScreenshot,
   describeLocator,
+  diagnoseMissingLocator,
   performCheck,
   performClick,
   performDrag,
@@ -68,6 +69,7 @@ import {
   resolveLocatorSnapshot,
   type BrowserManager,
   type CapturedNetworkRequest,
+  type LocatorScope,
   type PWLocator,
   type PWPage,
   type ResolvedLocator,
@@ -3291,6 +3293,28 @@ async function execExpect(step: ExpectStmt, response: ResponseTrace | null, conn
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(message));
 }
 
+/** `B4-08` — the live-DOM "nearest candidate" diagnosis (SPEC §9.3), on the assertion path.
+ *
+ * It used to fire only on the action path, because it lived at `resolveLocator`'s throw site and
+ * the assertion path deliberately never throws on zero matches (`is hidden` and `has count 0` must
+ * be able to pass against nothing). The result was that one typo produced two different qualities
+ * of failure: `click button "Add to Crat"` named the real button as a ready-to-paste locator,
+ * while `expect button "Add to Crat" is visible` said only *"but got no matching element"* — the
+ * one place the author most needs the suggestion, since a suite asserts far more than it clicks.
+ *
+ * Two conditions, both load-bearing. **Only on the final failure**: this is an extra whole-DOM
+ * scan and a retrying expect polls until its deadline, so running it per-poll would pay the scan
+ * dozens of times to print it once. **Only when nothing matched at all**: with an element actually
+ * resolved, the failure is about that element's *state* (`is enabled` against a disabled button),
+ * and a list of other elements whose names look similar would point away from the real cause. A
+ * `css`/`xpath` locator has no semantic name to match against and is dropped by the scan itself.
+ *
+ * Returns '' when there is nothing worth saying, so callers can concatenate unconditionally. */
+async function diagnoseIfNothingMatched(scope: LocatorScope, locatorAst: LocatorAst, name: string, count: number): Promise<string> {
+  if (count !== 0) return '';
+  return diagnoseMissingLocator(scope, locatorAst.kind, name);
+}
+
 /** UI `expect`/`check` (SPEC §9.4) — auto-retries to `timeouts.expect` (P#15's web-first half;
  * API expects evaluate once, UI expects retry), unlike `execExpect`'s single evaluation. Resolves
  * the locator itself on every poll (rather than once up front) so a state matcher observes the
@@ -3311,7 +3335,8 @@ async function execUiExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: 
     const label = locatorDetail(subject.locator, name, via);
     const outcome = await evalUiMatcherOnce(label, pwLocator, step.matcher, ctx, count);
     if (outcome.ok || performance.now() >= deadline) {
-      return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+      const message = outcome.message + (outcome.ok ? '' : await diagnoseIfNothingMatched(scope, subject.locator, name, count));
+      return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(message));
     }
     await sleep(WAIT_POLL_INTERVAL_MS);
   }
@@ -3400,7 +3425,8 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
       // rather than only the state at the deadline: without it, a condition that held 1.9s of a
       // required 2s and one that was never true for a single poll produce the same report line.
       const detail = longestHoldMs > 0 ? `longest unbroken hold ${Math.round(longestHoldMs)}ms of ${holdMs}ms` : `never held for ${holdMs}ms`;
-      const message = holdMs === null ? outcome.message : `${outcome.message} (${detail})`;
+      const held = holdMs === null ? outcome.message : `${outcome.message} (${detail})`;
+      const message = held + (await diagnoseIfNothingMatched(scope, subject.locator, name, count));
       return mkStep('wait', src, step.span, false, start, ctx.redactor.redact(message));
     }
     await sleep(WAIT_POLL_INTERVAL_MS);

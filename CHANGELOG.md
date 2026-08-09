@@ -169,6 +169,25 @@ A systematic pre-`1.0.0` review of the whole surface. Highlights:
 - Diagnostic carets are placed in terminal cells rather than UTF-16 code units, so a line
   containing wide or combining characters underlines the span the reader can see.
 
+### Fixed — locator suggestions on assertions, not just actions (M119)
+
+- **A misspelled locator now gets the same "nearest matches on the page" suggestions in
+  `expect`/`check`/`wait until` that it already got in `click`/`fill`.** `click button "Add to Crat"`
+  named the real `button "Add to Cart"`; `expect button "Add to Crat" is visible` said only *"but got
+  no matching element"* and stopped — the same typo answered two ways depending on the verb, in the
+  half of a suite where most failures actually happen. The suggestions are appended only on a step's
+  final failure and only when nothing matched at all: with an element resolved the failure is about
+  its state, not its name, so a list of similar names would point away from the cause. Absence that
+  the matcher is happy with — `is hidden`, `has count 0` — still passes, and a passing step is never
+  annotated.
+- **The generator's saturation verdict is tested at its real thresholds instead of raced for.** The
+  self-diagnosis test that proves a blocked event loop reports itself as saturated used to also
+  assert the process had held more than 50% of a core — a number that measures the machine's
+  scheduler rather than tflw, and that a busy loop cannot guarantee on a contended box. It went red
+  twice on that assertion alone while the behaviour it was named for passed both times. The verdict
+  is now a pure `isSaturated`, with the lag arm, the CPU arm (at its actual 90% threshold, which no
+  test had ever covered) and the short-window floor each pinned deterministically.
+
 ### Fixed — the first two minutes (M118)
 
 - **`tflw init` then `tflw run` is green in an empty directory.** The scaffolded config points `api`

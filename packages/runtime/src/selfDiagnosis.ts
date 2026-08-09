@@ -25,6 +25,21 @@ const CPU_SATURATION_PERCENT = 90;
  * transient blip as a verdict. */
 const MIN_SATURATION_WINDOW_MS = 300;
 
+/** The saturation verdict as a pure function of the numbers — extracted in `M119` (review row
+ * `M119-02`) so both arms can be tested at their real thresholds with constructed inputs, the way
+ * `mergeSelfDiagnosis` below already is. Until then the CPU arm's only coverage was a busy-block
+ * test racing the OS scheduler for a full core, which is not a property of this code: under CPU
+ * oversubscription that block reads well under `CPU_SATURATION_PERCENT` through no fault of the
+ * predicate (reproduced at 46.2% against 16 competing busy loops on a 16-core box), and the test
+ * flaked rather than the diagnosis being wrong. The lag arm is the one a real block drives
+ * deterministically — and contention only pushes lag further past its threshold, never back under
+ * it — so that is what the busy-block test now asserts, and the thresholds themselves are pinned
+ * here where no scheduler gets a vote. */
+export function isSaturated(sample: { wallMs: number; avgEventLoopLagMs: number; cpuPercent: number; sampleMs: number }): boolean {
+  if (sample.wallMs < MIN_SATURATION_WINDOW_MS) return false;
+  return sample.avgEventLoopLagMs > sample.sampleMs * LAG_SATURATION_MULTIPLE || sample.cpuPercent > CPU_SATURATION_PERCENT;
+}
+
 /** Starts sampling this process's event-loop lag (via `setInterval` drift) and CPU usage (via
  * `process.cpuUsage()` deltas) immediately. `peek()` (M32, R5 — "surfaces the generator
  * self-diagnosis live") computes the verdict from samples collected so far without stopping
@@ -51,7 +66,7 @@ export function startSelfDiagnosis(sampleMs = 100): { peek(): SelfDiagnosis; sto
     const cpuPercent = (cpuMs / wallMs) * 100;
     const avgEventLoopLagMs = lags.length > 0 ? lags.reduce((a, b) => a + b, 0) / lags.length : 0;
     const maxEventLoopLagMs = lags.length > 0 ? Math.max(...lags) : 0;
-    const saturated = wallMs >= MIN_SATURATION_WINDOW_MS && (avgEventLoopLagMs > sampleMs * LAG_SATURATION_MULTIPLE || cpuPercent > CPU_SATURATION_PERCENT);
+    const saturated = isSaturated({ wallMs, avgEventLoopLagMs, cpuPercent, sampleMs });
     return { avgEventLoopLagMs, maxEventLoopLagMs, cpuPercent, saturated };
   };
 

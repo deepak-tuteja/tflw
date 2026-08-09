@@ -5,21 +5,26 @@
 // the *healthy* case is still possible in principle, so that case only asserts the stats are sane,
 // never that `saturated` is strictly `false`.
 //
-// The *saturated* case flaked in CI once (2026-08-03, cpuPercent 43.6% against a >50 floor) —
-// under real contention, a `setTimeout`-based sleep tacked onto the busy-block can itself overshoot
-// its wall-clock duration, diluting cpuPercent's denominator without adding real CPU. Fixed by
-// shrinking that sleep to the minimum needed (just enough for the interval's overdue tick to fire)
-// and extending the block itself for margin — see the test's own comment for the full mechanism.
-// Confirmed via deliberate CPU-oversubscription locally (20 busy processes on a 16-core machine)
-// that a sufficiently extreme contention level can still starve the block itself of proportional
-// CPU (a different mechanism, not the sleep-overshoot above) — real GH-hosted runners are
-// dedicated 2-4 vCPU, not oversubscribed like that, but the bounded retry below is cheap insurance
-// against a transient spike either way, without paying `--test-concurrency=1`'s ~3x wall-clock
-// cost across this entire (largest) test suite for a scenario this unlikely.
+// The *saturated* case flaked twice on a `cpuPercent` floor the busy-block could not guarantee:
+// once in CI (2026-08-03, 43.6% against a >50 floor), then again inside a local mutation sweep
+// (`M119-02`, 46.2%) — reproduced deliberately at 1-in-5 runs against 16 competing busy loops on a
+// 16-core box, versus 0-in-6 at rest. The 2026-08-03 fix read it as a sleep-overshoot diluting
+// cpuPercent's denominator, shrank the trailing sleep, and added a bounded retry; its own comment
+// conceded that extreme contention could still starve the block of proportional CPU but judged the
+// retry "cheap insurance ... for a scenario this unlikely". It was not that unlikely, and a retry
+// cannot help when the contention outlasts the whole test — all 3 attempts ran under the same load.
+//
+// `M119` fixed the assertion rather than the number. `cpuPercent > 50` was never this test's
+// subject: `saturated` is an OR, a real block drives the *lag* arm on any machine, and the two
+// assertions before it had both already passed. Nor was 50 the production threshold (that is
+// `CPU_SATURATION_PERCENT`, 90) — it measured how much of a core the OS handed this process, which
+// is not a property of tflw. Both arms are now pinned deterministically against `isSaturated` at
+// their real thresholds, so the CPU arm ends up better covered than the racing floor ever had it,
+// and the block below asserts only what it genuinely causes.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { startSelfDiagnosis, mergeSelfDiagnosis } from '../src/selfDiagnosis.js';
+import { startSelfDiagnosis, mergeSelfDiagnosis, isSaturated } from '../src/selfDiagnosis.js';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -36,36 +41,58 @@ test('a mostly-idle window produces sane, non-negative stats', async () => {
 });
 
 test('a deliberately blocked event loop is detected as saturated', async () => {
-  const MAX_ATTEMPTS = 3;
-  let result;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const diag = startSelfDiagnosis(20);
-    // A real synchronous busy-block — the event loop genuinely cannot service the 20ms interval
-    // timer during this window, so when it resumes there is a real, large lag sample waiting,
-    // regardless of what else is happening on the machine (unlike a race against another timer).
-    // 350ms clears MIN_SATURATION_WINDOW_MS (300ms) with margin on its own.
-    const blockStart = performance.now();
-    while (performance.now() - blockStart < 350) {
-      // spin
-    }
-    // A short yield (not the previous 150ms) — just enough for the overdue 20ms interval tick to
-    // actually fire and record its lag sample before `stop()` reads it; `stop()` runs
-    // synchronously, so without *some* await here the pending tick never gets a turn. Kept short
-    // deliberately: a `setTimeout`-based sleep's wall-clock duration can overshoot under real CI
-    // CPU contention, diluting `cpuPercent`'s denominator without adding real CPU. A 150ms sleep
-    // tacked onto a 300ms block left only a ~66.7% theoretical ceiling, no room for any overshoot;
-    // a 20ms sleep tacked onto a 350ms block leaves a ~94.6% ceiling, comfortably absorbing an
-    // overshoot many times its own size.
-    await sleep(20);
-    result = diag.stop();
-    if (result.saturated && result.maxEventLoopLagMs > 100 && result.cpuPercent > 50) break;
-    // Retry (bounded, see file header) — only a sufficiently extreme, transient contention spike
-    // reaches this point, starving the busy-block itself of proportional CPU regardless of how
-    // short the trailing sleep is.
+  const diag = startSelfDiagnosis(20);
+  // A real synchronous busy-block — the event loop genuinely cannot service the 20ms interval
+  // timer during this window, so when it resumes there is a real, large lag sample waiting,
+  // regardless of what else is happening on the machine (unlike a race against another timer).
+  // 350ms clears MIN_SATURATION_WINDOW_MS (300ms) with margin on its own. Every assertion below
+  // fails *safe* under CPU contention: competition can only delay the overdue tick further and
+  // stretch the wall-clock window, pushing lag and `wallMs` deeper past their thresholds. That is
+  // what makes the retry this test used to carry unnecessary rather than merely insufficient.
+  const blockStart = performance.now();
+  while (performance.now() - blockStart < 350) {
+    // spin
   }
+  // A short yield — just enough for the overdue 20ms interval tick to actually fire and record its
+  // lag sample before `stop()` reads it; `stop()` runs synchronously, so without *some* await here
+  // the pending tick never gets a turn.
+  await sleep(20);
+  const result = diag.stop();
   assert.equal(result.saturated, true, JSON.stringify(result));
   assert.ok(result.maxEventLoopLagMs > 100, `expected a large lag spike, got ${result.maxEventLoopLagMs}ms`);
-  assert.ok(result.cpuPercent > 50, `expected high CPU from the busy-block, got ${result.cpuPercent}% (after ${MAX_ATTEMPTS} attempts)`);
+  // Sanity only, never a floor — how much CPU the OS actually granted this process is the
+  // machine's business, not tflw's (see file header). The threshold itself is pinned below.
+  assert.ok(result.cpuPercent >= 0, `expected a sane CPU reading, got ${result.cpuPercent}%`);
+});
+
+// ---- M119 (`M119-02`): both saturation arms at their real thresholds, no scheduler involved ----
+
+test('isSaturated: the lag arm fires on its own, just past the sample interval', () => {
+  const base = { wallMs: 1000, cpuPercent: 5, sampleMs: 20 };
+  assert.equal(isSaturated({ ...base, avgEventLoopLagMs: 21 }), true);
+  // Strictly greater — lag merely *equal* to the interval is a loop keeping up, not falling behind.
+  assert.equal(isSaturated({ ...base, avgEventLoopLagMs: 20 }), false);
+});
+
+test('isSaturated: the CPU arm fires on its own, just past CPU_SATURATION_PERCENT', () => {
+  // The arm the busy-block never reliably reached: a pinned process, healthy lag. 90 is the real
+  // threshold the production verdict uses — the flaky test asserted 50, which was neither this
+  // number nor anything the code controls.
+  const base = { wallMs: 1000, avgEventLoopLagMs: 0, sampleMs: 20 };
+  assert.equal(isSaturated({ ...base, cpuPercent: 91 }), true);
+  assert.equal(isSaturated({ ...base, cpuPercent: 90 }), false);
+});
+
+test('isSaturated: neither arm fires below MIN_SATURATION_WINDOW_MS (M32 floor)', () => {
+  // Both arms screaming, but the window is too short to mean anything — startup cost reads as a
+  // high rate against a tiny denominator, which is exactly what M32 found in a 150ms real run.
+  const hot = { avgEventLoopLagMs: 500, cpuPercent: 140, sampleMs: 20 };
+  assert.equal(isSaturated({ ...hot, wallMs: 299 }), false);
+  assert.equal(isSaturated({ ...hot, wallMs: 300 }), true);
+});
+
+test('isSaturated: a healthy sample in a long window is not saturated', () => {
+  assert.equal(isSaturated({ wallMs: 60_000, avgEventLoopLagMs: 1, cpuPercent: 12, sampleMs: 100 }), false);
 });
 
 test('a very short run never reports saturated, even with an inflated CPU% reading (M32 fix)', async () => {
