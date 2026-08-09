@@ -1729,7 +1729,11 @@ explicit `check`/`expect` lines.
   against) scans the live DOM for elements of the right shape and appends up to 5 ranked
   ready-to-paste suggestions to the failure, e.g. `click button "Add to Crat"`
   (a typo) surfaces `button "Add to Cart"`. An element with no usable name at all (an icon-only
-  button, e.g.) is still surfaced via a generated CSS selector rather than dropped. This is a
+  button, e.g.) is still surfaced via a generated CSS selector rather than dropped — **for
+  `button`/`field`/`list`, whose scans are shape-scoped, but not for `text` (`M119-01`)**. A `text`
+  scan is over every element, and an element with no text is not a near-miss for a text locator but
+  a non-candidate; offering it as a ready-to-paste `css "html > head"` is worse than saying nothing,
+  so when no text on the page is similar enough the message is left unchanged. This is a
   diagnosis, not a fallback — it never changes which element a step acts on, only what the failure
   message suggests. See also `tflw pick <url>` (§12), which prints a *verified* (not just
   best-guess) locator for a clicked element.

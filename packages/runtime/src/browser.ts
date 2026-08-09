@@ -680,7 +680,9 @@ async function ambiguityError(
 // their computed name is to what the author typed, and print the closest few as ready-to-paste
 // tflw locators. An element with no usable name at all (icon-only buttons, e.g.) still gets
 // surfaced via a generated CSS selector rather than being silently dropped — "including generated
-// CSS/XPath when nothing semantic exists" (PLAN.md §9). This is a diagnosis, not a fallback: it
+// CSS/XPath when nothing semantic exists" (PLAN.md §9) — but only for the kinds where an unnamed
+// element is still a candidate at all; see `UNNAMED_IS_STILL_A_CANDIDATE`, which `text` is
+// deliberately not in (`M119-01`). This is a diagnosis, not a fallback: it
 // never changes which element a step actually acts on, only what the failure message suggests.
 
 const DIAGNOSIS_SCAN_CSS: Partial<Record<LocatorKind, string>> = {
@@ -689,6 +691,25 @@ const DIAGNOSIS_SCAN_CSS: Partial<Record<LocatorKind, string>> = {
   text: '*',
   list: 'ul, ol, [role="list"]',
 };
+
+/** Kinds where an element the scan could not name is *still* a real candidate, and so is worth
+ * surfacing via a generated CSS path (PLAN.md §9). Opt-in, not a `!== 'text'` exclusion, so a kind
+ * added to `DIAGNOSIS_SCAN_CSS` later has to answer this question rather than inherit an answer:
+ * of the two ways to be wrong, offering a ready-to-paste locator that cannot be what the author
+ * meant is worse than omitting one that might have been.
+ *
+ * `text` is deliberately absent (`M119-01`). For `button`/`field`/`list` the scan is shape-scoped,
+ * so an unnamed hit is a genuine control that merely lacks an accessible name — an icon-only
+ * button is exactly the case the arm was written for, and a CSS path is the only way to name it.
+ * For `text` the scan is `*` and a name is only computed for leaves, so *every* element with
+ * children lands in the unnamed arm: on the four-element `/diagnose` fixture,
+ * `text "Somethign Unrelated"` answered with `css "html"`, `css "html > head"`,
+ * `css "html > body"` and two more — structural containers in document order, one of which can
+ * never be visible, none of which has any relationship to what was typed. The arm scores 0 and is
+ * appended without passing `MIN_DIAGNOSIS_SIMILARITY`, so on a real page it also crowds out the
+ * ranked matches it sits behind. An element with no text is not a near-miss for a text locator;
+ * it is not a candidate at all, and the honest answer is the unchanged message. */
+const UNNAMED_IS_STILL_A_CANDIDATE: Partial<Record<LocatorKind, true>> = { button: true, field: true, list: true };
 
 const MAX_DIAGNOSIS_CANDIDATES = 5;
 const MIN_DIAGNOSIS_SIMILARITY = 0.3;
@@ -834,7 +855,7 @@ export async function diagnoseMissingLocator(scope: LocatorScope, kind: LocatorK
     .map((c) => ({ suggestion: describeLocator(kind, c.name), score: similarity(typedName, c.name) }))
     .filter((c) => c.score >= MIN_DIAGNOSIS_SIMILARITY)
     .sort((a, b) => b.score - a.score);
-  const unnamed = raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 }));
+  const unnamed = UNNAMED_IS_STILL_A_CANDIDATE[kind] ? raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 })) : [];
   const combined = [...named, ...unnamed].slice(0, MAX_DIAGNOSIS_CANDIDATES);
   if (combined.length === 0) return '';
   return `\n  nearest matches on the page:\n${combined.map((c) => `    - ${c.suggestion}`).join('\n')}`;

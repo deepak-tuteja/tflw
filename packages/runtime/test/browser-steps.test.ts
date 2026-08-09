@@ -456,6 +456,48 @@ test('nothing of the right kind on the page at all leaves the error message unch
   assert.doesNotMatch(error, /nearest matches on the page:/);
 });
 
+// ---- M119-01: the unnamed arm is not offered for `text` --------------------------------------
+//
+// For `text` the scan is `*` and a name is computed for leaves only, so every element with
+// children fell into the unnamed arm and was offered as a ready-to-paste `css` locator at score 0,
+// without passing `MIN_DIAGNOSIS_SIMILARITY`. On this four-element fixture that meant `css "html"`,
+// `css "html > head"`, `css "html > body"` and two more — document order, not relevance, and the
+// head can never be visible. The arm stays for `button`/`field`/`list`, where an unnamed hit is a
+// real control that merely lacks an accessible name (pinned by the icon-button test above).
+
+test('a typo\'d text name surfaces the real text, and no structural css paths alongside it', async () => {
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const { program } = parseSource('test "text typo"\n  open "/diagnose"\n  click text "Add to Crat"\n');
+  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /nearest matches on the page:/);
+  assert.match(error, /text "Add to Cart"/);
+  assert.doesNotMatch(error, /css "html/); // the whole point: no `html`, `html > head`, `html > body`
+});
+
+test('an unrelated text name gets no diagnosis at all — an element with no text is not a near-miss', async () => {
+  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const { program } = parseSource('test "text unrelated"\n  open "/diagnose"\n  click text "Somethign Unrelated"\n');
+  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /no element found for `text "Somethign Unrelated"`/);
+  // Every named leaf is below MIN_DIAGNOSIS_SIMILARITY and the unnamed arm is gone, so the honest
+  // answer is the unchanged message — not five containers ranked by where they sit in the document.
+  assert.doesNotMatch(error, /nearest matches on the page:/);
+  assert.doesNotMatch(error, /css "html/);
+});
+
+test('the `text` exclusion did not disarm the assertion path it now also fires on (B4-08 + M119-01)', async () => {
+  const { program } = parseSource('test "text expect"\n  open "/diagnose"\n  expect text "Add to Crat" is visible\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /text "Add to Cart"/);
+  assert.doesNotMatch(error, /css "html/);
+});
+
 test('css/xpath locators never get a diagnosis suffix — no semantic name to fuzzy-match against', async () => {
   const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
   const { program } = parseSource('test "css escape"\n  open "/diagnose"\n  click css ".nonexistent"\n');
