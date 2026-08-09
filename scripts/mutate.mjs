@@ -37,9 +37,12 @@
 // measured zero that is really "not counted this way" is the exact class this tool exists to find,
 // so the kill line now says which it is.
 //
-// **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-08, not from
-// memory: **42 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106, 1 from M107,
-// 1 from M108, 3 from M109, 2 from M110, 7 from M111.** Each of the 20 is one whose target could be identified unambiguously from the plan's own
+// **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-09 by parsing the
+// array, not from memory: **48 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from
+// M106, 1 from M107, 1 from M107b, 1 from M108, 3 from M109, 2 from M110, 2 from M110b, 7 from
+// M111, 3 from M114.** The 2026-08-08 line this replaces said 42 and omitted `m107b` from its own
+// breakdown, so it was short by one on the day it was written and by six by the time CI read it.
+// Each of the 20 is one whose target could be identified unambiguously from the plan's own
 // description plus the source it names; the other 11 of the plan's 31 are described at a level
 // ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
 // would produce a number rather than a measurement. They are listed at the bottom of this file as
@@ -473,18 +476,36 @@ const MUTATIONS = [
     milestone: 'm111',
     pkg: '@tflw/reporter',
     file: 'packages/reporter/src/run-verdict.ts',
-    what: "an aborted run prints `PASS` again on all three sinks — the badge computed from `report.ok` alone (`FU-07`)",
-    find: "  if (report.aborted) return 'ABORTED';",
-    replace: '',
+    // Retargeted by `M114`, which rewrote the two lines this anchored into and left it **stale** —
+    // not failing, not passing, silently not run. Caught by CI's unscoped sweep after a local
+    // `verify:mutations m114` had reported all three of that milestone's own mutations killed.
+    //
+    // The `what` is weaker than it was, and deliberately says so. `FU-07`'s defect was a green
+    // `PASS` over an aborted run; since `M114` derives `RunReport.ok` from the same reason, an
+    // aborted run reaching this line already carries `ok: false`, so the badge it collapses to is
+    // `FAIL`. `PASS` is no longer a state the mutated code can produce — claiming otherwise would
+    // be describing a defect this tool can no longer reconstruct.
+    what: 'the badge stops distinguishing `ABORTED` from a verdict, collapsing an aborted run into `FAIL` (`FU-07`; pre-`M114` this read `PASS`)',
+    find: "  const reason = noVerdictReason(report);\n  if (reason !== null) return reason === 'aborted' ? 'ABORTED' : 'INCONCLUSIVE';",
+    replace: "  const reason = report.inconclusive ? 'inconclusive' : null;\n  if (reason !== null) return 'INCONCLUSIVE';",
   },
   {
     id: 'aborted-threshold-verdict',
     milestone: 'm111',
     pkg: '@tflw/reporter',
-    file: 'packages/reporter/src/run-verdict.ts',
+    // Retargeted by `M114` alongside `aborted-badge`. The branch this used to delete now lives in
+    // `packages/runtime/src/run-verdict.ts`, which this suite cannot see: `@tflw/runtime` resolves
+    // through its `dist/`, and this runner has no build step, so a mutation there would run against
+    // the *previous* build and be scored green — a survivor that measured nothing.
+    //
+    // Moved to junit's own call site rather than to reporter's re-export, because `M114` made
+    // `runBadgeText` a consumer of the same function: blinding the re-export would be killed by the
+    // badge tests, and a control killed by the sink it is not about stops being evidence for the
+    // sink it is. Here the mutation reaches `junit.xml` and nothing else.
+    file: 'packages/reporter/src/junit.ts',
     what: 'thresholds measured over a truncated sample get their ticks and their `junit.xml` pass back (`FU-07`)',
-    find: "  if (report.aborted) return 'aborted';",
-    replace: '',
+    find: '  const noVerdict = noVerdictReason(report);',
+    replace: "  const noVerdict = report.inconclusive ? 'inconclusive' : null;",
   },
   {
     id: 'browser-close-rethrow',
