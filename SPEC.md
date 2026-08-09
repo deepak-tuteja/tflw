@@ -1727,12 +1727,18 @@ explicit `check`/`expect` lines.
 - **Live-DOM "nearest candidate" diagnosis (M5):** a persistently-unresolved semantic locator
   (`button`/`field`/`text`/`list` — `css`/`xpath` are skipped, no semantic name to fuzzy-match
   against) scans the live DOM for elements of the right shape and appends up to 5 ranked
-  ready-to-paste suggestions to the "no element found" error, e.g. `click button "Add to Crat"`
+  ready-to-paste suggestions to the failure, e.g. `click button "Add to Crat"`
   (a typo) surfaces `button "Add to Cart"`. An element with no usable name at all (an icon-only
   button, e.g.) is still surfaced via a generated CSS selector rather than dropped. This is a
   diagnosis, not a fallback — it never changes which element a step acts on, only what the failure
   message suggests. See also `tflw pick <url>` (§12), which prints a *verified* (not just
   best-guess) locator for a clicked element.
+  **It fires on assertions and waits too, not only on actions (`B4-08`)** — the same typo in
+  `expect`/`check`/`wait until` gets the same suggestions, under two conditions: only on the step's
+  *final* failure (the scan is a whole-DOM round-trip and these steps poll until their deadline),
+  and only when *nothing* matched. With an element resolved, the failure is about its state rather
+  than its name, and naming other similar elements would point away from the cause. Absence that
+  the matcher is happy with — `is hidden`, `has count 0` — passes, and a pass is never annotated.
 
 ### 9.4 Waiting & UI subjects ✅
 

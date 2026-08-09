@@ -37,6 +37,16 @@
 // measured zero that is really "not counted this way" is the exact class this tool exists to find,
 // so the kill line now says which it is.
 //
+// M119 found the *second* way that line lied, and it had nothing to do with guard scripts: the two
+// summary formats. With no TTY, Node 22 defaults to the `tap` reporter (`# fail 0`) and Node 24+ to
+// `spec` (`ℹ fail 0`), and these regexes only ever knew `tap`. So on any modern Node — CI's Node 24
+// leg, and this Mac — *every* kill printed "suite exited non-zero (a guard script, not a node:test
+// assertion)" and every baseline printed "green, ? passing", whatever actually happened. The
+// verdicts were never affected (kill/survive reads the exit code, not the summary), but the stated
+// reason was wrong on half the machines that run this. `verify-test-counts.mjs` had already been
+// bitten by exactly this and documents it at length; the lesson didn't travel the 40 lines to here.
+// Both formats are matched now, the same way that file matches them.
+//
 // **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-09 by parsing the
 // array, not from memory: **48 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from
 // M106, 1 from M107, 1 from M107b, 1 from M108, 3 from M109, 2 from M110, 2 from M110b, 7 from
@@ -724,6 +734,83 @@ const MUTATIONS = [
     find: "  if (!url.startsWith('tflw://')) return url;",
     replace: '  return url;',
   },
+  {
+    id: 'assertion-diagnosis-never-fires',
+    milestone: 'm119',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`B4-08` restored exactly as filed: the nearest-candidate diagnosis fires on actions only, so `expect button "Add to Crat" is visible` goes back to saying nothing but "no matching element" while the identical `click` names the real button',
+    find: "  if (count !== 0) return '';\n  return diagnoseMissingLocator(scope, locatorAst.kind, name);",
+    replace: "  return '';",
+  },
+  {
+    id: 'diagnosis-ignores-the-resolved-element',
+    milestone: 'm119',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    // The over-firing direction, which is the one a "does it appear?" test cannot catch. Without
+    // this, every test in the cluster could pass with the guard deleted — and a state failure would
+    // print a list of names when the name was never the problem.
+    what: 'the zero-match guard is dropped, so an element that resolved and failed on its *state* (`is disabled` against an enabled button) is answered with a list of similarly-named other elements — a diagnosis pointing away from the cause',
+    find: "  if (count !== 0) return '';",
+    replace: '  void count;',
+  },
+  {
+    id: 'passing-assertion-gets-annotated',
+    milestone: 'm119',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the diagnosis is appended regardless of outcome, so `expect button "Nope" is hidden` — which *passes*, absence being the asserted state — reports success with "nearest matches on the page" stapled to it',
+    find: "      const message = outcome.message + (outcome.ok ? '' : await diagnoseIfNothingMatched(scope, subject.locator, name, count));",
+    replace: '      const message = outcome.message + (await diagnoseIfNothingMatched(scope, subject.locator, name, count));',
+  },
+  {
+    id: 'wait-until-diagnosis-dropped',
+    milestone: 'm119',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    // Scoped to the `wait until` call site alone: `assertion-diagnosis-never-fires` guts the shared
+    // helper and would be killed by the `expect` tests whether or not `wait until` was ever wired
+    // up. Only this one fails if the third call site is missing.
+    what: '`wait until` alone loses the diagnosis — the half of the fix that a test suite covering only `expect`/`check` would never notice was missing',
+    find: '      const message = held + (await diagnoseIfNothingMatched(scope, subject.locator, name, count));',
+    replace: '      const message = held;',
+  },
+  {
+    id: 'saturation-lag-arm-never-fires',
+    milestone: 'm119',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/selfDiagnosis.ts',
+    // The arm a real busy-block actually drives. Before `M119-02` this was reachable only through
+    // the busy-block test, which also carried the racing `cpuPercent > 50` floor — so a green kill
+    // here proves the deterministic replacement really does bind the arm, not just observe it.
+    what: 'a generator whose event loop is queuing behind its own work never reports it — lag can run arbitrarily far past the sample interval and `saturated` stays false unless CPU alone crosses 90%',
+    find: '  return sample.avgEventLoopLagMs > sample.sampleMs * LAG_SATURATION_MULTIPLE || sample.cpuPercent > CPU_SATURATION_PERCENT;',
+    replace: '  return sample.cpuPercent > CPU_SATURATION_PERCENT;',
+  },
+  {
+    id: 'saturation-cpu-arm-never-fires',
+    milestone: 'm119',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/selfDiagnosis.ts',
+    // The arm that had NO deterministic coverage before `M119-02` — the old floor of 50 sat below
+    // the real threshold of 90, so a pinned-CPU generator with a healthy loop was never tested at
+    // all. This mutation would have survived the entire pre-M119 suite.
+    what: 'a generator pinning a core while its event loop still keeps up is never called saturated — the CPU arm is dropped entirely and only lag can trip the verdict',
+    find: '  return sample.avgEventLoopLagMs > sample.sampleMs * LAG_SATURATION_MULTIPLE || sample.cpuPercent > CPU_SATURATION_PERCENT;',
+    replace: '  return sample.avgEventLoopLagMs > sample.sampleMs * LAG_SATURATION_MULTIPLE;',
+  },
+  {
+    id: 'saturation-ignores-the-min-window',
+    milestone: 'm119',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/selfDiagnosis.ts',
+    // M32's floor, restated as a mutation: without it a very short run's one-time startup cost
+    // reads as a sustained-saturation verdict (the original finding was a 150ms run at 140% CPU).
+    what: 'M32 undone — a run too short to mean anything can declare itself saturated on startup cost alone, so a brief `tflw load` reports its own generator as the bottleneck',
+    find: '  if (sample.wallMs < MIN_SATURATION_WINDOW_MS) return false;',
+    replace: '',
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
@@ -781,7 +868,7 @@ function runSuite(pkg) {
   }
 }
 
-const failCount = (out) => Number(/^# fail (\d+)$/m.exec(out)?.[1] ?? -1);
+const failCount = (out) => Number(/^(?:# |ℹ )fail (\d+)$/m.exec(out)?.[1] ?? -1);
 
 // A baseline first. A suite that is already red makes every "killed" verdict meaningless — the
 // mutation would be credited with failures it did not cause. One per package actually selected, so
@@ -796,10 +883,21 @@ function baseline(pkg) {
     process.exit(1);
   }
   if (!result.green) {
+    // M119: a count is not actionable. This aborted an unscoped sweep 26 mutations in with nothing
+    // but "(1 failing)" — and the suite passed on the next three runs, so the one run that could
+    // have named the test was also the only one that would ever have it. The suite's output is
+    // already captured; not printing the names was pure loss. Both reporters, same reason as
+    // `failCount` above: `not ok N - name` is tap, `✖ name (duration)` is spec.
+    const named = [...result.out.matchAll(/^(?:not ok \d+ - (.+?)|✖ (.+?) \([\d.]+ms\))$/gm)]
+      .map((m) => (m[1] ?? m[2]).trim())
+      .filter((n) => n && n !== 'failing tests:');
+    const unique = [...new Set(named)];
     console.error(`\n✗ ${pkg} is red before any mutation (${failCount(result.out)} failing). Fix that first — every verdict below would be borrowed from it.`);
+    if (unique.length > 0) console.error(unique.map((n) => `    ✖ ${n}`).join('\n'));
+    else console.error("    (no test name in the output — the suite failed outside node:test, e.g. in a guard script chained after it)");
     process.exit(1);
   }
-  console.log(`green, ${/^# pass (\d+)$/m.exec(result.out)?.[1] ?? '?'} passing`);
+  console.log(`green, ${/^(?:# |ℹ )pass (\d+)$/m.exec(result.out)?.[1] ?? '?'} passing`);
   baselined.add(pkg);
 }
 

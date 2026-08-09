@@ -466,6 +466,90 @@ test('css/xpath locators never get a diagnosis suffix — no semantic name to fu
   assert.doesNotMatch(error, /nearest matches on the page:/);
 });
 
+// ---- B4-08: the same diagnosis on the assertion path -----------------------------------------
+//
+// The diagnosis above lived at `resolveLocator`'s throw site, which the assertion path never
+// reaches — it resolves through `resolveLocatorSnapshot`, where zero matches is a legitimate
+// observation rather than an error. So one typo produced two qualities of failure depending on
+// whether you clicked the element or asserted on it. These tests pin both halves: it now fires
+// wherever nothing matched, and it still stays quiet everywhere it would mislead.
+
+const shortExpect = (): ResolvedConfig => ({ ...config, timeouts: { ...config.timeouts, expect: 300 } });
+
+test('a typo\'d button in an `expect` gets the same diagnosis a `click` gets', async () => {
+  const { program } = parseSource('test "typo"\n  open "/diagnose"\n  expect button "Add to Crat" is visible\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /but got no matching element/);
+  assert.match(error, /nearest matches on the page:/);
+  assert.match(error, /button "Add to Cart"/);
+});
+
+test('a soft `check` gets the diagnosis too — it is the same assertion, only non-fatal', async () => {
+  const { program } = parseSource('test "soft"\n  open "/diagnose"\n  check button "Add to Crat" is visible\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const step = report.tests[0]!.steps.find((s) => s.kind === 'check' && !s.ok);
+  assert.ok(step, 'expected a failed check step');
+  assert.match(step.detail ?? '', /nearest matches on the page:/);
+  assert.match(step.detail ?? '', /button "Add to Cart"/);
+});
+
+test('`wait until` gets the diagnosis — a name that never resolves is the same mistake', async () => {
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 300 } };
+  const { program } = parseSource('test "wait typo"\n  open "/diagnose"\n  wait until button "Add to Crat" is visible\n');
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /nearest matches on the page:/);
+  assert.match(error, /button "Add to Cart"/);
+});
+
+test('an element that resolved but failed on state gets NO diagnosis — the name was right', async () => {
+  // `#checkout-btn` is present and enabled, so `is disabled` fails with the element in hand. The
+  // failure is about its state; listing other similarly-named buttons would point away from that.
+  const { program } = parseSource('test "state"\n  open "/diagnose"\n  expect button "Add to Cart" is disabled\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /to be disabled/);
+  assert.doesNotMatch(error, /nearest matches on the page:/);
+});
+
+test('a passing assertion against nothing stays clean — `is hidden` is satisfied by zero elements', async () => {
+  const { program } = parseSource('test "hidden passes"\n  open "/diagnose"\n  expect button "Add to Crat" is hidden\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const step = report.tests[0]!.steps.find((s) => s.kind === 'expect');
+  assert.doesNotMatch(step?.detail ?? '', /nearest matches on the page:/);
+});
+
+test('`has count 0` passing against a typo\'d name is still a pass, and still says nothing extra', async () => {
+  const { program } = parseSource('test "count zero"\n  open "/diagnose"\n  expect button "Add to Crat" has count 0\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const step = report.tests[0]!.steps.find((s) => s.kind === 'expect');
+  assert.doesNotMatch(step?.detail ?? '', /nearest matches on the page:/);
+});
+
+test('a failing `has count` against zero elements DOES get the diagnosis — the name is why it is zero', async () => {
+  const { program } = parseSource('test "count typo"\n  open "/diagnose"\n  expect button "Add to Crat" has count 2\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /nearest matches on the page:/);
+  assert.match(error, /button "Add to Cart"/);
+});
+
+test('css/xpath on the assertion path is skipped by the scan, exactly as on the action path', async () => {
+  const { program } = parseSource('test "css expect"\n  open "/diagnose"\n  expect css ".nonexistent" is visible\n');
+  const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.doesNotMatch(error, /nearest matches on the page:/);
+});
+
 test('`open` without a `web` base URL configured is a clear error, not a crash', async () => {
   const noWebConfig: ResolvedConfig = { ...config, webBaseUrl: null };
   const { program } = parseSource('test "no web url"\n  open "/"\n');

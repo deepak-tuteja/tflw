@@ -820,8 +820,14 @@ async function scanDomCandidates(scope: LocatorScope, kind: LocatorKind): Promis
 }
 
 /** Empty string when nothing plausible was found (leaves the caller's message unchanged) — never
- * itself the failure, only ever appended to one. */
-async function diagnoseMissingLocator(scope: LocatorScope, kind: LocatorKind, typedName: string): Promise<string> {
+ * itself the failure, only ever appended to one.
+ *
+ * Exported since `B4-08`: the assertion path (`execUiExpect`/`execWaitUntilUi` in interpreter.ts)
+ * resolves through `resolveLocatorSnapshot`, which — correctly — treats zero matches as an
+ * observation rather than an error, and so never reached the `resolveLocator` throw site this
+ * used to be private to. The diagnosis is about the *name*, not about how the caller feels about
+ * a zero count, so both paths get it. */
+export async function diagnoseMissingLocator(scope: LocatorScope, kind: LocatorKind, typedName: string): Promise<string> {
   const raw = await scanDomCandidates(scope, kind);
   const named = raw
     .filter((c): c is { name: string; cssPath: string } => !!c.name)
