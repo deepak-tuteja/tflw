@@ -59,6 +59,7 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
     <span>${esc(report.startedAt)}</span>
   </div>
   ${report.insecure ? '<div class="insecure-warning">⚠ insecure: true — TLS certificate verification was disabled for this run</div>' : ''}
+  ${report.demo ? '<div class="demo-badge">ℹ demo run — this targeted tflw\'s built-in demo service, not a service of yours. Point <code>api</code> at your own in <code>tflw.config</code>.</div>' : ''}
   ${renderUnmaskableWarning(report.unmaskableSecrets)}
   ${report.browserEngine ? `<div class="engine-badge">browser <code>${esc(report.browserEngine)}</code></div>` : ''}
   ${report.aborted ? `<div class="insecure-warning">⚠ ${esc(report.abortedMessage ?? 'aborted before its planned duration elapsed')} — every workload number below reflects only what completed before Ctrl-C.</div>` : ''}
@@ -393,6 +394,10 @@ const STYLE = `
 header.run{padding:20px 24px;border-bottom:1px solid var(--line)}h1{margin:0 0 8px;font-size:18px}
 .meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--mut);align-items:center}
 .insecure-warning{margin-top:10px;padding:6px 10px;border-radius:6px;background:var(--warn);color:#1b1f27;font-weight:700}
+/* M118/D202 — informational, not a warning: a demo run is working as intended, it just proved
+   nothing about the reader's system. Same shape as the warning band so it is impossible to miss,
+   deliberately not the same colour so it does not read as something going wrong. */
+.demo-badge{margin-top:10px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);color:var(--mut);font-weight:600}
 .engine-badge{margin-top:8px;color:var(--mut);font-size:12px}
 .badge{padding:2px 10px;border-radius:20px;font-weight:700;color:#fff}.badge.ok{background:var(--ok)}.badge.fail{background:var(--fail)}
 code{background:var(--code);padding:1px 5px;border-radius:4px}

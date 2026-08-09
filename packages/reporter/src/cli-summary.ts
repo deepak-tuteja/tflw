@@ -40,6 +40,10 @@ export function renderCliSummary(report: RunReport, color = true): string {
   // Never a silent trade-off: `insecure true` disables TLS certificate verification for the whole
   // run (decision 78) — every summary says so, loudly, in red, not just in `tflw.config`.
   if (report.insecure) lines.push(`${c.red}${c.bold}⚠ insecure: true${c.reset}${c.dim} — TLS certificate verification was disabled for this run${c.reset}`);
+  // M118 (`FU-04`, D202), same principle: this run proved something about tflw's own demo service
+  // and nothing whatsoever about the reader's system. The quickstart's whole job is to produce a
+  // green run in an empty directory, which makes it the one green run that must never be quotable.
+  if (report.demo) lines.push(`${c.dim}ℹ demo: this run targeted tflw's built-in demo service, not a service of yours — point \`api\` at your own in tflw.config${c.reset}`);
   // `A12-01`, same principle one row down: a value declared secret but too short to substring-mask
   // safely (decision 64's `MIN_REDACTABLE_LENGTH`) ships in the clear. The floor is deliberate; the
   // silence was not. Naming the vars is the whole point — "some secret was too short" would send a

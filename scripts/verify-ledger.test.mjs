@@ -195,6 +195,29 @@ test('a suffixed milestone that ships after a higher-numbered one is still found
   assert.equal(t.closed, 165)
 })
 
+test('a `>`-only line ends a paragraph — the real log is one blockquote, not one paragraph (M118)', () => {
+  // The two fixtures above separate blockquote entries with *genuinely empty* lines. The ledger
+  // never has: its milestone log is one continuous blockquote whose blank lines are `>`, so before
+  // M118 this function saw a single 17,000-character paragraph spanning five milestones and
+  // reported `ambiguous` the moment a second tally landed inside it. Every entry here is `>`-led,
+  // exactly as the file writes them.
+  const text = [
+    '> **Ledger after `M118`: 70 open — S2 4 · S3 46 · S4 20 — 180 closed, 3 deferred, 4 withdrawn,',
+    '> 257 total.** <!-- tally:current --> Two closed, two filed.',
+    '>',
+    '> ---',
+    '>',
+    '> **Ledger after `M117`: 70 open — S2 6 · S3 45 · S4 19 — 178 closed, 3 deferred, 4 withdrawn,',
+    '> 255 total.** One row closed, one filed.',
+  ].join('\n')
+  const t = newestPublishedTally(text)
+  assert.equal(t.ambiguous, undefined, 'the older entry is history, not a second current tally')
+  assert.equal(t.milestone, 'M118')
+  assert.equal(t.open, 70)
+  assert.equal(t.closed, 180)
+  assert.equal(t.total, 257)
+})
+
 test('an unmarked tally is history, not the current count', () => {
   assert.equal(newestPublishedTally('Once: 9 open — S2 1 · S3 2 · S4 3 — 5 closed, 0 deferred, 0 withdrawn, 14 total.'), null)
 })

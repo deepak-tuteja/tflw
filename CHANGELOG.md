@@ -169,6 +169,22 @@ A systematic pre-`1.0.0` review of the whole surface. Highlights:
 - Diagnostic carets are placed in terminal cells rather than UTF-16 code units, so a line
   containing wide or combining characters underlines the span the reader can see.
 
+### Fixed — the first two minutes (M118)
+
+- **`tflw init` then `tflw run` is green in an empty directory.** The scaffolded config points `api`
+  at `tflw://demo`, tflw's own bundled demo service — a real HTTP server started for the run on an
+  ephemeral loopback port and stopped on every exit path, answering `GET /health` and nothing else.
+  The README has annotated that second command "green in seconds" since `tflw init` existed, and it
+  was `FAIL 0/1 passed`: the scaffold pointed at `http://localhost:3001`, where nothing listens in a
+  fresh directory. Swapping that one line for your own service is the intended first edit, and the
+  scaffold says so. A demo run is labelled in the CLI summary and in `report.html` — a green run that
+  proves nothing about your system must not look like one that does. `tflw check` never starts it.
+- **`tflw install-browsers` says what happened.** On success it names the engine and the
+  `playwright` version that now has the binary — previously it printed *nothing at all*, on either
+  stream, which is indistinguishable from a no-op or a silent hang. On failure Playwright's own
+  output still passes through, now with a tflw summary naming the three things that actually cause
+  it (a proxy, no route, no disk), and exit 2 rather than the exit code that means "a test failed".
+
 ### Changed — what ends a value (M99)
 
 tflw has no reserved words, so a bare variable followed by a keyword was indistinguishable from a

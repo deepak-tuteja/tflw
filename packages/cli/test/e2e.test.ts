@@ -524,6 +524,158 @@ test('B6-09/C15: `install-browsers` refuses, and downloads nothing, when the pro
   }
 });
 
+test('FU-04: `tflw init` then `tflw run` is green in an empty directory — the README’s own claim (M118)', async () => {
+  // The row, verbatim: "the README quickstart is annotated 'green in seconds' and is red out of the
+  // box". Measured on `main` at `964ae5b`: `FAIL 0/1 passed, 1 failed`, because the scaffold pointed
+  // at `http://localhost:3001` and nothing listens there in a fresh directory.
+  //
+  // Driven through the built `dist/cli.cjs` in a temp dir on purpose: this row is a claim about what
+  // a stranger sees typing two commands, and an in-process unit test cannot see that.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-quickstart-'));
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(stdout, /PASS 1\/1 passed/, `the quickstart must be green out of the box\n${stdout}`);
+    // D202 — and it must never look like it proved something about a real system.
+    assert.match(stdout, /demo: this run targeted tflw's built-in demo service/, stdout);
+    const report = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { demo?: boolean; ok: boolean };
+    assert.equal(report.ok, true);
+    assert.equal(report.demo, true, 'the flag has to reach the report, not only the terminal');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('FU-04: the demo service dies with the run that started it (M118, D203)', async () => {
+  // What this proves is the `disconnect` half (`demo-service.ts`): the child's IPC channel is its
+  // lifetime, so a demo cannot survive a crash, a `kill -9`, or any exit path that never reaches a
+  // `finally`. It deliberately does **not** prove the teardown is called — after the CLI exits both
+  // mechanisms give the same closed port, and `demo-outlives-the-run` survived the sweep saying so.
+  // The explicit `stop()` is covered where it is the only thing standing between a run and a leak:
+  // `watch.test.ts`, where the CLI process outlives the run.
+  //
+  // The port is read back out of the report rather than guessed: it is ephemeral by design (D200),
+  // so this is the only place it is knowable.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-demo-lifetime-'));
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
+    await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    const results = await readFile(join(dir, 'report', 'results.json'), 'utf8');
+    const port = /127\.0\.0\.1:(\d+)/.exec(results)?.[1];
+    assert.ok(port, `the run should have talked to a concrete loopback port\n${results.slice(0, 400)}`);
+    await assert.rejects(
+      fetch(`http://127.0.0.1:${port}/health`),
+      'the demo port must be closed once the run that opened it has exited',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('FU-04: every forked load shard reaches the parent’s demo, not one of its own (M118, D200)', async () => {
+  // Found by running it, not by reading it: `tflw run load.tflw --workers 2` against the freshly
+  // scaffolded config came out at **exactly 50% failures** — the main process's own shard-0 was
+  // perfect and the forked shard failed every iteration. `loadWorkerCommand` re-runs
+  // `loadAndValidate` itself (M31/D19 — no AST is ever serialized), so it read `tflw://demo` straight
+  // off disk and resolved a URL the runtime refuses. The address now travels in the start message.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-demo-shards-'));
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
+    await writeFile(
+      join(dir, 'load.tflw'),
+      `test "health under load"\n  ramp to 10 rps over 1s\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n`,
+      'utf8',
+    );
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '2', '--no-color'], { cwd: dir });
+    assert.match(stdout, /PASS 1\/1 passed/, stdout);
+    assert.match(stdout, /error rate < 1\.00% \(actual: 0\.00%\)/, `a shard that cannot reach the demo shows up here as a partial error rate\n${stdout}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('FU-04: `tflw check` accepts `tflw://demo` without executing anything (M118, D203)', async () => {
+  // `check` does no I/O by contract (P#75) — the reason it runs in CI with no secrets and no live
+  // API — so it must not start a server for a config that names one. The reserved URL also must not
+  // be a checker error: the scaffold every new project starts from carries it.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-demo-check-'));
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
+    const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+    assert.doesNotMatch(stdout, /error/i, stdout);
+    await assert.rejects(access(join(dir, 'report')), 'check must not have run anything, so there is no report');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * A project whose `playwright` is a stub: a real `node_modules/playwright/package.json` with a real
+ * `bin`, pointing at a script that prints what Playwright prints and exits with `exitCode`.
+ *
+ * Stubbed rather than real on purpose. `FU-03` is entirely about the sentences tflw wraps around
+ * the download — testing it against the genuine article would mean a 150 MB fetch per case, a
+ * network dependency in a unit suite, and no way at all to exercise the failure path without
+ * breaking someone's DNS.
+ */
+async function withStubPlaywright<T>(
+  exitCode: number,
+  fn: (dir: string) => Promise<T>,
+  { version = '1.62.0' }: { version?: string } = {},
+): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-stub-pw-'));
+  try {
+    const pkgDir = join(dir, 'node_modules', 'playwright');
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(join(pkgDir, 'package.json'), JSON.stringify({ name: 'playwright', version, bin: { playwright: 'cli.js' } }), 'utf8');
+    await writeFile(
+      join(pkgDir, 'cli.js'),
+      exitCode === 0
+        ? `process.stdout.write('chromium 1234 is already installed.\\n')\n`
+        : `process.stderr.write('Error: connect ECONNREFUSED 127.0.0.1:9\\n    at TCPConnectWrap.afterConnect\\n')\nprocess.exit(${exitCode})\n`,
+      'utf8',
+    );
+    return await fn(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test('FU-03: a successful `install-browsers` says so, and names the playwright it installed for (M118)', async () => {
+  // Measured on `main` at `964ae5b`, with the binary already present: exit 0, **0 bytes on stdout
+  // and 0 bytes on stderr**. The row filed it as "no success message"; it was no message at all,
+  // which is indistinguishable from a no-op, a silent hang, or a command that does not exist.
+  await withStubPlaywright(0, async (dir) => {
+    const { stdout } = await execFileAsync('node', [cliEntry, 'install-browsers'], { cwd: dir });
+    assert.notEqual(stdout.trim(), '', 'a command that did real work must not exit in silence');
+    assert.match(stdout, /chromium is ready/, stdout);
+    // The version is the point of the line, not decoration: it is the proof that the browser landed
+    // in *this project's* playwright, which is the exact confusion `B6-09`/M92b existed to end.
+    assert.match(stdout, /playwright 1\.62\.0 in this project/, stdout);
+    assert.match(stdout, /next:/, 'the success path owes a next step, the way `tflw init` does');
+  });
+});
+
+test('FU-03: a failed download gets a tflw sentence beside Playwright’s stack dump, and exit 2 (M118)', async () => {
+  await withStubPlaywright(1, async (dir) => {
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'install-browsers', '--browser', 'webkit'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stderr } = e as { code?: number; stderr: string };
+        // D205 — not `1`. `EXIT_FAIL` means "a test failed", and nothing here was tested.
+        assert.equal(code, 2, `a failed download is "could not run", not a test failure\n${stderr}`);
+        assert.match(stderr, /could not download the webkit browser binary/, stderr);
+        assert.match(stderr, /exited 1/, 'the child’s own exit code is part of the diagnosis');
+        // Playwright's raw output is *kept*, not swallowed: it is the only place the real cause
+        // (here, a refused connection) is ever stated.
+        assert.match(stderr, /ECONNREFUSED/, 'Playwright’s own error must still reach the user');
+        assert.match(stderr, /PLAYWRIGHT_DOWNLOAD_HOST/, 'the causes named must be the actionable ones');
+        return true;
+      },
+    );
+  });
+});
+
 test('B6-11/C5: a positional argument that is not a readable .tflw file is a teaching diagnostic too (M82)', async () => {
   // M61 closed the `--`-prefixed half of every parser's fall-through branch and left the other
   // half exactly as it was: an unexamined push into the file list, `readFile`d layers later. So the

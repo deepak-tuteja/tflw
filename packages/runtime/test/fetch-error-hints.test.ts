@@ -52,3 +52,22 @@ test('fetchErrorHint returns nothing for an unrecognised cause code', () => {
 test('fetchErrorHint returns nothing when there is no cause at all', () => {
   assert.equal(fetchErrorHint(new Error('boom')), '');
 });
+
+test('a typo under the reserved `tflw://` scheme is named, not handed to fetch (M118, FU-04)', async () => {
+  // `tflw run` substitutes the real loopback address before the interpreter sees anything, so a URL
+  // still spelled `tflw://…` here is either a typo under the reserved scheme or a caller that
+  // skipped the substitution. Reaching `fetch` with it produces an unsupported-protocol failure that
+  // names neither the scheme nor the fix — which is what this asserts is no longer possible.
+  //
+  // Written because `reserved-scheme-passes-through` SURVIVED the M118 sweep: the guard existed and
+  // nothing would have noticed its removal.
+  const source = `test "x"\n  api GET /health\n  expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig('tflw://demoo'), { source });
+
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /is not a real base URL/, error);
+  assert.match(error, /the only address under the reserved/, error);
+  assert.doesNotMatch(error, /fetch failed/, error);
+});

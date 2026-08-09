@@ -337,6 +337,11 @@ export interface RunReport {
   /** True when this run had `insecure true` active (TLS verification disabled) — surfaced as a
    * visible warning in the CLI summary and report header, never silently (decision 78). */
   readonly insecure: boolean;
+  /** True when this run's `api` was tflw's bundled demo service (`tflw://demo`, M118/`FU-04`/D202),
+   * not a service of the user's. Surfaced in the CLI summary and the report header for `insecure`'s
+   * reason: a green `PASS 1/1` from the quickstart must never be mistakable for evidence about a
+   * real system. Optional and omitted when false, so every existing fixture keeps compiling. */
+  readonly demo?: boolean;
   /** Names declared secret — via `env(NAME)`/`require env`, or a `capture` whose subject a `redact`
    * pattern covers — whose value was too short for `MIN_REDACTABLE_LENGTH` to mask safely, so it
    * ships in the clear (review finding `A12-01`). Surfaced as a warning beside `insecure`'s, for
