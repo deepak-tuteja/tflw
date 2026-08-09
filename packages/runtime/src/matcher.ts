@@ -216,9 +216,28 @@ function count(actual: unknown): number {
 }
 
 function num(value: unknown, matcher: string): number {
-  const n = typeof value === 'number' ? value : Number(value);
-  if (Number.isNaN(n)) throw new RuntimeError(`\`${matcher}\` expects a number, got ${describe(value)}`);
-  return n;
+  // `B3-04` — strict, where this used to be `Number(value)`. Coercion meant every value JS happens
+  // to map onto a number was *compared* as that number rather than rejected: `null`/`false`/`[]`/
+  // `""` as 0, `true` as 1, and a one-element array as its own element (`[5]` → 5). So
+  // `expect body.total is less than 100` reported PASS against a `total` of `null` — a green that
+  // answered a question nobody asked. Only `{}`/`undefined` and non-numeric strings ever landed on
+  // `NaN` and were caught, which is why the suite's one "non-number is an error" test (it used the
+  // string `'not-a-number'`) stayed green throughout.
+  //
+  // Nothing legal is turned away: SPEC §6.2's matcher table already scopes `is less than`/`is
+  // greater than` to "numbers, `duration`", and a duration arrives here as `DurationLit.ms` — a
+  // plain number — so `expect duration is less than 500ms` is unaffected. This also brings the
+  // comparisons in line with `equals`, which has never coerced (`deepEqual` is `===`-based).
+  //
+  // Applied to the expected operand too, not just the subject. A numeric string can only reach that
+  // side from `env(…)`, which is always a string: silently accepting `"100"` there would leave a
+  // second coercion path open for the sake of a spelling no corpus uses (measured: 0 occurrences of
+  // `is less than env(` / `is greater than env(` across both repos' 25 files using these matchers).
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    const got = Number.isNaN(value as number) ? 'NaN' : describe(value);
+    throw new RuntimeError(`\`${matcher}\` expects a number, got ${got}`);
+  }
+  return value;
 }
 
 /** Human-readable literal for messages: strings quoted, everything else JSON-ish. */

@@ -811,8 +811,12 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
   {
     id: 'matcher-expects-number',
     file: 'matcher.ts',
-    excerpt: 'expects a number, got ${describe(value)}',
+    excerpt: 'expects a number, got ${got}',
     decidable: 'needs-values',
+    // `B3-04` widened what this rule fires on: it used to reject only what `Number()` mapped to
+    // `NaN` (`{}`, `undefined`, a non-numeric string), and now rejects every non-number — `null`,
+    // booleans, arrays and numeric-looking strings included. Still `needs-values`: whether a
+    // response field holds a number is not decidable from the AST.
     note: 'shape of the compared value',
   },
 

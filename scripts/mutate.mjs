@@ -577,6 +577,23 @@ const MUTATIONS = [
     find: "  const reason = noVerdictReason(report);\n  if (reason !== null) return reason === 'aborted' ? 'ABORTED' : 'INCONCLUSIVE';",
     replace: "  const reason = report.aborted ? 'aborted' : null;\n  if (reason !== null) return 'ABORTED';",
   },
+  // --- M115 ------------------------------------------------------------------------------------
+  // Restores the `Number()` coercion verbatim. This one is worth its ~21s because the suite it has
+  // to be killed by is *new*, and because the shape it re-introduces already fooled a test once:
+  // `matchers.test.ts` has carried a "non-number subject is a clear runtime error" test since long
+  // before `B3-04`, and that test stays green under this mutation — it asserts on the string
+  // `'not-a-number'`, the single non-number `Number()` maps to `NaN`. So a survivor here would not
+  // mean "the comparison matchers are untested"; it would mean the tests are back to covering only
+  // the value that never needed covering.
+  {
+    id: 'comparison-coerces-operands',
+    milestone: 'm115',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/matcher.ts',
+    what: '`is less than`/`is greater than` coerce with `Number()` again, so `null`/`false`/`[]`/`""` compare as 0, `true` as 1 and `[5]` as 5 (`B3-04`)',
+    find: "  if (typeof value !== 'number' || Number.isNaN(value)) {\n    const got = Number.isNaN(value as number) ? 'NaN' : describe(value);\n    throw new RuntimeError(`\\`${matcher}\\` expects a number, got ${got}`);\n  }\n  return value;",
+    replace: "  const n = typeof value === 'number' ? value : Number(value);\n  if (Number.isNaN(n)) throw new RuntimeError(`\\`${matcher}\\` expects a number, got ${describe(value)}`);\n  return n;",
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
