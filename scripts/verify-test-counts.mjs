@@ -47,7 +47,7 @@ import { fileURLToPath } from 'node:url';
  * so adding a workspace cannot silently shift the comparison onto the wrong suite. */
 const EXPECTED = {
   '@tflw/lang': 925, // +34 in M116: baseUrls 15, capturableSubjects 12, snapshotMasks 7
-  '@tflw/runtime': 600, // +15 in `B3-04` (7 non-numbers × 2 matchers + 1 control); +7 in M116 (`checkConfigFiles`)
+  '@tflw/runtime': 603, // +15 in `B3-04` (7 non-numbers × 2 matchers + 1 control); +7 in M116 (`checkConfigFiles`); +3 in M117 (`B3-18`: refresh, its control, the failed-refresh branch)
   '@tflw/reporter': 106,
   '@tflw/lsp-server': 117, // +3 in M116: `TF051` in the editor, its control, and the unrooted-buffer case
   tflw: 160,

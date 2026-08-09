@@ -651,6 +651,24 @@ const MUTATIONS = [
     find: "    severity: 'warning' as const,",
     replace: "    severity: 'error' as const,",
   },
+  {
+    id: 'refresh-billed-to-endpoint',
+    milestone: 'm117',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the api step is billed from `stepStart` again, so a reactive 401 re-establish lands back inside the triggering endpoint\'s latency sample — `B3-18` exactly as filed, and invisible to every assertion that does not look at a duration',
+    find: "                billFrom = performance.now();\n                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, tc.pinnedAgents));",
+    replace: "                ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, tc.pinnedAgents));",
+  },
+  {
+    id: 'failed-refresh-billed-to-endpoint',
+    milestone: 'm117',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'only the *successful* refresh is re-based, so a re-establish that fails is still billed to the 401 attempt — the half of `B3-18` that a test written only against the happy path would never reach',
+    find: "                billFrom = performance.now() - firstAttemptMs;",
+    replace: "                billFrom = stepStart;",
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
