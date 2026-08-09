@@ -187,6 +187,14 @@ A systematic pre-`1.0.0` review of the whole surface. Highlights:
   twice on that assertion alone while the behaviour it was named for passed both times. The verdict
   is now a pure `isSaturated`, with the lag arm, the CPU arm (at its actual 90% threshold, which no
   test had ever covered) and the short-window floor each pinned deterministically.
+- **A failing `text` locator no longer suggests the document `head`.** Because the `text` scan looks
+  at every element and only leaves carry a name, every container fell into the "no usable name"
+  arm and was offered as a ready-to-paste `css` path — `css "html"`, `css "html > head"`,
+  `css "html > body"` — ranked by position in the document rather than by any relationship to what
+  was typed, and one of them can never be visible. An element with no text is not a misspelling of
+  a text locator, so when nothing on the page is similar enough the message is now left unchanged.
+  Icon-only buttons and unlabelled fields keep their generated `css` suggestion, which is the case
+  that arm was written for.
 
 ### Fixed — the first two minutes (M118)
 

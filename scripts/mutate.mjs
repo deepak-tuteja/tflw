@@ -811,6 +811,30 @@ const MUTATIONS = [
     find: '  if (sample.wallMs < MIN_SATURATION_WINDOW_MS) return false;',
     replace: '',
   },
+  {
+    id: 'text-diagnosis-offers-structural-css-paths',
+    milestone: 'm120',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    // `M119-01` restored exactly as filed. Note this mutation is the *pre-M119-01 production code*
+    // — which is why it is worth having: the defect was live from M5 to M120 and nothing went red.
+    what: '`M119-01` restored: the unnamed arm fires for `text` too, so `text "Somethign Unrelated"` is answered with `css "html"`, `css "html > head"` and `css "html > body"` — structural containers ranked by document position, one of which can never be visible, all offered as ready-to-paste locators',
+    find: '  const unnamed = UNNAMED_IS_STILL_A_CANDIDATE[kind] ? raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 })) : [];',
+    replace: '  const unnamed = raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 }));',
+  },
+  {
+    id: 'unnamed-arm-dropped-for-every-kind',
+    milestone: 'm120',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    // The over-correction direction. A fix that reads "stop offering css paths" is one keystroke
+    // from taking the arm away from the kinds it was written for, and the `text` tests alone would
+    // stay green — an icon-only button genuinely has no accessible name, and a generated path is
+    // the only way to name it (PLAN.md §9).
+    what: 'the unnamed arm is removed for every kind, not just `text`, so an icon-only button with no accessible name becomes unsuggestable — the exact case the arm exists for',
+    find: '  const unnamed = UNNAMED_IS_STILL_A_CANDIDATE[kind] ? raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 })) : [];',
+    replace: '  const unnamed: { suggestion: string; score: number }[] = [];',
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
