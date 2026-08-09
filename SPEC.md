@@ -715,6 +715,11 @@ test "checkout under load"
   ones have finished — queues build under saturation instead of silently disappearing, the only
   model that honestly validates an SLA. The 2 iteration-count kinds skip the back-off diagnostic
   entirely (D102) — there's no duration to divide by, so it's structurally undefined, not withheld.
+  **Both models send over the same HTTP client** (M121/D206), so the durations they report are
+  comparable: a difference between a `hold N users` run and a `hold N rps` run against one endpoint
+  is a fact about the target or the load shape, never about how tflw issued the request. Until M121
+  that was not true — the open model used a different client and, on Node 26, reported the
+  inter-arrival gap as service time.
 - **The back-off diagnostic needs a flat target** (D-M107-1). It compares the run's first half
   against its second, which reads as "the target slowed down" only when the two halves are otherwise
   alike. Under a rising target they are not — a `ramp to N users over M` runs its second half at

@@ -1,5 +1,5 @@
 // M45 (PLAN_BROWSER_PERF_SECURITY.md §2.16, D75) — a load-only send path on Node's native
-// `node:http`/`node:https` with a per-VU `Agent({keepAlive: true})`, structurally separate from
+// `node:http`/`node:https` with an `Agent({keepAlive: true})`, structurally separate from
 // `http.ts`'s `sendRequest` (`fetch()`). Never imports `undici` — the M35b root-cause finding
 // (`tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md` in testFlow-tests, moved there in
 // reorg Phase 2) is specific to that package; importing
@@ -9,6 +9,17 @@
 // isolation — it lives directly in this process, created once per VU and reused for that VU's
 // whole lifetime (mirrors Artillery's/k6's own default, and M42's own finding that this is what
 // closes most of the gap).
+//
+// M121 (`M118-02`, D206) — this path is now the load engine's *only* client, closed and open model
+// alike. M45 covered the closed model and explicitly left the open (rate-based) one on `fetch`,
+// reasoning that an arrival has no persistent VU to pin a connection to. That was right about
+// *pinning* and wrong about *pooling*, and the cost was not merely a lost optimisation: on Node 26
+// (the first release shipping undici 8) a `fetch` started inside a timer callback and not awaited
+// by that loop — precisely the open model's dispatch shape — has its completion deferred to roughly
+// the next timer tick, so a 0.2ms endpoint reported p50 36ms while the closed model reported 0ms
+// over the same endpoint in the same process. Measured chain and version bisect:
+// `tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md`. M35b's lesson arriving a second
+// time at the one path M45 declined to cover.
 
 import * as http from 'node:http';
 import * as https from 'node:https';
@@ -18,21 +29,38 @@ import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.
 import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { CookieEvent, ResponseTrace } from './types.js';
 
-export interface PinnedAgents {
+export interface KeepAliveAgents {
   readonly http: http.Agent;
   readonly https: https.Agent;
 }
 
-/** One pair per VU (`interpreter.ts`'s `runLoadCore`, the closed-model per-VU spawn block) —
+// M121 (D208) — `maxSockets: Infinity` is `http.Agent`'s own default and is set explicitly here
+// because for the open model it is load-bearing rather than incidental. A bounded pool would make
+// excess arrivals queue *inside the generator*, and that queue time lands inside `sendPinnedRequest`
+// below — i.e. it would be counted into the reported `durationMs`, manufacturing for real the defect
+// `M118-02` was originally (and wrongly) filed as. An open model exists to let queues build **at the
+// target**, where they are the signal; a queue in the client is noise wearing the signal's clothes.
+// The closed model cannot hit this — a VU issues one request at a time — so this constraint comes
+// from the caller M121 added, not from the pair itself.
+const MAX_SOCKETS = Infinity;
+
+/** One pair per VU for the closed model (`interpreter.ts`'s `runLoadCore` spawn blocks), one pair
+ * per *scenario* for the open model (M121/D207 — an arrival is not a VU and has nothing to pin to,
+ * but every arrival in a scenario can still share one pool; a pair per arrival would add a fresh TCP
+ * handshake to every sample and be strictly worse than the `fetch` path it replaced).
  * `keepAlive: true` is the entire point: without it Node's own agent still pools sockets, but
  * closes them between requests instead of reusing one across a VU's whole iteration loop. */
-export function createPinnedAgents(): PinnedAgents {
-  return { http: new http.Agent({ keepAlive: true }), https: new https.Agent({ keepAlive: true }) };
+export function createKeepAliveAgents(): KeepAliveAgents {
+  return {
+    http: new http.Agent({ keepAlive: true, maxSockets: MAX_SOCKETS }),
+    https: new https.Agent({ keepAlive: true, maxSockets: MAX_SOCKETS }),
+  };
 }
 
-/** Called once a VU's loop ends — releases its sockets instead of leaving them open (and the
- * process un-exitable) for the run's remaining lifetime. */
-export function destroyPinnedAgents(agents: PinnedAgents): void {
+/** Called once a VU's loop ends (closed model) or once a scenario's last arrival settles (open) —
+ * releases the sockets instead of leaving them open (and the process un-exitable) for the run's
+ * remaining lifetime. */
+export function destroyKeepAliveAgents(agents: KeepAliveAgents): void {
   agents.http.destroy();
   agents.https.destroy();
 }
@@ -109,7 +137,7 @@ function isTimeoutError(err: unknown): boolean {
  * those is a place `redirect: 'follow'` decides something on the pooled path that this loop has to
  * decide identically — the pooled path is normative, and `httpPinned.test.ts` states each such
  * property as a pinned-vs-pooled comparison rather than a hardcoded expectation. */
-export async function sendPinnedRequest(opts: PinnedSendOptions, agents: PinnedAgents): Promise<ResponseTrace> {
+export async function sendPinnedRequest(opts: PinnedSendOptions, agents: KeepAliveAgents): Promise<ResponseTrace> {
   const start = performance.now();
   let current = opts;
 

@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
-import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest } from '../src/httpPinned.js';
+import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
 
 /** `/hopN` waits `delayMs`, then redirects to `/hop(N-1)`; `/hop0` waits `delayMs` and answers 200.
@@ -44,7 +44,7 @@ test('a chain that overruns its budget one hop at a time times out on the pinned
   // 3 hops × 400ms = 1200ms against a 1000ms budget, with every individual hop comfortably inside
   // it. Before M88b the pinned arm returned a 200 here while the pooled arm threw.
   const server = await startFixtureServer(slowChainRoutes(2, 400));
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
   const opts = { method: 'GET', url: `${server.baseUrl}/hop2`, headers: {}, timeoutMs: 1000, followRedirects: true } as const;
 
   const pooled = await sendRequest(opts).then((r) => r, (e: Error) => e);
@@ -58,7 +58,7 @@ test('a chain that overruns its budget one hop at a time times out on the pinned
   assert.equal(pinned.message, pooled.message, 'which client a step runs on must not change what a blown deadline says');
   assert.match(pinned.message, /timed out after 1000ms: GET/);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
 });
 
@@ -67,7 +67,7 @@ test('a chain that fits inside its budget still lands — the deadline is the ch
   // is exactly the change that over-tightens by accident (an un-rearmed timer, a stale flag), and
   // this is the case that would go red if it had.
   const server = await startFixtureServer(slowChainRoutes(2, 50));
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
   const opts = { method: 'GET', url: `${server.baseUrl}/hop2`, headers: {}, timeoutMs: 2000, followRedirects: true } as const;
 
   const pooled = await sendRequest(opts);
@@ -77,20 +77,20 @@ test('a chain that fits inside its budget still lands — the deadline is the ch
   assert.equal(pinned.status, 200);
   assert.deepEqual(pinned.json, pooled.json);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
 });
 
 test('back-to-back requests each get a fresh deadline — it is per call, not per pinned Agent pair', async () => {
   // The other way to over-tighten: one deadline for the chain must not become one deadline for the
-  // VU. A workload runs thousands of iterations through the same `PinnedAgents`, so a timer that
+  // VU. A workload runs thousands of iterations through the same `KeepAliveAgents`, so a timer that
   // outlived its call would fail every request after the first `timeoutMs` of the run.
   const server = await startFixtureServer({
     '/slow': (_req, res) => {
       setTimeout(() => json(res, 200, { ok: true }), 120);
     },
   });
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
   const opts = { method: 'GET', url: `${server.baseUrl}/slow`, headers: {}, timeoutMs: 300, followRedirects: true } as const;
 
   for (let i = 0; i < 4; i++) {
@@ -98,7 +98,7 @@ test('back-to-back requests each get a fresh deadline — it is per call, not pe
     assert.equal(res.status, 200, `request ${i + 1} of 4 should still have its own 300ms`);
   }
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
 });
 

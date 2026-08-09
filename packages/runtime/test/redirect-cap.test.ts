@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
-import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest } from '../src/httpPinned.js';
+import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { MAX_REDIRECTS, RedirectLimitError } from '../src/redirect.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
 
@@ -86,7 +86,7 @@ test('the pinned (workload) client stops at the same place, saying the same thin
   // Which client a step runs on is a performance decision (`run N iterations` selects this one) —
   // `B4-01`'s lesson, one axis over: it must not decide whether an endless chain is a pass.
   const server = await startFixtureServer(hopChainRoutes(MAX_REDIRECTS + 1));
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
   const opts = { method: 'GET', url: `${server.baseUrl}/loop`, headers: {}, timeoutMs: 5000, followRedirects: true } as const;
 
   const pinned = await sendPinnedRequest(opts, agents).then((r) => r, (e: Error) => e);
@@ -103,7 +103,7 @@ test('the pinned (workload) client stops at the same place, saying the same thin
   const pinnedOver = await sendPinnedRequest(over, agents).then((r) => r, (e: Error) => e);
   assert.ok(pinnedOver instanceof RedirectLimitError, `pinned at cap+1: ${JSON.stringify(pinnedOver)}`);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
 });
 
@@ -112,7 +112,7 @@ test('`without redirects` still observes the 3xx itself — the cap never fires 
   // since a chain that is never walked cannot be too long (SPEC §5.1, §5.3).
   const server = await startFixtureServer(hopChainRoutes(0));
   const opts = { method: 'GET', url: `${server.baseUrl}/loop`, headers: {}, timeoutMs: 5000, followRedirects: false } as const;
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
 
   const pooled = await sendRequest(opts);
   const pinned = await sendPinnedRequest(opts, agents);
@@ -120,7 +120,7 @@ test('`without redirects` still observes the 3xx itself — the cap never fires 
   assert.equal(pooled.status, 302);
   assert.equal(pinned.status, pooled.status);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
 });
 
