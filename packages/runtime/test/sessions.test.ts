@@ -512,3 +512,157 @@ test('M102/A4-OS-11: a session `header` line interpolates its NAME, not only its
   assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
   await server.close();
 });
+
+// `B3-18` (M117) — a reactive 401 re-establish is a *whole login* against a different endpoint. It
+// already reports itself as its own step, and `recordEndpointMetrics` feeds every `api` step's
+// `durationMs` straight into that endpoint's histogram — which is what `threshold … for "label"`
+// reads. So billing the refresh to whichever endpoint happened to trigger it puts a login inside
+// that endpoint's latency sample. Same defect shape as `B3-02`, one indirection further out.
+//
+// These three are deliberately *timing* assertions, because the defect is a duration and nothing
+// else observes it. The margins are wide (a 300ms login, a <150ms bound on a localhost request that
+// really takes ~2ms) so that a loaded CI box cannot flip them; the paired assertion that the
+// refresh step itself took >=250ms is what stops the whole test passing vacuously if the fixture
+// ever stops being slow.
+const B318_LOGIN_MS = 300;
+
+/** A fixture whose login is expensive and whose work endpoint is not, so "did a login end up inside
+ * this endpoint's sample?" is answerable by looking at one number. */
+async function slowLoginFixture(work: (token: string) => Parameters<typeof startFixtureServer>[0][string]) {
+  let loginCount = 0;
+  let validToken = '';
+  const server = await startFixtureServer({
+    '/auth/login': async (_req, res) => {
+      loginCount++;
+      validToken = `tok-${loginCount}`;
+      await new Promise((r) => setTimeout(r, B318_LOGIN_MS));
+      json(res, 200, { token: validToken });
+    },
+    '/work': (req, res) => work(validToken)(req, res),
+  });
+  return { server, rotate: () => { validToken = 'rotated-away'; }, logins: () => loginCount };
+}
+
+const authed = (token: string) => (req: Parameters<Parameters<typeof startFixtureServer>[0][string]>[0], res: Parameters<Parameters<typeof startFixtureServer>[0][string]>[1]) => {
+  if (req.headers['authorization'] === `Bearer ${token}`) json(res, 200, { ok: true });
+  else res.writeHead(401).end();
+};
+
+test('B3-18: a reactive 401 re-establish is not billed to the endpoint whose request triggered it', async () => {
+  const { server, rotate, logins } = await slowLoginFixture(authed);
+  const config = configWithSession(server.baseUrl);
+  const sessionCache = new SessionCache();
+
+  const srcA = `test "establish" as admin\n  api GET /work\n  expect status equals 200\n`;
+  const { program: pA } = parseSource(srcA);
+  const { report: rA } = await runProgram(pA, config, { source: srcA, sessionCache });
+  assert.equal(rA.ok, true, JSON.stringify(rA.tests, null, 2));
+
+  rotate(); // the cached token is now stale server-side → the next /work 401s
+
+  const srcB = `test "refreshes" as admin\n  api GET /work\n  expect status equals 200\n`;
+  const { program: pB } = parseSource(srcB);
+  const { report: rB } = await runProgram(pB, config, { source: srcB, sessionCache });
+  assert.equal(rB.ok, true, JSON.stringify(rB.tests, null, 2));
+  assert.equal(logins(), 2, 'the 401 must have triggered exactly one re-login');
+
+  const steps = rB.tests[0]!.steps;
+  const workStep = steps.find((s) => s.kind === 'api' && s.endpoint === 'GET /work');
+  const refreshStep = steps.find((s) => s.kind === 'header' && (s.detail ?? '').includes('re-established'));
+
+  assert.ok(refreshStep, `the refresh must report itself as its own step: ${JSON.stringify(steps, null, 2)}`);
+  // Guards the test against passing for the wrong reason: if the fixture's login ever stops being
+  // slow, the assertion below stops being able to fail and this one says so first.
+  assert.ok(
+    refreshStep!.durationMs >= B318_LOGIN_MS - 50,
+    `the refresh step must carry the login's real cost, got ${refreshStep!.durationMs}ms`,
+  );
+  assert.ok(workStep, 'the retried request must still be reported as an api step for GET /work');
+  assert.ok(
+    workStep!.durationMs < 150,
+    `GET /work answers in ~2ms; a ${B318_LOGIN_MS}ms login must not be inside its latency sample, got ${workStep!.durationMs}ms`,
+  );
+
+  await server.close();
+});
+
+test('B3-18 control: with no 401 the endpoint duration is measured from the start of the step, unchanged', async () => {
+  // The other half of the pair. Without this, the assertion above is satisfied by any change that
+  // makes durations small for every reason, including a broken clock.
+  const { server, logins } = await slowLoginFixture(authed);
+  const config = configWithSession(server.baseUrl);
+  const sessionCache = new SessionCache();
+
+  const src = `test "no refresh" as admin\n  api GET /work\n  expect status equals 200\n`;
+  const { program } = parseSource(src);
+  const { report } = await runProgram(program, config, { source: src, sessionCache });
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(logins(), 1, 'the initial establish only — no reactive refresh in this run');
+
+  const steps = report.tests[0]!.steps;
+  assert.equal(steps.some((s) => s.kind === 'header' && (s.detail ?? '').includes('re-established')), false);
+  const workStep = steps.find((s) => s.kind === 'api' && s.endpoint === 'GET /work');
+  assert.ok(workStep, 'GET /work must be reported');
+  assert.ok(workStep!.durationMs < 150, `got ${workStep!.durationMs}ms`);
+
+  // The establish's own login *is* billed to its own endpoint, which is the behaviour the fix must
+  // not disturb: only the reactive path is re-based.
+  const loginStep = steps.find((s) => s.kind === 'api' && s.endpoint === 'POST /auth/login');
+  assert.ok(loginStep, 'the initial establish reports its login as its own api step');
+  assert.ok(
+    loginStep!.durationMs >= B318_LOGIN_MS - 50,
+    `the establish's login keeps its real duration, got ${loginStep!.durationMs}ms`,
+  );
+
+  await server.close();
+});
+
+test('B3-18: when the re-establish itself fails, the 401 attempt is still not billed for it', async () => {
+  // The `refresh.ok === false` branch: no retry happens, so the 401 attempt *is* this step's
+  // sample — but a failed re-establish costs just as much real time as a successful one and is no
+  // more this endpoint's latency.
+  let loginCount = 0;
+  let revoked = false;
+  const server = await startFixtureServer({
+    '/auth/login': async (_req, res) => {
+      loginCount++;
+      await new Promise((r) => setTimeout(r, B318_LOGIN_MS));
+      if (loginCount === 1) json(res, 200, { token: 'tok-1' });
+      else res.writeHead(500).end(); // the re-establish cannot succeed
+    },
+    '/work': (req, res) => {
+      if (!revoked && req.headers['authorization'] === 'Bearer tok-1') json(res, 200, { ok: true });
+      else res.writeHead(401).end();
+    },
+  });
+  const config = configWithSession(server.baseUrl);
+  const sessionCache = new SessionCache();
+
+  const srcA = `test "establish" as admin\n  api GET /work\n  expect status equals 200\n`;
+  const { program: pA } = parseSource(srcA);
+  const { report: rA } = await runProgram(pA, config, { source: srcA, sessionCache });
+  assert.equal(rA.ok, true, 'the establish run must succeed before the credential is revoked');
+  revoked = true; // now every /work 401s, and the re-establish that follows cannot succeed
+
+  const srcB = `test "refresh fails" as admin\n  api GET /work\n  expect status equals 200\n`;
+  const { program: pB } = parseSource(srcB);
+  const { report: rB } = await runProgram(pB, config, { source: srcB, sessionCache });
+  assert.equal(rB.ok, false, 'a persistent 401 with a broken re-establish still fails the test');
+  assert.equal(loginCount, 2, 'exactly one re-establish attempt, and it failed');
+
+  const steps = rB.tests[0]!.steps;
+  const failedRefresh = steps.find((s) => s.kind === 'header' && !s.ok);
+  assert.ok(failedRefresh, `the failed re-establish reports itself: ${JSON.stringify(steps, null, 2)}`);
+  assert.ok(
+    failedRefresh!.durationMs >= B318_LOGIN_MS - 50,
+    `the failed refresh carries its own cost, got ${failedRefresh!.durationMs}ms`,
+  );
+  const workStep = steps.find((s) => s.kind === 'api' && s.endpoint === 'GET /work');
+  assert.ok(workStep, 'the 401 attempt is still reported as an api step');
+  assert.ok(
+    workStep!.durationMs < 150,
+    `the 401 attempt itself took ~2ms; the failed refresh must not be inside its sample, got ${workStep!.durationMs}ms`,
+  );
+
+  await server.close();
+});

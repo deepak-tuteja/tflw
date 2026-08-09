@@ -2531,6 +2531,18 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       switch (step.type) {
         case 'ApiStep': {
           const catchConnectionError = requestAssertionApiIndices.has(stepIndex);
+          // `B3-18` — the origin this endpoint's latency sample is measured from, which stays
+          // `stepStart` for the ~all steps that never see a 401 (byte-identical numbers to
+          // before). A reactive re-establish is a *different* endpoint's work — a whole login —
+          // and it already reports itself as its own step below; billing it a second time to
+          // whichever endpoint happened to trigger it puts a login inside the sample that
+          // `recordEndpointMetrics` feeds to this endpoint's percentiles and to any
+          // `threshold … for "label"` clause reading them. Same defect shape as `B3-02`, one
+          // indirection further out: a duration percentile reading something other than the
+          // endpoint's own latency. Declared outside the `try` because the connection-error path
+          // below reports a duration too, and a retry that fails to connect must not bill this
+          // endpoint for the refresh that preceded it either.
+          let billFrom = stepStart;
           try {
             let { trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, tc.pinnedAgents);
             // Auto re-establish on 401 (SPEC §3.3, decision 3a, enterprise arc) — any session (not
@@ -2539,10 +2551,22 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // step, so a server that genuinely, persistently 401s still fails fast instead of
             // looping. `ctx.sessionNames` is `[]` for an anonymous test, so this is a no-op there.
             if (trace.response.status === 401 && ctx.sessionNames.length > 0) {
+              const firstAttemptMs = performance.now() - stepStart;
               const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
               results.push(...refresh.steps);
               if (refresh.ok) {
+                // The retry is the attempt that carries this endpoint's real latency, and it is
+                // the one k6 keeps: it records the 401 and the retry as two samples and excludes
+                // the first, so measuring from here is what makes the two threshold populations
+                // comparable (`D-M89-8`, which is where this row was found).
+                billFrom = performance.now();
                 ({ trace, redacted, retryAfterAttempts, retryAfterWaitedMs, cookieScopeNote } = await execApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, tc.pinnedAgents));
+              } else {
+                // No retry happened, so the 401 attempt *is* this step's sample — but the failed
+                // re-establish still cost real time, and it is no more this endpoint's latency
+                // than a successful one would have been. Re-basing the origin excludes exactly
+                // that interval and leaves the first attempt's own duration standing.
+                billFrom = performance.now() - firstAttemptMs;
               }
             }
             lastResponse = trace.response;
@@ -2556,7 +2580,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // needs to see about *this* request belongs on this request's own line, not in a
             // separate diagnostic stream.
             const cookieSuffix = cookieScopeNote !== undefined ? `, ${cookieScopeNote}` : '';
-            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}${cookieSuffix}`, redacted.request, redacted.response, apiStepIdentity(step));
+            result = mkStep('api', src, step.span, true, billFrom, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}${cookieSuffix}`, redacted.request, redacted.response, apiStepIdentity(step));
           } catch (err) {
             // Not opted in (no `request connects`/`fails` assertion follows this request, decision
             // 18.2) — rethrow unchanged, caught by this function's own outer `catch` below exactly
@@ -2570,7 +2594,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // Reported `ok: true` on the `api` line itself (like every other request, whatever
             // status code it got back) — this step's job is just to attempt the request; the
             // following `expect`/`check request connects`/`fails` step is what judges the outcome.
-            result = mkStep('api', src, step.span, true, stepStart, `${step.method} ${step.path.raw} → connection failed: ${redactedMessage}`, undefined, undefined, apiStepIdentity(step));
+            result = mkStep('api', src, step.span, true, billFrom, `${step.method} ${step.path.raw} → connection failed: ${redactedMessage}`, undefined, undefined, apiStepIdentity(step));
           }
           break;
         }
