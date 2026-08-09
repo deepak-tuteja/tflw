@@ -42,6 +42,7 @@ import {
   runProgram,
   resolveImportedActions,
   resolveMissingFiles,
+  checkConfigFiles,
   type ReadText,
   type PathExists,
   runLoadShard,
@@ -1000,13 +1001,26 @@ async function loadAndValidate(
   // `allow hosts` vs. the active env's own base URLs (M85, `TF036`) joins it for the same reason
   // and with the same scope — it is a `tflw.config` rule about the env that was just selected, not
   // about every env the file happens to declare (see `checkAllowHostsCoversBaseUrls`).
+  //
+  // M116 (D148, D151) adds two things here. `envBaseUrls` is what `TF051` decides against — two
+  // booleans read off the env that was just selected, not the URLs themselves (see `EnvBaseUrls`).
+  // And `collectConfigFileReferences` brings `cert`/`key` and a `session` body's own paths under
+  // `TF043`, resolved against the *config's* directory rather than any test file's.
+  const envBaseUrls = { envName: resolved.envName, api: resolved.apiBaseUrl !== null, web: resolved.webBaseUrl !== null };
   const configEnvDiags = [
-    ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services)),
+    ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
+    ...(await checkConfigFiles(parsedConfig.config, cwd)),
   ];
+  // **Gate on errors, not on "any diagnostic".** This branch used to `return EXIT_USAGE` for
+  // anything at all, which was correct while every config diagnostic was an error and became a
+  // latent `A4-05` the moment one was not. `TF043`'s run tier is exactly that case (D147): a
+  // `cert` a `before all` hook creates is a *prediction*, and a prediction must not make a valid
+  // suite unrunnable. Same rule the per-file stage below already applies, now stated in both.
+  const configEnvErrors = configEnvDiags.filter((d) => d.severity === 'error');
   if (configEnvDiags.length > 0) {
     writeStderr(renderDiagnostics(configEnvDiags, configText, { filename: 'tflw.config', color }) + '\n');
-    return EXIT_USAGE;
+    if (configEnvErrors.length > 0) return EXIT_USAGE;
   }
 
   // 4. Discover the test files. Anything named explicitly is checked first (M82, C5/`B6-11`) —
@@ -1028,7 +1042,10 @@ async function loadAndValidate(
   const knownSessions = Array.from(resolved.sessions.keys());
   const parsedFiles: { file: string; source: string; program: Program }[] = [];
   let hadErrors = false;
-  let warningCount = 0;
+  // Seeded with the config stage's own warnings (M116/D151), not zeroed: a `cert` that is not
+  // there is a warning the run summary has to count, or `1 warning` printed above a `no problems
+  // found` summary — the exact inconsistency `TF043`'s first tier was reviewed for.
+  let warningCount = configEnvDiags.length - configEnvErrors.length;
   for (const file of files) {
     const source = await readFile(file, 'utf8');
     const parsed = parseSource(source);
@@ -1043,6 +1060,10 @@ async function loadAndValidate(
       // problems found` for a file whose `import` named nothing, and `tflw run` then printed
       // `✗ t.tflw (crashed) (0 ms)` and not one word more, `--verbose` included.
       missingFiles: await resolveMissingFiles(file, parsed.program),
+      // M116/D148 — the same two booleans the config stage above computed once. `TF051` is the
+      // only rule here that can be wrong about a *whole suite* at once, which is why it is
+      // derived from the resolved env rather than re-read per file.
+      envBaseUrls,
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's

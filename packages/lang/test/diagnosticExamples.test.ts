@@ -72,6 +72,7 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
       ...(probe.needs?.importedActions
         ? { importedActions: probe.needs.importedActions.map((a) => ({ ...a, from: a.from })) }
         : {}),
+      ...(probe.needs?.envBaseUrls ? { envBaseUrls: probe.needs.envBaseUrls } : {}),
     }),
   ];
 }

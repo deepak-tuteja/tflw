@@ -63,6 +63,15 @@ export interface ProgramCheckOptions {
    * says the caller looked and everything was there.
    */
   readonly missingFiles?: ReadonlySet<string>;
+  /**
+   * Which base URLs the active env declares (M116, D148) — see `EnvBaseUrls`.
+   *
+   * `undefined` skips `checkBaseUrls` entirely, for the same reason as every option above it: a
+   * caller that resolved no config has not said "this env declares nothing", it has said nothing.
+   * Getting that backwards here would be the worst false positive in the file, since it would
+   * report every plain `api GET /path` in a suite the CLI had simply not been given a config for.
+   */
+  readonly envBaseUrls?: EnvBaseUrls;
 }
 
 /** One action a call could resolve to: its name, how many arguments it takes, and where it was
@@ -132,6 +141,9 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkValueSubjects(program),
     ...checkMatcherSubjects(program),
     ...checkReferencedFiles(program, opts),
+    ...checkBaseUrls(program, opts),
+    ...checkSnapshotMasks(program),
+    ...checkCapturableSubjects(program),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkActionCycles(program, opts),
@@ -405,7 +417,14 @@ export function checkSessionServices(sessions: readonly SessionDecl[], knownServ
  *    `program.tests`/`program.actions`, which a session has none of. Recorded as N/A with that
  *    reason rather than silently omitted.
  */
-export function checkSessionBody(sessions: readonly SessionDecl[], knownServices: readonly string[]): Diagnostic[] {
+export function checkSessionBody(
+  sessions: readonly SessionDecl[],
+  knownServices: readonly string[],
+  /** M116/D152 — the active env's base URLs, for `checkBaseUrls`. Optional and `undefined`-skipped
+   * like its `ProgramCheckOptions` twin, so a caller that has not resolved an env is not made to
+   * invent one. */
+  envBaseUrls?: EnvBaseUrls,
+): Diagnostic[] {
   const diags: Diagnostic[] = [];
   for (const session of sessions) {
     for (const step of session.body) checkStepService(step, knownServices, diags);
@@ -415,6 +434,12 @@ export function checkSessionBody(sessions: readonly SessionDecl[], knownServices
     checkValueSubjectsInSteps(session.body, diags);
     checkMatcherSubjectsInSteps(session.body, diags);
     checkNoCallsInSteps(session.body, session.name, diags);
+    // M116/D152 — the three new passes. `checkBaseUrls` is the one that matters most here: an
+    // un-prefixed `api` step is the dominant shape in a `session`, and a session's failure takes
+    // down every test that names it.
+    if (envBaseUrls) checkBaseUrlsInSteps(session.body, envBaseUrls, diags);
+    checkSnapshotMasksInSteps(session.body, diags);
+    checkCapturableSubjectsInSteps(session.body, diags);
   }
   return byPosition(diags);
 }
@@ -2220,7 +2245,14 @@ export interface FileReference {
  * yet is one an earlier step, a hook, a `use`d JS action, or a fixture-build between `check` and
  * `run` may be about to create, which makes "not there now" a prediction rather than a fact.
  */
-const FILE_BEARING_NODES: readonly { readonly node: string; readonly field: string; readonly syntax: string; readonly neededBy: 'check' | 'run' }[] = [
+interface FileBearingNode {
+  readonly node: string;
+  readonly field: string;
+  readonly syntax: string;
+  readonly neededBy: 'check' | 'run';
+}
+
+const FILE_BEARING_NODES: readonly FileBearingNode[] = [
   { node: 'ImportDecl', field: 'path', syntax: 'import', neededBy: 'check' },
   { node: 'UseDecl', field: 'path', syntax: 'use', neededBy: 'check' },
   { node: 'FileDataTable', field: 'path', syntax: 'with each from', neededBy: 'run' },
@@ -2250,7 +2282,14 @@ const FILE_BEARING_NODES: readonly { readonly node: string; readonly field: stri
  * two under D137 clause 1.
  */
 export function collectFileReferences(program: Program): FileReference[] {
-  const byNode = new Map(FILE_BEARING_NODES.map((e) => [e.node, e] as const));
+  return collectPathLiterals(program, FILE_BEARING_NODES);
+}
+
+/** The traversal both `collectFileReferences` and `collectConfigFileReferences` run — one walk,
+ * two node tables, so the structural argument above holds for the config dialect too rather than
+ * being re-derived (or forgotten) there. */
+function collectPathLiterals(root: unknown, nodes: readonly FileBearingNode[]): FileReference[] {
+  const byNode = new Map(nodes.map((e) => [e.node, e] as const));
   const out: FileReference[] = [];
   const seen = new Set<object>();
 
@@ -2274,9 +2313,55 @@ export function collectFileReferences(program: Program): FileReference[] {
     for (const child of Object.values(record)) visit(child);
   };
 
-  visit(program);
+  visit(root);
   return out;
 }
+
+/**
+ * `cert`/`key` (SPEC §3.5), plus every path a `session` body names — the `ConfigFile` half of
+ * `collectFileReferences` (M116, D151, closing `M97c-01`).
+ *
+ * **Why a second entry point rather than a wider `collectFileReferences`.** The two dialects are
+ * two trees with no common root: `checkProgram` runs per test file and resolves paths against *that
+ * file's* directory, while everything here resolves against `tflw.config`'s own directory. One
+ * function returning both would hand the caller a list it cannot resolve without re-deriving which
+ * half each entry came from. The walk itself is shared (`collectPathLiterals`); only the roots and
+ * the node table differ.
+ *
+ * **This is the piece `checkReferencedFiles`' session verdict was waiting on.** That row read "not
+ * yet reachable, not undecidable — the same missing piece `M97c-01` needs, so the two land together
+ * or not at all." They land together here: a session body's `body from "./creds.json"` is found by
+ * the same walk as `cert`, because both are objects with a `type` inside one `ConfigFile`.
+ *
+ * **Both tiers are `run` (D147).** `loadMtlsCreds` is called from `execApi` (`interpreter.ts:3125`),
+ * i.e. at the first api step of the run, not while the config is resolved — so a `before all` hook
+ * can create the file, the checker is *predicting*, and a prediction must not make a valid suite
+ * unrunnable. M97c shipped an `A4-05` in the milestone whose thesis was that the checker must never
+ * do that; this is the rule that says it does not happen twice.
+ */
+export function collectConfigFileReferences(config: ConfigFile): FileReference[] {
+  return collectPathLiterals(config, CONFIG_FILE_BEARING_NODES);
+}
+
+/**
+ * The config dialect's own path-bearing nodes (M116, D151) — `cert`/`key`, plus every run-tier node
+ * a `session` body can contain.
+ *
+ * **A named constant, not an inline array, because `fileReferenceDrift` reads it.** The guard's
+ * `known` set is the union of every table that claims a node; building this one inline made
+ * `CertDecl`/`KeyDecl` look unclaimed the moment they left `NOT_A_CHECKABLE_FILE`, and the guard
+ * said so on the first run — which is the third time in this cluster it has been right about
+ * something the author was not thinking about.
+ *
+ * The `check` tier is filtered out on purpose: `import`/`use` are `.tflw` declarations and cannot
+ * appear in `tflw.config` at all, so listing them here would claim coverage of a syntax that has no
+ * way to occur.
+ */
+const CONFIG_FILE_BEARING_NODES: readonly FileBearingNode[] = [
+  ...FILE_BEARING_NODES.filter((e) => e.neededBy === 'run'),
+  { node: 'CertDecl', field: 'path', syntax: 'cert', neededBy: 'run' },
+  { node: 'KeyDecl', field: 'path', syntax: 'key', neededBy: 'run' },
+];
 
 /**
  * Nodes whose `path`/`filePath` is a `StringLit` but is *not* a file this pass may check, each with
@@ -2284,16 +2369,17 @@ export function collectFileReferences(program: Program): FileReference[] {
  * somewhere, or the next person re-derives it or, worse, adds the row and ships false positives.
  *
  * The drift guard found all three on its first run, which is the argument for having written it.
+ * Two of those three have since been *fixed* rather than excused — see below.
  */
 const NOT_A_CHECKABLE_FILE: Readonly<Record<string, string>> = {
   // `open "/orders/{id}"` is a URL path against the env's `web` base URL. Nothing is opened on disk.
+  // Still the only genuine entry — and M116 gave it a rule of its own (`TF051`), so a bad `open` is
+  // now caught for what it actually is: a missing `web` base URL, not a missing file.
   OpenStmt: 'a URL path, not a filesystem path',
-  // `cert "…"` / `key "…"` (SPEC §3.5) *are* real files the runtime reads, and they are genuinely
-  // unchecked — but they live in `tflw.config`, which is the config dialect: `collectFileReferences`
-  // walks a `Program` and never sees a `ConfigFile`. Checking them means the config stage of
-  // `loadAndValidate`, not this pass. Filed rather than bolted on here (D144 scoped the test dialect).
-  CertDecl: 'config dialect — a real gap, filed; needs the config check path, not `checkProgram`',
-  KeyDecl: 'config dialect — a real gap, filed; needs the config check path, not `checkProgram`',
+  // `CertDecl`/`KeyDecl` were here, reading "a real gap, filed; needs the config check path". M116
+  // (D151) built that path — `collectConfigFileReferences` — so they are checked now and this table
+  // no longer excuses them. Left as a comment rather than deleted silently: the drift guard's value
+  // is that an entry here is a decision, and *retiring* one is the outcome it was hoping for.
 };
 
 /**
@@ -2305,7 +2391,13 @@ const NOT_A_CHECKABLE_FILE: Readonly<Record<string, string>> = {
  * the invariant this whole milestone turns on), so the test supplies the bytes.
  */
 export function fileReferenceDrift(astSource: string): string[] {
-  const known = new Set([...FILE_BEARING_NODES.map((e) => e.node), ...Object.keys(NOT_A_CHECKABLE_FILE)]);
+  // Every table that claims a node, not just the program one — M116 added `CONFIG_FILE_BEARING_NODES`
+  // and this guard caught the omission the moment `CertDecl`/`KeyDecl` left `NOT_A_CHECKABLE_FILE`.
+  const known = new Set([
+    ...FILE_BEARING_NODES.map((e) => e.node),
+    ...CONFIG_FILE_BEARING_NODES.map((e) => e.node),
+    ...Object.keys(NOT_A_CHECKABLE_FILE),
+  ]);
   const drift: string[] = [];
   for (const m of astSource.matchAll(/export interface (\w+) extends Node \{\n([\s\S]*?)\n\}/g)) {
     const [, name = '', body = ''] = m;
@@ -2368,3 +2460,252 @@ export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions
   }
   return diags;
 }
+
+// ---------------------------------------------------------------------------
+// M116 (`PLAN_M97_CHECKER_CONTRACT.md`, D148-D150) — three rules the runtime enforced alone.
+//
+// All eight rows these close came out of `RUNTIME_RULES`, and every one was re-probed against the
+// shipped CLI before a line was written: this cluster filed 21 rows and *withdrew three* for
+// reading an unreachable `throw` as an unchecked gap (`M97a-07`/`-09`/`-10`). A row's wording is
+// not evidence. What is: for each of the eight, a program the parser accepts, the checker reports
+// `no problems found` on, and the runtime throws for.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which base URLs the *active* env declares (M116, D148) — the config half of `TF051`.
+ *
+ * Two booleans and a name rather than the URLs themselves, because the rule is only ever "is this
+ * one declared": handing the checker a URL would invite it to reason about the URL, which is the
+ * runtime's job and needs the network. `envName` is carried solely so the diagnostic can name the
+ * env the user actually selected, which is the first thing they need to know.
+ *
+ * `undefined` on `ProgramCheckOptions` means no config was resolved at all and the pass is skipped
+ * — the same `undefined`-vs-`[]` doctrine as `knownServices`, and the docs-site editor demo is
+ * again the case that needs it.
+ */
+export interface EnvBaseUrls {
+  /** The active env's name, for the message. */
+  readonly envName: string;
+  /** Does it declare a default `api` base URL (`api "…"` with no service name)? */
+  readonly api: boolean;
+  /** Does it declare a `web` base URL? */
+  readonly web: boolean;
+}
+
+/**
+ * `M97a-04` + `M97a-15` (`TF051`) — a step needing a base URL the active env does not declare.
+ *
+ * **One code for both halves, deliberately.** They are one rule with two operands: the AST says
+ * which kind of base URL a step needs, `tflw.config` says which kinds the active env declares. Two
+ * codes would make the checker say two different things about the same missing line in one file.
+ *
+ * **Severity `error`, and this is not the `TF043` case.** D147 split `TF043` on *who opens the file
+ * and when*, because a path a step opens may be created by an earlier step — so the checker was
+ * predicting, and a prediction must not block. Nothing predicts here: the config is resolved once,
+ * before any step runs, and no step, hook or `use`d JS action can add a base URL to an env that is
+ * already resolved. The checker is observing.
+ *
+ * The three sites, all of which reach the same two runtime throws:
+ *   - `open` — `interpreter.ts:2497`. `open`'s path is *always* relative to the `web` base URL
+ *     (`ast.ts:774`: no method/service prefix, so no absolute-URL form to exempt), which is why
+ *     this half needs no operand inspection at all.
+ *   - an api request line with no `<service>` prefix — `interpreter.ts:4025`, reached from both
+ *     `api …` and `wait until api …`, which share `parseApiRequestLine`.
+ *   - `matches schema "…" from "<relative>"` — the non-obvious third site. `contract.ts:45`
+ *     resolves a non-absolute schema source against the *default* service, so it reaches the
+ *     identical throw by a second path. `schemaSource` is a `StringLit` that is never interpolated
+ *     (`ast.ts:726`), so absolute-vs-relative is a static test.
+ */
+export function checkBaseUrls(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  if (!opts.envBaseUrls) return diags;
+  for (const test of program.tests) checkBaseUrlsInSteps(test.body, opts.envBaseUrls, diags);
+  for (const action of program.actions) checkBaseUrlsInSteps(action.body, opts.envBaseUrls, diags);
+  for (const hook of program.hooks) checkBaseUrlsInSteps(hook.body, opts.envBaseUrls, diags);
+  return byPosition(diags);
+}
+
+/** One body's steps (D152) — what a `session` needs, and the shape it needs most: a session body's
+ * `api` steps are overwhelmingly the un-prefixed kind, and its failure takes down every test that
+ * names it. */
+function checkBaseUrlsInSteps(steps: readonly Step[], env: EnvBaseUrls, diags: Diagnostic[]): void {
+  // The object-graph walk, for `collectFileReferences`' reason (see its comment): a step nested in
+  // a block kind a hand-written walker had not been taught about is skipped *in silence*, and
+  // silence is how this class of gap presents — `no problems found`. Dispatching on `node.type`
+  // over every object cannot miss one, because a new block kind is just another object with
+  // children.
+  const seen = new Set<object>();
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    switch (node['type']) {
+      case 'OpenStmt':
+        if (!env.web) diags.push(missingBaseUrl('web', 'open', node as unknown as { span: Span }, env));
+        break;
+      case 'ApiStep':
+        if (!env.api && node['service'] === null) diags.push(missingBaseUrl('api', 'api', node as unknown as { span: Span }, env));
+        break;
+      case 'WaitUntilApiStmt': {
+        const request = node['request'] as ApiRequestSpec | undefined;
+        if (!env.api && request && request.service === null) {
+          diags.push(missingBaseUrl('api', 'wait until api', node as unknown as { span: Span }, env));
+        }
+        break;
+      }
+      case 'ExpectStmt': {
+        const expect = node as unknown as ExpectStmt;
+        const source = expect.matcher.schemaSource;
+        // Absolute sources pass through `resolveSchemaSourceUrl` untouched and need no base URL —
+        // the same test `contract.ts:44` applies, kept identical on purpose.
+        if (!env.api && expect.matcher.name === 'matchesSchema' && source && !/^https?:\/\//i.test(source.value)) {
+          diags.push(missingBaseUrl('api', 'matches schema … from', source, env));
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    for (const child of Object.values(node)) visit(child);
+  };
+  visit(steps);
+}
+
+function missingBaseUrl(kind: 'api' | 'web', syntax: string, at: { span: Span }, env: EnvBaseUrls): Diagnostic {
+  const declaration = kind === 'web' ? 'web "http://localhost:3000"' : 'api "http://localhost:3000"';
+  return {
+    code: Codes.NO_BASE_URL_FOR_STEP,
+    severity: 'error',
+    message: `\`${syntax}\` needs ${kind === 'api' ? 'an' : 'a'} \`${kind}\` base URL, and env "${env.envName}" declares none`,
+    span: at.span,
+    hint:
+      kind === 'web'
+        ? `add \`${declaration}\` to \`env ${env.envName}\` in \`tflw.config\` (SPEC §3.1, §9.1)`
+        : `add \`${declaration}\` to \`env ${env.envName}\` in \`tflw.config\`, or address a named service (\`api <service> GET …\`) — SPEC §3.1, §5.1`,
+  };
+}
+
+/**
+ * `M97a-05` (`TF052`) — `mask <locator>` where the matcher is not `matches snapshot`.
+ *
+ * The whole rule is `masks.length > 0 && matcher.name !== 'matchesSnapshot'`, both operands in one
+ * `ExpectStmt`. The parser cannot do it and should not: `parseSnapshotMasks` accepts a mask after
+ * any matcher by design, so that a misplaced one gets a *semantic* message instead of a parse error
+ * pointing at the wrong token. A transcription of `interpreter.ts:2582` into the checker — no new
+ * judgement, which is exactly what D137 clause 2 asks for.
+ */
+export function checkSnapshotMasks(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  forEachExpect(program, (expect) => checkOneSnapshotMask(expect, diags));
+  return diags;
+}
+
+/** One body's expects (D152) — vacuously reachable in a `session` rather than N/A: a session body
+ * is a body of steps and `ExpectStmt` is one of them. Wiring it costs nothing and means the next
+ * grammar change cannot quietly make it reachable while the pass is looking elsewhere. */
+function checkSnapshotMasksInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
+  forEachExpectInSteps(steps, (expect) => checkOneSnapshotMask(expect, diags));
+}
+
+function checkOneSnapshotMask(expect: ExpectStmt, diags: Diagnostic[]): void {
+  if (expect.masks.length === 0 || expect.matcher.name === 'matchesSnapshot') return;
+  for (const mask of expect.masks) {
+    diags.push({
+      code: Codes.MASK_WITHOUT_SNAPSHOT,
+      severity: 'error',
+      message: '`mask <locator>` only applies alongside `matches snapshot "…"`',
+      span: mask.span,
+      hint: 'a mask blanks a region *of a snapshot* before comparing it; against any other matcher there is nothing for it to blank (SPEC §9.9)',
+    });
+  }
+}
+
+/**
+ * `M97a-11` + `M97a-12` + `M97a-13` + `M97a-14` (`TF053`) — `capture` against a subject that can be
+ * asserted about but not bound to a name.
+ *
+ * **Four rows, one code, and that is the design.** They were filed as four because they are four
+ * `throw`s (`interpreter.ts:3947/3953/3992/3998/4002`), but every one of them is the same sentence:
+ * *this subject supports `expect`/`check`, not `capture`*. Four codes would be four ways to say it,
+ * and the fifth such subject would be a fifth row instead of one line in the set below.
+ *
+ * **The kind test alone would be unsound, and this is the subtle part.** `SUBJECT_KINDS` maps
+ * `StatusSubject` to `'value'` — but `capture status of request to "/health" as x` is *also*
+ * rejected by the runtime, because `of request to "…"` is not a subject type at all: it is an `of`
+ * field on four otherwise ordinary value subjects (`ast.ts:582/635/643/651`). A kind-only rule
+ * would pass it. So the test is `kind !== 'value' || of != null`, which is `subjectNetworkRef() ||
+ * PageSubject || RequestSubject || LocatorSubject` — the runtime's own four guards, transcribed.
+ *
+ * `SUBJECT_KINDS`' `satisfies` is what keeps this sound as the grammar grows: a new subject type
+ * fails to compile until it is classified, and then this pass already has an answer for it.
+ */
+export function checkCapturableSubjects(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const test of program.tests) checkCapturableSubjectsInSteps(test.body, diags);
+  for (const action of program.actions) checkCapturableSubjectsInSteps(action.body, diags);
+  for (const hook of program.hooks) checkCapturableSubjectsInSteps(hook.body, diags);
+  return byPosition(diags);
+}
+
+/** One body's captures (D152) — a `session` body's entire job is `capture`, so this is the pass of
+ * the three that a session most needs. */
+function checkCapturableSubjectsInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
+  const seen = new Set<object>();
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    if (node['type'] === 'CaptureStmt') {
+      const capture = node as unknown as { subject: Subject; span: Span };
+      const diag = uncapturableSubject(capture.subject);
+      if (diag) diags.push(diag);
+    }
+    for (const child of Object.values(node)) visit(child);
+  };
+  visit(steps);
+}
+
+/** The one place the rule lives. Returns `null` for a subject `capture` accepts. */
+function uncapturableSubject(subject: Subject): Diagnostic | null {
+  // `of request to "…"` first: it rides on subjects whose own kind is `'value'`, so testing it
+  // second would let `capture status of request to "…"` through. Same ordering the runtime uses
+  // (`subjectNetworkRef` is checked before the subject-type switch, `interpreter.ts:3946`).
+  const hasOfModifier = 'of' in subject && (subject as { of?: unknown }).of != null;
+  if (subject.type === 'NetworkRequestSubject' || hasOfModifier) {
+    return {
+      code: Codes.SUBJECT_NOT_CAPTURABLE,
+      severity: 'error',
+      message: '`capture` does not support a `request to "…"` subject',
+      span: subject.span,
+      hint: 'an observed network request is something to assert about, not a value to bind — use `expect`/`check` against it (SPEC §9.7)',
+    };
+  }
+  const kind = SUBJECT_KINDS[subject.type];
+  if (kind === 'value') return null;
+  return {
+    code: Codes.SUBJECT_NOT_CAPTURABLE,
+    severity: 'error',
+    message: `\`capture\` does not support ${KIND_LABELS[kind]} as a subject`,
+    span: subject.span,
+    hint: UNCAPTURABLE_HINTS[kind],
+  };
+}
+
+/** What each non-capturable kind *does* support, in the runtime's own words — the part a reader
+ * needs, since "not capturable" alone leaves them nowhere to go. */
+const UNCAPTURABLE_HINTS: Readonly<Record<Exclude<SubjectKind, 'value'>, string>> = {
+  locator: 'a UI locator is something to assert about — use `expect`/`check` against it, or `capture text "…"`-style value subject if you want its content (SPEC §9.4)',
+  page: '`page` is only ever an a11y subject — `expect`/`check page has no … a11y violations` (SPEC §9.8)',
+  request: '`request` reports whether the last api step connected — `expect`/`check request connects`/`fails` (SPEC §6.2.2)',
+  'network-request': 'an observed network request is something to assert about, not a value to bind — use `expect`/`check` against it (SPEC §9.7)',
+};

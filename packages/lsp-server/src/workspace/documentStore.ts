@@ -94,7 +94,13 @@ export class DocumentStore {
         const resolved = resolveConfig(parsed.config, envBlock);
         diagnostics = [
           ...diagnostics,
-          ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services)),
+          // M116/D152 — the same env this block already resolved, so a `session` body gets `TF051`
+          // in the editor exactly as it does from `tflw check`.
+          ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services), {
+            envName: resolved.envName,
+            api: resolved.apiBaseUrl !== null,
+            web: resolved.webBaseUrl !== null,
+          }),
           // `TF036` (M85) — same env scope as everything else here: the env this workspace
           // resolves to, not every env the file declares.
           ...checkAllowHostsCoversBaseUrls(parsed.config, envBlock),
@@ -115,11 +121,22 @@ export class DocumentStore {
     // docs-site demo — a browser, where no config can exist even in principle — omits these.
     let knownServices: string[] = [];
     let knownSessions: string[] = [];
+    // `envBaseUrls` (M116/D148, `TF051`) stays `undefined` when no project resolves, and that is the
+    // one option here that must NOT fall back to a permissive default. `[]` for services says "this
+    // env declares none", which is a real error about a real env; `{api: false, web: false}` would
+    // say the same about an env nobody selected, squiggling every `api GET /path` in a file the
+    // server could not place. The rule needs a resolved env or nothing — see `EnvBaseUrls`.
+    let envBaseUrls: { envName: string; api: boolean; web: boolean } | undefined;
     if (doc.root) {
       const project = await loadProjectConfig(doc.root, envSetting).catch(() => undefined);
       if (project?.resolved) {
         knownServices = Object.keys(project.resolved.services);
         knownSessions = Array.from(project.resolved.sessions.keys());
+        envBaseUrls = {
+          envName: project.resolved.envName,
+          api: project.resolved.apiBaseUrl !== null,
+          web: project.resolved.webBaseUrl !== null,
+        };
       }
     }
     // The CLI's own pass list, verbatim — one shared entry point, so the server can't fall behind it
@@ -145,7 +162,10 @@ export class DocumentStore {
         () => false,
       );
     });
-    const diagnostics = [...parsed.diagnostics, ...checkProgram(parsed.program, { knownServices, knownSessions, importedActions, missingFiles })];
+    const diagnostics = [
+      ...parsed.diagnostics,
+      ...checkProgram(parsed.program, { knownServices, knownSessions, importedActions, missingFiles, ...(envBaseUrls ? { envBaseUrls } : {}) }),
+    ];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), baseDir };
   }
 

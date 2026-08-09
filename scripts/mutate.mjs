@@ -594,6 +594,63 @@ const MUTATIONS = [
     find: "  if (typeof value !== 'number' || Number.isNaN(value)) {\n    const got = Number.isNaN(value as number) ? 'NaN' : describe(value);\n    throw new RuntimeError(`\\`${matcher}\\` expects a number, got ${got}`);\n  }\n  return value;",
     replace: "  const n = typeof value === 'number' ? value : Number(value);\n  if (Number.isNaN(n)) throw new RuntimeError(`\\`${matcher}\\` expects a number, got ${describe(value)}`);\n  return n;",
   },
+  // M116 (D148-D150) — one per rule, each aimed at the *specific* way that rule could look correct
+  // and be hollow. Not "delete the pass": deleting a pass is caught by any test at all, which is
+  // exactly the control M92d called a passing test of nothing.
+  {
+    id: 'base-url-ignores-service-prefix',
+    milestone: 'm116',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`TF051` fires on every api step, prefixed or not — the false positive that would reject a correct multi-service suite with no default `api` (D137 clause 1)',
+    find: "        if (!env.api && node['service'] === null) diags.push(missingBaseUrl('api', 'api', node as unknown as { span: Span }, env));",
+    replace: "        if (!env.api) diags.push(missingBaseUrl('api', 'api', node as unknown as { span: Span }, env));",
+  },
+  {
+    id: 'base-url-treats-undefined-as-false',
+    milestone: 'm116',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`checkBaseUrls` runs with no resolved config, reading `undefined` as "declares nothing" — the `undefined`-vs-`[]` doctrine inverted, which would report `TF051` on every docs-site sample',
+    find: '  if (!opts.envBaseUrls) return diags;',
+    replace: "  const envOrNone = opts.envBaseUrls ?? { envName: 'unknown', api: false, web: false };\n  if (!envOrNone) return diags;",
+  },
+  {
+    id: 'capturable-ignores-of-modifier',
+    milestone: 'm116',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`TF053` tests subject *kind* only, so `capture status of request to "/x" as n` passes — the exact hole a kind-only rule leaves, since those subjects are kind `value`',
+    find: "  const hasOfModifier = 'of' in subject && (subject as { of?: unknown }).of != null;\n  if (subject.type === 'NetworkRequestSubject' || hasOfModifier) {",
+    replace: "  const hasOfModifier = false;\n  if (subject.type === 'NetworkRequestSubject' || hasOfModifier) {",
+  },
+  {
+    id: 'mask-rule-inverted',
+    milestone: 'm116',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`TF052` fires on a mask that *does* sit alongside `matches snapshot` — breaking the one feature the rule exists to protect, while still passing any test that only checks the error case',
+    find: "  if (expect.masks.length === 0 || expect.matcher.name === 'matchesSnapshot') return;",
+    replace: "  if (expect.masks.length === 0) return;",
+  },
+  {
+    id: 'config-files-resolve-against-cwd',
+    milestone: 'm116',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/imports.ts',
+    what: "`cert`/`key` resolve against the process cwd instead of `tflw.config`'s directory — identical in every fixture written from a repo root, wrong for any user who runs `tflw` from elsewhere (D151)",
+    find: '      if (!(await exists(resolve(configDir, literal)))) missing.add(literal);',
+    replace: '      if (!(await exists(resolve(process.cwd(), literal)))) missing.add(literal);',
+  },
+  {
+    id: 'config-files-are-errors',
+    milestone: 'm116',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/imports.ts',
+    what: 'a missing `cert` becomes an error rather than a warning — D147\'s `A4-05` shipped a second time, making a suite whose hook writes the cert unrunnable with no override',
+    find: "    severity: 'warning' as const,",
+    replace: "    severity: 'error' as const,",
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than

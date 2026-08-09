@@ -45,7 +45,12 @@ export {
   checkMatcherSubjects,
   checkReferencedFiles,
   checkActionCycles,
+  checkBaseUrls,
+  checkSnapshotMasks,
+  checkCapturableSubjects,
+  type EnvBaseUrls,
   collectFileReferences,
+  collectConfigFileReferences,
   fileReferenceDrift,
   type FileReference,
 } from './checker.js';

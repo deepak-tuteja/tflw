@@ -95,6 +95,13 @@ export const Codes = {
   TAB_INDENT: 'TF048',
   HIDDEN_CHAR: 'TF049',
   CONFUSABLE_WORD: 'TF050',
+  // M116 (`PLAN_M97_CHECKER_CONTRACT.md`, D148-D150) — three rules the runtime enforced alone,
+  // closing eight `M97a`/`M97c` rows. Each is config × AST or AST × AST: nothing here needs a
+  // response, a value or the filesystem, which is why they were rule-2 violations and not the
+  // runtime's to keep.
+  NO_BASE_URL_FOR_STEP: 'TF051',
+  MASK_WITHOUT_SNAPSHOT: 'TF052',
+  SUBJECT_NOT_CAPTURABLE: 'TF053',
 } as const;
 
 // ---------------------------------------------------------------------------
