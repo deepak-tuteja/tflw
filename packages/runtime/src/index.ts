@@ -10,7 +10,7 @@ export { runLoadShard, mergeLoadShardReports, spliceLoadReportIntoRunReport, typ
 // M89b (D-M89-5) — the CLI's pre-run `scenario "…" — <description>` line formats *this* value
 // through the reporter's one `describeWorkload`, instead of switching over the AST itself.
 export { workloadOf } from './interpreter.js';
-export { resolveImportedActions, resolveMissingFiles, type ReadText, type PathExists } from './imports.js';
+export { resolveImportedActions, resolveMissingFiles, checkConfigFiles, type ReadText, type PathExists } from './imports.js';
 export { mergeSelfDiagnosis } from './selfDiagnosis.js';
 export { finalizeVerdict, noVerdictReason, type NoVerdictReason } from './run-verdict.js';
 export { shutdownMtlsWorker } from './mtlsWorker.js';

@@ -62,6 +62,52 @@ test('analyze: a tflw.config buffer gets checkSessionServices diagnostics agains
   });
 });
 
+// M116 (D148) — `TF051` in the editor. The server resolves the project's env already; before this
+// it simply did not hand it to `checkProgram`, so `tflw check` and the editor would have disagreed
+// about the same file. That is the gap M60 closed, running backwards — and the reason it is worth a
+// test rather than a comment is that nothing else in the suite would have noticed the silence.
+
+test('analyze: `open` with no `web` base URL squiggles `TF051` (M116)', async () => {
+  // `CLEAN_CONFIG` declares `api` and no `web`, so this is the real shape: a browser test written
+  // against an API-only project.
+  await withTmpProject(CLEAN_CONFIG, async (dir) => {
+    const store = new DocumentStore();
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), `test "ok"\n  open "/login"\n`);
+    const analysis = await store.analyze(uri, undefined);
+    assert.deepEqual(analysis?.diagnostics.map((d) => d.code), ['TF051']);
+  });
+});
+
+test('analyze: the same buffer is clean once the env declares `web` (M116)', async () => {
+  // The control. Without it the test above passes just as well against a rule that fires always.
+  await withTmpProject(`env local default\n  api "http://localhost:3001"\n  web "http://localhost:3000"\n`, async (dir) => {
+    const store = new DocumentStore();
+    const uri = 'file:///doc.tflw';
+    store.open(uri, join(dir, 'doc.tflw'), `test "ok"\n  open "/login"\n`);
+    const analysis = await store.analyze(uri, undefined);
+    assert.deepEqual(analysis?.diagnostics, []);
+  });
+});
+
+test('analyze: a buffer outside any project is NOT squiggled with `TF051` (M116)', async () => {
+  // The `undefined`-vs-`[]` half, and the one that would have been a genuinely bad regression:
+  // `knownServices` falls back to `[]` because a file outside a project truly cannot name a service
+  // that resolves — but there is no env to be missing a base URL, so `envBaseUrls` must stay
+  // `undefined` and the pass must not run. Control: default it to `{api: false, web: false}` and
+  // every `api` line in every unrooted buffer squiggles.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-lsp-norooot-'));
+  try {
+    const store = new DocumentStore();
+    const uri = 'file:///loose.tflw';
+    store.open(uri, join(dir, 'loose.tflw'), `test "ok"\n  api GET /health\n  open "/login"\n`);
+    const analysis = await store.analyze(uri, undefined);
+    assert.deepEqual(analysis?.diagnostics.filter((d) => d.code === 'TF051'), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('update: analyze reflects the buffer\'s latest text, not what open() first saw', async () => {
   await withTmpProject(CLEAN_CONFIG, async (dir) => {
     const store = new DocumentStore();

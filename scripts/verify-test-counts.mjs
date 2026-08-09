@@ -46,10 +46,10 @@ import { fileURLToPath } from 'node:url';
  * irrelevant — blocks are matched by the package name npm prints above each one, not by position,
  * so adding a workspace cannot silently shift the comparison onto the wrong suite. */
 const EXPECTED = {
-  '@tflw/lang': 891,
-  '@tflw/runtime': 593, // +15 in `B3-04`: 7 non-number values × 2 comparison matchers, + 1 control
+  '@tflw/lang': 925, // +34 in M116: baseUrls 15, capturableSubjects 12, snapshotMasks 7
+  '@tflw/runtime': 600, // +15 in `B3-04` (7 non-numbers × 2 matchers + 1 control); +7 in M116 (`checkConfigFiles`)
   '@tflw/reporter': 106,
-  '@tflw/lsp-server': 114,
+  '@tflw/lsp-server': 117, // +3 in M116: `TF051` in the editor, its control, and the unrooted-buffer case
   tflw: 160,
   'tflw-vscode': 34,
   '@tflw/docs-site': 32,

@@ -20,7 +20,7 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { collectFileReferences, parseSource, type KnownAction, type Program } from '@tflw/lang';
+import { collectConfigFileReferences, collectFileReferences, parseSource, type ConfigFile, type Diagnostic, type FileReference, type KnownAction, type Program, Codes } from '@tflw/lang';
 
 /** Reads a file's text, given an absolute path. Injectable so the language server can answer from
  * an open editor buffer — an imported file being edited in another tab is more current on screen
@@ -112,4 +112,41 @@ export async function resolveMissingFiles(filePath: string, program: Program, ex
     }),
   );
   return missing;
+}
+
+/**
+ * The `tflw.config` twin of `resolveMissingFiles` (M116, D151, closing `M97c-01`) — `cert`/`key`
+ * and every path a `session` body names, stat'd and turned straight into diagnostics.
+ *
+ * **It returns diagnostics, where the program-side function returns a set of literals, and the
+ * asymmetry is the point.** `checkProgram` is a pure pass in `@tflw/lang` that must be handed
+ * *answers*; there is no equivalent pure pass over a `ConfigFile`, and inventing one to preserve
+ * the symmetry would mean a second `checkSessionBody`-shaped entry point whose only job is to
+ * re-walk a tree this function has already walked.
+ *
+ * **`dirname(configPath)`, always.** Every path in `tflw.config` resolves against the config's own
+ * directory: `loadMtlsCreds` is called with `configDir` (`interpreter.ts:3125`), and a session
+ * body's paths were moved onto the same basis by `M97c-03`. Resolving against the cwd — which is
+ * usually the same directory, and so would pass every test written from the repo root — would be
+ * the `D137` clause 1 failure this whole cluster exists to avoid, visible only to a user who runs
+ * `tflw` from somewhere else.
+ *
+ * Every reference is the **run** tier, so every diagnostic is a warning; see
+ * `collectConfigFileReferences` for why `cert`/`key` are a prediction and not an observation.
+ */
+export async function checkConfigFiles(config: ConfigFile, configDir: string, exists: PathExists = existsOnDisk): Promise<Diagnostic[]> {
+  const refs = collectConfigFileReferences(config);
+  const missing = new Set<string>();
+  await Promise.all(
+    [...new Set(refs.map((r: FileReference) => r.path.value))].map(async (literal) => {
+      if (!(await exists(resolve(configDir, literal)))) missing.add(literal);
+    }),
+  );
+  return refs.filter((ref: FileReference) => missing.has(ref.path.value)).map((ref: FileReference) => ({
+    code: Codes.MISSING_FILE,
+    severity: 'warning' as const,
+    message: `\`${ref.syntax}\` names a file that does not exist: "${ref.path.value}"`,
+    span: ref.path.span,
+    hint: 'paths in `tflw.config` resolve against the directory of `tflw.config` itself — a warning, not an error, because this file is opened during the run, so a hook or an earlier step may still create it',
+  }));
 }

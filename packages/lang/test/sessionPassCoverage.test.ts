@@ -84,6 +84,27 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     code: Codes.UNKNOWN_CALL,
   },
 
+  checkBaseUrls: {
+    verdict: 'applies',
+    reason:
+      'M116/D148. The most load-bearing of the three: an api step with no `<service>` prefix is the dominant shape in a `session` body (a login almost always goes to the default service), and a session that cannot resolve its base URL takes down every test that names it. The fixture exercises the **`web`** half rather than that one, and the reason is structural, not a preference: the shared config below has to declare `api` for every other row here to be about what it says it is, so the `api` half cannot fire against it. `baseUrls.test.ts` covers the api half directly, in a session, against an env that declares none',
+    fixture: '  open "/login"\n',
+    code: Codes.NO_BASE_URL_FOR_STEP,
+  },
+  checkSnapshotMasks: {
+    verdict: 'applies',
+    reason:
+      'M116/D149. Reachable rather than load-bearing: a session body is a body of steps and `ExpectStmt` is one of them, so a stray `mask` parses there exactly as it does in a test. Wired because a pass that is wired costs nothing to keep wired, and the alternative is an "n/a" that quietly becomes wrong the first time someone snapshots inside a session',
+    fixture: '  api GET /health\n  expect status equals 200 mask field "Email"\n',
+    code: Codes.MASK_WITHOUT_SNAPSHOT,
+  },
+  checkCapturableSubjects: {
+    verdict: 'applies',
+    reason: 'M116/D150. A session body\'s entire purpose is to `capture` a token out of a login response, so this is the pass whose subject a session exercises most heavily',
+    fixture: '  api GET /health\n  capture request as r\n',
+    code: Codes.SUBJECT_NOT_CAPTURABLE,
+  },
+
   checkProgram: { verdict: 'n/a', reason: 'the composition of the per-file passes, not a pass — `checkSessionBody` is its config-side counterpart' },
   checkSessionBody: { verdict: 'n/a', reason: 'this list itself' },
   checkSessionServices: { verdict: 'n/a', reason: 'subsumed: `checkSessionBody` folds it in so callers have one entry point' },
@@ -102,7 +123,7 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
   checkReferencedFiles: {
     verdict: 'n/a',
     reason:
-      'M97c/D144, amended by `M97c-03`. Syntactically a session body *can* name a file (`api POST /auth/login body from "./creds.json"`), so this row was written expecting "applies". The original reason was that no single answer existed to check *against*: `runSession` ran the shared body under the `TestCtx` of whichever **test file** triggered it, so one `tflw.config` line resolved to a different absolute path per test file. That was filed as its own row rather than swallowed here — and it has since been fixed, so that reason is retired: a session body\'s paths now resolve against the config\'s own directory, deterministically. What keeps this "n/a" today is narrower and purely structural: `collectFileReferences` walks a `Program`, and sessions live in a `ConfigFile`, which has no such walk. That is the same missing piece `M97c-01` needs for `cert`/`key`, so the two land together or not at all — and note the verdict is now "not yet reachable", not "not decidable"',
+      'M97c/D144, amended by `M97c-03`. Syntactically a session body *can* name a file (`api POST /auth/login body from "./creds.json"`), so this row was written expecting "applies". The original reason was that no single answer existed to check *against*: `runSession` ran the shared body under the `TestCtx` of whichever **test file** triggered it, so one `tflw.config` line resolved to a different absolute path per test file. That was filed as its own row rather than swallowed here — and it has since been fixed, so that reason is retired: a session body\'s paths now resolve against the config\'s own directory, deterministically. The second reason is retired too: "`collectFileReferences` walks a `Program` and sessions live in a `ConfigFile`, so `M97c-01` and this land together or not at all" was true until M116/D151 built `collectConfigFileReferences`, and they did land together — a session body\'s `body from "./creds.json"` and a `cert "…"` are found by the same walk. What keeps the row "n/a" now is the only thing left, and it is the same shape as `missingFiles` on the program side: the `stat` is the **caller\'s**, never the pure pass\'s, so a session\'s file references are reported by `loadAndValidate`, not by `checkSessionBody`. `configFileReferences.test.ts` is where that coverage lives',
   },
 };
 
@@ -118,7 +139,10 @@ const config = (sessionBody: string): string =>
 const runSession = (sessionBody: string): string[] => {
   const parsed = parseConfigSource(config(sessionBody));
   assert.deepEqual(parsed.diagnostics, [], `fixture did not parse:\n${config(sessionBody)}`);
-  return checkSessionBody(parsed.config.sessions, ['billing']).map((d) => d.code);
+  // M116/D152 — the env the fixture config above actually describes: it declares a default `api`
+  // and no `web`. Stating it truthfully rather than passing `{api: true, web: true}` is what lets
+  // `checkBaseUrls`' row prove itself here at all.
+  return checkSessionBody(parsed.config.sessions, ['billing'], { envName: 'local', api: true, web: false }).map((d) => d.code);
 };
 
 test('the source scan finds passes at all', () => {
