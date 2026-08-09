@@ -312,6 +312,14 @@ export interface WorkloadTestResult extends LoadScenarioReport {
 export type ReportEntry = TestResult | WorkloadTestResult;
 
 export interface RunReport {
+  /** **Did this run pass?** — not "did nothing that ran fail", which is `failed === 0` one line
+   * down. A run that never reached a verdict is `ok: false` even with an empty `failed` count:
+   * `aborted` (Ctrl-C before the planned duration) and `inconclusive` (tflw's own generator
+   * saturated) each say which kind of no-verdict it was. `M114` (review row `M111-01`) — until then
+   * an aborted run's `results.json` read `{"ok": true, "failed": 0, "aborted": true}`, and a CI job
+   * branching on the field named for exactly this question read a clean pass off a run cut short.
+   *
+   * Derived in exactly one place, `finalizeVerdict` (`run-verdict.ts`), by every producer. */
   readonly ok: boolean;
   readonly env: string;
   readonly startedAt: string;

@@ -21,23 +21,13 @@
 // the sample that was planned), so it gets the same treatment rather than a new one, and this
 // module is where the two stopped being separate code.
 
-import type { RunReport } from '@tflw/runtime';
+// **`M114` moved the question itself into `@tflw/runtime`** (`M111-01`). `noVerdictReason` used to
+// live here, which was right while only renderers asked it — but `RunReport.ok` is now derived from
+// the same answer, and a report cannot import its own renderer. What stays here is what is genuinely
+// presentation: the wording, and the word at the top of the summary.
+import { noVerdictReason, type NoVerdictReason, type RunReport } from '@tflw/runtime';
 
-/** Why this run's workload thresholds carry no verdict. */
-export type NoVerdictReason = 'aborted' | 'inconclusive';
-
-/**
- * `'aborted'`, `'inconclusive'`, or `null` when the run's thresholds mean what they say.
- *
- * Abort outranks inconclusive, matching the exit-code priority `runCommand` already applies
- * (`aborted > inconclusive > ok`) — a run that was cut short never gathered the sample that a
- * saturation reading would describe, so the abort is the more basic fact about it.
- */
-export function noVerdictReason(report: RunReport): NoVerdictReason | null {
-  if (report.aborted) return 'aborted';
-  if (report.inconclusive) return 'inconclusive';
-  return null;
-}
+export { noVerdictReason, type NoVerdictReason };
 
 /** Why a threshold carries no verdict, in the one wording every sink uses. */
 export function noVerdictMessage(reason: NoVerdictReason, report: RunReport): string {
@@ -48,11 +38,22 @@ export function noVerdictMessage(reason: NoVerdictReason, report: RunReport): st
 }
 
 /**
- * The word at the top of the summary. `ABORTED` is a third state on purpose: a run cut short did
- * not pass and did not fail, and collapsing it into either is the defect `FU-07` filed. It is
- * rendered in the same red as `FAIL` because the one thing it definitely is not is a green run.
+ * The word at the top of the summary. `ABORTED`/`INCONCLUSIVE` are states of their own on purpose:
+ * a run that reached no verdict did not pass and did not fail, and collapsing it into either is the
+ * defect `FU-07` filed. Both render in the same red as `FAIL`, because the one thing such a run
+ * definitely is not is green.
+ *
+ * `INCONCLUSIVE` is `M114`'s (`M111-01`). `M111` special-cased `aborted` here and left the sibling
+ * cause alone, so a saturated run printed a green `PASS 1/1 passed` while `junit.xml` — reading the
+ * same `noVerdictReason` — marked every one of its thresholds `<skipped/>`: the two sinks `M111`
+ * unified disagreed about one of the two reasons it unified them for. Measured, not read.
+ *
+ * The reason is consulted **before** `report.ok`, and has to be: since `M114`, `ok` is already
+ * `false` on a no-verdict run, so an `ok`-first version of this function would badge every aborted
+ * run `FAIL`.
  */
-export function runBadgeText(report: RunReport): 'PASS' | 'FAIL' | 'ABORTED' {
-  if (report.aborted) return 'ABORTED';
+export function runBadgeText(report: RunReport): 'PASS' | 'FAIL' | 'ABORTED' | 'INCONCLUSIVE' {
+  const reason = noVerdictReason(report);
+  if (reason !== null) return reason === 'aborted' ? 'ABORTED' : 'INCONCLUSIVE';
   return report.ok ? 'PASS' : 'FAIL';
 }

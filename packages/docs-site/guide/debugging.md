@@ -10,9 +10,17 @@ PASS 1/1 passed · env local · seed 1486355565 · now 2026-07-20T19:09:07.104Z 
 report: report/report.html
 ```
 
-One line per test (`✓`/`✗`, name, duration), then a summary line (`PASS`/`FAIL`, pass tally, the
+One line per test (`✓`/`✗`, name, duration), then a summary line (the badge, pass tally, the
 `env` that ran, the `seed`/`now` that generated any random/date values, total duration), then the
-report path. A failing test also prints its failing step(s) indented underneath, live, the moment
+report path.
+
+The badge has **four** words, not two. `PASS` and `FAIL` are the run's verdict; `ABORTED` (Ctrl-C
+before a workload's planned duration elapsed) and `INCONCLUSIVE` (tflw's own generator saturated,
+so the numbers describe tflw rather than your system) mean the run reached **no** verdict — it
+neither passed nor failed, and the tally beside them is only what completed. Both print in the same
+red as `FAIL`, because the one thing such a run is not is green. `report/results.json`'s `ok` says
+the same thing to a script (`ok: false` with `failed: 0`), and the exit code distinguishes them:
+`130` aborted, `3` inconclusive. A failing test also prints its failing step(s) indented underneath, live, the moment
 it fails — you don't have to wait for the whole suite or open the report to see what broke:
 
 ```console

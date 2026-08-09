@@ -88,6 +88,7 @@ import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest, warnPinnedF
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { inferContentType } from './mime.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
+import { finalizeVerdict } from './run-verdict.js';
 import type {
   AttemptResult,
   BackOffDiagnosis,
@@ -526,7 +527,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
 
   const passed = results.filter((r) => r.ok).length;
   const unmaskableSecrets = redactor.unmaskableNames();
-  const rawReport: RunReport = {
+  const rawReport: RunReport = finalizeVerdict({
     ok: results.every((r) => r.ok),
     env: config.envName,
     startedAt,
@@ -546,7 +547,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     ...(opts.browserManager ? { browserEngine: opts.browserManager.engine } : {}),
     ...(selfDiagnosis ? { selfDiagnosis, inconclusive } : {}),
     ...(aborted ? { aborted, abortedMessage } : {}),
-  };
+  });
   // Final full-report redaction pass (decision 56, half 2): a secret registered late in this run
   // (or, when `redactor` is shared across files, by a file that ran concurrently/after this one)
   // may not have been known yet when an earlier step's trace was first redacted. Re-redacting the
@@ -1773,13 +1774,15 @@ export function spliceLoadReportIntoRunReport(report: RunReport, loadReport: Loa
     const spliced: WorkloadTestResult = { ...merged, kind: 'workload', ...(entry.file !== undefined ? { file: entry.file } : {}), ...(entry.concurrency !== undefined ? { concurrency: entry.concurrency } : {}) };
     return spliced;
   });
-  return {
+  // `M114` — `inconclusive`/`aborted` arrive *here*, after `runProgram` already stamped this
+  // report's `ok`, so the verdict has to be re-derived rather than carried over (`M111-01`).
+  return finalizeVerdict({
     ...report,
     tests,
     selfDiagnosis: loadReport.selfDiagnosis,
     inconclusive: loadReport.inconclusive,
     ...(loadReport.aborted ? { aborted: true, abortedMessage: loadReport.abortedMessage } : {}),
-  };
+  });
 }
 
 export function makeUniqueSeq(): { next(): number } {

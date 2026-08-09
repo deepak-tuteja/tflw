@@ -5,6 +5,17 @@
 // concurrent multi-scenario scheduling with per-scenario metrics (D29, R6), and M31's
 // multi-process building blocks: workload/sub-seed striping (`shareOfWorkloadTarget`/
 // `globalIterationIndex`), `runLoadShard`, and `mergeLoadShardReports` (D19, R4).
+//
+// **These tests assert `report.failed`, not `report.ok` (`M114`, review row `M111-01`).** Since
+// `M114`, `RunReport.ok` is the run's *verdict* — false on a run that reached none, i.e. one whose
+// generator saturated (`inconclusive`) or that was Ctrl-C'd (`aborted`). Every test here points a
+// real VU loop at a zero-latency loopback fixture, which is the one target shape that genuinely can
+// make tflw its own bottleneck, so whether a given run reads `inconclusive` depends on how loaded
+// the machine is at that moment — four of these went red the first time `ok` started reflecting it.
+// That is not a reason to weaken the verdict; it is a reason to stop borrowing it. These tests are
+// about workload *mechanics*, and the thing they always meant was "no test in this run failed",
+// which is `failed === 0` — the exact narrow statement `ok` used to make. The verdict itself is
+// covered directly, and deterministically, in `run-verdict.test.ts`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -59,7 +70,7 @@ test('a closed (`ramp to N users`) workload runs iterations and reports clean me
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.equal(report.scenarios.length, 1);
   const s = report.scenarios[0]!;
   assert.equal(s.name, 'Health burst');
@@ -80,7 +91,7 @@ test('an open (`ramp to N rps`) workload schedules arrivals independent of compl
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
   assert.deepEqual(s.workload, { shape: 'ramp', model: 'open', target: 40, overMs: 400 });
   // area under a 0→40rps linear ramp over 0.4s = 40*0.4/2 = 8 arrivals — exact by construction.
@@ -200,7 +211,7 @@ test('a `hold N users for <dur>` workload runs a flat population for the whole d
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
   assert.deepEqual(s.workload, { shape: 'hold', model: 'closed', target: 4, forMs: 300 });
   assert.ok(s.metrics.iterations >= 4, `expected several iterations from 4 flat VUs over 300ms, got ${s.metrics.iterations}`);
@@ -215,7 +226,7 @@ test('a `hold N rps for <dur>` workload schedules a constant arrival rate', asyn
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
   assert.deepEqual(s.workload, { shape: 'hold', model: 'open', target: 20, forMs: 400 });
   // a constant 20rps for 0.4s should land close to 8 arrivals (poll-interval jitter at these small
@@ -231,7 +242,7 @@ test('a `step users` staircase runs more iterations at its higher stages than a 
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
   // M89b (`B3-03`) — the stages survive into the report. This used to assert
   // `{ kind: 'users', target: 6, overMs: 300 }`: the peak and the total, which a `spike` with the
@@ -249,7 +260,7 @@ test('a `spike users` schedule ramps up, holds, and ramps back down without erro
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
   // M89b (`B3-03`) — `ramped` per stage, mirroring what `stageTargetAt` schedules: `hold N for`
   // jumps, `to N over` ramps from the previous level.
@@ -275,7 +286,7 @@ test('`run N iterations across M users` (shared pool) runs exactly N iterations 
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
   // M89b (`B3-03`) — used to be `{ kind: 'users', target: 4, overMs: 0 }`, which rendered as
   // `ramp to 4 users over 0ms`, a workload the grammar cannot express.
@@ -291,7 +302,7 @@ test('`run N iterations per user across M users` runs exactly M*N iterations tot
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   const s = report.scenarios[0]!;
   assert.equal(s.metrics.iterations, 15);
   await server.close();
@@ -305,7 +316,7 @@ test('`pause` paces a `run … iterations …` body without being excluded from 
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.equal(report.scenarios[0]!.metrics.iterations, 3);
   await server.close();
 });
@@ -400,7 +411,7 @@ session admin
 
   const report = await runWorkload(program, config, { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.equal(logins, 1, 'session should establish exactly once, not per iteration');
   assert.equal(report.scenarios[0]!.metrics.failures, 0);
 
@@ -449,7 +460,7 @@ session admin
 
   const report = await runWorkload(program, config, { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.ok(healthCalls > ROTATE_AT + 10, `expected many iterations after the rotation, got ${healthCalls} total health calls`);
   // Before the fix: every iteration after the rotation cloned the same frozen (now-stale) headers,
   // so every single one of them 401'd and paid for its own re-login — loginCount would track
@@ -501,7 +512,7 @@ session admin
 
   const report = await runWorkload(program, config, { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.equal(loginCount, 2, `expected exactly one real re-login beyond the initial (already-stale) establish, got ${loginCount}`);
   await server.close();
 });
@@ -527,7 +538,7 @@ test('two `parallel` scenarios in one file run concurrently — a fast scenario 
 
   const seen: LoadIterationResult[] = [];
   const report = await runWorkload(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
 
   const firstFastIndex = seen.findIndex((r) => r.scenario === 'Fast');
   const lastSlowIndex = seen.length - 1 - [...seen].reverse().findIndex((r) => r.scenario === 'Slow');
@@ -568,7 +579,7 @@ test('each scenario\'s own metrics stay scoped to itself — one scenario\'s fai
   await server.close();
 });
 
-test('each scenario\'s thresholds evaluate only against its own metrics — one can fail while another passes, gating the overall report.ok', async () => {
+test('each scenario\'s thresholds evaluate only against its own metrics — one can fail while another passes, gating the run\'s own failure count', async () => {
   const server = await startFixtureServer({
     '/ok': (_req, res) => json(res, 200, { ok: true }),
     '/fail': (_req, res) => res.writeHead(500).end(),
@@ -584,7 +595,7 @@ test('each scenario\'s thresholds evaluate only against its own metrics — one 
   const failing = report.scenarios.find((s) => s.name === 'Failing')!;
   assert.equal(passing.ok, true);
   assert.equal(failing.ok, false);
-  assert.equal(report.ok, false, 'the overall run must fail if any one scenario breaches a threshold');
+  assert.equal(report.failed, 1, 'the overall run must count the breaching scenario as failed — and only that one');
 
   await server.close();
 });
@@ -618,7 +629,7 @@ session admin
 
   const report = await runWorkload(program, config, { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.equal(logins, 1, 'a session shared by two concurrent scenarios should still establish exactly once');
 
   await server.close();
@@ -1266,7 +1277,7 @@ test('a closed-model scenario pins one connection per VU, reused across every it
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.ok(ports.length > 2, `expected more than one iteration per VU to actually run, got ${ports.length} total`);
   const distinctPorts = new Set(ports);
   assert.equal(distinctPorts.size, 2, `expected exactly 2 users' worth of distinct connections, saw ${distinctPorts.size} across ${ports.length} requests`);
@@ -1283,7 +1294,7 @@ test('an `upload` body under a closed-model load still passes — falls back to 
 
   const report = await runWorkload(program, testConfig(server.baseUrl), { source, baseDir: dir });
 
-  assert.equal(report.ok, true, JSON.stringify(report, null, 2));
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
   assert.equal(report.scenarios[0]!.metrics.failures, 0);
 
   await server.close();
@@ -1330,7 +1341,7 @@ test('M89a/`B3-02`: a duration threshold reads successful iterations only — fa
   assert.ok(s.metrics.durations.p95 <= s.metrics.successful.durations.p95, 'the all-iterations p95 must be the *lower* of the two — that is exactly why it was the wrong one to threshold on');
   assert.ok(s.metrics.successful.durations.p95 >= 60, `successful-only p95 should clear 60ms, got ${s.metrics.successful.durations.p95}`);
   assert.equal(s.thresholds[0]!.ok, false, `the threshold must fail: ${JSON.stringify(s.thresholds[0])}`);
-  assert.equal(report.ok, false);
+  assert.equal(report.failed, 1);
 
   await server.close();
 });
@@ -1367,7 +1378,7 @@ test('M89a/D-M89-1: with zero successful iterations a duration threshold reports
   // way to pass a latency threshold — `B3-02`'s trap, reintroduced at its own boundary.
   assert.equal(s.thresholds[0]!.actual, null, 'no successful iterations means there is no percentile to state');
   assert.equal(s.thresholds[0]!.ok, false);
-  assert.equal(report.ok, false);
+  assert.equal(report.failed, 1);
 
   await server.close();
 });

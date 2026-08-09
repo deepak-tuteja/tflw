@@ -65,6 +65,7 @@ import {
   LOG_LEVEL_ORDER,
   startPickSession,
   mergeSelfDiagnosis,
+  finalizeVerdict,
   shutdownMtlsWorker,
   workloadOf,
   type BrowserEngine,
@@ -2302,7 +2303,10 @@ function mergeReports(
   // registered a short secret snapshotted an earlier state, and under `--workers N` the finishing
   // order is not the starting order. Deduplicated, insertion-ordered.
   const unmaskableSecrets = [...new Set(reports.flatMap((r) => r.unmaskableSecrets ?? []))];
-  return {
+  // `M114` (`M111-01`) — `ok` is stamped by the one shared derivation, not by this expression: a
+  // merged run whose `aborted`/`inconclusive` came from *some other* file still has to come out
+  // `ok: false`, and `tests.every(...)` alone cannot see that.
+  return finalizeVerdict({
     ok: tests.every((t) => t.ok),
     env: envName,
     startedAt: reports[0]?.startedAt ?? new Date().toISOString(),
@@ -2319,7 +2323,7 @@ function mergeReports(
     ...(unmaskableSecrets.length > 0 ? { unmaskableSecrets } : {}),
     ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
     ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),
-  };
+  });
 }
 
 function tick(color: boolean, ok: boolean): string {

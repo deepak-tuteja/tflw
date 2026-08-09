@@ -529,6 +529,33 @@ const MUTATIONS = [
     find: '  example: renderDiagnosticExample(row.probes),',
     replace: "  example: row.probes[0]?.as ?? '',",
   },
+  {
+    id: 'ok-ignores-no-verdict',
+    milestone: 'm114',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/run-verdict.ts',
+    what: '`ok` goes back to meaning "nothing that ran failed", so an aborted run\'s `results.json` and `run:end` event assert a pass beside `"aborted": true` again (`M111-01`)',
+    find: '  const ok = noVerdictReason(report) === null && report.tests.every((t) => t.ok);',
+    replace: '  const ok = report.tests.every((t) => t.ok);',
+  },
+  {
+    id: 'verdict-not-restamped-after-splice',
+    milestone: 'm114',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: 'the merged load report stops re-deriving the verdict, so a `--workers N` run whose abort arrives at the splice keeps the stale `ok: true` `runProgram` stamped before it (`M111-01`)',
+    find: '  // `M114` — `inconclusive`/`aborted` arrive *here*, after `runProgram` already stamped this\n  // report\'s `ok`, so the verdict has to be re-derived rather than carried over (`M111-01`).\n  return finalizeVerdict({',
+    replace: '  return ({',
+  },
+  {
+    id: 'badge-drops-inconclusive',
+    milestone: 'm114',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/run-verdict.ts',
+    what: "the console/`report.html` badge special-cases `aborted` alone again, so a saturated run prints a green `PASS` while its own `junit.xml` marks every threshold `<skipped/>` — `M111`'s half-fix, restored",
+    find: "  const reason = noVerdictReason(report);\n  if (reason !== null) return reason === 'aborted' ? 'ABORTED' : 'INCONCLUSIVE';",
+    replace: "  const reason = report.aborted ? 'aborted' : null;\n  if (reason !== null) return 'ABORTED';",
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
