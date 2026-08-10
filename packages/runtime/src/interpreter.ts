@@ -86,7 +86,7 @@ import { extractPdfText } from './pdf-text.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest, warnPinnedFallback, type PinnedAgents } from './httpPinned.js';
+import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest, warnPinnedFallback, type KeepAliveAgents } from './httpPinned.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { inferContentType } from './mime.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
@@ -710,7 +710,7 @@ async function runClosedPopulationVus(
   scheduleMs: number,
   maxVus: number,
   targetUsersAt: (elapsedMs: number) => number,
-  runIteration: (pinnedAgents?: PinnedAgents) => Promise<void>,
+  runIteration: (pinnedAgents?: KeepAliveAgents) => Promise<void>,
   abortSignal?: AbortSignal,
 ): Promise<void> {
   const scheduleEnd = runStart + scheduleMs;
@@ -718,18 +718,18 @@ async function runClosedPopulationVus(
   for (let i = 0; i < maxVus; i++) {
     vuPromises.push(
       (async () => {
-        let pinnedAgents: PinnedAgents | undefined;
+        let pinnedAgents: KeepAliveAgents | undefined;
         try {
           while (performance.now() < scheduleEnd && !abortSignal?.aborted) {
             if (i < targetUsersAt(performance.now() - runStart)) {
-              if (!pinnedAgents) pinnedAgents = createPinnedAgents();
+              if (!pinnedAgents) pinnedAgents = createKeepAliveAgents();
               await runIteration(pinnedAgents);
             } else {
               await sleep(POPULATION_POLL_INTERVAL_MS, abortSignal);
             }
           }
         } finally {
-          if (pinnedAgents) destroyPinnedAgents(pinnedAgents);
+          if (pinnedAgents) destroyKeepAliveAgents(pinnedAgents);
         }
       })(),
     );
@@ -913,12 +913,20 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
   }
 
-  // M45 (D75) — `pinnedAgents` is set only by the closed-model (`RampUsersWorkload`) VU spawn
-  // loop below, one pair created per VU and reused across every iteration that VU runs; an
-  // open-model (rate-based) arrival has no persistent "VU" to pin a connection to (each arrival
-  // is its own fire-and-forget iteration, D75's design sketch cites only the closed-model spawn
-  // block), so it stays on `sendRequest`'s unpinned path exactly as before.
-  const runIteration = async (pinnedAgents?: PinnedAgents): Promise<void> => {
+  // M45 (D75) — `pinnedAgents` carries this iteration's keep-alive pair down to `execApi`. The
+  // closed-model spawn blocks below create one pair per VU and reuse it across every iteration that
+  // VU runs.
+  //
+  // M121 (`M118-02`, D206/D207) corrects what this comment used to say. It read: an open-model
+  // arrival "has no persistent VU to pin a connection to … so it stays on `sendRequest`'s unpinned
+  // path exactly as before." The premise is true and the conclusion did not follow — it rules out
+  // per-VU *pinning*, not *pooling*, and the two were being treated as the same decision. The cost
+  // was not a missed optimisation: the unpinned path is `fetch`, and on Node 26 a `fetch` issued
+  // from a timer callback that the issuing loop does not await (exactly an open arrival's shape) has
+  // its completion deferred to about the next timer tick, so the reported duration tracked the
+  // *inter-arrival gap* rather than the service time. The two models disagreed by ~100x about one
+  // endpoint. Open scenarios now share one pair for the whole scenario (`openArrival` below).
+  const runIteration = async (pinnedAgents?: KeepAliveAgents): Promise<void> => {
     const index = globalIterationIndex(nextIterationIndex(), shard);
     const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)), pinnedAgents };
     const scope = new Map<string, unknown>();
@@ -1016,6 +1024,17 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     onIteration?.(result);
   };
 
+  // M121 (D207) — one pair for every arrival this scenario ever fires, created on the first arrival
+  // (a shard whose striped share rounds to no arrivals, or a `0 rps` stage that never fires one,
+  // opens no socket at all — the same laziness `runClosedPopulationVus` gives an idle VU) and
+  // destroyed once the last one settles. Created *here*, in one place shared by all three open
+  // branches below, rather than inside each: "every arrival in this scenario uses the same pair" is
+  // then structural rather than a property three call sites have to keep agreeing on. A pair per
+  // arrival would put a fresh TCP handshake in front of every sample and be worse than the `fetch`
+  // path this replaces — see D207.
+  let openAgents: KeepAliveAgents | undefined;
+  const openArrival = (): Promise<void> => runIteration((openAgents ??= createKeepAliveAgents()));
+
   const vuPromises: Promise<void>[] = [];
   if (scenario.workload.type === 'RampUsersWorkload') {
     // Closed model (D17): VUs loop continuously once spawned. `users` VUs ramp in linearly over
@@ -1035,13 +1054,13 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
           // M45 (D75): one pinned connection pair for this VU's whole lifetime, created after its
           // ramp-in wait (so an idle-waiting VU holds no open socket) and torn down once its loop
           // exits — Ctrl-C or `runEnd`, either way, never left open for the rest of the process.
-          const pinnedAgents = createPinnedAgents();
+          const pinnedAgents = createKeepAliveAgents();
           try {
             // M32 (R5): Ctrl-C stops this VU from *starting* another iteration — whichever
             // iteration it's mid-`runIteration()` on (if any) still runs to completion above.
             while (performance.now() < runEnd && !abortSignal?.aborted) await runIteration(pinnedAgents);
           } finally {
-            destroyPinnedAgents(pinnedAgents);
+            destroyKeepAliveAgents(pinnedAgents);
           }
         })(),
       );
@@ -1069,7 +1088,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       // Fire-and-forget: the arrival schedule doesn't wait on this iteration's completion
       // (that's the whole point of "open") — its promise is still collected so this scenario's
       // own task (and, transitively, the whole run) waits for every fired iteration.
-      vuPromises.push(runIteration());
+      vuPromises.push(openArrival());
     }
   } else if (scenario.workload.type === 'HoldUsersWorkload') {
     // D97: a flat target for the whole duration, no ramp-in — every VU is live from t=0, so the
@@ -1083,7 +1102,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     // `1000/rps`, no ramp.
     const { rps, forMs } = scenario.workload;
     const targetRps = shareOfWorkloadTarget(rps, shard);
-    vuPromises.push(runOpenPopulationArrivals(runStart, forMs, () => targetRps, () => runIteration(), abortSignal));
+    vuPromises.push(runOpenPopulationArrivals(runStart, forMs, () => targetRps, openArrival, abortSignal));
   } else if (scenario.workload.type === 'StepUsersWorkload' || scenario.workload.type === 'SpikeUsersWorkload') {
     // D97: a staircase (`step`, every stage `mode: 'jump'`) or a mixed jump/ramp schedule
     // (`spike`) — `stageTargetAt` handles both uniformly, ramp legs included (up or down).
@@ -1094,7 +1113,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
   } else if (scenario.workload.type === 'StepRpsWorkload' || scenario.workload.type === 'SpikeRpsWorkload') {
     const { stages } = scenario.workload;
     const scheduleMs2 = stages.reduce((sum, s) => sum + s.durationMs, 0);
-    vuPromises.push(runOpenPopulationArrivals(runStart, scheduleMs2, (elapsedMs) => stageTargetAt(stages, elapsedMs, shard), () => runIteration(), abortSignal));
+    vuPromises.push(runOpenPopulationArrivals(runStart, scheduleMs2, (elapsedMs) => stageTargetAt(stages, elapsedMs, shard), openArrival, abortSignal));
   } else if (scenario.workload.type === 'SharedIterationsWorkload') {
     // D97: `vus` VUs pull from one shared pool of `iterations` total iterations until it's
     // exhausted — no duration, no ramp. Decrementing `remaining` synchronously before the
@@ -1119,14 +1138,14 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     for (let i = 0; i < targetVus; i++) {
       vuPromises.push(
         (async () => {
-          const pinnedAgents = createPinnedAgents();
+          const pinnedAgents = createKeepAliveAgents();
           try {
             while (remaining > 0 && !abortSignal?.aborted) {
               remaining--;
               await runIteration(pinnedAgents);
             }
           } finally {
-            destroyPinnedAgents(pinnedAgents);
+            destroyKeepAliveAgents(pinnedAgents);
           }
         })(),
       );
@@ -1139,18 +1158,28 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     for (let i = 0; i < targetVus; i++) {
       vuPromises.push(
         (async () => {
-          const pinnedAgents = createPinnedAgents();
+          const pinnedAgents = createKeepAliveAgents();
           try {
             for (let n = 0; n < iterationsPerVu && !abortSignal?.aborted; n++) await runIteration(pinnedAgents);
           } finally {
-            destroyPinnedAgents(pinnedAgents);
+            destroyKeepAliveAgents(pinnedAgents);
           }
         })(),
       );
     }
   }
 
-  await Promise.all(vuPromises);
+  // M121 (D207) — the open pair outlives the arrival *schedule* and dies with the last arrival, so
+  // the teardown belongs here and not in any branch above. A narrow `finally` is sufficient rather
+  // than one wrapping the whole dispatch: nothing in the branches above can throw before this line.
+  // The only `await` any of them performs on this task's own stack is `sleep`, which never rejects
+  // (it resolves on abort rather than throwing, see its definition), and `runIteration` reports a
+  // failed iteration instead of propagating one.
+  try {
+    await Promise.all(vuPromises);
+  } finally {
+    if (openAgents) destroyKeepAliveAgents(openAgents);
+  }
 }
 
 /** D109 (Phase 2b) — a maximal run of consecutive `concurrency: 'parallel'` tests forms one batch
@@ -1912,11 +1941,12 @@ interface TestCtx {
   /** M4b, D15 — see `RunOptions.filePath`/`updateSnapshots`. */
   readonly filePath: string;
   readonly updateSnapshots: boolean;
-  /** M45 (D75) — this VU's pinned `node:http`/`node:https` connections, set only on a load
-   * iteration's own `iterTc` (`runLoadCore` below). Undefined everywhere else (a plain `tflw run`
-   * attempt, a session's own establishment run, `wait until api` outside a load context) — those
-   * keep using `sendRequest`'s unpinned `fetch()` exactly as before, unaffected by this milestone. */
-  readonly pinnedAgents?: PinnedAgents;
+  /** M45 (D75) — the `node:http`/`node:https` keep-alive pair this iteration sends over, set only
+   * on a load iteration's own `iterTc` (`runLoadCore` below): one pair per VU in the closed model,
+   * and since M121 (D207) one pair per *scenario*, shared by every arrival, in the open one.
+   * Undefined everywhere else (a plain `tflw run`, a session's own establishment run, `wait until
+   * api` outside a load context) — those keep using `sendRequest`'s unpinned `fetch()`. */
+  readonly pinnedAgents?: KeepAliveAgents;
 }
 
 export interface SessionOutcome {
@@ -3111,7 +3141,7 @@ async function loadMtlsCreds(config: ResolvedConfig, baseDir: string): Promise<{
   return p;
 }
 
-async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string, configDir: string, pinnedAgents?: PinnedAgents): Promise<ApiExec> {
+async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string, configDir: string, pinnedAgents?: KeepAliveAgents): Promise<ApiExec> {
   const baseUrl = resolveBaseUrl(spec.service, config);
   const path = interpolatePath(spec.path.raw, ctx, true);
   const url = baseUrl + ensureLeadingSlash(path);
@@ -3784,7 +3814,7 @@ async function execWaitUntilApi(
   configDir: string,
   src: string,
   start: number,
-  pinnedAgents?: PinnedAgents,
+  pinnedAgents?: KeepAliveAgents,
 ): Promise<{ result: StepResult; response: ResponseTrace | null }> {
   const deadline = performance.now() + config.timeouts.wait;
   let attempt = 0;

@@ -47,11 +47,21 @@
 // bitten by exactly this and documents it at length; the lesson didn't travel the 40 lines to here.
 // Both formats are matched now, the same way that file matches them.
 //
-// **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-09 by parsing the
-// array, not from memory: **48 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from
+// **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-10 by parsing the
+// array, not from memory: **74 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from
 // M106, 1 from M107, 1 from M107b, 1 from M108, 3 from M109, 2 from M110, 2 from M110b, 7 from
-// M111, 3 from M114.** The 2026-08-08 line this replaces said 42 and omitted `m107b` from its own
-// breakdown, so it was short by one on the day it was written and by six by the time CI read it.
+// M111, 3 from M114, 1 from M115, 6 from M116, 2 from M117, 5 from M118, 7 from M119, 2 from M120,
+// 3 from M121.**
+//
+// The line this replaces said 48 and was written on 2026-08-09 — one day and six milestones stale,
+// short by 26. That is the third time this paragraph has gone wrong (see below), and the pattern is
+// now unambiguous rather than anecdotal: **every milestone that adds a mutation updates the array
+// and not the prose**, because `verify:mutations` checks the array and nothing checks the sentence.
+// The count is one `node -e` away — parse `/^\s*milestone: '([^']+)',/gm` over this file — so the
+// only defensible way to touch this number is to re-derive it, never to add to it. Exactly the
+// failure mode the ledger's own `tally:current` check exists to prevent on the other side of the
+// repo, and the argument for giving this one the same treatment.
+//
 // Each of the 20 is one whose target could be identified unambiguously from the plan's own
 // description plus the source it names; the other 11 of the plan's 31 are described at a level
 // ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
@@ -834,6 +844,31 @@ const MUTATIONS = [
     what: 'the unnamed arm is removed for every kind, not just `text`, so an icon-only button with no accessible name becomes unsuggestable — the exact case the arm exists for',
     find: '  const unnamed = UNNAMED_IS_STILL_A_CANDIDATE[kind] ? raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 })) : [];',
     replace: '  const unnamed: { suggestion: string; score: number }[] = [];',
+    id: 'open-model-back-to-fetch',
+    milestone: 'm121',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "an open-model (`rps`) arrival goes back out over `sendRequest`'s unpinned `fetch` — `M118-02` restored verbatim, and the state in which a 0.2ms endpoint reported p50 36ms under `hold 10 rps` while `hold 1 users` reported 0ms in the same process. The control for the whole milestone: this is the one line D206 changes, and if it survives then nothing in the suite can tell tflw's two load models apart by the client they use",
+    find: '  const openArrival = (): Promise<void> => runIteration((openAgents ??= createKeepAliveAgents()));',
+    replace: '  const openArrival = (): Promise<void> => runIteration();',
+  },
+  {
+    id: 'open-model-agents-per-arrival',
+    milestone: 'm121',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: 'each arrival builds its own agent pair instead of sharing the scenario\'s — the over-correction D207 rejects, which is *worse* than the `fetch` path it replaced because every sample then pays for a fresh TCP handshake. It exists to keep the D207 test honest: a structural test that only asked "did an arrival use a keep-alive agent" stays green here, so the assertion has to be that arrivals share **one** pool, observed as connection reuse',
+    find: '  const openArrival = (): Promise<void> => runIteration((openAgents ??= createKeepAliveAgents()));',
+    replace: '  const openArrival = (): Promise<void> => runIteration(createKeepAliveAgents());',
+  },
+  {
+    id: 'open-model-maxsockets-bounded',
+    milestone: 'm121',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/httpPinned.ts',
+    what: "the connection pool gains a cap, so arrivals past it queue *inside the generator* — where the wait falls within `sendPinnedRequest`'s measured window and is reported as service time. This manufactures, for real, the defect `M118-02` was originally and wrongly filed as. Killed by an assertion on the constant rather than on its consequence: reaching a cap of 50 needs a slow endpoint driven hard enough to make the test both expensive and flaky, and D208's point is that the value is a decision, not tuning",
+    find: 'const MAX_SOCKETS = Infinity;',
+    replace: 'const MAX_SOCKETS = 50;',
   },
 ];
 

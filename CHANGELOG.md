@@ -169,6 +169,24 @@ A systematic pre-`1.0.0` review of the whole surface. Highlights:
 - Diagnostic carets are placed in terminal cells rather than UTF-16 code units, so a line
   containing wide or combining characters underlines the span the reader can see.
 
+### Fixed — the open model's client (M121)
+
+- **An open (`rps`) workload no longer reports the inter-arrival gap as request latency.** Both load
+  models now send over the same `node:http` keep-alive client; the open model previously used
+  `fetch`, and on Node 26 a `fetch` issued from a timer callback that its own loop does not await —
+  exactly how an open arrival is dispatched — has its completion deferred to roughly the next timer
+  tick. The reported duration therefore tracked the arrival gap rather than the service time: on one
+  0.2 ms endpoint, in one process, `hold 10 rps` reported p50 36 ms while `hold 1 users` reported
+  0 ms. The error was largest precisely where it misleads most — a fast target at a low rate, i.e. a
+  healthy service. Every arrival in a scenario shares one connection pool, and that pool is
+  deliberately unbounded: a bounded one would queue arrivals inside the generator, where the wait
+  *would* be counted as service time.
+
+  Node 22 and 24 are unaffected, as is every non-workload `tflw run` and the closed (`users`) model
+  on all versions. No previously published measurement changes — every performance corpus tflw
+  ships uses the closed model. Full chain, version bisect and a standalone reproduction:
+  `tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md` in the dogfood repo.
+
 ### Fixed — locator suggestions on assertions, not just actions (M119)
 
 - **A misspelled locator now gets the same "nearest matches on the page" suggestions in

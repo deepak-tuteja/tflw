@@ -1261,7 +1261,7 @@ test('`mergeLoadShardReports` pools per-endpoint histograms across shards by ide
 // M45 (PLAN_BROWSER_PERF_SECURITY.md §2.16, D75) — the closed-model (`RampUsersWorkload`) VU loop
 // now pins one `node:http` connection per VU for that VU's whole lifetime instead of letting
 // `sendRequest`'s unpinned `fetch()` open (and, without keep-alive reuse, often re-open) one per
-// request. `httpPinned.test.ts` covers `sendPinnedRequest`/`createPinnedAgents` directly; these two
+// request. `httpPinned.test.ts` covers `sendPinnedRequest`/`createKeepAliveAgents` directly; these two
 // exercise the real wiring end to end through the shipped `runProgram` path itself.
 
 test('a closed-model scenario pins one connection per VU, reused across every iteration that VU runs', async () => {
@@ -1284,6 +1284,114 @@ test('a closed-model scenario pins one connection per VU, reused across every it
 
   await server.close();
 });
+
+// ---------------------------------------------------------------------------------------------
+// M121 (`M118-02`, D206/D207/D209) — the open model uses the same client as the closed one.
+//
+// M45 pinned the closed model and left the open one on `fetch`, reasoning that an arrival has no
+// persistent VU to pin to. True of *pinning*, false of *pooling* — and on Node 26 the difference
+// stopped being an optimisation: a `fetch` issued from a timer callback that its own loop does not
+// await (an open arrival, exactly) has its completion deferred to roughly the next timer tick, so
+// the reported duration tracked the inter-arrival gap instead of the service time. Measured chain,
+// version bisect and the isolated trigger:
+// `tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md`.
+//
+// These assert the *routing*, not a latency. This arc has paid twice for tests that encode a
+// millisecond (`M115-02`, `M119-02`), and the defect is invisible on the Node versions CI runs
+// (22/24) — a timing assertion would therefore have been both flaky and blind here. What is true on
+// every version is which client sent the bytes, and that is what fails the moment someone reverts.
+// ---------------------------------------------------------------------------------------------
+
+/** `sec-fetch-mode` is emitted by `fetch`/undici and by nothing in `node:http` — verified present
+ * on the fetch side and absent on the pinned side on Node 22.23.2, 24.19.0 and 26.7.0 rather than
+ * assumed from the spec. `user-agent`/`accept-language` discriminate identically; this one is the
+ * least likely to ever be set deliberately by a step the author wrote. */
+const FETCH_ONLY_HEADER = 'sec-fetch-mode';
+
+/** Every open (rate-based) grammar, so the assertion covers all three dispatch sites rather than
+ * the one that happens to be most written about: `hold`/`step`+`spike` reach the shared arrival
+ * scheduler, while `ramp to N rps` still runs its own inline closed-form schedule. A test that only
+ * used `hold N rps` would leave `ramp`'s loop free to regress silently — and `ramp to N rps` is the
+ * open workload the docs reach for first. */
+const OPEN_WORKLOADS: readonly (readonly [string, string])[] = [
+  ['ramp to N rps', 'ramp to 40 rps over 400ms'],
+  ['hold N rps', 'hold 20 rps for 400ms'],
+  ['step rps', 'step rps\n    to 20 for 200ms\n    to 30 for 200ms'],
+  ['spike rps', 'spike rps\n    hold 20 for 200ms\n    to 30 over 200ms'],
+];
+
+for (const [label, workload] of OPEN_WORKLOADS) {
+  test(`M121: an open-model (\`${label}\`) arrival sends over the keep-alive client, not \`fetch\``, async () => {
+    const clients: (string | undefined)[] = [];
+    const server = await startFixtureServer({
+      '/health': (req, res) => {
+        clients.push(req.headers[FETCH_ONLY_HEADER] as string | undefined);
+        json(res, 200, { ok: true });
+      },
+    });
+    const source = `test "Open"\n  ${workload}\n  api GET /health\n  expect status equals 200\n`;
+    const { program, diagnostics } = parseSource(source);
+    assert.deepEqual(diagnostics, []);
+
+    const report = await runWorkload(program, testConfig(server.baseUrl), { source });
+
+    assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
+    assert.ok(clients.length > 0, 'the workload has to actually fire an arrival for this to assert anything');
+    const viaFetch = clients.filter((c) => c !== undefined).length;
+    assert.equal(viaFetch, 0, `${viaFetch} of ${clients.length} arrivals still went out over \`fetch\` (\`${FETCH_ONLY_HEADER}\` present)`);
+
+    await server.close();
+  });
+}
+
+test('M121/D207: every arrival in one open scenario shares one agent pair — not one pair per arrival', async () => {
+  const ports: number[] = [];
+  const server = await startFixtureServer({
+    '/health': (req, res) => {
+      ports.push(req.socket.remotePort!);
+      json(res, 200, { ok: true });
+    },
+  });
+  // A modest rate against an instant endpoint: arrivals essentially never overlap, so one shared
+  // keep-alive pool serves all of them over a socket it reuses. A pair created per arrival cannot
+  // reuse anything — every arrival would open (and pay a handshake for) its own connection, which
+  // is the specific over-correction D207 rejects and `open-model-agents-per-arrival` restores.
+  const source = 'test "Shared"\n  hold 20 rps for 500ms\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.failed, 0, JSON.stringify(report, null, 2));
+  assert.ok(ports.length >= 5, `expected several arrivals to compare, got ${ports.length}`);
+  // Stated as reuse rather than as an exact socket count: a genuinely coincident pair of arrivals
+  // may legitimately open a second connection on a loaded machine, and pinning this to `=== 1`
+  // would make a correct run red for a reason that has nothing to do with the decision under test.
+  const distinct = new Set(ports).size;
+  assert.ok(distinct < ports.length, `every one of the ${ports.length} arrivals opened its own connection (${distinct} distinct) — nothing was pooled`);
+
+  await server.close();
+});
+
+// There is deliberately no in-suite *timing* test for `M118-02`, and the reason is worth keeping
+// because D209 originally called for one. The plan specified a differential assertion — "the open
+// and closed models report p50 within an order of magnitude of each other for one endpoint" — on the
+// grounds that it states the invariant that actually broke without encoding a machine-specific
+// millisecond. Building it and then running it on Node 26 **with the fix reverted**, which the
+// milestone gate required precisely so the instrument could be checked, showed it does not work:
+//
+//   fixed     open p50 1ms   closed p50 0ms      reverted  open p50 5-8ms  closed p50 0ms
+//
+// The closed model against a loopback fixture reports **0**, so a ratio against it is degenerate —
+// "within 10x of zero" admits anything under the `+1` floor, and the reverted run sailed through it
+// 4 times in 5. The separation that genuinely exists (1ms vs 6ms) is *absolute*, which is the flake
+// generator D209 refused on the strength of `M115-02` and `M119-02`, and lengthening the run until
+// p50 stabilises needs `for 10s` per model — 20s on every CI run, to assert something neither Node
+// version CI uses can even falsify. A test that catches the defect one run in five while reading as
+// a guard is worse than no test: it is a flake that also grants false confidence.
+//
+// So the guard is structural (above) and the timing evidence is a recorded, manually-run
+// reproduction: `tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md`, which carries the
+// version bisect and the fixed-vs-reverted numbers measured on Node 26.
 
 test('an `upload` body under a closed-model load still passes — falls back to the unpinned client for that request', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-load-upload-'));

@@ -22,7 +22,7 @@ import { parseSource } from '@tflw/lang';
 import { hostMatchesAllowPattern } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
-import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest } from '../src/httpPinned.js';
+import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { AllowHostsError, isHostAllowed } from '../src/allowHosts.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 
@@ -130,7 +130,7 @@ test('the pinned (workload) client refuses the same hop the same way', async () 
   const server = await startFixtureServer({
     '/go': (_req, res) => res.writeHead(302, { location: unlistedHostUrl(target, '/landing') }).end(),
   });
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
 
   const opts = { method: 'GET', url: `${server.baseUrl}/go`, headers: {}, timeoutMs: 5000, followRedirects: true, allowHosts: ['127.0.0.1'] } as const;
   const pinnedError = await sendPinnedRequest(opts, agents).then(() => null, (e: Error) => e);
@@ -141,7 +141,7 @@ test('the pinned (workload) client refuses the same hop the same way', async () 
   assert.equal(pinnedError.message, pooledError.message, 'the two clients must refuse identically, not merely both refuse');
   assert.equal(target.received.has('/landing'), false);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
   await target.close();
 });

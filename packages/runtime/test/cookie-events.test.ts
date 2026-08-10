@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
-import { createPinnedAgents, destroyPinnedAgents, sendPinnedRequest } from '../src/httpPinned.js';
+import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
 
 const GUARDED = ['127.0.0.1'];
@@ -63,7 +63,7 @@ test('a `Set-Cookie` on an intermediate hop is reported, not discarded with the 
 
 test('the pinned (workload) client reports the same hop the same way', async () => {
   const server = await startFixtureServer(loginChainRoutes());
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
   const opts = { method: 'GET', url: `${server.baseUrl}/login`, headers: {}, timeoutMs: 5000, followRedirects: true } as const;
 
   const pooled = await sendRequest(opts);
@@ -76,7 +76,7 @@ test('the pinned (workload) client reports the same hop the same way', async () 
   assert.deepEqual(pinned.cookieEvents, pooled.cookieEvents);
   assert.equal(pinned.finalUrl, pooled.finalUrl);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
 });
 
@@ -132,7 +132,7 @@ test('the pinned client crosses origins the same way', async () => {
   const home = await startFixtureServer({
     '/login': (_req, res) => res.writeHead(302, { location: `${other.baseUrl}/dashboard`, 'set-cookie': [SESSION_COOKIE] }).end(),
   });
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
   const opts = { method: 'GET', url: `${home.baseUrl}/login`, headers: {}, timeoutMs: 5000, followRedirects: true } as const;
 
   const pooled = await sendRequest(opts);
@@ -141,7 +141,7 @@ test('the pinned client crosses origins the same way', async () => {
   assert.deepEqual(pinned.cookieEvents, pooled.cookieEvents);
   assert.equal(pinned.finalUrl, `${other.baseUrl}/dashboard`);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await home.close();
   await other.close();
 });
@@ -173,7 +173,7 @@ test('multiple `Set-Cookie`s on one response stay separate lines, and `headers` 
   const server = await startFixtureServer({
     '/login': (_req, res) => res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': [SESSION_COOKIE, CSRF_COOKIE] }).end(JSON.stringify({ ok: true })),
   });
-  const agents = createPinnedAgents();
+  const agents = createKeepAliveAgents();
   const opts = { method: 'GET', url: `${server.baseUrl}/login`, headers: {}, timeoutMs: 5000, followRedirects: true } as const;
 
   const pooled = await sendRequest(opts);
@@ -184,7 +184,7 @@ test('multiple `Set-Cookie`s on one response stay separate lines, and `headers` 
   assert.deepEqual(pooled.cookieEvents, [{ origin: server.baseUrl, setCookie: [SESSION_COOKIE, CSRF_COOKIE] }]);
   assert.deepEqual(pinned.cookieEvents, pooled.cookieEvents);
 
-  destroyPinnedAgents(agents);
+  destroyKeepAliveAgents(agents);
   await server.close();
 });
 
