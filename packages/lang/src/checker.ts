@@ -31,6 +31,7 @@ import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import { isDecodable, regexCompileError } from './literalValidity.js';
 import { hostMatchesAllowPattern } from './allowHostsPattern.js';
+import { absoluteUrlHost, isAbsoluteUrl } from './absoluteUrl.js';
 import { MATCHERS, MATCHER_ROW_BY_NAME, type SubjectKind } from './spec-data.js';
 import { parseStringParts } from './parser.js';
 
@@ -86,6 +87,41 @@ export interface ProgramCheckOptions {
    * skipped rather than guessed at.
    */
   readonly envTimeouts?: EnvTimeouts;
+  /**
+   * The active env's accumulated `allow hosts` (M125b1, D263) — see `EnvAllowHosts`.
+   *
+   * The sixth field to carry the `undefined`-vs-empty rule, and the **only one where the empty case
+   * is not a safety margin but the diagnostic itself**. Everywhere above, `[]` means "resolved, and
+   * there is nothing to check against", so the pass goes quiet. Here `{ hosts: [] }` means "a config
+   * was resolved and declares no allowlist", which is precisely the state that makes the runtime
+   * refuse an absolute URL — so it is the state `TF058` exists to report, and going quiet on it
+   * would lose the rule entirely.
+   *
+   * `undefined` still means nobody looked, and still skips. Collapsing the two in *that* direction
+   * fires `TF058` on every absolute URL in the docs-site editor demo, which runs in a browser where
+   * no `tflw.config` can exist even in principle.
+   */
+  readonly envAllowHosts?: EnvAllowHosts;
+}
+
+/**
+ * The active env's `allow hosts`, as `TF058` needs it (M125b1, D263).
+ *
+ * A list and the env's name, for the reasons `EnvTimeouts` gives: `lang` must not depend on the
+ * runtime's config shape, and the diagnostic has to name *which* env declares nothing, since the
+ * answer differs per env and the reader picked one.
+ *
+ * **Accumulated across `defaults` + `env` by the caller, not by this package.** SPEC §3.7 makes the
+ * two additive, and `checkAllowHostsCoversBaseUrls` already does that accumulation for the config
+ * half — a suite that keeps its baseline list in `defaults` (the arrangement SPEC recommends) would
+ * otherwise be reported here as declaring nothing, which is the exact false positive that pass
+ * exists to avoid.
+ */
+export interface EnvAllowHosts {
+  readonly envName: string;
+  /** Every pattern in force for this env — `defaults` first, then the env's own. Empty means a
+   * config was read and declares none, which is a fact, not an absence. */
+  readonly hosts: readonly string[];
 }
 
 /**
@@ -177,6 +213,12 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     // active env's `timeout wait` and skips itself without it.
     ...checkLiteralOperands(program),
     ...checkHoldWindows(program, opts),
+    // M125b1 (`FU-18`, D245/D246/D266) — absolute URLs became legal this milestone; this says what
+    // one costs. Unlike the two above it is wired unconditionally: `TF059` needs nothing from the
+    // caller, and the `TF057`/`TF058` choice is made from `opts.envAllowHosts` inside the pass
+    // rather than by skipping it, because "no config was resolved" is still a case with a
+    // diagnostic to emit here.
+    ...checkAbsoluteUrls(program, opts),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkActionCycles(program, opts),
@@ -460,6 +502,12 @@ export function checkSessionBody(
   /** M124/D236 — the active env's `timeout wait`, for `checkHoldWindows`. Same optionality, same
    * reason: a caller that resolved no env must not have one invented for it. */
   envTimeouts?: EnvTimeouts,
+  /** M125b1/D263 — the active env's `allow hosts`, for `checkAbsoluteUrls`. Optional like the two
+   * above, but the optionality means something different and the difference is worth the extra
+   * sentence: omitting it does not skip the pass, it selects `TF057` over `TF058`. A caller that has
+   * not resolved a config still gets the portability warning, which is true of an absolute URL
+   * regardless of any config. */
+  envAllowHosts?: EnvAllowHosts,
 ): Diagnostic[] {
   const diags: Diagnostic[] = [];
   for (const session of sessions) {
@@ -481,6 +529,12 @@ export function checkSessionBody(
     // wired for the reason D149's mask pass was — a wired pass costs nothing to keep wired.
     checkLiteralOperandsInSteps(session.body, diags);
     if (envTimeouts) checkHoldWindowsInSteps(session.body, envTimeouts, diags);
+    // M125b1/D245 — and this one is load-bearing here rather than merely reachable: a `session`
+    // exists to log in, and the identity provider a suite authenticates against is very often a
+    // different host from the app under test, which is exactly what an absolute URL is for. Note
+    // the missing `if` — unlike the two lines above, the pass runs whether or not the caller
+    // resolved a config, because "no config" is a case with its own diagnostic here (`TF057`).
+    checkAbsoluteUrlsInSteps(session.body, envAllowHosts ? { envAllowHosts } : {}, diags);
   }
   return byPosition(diags);
 }
@@ -2608,6 +2662,13 @@ export function checkBaseUrls(program: Program, opts: ProgramCheckOptions = {}):
 /** One body's steps (D152) — what a `session` needs, and the shape it needs most: a session body's
  * `api` steps are overwhelmingly the un-prefixed kind, and its failure takes down every test that
  * names it. */
+/** Whether an api request line's target is written absolutely (M125b1) — shared by the two api
+ *  arms of `checkBaseUrlsInSteps`, which read the same `PathExpr` off two differently-shaped nodes. */
+function apiTargetIsAbsolute(path: unknown): boolean {
+  const raw = (path as { raw?: unknown } | undefined)?.raw;
+  return typeof raw === 'string' && isAbsoluteUrl(raw);
+}
+
 function checkBaseUrlsInSteps(steps: readonly Step[], env: EnvBaseUrls, diags: Diagnostic[]): void {
   // The object-graph walk, for `collectFileReferences`' reason (see its comment): a step nested in
   // a block kind a hand-written walker had not been taught about is skipped *in silence*, and
@@ -2624,16 +2685,30 @@ function checkBaseUrlsInSteps(steps: readonly Step[], env: EnvBaseUrls, diags: D
       return;
     }
     const node = value as Record<string, unknown>;
+    // M125b1 (`FU-18`) — an absolute target needs no base URL, so `TF051` must not demand one.
+    //
+    // This is the interaction that makes D245 more than a lexer change, and it fails in the worst
+    // available direction: `TF051` is an **error**, so without these guards `api GET https://x/y`
+    // in an env declaring no default `api` base would be *blocked from running* by a rule
+    // predicting a refusal the runtime does not make — `execApi` never calls `resolveBaseUrl` for an
+    // absolute target, and `resolveWebUrl` returns before its `web` check. A checker reporting an
+    // error on a program that runs is D137 clause 1, and it would have shipped invisibly, because
+    // every existing `TF051` test uses a path and passes either way.
     switch (node['type']) {
-      case 'OpenStmt':
-        if (!env.web) diags.push(missingBaseUrl('web', 'open', node as unknown as { span: Span }, env));
+      case 'OpenStmt': {
+        const lit = node['path'] as { value?: unknown } | undefined;
+        const absolute = typeof lit?.value === 'string' && isAbsoluteUrl(lit.value);
+        if (!env.web && !absolute) diags.push(missingBaseUrl('web', 'open', node as unknown as { span: Span }, env));
         break;
+      }
       case 'ApiStep':
-        if (!env.api && node['service'] === null) diags.push(missingBaseUrl('api', 'api', node as unknown as { span: Span }, env));
+        if (!env.api && node['service'] === null && !apiTargetIsAbsolute(node['path'])) {
+          diags.push(missingBaseUrl('api', 'api', node as unknown as { span: Span }, env));
+        }
         break;
       case 'WaitUntilApiStmt': {
         const request = node['request'] as ApiRequestSpec | undefined;
-        if (!env.api && request && request.service === null) {
+        if (!env.api && request && request.service === null && !apiTargetIsAbsolute((request as unknown as Record<string, unknown>)['path'])) {
           diags.push(missingBaseUrl('api', 'wait until api', node as unknown as { span: Span }, env));
         }
         break;
@@ -3036,6 +3111,140 @@ function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts, diags
     for (const child of Object.values(node)) visit(child);
   };
   visit(steps);
+}
+
+/**
+ * M125b1 (`FU-18`, D245/D246/D266) — what an absolute URL costs, said at check time.
+ *
+ * `api GET https://x/y` and `open "https://x/y"` became legal in this milestone, and they are a
+ * legitimate authoring choice with two real consequences. This pass names both.
+ *
+ * **One diagnostic per step, never two, and which one depends on what the caller resolved.** A step
+ * that is going to be *refused* does not also need to be told it is unportable — that reads as two
+ * problems where there is one, and the second is irrelevant until the first is fixed:
+ *
+ * | `opts.envAllowHosts` | means | emits |
+ * | --- | --- | --- |
+ * | `undefined` | nobody resolved a config — a browser demo, a bare `parse` | `TF057` |
+ * | `{ hosts: [] }` | a config *was* resolved and declares no allowlist | `TF058` |
+ * | `{ hosts: [...] }` | an allowlist exists; the runtime will apply it | `TF057` |
+ *
+ * The middle row is the one `ProgramCheckOptions` warns about in the abstract and this pass makes
+ * concrete: `undefined` and `[]` are not interchangeable here, they select *different diagnostics*.
+ * Reading `[]` as "not resolved" loses `TF058` entirely; reading `undefined` as `[]` fires `TF058`
+ * on every absolute URL in the docs-site editor demo, which can have no `tflw.config` even in
+ * principle.
+ *
+ * **D247 — nothing here looks at a URL pattern.** `stub GET "https://payments.example.test/…"` and
+ * `expect request to "https://…" was made` are patterns matched against traffic, not addresses
+ * anything is sent to; `testFlow-tests`' `storefront.tflw` writes both today. The visit below is
+ * keyed on the three node types that *issue* a request, so a pattern is never reached — not
+ * filtered out afterwards, which is the version of this that rots the first time a fourth
+ * pattern-bearing node type is added.
+ */
+export function checkAbsoluteUrls(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const test of program.tests) checkAbsoluteUrlsInSteps(test.body, opts, diags);
+  for (const action of program.actions) checkAbsoluteUrlsInSteps(action.body, opts, diags);
+  for (const hook of program.hooks) checkAbsoluteUrlsInSteps(hook.body, opts, diags);
+  return byPosition(diags);
+}
+
+function checkAbsoluteUrlsInSteps(steps: readonly Step[], opts: ProgramCheckOptions, diags: Diagnostic[]): void {
+  const seen = new Set<object>();
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    const kind = node['type'];
+    if (kind === 'ApiStep') {
+      checkOneAbsoluteTarget(pathRaw(node['path']), node['service'], spanOf(node), 'api', opts, diags);
+    } else if (kind === 'WaitUntilApiStmt') {
+      const request = node['request'] as Record<string, unknown> | undefined;
+      if (request) checkOneAbsoluteTarget(pathRaw(request['path']), request['service'], spanOf(node), 'wait until api', opts, diags);
+    } else if (kind === 'OpenStmt') {
+      // `open` carries a `StringLit`, not a `PathExpr` — the same address written in the other of
+      // the language's two spellings for one.
+      const lit = node['path'] as Record<string, unknown> | undefined;
+      const raw = typeof lit?.['value'] === 'string' ? (lit['value'] as string) : null;
+      checkOneAbsoluteTarget(raw, null, spanOf(node), 'open', opts, diags);
+    }
+    for (const child of Object.values(node)) visit(child);
+  };
+  visit(steps);
+}
+
+function pathRaw(path: unknown): string | null {
+  const node = path as Record<string, unknown> | undefined;
+  return typeof node?.['raw'] === 'string' ? (node['raw'] as string) : null;
+}
+
+function spanOf(node: Record<string, unknown>): Span {
+  return node['span'] as Span;
+}
+
+function checkOneAbsoluteTarget(
+  target: string | null,
+  service: unknown,
+  span: Span,
+  keyword: string,
+  opts: ProgramCheckOptions,
+  diags: Diagnostic[],
+): void {
+  // `null` is not "relative" — it is "the AST did not hand us a literal to read", and the two must
+  // not collapse. An interpolated `{base}/orders` reaches here as a string that does not start with
+  // a scheme and is correctly silent: whether it resolves absolutely is a runtime fact.
+  if (target === null || !isAbsoluteUrl(target)) return;
+
+  // D266 — a named service selects a base URL, and an absolute URL replaces it. Both cannot be
+  // load-bearing, so one of the two is dead text the author believes is doing something. An
+  // **error**, not a warning, and the tier is not a judgement call: both operands are written in
+  // this file, so there is no config that makes the combination meaningful and nothing for the
+  // checker to predict. That is exactly `M124`'s line.
+  if (typeof service === 'string') {
+    diags.push({
+      code: Codes.SERVICE_WITH_ABSOLUTE_URL,
+      severity: 'error',
+      message: `\`${keyword} ${service}\` names a service and an absolute URL ("${target}") on the same step`,
+      span,
+      hint: `a service names the base URL to send to, and an absolute URL already is one — so one of the two would be silently ignored. Drop \`${service}\` to send to the URL as written, or write a path (\`/orders\`) to send to the service`,
+    });
+    return;
+  }
+
+  const declared = opts.envAllowHosts;
+  if (declared && declared.hosts.length === 0) {
+    const host = absoluteUrlHost(target);
+    diags.push({
+      code: Codes.ABSOLUTE_URL_NEEDS_ALLOW_HOSTS,
+      severity: 'warning',
+      message: `this \`${keyword}\` step names an absolute URL and env "${declared.envName}" declares no \`allow hosts\` — the run will refuse to send it`,
+      span,
+      // Says what the *runtime* will do, because that is the fact the author needs and it is not
+      // guessable from the config: an allowlist is opt-in and its absence means no enforcement
+      // everywhere else in the language. This is the one place absence means refusal.
+      hint: host
+        ? `an absolute URL can reach a host \`tflw.config\` never mentions, so writing one opts the suite into declaring where it may reach — add \`allow hosts "${host}"\` to env "${declared.envName}" or to \`defaults\` (SPEC §3.7)`
+        : `add an \`allow hosts\` entry covering this URL's host to env "${declared.envName}" or to \`defaults\` (SPEC §3.7)`,
+    });
+    return;
+  }
+
+  diags.push({
+    code: Codes.ABSOLUTE_URL_NOT_PORTABLE,
+    severity: 'warning',
+    message: `this \`${keyword}\` step names an absolute URL, so \`--env\` will not move it`,
+    span,
+    // Not phrased as a mistake, because it frequently is not one — a one-off request to a second
+    // host is the case `FU-18` was filed about. The warning exists so that "this step ignores the
+    // env" is a thing the file says out loud rather than a thing a reader has to notice.
+    hint: `every other request follows the active env's base URL; this one is fixed wherever it points. That is a fine thing to want for a one-off — if it is not, move the host into \`tflw.config\` as a base URL or a named service and write a path (SPEC §3.1)`,
+  });
 }
 
 /** What each non-capturable kind *does* support, in the runtime's own words — the part a reader

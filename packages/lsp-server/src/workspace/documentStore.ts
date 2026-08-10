@@ -148,6 +148,14 @@ export class DocumentStore {
     // dangerous — it would squiggle `for 45s` in a workspace whose config raises `timeout wait` to
     // 120s, and be correct often enough that nobody would suspect the fallback.
     let envTimeouts: { envName: string; wait: number } | undefined;
+    // `envAllowHosts` (M125b1/D263, `TF057`/`TF058`) is the third of these and the one where the
+    // fallback is most tempting and most wrong. `{ hosts: [] }` is not a neutral default here the
+    // way it is for `knownServices` — it is an assertion that a config was read and declares no
+    // allowlist, which is `TF058`'s trigger. Defaulting to it would warn "the run will refuse to
+    // send it" on every absolute URL in any file the server cannot place, about a refusal that
+    // depends entirely on a config nobody found. Left `undefined`, and the pass then reports the
+    // portability warning only, which is true regardless of any config.
+    let envAllowHosts: { envName: string; hosts: readonly string[] } | undefined;
     if (doc.root) {
       const project = await loadProjectConfig(doc.root, envSetting).catch(() => undefined);
       if (project?.resolved) {
@@ -159,6 +167,7 @@ export class DocumentStore {
           web: project.resolved.webBaseUrl !== null,
         };
         envTimeouts = { envName: project.resolved.envName, wait: project.resolved.timeouts.wait };
+        envAllowHosts = { envName: project.resolved.envName, hosts: project.resolved.allowHosts ?? [] };
       }
     }
     // The CLI's own pass list, verbatim — one shared entry point, so the server can't fall behind it
@@ -200,6 +209,7 @@ export class DocumentStore {
         ...(missingFiles === undefined ? {} : { missingFiles }),
         ...(envBaseUrls ? { envBaseUrls } : {}),
         ...(envTimeouts ? { envTimeouts } : {}),
+        ...(envAllowHosts ? { envAllowHosts } : {}),
       }),
     ];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };

@@ -833,11 +833,34 @@ api POST /orders body { name: {name}, qty: {qty} }
 api billing GET /invoices/{oid}
 api GET /health timeout 2s
 api GET /old-path without redirects
+api GET https://status.example.com/v1/health      # absolute — see below (M125b1)
 ```
 
-Grammar: `api [<service>] <METHOD> <path>[?query] [<body-form>] [timeout <dur>] [without redirects]`
+Grammar: `api [<service>] <METHOD> <target>[?query] [<body-form>] [timeout <dur>] [without redirects]`,
+where `<target>` is either a path (`/orders`) or an absolute URL (`https://host/orders`).
 
-- Path is relative to the service's baseUrl in the active env; `{vars}` interpolate.
+- A **path** is relative to the service's baseUrl in the active env; `{vars}` interpolate.
+- An **absolute URL** is the address, and no base URL is consulted or required. Any RFC 3986 scheme
+  lexes — which schemes actually work is `fetch`'s question, answered at run time, not the
+  grammar's. `{vars}` interpolate here too, including in the host (`https://{tenant}.example.com/x`).
+  Three things follow, and all three are checked statically (§17):
+  - `--env` does not move the step. That is a legitimate thing to want for a one-off request to a
+    second host, and is a **warning** (`TF057`) rather than an error, so that "this step ignores the
+    env" is something the file says out loud rather than something a reader has to notice.
+  - **Writing an absolute URL opts the suite into declaring where it may reach.** `allow hosts`
+    (§3.7) is opt-in and unset means no enforcement — which is the right default for a suite written
+    entirely against its env's base URL, because that base *is* the declaration of where it talks.
+    An absolute URL is the one form that can reach a host `tflw.config` never mentions, so with no
+    `allow hosts` declared anywhere the run **refuses the step** (`TF058` predicts it). With a list
+    declared, the ordinary rule applies: the host must be on it.
+  - A named `<service>` and an absolute URL on the same step is an **error** (`TF059`): a service
+    names the base URL to send to and an absolute URL already is one, so one of the two would be
+    silently ignored.
+- The same rules hold for `wait until api` (§5.5) and for `open` (§9.1), which resolves against the
+  `web` base rather than the `api` one. Through v0.1 `api` rejected an absolute URL outright and
+  `open` *concatenated* it onto the `web` base — opening `http://localhost:5173/https://example.com/x`,
+  a URL that loads on any SPA with a catch-all route, so the step passed and the run failed later on
+  an unrelated assertion (`FU-18`).
 - Headers: env/defaults headers apply automatically; per-step extras:
   `header "X-Trace" is "{traceId}"` lines directly under the api step.
   **Both operands interpolate** — the name as well as the value (M102, D176), so
@@ -1663,6 +1686,7 @@ suite actually runs a browser step).
 
 ```
 open "/orders/{orderId}"                 # relative to env `web` base URL (§3.1)
+open "https://idp.example.com/login"     # absolute — the address, no `web` base needed (§5.1)
 click button "Add to cart"
 double click button "Row"
 right click button "Row"
@@ -2474,6 +2498,9 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF054` | Checker (M124, `M97a-02`/`M97a-03`/`M97a-16`): an operand **written in the file** that the step will reject the moment it evaluates — `random number 5 to 1` (an empty range), `random password 2` (no room for the four character classes it guarantees), `hex`/`base64`/`url` `decode("…")` over a literal that will not decode, or a `matches`/`fails matching` pattern that is not a valid regular expression. Seven runtime `throw`s, one sentence, one code. **The rule fires on literals only, and that is the point rather than a limitation**: `random number {lo} to {hi}` is ordinary, legal and unknowable until the run binds those names, so an interpolated operand stays the runtime's. The decode tests are *imported* from the same module `eval.ts` uses (`literalValidity.ts`) rather than restated — "valid hex" has a length clause and "valid base64" excludes the URL-safe alphabet, and a second copy that drifted would report an error on a program that runs fine. | `let bad = random number 5 to 1` → `` `to` must be ≥ `from` ``; `let x = hex decode("not-hex!")` → `is not valid hex`; `api GET /a` then `expect body.name matches "("` → `invalid regex in matcher` |
 | `TF055` | Checker (M124, `M97a-06`): `wait until <locator> … for <duration>` whose hold window is at least as long as `timeout wait`. The window asks the condition to stay true for longer than the step is allowed to run, so it can never close — the step can only end by timing out, reporting a slow app, which is the one thing that was not wrong. **A warning, not an error, and the tier is the whole decision.** The second operand comes from `tflw.config` and differs per env, so the checker is *predicting* what this run will do rather than observing something settled: a suite whose CI env raises `timeout wait` to 120s is correct, and an error would make it unrunnable with no override. That is D147, filed after `A4-05` shipped exactly this mistake inside the milestone whose thesis forbade it. Skipped entirely when the caller resolved no env — `undefined` means nobody looked, not "the budget is zero". | `open "/x"` then `wait until button "Hidden" is hidden for 60s` → `can never be satisfied` |
 | `TF056` | Checker (M124, `M97a-01`): `with each from "…"` naming a file whose extension is neither `.csv` nor `.json`. The loader reads rows from CSV (a header row) or JSON (an array of row objects) and picks between them by extension, so anything else is refused — but only *after* the file is opened, which means the run gets far enough to read a path whose problem was legible in the source all along. **Its own code rather than `TF043`**: `TF043` is `MISSING_FILE`, and here the file is very likely present — being present is what leaves the extension as the only thing wrong. They also sit on opposite sides of D147, since a missing file may be created by an earlier step (a prediction, warning) while an extension cannot change between check and run (an observation, error). Interpolated paths are skipped, like every other M124 rule. | `with each from "./rows.txt"` then `test "t"` then `api GET /health` → `` must be `.csv` or `.json` `` |
+| `TF057` | Checker (M125b1, `FU-18`, D245): an `api`/`wait until api`/`open` step whose target is written as an absolute URL rather than a path under the active env's base. Absolute URLs became legal in M125b1 — before it, `api GET https://x/y` was a parse error and `open "https://x/y"` was *silently concatenated* onto the `web` base, opening `http://localhost:5173/https://x/y`, which loads on any SPA with a catch-all route and fails later on an unrelated assertion. This warning is the cost of making it legal: the step is fixed wherever it points, so `--env staging` moves every other request in the suite and not this one. **Not phrased as a mistake, because it frequently is not one** — a one-off request to a second host is the case the row was filed about, and the warning exists so that "this step ignores the env" is something the file says out loud rather than something a reader has to notice. Emitted when the caller resolved no config at all (nothing can be predicted about a refusal) or when an allowlist exists; when a config *was* resolved and declares none, `TF058` is emitted instead, because a step that is going to be refused does not also need to be told it is unportable. | `api GET https://api.example.com/orders` → `` `--env` will not move it ``; `open "https://example.com/checkout"` → `absolute URL` |
+| `TF058` | Checker (M125b1, `FU-18`, D246): an absolute URL in a suite whose resolved env declares no `allow hosts` — the run will refuse to send it. **This is the one place in the language where the *absence* of an allowlist means enforcement rather than the lack of it**, and that inversion is the rule: `allow hosts` is opt-in and unset means every host is permitted (`allowHosts.ts:30`), which is the right default for a suite written entirely against its env's base URL, because that base *is* the declaration of where it talks. An absolute URL is the one form that can reach a host `tflw.config` never mentions, so writing one opts the suite into declaring where it may reach. **A warning here and a refusal at run time, and the split is D147**: `allow hosts` is read from `tflw.config` and differs per env, so the checker is predicting what *this* run would do — a suite whose CI env declares an allowlist is correct, and an error would make it unrunnable with no override — while the runtime has resolved the config and is looking at the URL it is about to fetch, so it observes and may refuse outright. Requires the caller to distinguish "a config was resolved and declares none" from "no config was resolved": the first is this rule, the second is `TF057`. | `api GET https://api.example.com/orders` → `the run will refuse to send it` |
+| `TF059` | Checker (M125b1, `FU-18`, D266): a named api service and an absolute URL on the same step — `api billing GET https://other.example/x`. A service names the base URL to send to and an absolute URL already is one, so one of the two is dead text the author believes is doing something, and picking a winner silently is the failure class this whole row was filed about. **An error rather than a warning, and the contrast with the two codes above it is the clearest statement of D147 in the manifest**: both of `TF059`'s operands are written in the file, so no config can make the combination meaningful and there is nothing to predict — exactly `M124`'s line, one milestone later. The hint names both ways out without preferring one, since which of the two the author meant is genuinely not knowable from the step. | `api billing GET https://other.example/x` → `names a service and an absolute URL` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

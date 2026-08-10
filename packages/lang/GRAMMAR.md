@@ -41,9 +41,16 @@ STRING      "…"  with \" \\ \n \r \t \u{XXXX} escapes; may contain {interpolat
                  halves (M98d); it is also the way to write a character TF049 refuses literally
 NUMBER      digits, optional fraction: 200, 12.5
 IDENT       [A-Za-z_][A-Za-z0-9_]*        (also the keyword lexeme before classification)
-PATH        a run beginning with '/' over every character RFC 3986 allows unescaped in a
-                 path or query (unreserved + sub-delims + '[' ']' '@'); ends at whitespace
-                 or at '#', which ends the path and starts a comment (TF001, M59/A1-OS-01)
+PATH        a run beginning with '/' — OR, since M125b1 (FU-18), with an absolute URL's
+                 scheme, `[A-Za-z][A-Za-z0-9+.-]*'://'` — over every character RFC 3986
+                 allows unescaped in a path or query (unreserved + sub-delims + '[' ']'
+                 '@' ':'); ends at whitespace or at '#', which ends the path and starts a
+                 comment (TF001, M59/A1-OS-01)
+                 BOTH forms are lexed ONLY in HTTP-method position (right after `api` or
+                 `api <service>` and a method word). That guard is not an optimisation: it
+                 is what makes `let ratio = get / 2` division rather than a path
+                 (decision 60), and the absolute form is gated on the identical predicate
+                 so that an ident which merely reads like a scheme keeps lexing as one.
 TAG         '@' IDENT
 ```
 

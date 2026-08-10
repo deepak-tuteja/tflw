@@ -120,6 +120,14 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     code: Codes.HOLD_EXCEEDS_WAIT_TIMEOUT,
   },
 
+  checkAbsoluteUrls: {
+    verdict: 'applies',
+    reason:
+      'M125b1/D245. Load-bearing rather than merely reachable, and a session is arguably the *most* likely body to hold one: it exists to log in, and the identity provider a suite authenticates against is very often a different host from the app under test — which is the case an absolute URL is for. Both consequences apply unchanged there: a session step fixed to one host does not move with `--env`, and the runtime refuses it with no `allow hosts` declared, from the same guard, since `runSession` issues real requests through the same client. Wired with the caller\'s `envAllowHosts`, and the fixture below fires `TF057` rather than `TF058` precisely because this test passes none — the absence selects the other rule instead of silencing the pass, which is the one way this option differs from `envTimeouts` above',
+    fixture: '  api GET https://idp.example.com/token\n',
+    code: Codes.ABSOLUTE_URL_NOT_PORTABLE,
+  },
+
   checkProgram: { verdict: 'n/a', reason: 'the composition of the per-file passes, not a pass — `checkSessionBody` is its config-side counterpart' },
   checkSessionBody: { verdict: 'n/a', reason: 'this list itself' },
   checkSessionServices: { verdict: 'n/a', reason: 'subsumed: `checkSessionBody` folds it in so callers have one entry point' },
