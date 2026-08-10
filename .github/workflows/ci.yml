@@ -31,6 +31,13 @@ jobs:
     # the hang and the budget came due in the same run. 60 gives 2.2×. Note
     # the backstop moved inward — `mutate.mjs` now bounds each suite at 10m and names the package
     # that hung, so this number no longer has to be the thing that catches a hang.
+    #
+    # M124: the re-measurement the M112 note asks for, and it moved the sweep *out* of this job
+    # rather than moving this number (see the `mutations` job below). What is left here is
+    # build+typecheck+test+coverage: **13m** of the 60m that were being spent, on the same run
+    # 31412181636 that cancelled. The generous multiple is now deliberate rather than accidental —
+    # nothing in this job grows the way the mutation registry does, so there is nothing left here to
+    # re-measure per milestone.
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -77,24 +84,6 @@ jobs:
       # mutation pass. Before `npm test` would be wrong: a red suite is the more useful signal.
       - run: npm run verify:observability
 
-      # The M98 cluster's mutations, re-run. A control that killed a mutation once can stop killing
-      # it without any test turning red — which is how M98c's `isUnlexable` control went vacuous in
-      # the first place, and how the `#` case was still uncovered five milestones later. ~40s
-      # (18 × the 1.4s lang suite). Node 22 only: the mutations are source edits, identical under
-      # every runtime, so the matrix would just pay for it twice.
-      #
-      # M112: `xvfb-run`, for the same reason `npm test` above has it. This step ran bare for
-      # fourteen milestones and it never mattered, because every mutation named `@tflw/lang`,
-      # `@tflw/runtime` or `@tflw/docs-site`. M111 added the first `pkg: 'tflw'` entries, and
-      # `mutate.mjs` baselines a package before its first mutation — so the cli suite ran here for
-      # the first time, without a display, and `pick.test.ts` (real headed Chromium through the
-      # real dist binary) blocked forever on a `tflw pick` child that could not start one. The
-      # job died on `timeout-minutes` after 31 minutes of silence (run 31273904180). The same
-      # suite passed under `xvfb-run` four steps earlier, on the same runner, in the same job.
-      - name: Mutation controls
-        if: matrix.node-version == 22
-        run: xvfb-run -a npm run verify:mutations
-
       # The root `scripts/` tools' own tests (M113). `verify-ledger.mjs` checks a corpus that is
       # gitignored on purpose, so the guard itself cannot run here — its input is simply absent, and
       # a check that skips when its input is missing is green about nothing, which is the exact
@@ -128,3 +117,65 @@ jobs:
         with:
           name: coverage-lcov
           path: coverage/lcov.info
+
+  # ---------------------------------------------------------------------------
+  # M124 (`M114-01`, finally re-measured) — the mutation sweep gets its own job.
+  #
+  # It was step 10 of the `test` job for fourteen milestones, and `M114-01` has been open the whole
+  # time asking what it costs. The answer arrived as a cancellation rather than a number: on run
+  # 31412181636 the Node 22 leg spent **51m24s** in the sweep, finished it *green*, and then died on
+  # `timeout-minutes: 60` three minutes into `Coverage`. Nothing was broken — the job simply ran out
+  # of clock with the work done. That is the worst way for this to fail, because the sweep's own
+  # result was thrown away along with the job.
+  #
+  # The trend is the argument for a structural fix rather than a bigger number: the step measured
+  # 16m41s at M112 (7 mutations added), and M123's ten more took it to 51m24s. It grows every
+  # milestone, by design — that is what a mutation registry is — and every milestone that adds one
+  # was quietly spending the `test` job's budget. M124 adds six more.
+  #
+  # So: its own job, running in parallel with the matrix instead of serially after it. Three things
+  # fall out. The sweep no longer shares a clock with anything (a slow suite cannot cancel it, and
+  # it cannot cancel `Coverage`); the wall clock for the whole workflow becomes max(13m, sweep)
+  # rather than their sum; and the next milestone to add a mutation reads *this* number, in the job
+  # that is actually about mutations.
+  #
+  # Node 22 only, for the reason it always was: mutations are source edits, identical under every
+  # runtime, so the matrix would just pay for it twice.
+  mutations:
+    name: mutation controls
+    runs-on: ubuntu-latest
+    # 90 against a measured 51m24s — 1.75×, and deliberately not the 2× the `test` job's number is
+    # chosen for. The sweep is the one step here with an *inward* backstop: `mutate.mjs` bounds each
+    # package's suite at 10m and names the package that hung (M112), so this number no longer has to
+    # be the thing that catches a hang. It has to be the thing that survives ordinary growth, and
+    # 90 buys roughly eleven more milestones' worth at M123's rate.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `mutate.mjs` baselines a package before its first mutation, and M111 added the first
+      # `pkg: 'tflw'` entries — so the cli suite runs here, and it launches real headed Chromium
+      # through the real dist binary. Without these two steps it blocks forever rather than failing:
+      # run 31273904180 died after 31 minutes of silence, and the same suite passed under `xvfb-run`
+      # four steps earlier in the same job (M112).
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox
+
+      - run: npm run build
+
+      # A control that killed a mutation once can stop killing it without any test turning red —
+      # which is how M98c's `isUnlexable` control went vacuous in the first place, and how the `#`
+      # case was still uncovered five milestones later.
+      #
+      # Unscoped, and that is `M114`'s rule rather than a default: a scoped sweep is how `M122-01`
+      # stayed invisible — a merged registry entry left one mutation not merely surviving but
+      # *absent*, and every scoped run was green about a mutation that no longer existed.
+      - name: Mutation controls
+        run: xvfb-run -a npm run verify:mutations

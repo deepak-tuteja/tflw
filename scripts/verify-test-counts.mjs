@@ -42,6 +42,9 @@ import { spawn } from 'node:child_process';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { journalPath, openJournalWarning, readJournal } from './mutation-journal.mjs';
+import { countsByWorkspace } from './reporter-summary.mjs';
+
 /** Every workspace with a `test` script, and how many tests its suite contains. Order is
  * irrelevant — blocks are matched by the package name npm prints above each one, not by position,
  * so adding a workspace cannot silently shift the comparison onto the wrong suite. */
@@ -57,6 +60,38 @@ const EXPECTED = {
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
+// M123 (`M111-02`) — refuse to run against a tree `scripts/mutate.mjs` is deliberately holding
+// wrong.
+//
+// The sweep rewrites tracked sources in place for as long as each suite takes, and the row's worked
+// example is a commit made inside that window: `M111`'s `1cdefdc` captured a mutated `cli.ts`. The
+// window cannot be closed — the suite has to run against the real tree — but the gate people run
+// *before* committing can refuse to give them a green while it is open. A suite run against a
+// mutated source is worthless in both directions: red for someone else's edit, or green about code
+// nobody is shipping.
+//
+// This is also the guard for a *dead* sweep, which is the more common case: `mutate.mjs` repairs a
+// stale journal at startup, but nothing else does, so a tree left broken by a `kill -9` would
+// otherwise sail into a full run and report a headcount for the wrong code.
+//
+// Deliberately NOT scoped to "is a sweep still alive", and the asymmetry with `mutate.mjs` is the
+// point. That tool checks the journal's pid and treats the two cases differently — a live owner
+// means another sweep holds the worktree, so refuse; a dead one means wreckage, so repair
+// (`M123-03`). Here both cases have the same answer: the tree cannot be trusted either way, and a
+// crashed run is the case that actually costs a commit. Same signal, opposite reason, one message.
+let openSweep;
+try {
+  openSweep = readJournal();
+} catch (err) {
+  console.error(`✗ the mutation journal at ${journalPath()} is unreadable (${err.message}).`);
+  console.error('  Something wrote it and did not finish. Check `git status` before deleting it by hand.');
+  process.exit(2);
+}
+if (openSweep) {
+  console.error(`✗ ${openJournalWarning(openSweep)}`);
+  process.exit(2);
+}
 
 const child = spawn(npm, ['run', 'test:raw'], { cwd: repoRoot, env: process.env });
 let captured = '';
@@ -86,17 +121,18 @@ if (status !== 0) process.exit(status);
 // both is the fix; the counts themselves are identical because both reporters render the same
 // summary object. If a future Node ships a third default, this goes red naming every package rather
 // than passing quietly — which is the failure direction this script exists to have.
-const counted = {};
-let current = null;
-for (const line of captured.split('\n')) {
-  const header = /^> (\S+?)@[\d.]+ test(?::|$| )/.exec(line);
-  if (header) {
-    current = header[1];
-    continue;
-  }
-  const tests = /^(?:# |ℹ )tests (\d+)$/.exec(line);
-  if (tests && current) counted[current] = (counted[current] ?? 0) + Number(tests[1]);
-}
+//
+// M123 (`M123-01`): AND A THIRD FORMAT, WHICH IS NOT A FORMAT AT ALL. Both patterns above are
+// `^`-anchored, and `node --test` colours its summary whenever the environment exports
+// `FORCE_COLOR` — pipe or no pipe, any Node, either reporter. So on a machine whose terminal sets
+// it (this repo's Mac does; ssh to the Fedora box does not forward it, which is why the box never
+// showed it) the line is `\x1b[34mℹ tests 925\x1b[39m`, nothing matches, and **this script goes red
+// naming every workspace as "printed no test-summary line" while every suite was in fact green with
+// the right count**. Measured against a real captured run: `{}` as captured, `{"@tflw/lang":925}`
+// after stripping. The parse now lives in `reporter-summary.mjs` and strips ANSI first — one
+// implementation, because this is the third time the two consumers have been wrong about the same
+// line and the first two fixes were made by editing each copy in place.
+const counted = countsByWorkspace(captured);
 
 const problems = [];
 for (const [pkg, want] of Object.entries(EXPECTED)) {

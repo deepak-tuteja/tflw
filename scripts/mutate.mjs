@@ -80,6 +80,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { applyJournal, clearJournal, isProcessAlive, journalPath, readJournal, writeJournal } from './mutation-journal.mjs';
+import { failedTestNames, summaryCount } from './reporter-summary.mjs';
+import { ROOT_SUITE, SELF_MUTATIONS } from './self-mutations.mjs';
+
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const LEXER = 'packages/lang/src/lexer.ts';
 const PARSER = 'packages/lang/src/parser.ts';
@@ -88,6 +92,13 @@ const INTERP = 'packages/runtime/src/interpreter.ts';
 const CHECKER = 'packages/lang/src/checker.ts';
 const SPEC_DATA = 'packages/lang/src/spec-data.ts';
 const LSP_SERVER = 'packages/lsp-server/src/server.ts';
+
+// M123 (D226) — a mutation may name the root `test:scripts` suite instead of a workspace, because
+// this file and its helper modules are now mutation targets themselves. Those entries live in
+// `scripts/self-mutations.mjs`, which explains at length why they cannot live here: a `find:`
+// literal in the same file it targets makes the string occur twice, and the runner's
+// exactly-once guard then refuses to apply it — silently, as `stale`.
+export { ROOT_SUITE };
 
 /** Tracked files a suite *rewrites as a side effect of running*, which therefore have to be
  *  restored alongside the mutated file. SPEC.md is one: `@tflw/lang`'s `pretest` regenerates its
@@ -120,7 +131,7 @@ const DATE_BRANCH = `        // A number followed (whitespace allowed) by a spel
 `;
 
 /** @type {{id: string, milestone: string, file: string, what: string, find?: string, replace?: string, edits?: [string, string][], equivalent?: boolean}[]} */
-const MUTATIONS = [
+const REGISTRY = [
   // --- M98d ------------------------------------------------------------------------------------
   {
     id: 'bom-col',
@@ -936,6 +947,14 @@ const UNRECONSTRUCTED = [
 ];
 
 // ---------------------------------------------------------------------------
+// THE RUNNER. Nothing below runs on `import` — see the `main` guard at the very bottom (M123, D224).
+
+// The registry the runner works from: the mutations written here, plus the ones this tool aims at
+// its own instrumentation (M123). Two files for a mechanical reason, not an organisational one —
+// see `scripts/self-mutations.mjs` for why a self-targeting `find:` cannot live beside its target.
+const MUTATIONS = [...REGISTRY, ...SELF_MUTATIONS];
+
+export { MUTATIONS, UNRECONSTRUCTED };
 
 // M122 (`M122-01`). `MUTATIONS` silently lost an entry between `M120` and `M121`: a missing
 // `},\n  {` merged two object literals into one, so `M121`'s `id`, `file`, `find` and `replace`
@@ -950,21 +969,128 @@ const UNRECONSTRUCTED = [
 // against objects *built*. Same shape as `verify-test-counts.mjs`, for the same reason: an
 // instrument has to count what it ran against what exists, because "nothing went red" is not a
 // result (`M119`).
-const idKeysWritten = (readFileSync(fileURLToPath(import.meta.url), 'utf8').match(/^ {4}id: '/gm) ?? []).length;
-if (idKeysWritten !== MUTATIONS.length) {
-  console.error(
-    `mutate.mjs is malformed: ${idKeysWritten} \`id:\` keys are written in this file but ${MUTATIONS.length} ` +
-      `mutation objects were built. A missing \`},\` between two entries merges them, and the earlier ` +
-      `mutation stops existing without any run going red.`,
+// M123: the registry is now two files, so the check counts across both. A per-file check would
+// have passed on each half and still missed a merged entry, which is the whole failure mode.
+const REGISTRY_SOURCES = [fileURLToPath(import.meta.url), fileURLToPath(new URL('./self-mutations.mjs', import.meta.url))];
+
+export function registryProblem(source = REGISTRY_SOURCES.map((f) => readFileSync(f, 'utf8')).join('\n'), built = MUTATIONS.length) {
+  const idKeysWritten = (source.match(/^ {4}id: '/gm) ?? []).length;
+  if (idKeysWritten === built) return undefined;
+  return (
+    `mutate.mjs is malformed: ${idKeysWritten} \`id:\` keys are written in this file but ${built} ` +
+    `mutation objects were built. A missing \`},\` between two entries merges them, and the earlier ` +
+    `mutation stops existing without any run going red.`
   );
-  process.exit(2);
 }
 
-const arg = process.argv[2];
-const selected = MUTATIONS.filter((m) => !arg || m.id === arg || m.milestone === arg);
-if (selected.length === 0) {
-  console.error(`no mutation matches "${arg}" — ids: ${MUTATIONS.map((m) => m.id).join(', ')}`);
-  process.exit(2);
+// ---------------------------------------------------------------------------
+// M123 (`M118-03`, `M111-02`) — THE JOURNAL. The mechanism and the measurements behind it live in
+// `scripts/mutation-journal.mjs`, which is a separate module because it has a second consumer: the
+// root `npm test` refuses to run while a journal is open.
+
+/** The entry currently on disk, so a signal handler knows what to undo. */
+let inFlight = null;
+
+/**
+ * Open the journal, and treat a journal that cannot be written as a reason not to proceed.
+ *
+ * This is also what makes the ordering in `sweep` testable rather than merely correct. With the
+ * journal opened first, an unwritable location stops the run with the source untouched; with the two
+ * lines swapped, the same failure leaves the source mutated **and** nothing on disk saying what it
+ * was — `M118-03` produced by the journal's own failure path. A test can point
+ * `TFLW_MUTATE_JOURNAL` at a directory that does not exist and read the difference straight off the
+ * working tree, which nothing watching the sub-millisecond gap between two `writeFileSync` calls
+ * could ever do without flaking.
+ */
+function openJournal(entry) {
+  try {
+    writeJournal(entry);
+  } catch (err) {
+    console.error(`✗ cannot write the mutation journal at ${journalPath()} (${err.message}).`);
+    console.error(`  Nothing has been mutated: without somewhere to record the original, an interrupted run`);
+    console.error(`  would leave a tracked source wrong with no way back (M118-03).`);
+    return false;
+  }
+  inFlight = entry;
+  return true;
+}
+
+function closeJournal() {
+  inFlight = null;
+  clearJournal();
+}
+
+/**
+ * A journal left behind by a run that died. Repaired — and reported — *before* anything else
+ * happens, because the alternative is a sweep baselining against a tree that still holds the last
+ * run's mutation: a red baseline at best, and at worst a green one that means nothing.
+ */
+function repairStaleJournal() {
+  let journal;
+  try {
+    journal = readJournal();
+  } catch (err) {
+    console.error(`✗ the mutation journal at ${journalPath()} is unreadable (${err.message}).`);
+    console.error(`  It was written by a run that did not finish, and it is the only record of what that run changed.`);
+    console.error(`  Check \`git status\` for a modified source file before deleting it by hand.`);
+    return 2;
+  }
+  if (!journal) return 0;
+
+  // M123 (`M123-03`) — a journal whose owner is still running is not stale, and repairing it is
+  // actively destructive. Measured, one worktree, two processes:
+  //
+  //     outer sweep is live (pid 24371); lexer.ts is mutated; journal present? true
+  //     ↺ repaired: a previous run died at … with `bom-col` (m98d) applied.
+  //         restored packages/lang/src/lexer.ts
+  //     after the second process: lexer.ts back to pristine? true
+  //                              the LIVE sweep's journal still there? false
+  //
+  // The second process un-mutated the first one's source **mid-suite** and announced that a run had
+  // died about a run that was still going. The first sweep then measured unmutated code and
+  // reported SURVIVED — a false survivor, which is the safe direction to fail in but is still a
+  // broken instrument. It cost three of this milestone's own nine controls, and it was found only
+  // because those controls existed: `M123`'s tests spawn `mutate.mjs`, so `test:scripts` ran a
+  // second sweep inside the first.
+  //
+  // Refuse, rather than wait or repair. Two sweeps cannot share a worktree in any case — they would
+  // fight over the same sources — so there is nothing useful to do but say which process holds it.
+  if (isProcessAlive(journal.pid) && journal.pid !== process.pid) {
+    console.error(`✗ another mutation sweep is already running in this worktree (pid ${journal.pid}), holding \`${journal.id}\` (${journal.milestone}).`);
+    console.error(`  Two sweeps cannot share one worktree: they rewrite the same tracked sources, and whichever`);
+    console.error(`  finishes second restores what the first was still measuring.`);
+    console.error(`  Wait for it, or — if you are certain that process is gone and its pid has been reused —`);
+    console.error(`  delete ${journalPath()} by hand after checking \`git status\`.`);
+    return 2;
+  }
+  const { restored, problems } = applyJournal(journal);
+  if (problems.length > 0) {
+    console.error(`✗ a previous run of this tool died while \`${journal.id}\` was applied, and the repair failed:`);
+    for (const p of problems) console.error(`    ${p}`);
+    return 2;
+  }
+  if (restored.length > 0) {
+    console.log(`↺ repaired: a previous run died at ${journal.startedAt ?? 'an unknown time'} with \`${journal.id}\` (${journal.milestone}) applied.`);
+    for (const rel of restored) console.log(`    restored ${rel}`);
+    console.log(`  Nothing announced that at the time, which is exactly what \`M118-03\` was about.`);
+  }
+  closeJournal();
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Arguments. M123 (D228): `M118-03` began life as `mutate.mjs m118 --list`, typed expecting a
+// listing — `--list` was silently ignored, `m118` was taken as a scope, and the tool started
+// rewriting tracked sources. An unrecognised argument is an error here, never a filter that happens
+// to match nothing, and `--list` now means what it looked like it meant.
+export function parseArgs(argv) {
+  const args = argv.slice(2);
+  const flags = args.filter((a) => a.startsWith('-'));
+  const positional = args.filter((a) => !a.startsWith('-'));
+  const unknown = flags.filter((f) => f !== '--list');
+  if (unknown.length > 0) return { error: `unknown option${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')} — the only option is --list. Usage: mutate.mjs [--list] [<id>|<milestone>]` };
+  if (positional.length > 1) return { error: `expected at most one id or milestone, got ${positional.length}: ${positional.join(', ')}` };
+  return { list: flags.includes('--list'), scope: positional[0] };
 }
 
 // M112. Every suite run is bounded, because until now none of them was.
@@ -984,11 +1110,44 @@ if (selected.length === 0) {
 const SUITE_TIMEOUT_MS = Number(process.env.TFLW_MUTATE_TIMEOUT_MS ?? 10 * 60_000);
 const TIMEOUT_LABEL = SUITE_TIMEOUT_MS >= 60_000 ? `${SUITE_TIMEOUT_MS / 60_000}m` : `${SUITE_TIMEOUT_MS}ms`;
 
+export function suiteCommand(pkg) {
+  return pkg === ROOT_SUITE ? 'npm run test:scripts 2>&1' : `npm test -w ${pkg} 2>&1`;
+}
+
+/**
+ * M123 (`M123-02`) — the environment a suite must NOT inherit.
+ *
+ * `NODE_TEST_CONTEXT` is how `node --test` tells a child test process to speak its internal
+ * serializer instead of printing a human report. It is exported into everything a test spawns, so
+ * a sweep started from inside any node:test process — which is exactly what this milestone's own
+ * tests do, and what a `test:scripts` mutation does — hands it straight to the suite it is
+ * measuring. Measured, same command, one variable:
+ *
+ *     clean                        exit=0   ℹ pass 925 / ℹ fail 0    98,997 bytes
+ *     NODE_TEST_CONTEXT=child-v8   exit=0   (no summary at all)         472 bytes
+ *
+ * **Exit 0 either way.** So every mutation would be reported `SURVIVED` and every baseline
+ * `green, ? passing`, with nothing anywhere going red — the vacuous-instrument shape this file has
+ * now hit three times (`M110`, `M119`, and here), and the first one that inverts the verdict rather
+ * than just the stated reason.
+ *
+ * This is *removing* contamination, not editing the experiment (D225): the variable is never set in
+ * a normal run, so deleting it restores the condition the suite is supposed to be measured under
+ * rather than changing it.
+ */
+function suiteEnv() {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  delete env.NODE_TEST_WORKER_ID;
+  return env;
+}
+
 function runSuite(pkg) {
   try {
-    const out = execSync(`npm test -w ${pkg} 2>&1`, {
+    const out = execSync(suiteCommand(pkg), {
       cwd: ROOT,
       encoding: 'utf8',
+      env: suiteEnv(),
       timeout: SUITE_TIMEOUT_MS,
       killSignal: 'SIGKILL',
     });
@@ -1003,111 +1162,218 @@ function runSuite(pkg) {
   }
 }
 
-const failCount = (out) => Number(/^(?:# |ℹ )fail (\d+)$/m.exec(out)?.[1] ?? -1);
-
+// M123 (`M115-01`): the summary parse moved to `scripts/reporter-summary.mjs`, shared with
+// `verify-test-counts.mjs`. It had gone wrong here three times — `# fail N` only, then `ℹ fail N`
+// added forty lines from the file that already documented the lesson, and finally the discovery
+// that both are `^`-anchored and neither strips ANSI, so any environment exporting `FORCE_COLOR`
+// silently defeats them on **any** Node. `summaryCount` returns `undefined`, not `-1`, when a suite
+// printed no summary at all: "reported zero failures" and "reported nothing" are different facts,
+// and the old sentinel was a number no caller ever checked for.
+//
 // A baseline first. A suite that is already red makes every "killed" verdict meaningless — the
 // mutation would be credited with failures it did not cause. One per package actually selected, so
 // running `mutate.mjs m98d` still pays for exactly one suite.
 const baselined = new Set();
 function baseline(pkg) {
-  if (baselined.has(pkg)) return;
+  if (baselined.has(pkg)) return 0;
   process.stdout.write(`baseline ${pkg} … `);
   const result = runSuite(pkg);
   if (result.timedOut) {
     console.error(`\n✗ ${pkg}'s suite hung — killed after ${TIMEOUT_LABEL} without finishing. Nothing below ran. This is a hang, not a red suite: the last test to report is the one before the one to look at.`);
-    process.exit(1);
+    return 1;
   }
   if (!result.green) {
     // M119: a count is not actionable. This aborted an unscoped sweep 26 mutations in with nothing
     // but "(1 failing)" — and the suite passed on the next three runs, so the one run that could
     // have named the test was also the only one that would ever have it. The suite's output is
-    // already captured; not printing the names was pure loss. Both reporters, same reason as
-    // `failCount` above: `not ok N - name` is tap, `✖ name (duration)` is spec.
-    const named = [...result.out.matchAll(/^(?:not ok \d+ - (.+?)|✖ (.+?) \([\d.]+ms\))$/gm)]
-      .map((m) => (m[1] ?? m[2]).trim())
-      .filter((n) => n && n !== 'failing tests:');
-    const unique = [...new Set(named)];
-    console.error(`\n✗ ${pkg} is red before any mutation (${failCount(result.out)} failing). Fix that first — every verdict below would be borrowed from it.`);
+    // already captured; not printing the names was pure loss.
+    const unique = failedTestNames(result.out);
+    const fails = summaryCount(result.out, 'fail');
+    console.error(`\n✗ ${pkg} is red before any mutation (${fails ?? 'no'} failing). Fix that first — every verdict below would be borrowed from it.`);
     if (unique.length > 0) console.error(unique.map((n) => `    ✖ ${n}`).join('\n'));
     else console.error("    (no test name in the output — the suite failed outside node:test, e.g. in a guard script chained after it)");
-    process.exit(1);
+    return 1;
   }
-  console.log(`green, ${/^(?:# |ℹ )pass (\d+)$/m.exec(result.out)?.[1] ?? '?'} passing`);
+  console.log(`green, ${summaryCount(result.out, 'pass') ?? '?'} passing`);
   baselined.add(pkg);
+  return 0;
 }
 
-const survivors = [];
-for (const m of selected) {
-  const pkg = m.pkg ?? DEFAULT_PKG;
-  baseline(pkg);
-  const full = path.join(ROOT, m.file);
-  const original = readFileSync(full, 'utf8');
-  const edits = m.edits ?? [[m.find, m.replace]];
-  let mutated = original;
-  let stale = null;
-  for (const [find, replace] of edits) {
-    const occurrences = mutated.split(find).length - 1;
-    if (occurrences !== 1) {
-      stale = `matched ${occurrences} times, not 1`;
-      break;
-    }
-    mutated = mutated.replace(find, replace);
+/**
+ * How a kill was actually delivered. M122 (`M122-02`): a node:test file whose test awaits an event
+ * that never arrives drains the event loop, node:test cancels the rest of the file, and the run
+ * reports `# fail 0` / `# cancelled 9` while still exiting non-zero. A sweep scoring exit codes
+ * calls that a kill — and **no assertion ran**. The three cases are named apart here so that
+ * "killed" never has to be taken on trust.
+ */
+function killReason(out) {
+  const fails = summaryCount(out, 'fail');
+  if (fails !== undefined && fails > 0) return `${fails} failing`;
+  const cancelled = summaryCount(out, 'cancelled');
+  if (cancelled !== undefined && cancelled > 0) {
+    return `${cancelled} CANCELLED and 0 failing — the suite drained before asserting (M122-02); no assertion ran, so this is not the control it looks like`;
   }
-  if (stale) {
-    // Not a survivor and not a kill — the mutation did not apply, which is its own kind of silent
-    // pass. M97e's lesson: a probe that cannot run is not a probe that found nothing.
-    console.log(`⚠ ${m.id} (${m.milestone}) — target ${stale}; source has drifted. NOT RUN.`);
-    survivors.push({ ...m, verdict: 'stale' });
-    continue;
-  }
-  // M110 — revert the *side effects* too, not only the edit.
-  //
-  // `@tflw/lang`'s `pretest` runs `docs:gen`, which regenerates SPEC.md's matcher/generator/
-  // diagnostic tables from `spec-data.ts`. So the first mutation ever to target that manifest
-  // (`config-directive-list`) had the suite rewrite SPEC.md from the *mutated* array, and the
-  // revert below — which only knows about `m.file` — left the mutation's output sitting in a
-  // tracked file. Caught by reading the diff, one commit from shipping the exact defect the
-  // mutation exists to prove is fixed: a `TF022` row naming four config directives.
-  //
-  // Snapshotted rather than regenerated afterwards, because "run the generator again" assumes the
-  // generator is the only writer, and this list is meant to hold whatever a suite touches.
-  const sideEffects = SIDE_EFFECT_FILES.map((rel) => [path.join(ROOT, rel), readFileSync(path.join(ROOT, rel), 'utf8')]);
-  writeFileSync(full, mutated);
-  try {
-    const result = runSuite(pkg);
-    const fails = failCount(result.out);
-    if (result.timedOut) {
-      // Not a kill and not a survival — the suite never reached a verdict, so neither has this
-      // mutation. Counted against the run so a hang can never leave the sweep exiting 0.
-      console.log(`✗ TIMED OUT ${m.id} (${m.milestone}) — ${pkg}'s suite hung; no verdict on: ${m.what}`);
-      survivors.push({ ...m, verdict: 'timeout' });
-    } else if (result.green && m.equivalent) {
-      console.log(`· no-op     ${m.id} (${m.milestone}) — ${m.what}; survives because it changes nothing`);
-    } else if (result.green) {
-      console.log(`✗ SURVIVED  ${m.id} (${m.milestone}) — ${m.what}`);
-      survivors.push({ ...m, verdict: 'survived' });
-    } else if (m.equivalent) {
-      // The claim above was that this edit is behaviourally equivalent. A kill disproves it, and a
-      // disproved claim in a comment is worse than none — it reads as measured.
-      console.log(`✗ NOT A NO-OP  ${m.id} (${m.milestone}) — killed ${fails} test(s); its \`equivalent\` claim is wrong`);
-      survivors.push({ ...m, verdict: 'mislabelled' });
-    } else {
-      // M110: `# fail N` is node:test's summary, and not every workspace's `npm test` is only
-      // node:test — `@tflw/docs-site` chains a guard script after it, so a kill by that script
-      // leaves the summary reading `# fail 0`. Printing "killed 0 failing" would state a measured
-      // zero where the truth is "this suite does not count failures that way".
-      console.log(`✓ killed    ${m.id} (${m.milestone}) — ${fails > 0 ? `${fails} failing` : 'suite exited non-zero (a guard script, not a node:test assertion)'}`);
-    }
-  } finally {
-    writeFileSync(full, original);
-    for (const [abs, before] of sideEffects) if (readFileSync(abs, 'utf8') !== before) writeFileSync(abs, before);
-  }
+  // M110: not every workspace's `npm test` is only node:test — `@tflw/docs-site` chains a guard
+  // script after it, so a kill by that script leaves the summary reading `# fail 0`. Printing
+  // "killed 0 failing" would state a measured zero where the truth is "this suite does not count
+  // failures that way".
+  return 'suite exited non-zero (a guard script, not a node:test assertion)';
 }
 
-const timedOut = survivors.filter((s) => s.verdict === 'timeout').length;
-console.log(`\n${selected.length} mutation(s) run; ${survivors.filter((s) => s.verdict === 'survived').length} survived, ${survivors.filter((s) => s.verdict === 'stale').length} stale${timedOut > 0 ? `, ${timedOut} timed out` : ''}.`);
-if (!arg) {
-  console.log(`\n${UNRECONSTRUCTED.length} group(s) from the plan's 31 are NOT reconstructed here:`);
-  for (const [ms, what] of UNRECONSTRUCTED) console.log(`    ${ms}: ${what}`);
+function sweep(selected, scope) {
+  const survivors = [];
+  for (const m of selected) {
+    const pkg = m.pkg ?? DEFAULT_PKG;
+    const code = baseline(pkg);
+    if (code !== 0) return code;
+    const full = path.join(ROOT, m.file);
+    const original = readFileSync(full, 'utf8');
+    const edits = m.edits ?? [[m.find, m.replace]];
+    let mutated = original;
+    let stale = null;
+    for (const [find, replace] of edits) {
+      const occurrences = mutated.split(find).length - 1;
+      if (occurrences !== 1) {
+        stale = `matched ${occurrences} times, not 1`;
+        break;
+      }
+      mutated = mutated.replace(find, replace);
+    }
+    if (stale) {
+      // Not a survivor and not a kill — the mutation did not apply, which is its own kind of silent
+      // pass. M97e's lesson: a probe that cannot run is not a probe that found nothing.
+      console.log(`⚠ ${m.id} (${m.milestone}) — target ${stale}; source has drifted. NOT RUN.`);
+      survivors.push({ ...m, verdict: 'stale' });
+      continue;
+    }
+    // M110 — revert the *side effects* too, not only the edit.
+    //
+    // `@tflw/lang`'s `pretest` runs `docs:gen`, which regenerates SPEC.md's matcher/generator/
+    // diagnostic tables from `spec-data.ts`. So the first mutation ever to target that manifest
+    // (`config-directive-list`) had the suite rewrite SPEC.md from the *mutated* array, and the
+    // revert below — which only knows about `m.file` — left the mutation's output sitting in a
+    // tracked file. Caught by reading the diff, one commit from shipping the exact defect the
+    // mutation exists to prove is fixed: a `TF022` row naming four config directives.
+    //
+    // Snapshotted rather than regenerated afterwards, because "run the generator again" assumes the
+    // generator is the only writer, and this list is meant to hold whatever a suite touches.
+    const files = { [m.file]: original };
+    for (const rel of SIDE_EFFECT_FILES) files[rel] = readFileSync(path.join(ROOT, rel), 'utf8');
+
+    // M123 — the journal goes down BEFORE the source is touched, and every file whose original this
+    // run is holding goes into it, side effects included. A crash between here and the `finally`
+    // used to be unrecoverable; now the next run repairs it and says so.
+    if (!openJournal({ id: m.id, milestone: m.milestone, pid: process.pid, startedAt: new Date().toISOString(), files })) return 2;
+    writeFileSync(full, mutated);
+    try {
+      const result = runSuite(pkg);
+      if (result.timedOut) {
+        // Not a kill and not a survival — the suite never reached a verdict, so neither has this
+        // mutation. Counted against the run so a hang can never leave the sweep exiting 0.
+        console.log(`✗ TIMED OUT ${m.id} (${m.milestone}) — ${pkg}'s suite hung; no verdict on: ${m.what}`);
+        survivors.push({ ...m, verdict: 'timeout' });
+      } else if (result.green && m.equivalent) {
+        console.log(`· no-op     ${m.id} (${m.milestone}) — ${m.what}; survives because it changes nothing`);
+      } else if (result.green) {
+        console.log(`✗ SURVIVED  ${m.id} (${m.milestone}) — ${m.what}`);
+        survivors.push({ ...m, verdict: 'survived' });
+      } else if (m.equivalent) {
+        // The claim above was that this edit is behaviourally equivalent. A kill disproves it, and a
+        // disproved claim in a comment is worse than none — it reads as measured.
+        console.log(`✗ NOT A NO-OP  ${m.id} (${m.milestone}) — killed ${summaryCount(result.out, 'fail') ?? 0} test(s); its \`equivalent\` claim is wrong`);
+        survivors.push({ ...m, verdict: 'mislabelled' });
+      } else {
+        console.log(`✓ killed    ${m.id} (${m.milestone}) — ${killReason(result.out)}`);
+      }
+    } finally {
+      // D227 — restore, then read it back. A silent restore failure is the same defect this whole
+      // mechanism exists to prevent, reached from the inside.
+      const { problems } = applyJournal({ files });
+      if (problems.length > 0) {
+        console.error(`✗ could not put the source back after ${m.id}:`);
+        for (const p of problems) console.error(`    ${p}`);
+        console.error(`  The journal at ${journalPath()} is being left in place so the next run can retry.`);
+        // Deliberately not cleared: the journal is the only remaining record of the original.
+        inFlight = null;
+      } else {
+        closeJournal();
+      }
+    }
+  }
+
+  const timedOut = survivors.filter((s) => s.verdict === 'timeout').length;
+  console.log(`\n${selected.length} mutation(s) run; ${survivors.filter((s) => s.verdict === 'survived').length} survived, ${survivors.filter((s) => s.verdict === 'stale').length} stale${timedOut > 0 ? `, ${timedOut} timed out` : ''}.`);
+  if (!scope) {
+    console.log(`\n${UNRECONSTRUCTED.length} group(s) from the plan's 31 are NOT reconstructed here:`);
+    for (const [ms, what] of UNRECONSTRUCTED) console.log(`    ${ms}: ${what}`);
+  }
+  return survivors.length > 0 ? 1 : 0;
 }
-process.exit(survivors.length > 0 ? 1 : 0);
+
+function main(argv = process.argv) {
+  const problem = registryProblem();
+  if (problem) {
+    console.error(problem);
+    return 2;
+  }
+
+  const { error, list, scope } = parseArgs(argv);
+  if (error) {
+    console.error(error);
+    return 2;
+  }
+
+  const selected = MUTATIONS.filter((m) => !scope || m.id === scope || m.milestone === scope);
+  if (selected.length === 0) {
+    console.error(`no mutation matches "${scope}" — ids: ${MUTATIONS.map((m) => m.id).join(', ')}`);
+    return 2;
+  }
+
+  // The repair runs before everything, `--list` included: a stale journal means a source file on
+  // disk is still wrong, and there is no mode of this tool in which leaving it that way is right.
+  const repair = repairStaleJournal();
+  if (repair !== 0) return repair;
+
+  // `--list` applies nothing. It exists because `M118-03` was opened by someone typing exactly this
+  // and getting a sweep instead (D228).
+  if (list) {
+    for (const m of selected) console.log(`${m.id}\t${m.milestone}\t${m.pkg ?? DEFAULT_PKG}\t${m.file}\n    ${m.what}`);
+    console.log(`\n${selected.length} mutation(s) listed; no mutation was applied and no suite was run.`);
+    return 0;
+  }
+
+  // M123 (`M111-02`) — say out loud that tracked sources are about to be deliberately wrong. The
+  // row's worked example is a commit made during exactly this window: `M111`'s `1cdefdc` captured a
+  // mutated `cli.ts`, and the only tell was a `git status` whose diff ran the wrong way. The window
+  // cannot be removed — the suite has to run against the real tree — so what changes here is that
+  // it is announced, journalled, and refused by the root `npm test` while it is open.
+  console.log(`⚠ ${selected.length} mutation(s) will be applied to tracked sources in this worktree, one at a time.`);
+  console.log(`  Do not commit or stage from this tree until the run finishes; \`git status\` will show a modified`);
+  console.log(`  source file for as long as each suite takes, and that modification is not yours.\n`);
+
+  // D223 — Ctrl-C is the normal way to abandon a 20-minute sweep, so the common case self-repairs
+  // rather than waiting for the next run to notice the journal.
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      if (inFlight) {
+        const { restored, problems } = applyJournal(inFlight);
+        for (const rel of restored) console.log(`\n↺ ${sig} — restored ${rel} (\`${inFlight.id}\` was applied)`);
+        for (const p of problems) console.error(`\n✗ ${sig} — could not restore: ${p}; the journal at ${journalPath()} still holds the original`);
+        if (problems.length === 0) closeJournal();
+      }
+      process.exit(130);
+    });
+  }
+
+  return sweep(selected, scope);
+}
+
+// D224 — the `main` guard. `M122` reproduced `M118-03` by `import()`-ing this file to read
+// `MUTATIONS`; the import ran a sweep and left a deleted guard in `interpreter.ts`. The response at
+// the time was a rule written into the ledger header — *never `import()` this script* — which is a
+// sign next to a landmine, in a file the next session may not read. Importing it now runs nothing,
+// which is also what makes this file testable at all and what lets it be a mutation target of
+// itself (D226).
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exit(main());
+}

@@ -38,3 +38,9 @@ PLAN_*.md
 # the per-pass ledgers behind it, the freeze-surface record and the fresh-user friction log. These
 # are internal working notes — every row is an unfixed defect with a reproduction — and stay local.
 REVIEW_*.md
+
+# M123 — `scripts/mutate.mjs`'s crash journal, for the case where there is no `.git` to put it in
+# (a tarball or a vendored copy; the normal location is `<git-dir>/tflw-mutate-journal.json`, which
+# cannot be committed at all). It holds the pre-mutation contents of a tracked source and exists
+# only while a sweep is running or after one died — never something to commit.
+.tflw-mutate-journal.json
