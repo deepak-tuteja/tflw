@@ -73,7 +73,10 @@ test('`tflw lsp` speaks LSP over stdio: a raw Content-Length-framed `initialize`
     const capabilities = (response.result as { capabilities: Record<string, unknown> }).capabilities;
     assert.equal(capabilities.hoverProvider, true);
     assert.equal(capabilities.definitionProvider, true);
-    assert.equal(capabilities.renameProvider, true);
+    // M122/D219 — `{ prepareProvider: true }`, not a bare `true`. Asserted here as well as in
+    // `lsp-server`'s own protocol tests because this is the only test that reaches the capability
+    // through the real `tflw lsp` subprocess over real stdio, which is how an editor sees it.
+    assert.deepEqual(capabilities.renameProvider, { prepareProvider: true });
     assert.ok(capabilities.completionProvider);
     assert.ok(capabilities.signatureHelpProvider);
   } finally {

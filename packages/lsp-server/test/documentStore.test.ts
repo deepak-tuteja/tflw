@@ -267,3 +267,64 @@ test('analyze: an imported file open in another buffer is read from that buffer,
     assert.match(analysis!.diagnostics[0]!.message, /expects 2 arguments, got 1/);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// M122 / `B5-06` — a document with no path on disk (D214). The store's contract, in isolation from
+// the protocol tests that prove the same thing over the wire.
+// ---------------------------------------------------------------------------------------------
+
+test('open: a pathless buffer is a test document in no project, not a config and not a guess', async () => {
+  const store = new DocumentStore();
+  store.open('untitled:Untitled-1', undefined, 'test "ok"\n  api GET /health\n  expect status equals 200\n');
+  const info = store.get('untitled:Untitled-1');
+  // `classify` keys off the *filename* `tflw.config`, and there is no filename here. The language
+  // id VS Code routes to this server is the test dialect's, so that is what an unsaved buffer is.
+  assert.equal(info?.kind, 'test');
+  assert.equal(info?.absPath, undefined);
+  // No path means no directory to walk upwards from, so no project — and therefore none of the
+  // project's sessions or services, which is a real limit and not a bug (D215).
+  assert.equal(info?.root, undefined);
+});
+
+test('analyze: a pathless buffer parses and checks, and reports no baseDir to resolve against', async () => {
+  const store = new DocumentStore();
+  const uri = 'untitled:Untitled-1';
+  store.open(uri, undefined, 'test "ok" as ghost\n  api GET /health\n');
+  const analysis = await store.analyze(uri, undefined);
+
+  assert.ok(analysis, 'analyze returned undefined for a pathless buffer');
+  assert.ok(analysis!.program, 'a pathless buffer must still parse');
+  assert.equal(analysis!.baseDir, undefined);
+  assert.equal(analysis!.root, undefined);
+  // The in-file checker passes still run: an unknown session is still an unknown session.
+  assert.deepEqual(analysis!.diagnostics.map((d) => d.code), ['TF028']);
+});
+
+test('analyze: a pathless buffer leaves the filesystem-backed passes off rather than failing them', async () => {
+  // The measured reason `absPath` is `undefined` and not a synthetic path. `resolveMissingFiles`
+  // and `resolveImportedActions` both need somewhere to resolve `"./orders.tflw"` *from*; given a
+  // made-up directory they answer "does not exist" with total confidence. `checker.ts` already
+  // distinguishes `undefined` ("could not be read") from `[]` ("read, and empty") — the pathless
+  // case is the former, and falls into a branch that predates this row.
+  const store = new DocumentStore();
+  const uri = 'untitled:Untitled-1';
+  store.open(uri, undefined, 'import "./orders.tflw"\n\ntest "t"\n  api GET /health\n  expect status equals 200\n');
+  const analysis = await store.analyze(uri, undefined);
+  assert.deepEqual(analysis?.diagnostics.map((d) => d.code), []);
+});
+
+test('update + scheduleDiagnostics: a pathless buffer stays live after the open', async () => {
+  // Before M122 the open threw, so the document was never stored — and because both of these begin
+  // `if (!doc) return`, every later keystroke was a silent no-op too. The buffer was dead for the
+  // rest of the session, which is the "silently" in the row's title.
+  const store = new DocumentStore();
+  const uri = 'untitled:Untitled-1';
+  store.open(uri, undefined, 'test "ok" as ghost\n  api GET /health\n');
+  store.update(uri, 'test "ok" as stillGhost\n  api GET /health\n');
+
+  const published = await new Promise<readonly { code: string }[]>((resolve) => {
+    store.scheduleDiagnostics(uri, undefined, resolve);
+  });
+  assert.deepEqual(published.map((d) => d.code), ['TF028']);
+  assert.match((await store.analyze(uri, undefined))!.diagnostics[0]!.message, /stillGhost/);
+});

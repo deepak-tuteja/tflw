@@ -65,7 +65,10 @@ test('initialize: advertises capabilities for every LSP feature this server impl
   };
   assert.equal(result.capabilities.hoverProvider, true);
   assert.equal(result.capabilities.definitionProvider, true);
-  assert.equal(result.capabilities.renameProvider, true);
+  // M122/D219 — an object with `prepareProvider`, not a bare `true`: without the prepare step the
+  // client guesses the rename range with its own generic word pattern, which does not know tflw's
+  // identifier rule, and nothing can reject an invalid position before the rename box opens.
+  assert.deepEqual(result.capabilities.renameProvider, { prepareProvider: true });
   assert.ok(result.capabilities.completionProvider);
   assert.ok(result.capabilities.signatureHelpProvider);
   assert.ok(result.capabilities.semanticTokensProvider);
@@ -76,9 +79,9 @@ test('diagnostics: opening a file with an unknown session publishes a TF028 diag
   const { client, uri } = await connectServer();
   const text = `test "ok" as nope\n  api GET /health\n`;
 
-  const diagnosticsPromise = new Promise<{ diagnostics: { code: string }[] }>((resolve) => {
-    client.onNotification('textDocument/publishDiagnostics', (params) => resolve(params as { diagnostics: { code: string }[] }));
-  });
+  // Via `nextDiagnostics` (below) rather than a bare promise: an unbounded wait here does not fail
+  // this test, it cancels every test after it in the file (M122, `M122-02`).
+  const diagnosticsPromise = nextDiagnostics(client, 'a file with an unknown session');
   openDocument(client, uri, text);
   const { diagnostics } = await diagnosticsPromise;
 
@@ -183,5 +186,213 @@ test('semanticTokens/full: returns a well-formed, non-empty token stream for a r
   // 5 ints per token (deltaLine, deltaStart, length, tokenType, tokenModifiers) — never a partial group.
   assert.equal(result!.data.length % 5, 0);
   assert.ok(result!.data.length > 0);
+  client.dispose();
+});
+
+// ---------------------------------------------------------------------------------------------
+// M122 — `B5-06` (an unsaved buffer silently gets no language support at all).
+//
+// VS Code routes an unsaved document here as `untitled:Untitled-1`, because
+// `packages/vscode/src/extension.ts` registers `{ language: 'tflw' }` with no `scheme`. Before
+// M122, `onDidOpen` called `fileURLToPath` on that URI unconditionally and it threw
+// `ERR_INVALID_URL_SCHEME` — inside a *notification* handler, so vscode-jsonrpc swallowed the throw
+// and the client saw nothing at all. These tests are written against the wire, not against
+// `DocumentStore`, because that swallowing is the whole defect: any test that called the store
+// directly would have passed on the pre-fix code.
+// ---------------------------------------------------------------------------------------------
+
+const UNTITLED = 'untitled:Untitled-1';
+
+/** Waits for the next `publishDiagnostics`, **with a live timer**, and that detail is the point.
+ *
+ * A bare `new Promise((resolve) => client.onNotification(…))` is the obvious way to write this and
+ * it makes the suite lie. When the server never analyzes the document, nothing keeps the event loop
+ * alive, node:test resolves the loop and cancels every remaining test in the file with
+ * `failureType: 'cancelledByParent'` — reported as `# fail 0`, `# cancelled 9`, with the process
+ * still exiting 1. The run is red, no assertion ever ran, and tests for an unrelated row go red
+ * alongside it. Measured on M122's own `untitled-uri-back-to-filepath` mutation: nine `not ok`
+ * lines, zero failures, and four of the nine belonged to `B5-07`.
+ *
+ * The pending `setTimeout` holds the loop open long enough for the rejection to be *this* test's,
+ * with a message that says what did not happen (`M119`: an instrument can be wrong in a direction
+ * that looks like a result). */
+function nextDiagnostics(client: MessageConnection, whatFor: string): Promise<{ uri: string; diagnostics: { code: string }[] }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`no publishDiagnostics arrived for ${whatFor} within 5s — the server never analyzed the document`)), 5_000);
+    client.onNotification('textDocument/publishDiagnostics', (params) => {
+      clearTimeout(timer);
+      resolve(params as { uri: string; diagnostics: { code: string }[] });
+    });
+  });
+}
+
+test('B5-06: an unsaved (untitled:) buffer is analyzed and gets diagnostics, not silence', { timeout: 15_000 }, async () => {
+  const { client } = await connectServer();
+  const text = `test "ok" as nope\n  api GET /health\n`;
+
+  const published = nextDiagnostics(client, 'the untitled buffer');
+  openDocument(client, UNTITLED, text);
+  const params = await published;
+
+  assert.equal(params.uri, UNTITLED);
+  assert.equal(params.diagnostics.length, 1);
+  assert.equal(params.diagnostics[0]!.code, 'TF028');
+  client.dispose();
+});
+
+test('B5-06: an unsaved buffer answers hover and semantic tokens like any other document', async () => {
+  const { client } = await connectServer();
+  const text = `test "ok"\n  api GET /health\n  expect status equals 200\n`;
+  openDocument(client, UNTITLED, text);
+
+  const hover = (await client.sendRequest('textDocument/hover', {
+    textDocument: { uri: UNTITLED },
+    position: positionAt(text, text.indexOf('equals') + 1),
+  })) as { contents: { value: string } } | null;
+  assert.ok(hover, 'hover returned null for an unsaved buffer');
+  assert.match(hover!.contents.value, /equals/);
+
+  const tokens = (await client.sendRequest('textDocument/semanticTokens/full', { textDocument: { uri: UNTITLED } })) as { data: number[] } | null;
+  assert.ok(tokens, 'semanticTokens returned null for an unsaved buffer');
+  assert.ok(tokens!.data.length > 0);
+  client.dispose();
+});
+
+test('B5-06: an unsaved buffer keeps answering after an edit — the store does not go permanently deaf', { timeout: 15_000 }, async () => {
+  // The half of this row that outlived the initial failure. `store.update` and
+  // `store.scheduleDiagnostics` both begin `if (!doc) return`, so a document that never got opened
+  // stayed dead for the life of the session: every subsequent keystroke was a silent no-op too.
+  const { client } = await connectServer();
+  openDocument(client, UNTITLED, `test "ok" as nope\n  api GET /health\n`);
+  await nextDiagnostics(client, 'the initial open of the untitled buffer');
+
+  const afterEdit = nextDiagnostics(client, 'the untitled buffer after an edit');
+  client.sendNotification('textDocument/didChange', {
+    textDocument: { uri: UNTITLED, version: 2 },
+    contentChanges: [{ text: `test "ok" as alsoNope\n  api GET /health\n` }],
+  });
+  const params = await afterEdit;
+
+  assert.equal(params.uri, UNTITLED);
+  assert.equal(params.diagnostics[0]!.code, 'TF028');
+  client.dispose();
+});
+
+test('B5-06: an in-file rename works in an unsaved buffer', async () => {
+  const { client } = await connectServer();
+  const text = `test "a"\n  let token = unique("t")\n  api GET /health\n  let copy = token\n`;
+  openDocument(client, UNTITLED, text);
+
+  const result = (await client.sendRequest('textDocument/rename', {
+    textDocument: { uri: UNTITLED },
+    position: positionAt(text, text.indexOf('token') + 1),
+    newName: 'authToken',
+  })) as { changes: Record<string, { newText: string }[]> } | null;
+
+  assert.ok(result);
+  assert.equal(result!.changes[UNTITLED]?.length, 2);
+  client.dispose();
+});
+
+test('B5-06: an unresolvable import in an unsaved buffer is not reported missing (D214)', { timeout: 15_000 }, async () => {
+  // The reason `absPath` is `undefined` rather than a synthetic stand-in path. With a made-up path,
+  // `resolveMissingFiles` would stat a directory that does not exist and squiggle every `import` in
+  // a scratch buffer red. The `file:` control proves the pass still fires where a path does exist —
+  // without it, this test would also pass if `TF043` had simply been deleted.
+  const { client, uri: fileUri } = await connectServer();
+  const text = `import "./nope.tflw"\n\ntest "a"\n  api GET /health\n  expect status equals 200\n`;
+
+  const untitledDiags = nextDiagnostics(client, 'the untitled buffer with an import');
+  openDocument(client, UNTITLED, text);
+  assert.deepEqual((await untitledDiags).diagnostics.map((d) => d.code), []);
+
+  const fileDiags = nextDiagnostics(client, 'the file: control');
+  openDocument(client, fileUri, text);
+  assert.deepEqual((await fileDiags).diagnostics.map((d) => d.code), ['TF043']);
+  client.dispose();
+});
+
+// ---------------------------------------------------------------------------------------------
+// M122 — `B5-07` (LSP rename accepts any string, including the empty one).
+// ---------------------------------------------------------------------------------------------
+
+const RENAME_FIXTURE = `test "a"\n  let token = unique("t")\n  api GET /health\n  let copy = token\n`;
+
+async function renameTo(client: MessageConnection, uri: string, newName: string): Promise<{ ok: true; edits: { newText: string }[] } | { ok: false; message: string }> {
+  try {
+    const result = (await client.sendRequest('textDocument/rename', {
+      textDocument: { uri },
+      position: positionAt(RENAME_FIXTURE, RENAME_FIXTURE.indexOf('token') + 1),
+      newName,
+    })) as { changes: Record<string, { newText: string }[]> };
+    return { ok: true, edits: result.changes[uri] ?? [] };
+  } catch (e) {
+    return { ok: false, message: (e as { message: string }).message };
+  }
+}
+
+test('B5-07: an unusable newName is refused with an explanatory error and edits nothing', async () => {
+  const { client, uri } = await connectServer();
+  openDocument(client, uri, RENAME_FIXTURE);
+
+  // Every one of these used to come back as two edits carrying the string verbatim, leaving a file
+  // that no longer parses — and for a `crossFile` symbol, every file in the project along with it.
+  // `'  ok  '` is the one that does not look like the others. It lexes to a single clean `ident`
+  // with no diagnostics, because the lexer reads leading whitespace as indentation and drops
+  // trailing whitespace — so a validator that only asked "exactly one ident token?" would accept it
+  // and splice the padding into every span, including interpolations (`{orderId}` → `{  ok  }`).
+  for (const newName of ['', '   ', '123abc', 'has space', 'has-dash', 'a\nb', '{{x}}', '"q"', '  ok  ', 'ok\t']) {
+    const outcome = await renameTo(client, uri, newName);
+    assert.equal(outcome.ok, false, `rename accepted ${JSON.stringify(newName)}`);
+    assert.match((outcome as { message: string }).message, /a name (cannot be empty|starts with a letter)/);
+  }
+  client.dispose();
+});
+
+test('B5-07: a contextual keyword is a legal name and is still accepted (D217)', async () => {
+  // The obvious companion rule — reject keywords — would be wrong. tflw's keywords are contextual,
+  // the lexer emits `ident` for all of them, and `let status = unique("t")` checks clean, so a
+  // blocklist would refuse renames the language itself accepts.
+  const { client, uri } = await connectServer();
+  openDocument(client, uri, RENAME_FIXTURE);
+
+  for (const newName of ['let', 'status', 'expect', 'ok_name', '_x']) {
+    const outcome = await renameTo(client, uri, newName);
+    assert.equal(outcome.ok, true, `rename refused ${JSON.stringify(newName)}`);
+    assert.equal((outcome as { edits: { newText: string }[] }).edits.length, 2);
+    assert.ok((outcome as { edits: { newText: string }[] }).edits.every((e) => e.newText === newName));
+  }
+  client.dispose();
+});
+
+test('B5-07: prepareRename reports the occurrence under the cursor and its current name', async () => {
+  const { client, uri } = await connectServer();
+  openDocument(client, uri, RENAME_FIXTURE);
+
+  // The *second* occurrence (`let copy = token`), not the definition — the editor pre-selects the
+  // range it is given, so answering with the symbol's first span would move the user's selection.
+  const offset = RENAME_FIXTURE.lastIndexOf('token') + 1;
+  const result = (await client.sendRequest('textDocument/prepareRename', {
+    textDocument: { uri },
+    position: positionAt(RENAME_FIXTURE, offset),
+  })) as { range: { start: LspPosition; end: LspPosition }; placeholder: string } | null;
+
+  assert.ok(result, 'prepareRename was Unhandled before M122');
+  assert.equal(result!.placeholder, 'token');
+  assert.equal(offsetAt(RENAME_FIXTURE, result!.range.start), RENAME_FIXTURE.lastIndexOf('token'));
+  assert.equal(RENAME_FIXTURE.slice(offsetAt(RENAME_FIXTURE, result!.range.start), offsetAt(RENAME_FIXTURE, result!.range.end)), 'token');
+  client.dispose();
+});
+
+test('B5-07: prepareRename returns null where nothing is renameable', async () => {
+  const { client, uri } = await connectServer();
+  openDocument(client, uri, RENAME_FIXTURE);
+
+  const result = await client.sendRequest('textDocument/prepareRename', {
+    textDocument: { uri },
+    position: positionAt(RENAME_FIXTURE, RENAME_FIXTURE.indexOf('"a"') + 1),
+  });
+
+  assert.equal(result, null);
   client.dispose();
 });
