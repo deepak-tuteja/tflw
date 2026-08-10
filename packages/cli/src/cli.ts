@@ -1051,8 +1051,12 @@ async function loadAndValidate(
   // And `collectConfigFileReferences` brings `cert`/`key` and a `session` body's own paths under
   // `TF043`, resolved against the *config's* directory rather than any test file's.
   const envBaseUrls = { envName: resolved.envName, api: resolved.apiBaseUrl !== null, web: resolved.webBaseUrl !== null };
+  // M124/D236 — `TF055`'s config half, resolved here for the same reason and read the same way: one
+  // number off the env that was just selected, not the whole `timeouts` record, because the rule
+  // compares against exactly one budget.
+  const envTimeouts = { envName: resolved.envName, wait: resolved.timeouts.wait };
   const configEnvDiags = [
-    ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls),
+    ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
     ...(await checkConfigFiles(parsedConfig.config, cwd)),
   ];
@@ -1108,6 +1112,9 @@ async function loadAndValidate(
       // only rule here that can be wrong about a *whole suite* at once, which is why it is
       // derived from the resolved env rather than re-read per file.
       envBaseUrls,
+      // M124/D236 — `TF055`. Derived from the resolved env, once, like `envBaseUrls` above: the
+      // hold window is written per step but the budget it has to fit inside is a whole-suite fact.
+      envTimeouts,
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's

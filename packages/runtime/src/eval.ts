@@ -2,7 +2,7 @@
 // register for redaction), variable/capture references, JSON body shapes, arithmetic/date-math
 // expressions, and the `unique`/`random` generator family (M2, SPEC §7).
 
-import { parseStringParts, type BinaryOp, type DateOffsetUnit, type PathSegment, type StringPart, type Value } from '@tflw/lang';
+import { isDecodableBase64, isDecodableHex, isDecodablePercentEncoding, parseStringParts, type BinaryOp, type DateOffsetUnit, type PathSegment, type StringPart, type Value } from '@tflw/lang';
 import type { Redactor } from './redact.js';
 import { subSeed, mulberry32 } from './seed.js';
 import type { CookieJar } from './cookieJar.js';
@@ -444,24 +444,24 @@ function uniqueUuid(counter: number, runSeed: number): string {
 
 // ---- transforms: base64 / hex / url encode/decode (decision 98) -----------
 
-const HEX_RE = /^[0-9a-fA-F]*$/;
-const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
-
+// The shape tests come from `@tflw/lang` (M124, D233) — `TF054` predicts these three throws, and a
+// second copy of "what counts as valid hex" is exactly the drift that would make the prediction
+// wrong on the inputs users actually hit. The *messages* stay here, where they fire.
 function applyTransform(kind: 'base64' | 'hex' | 'url', direction: 'encode' | 'decode', input: string): string {
   if (kind === 'url') {
-    try {
-      return direction === 'encode' ? encodeURIComponent(input) : decodeURIComponent(input);
-    } catch {
+    if (direction === 'encode') return encodeURIComponent(input);
+    if (!isDecodablePercentEncoding(input)) {
       throw new RuntimeError(`url decode(...): "${input}" is not validly percent-encoded`);
     }
+    return decodeURIComponent(input);
   }
   if (direction === 'encode') return Buffer.from(input, 'utf8').toString(kind);
   // `Buffer.from(..., 'hex'|'base64')` silently ignores invalid characters instead of throwing,
   // so malformed input must be rejected with an explicit shape check before decoding.
-  if (kind === 'hex' && (!HEX_RE.test(input) || input.length % 2 !== 0)) {
+  if (kind === 'hex' && !isDecodableHex(input)) {
     throw new RuntimeError(`hex decode(...): "${input}" is not valid hex`);
   }
-  if (kind === 'base64' && (!BASE64_RE.test(input) || input.length % 4 !== 0)) {
+  if (kind === 'base64' && !isDecodableBase64(input)) {
     throw new RuntimeError(`base64 decode(...): "${input}" is not valid base64`);
   }
   return Buffer.from(input, kind).toString('utf8');

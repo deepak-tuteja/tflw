@@ -48,13 +48,20 @@ export {
   checkBaseUrls,
   checkSnapshotMasks,
   checkCapturableSubjects,
+  checkLiteralOperands,
+  checkHoldWindows,
   type EnvBaseUrls,
+  type EnvTimeouts,
   collectFileReferences,
   collectConfigFileReferences,
   fileReferenceDrift,
   type FileReference,
 } from './checker.js';
 export { hostMatchesAllowPattern } from './allowHostsPattern.js';
+// M124/D233 — the operand tests `TF054` and the runtime's own `throw`s share. Exported because
+// `@tflw/runtime` is the other caller: `eval.ts`'s `applyTransform` imports these rather than
+// keeping a second copy of what counts as decodable.
+export { isDecodable, isDecodableHex, isDecodableBase64, isDecodablePercentEncoding, regexCompiles, regexCompileError } from './literalValidity.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
 export { getCompletionContext } from './completion.js';
 export { collectSemanticTokens, type SemanticToken, type SemanticTokenType } from './semanticTokens.js';

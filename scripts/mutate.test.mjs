@@ -318,7 +318,12 @@ test('a sweep started from inside a node:test process still measures the suite (
       env: withJournal(file, { NODE_TEST_CONTEXT: 'child-v8' }),
     });
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /baseline @tflw\/lang … green, 925 passing/);
+    // `\d+`, not the literal count. M124 added 44 tests to `@tflw/lang` and this line went red for
+    // a reason unrelated to anything it proves — the property is that a *number* arrives at all,
+    // since the defect's signature is `green, ? passing` (asserted below) rather than a wrong one.
+    // Pinning the live headcount here makes every milestone that adds a lang test edit an
+    // instrument test, and `verify-test-counts.mjs` is already the place that owns that number.
+    assert.match(r.stdout, /baseline @tflw\/lang … green, \d+ passing/);
     assert.match(r.stdout, /✓ killed {4}bom-col \(m98d\) — 1 failing/);
     assert.doesNotMatch(r.stdout, /SURVIVED/);
     assert.doesNotMatch(r.stdout, /\? passing/);

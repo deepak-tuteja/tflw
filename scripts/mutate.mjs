@@ -934,6 +934,65 @@ const REGISTRY = [
     find: '    const span = found.result.spans.find((s) => spanContains(s, found.offset));',
     replace: '    const span = found.result.spans[0];',
   },
+  // M124 (D239) — one per rule, and every one of them aimed at a *false positive* rather than a
+  // miss. That is the asymmetry this milestone runs on: `TF054`/`TF055`/`TF056` are
+  // `'static-if-literal'` rules, so the way they fail is by deciding something they cannot know and
+  // reporting an error on a program that runs. A mutation that deletes a rule is caught by any test
+  // at all; these each leave the rule visibly present and quietly wrong.
+  {
+    id: 'literal-operand-reads-interpolated-text',
+    milestone: 'm124',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`literalText` returns an interpolated `StringLit`\'s raw text, so `hex decode("{token}")` is checked as though `{token}` were hex digits — D237 inverted, and a `TF054` error on a program that decodes fine at run time (D137 clause 1)',
+    find: '  if (value.type !== \'StringLit\') return null;\n  if (value.parts.some((part) => part.kind !== \'text\')) return null;\n  return value.value;',
+    replace: '  if (value.type !== \'StringLit\') return null;\n  return value.value;',
+  },
+  {
+    id: 'random-range-rejects-equal-bounds',
+    milestone: 'm124',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`TF054` reports `random number 3 to 3`, a legal one-element range the runtime accepts — the checker inventing a rule instead of predicting one, which is `A4-05`\'s shape and passes every test that only checks the error case',
+    find: '  if (from === null || to === null || to.n >= from.n) return;',
+    replace: '  if (from === null || to === null || to.n > from.n) return;',
+  },
+  {
+    id: 'decode-test-rederived-in-the-checker',
+    milestone: 'm124',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the checker stops importing the runtime\'s own decode test and uses a plausible character-class regex instead — which accepts the odd-length `hex decode("abc")` and the URL-safe `base64 decode("ab-_")` that `applyTransform` refuses. The exact drift D233 hoisted `literalValidity.ts` to make impossible',
+    find: '  if (input === null || isDecodable(node.kind, input)) return;',
+    replace: '  if (input === null || /^[A-Za-z0-9+/_=-]*$/.test(input)) return;',
+  },
+  {
+    id: 'hold-window-invents-a-budget',
+    milestone: 'm124',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`checkHoldWindows` falls back to the documented 30s default when the caller resolved no env, reading `undefined` as an answer — the `undefined`-vs-present doctrine inverted, and *usually right*, which is what would let it ship: it only misreports in a workspace whose config raises `timeout wait`',
+    find: '  if (!opts.envTimeouts) return diags;',
+    replace: "  const env = opts.envTimeouts ?? { envName: 'local', wait: 30_000 };\n  if (!env) return diags;",
+  },
+  {
+    id: 'hold-window-is-an-error',
+    milestone: 'm124',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`TF055` becomes an error, so a suite whose CI env legitimately raises `timeout wait` cannot run at all — D147 shipped a third time, after `A4-05` and the `cert` warning M116 had to fix',
+    find: "          code: Codes.HOLD_EXCEEDS_WAIT_TIMEOUT,\n          severity: 'warning',",
+    replace: "          code: Codes.HOLD_EXCEEDS_WAIT_TIMEOUT,\n          severity: 'error',",
+  },
+  {
+    id: 'data-table-extension-is-case-sensitive',
+    milestone: 'm124',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`TF056` compares the extension without lowercasing, so `with each from "./ROWS.CSV"` is rejected — a file `loadTableRows` reads without complaint, since it lowercases first. The checker and the loader disagreeing about the same path',
+    find: '  const ext = dot > slash + 1 ? path.slice(dot).toLowerCase() : \'\';',
+    replace: '  const ext = dot > slash + 1 ? path.slice(dot) : \'\';',
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than

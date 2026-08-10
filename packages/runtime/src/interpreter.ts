@@ -3424,7 +3424,11 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
   // A hold window at least as long as the poll budget can never pass — the condition would have to
   // stay true past the deadline that ends the step. That is a written-wrong test, not a slow app,
   // and it would otherwise surface as an ordinary timeout that says nothing about the real cause.
-  // The parser cannot catch it: `timeout wait` comes from config and can differ per run.
+  // The *parser* cannot catch it — `timeout wait` comes from config and is not in the file. The
+  // **checker** can and now does (M124, `TF055`), through the resolved-by-the-caller channel M116
+  // built for `TF051`; this throw is the backstop for a run whose config the checker was never
+  // given. It is a warning there and a hard error here on purpose (D147): the checker predicts
+  // against one env, and a suite whose CI env raises `timeout wait` is correct.
   if (holdMs !== null && holdMs >= config.timeouts.wait) {
     throw new RuntimeError(
       `\`for ${holdMs}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${config.timeouts.wait}ms), so the hold window has to be shorter than it. Raise \`timeout wait\` in tflw.config, or shorten the hold.`,
