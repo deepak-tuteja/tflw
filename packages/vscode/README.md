@@ -24,6 +24,15 @@ test "a customer can check out"
 - **Completion, hover, signature help and rename**, plus **go-to-definition** that follows a
   `capture`/`let`/parameter binding to where it came from, a `session` reference into `tflw.config`,
   and an `action` call into the file that `import`s or `use`s it.
+- **Unsaved buffers work too.** A new, never-saved tab gets highlighting, diagnostics, hover,
+  completion, signature help and in-file rename. What it cannot get is anything that needs a
+  location on disk — the `session` and service names declared in your `tflw.config`, `import`
+  resolution, and go-to-definition or rename *across* files — because a file with no path has
+  nothing to resolve `./shared/orders.tflw` against. Save it into your project and those light up.
+- **Rename checks the name.** A replacement has to be a name the language accepts — starting with a
+  letter or `_`, continuing with letters, digits or `_` — and you get told why if it isn't, instead
+  of a rename that silently leaves the file unparseable. tflw's keywords are contextual, so
+  `status`, `let` and `expect` are all legal variable names and are not refused.
 - **Run CodeLenses** above every `test` and at the top of every file: *Run this test* and *Run all
   tests in this file*, which shell out to your project's own `tflw` binary.
 - **Snippets** for the shapes worth not retyping: a `test` skeleton, an `expect`, a `session`, the

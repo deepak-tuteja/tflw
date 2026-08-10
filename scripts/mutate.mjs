@@ -87,6 +87,7 @@ const DIAG = 'packages/lang/src/diagnostic.ts';
 const INTERP = 'packages/runtime/src/interpreter.ts';
 const CHECKER = 'packages/lang/src/checker.ts';
 const SPEC_DATA = 'packages/lang/src/spec-data.ts';
+const LSP_SERVER = 'packages/lsp-server/src/server.ts';
 
 /** Tracked files a suite *rewrites as a side effect of running*, which therefore have to be
  *  restored alongside the mutated file. SPEC.md is one: `@tflw/lang`'s `pretest` regenerates its
@@ -844,6 +845,8 @@ const MUTATIONS = [
     what: 'the unnamed arm is removed for every kind, not just `text`, so an icon-only button with no accessible name becomes unsuggestable — the exact case the arm exists for',
     find: '  const unnamed = UNNAMED_IS_STILL_A_CANDIDATE[kind] ? raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 })) : [];',
     replace: '  const unnamed: { suggestion: string; score: number }[] = [];',
+  },
+  {
     id: 'open-model-back-to-fetch',
     milestone: 'm121',
     pkg: '@tflw/runtime',
@@ -870,6 +873,56 @@ const MUTATIONS = [
     find: 'const MAX_SOCKETS = Infinity;',
     replace: 'const MAX_SOCKETS = 50;',
   },
+  {
+    id: 'untitled-uri-back-to-filepath',
+    milestone: 'm122',
+    pkg: '@tflw/lsp-server',
+    file: LSP_SERVER,
+    what: "`B5-06` restored verbatim: every document URI is assumed to be a path again, so an unsaved `untitled:` buffer throws `ERR_INVALID_URL_SCHEME` inside `onDidOpen`. Kept for fidelity, but read its kill with care — the uncaught throw drains the event loop, so node:test **cancels** the rest of the file (`failureType: 'cancelledByParent'`, reported as `# fail 0` with the process still exiting 1) instead of failing anything. Nine `not ok` lines, zero assertions run, four of them belonging to `B5-07`. `untitled-buffer-silently-skipped` is the sibling that pins the behaviour",
+    find: "  return uri.startsWith('file:') ? fileURLToPath(uri) : undefined;",
+    replace: '  return fileURLToPath(uri);',
+  },
+  {
+    id: 'untitled-buffer-silently-skipped',
+    milestone: 'm122',
+    pkg: '@tflw/lsp-server',
+    file: LSP_SERVER,
+    // This is what the *user* saw before M122, and it is the version that proves the tests work.
+    // The throw above was swallowed by vscode-jsonrpc, so in a real editor there was no crash and
+    // no error — just a buffer that answered nothing, forever. Reproducing that observable
+    // behaviour (rather than the explosion) is what makes the kill attributable: 5 failures, 0
+    // cancellations, each B5-06 test red on its own message, and B5-07's four still green.
+    what: "the observable half of `B5-06`: a non-file URI is skipped instead of throwing, so an unsaved buffer is never stored and answers nothing for the life of the session — silently, exactly as it did in a real editor, where vscode-jsonrpc swallowed the throw. The mutation that proves the B5-06 tests fail *on their assertions* rather than on a drained event loop",
+    find: '    store.open(e.document.uri, uriToPath(e.document.uri), e.document.getText());\n    void publishDiagnostics(e.document.uri);',
+    replace: '    const p = uriToPath(e.document.uri);\n    if (p === undefined) return;\n    store.open(e.document.uri, p, e.document.getText());\n    void publishDiagnostics(e.document.uri);',
+  },
+  {
+    id: 'pathless-buffer-gets-a-synthetic-path',
+    milestone: 'm122',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/workspace/documentStore.ts',
+    what: 'the over-correction D214 rejects — a pathless buffer is handed a made-up path instead of `undefined`, which is the obvious way to make the crash go away without touching anything else. It is worse than the crash it fixes: `resolveMissingFiles` then stats a directory that does not exist and answers confidently, so every `import "./x.tflw"` in an unsaved scratch file is squiggled `TF043`. Killed by the pathless-import test, whose `file:` control is what stops that test passing for the wrong reason (a deleted `TF043` pass)',
+    find: '    const missingFiles = doc.absPath === undefined ? undefined : await resolveMissingFiles(doc.absPath, parsed.program, async (absPath) => {',
+    replace: "    const missingFiles = await resolveMissingFiles(doc.absPath ?? '/untitled/Untitled-1', parsed.program, async (absPath) => {",
+  },
+  {
+    id: 'rename-name-unvalidated',
+    milestone: 'm122',
+    pkg: '@tflw/lsp-server',
+    file: LSP_SERVER,
+    what: "`B5-07` restored verbatim: `newName` is spliced into every span with no check, so an empty rename box leaves the file unparseable — and for a `crossFile` symbol, every file in the project with it",
+    find: '    if (problem) return new ResponseError(LSPErrorCodes.RequestFailed, problem);',
+    replace: '',
+  },
+  {
+    id: 'preparerename-answers-the-first-span',
+    milestone: 'm122',
+    pkg: '@tflw/lsp-server',
+    file: LSP_SERVER,
+    what: "`prepareRename` reports the symbol's first occurrence rather than the one under the cursor, so renaming the second use of a variable silently moves the editor's selection to the definition. Survives any test that renames the *first* occurrence, which is the natural way to write one — the `prepareRename` test deliberately uses the last",
+    find: '    const span = found.result.spans.find((s) => spanContains(s, found.offset));',
+    replace: '    const span = found.result.spans[0];',
+  },
 ];
 
 // Named, not silently omitted. Each is described in the plan at a granularity that admits more than
@@ -883,6 +936,29 @@ const UNRECONSTRUCTED = [
 ];
 
 // ---------------------------------------------------------------------------
+
+// M122 (`M122-01`). `MUTATIONS` silently lost an entry between `M120` and `M121`: a missing
+// `},\n  {` merged two object literals into one, so `M121`'s `id`, `file`, `find` and `replace`
+// overwrote `M120`'s and `unnamed-arm-dropped-for-every-kind` — the over-correction control for
+// `B4-08`'s fix — stopped existing. Every run since was green, because **a mutation that is not in
+// the array cannot survive**. Scoping made it invisible rather than obvious: the surviving object
+// carried `milestone: 'm121'`, so even `M114`'s run-it-unscoped rule showed no gap, and the count
+// printed at the end of a run counts what was built, never what was written.
+//
+// The array cannot catch this from the inside — by the time it is a value the duplicate keys are
+// already collapsed. So the check reads this file's own source and compares `id:` keys *written*
+// against objects *built*. Same shape as `verify-test-counts.mjs`, for the same reason: an
+// instrument has to count what it ran against what exists, because "nothing went red" is not a
+// result (`M119`).
+const idKeysWritten = (readFileSync(fileURLToPath(import.meta.url), 'utf8').match(/^ {4}id: '/gm) ?? []).length;
+if (idKeysWritten !== MUTATIONS.length) {
+  console.error(
+    `mutate.mjs is malformed: ${idKeysWritten} \`id:\` keys are written in this file but ${MUTATIONS.length} ` +
+      `mutation objects were built. A missing \`},\` between two entries merges them, and the earlier ` +
+      `mutation stops existing without any run going red.`,
+  );
+  process.exit(2);
+}
 
 const arg = process.argv[2];
 const selected = MUTATIONS.filter((m) => !arg || m.id === arg || m.milestone === arg);

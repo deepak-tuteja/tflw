@@ -64,6 +64,11 @@ test('activate constructs and starts a LanguageClient scoped to the resolved pro
   assert.deepEqual((client.serverOptions as { args: string[] }).args, ['lsp']);
   assert.equal((client.serverOptions as { transport: unknown }).transport, lcMock.TransportKind.stdio);
   assert.equal((client.serverOptions as { options: { cwd: string } }).options.cwd, root);
+  // The absence of a `scheme` is load-bearing, not an omission (M122, `B5-06`, D213). Without one
+  // this selector also matches `untitled:` buffers, which is what routes an unsaved tab to the
+  // server at all. Adding `scheme: 'file'` would compile, read as a tidy-up, and silently take
+  // language support away from every new scratch file — the exact state `B5-06` describes, just
+  // reached deliberately. The server handles pathless documents; this stays as it is.
   assert.deepEqual((client.clientOptions as { documentSelector: unknown }).documentSelector, [{ language: 'tflw' }]);
   assert.equal(client.started, true);
 });

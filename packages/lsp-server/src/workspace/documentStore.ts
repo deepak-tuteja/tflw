@@ -36,7 +36,13 @@ import { loadProjectConfig } from './configResolution.js';
 export type DocumentKind = 'test' | 'config';
 
 interface OpenDoc {
-  absPath: string;
+  /** `undefined` for a buffer that has no path on disk — an unsaved `untitled:` document (M122,
+   * `B5-06`, D214). Deliberately not a synthetic stand-in path: this field feeds `findProjectRoot`,
+   * `resolveImportedActions` and `resolveMissingFiles`, all of which would then answer confidently
+   * about a directory that does not exist — every `import "./x.tflw"` in a scratch buffer coming
+   * back `TF043 — file does not exist`. Absent is a fact those passes already know how to handle;
+   * a wrong path is not. */
+  absPath: string | undefined;
   kind: DocumentKind;
   text: string;
   readonly root: string | undefined;
@@ -49,20 +55,29 @@ export interface DocumentAnalysis {
   readonly program?: Program;
   readonly config?: ConfigFile;
   readonly root?: string;
-  readonly baseDir: string;
+  /** Absent for a pathless buffer (D214) — nothing relative can be resolved against it. */
+  readonly baseDir?: string;
 }
 
 const DEBOUNCE_MS = 200;
 
-function classify(absPath: string): DocumentKind {
-  return basename(absPath) === 'tflw.config' ? 'config' : 'test';
+/** A pathless buffer is always a test document: `tflw.config` is recognised by filename, and an
+ * unsaved buffer has no filename to recognise. The `tflw` language id VS Code routes here is the
+ * test dialect's, so this is what the author is writing. */
+function classify(absPath: string | undefined): DocumentKind {
+  return absPath !== undefined && basename(absPath) === 'tflw.config' ? 'config' : 'test';
 }
 
 export class DocumentStore {
   private readonly docs = new Map<string, OpenDoc>();
 
-  open(uri: string, absPath: string, text: string): void {
-    this.docs.set(uri, { absPath, kind: classify(absPath), text, root: findProjectRoot(dirname(absPath)) });
+  open(uri: string, absPath: string | undefined, text: string): void {
+    this.docs.set(uri, {
+      absPath,
+      kind: classify(absPath),
+      text,
+      root: absPath === undefined ? undefined : findProjectRoot(dirname(absPath)),
+    });
   }
 
   update(uri: string, text: string): void {
@@ -76,14 +91,14 @@ export class DocumentStore {
     this.docs.delete(uri);
   }
 
-  get(uri: string): { readonly absPath: string; readonly kind: DocumentKind; readonly root: string | undefined } | undefined {
+  get(uri: string): { readonly absPath: string | undefined; readonly kind: DocumentKind; readonly root: string | undefined } | undefined {
     return this.docs.get(uri);
   }
 
   async analyze(uri: string, envSetting: string | undefined): Promise<DocumentAnalysis | undefined> {
     const doc = this.docs.get(uri);
     if (!doc) return undefined;
-    const baseDir = dirname(doc.absPath);
+    const baseDir = doc.absPath === undefined ? undefined : dirname(doc.absPath);
 
     if (doc.kind === 'config') {
       const parsed = parseConfigSource(doc.text);
@@ -110,7 +125,7 @@ export class DocumentStore {
         // No active env resolvable yet (e.g. mid-edit, no `default` env) — session-service
         // diagnostics simply can't run; parse/validateConfig diagnostics still stand on their own.
       }
-      return { diagnostics, symbols, config: parsed.config, ...(doc.root ? { root: doc.root } : {}), baseDir };
+      return { diagnostics, symbols, config: parsed.config, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };
     }
 
     const parsed = parseSource(doc.text);
@@ -147,7 +162,14 @@ export class DocumentStore {
     // tab is more current on screen than on disk, and squiggling the file in *this* tab against a
     // stale copy of that one is exactly the sort of "the editor disagrees with the CLI" gap M60
     // closed. Falls back to disk for anything not open.
-    const importedActions = await resolveImportedActions(doc.absPath, parsed.program, async (absPath) => {
+    //
+    // Both of these need `doc.absPath` to resolve a relative `import` against, so both are skipped
+    // for a pathless buffer (D214) — left `undefined`, never `[]`. That distinction is the one
+    // `checker.ts` already documents (`importsResolved = imports.length === 0 || importedActions
+    // !== undefined`): `undefined` means "these could not be read", which is exactly true of a
+    // buffer with nowhere to read from, and suppresses the passes that would otherwise report
+    // every import in an unsaved scratch file as unresolved.
+    const importedActions = doc.absPath === undefined ? undefined : await resolveImportedActions(doc.absPath, parsed.program, async (absPath) => {
       const open = [...this.docs.values()].find((d) => d.absPath === absPath);
       return open ? open.text : readFile(absPath, 'utf8');
     });
@@ -155,7 +177,7 @@ export class DocumentStore {
     // author created in another tab and has not saved yet exists as far as this editor session is
     // concerned, and squiggling `import "./shared/orders.tflw"` red while that very file sits open
     // two tabs over is the "the editor disagrees with the CLI" gap M60 closed, running backwards.
-    const missingFiles = await resolveMissingFiles(doc.absPath, parsed.program, async (absPath) => {
+    const missingFiles = doc.absPath === undefined ? undefined : await resolveMissingFiles(doc.absPath, parsed.program, async (absPath) => {
       if ([...this.docs.values()].some((d) => d.absPath === absPath)) return true;
       return stat(absPath).then(
         () => true,
@@ -164,9 +186,15 @@ export class DocumentStore {
     });
     const diagnostics = [
       ...parsed.diagnostics,
-      ...checkProgram(parsed.program, { knownServices, knownSessions, importedActions, missingFiles, ...(envBaseUrls ? { envBaseUrls } : {}) }),
+      ...checkProgram(parsed.program, {
+        knownServices,
+        knownSessions,
+        ...(importedActions === undefined ? {} : { importedActions }),
+        ...(missingFiles === undefined ? {} : { missingFiles }),
+        ...(envBaseUrls ? { envBaseUrls } : {}),
+      }),
     ];
-    return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), baseDir };
+    return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };
   }
 
   /** Resets the debounce timer on every call for the same `uri` — a burst of keystrokes collapses
