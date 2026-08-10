@@ -102,6 +102,13 @@ export const Codes = {
   NO_BASE_URL_FOR_STEP: 'TF051',
   MASK_WITHOUT_SNAPSHOT: 'TF052',
   SUBJECT_NOT_CAPTURABLE: 'TF053',
+  // M124 (`PLAN_M124_LITERAL_DECIDABILITY.md`, D232-D233) — the `'static-if-literal'` residue of
+  // the same enumeration. One sentence across all three: an operand *written in the file* that the
+  // runtime inspects and refuses is decidable before the run starts. Three codes for five rows,
+  // because rows get filed per `throw` site and rules are fewer (M116's finding).
+  INVALID_LITERAL_OPERAND: 'TF054',
+  HOLD_EXCEEDS_WAIT_TIMEOUT: 'TF055',
+  DATA_TABLE_EXTENSION: 'TF056',
 } as const;
 
 // ---------------------------------------------------------------------------

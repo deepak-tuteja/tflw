@@ -11,6 +11,7 @@ import type {
   CallExpr,
   ConfigEntry,
   ConfigFile,
+  DataTable,
   EnvBlock,
   ExpectStmt,
   MatcherName,
@@ -23,10 +24,12 @@ import type {
   StringPart,
   Subject,
   TestDecl,
+  TransformExpr,
   Value,
 } from './ast.js';
 import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
+import { isDecodable, regexCompileError } from './literalValidity.js';
 import { hostMatchesAllowPattern } from './allowHostsPattern.js';
 import { MATCHERS, MATCHER_ROW_BY_NAME, type SubjectKind } from './spec-data.js';
 import { parseStringParts } from './parser.js';
@@ -72,6 +75,31 @@ export interface ProgramCheckOptions {
    * report every plain `api GET /path` in a suite the CLI had simply not been given a config for.
    */
   readonly envBaseUrls?: EnvBaseUrls;
+  /**
+   * The active env's resolved timeouts (M124, D236) — see `EnvTimeouts`. Only `wait` is read, by
+   * `TF055`, and only to compare against a `for <duration>` hold window written in the file.
+   *
+   * The fifth field to carry the same `undefined` rule, and the one where getting it backwards is
+   * cheapest to do and most embarrassing to ship: a default of `{ wait: 0 }` would make *every*
+   * `for` clause in the language "longer than the budget", so a file the CLI was handed without a
+   * config would light up entirely. `undefined` means nobody resolved an env, and the pass is
+   * skipped rather than guessed at.
+   */
+  readonly envTimeouts?: EnvTimeouts;
+}
+
+/**
+ * The active env's timeouts, as `TF055` needs them (M124, D236).
+ *
+ * A number and the env's name, not the `ResolvedConfig` object: the `lang` package must not depend
+ * on the runtime's config shape, and the rule reads exactly one field. `envName` is here for the
+ * same reason it is on `EnvBaseUrls` — the diagnostic has to say *which* env's budget the hold
+ * window does not fit inside, since the answer differs per env and the reader picked one.
+ */
+export interface EnvTimeouts {
+  readonly envName: string;
+  /** `timeout wait` in milliseconds — the budget bounding a whole `wait until` step. */
+  readonly wait: number;
 }
 
 /** One action a call could resolve to: its name, how many arguments it takes, and where it was
@@ -144,6 +172,11 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkBaseUrls(program, opts),
     ...checkSnapshotMasks(program),
     ...checkCapturableSubjects(program),
+    // M124 (D232-D233) — the `'static-if-literal'` residue of the same enumeration M116 worked
+    // through. `checkLiteralOperands` needs nothing from the caller; `checkHoldWindows` needs the
+    // active env's `timeout wait` and skips itself without it.
+    ...checkLiteralOperands(program),
+    ...checkHoldWindows(program, opts),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkActionCycles(program, opts),
@@ -424,6 +457,9 @@ export function checkSessionBody(
    * like its `ProgramCheckOptions` twin, so a caller that has not resolved an env is not made to
    * invent one. */
   envBaseUrls?: EnvBaseUrls,
+  /** M124/D236 — the active env's `timeout wait`, for `checkHoldWindows`. Same optionality, same
+   * reason: a caller that resolved no env must not have one invented for it. */
+  envTimeouts?: EnvTimeouts,
 ): Diagnostic[] {
   const diags: Diagnostic[] = [];
   for (const session of sessions) {
@@ -440,6 +476,11 @@ export function checkSessionBody(
     if (envBaseUrls) checkBaseUrlsInSteps(session.body, envBaseUrls, diags);
     checkSnapshotMasksInSteps(session.body, diags);
     checkCapturableSubjectsInSteps(session.body, diags);
+    // M124/D236's two. A session body binds with `let` and asserts with `expect` like any other
+    // body, so `TF054` applies unchanged; `TF055` is the reachable-rather-than-load-bearing one,
+    // wired for the reason D149's mask pass was — a wired pass costs nothing to keep wired.
+    checkLiteralOperandsInSteps(session.body, diags);
+    if (envTimeouts) checkHoldWindowsInSteps(session.body, envTimeouts, diags);
   }
   return byPosition(diags);
 }
@@ -487,10 +528,13 @@ function checkService(service: string | null, span: Span, knownServices: readonl
  * "…"`) don't have known columns until the file is read at runtime, so a mismatched column there
  * surfaces as an ordinary "unknown variable" runtime error instead — this is purely static
  * analysis, no I/O (the `lang` package never touches the filesystem).
+ *
+ * M124 adds the file-backed form's one *static* property: its extension (`M97a-01`, `TF056`).
  */
 export function checkDataTables(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
   for (const test of program.tests) {
+    checkDataTableExtension(test.table, diags);
     if (!test.table || test.table.type !== 'InlineDataTable') continue;
     const columns = test.table.columns;
     for (const part of test.name.parts) {
@@ -508,6 +552,42 @@ export function checkDataTables(program: Program): Diagnostic[] {
     }
   }
   return diags;
+}
+
+/**
+ * `M97a-01` (`TF056`) — `with each from "./rows.txt"`, a data table the loader will refuse (M124).
+ *
+ * `loadTableRows` accepts `.csv` and `.json` and throws on anything else, *after* reading the file
+ * — so the run gets far enough to open the path and then dies on a property that was legible in the
+ * source all along. Pure string inspection: no `stat`, no read, nothing the `lang` package is
+ * forbidden from doing.
+ *
+ * **Why this is not `TF043`.** `TF043` is `MISSING_FILE`, and here the file is very likely *there* —
+ * being there is what makes the extension the only thing wrong. They are also different tiers for
+ * D147's reason: a missing file may be created by an earlier step, so `TF043` predicts and warns,
+ * while an extension cannot change between check and run, so this observes and errors.
+ *
+ * The path is a `StringLit` that the grammar allows to be interpolated, so D237 applies here as
+ * everywhere else — `with each from "{dir}/rows.csv"` is skipped rather than guessed at, since the
+ * extension of a name nobody has resolved is not a fact.
+ */
+function checkDataTableExtension(table: DataTable | null | undefined, diags: Diagnostic[]): void {
+  if (!table || table.type !== 'FileDataTable') return;
+  if (table.path.parts.some((part) => part.kind !== 'text')) return;
+  const path = table.path.value;
+  const dot = path.lastIndexOf('.');
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  // `extname`'s rule without importing `node:path`: a dot must exist, follow the last separator,
+  // and not *be* the first character of the basename (`.csvrc` has no extension, it is a dotfile).
+  const ext = dot > slash + 1 ? path.slice(dot).toLowerCase() : '';
+  if (ext === '.csv' || ext === '.json') return;
+  diags.push({
+    code: Codes.DATA_TABLE_EXTENSION,
+    severity: 'error',
+    message: `data table file "${path}" must be \`.csv\` or \`.json\` (got ${ext ? `"${ext}"` : 'no extension'})`,
+    span: table.path.span,
+    hint: 'a file-backed `with each` reads rows from CSV (header row) or JSON (array of row objects) — those are the two formats the loader knows, and the extension is how it picks (SPEC §4.3)',
+  });
 }
 
 /**
@@ -2699,6 +2779,263 @@ function uncapturableSubject(subject: Subject): Diagnostic | null {
     span: subject.span,
     hint: UNCAPTURABLE_HINTS[kind],
   };
+}
+
+/**
+ * `M97a-02` + `M97a-03` + `M97a-16` (`TF054`) — an operand *written in the file* that the runtime
+ * inspects and refuses (M124, D232/D233/D237).
+ *
+ * Seven throw sites, one sentence: `random number 5 to 1` selects from an empty range,
+ * `random password 2` has no room for the four character classes it guarantees, `hex decode("zz")`
+ * decodes nothing, and `matches "("` never compiles. In every case the operand is a literal, so the
+ * answer is the same on every run — which is the whole definition of a checker rule.
+ *
+ * **`'static-if-literal'`, and the "if" is the load-bearing half (D237).** `RandomNumberExpr.from`
+ * and `.to` are typed `Value`, not `NumberLit`: `random number {lo} to {hi}` is legal, ordinary, and
+ * unknowable until the run binds those names. Every rule below tests the node kind *first* and
+ * reports only on a literal — an interpolated operand stays the runtime's, unchanged. That is not a
+ * gap to apologise for in the hint text; it is the boundary that makes the rule sound, and the
+ * `undefined`-vs-`[]` doctrine (D144) restated at the level of a single operand.
+ *
+ * **Why the tests are imported rather than restated.** `isDecodableHex` and its siblings live in
+ * `literalValidity.ts` and are called by `eval.ts` too. Re-deriving "what counts as valid base64"
+ * here would be a second copy of a rule with two non-obvious clauses (the length check, and the
+ * URL-safe alphabet the runtime deliberately rejects), and any drift between the copies shows up as
+ * a `TF054` on a program that runs fine — a D137 clause 1 violation, shipped by copy-paste. The
+ * regex half needs no such module: both sides call `new RegExp` on the same string, so the engine
+ * *is* the shared authority.
+ *
+ * **The one shipped test this must not break.** `packages/runtime/test/request-connects-fails.test.ts`
+ * builds `expect request fails matching "("` on purpose and asserts on the thrown message. It never
+ * calls `check`, so it is unaffected — but it is the canary for anything that starts checking source
+ * on the way into the runtime, and it is written down here rather than discovered by a red suite.
+ */
+export function checkLiteralOperands(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const test of program.tests) checkLiteralOperandsInSteps(test.body, diags);
+  for (const action of program.actions) checkLiteralOperandsInSteps(action.body, diags);
+  for (const hook of program.hooks) checkLiteralOperandsInSteps(hook.body, diags);
+  // An inline `with each` table's cells are full expressions (`ast.ts`: `readonly Value[]`), so a
+  // generator lives there exactly as it does in a `let` — and it is evaluated once per row, which
+  // makes a bad literal there N failures rather than one.
+  for (const test of program.tests) {
+    if (test.table?.type === 'InlineDataTable') checkLiteralOperandsInSteps(test.table.rows, diags);
+  }
+  return byPosition(diags);
+}
+
+/** One body's operands (D152) — a `session` body runs `let` bindings and `expect`s like any other,
+ * so nothing here is test-specific. */
+function checkLiteralOperandsInSteps(steps: unknown, diags: Diagnostic[]): void {
+  // The object-graph walk, for `checkBaseUrlsInSteps`' reason: a `Value` can sit anywhere an
+  // expression is legal — a `let`, a request body, a header, a table cell, a call argument — and a
+  // hand-written walker that has not been taught about one of those skips it *in silence*.
+  const seen = new Set<object>();
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    switch (node['type']) {
+      case 'RandomNumberExpr':
+      case 'RandomDecimalExpr':
+        checkRandomRange(node as unknown as RandomRangeNode, node['type'] === 'RandomNumberExpr' ? 'random number' : 'random decimal', diags);
+        break;
+      case 'RandomPasswordExpr':
+        checkRandomPasswordLength(node as unknown as { length?: Value; span: Span }, diags);
+        break;
+      case 'TransformExpr':
+        checkTransformOperand(node as unknown as TransformExpr, diags);
+        break;
+      case 'ExpectStmt':
+        checkRegexOperand((node as unknown as ExpectStmt).matcher, diags);
+        break;
+      default:
+        break;
+    }
+    for (const child of Object.values(node)) visit(child);
+  };
+  visit(steps);
+}
+
+/** The two `random` generators that take a range; identical rule, identical runtime throw. */
+interface RandomRangeNode {
+  readonly from: Value;
+  readonly to: Value;
+  readonly span: Span;
+}
+
+function checkRandomRange(node: RandomRangeNode, syntax: 'random number' | 'random decimal', diags: Diagnostic[]): void {
+  // Both bounds, or nothing: `random number 5 to {hi}` is a range whose emptiness nobody can know.
+  const from = literalNumber(node.from);
+  const to = literalNumber(node.to);
+  if (from === null || to === null || to.n >= from.n) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    // The runtime's own sentence (`eval.ts`), so a reader who has seen one has seen both.
+    message: `\`${syntax} ${from.text} to ${to.text}\`: \`to\` must be ≥ \`from\``,
+    span: node.span,
+    hint: `the bounds are the wrong way round — write \`${syntax} ${to.text} to ${from.text}\` (SPEC §7.3)`,
+  });
+}
+
+/**
+ * A number the author wrote, or `null` — D237's test for the numeric half.
+ *
+ * The `BinaryExpr` clause is not general constant folding and must not become it. A negative
+ * literal has no unary-minus node in this grammar: the parser desugars `-5` to `0 - 5`, so a
+ * `NumberLit`-only test silently skips *every* negative bound, and `random number -1 to -5` — a
+ * range that is wrong in the obvious way — reads as unknowable. Measured, not assumed: this clause
+ * exists because a test asserting `TF054` on that program failed.
+ *
+ * The clause is exactly as wide as that desugaring: `-` over two literals, nothing else. `{lo} - 5`
+ * has an operand nobody has bound and returns `null`, which is the whole rule.
+ */
+function literalNumber(value: Value): { n: number; text: string } | null {
+  if (value.type === 'NumberLit') return { n: value.value, text: value.raw };
+  if (value.type === 'BinaryExpr' && value.op === '-' && value.left.type === 'NumberLit' && value.right.type === 'NumberLit') {
+    const n = value.left.value - value.right.value;
+    // `0 - 5` prints as `-5`, not as `0 - 5`: the message quotes what the author wrote back to them,
+    // and nobody wrote a zero.
+    return { n, text: value.left.value === 0 ? `-${value.right.raw}` : `${value.left.raw} - ${value.right.raw}` };
+  }
+  return null;
+}
+
+/** `random password` guarantees one upper, one lower, one digit and one symbol regardless of
+ *  length (decision 98), so a length below 4 is a promise the generator cannot keep. */
+function checkRandomPasswordLength(node: { length?: Value; span: Span }, diags: Diagnostic[]): void {
+  // `random password` with no length at all defaults to 12 — nothing written, nothing to check.
+  const length = node.length ? literalNumber(node.length) : null;
+  if (length === null || length.n >= 4) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    message: `\`random password ${length.text}\`: length must be at least 4`,
+    span: node.span,
+    hint: '`random password` always includes an uppercase letter, a lowercase letter, a digit and a symbol (SPEC §7.4), so it needs at least four characters to put them in — raise the length, or use `random string` if the character classes do not matter',
+  });
+}
+
+/** `hex`/`base64`/`url` `decode(...)` over a literal that will not decode. `encode` never fails and
+ *  is not inspected. */
+function checkTransformOperand(node: TransformExpr, diags: Diagnostic[]): void {
+  if (node.direction !== 'decode') return;
+  const input = literalText(node.value);
+  if (input === null || isDecodable(node.kind, input)) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    message: `\`${node.kind} decode(...)\`: ${JSON.stringify(input)} is not ${DECODE_LABELS[node.kind]}`,
+    span: node.span,
+    hint: DECODE_HINTS[node.kind],
+  });
+}
+
+/** The runtime's three phrasings, matched word for word (`eval.ts`'s `applyTransform`). */
+const DECODE_LABELS: Readonly<Record<'base64' | 'hex' | 'url', string>> = {
+  hex: 'valid hex',
+  base64: 'valid base64',
+  url: 'validly percent-encoded',
+};
+
+/** What is actually wrong, since "not valid hex" leaves a reader guessing at a rule with two
+ *  clauses — and the odd-length one is the clause nobody remembers. */
+const DECODE_HINTS: Readonly<Record<'base64' | 'hex' | 'url', string>> = {
+  hex: 'hex is `0-9`/`a-f` in pairs — an odd number of digits is rejected too, since half a byte cannot be decoded (SPEC §7.6)',
+  base64: 'standard base64 only: `A-Z`/`a-z`/`0-9`/`+`/`/`, padded to a multiple of 4 with `=`. The URL-safe alphabet (`-`/`_`) is a different encoding and is not accepted here (SPEC §7.6)',
+  url: 'every `%` must start a well-formed escape — `%` alone, or `%zz`, is not percent-encoded text. If you meant a literal percent sign, write `%25` (SPEC §7.6)',
+};
+
+/** `matches "…"` and `fails matching "…"` — the two matchers whose operand is compiled as a regular
+ *  expression (`matcher.ts`, both sites). */
+function checkRegexOperand(matcher: ExpectStmt['matcher'], diags: Diagnostic[]): void {
+  if (matcher.name !== 'matches' && matcher.name !== 'fails') return;
+  const pattern = matcher.value ? literalText(matcher.value) : null;
+  if (pattern === null) return;
+  const why = regexCompileError(pattern);
+  if (why === null) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    message: `invalid regex in matcher: ${JSON.stringify(pattern)}`,
+    span: matcher.value!.span,
+    hint: `${why} — the operand of \`${matcher.name === 'matches' ? 'matches' : 'fails matching'}\` is a regular expression, so \`(\`, \`[\` and \`\\\` are syntax. To match one literally, escape it (SPEC §6.2)`,
+  });
+}
+
+/** A string operand's text, or `null` when it is not a fully literal string — D237's test, in one
+ *  place. An interpolated `StringLit` keeps its `{ref}` holes in `value`, so reading `.value` alone
+ *  would check a pattern nobody wrote and report on a program that is fine. */
+function literalText(value: Value): string | null {
+  if (value.type !== 'StringLit') return null;
+  if (value.parts.some((part) => part.kind !== 'text')) return null;
+  return value.value;
+}
+
+/**
+ * `M97a-06` (`TF055`) — a `for <duration>` hold window that cannot fit inside `timeout wait`
+ * (M124, D232/D236).
+ *
+ * `wait until <locator> … for 60s` asks for a condition that stays true for a minute, inside a step
+ * the runtime bounds at `timeout wait` (30s by default). The window can never close, so the step can
+ * only ever end by timing out — and it times out saying the app was slow, which is the one thing
+ * that was not wrong.
+ *
+ * **A warning, and this is D147's line, not a preference.** The comparison's second operand comes
+ * from `tflw.config` and differs per env, so the checker is *predicting* what the run will do rather
+ * than observing something already settled: a suite whose CI env raises `timeout wait` to 120s is
+ * correct, and an error here would make it unrunnable with no override. `M97c` shipped exactly that
+ * mistake once (`A4-05`) inside the milestone whose thesis forbade it, which is why the tier is
+ * written down twice — here and in `spec-data.ts`.
+ *
+ * Skipped entirely without `opts.envTimeouts`: see `ProgramCheckOptions`.
+ */
+export function checkHoldWindows(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  if (!opts.envTimeouts) return diags;
+  for (const test of program.tests) checkHoldWindowsInSteps(test.body, opts.envTimeouts, diags);
+  for (const action of program.actions) checkHoldWindowsInSteps(action.body, opts.envTimeouts, diags);
+  for (const hook of program.hooks) checkHoldWindowsInSteps(hook.body, opts.envTimeouts, diags);
+  return byPosition(diags);
+}
+
+/** One body's `wait until` steps (D152) — reachable in a `session`, which may well wait for a login
+ *  redirect to settle before capturing the token. */
+function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts, diags: Diagnostic[]): void {
+  const seen = new Set<object>();
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    if (node['type'] === 'WaitUntilUiStmt') {
+      const hold = node['holdMs'];
+      // `>=`, not `>`, and the runtime's test is the same one: a window exactly as long as the
+      // budget still cannot close, because the condition would have to survive past the deadline
+      // that ends the step.
+      if (typeof hold === 'number' && hold >= env.wait) {
+        diags.push({
+          code: Codes.HOLD_EXCEEDS_WAIT_TIMEOUT,
+          severity: 'warning',
+          message: `\`for ${hold}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${env.wait}ms in env "${env.envName}")`,
+          span: (node as unknown as { span: Span }).span,
+          hint: `the hold window has to be shorter than the budget the step runs inside — raise \`timeout wait\` in \`tflw.config\`, or shorten the hold (SPEC §9.5)`,
+        });
+      }
+    }
+    for (const child of Object.values(node)) visit(child);
+  };
+  visit(steps);
 }
 
 /** What each non-capturable kind *does* support, in the runtime's own words — the part a reader

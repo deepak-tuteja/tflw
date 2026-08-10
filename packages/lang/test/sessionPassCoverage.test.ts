@@ -105,13 +105,32 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     code: Codes.SUBJECT_NOT_CAPTURABLE,
   },
 
+  checkLiteralOperands: {
+    verdict: 'applies',
+    reason:
+      'M124/D232. A session body binds with `let` and asserts with `expect` like any other body, so every one of `TF054`\'s seven sites is reachable there — and the login `expect` that guards a session is a plausible place for a hand-written regex. Needs nothing from the caller, so unlike its M124 sibling it is wired unconditionally',
+    fixture: '  let bad = random number 5 to 1\n  api GET /health\n',
+    code: Codes.INVALID_LITERAL_OPERAND,
+  },
+  checkHoldWindows: {
+    verdict: 'applies',
+    reason:
+      'M124/D236. Reachable rather than load-bearing, like `checkSnapshotMasks`: a session that logs in through the browser may well wait for a redirect to settle before capturing the token. Gated on `envTimeouts`, so the fixture below only fires because this test passes one — which is the assertion worth having, since a forgotten argument here would leave the pass wired and silent',
+    fixture: '  open "/login"\n  wait until button "Hidden" is hidden for 60s\n',
+    code: Codes.HOLD_EXCEEDS_WAIT_TIMEOUT,
+  },
+
   checkProgram: { verdict: 'n/a', reason: 'the composition of the per-file passes, not a pass — `checkSessionBody` is its config-side counterpart' },
   checkSessionBody: { verdict: 'n/a', reason: 'this list itself' },
   checkSessionServices: { verdict: 'n/a', reason: 'subsumed: `checkSessionBody` folds it in so callers have one entry point' },
   validateConfig: { verdict: 'n/a', reason: 'validates config *declarations* (which key in which block), not step bodies' },
   checkAllowHostsCoversBaseUrls: { verdict: 'n/a', reason: 'reasons about an env\'s own base URLs against its `allow hosts` — a whole-env property, not a step one' },
 
-  checkDataTables: { verdict: 'n/a', reason: 'walks `program.tests` for `with each` columns; a session has no tests and no table' },
+  checkDataTables: {
+    verdict: 'n/a',
+    reason:
+      'walks `program.tests` for `with each` columns; a session has no tests and no table. M124 added `TF056` (the file-backed form\'s extension) to this same pass and the verdict is unchanged for the identical reason — `with each` is a modifier on a `test`, and `tflw.config` declares none',
+  },
   checkSessions: { verdict: 'n/a', reason: 'validates that a `test … as <name>` names a declared session — about tests referencing sessions, the opposite direction' },
   checkActionDecls: { verdict: 'n/a', reason: 'walks `program.actions`; the config dialect declares none (see `checkCalls` above)' },
   checkActionCycles: {
@@ -142,7 +161,9 @@ const runSession = (sessionBody: string): string[] => {
   // M116/D152 — the env the fixture config above actually describes: it declares a default `api`
   // and no `web`. Stating it truthfully rather than passing `{api: true, web: true}` is what lets
   // `checkBaseUrls`' row prove itself here at all.
-  return checkSessionBody(parsed.config.sessions, ['billing'], { envName: 'local', api: true, web: false }).map((d) => d.code);
+  // M124/D236 — and stated truthfully for the same reason: 30s is the documented default, so
+  // `checkHoldWindows`' row is proved against the budget a real `local` env would have.
+  return checkSessionBody(parsed.config.sessions, ['billing'], { envName: 'local', api: true, web: false }, { envName: 'local', wait: 30_000 }).map((d) => d.code);
 };
 
 test('the source scan finds passes at all', () => {

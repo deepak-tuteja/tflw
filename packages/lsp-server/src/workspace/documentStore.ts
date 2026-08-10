@@ -142,6 +142,12 @@ export class DocumentStore {
     // say the same about an env nobody selected, squiggling every `api GET /path` in a file the
     // server could not place. The rule needs a resolved env or nothing — see `EnvBaseUrls`.
     let envBaseUrls: { envName: string; api: boolean; web: boolean } | undefined;
+    // `envTimeouts` (M124/D236, `TF055`) follows `envBaseUrls` exactly, and needs the same
+    // discipline for a sharper version of the same reason: the fallback anyone would reach for is
+    // the documented 30s default, and that default is *usually right*, which is what makes it
+    // dangerous — it would squiggle `for 45s` in a workspace whose config raises `timeout wait` to
+    // 120s, and be correct often enough that nobody would suspect the fallback.
+    let envTimeouts: { envName: string; wait: number } | undefined;
     if (doc.root) {
       const project = await loadProjectConfig(doc.root, envSetting).catch(() => undefined);
       if (project?.resolved) {
@@ -152,6 +158,7 @@ export class DocumentStore {
           api: project.resolved.apiBaseUrl !== null,
           web: project.resolved.webBaseUrl !== null,
         };
+        envTimeouts = { envName: project.resolved.envName, wait: project.resolved.timeouts.wait };
       }
     }
     // The CLI's own pass list, verbatim — one shared entry point, so the server can't fall behind it
@@ -192,6 +199,7 @@ export class DocumentStore {
         ...(importedActions === undefined ? {} : { importedActions }),
         ...(missingFiles === undefined ? {} : { missingFiles }),
         ...(envBaseUrls ? { envBaseUrls } : {}),
+        ...(envTimeouts ? { envTimeouts } : {}),
       }),
     ];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };
