@@ -14,7 +14,17 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { MUTATIONS, ROOT_SUITE, parseArgs, registryProblem, suiteCommand } from './mutate.mjs';
+import {
+  M98_PLAN,
+  MUTATIONS,
+  ROOT_SUITE,
+  UNRECONSTRUCTED,
+  coverage,
+  coverageProblem,
+  parseArgs,
+  registryProblem,
+  suiteCommand,
+} from './mutate.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
@@ -342,4 +352,69 @@ test('a sweep announces that tracked sources are about to be wrong (M111-02)', (
   // The banner belongs to a run that will actually apply something, so an unmatched scope must not
   // print it — a warning that appears when nothing is happening stops being read.
   assert.doesNotMatch(r.stdout, /will be applied to tracked sources/);
+});
+
+// ---------------------------------------------------------------------------
+// M126 (`M125e-02`) — the summary line names its own denominator.
+//
+// The row: `verify:mutations` ended on `120 mutation(s) run; 0 survived, 0 stale.` over a registry
+// that reconstructs part of the M98 plan, and the gap printed *underneath* — the third finding on
+// this board with the shape **read the line under the headline**. Worse, it printed only when the
+// run was unscoped, so the scoped local run a developer actually makes disclosed nothing at all.
+//
+// These tests hold the two halves that a comment cannot: that the number and its denominator arrive
+// together, and that the accounting behind the denominator cannot drift one side at a time.
+
+test('coverage() is derived from the registry, not from a sentence in it', () => {
+  const c = coverage();
+  assert.equal(c.total, MUTATIONS.length);
+  assert.equal(c.planned, Object.values(M98_PLAN).reduce((a, b) => a + b, 0));
+  assert.equal(c.missing, UNRECONSTRUCTED.reduce((a, u) => a + u.count, 0));
+  assert.equal(c.reconstructed, MUTATIONS.filter((m) => m.plan).length);
+  // The identity the whole scheme rests on. Stated here as well as inside `coverageProblem` so this
+  // file fails on a broken registry even if that function is what broke.
+  assert.equal(c.reconstructed + c.missing, c.planned);
+});
+
+test('the accounting is checked from both sides, and this registry passes it', () => {
+  assert.equal(coverageProblem(), undefined);
+});
+
+test('reconstructing a mutation without dropping its UNRECONSTRUCTED entry turns the run red', () => {
+  // The exact drift the old prose array could not notice: a group gets reconstructed, the array
+  // keeps claiming it is missing, and the reported coverage silently understates. The mirror case —
+  // dropping the entry without flagging the mutation — overstates, and fails the same check.
+  const extra = [...MUTATIONS, { id: 'pretend', milestone: 'm98c', file: 'x', what: 'x', plan: true }];
+  const problem = coverageProblem(extra);
+  assert.match(problem, /m98c: the plan ran 11 mutation\(s\), this file accounts for 12/);
+  assert.match(problem, /flagging it `plan: true` \*\*and\*\* dropping it/);
+});
+
+test('a `plan: true` outside M98 is rejected rather than counted', () => {
+  // `plan` means "reconstructs a mutation the M98 plan ran". Nothing else has a plan to be counted
+  // against, so a flag on an m124 entry is a mistake and not a 32nd planned mutation.
+  const problem = coverageProblem([...MUTATIONS, { id: 'pretend', milestone: 'm124', file: 'x', what: 'x', plan: true }]);
+  assert.match(problem, /`pretend` is flagged `plan: true` but `m124` is not one of M98's/);
+});
+
+test('a scoped sweep prints the coverage clause too — the half the old report withheld', () => {
+  // `if (!scope)` is what this replaces. `node scripts/mutate.mjs m98c` used to end on a clean
+  // `N mutation(s) run; 0 survived` and say nothing about what it had not run, which is precisely
+  // the run a developer makes and precisely where the disclosure was missing.
+  const before = readFileSync(LEXER, 'utf8');
+  const { file, cleanup } = sandboxJournal();
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, 'bom-col'], { cwd: ROOT, encoding: 'utf8', env: withJournal(file) });
+    assert.equal(r.status, 0);
+    const c = coverage();
+    assert.match(
+      r.stdout,
+      new RegExp(`1 mutation\\(s\\) run; 0 survived, 0 stale — over a registry that reconstructs ${c.reconstructed} of the M98 plan's ${c.planned} mutations, ${c.missing} not\\.`),
+    );
+    // And it is on the tally line, not beneath it: nothing separates the count from its denominator.
+    assert.doesNotMatch(r.stdout, /0 stale\.\n/);
+  } finally {
+    if (readFileSync(LEXER, 'utf8') !== before) writeFileSync(LEXER, before);
+    cleanup();
+  }
 });

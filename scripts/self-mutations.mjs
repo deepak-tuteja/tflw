@@ -130,4 +130,22 @@ export const SELF_MUTATIONS = [
     find: '      problems.push(`${rel}: ${err.message}`);',
     replace: '      throw err;',
   },
+  {
+    id: 'coverage-guard-off',
+    milestone: 'm126',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: '`M125e-02`\'s guard neutered: the M98 accounting is computed and thrown away, so the two sides can drift apart again — a group reconstructed without dropping its `UNRECONSTRUCTED` entry, or the reverse, and the summary line goes on quoting a number nothing checks',
+    find: '  if (problems.length === 0) return undefined;',
+    replace: '  return undefined;',
+  },
+  {
+    id: 'coverage-clause-dropped-from-the-tally',
+    milestone: 'm126',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: '`M125e-02` itself: the denominator leaves the summary line, so the sweep ends on a complete-sounding `N mutation(s) run; 0 survived` over a registry that covers part of the plan — the shape three findings on this board now share',
+    find: '      `— over a registry that reconstructs ${cov.reconstructed} of the M98 plan\'s ${cov.planned} mutations, ${cov.missing} not.`,',
+    replace: "      '.',",
+  },
 ];

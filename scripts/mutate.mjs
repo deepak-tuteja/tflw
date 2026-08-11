@@ -47,34 +47,37 @@
 // bitten by exactly this and documents it at length; the lesson didn't travel the 40 lines to here.
 // Both formats are matched now, the same way that file matches them.
 //
-// **Coverage, stated rather than implied.** Counted from `MUTATIONS` on 2026-08-10 by parsing the
-// array, not from memory: **74 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from
-// M106, 1 from M107, 1 from M107b, 1 from M108, 3 from M109, 2 from M110, 2 from M110b, 7 from
-// M111, 3 from M114, 1 from M115, 6 from M116, 2 from M117, 5 from M118, 7 from M119, 2 from M120,
-// 3 from M121.**
+// **Coverage is derived now, not written down (M126, `M125e-02`).** This paragraph used to carry a
+// hand-counted census — *"74 entries — 20 from the M98 plan (m98b 5, m98c 12, m98d 3), 8 from M106,
+// …"*, stopping at M121. By M126 the array held **120**. That is the **fourth** time the number here
+// went wrong, after the three recorded below, and it went wrong the same way every time: *every
+// milestone that adds a mutation updates the array and not the prose*, because `verify:mutations`
+// checks the array and nothing checks the sentence. So the census is gone rather than corrected.
+// `coverage()` computes it from `MUTATIONS`, the sweep prints it **on** the summary line, and
+// `coverageProblem()` fails the run when it stops adding up — the same treatment the ledger's
+// `tally:current` marker gives the other side of the repo, which is what the line this replaces
+// already named as the right answer without doing it.
 //
-// The line this replaces said 48 and was written on 2026-08-09 — one day and six milestones stale,
-// short by 26. That is the third time this paragraph has gone wrong (see below), and the pattern is
-// now unambiguous rather than anecdotal: **every milestone that adds a mutation updates the array
-// and not the prose**, because `verify:mutations` checks the array and nothing checks the sentence.
-// The count is one `node -e` away — parse `/^\s*milestone: '([^']+)',/gm` over this file — so the
-// only defensible way to touch this number is to re-derive it, never to add to it. Exactly the
-// failure mode the ledger's own `tally:current` check exists to prevent on the other side of the
-// repo, and the argument for giving this one the same treatment.
+// **The M98 reconciliation, settled.** The plan's 31 is `M98_PLAN` below — 5 + 11 + 15, read off
+// `PLAN_M98_LEXER_POSITIONS.md`'s own shipped sections (*"All five negative controls
+// mutation-tested"*; *"Eleven mutations run"*; *"Two of fifteen mutations survived"*). M98a shipped
+// none. Against that, this registry holds 20 `m98`-scoped entries, of which **13 reconstruct a plan
+// mutation** (flagged `plan: true`) and **7 are controls #28 invented while writing them**:
+// generalising `unlexable-drops-at` to `#` and `"`, the three `M98c-02` fix controls,
+// `unclosed-bracket-silent`, `bom-not-hidden-exempt`. Those seven are good mutations and they are
+// not reconstructions — counting them as such is how *"20 of the plan's 31"* overstated this
+// registry's coverage of M98 by seven, from #28 until M126.
 //
-// Each of the 20 is one whose target could be identified unambiguously from the plan's own
-// description plus the source it names; the other 11 of the plan's 31 are described at a level
-// ("D159 reverted", "per-code-unit recovery") that admits more than one edit, and guessing at them
-// would produce a number rather than a measurement. They are listed at the bottom of this file as
-// `UNRECONSTRUCTED` so the gap is visible in the tool and not only in a commit message.
-//
-// Two numbers here were wrong until M107, in the one file whose whole subject is that a count
-// nobody re-measures stops being true. The paragraph shipped in #28 claiming "18 of 31" over a
-// `MUTATIONS` array that already held 20, and M106's 8 additions never touched it at all. Counted
-// rather than recalled this time. A third does not reconcile and is left visible rather than
-// rounded: 31 − 20 = 11 unreconstructed, but the five `UNRECONSTRUCTED` groups' own prose counts
-// (2 + 1 + 1 + 2 + 10) sum to 16. That disagreement is in `PLAN_M98_LEXER_POSITIONS.md`'s prose,
-// which is the only record of the 31, so it cannot be settled from this side.
+// **And the 11-vs-16 that "cannot be settled from this side" was a category error.** The note here
+// used to read: 31 − 20 = 11 unreconstructed, but the five `UNRECONSTRUCTED` groups' own counts
+// (2 + 1 + 1 + 2 + 10) sum to 16, and that disagreement lives in prose which cannot be settled
+// against prose. The parenthesised numbers were never mutation counts. They are **kill** counts,
+// lifted verbatim from the plan's *"Nine died as intended (D159 reverted → 2; re-scanning for `#`
+// instead of taking `lexContent`'s return → 1; …)"*, where `→ 2` means *two tests failed*. Each of
+// those groups is one mutation. Read as what they are, the plan settles the question by itself and
+// no second source is needed: the real gap is **18 mutations in 18 groups** — the four in m98c the
+// old array named, **thirteen** in m98d where it claimed ten, and one in m98b it omitted entirely
+// (`A1-20`'s stray closer, which exists nowhere in this registry under any milestone).
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -130,12 +133,20 @@ const DATE_BRANCH = `        // A number followed (whitespace allowed) by a spel
         }
 `;
 
-/** @type {{id: string, milestone: string, file: string, what: string, find?: string, replace?: string, edits?: [string, string][], equivalent?: boolean}[]} */
+/**
+ * `plan: true` marks an entry as a **reconstruction of a mutation the M98 plan actually ran**, as
+ * opposed to a control written here while reconstructing one. Only `m98*` entries carry it; it is
+ * what `coverage()` counts against `M98_PLAN`, and the two sides are asserted equal by
+ * `coverageProblem()` so neither can drift alone (M126, `M125e-02`).
+ *
+ * @type {{id: string, milestone: string, file: string, what: string, plan?: boolean, find?: string, replace?: string, edits?: [string, string][], equivalent?: boolean}[]}
+ */
 const REGISTRY = [
   // --- M98d ------------------------------------------------------------------------------------
   {
     id: 'bom-col',
     milestone: 'm98d',
+    plan: true,
     file: LEXER,
     what: 'a BOM at offset 0 counts as an indent column again (`M98d-01`)',
     find: 'const bomCol = lineStart === 0 && line[0] === BOM ? 1 : 0;',
@@ -144,6 +155,7 @@ const REGISTRY = [
   {
     id: 'unicode-escape-recovery',
     milestone: 'm98d',
+    plan: true,
     file: LEXER,
     what: 'a malformed `\\u{…}` recovers verbatim, inventing a variable for the checker to reject',
     find: "      this.diag(Codes.UNKNOWN_ESCAPE, 'error', message, { start: at(c), end: at(end) }, hint);\n      return { text: '', next: end };",
@@ -169,6 +181,7 @@ const REGISTRY = [
   {
     id: 'unlexable-drops-at',
     milestone: 'm98c',
+    plan: true,
     file: LEXER,
     what: '`@` leaves `isUnlexable`, so a garbage run swallows the start of a tag',
     find: "|| ch === '\"' || ch === '/' || ch === '@' ||",
@@ -193,6 +206,7 @@ const REGISTRY = [
   {
     id: 'max-run-chars-unbounded',
     milestone: 'm98c',
+    plan: true,
     file: LEXER,
     what: 'the coalesced run is unbounded — `A1-01`\'s quadratic blow-up returns through the message',
     find: 'const MAX_RUN_CHARS = 16;',
@@ -201,6 +215,7 @@ const REGISTRY = [
   {
     id: 'max-unexpected-unbounded',
     milestone: 'm98c',
+    plan: true,
     file: LEXER,
     what: 'the per-file diagnostic ceiling is gone (`A1-01`)',
     find: 'const MAX_UNEXPECTED_CHARS = 50;',
@@ -209,6 +224,7 @@ const REGISTRY = [
   {
     id: 'invisible-requoted',
     milestone: 'm98c',
+    plan: true,
     file: LEXER,
     what: 'invisible characters are quoted whole again — `unexpected character " "` for a U+00A0',
     find: 'const named = anyInvisible ? chars.map(describeChar).join(\', \') : JSON.stringify(run);',
@@ -217,6 +233,7 @@ const REGISTRY = [
   {
     id: 'cut-short-dropped',
     milestone: 'm98c',
+    plan: true,
     file: LEXER,
     what: 'the "name was cut short" clause is dropped, so `let café = 1` reads as two unrelated errors',
     find: "            ? `the name \\`${prev.value}\\` was cut short here — `\n            : '';",
@@ -225,6 +242,7 @@ const REGISTRY = [
   {
     id: 'tab-under-tf003',
     milestone: 'm98c',
+    plan: true,
     file: LEXER,
     what: 'the tab rule goes back under `TF003`, so one code means two unrelated things again',
     find: '      Codes.TAB_INDENT,\n',
@@ -233,6 +251,7 @@ const REGISTRY = [
   {
     id: 'duration-any-adjacent-word',
     milestone: 'm98c',
+    plan: true,
     file: PARSER,
     what: 'the enumerated duration table becomes "any adjacent word"',
     find: "  if ((DURATION_UNITS as readonly string[]).includes(lower)) return lower as DurationUnit;",
@@ -293,6 +312,7 @@ const REGISTRY = [
   {
     id: 'number-rule-broadened',
     milestone: 'm98b',
+    plan: true,
     file: LEXER,
     what: 'D158 as the plan first wrote it — any number followed by an ident, which is every duration',
     find: "    if (/^[eE][+-]?\\d+$/.test(suffix)) {",
@@ -301,6 +321,7 @@ const REGISTRY = [
   {
     id: 'unknown-escape-silent',
     milestone: 'm98b',
+    plan: true,
     file: LEXER,
     what: '`TF047` goes back to silence — an unknown escape just loses its backslash (`A1-05`)',
     find: "        const decoded = ESCAPES[next];\n        if (decoded === undefined) {\n          this.diag(",
@@ -309,6 +330,7 @@ const REGISTRY = [
   {
     id: 'unclosed-bracket-outermost',
     milestone: 'm98b',
+    plan: true,
     file: LEXER,
     what: 'the *outermost* unclosed bracket is reported instead of the innermost (`A1-10`)',
     find: 'const unclosed = this.openBrackets[this.openBrackets.length - 1];',
@@ -325,6 +347,7 @@ const REGISTRY = [
   {
     id: 'empty-tag-on-every-tag',
     milestone: 'm98b',
+    plan: true,
     file: LEXER,
     what: '`TF046` fires on every tag, well-formed or not (`A1-11`)',
     find: "        if (name === '' || !isIdentStart(name[0]!)) {",
@@ -1285,15 +1308,104 @@ const REGISTRY = [
   },
 ];
 
-// Named, not silently omitted. Each is described in the plan at a granularity that admits more than
-// one concrete edit; reconstructing them needs the milestone's own diff, not its prose.
+/**
+ * How many mutations each M98 sub-milestone ran, from `PLAN_M98_LEXER_POSITIONS.md`'s own shipped
+ * sections. This is the denominator every "N of the plan's 31" sentence in this repo has quoted,
+ * and until M126 it was a bare `31` with no record of where it came from.
+ *
+ * M98a is absent because it shipped no mutation note, not because it was overlooked — an absent key
+ * and a `0` mean different things here, and `coverageProblem()` only grades the keys present.
+ */
+const M98_PLAN = { m98b: 5, m98c: 11, m98d: 15 };
+
+/**
+ * The plan's mutations this registry does **not** reconstruct. Named rather than silently omitted.
+ *
+ * `count` is a count of **mutations**, and saying so is the whole point of this rewrite. The five
+ * entries this replaces carried the plan's *kill* counts in parentheses — `(2 kills)`, `(1)`, `(1)`,
+ * `(2)` — copied out of its "Nine died as intended (D159 reverted → 2; …)" list, where `→ 2` means
+ * *two tests failed*. Summed as if they were mutation counts they gave 16 against an arithmetic 11,
+ * and that contradiction sat in this file for eighteen milestones as something that "cannot be
+ * settled from this side". It could: each of those four groups is one mutation.
+ *
+ * Each of these is described in the plan at a granularity that admits more than one concrete edit
+ * ("D159 reverted", "per-code-unit recovery"), so reconstructing one needs the milestone's own diff,
+ * not its prose — which is why they are still open rather than closed by guesswork. Reconstruct one
+ * and `coverageProblem()` goes red until this array is updated to match: that is the check the old
+ * array did not have, and the reason it could quietly stop being true.
+ */
 const UNRECONSTRUCTED = [
-  ['m98c', 'D159 reverted — the `newline` token back at the physical end of line (2 kills)'],
-  ['m98c', 're-scanning for `#` instead of taking `lexContent`\'s return (1)'],
-  ['m98c', 'the tab rule applied per-line rather than once per file (1)'],
-  ['m98c', 'per-code-unit recovery for astral characters (2)'],
-  ['m98d', '10 of the 15: the eight-position hidden-character property and its two probe additions'],
+  // m98b. Omitted entirely by the array this replaces — the plan lists five negative controls and
+  // this is the one with no counterpart here, under any milestone (grep the registry for a stray
+  // closer and nothing comes back). Its absence is exactly why the count is now checked.
+  { milestone: 'm98b', count: 1, what: 're-clamping the stray closer, so `A1-20`\'s note stops being reported' },
+
+  // m98c. These four the old array had right; only their numbers were kill counts.
+  { milestone: 'm98c', count: 1, what: 'D159 reverted — the `newline` token back at the physical end of line' },
+  { milestone: 'm98c', count: 1, what: 're-scanning for `#` instead of taking `lexContent`\'s return' },
+  { milestone: 'm98c', count: 1, what: 'the tab rule applied per-line rather than once per file' },
+  { milestone: 'm98c', count: 1, what: 'per-code-unit recovery for astral characters' },
+
+  // m98d. The old array said "10 of the 15". Thirteen: the registry reconstructs only the two
+  // survivors (`bom-col`, `unicode-escape-recovery`), and the third survivor the plan records —
+  // `M2`, the trailing-comment coverage gap — is not here either.
+  { milestone: 'm98d', count: 13, what: '13 of the 15: the eight-position hidden-character property, its two probe additions, and the `M2` trailing-comment survivor' },
 ];
+
+/**
+ * What this registry covers, computed rather than recalled. Printed on the summary line so the
+ * denominator travels with the numerator — `M125e-02` is the row for what happens when it doesn't.
+ */
+export function coverage(mutations = MUTATIONS) {
+  const planned = Object.values(M98_PLAN).reduce((a, b) => a + b, 0);
+  const missing = UNRECONSTRUCTED.reduce((a, u) => a + u.count, 0);
+  const reconstructed = mutations.filter((m) => m.plan).length;
+  return { planned, missing, reconstructed, total: mutations.length };
+}
+
+/**
+ * The M98 accounting, checked from both sides.
+ *
+ * One side is `MUTATIONS.filter(m => m.plan)`; the other is `M98_PLAN` minus `UNRECONSTRUCTED`.
+ * Neither can move without the other agreeing, which is the property the old prose lacked: an
+ * unchecked array of sentences forty lines under a census that had already gone wrong three times
+ * — and went wrong a fourth before anyone noticed. Reconstructing one of the plan's mutations now
+ * means flagging it *and* dropping it from `UNRECONSTRUCTED`; doing either alone turns the sweep
+ * red on its next run rather than silently overstating coverage.
+ */
+export function coverageProblem(mutations = MUTATIONS) {
+  const problems = [];
+  for (const [ms, planned] of Object.entries(M98_PLAN)) {
+    const reconstructed = mutations.filter((m) => m.milestone === ms && m.plan).length;
+    const missing = UNRECONSTRUCTED.filter((u) => u.milestone === ms).reduce((a, u) => a + u.count, 0);
+    if (reconstructed + missing !== planned) {
+      problems.push(
+        `${ms}: the plan ran ${planned} mutation(s), this file accounts for ${reconstructed + missing} ` +
+          `(${reconstructed} flagged \`plan: true\`, ${missing} counted in UNRECONSTRUCTED).`,
+      );
+    }
+  }
+  for (const u of UNRECONSTRUCTED) {
+    if (!(u.milestone in M98_PLAN)) {
+      problems.push(`UNRECONSTRUCTED names \`${u.milestone}\`, which M98_PLAN does not know.`);
+    }
+    if (!Number.isInteger(u.count) || u.count < 1) {
+      problems.push(`UNRECONSTRUCTED entry "${u.what}" has a \`count\` of ${u.count}; it must be a positive integer count of *mutations*.`);
+    }
+  }
+  for (const m of mutations) {
+    if (m.plan && !(m.milestone in M98_PLAN)) {
+      problems.push(`\`${m.id}\` is flagged \`plan: true\` but \`${m.milestone}\` is not one of M98's sub-milestones.`);
+    }
+  }
+  if (problems.length === 0) return undefined;
+  return (
+    `mutate.mjs no longer adds up against the M98 plan:\n` +
+    problems.map((p) => `    ${p}`).join('\n') +
+    `\n  Reconstructing one of the plan's mutations means flagging it \`plan: true\` **and** dropping it` +
+    `\n  from UNRECONSTRUCTED. Doing one without the other is what this check exists to catch.`
+  );
+}
 
 // ---------------------------------------------------------------------------
 // THE RUNNER. Nothing below runs on `import` — see the `main` guard at the very bottom (M123, D224).
@@ -1303,7 +1415,7 @@ const UNRECONSTRUCTED = [
 // see `scripts/self-mutations.mjs` for why a self-targeting `find:` cannot live beside its target.
 const MUTATIONS = [...REGISTRY, ...SELF_MUTATIONS];
 
-export { MUTATIONS, UNRECONSTRUCTED };
+export { M98_PLAN, MUTATIONS, UNRECONSTRUCTED };
 
 // M122 (`M122-01`). `MUTATIONS` silently lost an entry between `M120` and `M121`: a missing
 // `},\n  {` merged two object literals into one, so `M121`'s `id`, `file`, `find` and `replace`
@@ -1651,16 +1763,35 @@ function sweep(selected, scope) {
   }
 
   const timedOut = survivors.filter((s) => s.verdict === 'timeout').length;
-  console.log(`\n${selected.length} mutation(s) run; ${survivors.filter((s) => s.verdict === 'survived').length} survived, ${survivors.filter((s) => s.verdict === 'stale').length} stale${timedOut > 0 ? `, ${timedOut} timed out` : ''}.`);
-  if (!scope) {
-    console.log(`\n${UNRECONSTRUCTED.length} group(s) from the plan's 31 are NOT reconstructed here:`);
-    for (const [ms, what] of UNRECONSTRUCTED) console.log(`    ${ms}: ${what}`);
+
+  // M126 (`M125e-02`). The gap is part of the tally, not a paragraph under it. It used to print
+  // below the headline and only when the run was unscoped — so `node scripts/mutate.mjs m98c`, the
+  // scope these groups actually belong to, reported a clean number and disclosed nothing. Three
+  // findings on this board now share the shape *read the line under the headline*; the fix for the
+  // third is to stop having a line under the headline.
+  const cov = coverage();
+  console.log(
+    `\n${selected.length} mutation(s) run; ${survivors.filter((s) => s.verdict === 'survived').length} survived, ` +
+      `${survivors.filter((s) => s.verdict === 'stale').length} stale${timedOut > 0 ? `, ${timedOut} timed out` : ''} ` +
+      `— over a registry that reconstructs ${cov.reconstructed} of the M98 plan's ${cov.planned} mutations, ${cov.missing} not.`,
+  );
+
+  // Itemised for the scope in hand: everything when unscoped, that milestone's own gap when not.
+  // A scope with nothing missing says so rather than staying quiet, because silence here is what
+  // reads as coverage.
+  const relevant = scope ? UNRECONSTRUCTED.filter((u) => u.milestone === scope) : UNRECONSTRUCTED;
+  if (relevant.length > 0) {
+    const n = relevant.reduce((a, u) => a + u.count, 0);
+    console.log(`\n${n} of the plan's mutations are NOT reconstructed here${scope ? ` in \`${scope}\`` : ''}:`);
+    for (const u of relevant) console.log(`    ${u.milestone}: ${u.what}`);
+  } else if (scope && scope in M98_PLAN) {
+    console.log(`\nNothing from the M98 plan is missing in \`${scope}\` — all ${M98_PLAN[scope]} of its mutations are reconstructed.`);
   }
   return survivors.length > 0 ? 1 : 0;
 }
 
 function main(argv = process.argv) {
-  const problem = registryProblem();
+  const problem = registryProblem() ?? coverageProblem();
   if (problem) {
     console.error(problem);
     return 2;
