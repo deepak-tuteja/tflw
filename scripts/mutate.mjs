@@ -635,8 +635,18 @@ const REGISTRY = [
     pkg: '@tflw/lang',
     file: 'packages/lang/src/checker.ts',
     what: '`TF051` fires on every api step, prefixed or not — the false positive that would reject a correct multi-service suite with no default `api` (D137 clause 1)',
-    find: "        if (!env.api && node['service'] === null) diags.push(missingBaseUrl('api', 'api', node as unknown as { span: Span }, env));",
-    replace: "        if (!env.api) diags.push(missingBaseUrl('api', 'api', node as unknown as { span: Span }, env));",
+    // RETARGETED by `M125b1`, and the retarget is the point rather than housekeeping. That milestone
+    // added `!apiTargetIsAbsolute(...)` to this condition and split the statement across lines, so
+    // this `find` stopped matching and the sweep reported it **stale** — `0 survived` in the
+    // headline, the real answer one line below it. `M123`'s lesson, arriving on schedule: a mutant
+    // whose anchor has drifted is not a mutant that found nothing, it is a rule that went unchecked
+    // while the report said otherwise. Deleting it would have been the easy read of "0 survived".
+    //
+    // The mutation itself is unchanged in meaning: drop the `service === null` clause and nothing
+    // else, so `api billing GET /orders` is reported as needing a default `api` base it never
+    // resolves.
+    find: "        if (!env.api && node['service'] === null && !apiTargetIsAbsolute(node['path'])) {",
+    replace: "        if (!env.api && !apiTargetIsAbsolute(node['path'])) {",
   },
   {
     id: 'base-url-treats-undefined-as-false',
@@ -933,6 +943,55 @@ const REGISTRY = [
     what: "`prepareRename` reports the symbol's first occurrence rather than the one under the cursor, so renaming the second use of a variable silently moves the editor's selection to the definition. Survives any test that renames the *first* occurrence, which is the natural way to write one — the `prepareRename` test deliberately uses the last",
     find: '    const span = found.result.spans.find((s) => spanContains(s, found.offset));',
     replace: '    const span = found.result.spans[0];',
+  },
+  // M125b1 (`FU-18`) — one per decision that could be silently undone, and "silently" is doing the
+  // work in every one of them. A mutation that deletes the absolute-URL branch outright is caught
+  // by the first test that writes `api GET https://…`; these five each leave the feature visibly
+  // working and wrong somewhere no existing test looks.
+  {
+    id: 'absolute-url-lexes-outside-method-position',
+    milestone: 'm125b1',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/lexer.ts',
+    what: 'the new lexer branch drops `canStartPath()`, so any ident followed by `://` starts a path anywhere in a file — decision 60 undone by a fix that never mentions it. Every `api GET https://…` test still passes; what breaks is `let ratio = get / 2`, three years of grammar away from anything this milestone touched',
+    find: '      if (isIdentStart(ch) && this.canStartPath() && ABSOLUTE_URL_START.test(line.slice(c))) {',
+    replace: '      if (isIdentStart(ch) && ABSOLUTE_URL_START.test(line.slice(c))) {',
+  },
+  {
+    id: 'absolute-api-target-still-gets-the-base-prepended',
+    milestone: 'm125b1',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`execApi` composes the base URL onto an absolute target anyway — `http://localhost:4001/v1/https://other/x`. The concatenation bug this milestone exists to remove, reintroduced on the `api` side by the fix for it. A request IS sent and a response IS received, so any test asserting only that the step ran stays green: it takes two servers to notice',
+    find: '  const url = isAbsoluteUrl(path) ? guardDemoUrl(path) : resolveBaseUrl(spec.service, config) + ensureLeadingSlash(path);',
+    replace: '  const url = resolveBaseUrl(spec.service, config) + ensureLeadingSlash(path);',
+  },
+  {
+    id: 'absolute-open-target-still-gets-the-web-base-prepended',
+    milestone: 'm125b1',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the `open` half reverts to unconditional concatenation — `http://localhost:5173/https://example.com/x`, which LOADS on any SPA with a catch-all route. This is the original defect verbatim, and the reason it survived to be filed is that it fails as a plausible assertion error several steps later',
+    find: '  if (isAbsoluteUrl(path)) {\n    requireAllowHostsForAbsolute(path, path, config);\n    checkHostAllowed(path, config);\n    return path;\n  }',
+    replace: '',
+  },
+  {
+    id: 'tf058-fires-when-no-config-was-resolved',
+    milestone: 'm125b1',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the `undefined`-vs-`[]` rule collapses in the dangerous direction: an absent `envAllowHosts` is read as "declares none", so every absolute URL in the docs-site editor demo — a browser, where no `tflw.config` can exist even in principle — warns that the run will refuse it. D263, and the only visible symptom is a warning that is *plausible*',
+    find: '  if (declared && declared.hosts.length === 0) {',
+    replace: '  if (!declared || declared.hosts.length === 0) {',
+  },
+  {
+    id: 'tf051-demands-a-base-url-for-an-absolute-step',
+    milestone: 'm125b1',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: "`TF051` stops exempting absolute targets, so `api GET https://x/y` in an env with no default `api` base is reported as an ERROR and cannot run — a checker blocking a program the runtime accepts (D137 clause 1). Aimed here because this was a *live* defect found mid-milestone rather than a hypothetical: every `TF051` test predating M125b1 writes a path and passes either way",
+    find: "        if (!env.api && node['service'] === null && !apiTargetIsAbsolute(node['path'])) {",
+    replace: "        if (!env.api && node['service'] === null) {",
   },
   // M124 (D239) — one per rule, and every one of them aimed at a *false positive* rather than a
   // miss. That is the asymmetry this milestone runs on: `TF054`/`TF055`/`TF056` are

@@ -1055,6 +1055,17 @@ async function loadAndValidate(
   // number off the env that was just selected, not the whole `timeouts` record, because the rule
   // compares against exactly one budget.
   const envTimeouts = { envName: resolved.envName, wait: resolved.timeouts.wait };
+  // M125b1/D263 — `TF058`'s config half. Read off the **resolved** config rather than re-walked from
+  // the `defaults`/`env` blocks, because `resolve.ts:96` already accumulates the two the way SPEC
+  // §3.7 says they compose (`allowHosts = [...(allowHosts ?? []), ...entry.hosts]`), and a second
+  // accumulation here is the "two copies of a matching rule" that `checkAllowHostsCoversBaseUrls`
+  // has a paragraph warning about one function away.
+  //
+  // `?? []` is load-bearing and is the opposite of the usual defaulting: `resolved.allowHosts` is
+  // `null` when no env or `defaults` block declared the key, which is *exactly* the state `TF058`
+  // reports. Passing `undefined` through here would say "nobody resolved a config" about a config
+  // this function has, by that point, definitely read.
+  const envAllowHosts = { envName: resolved.envName, hosts: resolved.allowHosts ?? [] };
   const configEnvDiags = [
     ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
@@ -1115,6 +1126,10 @@ async function loadAndValidate(
       // M124/D236 — `TF055`. Derived from the resolved env, once, like `envBaseUrls` above: the
       // hold window is written per step but the budget it has to fit inside is a whole-suite fact.
       envTimeouts,
+      // M125b1/D263 — `TF057`/`TF058`. Same shape and the same once-per-run derivation, and the
+      // same reason: which hosts a suite may reach is a whole-suite fact that a per-step diagnostic
+      // has to be told.
+      envAllowHosts,
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's

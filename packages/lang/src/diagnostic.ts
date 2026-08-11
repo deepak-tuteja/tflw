@@ -109,6 +109,15 @@ export const Codes = {
   INVALID_LITERAL_OPERAND: 'TF054',
   HOLD_EXCEEDS_WAIT_TIMEOUT: 'TF055',
   DATA_TABLE_EXTENSION: 'TF056',
+  // M125b1 (`FU-18`, D245/D246/D266) — an absolute URL is now legal in `api` and `open`, and these
+  // three say what it costs. The first two are **warnings** and the tier is D147: `allow hosts` and
+  // the env's base URLs come from `tflw.config` and differ per env, so the checker is predicting
+  // what *this* run would do rather than observing something settled. The third is an **error**,
+  // and the difference is the whole of D147 in one place — both of its operands are written in the
+  // file, so no config can make it right.
+  ABSOLUTE_URL_NOT_PORTABLE: 'TF057',
+  ABSOLUTE_URL_NEEDS_ALLOW_HOSTS: 'TF058',
+  SERVICE_WITH_ABSOLUTE_URL: 'TF059',
 } as const;
 
 // ---------------------------------------------------------------------------

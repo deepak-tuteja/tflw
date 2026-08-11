@@ -58,6 +58,35 @@ export function allowHostsRefusal(url: string, allowHosts: readonly string[], or
   }
 }
 
+/**
+ * M125b1 (`FU-18`, D246) — the refusal for an absolute URL written in a suite that declares no
+ * `allow hosts` at all.
+ *
+ * Separate from `allowHostsRefusal` above rather than a fourth `RefusalOrigin`, because every
+ * variant there answers "this host is not on the list" and quotes the list. Here there is no list,
+ * and saying `not in \`allow hosts\` ()` would be both ungrammatical and misleading — it reads as a
+ * misconfigured allowlist when the actual state is that the guardrail was never switched on.
+ *
+ * Says what happened and what to write, and nothing about which check fired (C7/M84). The two ways
+ * out are genuinely different choices rather than one fix and one workaround — declare the host, or
+ * put it in the config as a base URL and go back to writing paths — so both are named and neither
+ * is recommended over the other.
+ */
+export function absoluteUrlNeedsAllowHosts(url: string): string {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    hostname = url;
+  }
+  return (
+    `this step names an absolute URL ("${url}"), and the config declares no \`allow hosts\` — refusing to send it. ` +
+    `An absolute URL can reach a host \`tflw.config\` never mentions, so writing one opts the suite into saying where it may reach: ` +
+    `add \`allow hosts "${hostname}"\` to the env (or to \`defaults\`). ` +
+    `If this host is where the suite normally talks, giving it an \`api\` base URL and writing a path is the other way round (SPEC §3.1, §3.7).`
+  );
+}
+
 export type RefusalOrigin =
   | { readonly kind: 'request' }
   | { readonly kind: 'redirect'; readonly from: string }

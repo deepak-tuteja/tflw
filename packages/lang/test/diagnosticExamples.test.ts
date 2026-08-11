@@ -74,6 +74,7 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
         : {}),
       ...(probe.needs?.envBaseUrls ? { envBaseUrls: probe.needs.envBaseUrls } : {}),
       ...(probe.needs?.envTimeouts ? { envTimeouts: probe.needs.envTimeouts } : {}),
+      ...(probe.needs?.envAllowHosts ? { envAllowHosts: probe.needs.envAllowHosts } : {}),
     }),
   ];
 }

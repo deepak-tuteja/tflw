@@ -50,14 +50,20 @@ export {
   checkCapturableSubjects,
   checkLiteralOperands,
   checkHoldWindows,
+  checkAbsoluteUrls,
   type EnvBaseUrls,
   type EnvTimeouts,
+  type EnvAllowHosts,
   collectFileReferences,
   collectConfigFileReferences,
   fileReferenceDrift,
   type FileReference,
 } from './checker.js';
 export { hostMatchesAllowPattern } from './allowHostsPattern.js';
+// M125b1 (`FU-18`, D265) — exported for `@tflw/runtime`, which must agree with the lexer about what
+// "absolute" means or it will concatenate a base URL onto something the lexer already accepted as a
+// whole address. Same reason `hostMatchesAllowPattern` is exported one line above.
+export { ABSOLUTE_URL_START, isAbsoluteUrl, absoluteUrlHost } from './absoluteUrl.js';
 // M124/D233 — the operand tests `TF054` and the runtime's own `throw`s share. Exported because
 // `@tflw/runtime` is the other caller: `eval.ts`'s `applyTransform` imports these rather than
 // keeping a second copy of what counts as decodable.

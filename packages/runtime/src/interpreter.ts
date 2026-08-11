@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, join, resolve as resolvePath } from 'node:path';
-import { parseSource, quantifiable, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
+import { isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   A11ySeverity,
   ApiBody,
@@ -85,7 +85,7 @@ import { parseCsv } from './csv-parse.js';
 import { extractPdfText } from './pdf-text.js';
 import { CookieJar } from './cookieJar.js';
 import { sendRequest } from './http.js';
-import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
+import { absoluteUrlNeedsAllowHosts, AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest, warnPinnedFallback, type KeepAliveAgents } from './httpPinned.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
 import { inferContentType } from './mime.js';
@@ -2526,7 +2526,23 @@ async function resolveForStep(ctx: EvalCtx, config: ResolvedConfig, locatorAst: 
   return resolveLocator(scope, locatorAst, ctx, config.timeouts.step);
 }
 
-function resolveWebUrl(path: string, config: ResolvedConfig): string {
+/** Exported for the same reason `resolveBaseUrl` and `checkHostAllowed` beside it are (M125b1): the
+ *  `FU-18` rule is one line of composition whose defect was invisible from outside, and a test that
+ *  can only reach it by driving a browser is a test nobody writes. */
+export function resolveWebUrl(path: string, config: ResolvedConfig): string {
+  // M125b1 (`FU-18`, D245) — this line is the row's worst half. It used to be unconditional, so
+  // `open "https://example.com/x"` against a configured `web` base navigated to
+  // `http://localhost:5173/https://example.com/x` — a page that *loads* on any SPA with a catch-all
+  // route, so the run went on and failed later on an assertion about content, or passed. `M125a`
+  // reproduced exactly that: 5.5s, a page served, and a failure attributed to the wrong step.
+  //
+  // Checked before the `web`-base requirement below, not after, because an absolute URL needs no
+  // base — demanding one is the other half of what the row filed.
+  if (isAbsoluteUrl(path)) {
+    requireAllowHostsForAbsolute(path, path, config);
+    checkHostAllowed(path, config);
+    return path;
+  }
   if (!config.webBaseUrl) {
     throw new RuntimeError('no `web` base URL is configured for the active env — add `web "http://localhost:..."` to `tflw.config` (SPEC §3.1, §9.1)');
   }
@@ -3142,9 +3158,18 @@ async function loadMtlsCreds(config: ResolvedConfig, baseDir: string): Promise<{
 }
 
 async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx, redactor: Redactor, baseDir: string, configDir: string, pinnedAgents?: KeepAliveAgents): Promise<ApiExec> {
-  const baseUrl = resolveBaseUrl(spec.service, config);
   const path = interpolatePath(spec.path.raw, ctx, true);
-  const url = baseUrl + ensureLeadingSlash(path);
+  // M125b1 (`FU-18`, D245) — an absolute target IS the address; there is no base to prepend and no
+  // base that needs to exist. Decided after interpolation, not before, so `https://{host}/x` is
+  // absolute for the same reason `https://a.example/x` is: what leaves the machine is what is
+  // judged. `guardDemoUrl` still applies, because `tflw://demo` reaching the runtime is a bug on
+  // every path into it (M118, `FU-04`), and this is a new path into it.
+  //
+  // A named service and an absolute URL together is refused by the checker (`TF059`, D266) rather
+  // than resolved here: one of the two is dead text, and picking a winner silently is the failure
+  // this row is filed about.
+  const url = isAbsoluteUrl(path) ? guardDemoUrl(path) : resolveBaseUrl(spec.service, config) + ensureLeadingSlash(path);
+  requireAllowHostsForAbsolute(url, path, config);
   checkHostAllowed(url, config);
 
   const headers: Record<string, string> = {};
@@ -4102,6 +4127,31 @@ export function checkHostAllowed(url: string, config: ResolvedConfig): void {
   if (!isHostAllowed(url, config.allowHosts)) {
     throw new AllowHostsError(allowHostsRefusal(url, config.allowHosts!, { kind: 'request' }));
   }
+}
+
+/**
+ * M125b1 (`FU-18`, D246) — writing an absolute URL opts the suite into declaring where it may
+ * reach, and with nothing declared the step is refused.
+ *
+ * This exists because `isHostAllowed` answers `true` for **everything** when no allowlist is
+ * configured (`allowHosts.ts:30`), which is the correct default for a suite written entirely
+ * against its env's base URL — that base is the declaration. An absolute URL is the case where that
+ * stops being true: it is the one form that can send a request somewhere the config never mentions,
+ * and `tflw.config` is the only place a reader would look to find out where a suite talks to.
+ *
+ * The tier is D147 and the same split `M124` shipped for `TF055`. Here the runtime has resolved the
+ * config and is looking at the actual URL about to be fetched, so it *observes* and may refuse. The
+ * checker only *predicts* — `allow hosts` differs per env, and a suite whose CI env declares one is
+ * correct — so it warns (`TF058`) and never errors.
+ *
+ * `AllowHostsError` rather than a bare `RuntimeError`, because the three layers between here and the
+ * reporter each re-frame what they catch as "request failed: …", and this is not a failed request:
+ * nothing was sent. That distinction is carried by the type, exactly as `allowHosts.ts` describes.
+ */
+export function requireAllowHostsForAbsolute(url: string, target: string, config: ResolvedConfig): void {
+  if (!isAbsoluteUrl(target)) return;
+  if (config.allowHosts && config.allowHosts.length > 0) return;
+  throw new AllowHostsError(absoluteUrlNeedsAllowHosts(url));
 }
 
 export function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {

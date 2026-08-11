@@ -18,6 +18,7 @@
 
 import type { Position, Span, Token, TokenType } from './token.js';
 import { type Diagnostic, Codes } from './diagnostic.js';
+import { ABSOLUTE_URL_START } from './absoluteUrl.js';
 
 export interface LexResult {
   readonly tokens: readonly Token[];
@@ -55,6 +56,13 @@ const MAX_RUN_CHARS = 16;
 /** HTTP method words — a `/` right after one of these starts a PATH token; elsewhere `/` is the
  * arithmetic divide operator (M2, P#25). Case-insensitive to match the parser's method check. */
 const METHOD_WORDS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']);
+
+// An absolute URL in HTTP-method position (M125b1, `FU-18`, D265) — `api GET https://x/y` — is
+// recognised with `ABSOLUTE_URL_START`, imported at the top of this file rather than written here.
+// D233's reason is sharper than usual: see `absoluteUrl.ts` for the worked example in which a lexer
+// admitting a scheme the interpreter does not silently reproduces the very concatenation bug
+// `FU-18` is about. `PATH_CHARS` already admits `:`, so only that prefix needs recognising; scanning
+// then continues with the same character class the `/` branch uses, and both produce a `path` token.
 
 function isIdentStart(ch: string): boolean {
   return /[A-Za-z_]/.test(ch);
@@ -438,6 +446,35 @@ class Lexer {
       // string
       if (ch === '"') {
         c = this.lexString(line, c, lineStart, lineNo);
+        continue;
+      }
+
+      // absolute URL in method position (M125b1, `FU-18`, D265) — `api GET https://x/y`.
+      //
+      // Must come before the identifier branch below, which would otherwise take `https` as a bare
+      // ident and leave the parser reporting "expected a path like `/orders`, found `https`" — the
+      // error the row is filed against, produced by the lexer and only *reported* by the parser.
+      //
+      // Gated on the same `canStartPath()` as the `/` branch, deliberately: that predicate is what
+      // keeps `let ratio = get / 2` from mistaking a variable named `get` for a method (decision
+      // 60), and an absolute URL needs exactly the same protection for the same reason. Outside
+      // method position this is an ident followed by punctuation, lexed as it always was.
+      if (isIdentStart(ch) && this.canStartPath() && ABSOLUTE_URL_START.test(line.slice(c))) {
+        while (c < len && PATH_CHARS.test(line[c]!)) c++;
+        const raw = line.slice(startCol, c);
+        this.push('path', raw, raw, { start: startPos, end: at(c) });
+        // The same `#` collision the `/` branch diagnoses (M59, `A1-02`), for the same reason and
+        // more sharply: a fragment on an absolute URL is the form people actually paste out of a
+        // browser, and silently truncating it would send a request nobody wrote.
+        if (c < len && line[c] === '#') {
+          this.diag(
+            Codes.UNEXPECTED_CHAR,
+            'error',
+            `\`#\` ends the URL \`${raw}\` and starts a comment`,
+            { start: at(c), end: at(c + 1) },
+            'write `%23` for a literal `#`. A URL fragment is never sent to the server, so it cannot be part of a request path.',
+          );
+        }
         continue;
       }
 
