@@ -564,6 +564,10 @@ export interface ResolvedLocator {
 
 const POLL_INTERVAL_MS = 100;
 
+/** How long a locator may go unresolved before `resolveLocator` says so out loud (`FU-14`, D248).
+ * Not a new deadline and not a fast-fail — the step still polls to its own timeout. */
+const SPECULATIVE_DIAGNOSIS_MS = 3000;
+
 function candidateStrategies(scope: LocatorScope, kind: LocatorKind, name: string): { readonly pwLocator: PWLocator; readonly via: string }[] {
   switch (kind) {
     case 'button':
@@ -635,7 +639,14 @@ function sleep(ms: number): Promise<void> {
 export async function resolveLocator(scope: LocatorScope, locatorAst: LocatorAst, ctx: EvalCtx, timeoutMs: number): Promise<ResolvedLocator> {
   const name = String(evalValue(locatorAst.value, ctx));
   const attempts = candidateStrategies(scope, locatorAst.kind, name);
-  const deadline = Date.now() + timeoutMs;
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
+  // Speak only when at least as much waiting would remain as has already passed — under a step
+  // timeout of 3 s or so the line would land a blink before the failure it precedes and be pure
+  // noise. `M119`'s guard is untouched: this is progress, and the diagnosis still fires exactly
+  // once, at the end, on the step's final failure.
+  const speakAt = timeoutMs > SPECULATIVE_DIAGNOSIS_MS * 2 ? startedAt + SPECULATIVE_DIAGNOSIS_MS : undefined;
+  let spoken = false;
   for (;;) {
     for (const attempt of attempts) {
       const count = await attempt.pwLocator.count();
@@ -648,28 +659,136 @@ export async function resolveLocator(scope: LocatorScope, locatorAst: LocatorAst
       const diagnosis = await diagnoseMissingLocator(scope, locatorAst.kind, name);
       throw new RuntimeError(`no element found for ${describeLocator(locatorAst.kind, name)}${suffix}${diagnosis}`);
     }
+    if (speakAt !== undefined && !spoken && Date.now() >= speakAt) {
+      spoken = true;
+      await announceStillWaiting(scope, locatorAst.kind, name, timeoutMs);
+    }
     await sleep(POLL_INTERVAL_MS);
   }
+}
+
+/** `FU-14`/D248. The most common UI authoring error — a typo in a locator name — used to buy 30.4 s
+ * of unbroken silence and then a good diagnosis; measured on the box, all eleven console lines of
+ * the run landed within 12 ms of each other at the very end. The complaint in the row is the
+ * silence, not the thirty seconds, and the silence is the part that can be fixed without changing
+ * what passes: a slow-rendering app that resolves at 8 s still resolves at 8 s.
+ *
+ * **Console only, and deliberately not buffered.** `--verbose` step logs are collected per file and
+ * flushed as a block under `--parallel > 1` so they never interleave; this line is the one piece of
+ * output where that treatment would destroy the entire point, since it would then arrive *after*
+ * the failure it exists to pre-empt. It also adds no event to the stream — a progress line is not a
+ * result (C4/`B3-05`).
+ *
+ * It speaks even when nothing on the page resembles the name. That case is the one the row's own
+ * re-measurement singled out as worst: against a page with no near-miss, the wait is not even paid
+ * off with a suggestion at the end. */
+async function announceStillWaiting(scope: LocatorScope, kind: LocatorKind, name: string, timeoutMs: number): Promise<void> {
+  const described = describeLocator(kind, name);
+  const closest = (await nearestCandidates(scope, kind, name).catch(() => []))[0];
+  const seconds = (ms: number): string => `${Math.round(ms / 1000)}s`;
+  const detail = closest
+    ? `the closest thing on the page is ${closest.suggestion}`
+    : 'nothing on the page resembles it yet';
+  process.stderr.write(`⏳ tflw: still nothing matching ${described} after ${seconds(SPECULATIVE_DIAGNOSIS_MS)} — ${detail}; still waiting, up to ${seconds(timeoutMs)}\n`);
+}
+
+const MAX_AMBIGUITY_CANDIDATES = 5;
+
+/** One matched element, as the ambiguity message needs to talk about it: what it says, and the one
+ * fact that tells it apart from its identical siblings (`M125c`, `FU-21`). */
+export interface AmbiguousMatch {
+  readonly text: string;
+  /** Already rendered — `data-testid="save-profile"`, `in "Billing"` — or null when the page offers
+   * nothing at all and the ordinal is the only handle there is. */
+  readonly discriminator: string | null;
+}
+
+/** **One query.** `count` and the descriptions used to come from two independent round-trips — the
+ * caller's `.count()` and this function's own `.all()` — against a DOM that can change between
+ * them, which is the only explanation for `FU-21`'s filed "2 matches, 1 candidate shown, … and 1
+ * more" (D253). Everything the message says now derives from a single in-page evaluation, so the
+ * arithmetic is consistent by construction rather than by luck.
+ *
+ * It is also strictly cheaper than what it replaces: one `evaluateAll` instead of a `.count()`, an
+ * `.all()`, and N `innerText()` calls. */
+async function describeAmbiguousMatches(pwLocator: PWLocator): Promise<AmbiguousMatch[]> {
+  try {
+    // No named inner bindings — see `scanDomCandidates`' comment; this callback is serialized into
+    // the page and a `__name` helper reference would not exist there.
+    return await pwLocator.evaluateAll((els: Element[]) => {
+      const out: { text: string; discriminator: string | null }[] = [];
+      for (const el of els) {
+        let raw = (el as HTMLElement).innerText ?? el.textContent ?? '';
+        if (!raw.trim()) raw = (el as HTMLInputElement).value ?? '';
+        const text = raw.trim().replace(/\s+/g, ' ').slice(0, 80);
+
+        // The cascade, most-specific first: something a human can paste, then something a human can
+        // read. `id` and `data-testid` are stable handles; `aria-label` is what the control calls
+        // itself; a labelled or headed container is where it lives.
+        let discriminator: string | null = null;
+        const testid = el.getAttribute('data-testid');
+        const aria = el.getAttribute('aria-label');
+        if (testid?.trim()) {
+          discriminator = `data-testid="${testid.trim()}"`;
+        } else if (el.id) {
+          discriminator = `id="${el.id}"`;
+        } else if (aria?.trim()) {
+          discriminator = `aria-label="${aria.trim()}"`;
+        } else {
+          let node: Element | null = el.parentElement;
+          while (node && !discriminator) {
+            const tag = node.tagName.toLowerCase();
+            const containerLabel = node.getAttribute('aria-label');
+            if (containerLabel?.trim()) {
+              discriminator = `in "${containerLabel.trim().slice(0, 60)}"`;
+            } else if (['section', 'nav', 'main', 'aside', 'header', 'footer', 'form', 'article', 'li', 'fieldset'].includes(tag)) {
+              const heading = node.querySelector('h1, h2, h3, h4, h5, h6, legend');
+              const headingText = heading?.textContent?.trim();
+              if (headingText) discriminator = `in "${headingText.replace(/\s+/g, ' ').slice(0, 60)}"`;
+            }
+            node = node.parentElement;
+          }
+        }
+
+        out.push({ text, discriminator });
+      }
+      return out;
+    });
+  } catch {
+    return []; // a page that navigated mid-description must not replace the real failure
+  }
+}
+
+/** Pure, so the degenerate branch below is reachable from a unit test rather than only from a race
+ * nobody can stage on demand. */
+export function formatAmbiguity(described: string, via: string, observedCount: number, matches: readonly AmbiguousMatch[]): string {
+  const tail = 'narrow it with `within <container>`, or make the name more specific (SPEC §9.3)';
+  // The caller counted N>1 and threw; if the single describing query then sees fewer than two, the
+  // page settled in between. Saying "matched 1 elements" would be internally consistent and
+  // actively misleading, so the race is named instead of smoothed over.
+  if (matches.length < 2) {
+    return (
+      `ambiguous locator ${described} (resolved via ${via}) — matched ${observedCount} elements when the step ran, ` +
+      `but the page changed while the failure was being described (it now matches ${matches.length}), so there is no stable list to show\n${tail}`
+    );
+  }
+  const shown = matches.slice(0, MAX_AMBIGUITY_CANDIDATES);
+  const descriptions = shown.map((m, i) => {
+    const text = m.text ? JSON.stringify(m.text) : '(no visible text)';
+    return `  ${i + 1}. ${text}${m.discriminator ? ` — ${m.discriminator}` : ''}`;
+  });
+  const more = matches.length > shown.length ? `\n  … and ${matches.length - shown.length} more` : '';
+  return `ambiguous locator ${described} (resolved via ${via}) — matched ${matches.length} elements:\n${descriptions.join('\n')}${more}\n${tail}`;
 }
 
 async function ambiguityError(
   locatorAst: LocatorAst,
   name: string,
   attempt: { readonly pwLocator: PWLocator; readonly via: string },
-  count: number,
+  observedCount: number,
 ): Promise<RuntimeError> {
-  const all = await attempt.pwLocator.all();
-  const shown = all.slice(0, 5);
-  const descriptions = await Promise.all(
-    shown.map(async (l, i) => {
-      const text = (await l.innerText().catch(() => '')).trim().replace(/\s+/g, ' ').slice(0, 80);
-      return `  ${i + 1}. ${text ? JSON.stringify(text) : '(no visible text)'}`;
-    }),
-  );
-  const more = count > shown.length ? `\n  … and ${count - shown.length} more` : '';
-  return new RuntimeError(
-    `ambiguous locator ${describeLocator(locatorAst.kind, name)} (resolved via ${attempt.via}) — matched ${count} elements:\n${descriptions.join('\n')}${more}\nnarrow it with \`within <container>\`, or make the name more specific (SPEC §9.3)`,
-  );
+  const matches = await describeAmbiguousMatches(attempt.pwLocator);
+  return new RuntimeError(formatAmbiguity(describeLocator(locatorAst.kind, name), attempt.via, observedCount, matches));
 }
 
 // ---- M5: live-DOM "nearest candidate" diagnosis (SPEC §9.3) ---------------------------------
@@ -849,6 +968,54 @@ async function scanDomCandidates(scope: LocatorScope, kind: LocatorKind): Promis
  * used to be private to. The diagnosis is about the *name*, not about how the caller feels about
  * a zero count, so both paths get it. */
 export async function diagnoseMissingLocator(scope: LocatorScope, kind: LocatorKind, typedName: string): Promise<string> {
+  return renderNearestCandidates(await nearestCandidates(scope, kind, typedName));
+}
+
+/** A suggestion, plus the fact that decides whether it is usable: how many elements on the page
+ * render to this exact string (`M125c`, `B4-11`). */
+export interface NearestCandidate {
+  readonly suggestion: string;
+  readonly score: number;
+  readonly matches: number;
+}
+
+/** Collapses byte-identical suggestions, keeping first-seen order (the caller sorts by score before
+ * calling, so first-seen *is* best-first) and the best score in each group.
+ *
+ * `B4-11`: two `Save` buttons produced the list ``- `button "Save"`` twice, and SPEC §9.3 calls
+ * these ready-to-paste. Measured on a twelve-control page the defect is worse than duplication —
+ * all five slots of `MAX_DIAGNOSIS_CANDIDATES` were the *same* string, so a genuinely different
+ * candidate could not be shown at all. Deduping before the slice is what returns those slots. */
+export function dedupeCandidates(entries: readonly { suggestion: string; score: number }[]): NearestCandidate[] {
+  const groups = new Map<string, { suggestion: string; score: number; matches: number }>();
+  for (const entry of entries) {
+    const existing = groups.get(entry.suggestion);
+    if (existing) {
+      existing.matches += 1;
+      if (entry.score > existing.score) existing.score = entry.score;
+    } else {
+      groups.set(entry.suggestion, { suggestion: entry.suggestion, score: entry.score, matches: 1 });
+    }
+  }
+  return [...groups.values()];
+}
+
+/** Deduping alone would still hand back a locator that cannot work: one `button "Save"` pasted into
+ * a page with two of them fails with the *ambiguity* error, which is a different failure than the
+ * one being diagnosed — `B4-11`'s actual complaint. So a non-unique suggestion says so, and names
+ * the way out, rather than being quietly offered as if it were ready to paste. */
+export function renderNearestCandidates(candidates: readonly NearestCandidate[]): string {
+  if (candidates.length === 0) return '';
+  const lines = candidates.map((c) => {
+    const caveat = c.matches > 1 ? ` — ${c.matches} elements render this same locator, so pasting it as-is is ambiguous; add \`within <container>\`` : '';
+    return `    - ${c.suggestion}${caveat}`;
+  });
+  return `\n  nearest matches on the page:\n${lines.join('\n')}`;
+}
+
+/** Exported for `FU-14`'s speculative line, which needs the closest candidate rather than the whole
+ * rendered block. */
+export async function nearestCandidates(scope: LocatorScope, kind: LocatorKind, typedName: string): Promise<NearestCandidate[]> {
   const raw = await scanDomCandidates(scope, kind);
   const named = raw
     .filter((c): c is { name: string; cssPath: string } => !!c.name)
@@ -856,9 +1023,7 @@ export async function diagnoseMissingLocator(scope: LocatorScope, kind: LocatorK
     .filter((c) => c.score >= MIN_DIAGNOSIS_SIMILARITY)
     .sort((a, b) => b.score - a.score);
   const unnamed = UNNAMED_IS_STILL_A_CANDIDATE[kind] ? raw.filter((c) => !c.name).map((c) => ({ suggestion: `css ${JSON.stringify(c.cssPath)}`, score: 0 })) : [];
-  const combined = [...named, ...unnamed].slice(0, MAX_DIAGNOSIS_CANDIDATES);
-  if (combined.length === 0) return '';
-  return `\n  nearest matches on the page:\n${combined.map((c) => `    - ${c.suggestion}`).join('\n')}`;
+  return dedupeCandidates([...named, ...unnamed]).slice(0, MAX_DIAGNOSIS_CANDIDATES);
 }
 
 /** Strips Playwright's verbose multi-line "Call log:" trailer down to just its first line, so a

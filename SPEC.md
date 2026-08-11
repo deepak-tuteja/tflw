@@ -1748,8 +1748,17 @@ explicit `check`/`expect` lines.
   - Escapes: `css "…"`, `xpath "…"` — greppable; lint-nudged behind `element` aliases once §8
     builds them.
 - **Strict ambiguity (D7):** more than one match is always a hard error — never "take the first".
-  The error lists up to 5 matched candidates' visible text and suggests `within <container>` or a
-  more specific name.
+  The error lists up to 5 matched candidates and suggests `within <container>` or a more specific
+  name. Each candidate carries its visible text **plus the first thing the page offers to tell it
+  apart from its identical siblings** (`M125c`, `FU-21`): `data-testid`, then `id`, then
+  `aria-label`, then the nearest enclosing labelled or headed container — `2. "Add to cart" — in
+  "Product 2"` — degrading to a bare ordinal when the page offers nothing. No generated CSS paths
+  here, for the same reason `M119-01` keeps them out of the nearest-candidate list. Twelve identical
+  "Add to cart" buttons used to print five identical quoted labels, which is a list carrying no
+  information for the choice it asks the reader to make.
+  The count and the list come from **one** query, so "matched N, showing M, and K more" always
+  accounts for every match; they used to be two independent round-trips against a live DOM, which is
+  the only way the filed "matched 2 elements … 1 shown … and 1 more" can happen.
 - **`within <locator>`** + an indented step block scopes every nested step's locator resolution to
   inside that container (block form only, same indentation every other construct uses — no brace
   syntax).
@@ -1772,6 +1781,25 @@ explicit `check`/`expect` lines.
   and only when *nothing* matched. With an element resolved, the failure is about its state rather
   than its name, and naming other similar elements would point away from the cause. Absence that
   the matcher is happy with — `is hidden`, `has count 0` — passes, and a pass is never annotated.
+  **Byte-identical suggestions are collapsed, and a collapsed one says so (`M125c`, `B4-11`).** Two
+  `Save` buttons produced the list ``- `button "Save"`` twice; pasting it back in produced the
+  *ambiguity* error above — a different failure than the one being diagnosed, from a list this
+  section calls ready-to-paste. So duplicates now collapse to a single entry annotated with how many
+  elements render it and the `within <container>` way out. Collapsing happens **before** the cap,
+  which is the larger half of the fix: on a page of twelve identical controls all five slots were
+  spent on one string, so a genuinely different candidate could not be shown at all.
+- **A step still unresolved at ~3s says so, and keeps waiting (`M125c`, `FU-14`):** one line on
+  stderr — ``⏳ tflw: still nothing matching `button "Log Inn"` after 3s — the closest thing on the
+  page is `button "Login"`; still waiting, up to 30s`` — then the step polls to its own deadline
+  exactly as before. **No deadline moves and nothing that passed stops passing**: an app that
+  renders at 8s still resolves at 8s. A locator typo is the most common UI authoring error and used
+  to buy 30s of unbroken silence before any output at all; the complaint is the silence, not the
+  thirty seconds. It speaks even when nothing on the page resembles the name, which is the case
+  where the wait is otherwise not even repaid with a suggestion at the end. The line is progress,
+  not a result: it is never added to the event stream, and it is deliberately *not* buffered per
+  file under `--parallel` the way `--verbose` step logs are, since flushing it at end-of-file would
+  deliver it after the failure it exists to pre-empt. Steps whose own timeout leaves no room to wait
+  after speaking stay quiet — which covers `expect`/`check` at their 5s default.
 
 ### 9.4 Waiting & UI subjects ✅
 
