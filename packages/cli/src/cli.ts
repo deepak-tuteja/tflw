@@ -97,6 +97,7 @@ import {
 import { startServer } from '@tflw/lsp-server';
 import { buildEnviron } from './env.js';
 import { DOCS_TOPICS } from './docs-data.generated.js';
+import { renderTopicIndex } from './docs-index.js';
 import {
   DEMO_BASE_URL,
   demoServiceChild,
@@ -2347,7 +2348,7 @@ async function docsCommand(argv: string[]): Promise<number> {
 
   if (topic === undefined) {
     process.stdout.write(`tflw docs <topic> — print a SPEC.md cheatsheet section. Topics:\n\n`);
-    for (const t of topics) process.stdout.write(`  ${t}\n`);
+    process.stdout.write(renderTopicIndex(topics));
     process.stdout.write(`\nrun \`tflw docs <topic>\` to read one, e.g. \`tflw docs matchers\`.\n`);
     // M92c (`FU-17`) — this is the one place that names SPEC.md *and* has room to say where it is.
     // The npm package doesn't ship SPEC.md (`files: ["dist", "THIRD-PARTY-NOTICES.md"]`), so before

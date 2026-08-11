@@ -944,6 +944,91 @@ const REGISTRY = [
     find: '    const span = found.result.spans.find((s) => spanContains(s, found.offset));',
     replace: '    const span = found.result.spans[0];',
   },
+  // M125e (`FU-24` · `FU-29` · `FU-30`) — one per decision that a later edit could undo while
+  // leaving a surface that still looks helpful. The manifest is the interesting case: several of
+  // these leave hover and completion *working*, and wrong only in what they teach.
+  {
+    id: 'step-completion-without-its-detail',
+    milestone: 'm125e',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/resolution/completion.ts',
+    what: "the step list goes back to bare labels — the exact state `FU-24` measured (\"37 items, 0 carrying detail\"). Completion still works, still filters, still offers every keyword; it just stops saying what any of them do, which is the whole reason the manifest exists. Every test asserting *which* labels are offered still passes",
+    find: '      return STEP_KEYWORDS.filter((k) => byPrefix(k.id)).map((k) => ({ label: k.id, detail: k.summary }));',
+    replace: '      return STEP_KEYWORDS.filter((k) => byPrefix(k.id)).map((k) => ({ label: k.id }));',
+  },
+  {
+    id: 'blank-line-completion-keeps-the-probe-character',
+    milestone: 'm125e',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/completion.ts',
+    what: "the synthetic character used to make an indented blank line non-blank survives into `prefix`, so the caller filters candidates by `_`. Nothing starts with `_`, so the list is empty again — the row's exact symptom, reached by a different route, and now with a context object that looks perfectly well-formed",
+    find: '  return ctx ? { ...ctx, prefix: \'\' } : null;',
+    replace: '  return ctx;',
+  },
+  {
+    id: 'blank-line-completion-answers-at-column-zero',
+    milestone: 'm125e',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/completion.ts',
+    what: "D278's column-0 arm, which the parser makes redundant rather than the tests failing to cover",
+    find: '  if (line.length === 0 || /\\S/.test(line)) return null;',
+    replace: '  if (/\\S/.test(line)) return null;',
+    // Filed as a live mutant and it survived the first unscoped sweep, so the claim it was written
+    // with is on record and wrong: "answering on an unindented blank line offers the step list at
+    // declaration position". It does not, and cannot.
+    //
+    // `getCompletionContext` is `parseForCompletion(…) ?? resolveOnBlankLine(…)`, so dropping this
+    // arm changes an answer only where the parser declines AND the `_` probe makes it answer. At
+    // column 0 the probe character is a token at indent 0, which dedents out of every block; the
+    // seven places that set `completionResult` (session, step, subject, matcher, unique, random,
+    // transform) are all inside a test or action body, and declaration position is instrumented
+    // nowhere. So the probe reaches no production and both sides return null.
+    //
+    // Measured, not reasoned: 10,152 column-0 cursor positions — every line start in the 178 `.tflw`
+    // files across this repo and testFlow-tests, plus 29 hand-built cases aimed at the constructs
+    // where a column-0 line might still be "inside" something (unclosed JSON body, table block,
+    // session, env, empty document). Zero divergence.
+    //
+    // The arm stays. It is defence-in-depth that states D278's boundary at the boundary, and it
+    // becomes load-bearing the moment anything sets a completion context at declaration position —
+    // which `blankLineCompletion.test.ts`'s last test now watches for.
+    equivalent: true,
+  },
+  {
+    id: 'step-hover-without-the-grammar-guard',
+    milestone: 'm125e',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/resolution/hover.ts',
+    what: 'step-keyword hover stops asking the parser whether a statement may begin at that offset, and matches on text alone. A body field spelt `log:` and the word `api` inside a `log "api is down"` message then hover as keywords — the over-match a textual rule invites, and the reason the guard is the grammar rather than a list of node types to exclude',
+    find: "  if (getCompletionContext(text, wordStart)?.kind !== 'step') return null;",
+    replace: '',
+  },
+  {
+    id: 'imported-action-labelled-for-every-file',
+    milestone: 'm125e',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/resolution/hover.ts',
+    what: "the `imported action` label is applied whether or not the file brings names in from elsewhere, so a plain typo'd call in a file with no `use`/`import` at all hovers as an imported action — asserting an origin nothing here can know. The `use`d-helper case, which is what `FU-24` filed, still reads correctly",
+    find: "  if (ref.kind === 'action' && !ref.defSpan && bringsInNames(root)) return SYMBOL_KIND_LABEL.importedAction;",
+    replace: "  if (ref.kind === 'action' && !ref.defSpan) return SYMBOL_KIND_LABEL.importedAction;",
+  },
+  // NO MUTANT FOR D279a ITSELF, and the reason is a property of this harness worth stating once.
+  // The mistake it guards against is `collectSymbols` writing `importedAction` into `SymbolRef.kind`
+  // — a `packages/lang/src/symbols.ts` edit whose damage shows up only in `@tflw/lsp-server`'s
+  // suite (`definition.test.ts`, `workspaceIndex.test.ts`, `stepHover.test.ts`). A mutant names one
+  // `pkg` whose suite runs against the tree as mutated, and that suite reaches `@tflw/lang` through
+  // its built `dist`, not its source — so a source-level mutation of `symbols.ts` is invisible to
+  // the only tests that would kill it, and it would be scored `survived` while three tests stand
+  // ready to catch the real thing. Recorded rather than staged.
+  {
+    id: 'docs-index-groups-sorted-alphabetically',
+    milestone: 'm125e',
+    pkg: 'tflw',
+    file: 'packages/cli/src/docs-index.ts',
+    what: "the topic groups are ordered by their own names instead of by SPEC's structure, so the listing opens on `Actions, imports, element aliases` and buries `Principles` in the middle. Still grouped, still titled, still complete — just no longer the reading order the document was written in, which is the one thing the grouping was for",
+    find: '  for (const slug of Object.keys(DOCS_TOPICS)) byGroup.set(DOCS_TOPICS[slug]!.group, []);',
+    replace: '  for (const slug of Object.keys(DOCS_TOPICS).sort((a, b) => DOCS_TOPICS[a]!.group.localeCompare(DOCS_TOPICS[b]!.group))) byGroup.set(DOCS_TOPICS[slug]!.group, []);',
+  },
   // M125d (`FU-16` · `FU-25` · `FU-23` · `FU-19`) — the plan named one of these in advance (the
   // report's failure-first behaviour applying to a green run). The rest are the decisions that a
   // later edit could undo while leaving a report that still looks right: the filter that is

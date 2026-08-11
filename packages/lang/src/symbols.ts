@@ -221,6 +221,21 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
     walkSteps(action.body, bound, scopeId, source, actionDefs, pushDef, refs);
   }
 
+  // A call that resolved to no in-file `action` keeps `kind: 'action'` — deliberately, and this is
+  // the second attempt (`M125e`, `FU-24`, D279a). The first re-labelled those refs `importedAction`
+  // here, which reads as the obvious home for it: the distinguishing fact is computed one
+  // expression away, where `walkValue` looks the name up in `actionDefs` to fill `defSpan` and
+  // writes `kind: 'action'` regardless.
+  //
+  // It broke go-to-definition and cross-file rename, for exactly the calls it set out to describe.
+  // `SymbolKind` is an **identity key**, not a display label: `definition.ts` asks
+  // `ref.kind === 'action'` to decide a call needs cross-file resolution, and
+  // `findCrossFileRenameEdits` matches `(kind, name)` pairs across the workspace. Splitting one
+  // identity in two for a presentation reason silently made both of those miss — with no type
+  // error anywhere, since both halves are valid `SymbolKind` values.
+  //
+  // So the label is derived where it is displayed (`hover.ts`'s `refLabel`), from the two facts
+  // that are already in hand there: no `defSpan`, in a file that imports names from elsewhere.
   return { defs, refs };
 }
 

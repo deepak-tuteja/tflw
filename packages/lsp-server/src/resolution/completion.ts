@@ -6,7 +6,7 @@
 // come from the caller (Phase 3's I/O layer resolves `tflw.config`; `packages/lang` has no
 // notion of "the project" to fetch them itself).
 
-import { GENERATORS, MATCHERS, type CompletionContext, type Program, type Span, type SymbolTable } from '@tflw/lang';
+import { GENERATORS, MATCHERS, STEP_KEYWORDS, type CompletionContext, type Program, type Span, type SymbolTable } from '@tflw/lang';
 
 export interface CompletionCandidate {
   readonly label: string;
@@ -26,31 +26,22 @@ export interface CompletionSources {
   readonly knownVariables?: readonly string[];
 }
 
-// Independent copies of parser.ts's `STATEMENT_KEYWORDS`/`SUBJECT_KEYWORDS` (kept local rather
-// than exported, same house-style tradeoff already accepted for tflw.tmLanguage.json/
-// semanticTokens.ts's own wordlists — M3e/M4a) — must be kept in sync with the browser-arc
-// (M3a-M3e) constructs those lists gained, plus `log` (M27/M28, PLAN_LOG_LSP.md).
+// `M125e`/`FU-24`/D251: the step list used to live here as thirty-seven bare strings — an
+// independent copy of parser.ts's `STATEMENT_KEYWORDS` plus the workload directives, kept local on
+// the same house-style tradeoff as tflw.tmLanguage.json/semanticTokens.ts's own wordlists
+// (M3e/M4a). Bare strings are why completion could offer `api` and say nothing about it. They now
+// come from `spec-data.ts`'s `STEP_KEYWORDS`, which carries the `detail` text with them and is held
+// to the parser's own lists by `stepKeywords.test.ts` (D277) — so the copy that used to need
+// manual syncing against every browser-arc and load-testing addition cannot silently fall behind
+// one any more. Retired spellings (`think`, `uncheck`) stay out by construction: the manifest never
+// held them.
 //
-// M29-M32 (load testing, M33 catch-up), M50 (`scenario` collapsed into `test`, D93-D96): `pause`
-// is a real `Step` AST production reached through `parseStep()`'s own switch like every other
-// entry here — the checker (not the parser) is what restricts it to a workload-bearing `test`
-// body (TF033), so it naturally participates in this same flat, container-blind list, exactly
-// like a browser step still being offered inside a `before`/`after` hook even though it's really
-// only meaningful there some of the time. `ramp`/`threshold`/`cleanup` are structurally different
-// — they're dispatched by `parseTestBody`'s own loop *before* `parseStep()` is ever reached, not
-// `Step` productions at all — but a partial word typed at that exact cursor position (not yet
-// matching any of the three exactly) falls through to `parseStep()`'s completion gate the same
-// way, so the same `kind: 'step'` signal is what a user typing inside any `test` body actually
-// sees; bundled in here rather than left offering an incomplete list at that position, accepting
-// the same over-broad-but-harmless tradeoff already baked into every other entry in this list.
-const STEP_KEYWORDS = [
-  'api', 'expect', 'check', 'let', 'capture', 'log', 'wait', 'give',
-  // FS-04: `uncheck` is retired, and a retired spelling must not be offered back as valid — the
-  // same rule `RETIRED_STATEMENT_KEYWORDS` holds the parser's own suggest vocabulary to.
-  'open', 'click', 'double', 'right', 'fill', 'select', 'tick', 'untick', 'press', 'hover', 'scroll',
-  'within', 'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
-  'pause', 'ramp', 'threshold', 'cleanup', 'hold', 'step', 'spike', 'run',
-] as const;
+// Still deliberately flat and container-blind. `ramp`/`hold`/`step`/`spike`/`run`/`threshold`/
+// `cleanup` are dispatched by `parseTestBody`'s own loop *before* `parseStep()` is ever reached and
+// are not `Step` productions at all, but a partial word typed at that exact cursor position falls
+// through to `parseStep()`'s completion gate anyway, so `kind: 'step'` is what a user typing inside
+// any `test` body actually gets. Offering them here is the same over-broad-but-harmless tradeoff
+// that already offers a browser step inside a `before` hook.
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 
 /** Plain typeable matcher keyword → the `spec-data.ts` `MatcherEntry.id` supplying its detail
@@ -167,8 +158,11 @@ export function variablesInScopeAt(program: Program, symbols: SymbolTable, offse
 export function getCompletions(ctx: CompletionContext, sources: CompletionSources = {}): CompletionCandidate[] {
   const byPrefix = (label: string): boolean => label.startsWith(ctx.prefix);
   switch (ctx.kind) {
+    // `FU-24`: `detail` is what makes the list teach rather than merely list. The summary alone,
+    // not the syntax — a completion widget renders `detail` on one line next to the label, and the
+    // syntax line is what hover is for.
     case 'step':
-      return STEP_KEYWORDS.filter(byPrefix).map((label) => ({ label }));
+      return STEP_KEYWORDS.filter((k) => byPrefix(k.id)).map((k) => ({ label: k.id, detail: k.summary }));
     // M96/D134 — `FU-11`'s real failure mode was never that the grammar rejected `expect
     // {orderId} …`; it was that nobody discovered the form. The subject list is a wall a user hits
     // once and routes around permanently, and what they learn instead is the `actions.md`

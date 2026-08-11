@@ -2420,11 +2420,18 @@ test('--verbose --parallel 2 buffers each file\'s step lines into one contiguous
 // Track 3b (grill-me, 2026-07-07): `tflw docs [topic]`, a static SPEC.md-derived cheatsheet
 // bundled into dist/cli.cjs — no network, no cwd/tflw.config needed, so no fixture dir required.
 test('`tflw docs` with no topic lists every topic, one per line', async () => {
+  // `M125e`/`FU-29`/D281 widened the line: a topic still gets one line of its own, but under its
+  // SPEC `##` group heading and followed by its title. `quantifiers` and `subset` are the two the
+  // row named as unreadable slugs, so they are the two asserted to now say what they are — the
+  // `$`-anchored version of this test passed for as long as the listing taught nothing.
   const { stdout } = await execFileAsync('node', [cliEntry, 'docs']);
   assert.match(stdout, /Topics:/);
-  assert.match(stdout, /^ {2}quantifiers$/m);
-  assert.match(stdout, /^ {2}subset$/m);
+  assert.match(stdout, /^ {2}quantifiers\s+Array quantifiers$/m);
+  assert.match(stdout, /^ {2}subset\s+Partial-object matching/m);
+  // `config` is a `##` section's own topic, whose title *is* the group heading printed directly
+  // above it — so it stays bare rather than repeating itself.
   assert.match(stdout, /^ {2}config$/m);
+  assert.match(stdout, /^Assertions$/m);
 });
 
 test('`tflw docs quantifiers` prints non-empty, recognizable SPEC.md content', async () => {

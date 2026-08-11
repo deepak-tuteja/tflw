@@ -16,7 +16,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { MATCHERS, GENERATORS, DIAGNOSTICS } from '../src/spec-data.ts';
+import { MATCHERS, GENERATORS, DIAGNOSTICS, STEP_KEYWORDS } from '../src/spec-data.ts';
 
 /** @param {import('../src/spec-data.js').MatcherEntry[]} matchers */
 export function renderMatcherTable(matchers) {
@@ -39,6 +39,13 @@ export function renderDiagnosticsTable(diagnostics) {
   return [header, ...rows].join('\n');
 }
 
+/** @param {import('../src/spec-data.js').StepKeywordEntry[]} steps */
+export function renderStepKeywordTable(steps) {
+  const header = '| Family | Keyword | Syntax | What it does | Example |\n|---|---|---|---|---|';
+  const rows = steps.map((s) => `| ${s.family} | \`${s.id}\` | ${s.syntax} | ${s.summary} | ${s.example} |`);
+  return [header, ...rows].join('\n');
+}
+
 function replaceMarkerRegion(text, name, replacement) {
   const start = `<!-- GENERATED:${name}:start -->`;
   const end = `<!-- GENERATED:${name}:end -->`;
@@ -58,8 +65,11 @@ function main() {
   text = replaceMarkerRegion(text, 'matchers', renderMatcherTable(MATCHERS));
   text = replaceMarkerRegion(text, 'generators', renderGeneratorTable(GENERATORS));
   text = replaceMarkerRegion(text, 'diagnostics', renderDiagnosticsTable(DIAGNOSTICS));
+  text = replaceMarkerRegion(text, 'step-keywords', renderStepKeywordTable(STEP_KEYWORDS));
   writeFileSync(specPath, text, 'utf8');
-  console.log(`gen-spec-tables: wrote ${MATCHERS.length} matcher rows + ${GENERATORS.length} generator rows + ${DIAGNOSTICS.length} diagnostic rows to SPEC.md`);
+  // Counts every region it wrote, not most of them: a generator whose report omits one of its
+  // outputs is a report you cannot use to tell whether that output ran.
+  console.log(`gen-spec-tables: wrote ${MATCHERS.length} matcher rows + ${GENERATORS.length} generator rows + ${DIAGNOSTICS.length} diagnostic rows + ${STEP_KEYWORDS.length} step keyword rows to SPEC.md`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

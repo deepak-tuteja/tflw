@@ -224,7 +224,7 @@ export const STATEMENT_KEYWORDS = [
  * an error. Neither replacement is reachable by edit distance either (`think`→`pause` shares no
  * letters; `uncheck`→`untick` is 3 edits, past `suggest`'s threshold), which is why both are named
  * outright rather than left to a did-you-mean. */
-const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think', 'uncheck'];
+export const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think', 'uncheck'];
 const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 /** What may stand in subject position, for the "expected …" half of every `TF013`. `{variable}` is

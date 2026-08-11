@@ -19,6 +19,10 @@ export {
   parseConfig as parseConfigTokens,
   parseForCompletion,
   parseStringParts,
+  // `M125e`/D277 — exported so `spec-data.ts`'s `STEP_KEYWORDS` can be asserted against the list
+  // the parser actually dispatches on, rather than against prose.
+  STATEMENT_KEYWORDS,
+  RETIRED_STATEMENT_KEYWORDS,
   type ParseResult,
   type ConfigResult,
   type CompletionKind,
