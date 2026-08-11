@@ -674,7 +674,14 @@ prior attempt renders as a collapsed section (labeled `attempt 1 — failed`, `a
 …) above the final attempt's already-visible steps, so a `flaky` badge always has its evidence
 trail one click away (PLAN.md decision 86, closing decision 46's deferred gap). `junit.xml` stays
 summary-only by design — its `<testcase>` carries a `flaky` `<system-out>` note with the attempt
-count, not step-level detail; that detail lives in report.html.
+count, not step-level detail; that detail lives in report.html. The final attempt is labelled with
+its own verdict — `attempt N of N — passed` or `— failed` — so a test that exhausted its budget
+failing is never shown a green badge inside a panel marked failed (`FU-16`'s neighbour, M125d).
+
+The CLI summary says how many attempts ran whenever more than one did: `✗ always fails (2 attempts)`.
+It is suppressed on a `flaky` pass, where `(flaky)` already states the same fact more usefully — that
+a retry *saved* this test, rather than merely that retries happened (`FU-25`, M125d). A test that ran
+once carries no count at all.
 
 ### 4.5 Load testing — workload-bearing tests (M29/M30, M50-M56, D16-D19/D24a/D26/D70/D93-D122)
 
@@ -2199,6 +2206,15 @@ regression baselines (their own before/after/diff evidence) wait for M4b.
   with the first failing test's panel shown; an all-passing run defaults to the first file's first
   test. `@media print` forces every panel visible and hides the sidebar, so printing/PDF export is
   unaffected.
+- **Failure-first when the run failed** (`FU-16`, M125d). A run with at least one failure opens with
+  the status toggle on **Failed** — applied, not merely highlighted — and scrolls to the first
+  failing step of the panel it opened. Each step's bulky evidence (req/res panels, screenshots,
+  snapshot triptychs) sits in a native `<details>`, collapsed on a passing step and left **open** on
+  a failing one. The failing assertion text itself is never inside that disclosure: it is the answer
+  a reader opened the file for, not evidence to go looking for. Content is folded, never dropped —
+  response bodies remain in the file for Ctrl-F and for any downstream consumer that greps it.
+  **A green run is unchanged in every respect**: the toggle starts on All and nothing is collapsed
+  that was not collapsed before.
 - CI: summary to stdout, `junit.xml` (seed in properties), meaningful exit codes. `report/` also
   always gets `results.json` (the same redacted `RunReport` as JSON) and `.last-run.json` (this
   run's failing tests) — see the CI ergonomics subsection below.
@@ -2294,6 +2310,16 @@ certify that anything is safe to share.
   and that pair is not a contradiction — it reads "this run did not pass, and no test failed",
   which is exactly what an abort is. The narrow question has its own field: `failed === 0`.
 
+  **When the saturation verdict and a per-test back-off warning both fire** (`FU-19`, M125d), the
+  summary states how they relate instead of leaving two adjacent lines blaming opposite parties.
+  They are two readings of one overloaded machine, not a contradiction — and the saturation line is
+  the one to believe first, because a saturated generator mistimes its own requests, so the back-off
+  estimate is derived from numbers that saturation already distorted. Give tflw more headroom,
+  re-run, and only then read the target's verdict. The clause appears only when both fired; either
+  warning alone reads exactly as it always did. The pair is rare: under a closed model a generator
+  waiting on a slow target is definitionally not saturated (measured — throttling a target 8× drove
+  generator CPU *down*, 36 % → 8-10 %), so the two conditions are close to mutually exclusive.
+
   This makes the JSON agree with the exit code it ships beside. Before M114 an aborted run wrote
   `{"ok": true, "passed": 1, "failed": 0, "aborted": true}` and exited `130` — the artifact said
   clean, the process said cut short, and a CI job branching on the field named for the question
@@ -2307,6 +2333,15 @@ certify that anything is safe to share.
   in this list, since `TestResult.ok` is already the final post-retry verdict). No state file, or
   a prior run with zero failures: falls back to the full suite with a printed note, matching
   pytest's `--lf` default. Composes with `--tag`/`--only` as AND.
+
+  A replay says what it is replaying — `re-running 3 tests that failed in the last run` — and,
+  when the run it is replaying was itself narrowed, says so: `— which was filtered by
+  \`--tag smoke\`, not the whole suite` (`FU-23`, M125d). The record carries a `filter` field
+  recording the filters as typed, present only on a filtered run; an unfiltered record is
+  byte-identical to what earlier versions wrote. The overwrite behaviour is deliberately unchanged:
+  a filtered run still records what it found, because *not* writing would replace one silence with
+  another — run `--tag smoke`, then `--failed`, and replay something unrelated to what you just
+  watched fail.
 - `--bail` — stops after the first failing test's final (post-retry) verdict. Under
   `--parallel > 1`, the pool stops pulling new files once a failure is seen; files already claimed
   finish normally (no hard-abort/cancellation-token plumbing into the interpreter). `--parallel`,

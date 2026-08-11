@@ -89,6 +89,7 @@ import {
   writeResultsJson,
   writeLastRun,
   readLastRun,
+  describeRunFilter,
   writeEventsNdjson,
   renderCliSummary,
   describeWorkload,
@@ -1391,6 +1392,15 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     const lastRun = await readLastRun(join(cwd, resolved.reportDir));
     if (lastRun && lastRun.failed.length > 0) {
       failedSet = new Set(lastRun.failed.map((f) => `${f.file}::${f.test}`));
+      // `FU-23`/D250 — say what is being replayed, and say when "the last run" was not the whole
+      // suite. Without the second clause, `tflw run --tag smoke` followed by `tflw run --failed`
+      // quietly redefines `--failed` to mean "failed among the smoke tests", which is how a
+      // failure watched minutes earlier can vanish from a replay with nothing printed about it.
+      if (!ndjsonActive) {
+        const n = lastRun.failed.length;
+        const scope = lastRun.filter ? ` — which was filtered by \`${lastRun.filter}\`, not the whole suite` : '';
+        out.write(withTimestamps(`re-running ${n} test${n === 1 ? '' : 's'} that failed in the last run${scope}`, !args.noTimestamps) + '\n');
+      }
     } else if (!ndjsonActive) {
       out.write(withTimestamps('no failed tests from the last run — running the full suite', !args.noTimestamps) + '\n');
     }
@@ -1709,7 +1719,11 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
   await writeResultsJson(merged, reportDir);
-  await writeLastRun(merged, reportDir);
+  // D250 — the record now carries how this run was narrowed, so the *next* `--failed` can say what
+  // it is replaying. Still unconditional and still always overwritten: not writing on a filtered
+  // run was rejected for introducing a second silence (run `--tag smoke`, then `--failed`, and
+  // replay something unrelated to what you just watched fail).
+  await writeLastRun(merged, reportDir, describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed }));
   // M63 (V2-02): the persisted event log gets the same final redaction pass as every other
   // artifact. It is written after the whole run, so — unlike the live stdout stream, which is gone
   // by the time a late `env()` reveals a secret — the redactor here is fully populated. Skipping

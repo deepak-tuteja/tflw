@@ -20,7 +20,7 @@ export { renderCliSummary } from './cli-summary.js';
 // the same string this renders into the summary and `report.html` because it is the same call.
 export { describeWorkload } from './workload-format.js';
 export { renderJunitXml } from './junit.js';
-export { writeLastRun, readLastRun, renderLastRun, type LastRun, type LastRunFailure } from './last-run.js';
+export { writeLastRun, readLastRun, renderLastRun, describeRunFilter, type LastRun, type LastRunFailure } from './last-run.js';
 export { writeEventsNdjson } from './events-ndjson.js';
 export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
