@@ -2202,7 +2202,7 @@ test('`tflw init` appends only the missing line(s) to an existing `.gitignore`, 
     await writeFile(join(dir, '.gitignore'), 'node_modules/\n.env\n', 'utf8');
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
-    assert.match(stdout, /created tflw\.config, example\.tflw, \.env\.example, \.gitignore/);
+    assert.match(stdout, /created tflw\.config, example\.tflw, \.env\.example, package\.json, \.gitignore/);
 
     const gitignore = await readFile(join(dir, '.gitignore'), 'utf8');
     assert.equal(gitignore.match(/^\.env$/gm)?.length, 1, '.env must not be duplicated');
@@ -2211,6 +2211,79 @@ test('`tflw init` appends only the missing line(s) to an existing `.gitignore`, 
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// M125b2 (`FU-15`, D259) — the other half of the typeless-module warning. The runtime restates it
+// in one tflw sentence when it happens; this stops it happening at all for a project started with
+// `tflw init`, which before now scaffolded no `package.json` and so left Node guessing the module
+// type at the first `use "./x.ts"`.
+test('`tflw init` scaffolds a `package.json` with `"type": "module"`, and never touches one that exists (M125b2, FU-15)', async () => {
+  const fresh = await mkdtemp(join(tmpdir(), 'tflw-e2e-init-pkg-'));
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: fresh });
+    const pkg = JSON.parse(await readFile(join(fresh, 'package.json'), 'utf8'));
+    assert.equal(pkg.type, 'module');
+    assert.equal(pkg.private, true, 'a scaffolded test project is not something to publish by accident');
+  } finally {
+    await rm(fresh, { recursive: true, force: true });
+  }
+
+  // A `package.json` the user already has is theirs. `init` adds files that are missing; it does
+  // not merge keys into, reformat, or overwrite an existing manifest — the same restraint
+  // `.gitignore` gets, and the one that matters most here because this file carries dependencies.
+  const existing = await mkdtemp(join(tmpdir(), 'tflw-e2e-init-pkg-keep-'));
+  try {
+    const mine = '{\n  "name": "mine",\n  "dependencies": { "left-pad": "^1.0.0" }\n}\n';
+    await writeFile(join(existing, 'package.json'), mine, 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'init'], { cwd: existing });
+    assert.doesNotMatch(stdout, /package\.json/, 'an untouched file must not be reported as created');
+    assert.equal(await readFile(join(existing, 'package.json'), 'utf8'), mine, 'byte-for-byte unchanged');
+  } finally {
+    await rm(existing, { recursive: true, force: true });
+  }
+});
+
+// The real end-to-end for `FU-15`, and it has to live here rather than in `@tflw/runtime` (M125b2).
+// That package's tests run under `node --import tsx`, and tsx resolves `.ts` itself, so Node never
+// reaches its own detect-module path and the warning this row is about cannot be produced inside
+// that harness at all — a fixture there asserts against an empty stderr and proves nothing. Only a
+// real child process running the real binary sees what a user sees.
+test('a `.ts` helper in a project whose `package.json` declares no `"type"` prints one tflw line, not four raw Node ones (M125b2, FU-15)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-typeless-'));
+    try {
+      // A manifest *without* `"type"` is the trigger — measured, and not what the row implied: with
+      // no `package.json` above the helper Node emits nothing at all.
+      await writeFile(join(dir, 'package.json'), '{\n  "name": "typeless-fixture"\n}\n', 'utf8');
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'label.ts'), 'export function makeLabel(_ctx: { env: NodeJS.ProcessEnv }, n: number): string {\n  return `n-${n}`;\n}\n', 'utf8');
+      await writeFile(
+        join(dir, 'helper.tflw'),
+        'use "./label.ts"\n\ntest "uses a ts helper"\n  let l = make label(1)\n  api GET /health\n  expect status equals 200\n',
+        'utf8',
+      );
+
+      const { stdout, stderr } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+      const all = stdout + stderr;
+
+      // The four lines the row filed, each asserted absent on its own so a partial regression is
+      // named rather than lumped into one failure.
+      assert.doesNotMatch(all, /MODULE_TYPELESS_PACKAGE_JSON/, all);
+      assert.doesNotMatch(all, /Reparsing as ES module/, all);
+      assert.doesNotMatch(all, /incurs a performance overhead/, all);
+      assert.doesNotMatch(all, /trace-warnings/, all);
+      // …replaced by one tflw sentence that names the fix. Asserted present, so this test cannot
+      // pass by the helper simply never loading.
+      assert.match(stderr, /⚠ tflw:/, all);
+      assert.match(stderr, /"type": "module"/, all);
+      // And the run itself is still green — the interception must not change what happens, only
+      // what is said about it.
+      assert.match(stdout, /uses a ts helper/, all);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 // Track 3a (UX grill-me, 2026-07-07): a failing test's diff must be visible live, without an
@@ -3172,7 +3245,7 @@ test('`tflw init --load` scaffolds load.tflw alongside the usual files', async (
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-init-load-'));
   try {
     const { stdout } = await execFileAsync('node', [cliEntry, 'init', '--load'], { cwd: dir });
-    assert.match(stdout, /created tflw\.config, example\.tflw, load\.tflw, \.env\.example, \.gitignore/);
+    assert.match(stdout, /created tflw\.config, example\.tflw, load\.tflw, \.env\.example, package\.json, \.gitignore/);
     const loadSource = await readFile(join(dir, 'load.tflw'), 'utf8');
     assert.match(loadSource, /^test "/m);
     assert.match(loadSource, /ramp to \d+ rps over/);

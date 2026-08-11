@@ -110,7 +110,34 @@ export function planClaims(text, headerLines = 12) {
   return [...new Set([...head.matchAll(ROW_ID)].map((m) => m[1]))]
 }
 
-/** Milestone numbers with a commit on the given ref. `M111+M112: …` counts as both. */
+/**
+ * Every milestone a commit subject names, as `M125b1: …` → `['125b1', '125']`.
+ *
+ * Both forms, deliberately: the suffixed token so a staged plan can name the stage that finishes
+ * it, the bare number so every unstaged plan keeps behaving exactly as it did. `M111+M112: …`
+ * names two, which is why this splits on the subject head rather than taking the first match.
+ */
+export function milestoneTokens(subject) {
+  const head = subject.split(':')[0] // `M111+M112` from `M111+M112: report honesty …`
+  const out = new Set()
+  for (const m of head.matchAll(/\bM(\d+[a-z]?\d*)/g)) {
+    out.add(m[1])
+    out.add(m[1].match(/^\d+/)[0])
+  }
+  return [...out]
+}
+
+/**
+ * Milestones with a commit on the given ref. `M111+M112: …` counts as both.
+ *
+ * **Both the bare number and the full suffixed token are recorded** — `M125b1: …` yields `125` and
+ * `125b1` — because a plan that ships in stages needs to name the stage that finishes it. See
+ * `closesAt` in `loadPlans`, and the failure that forced it: with only the bare number, the *first*
+ * stage of a staged plan marks the whole plan shipped, and every row its later stages owe is
+ * reported stale from that moment on. That is not hypothetical — `M125b1` merging turned this
+ * check red for ten rows `M125c`/`d`/`e` had not been written yet, and it did so *after* `M125b1`'s
+ * own gate had passed, because a milestone is never on `main` while its gate is running.
+ */
 function shippedMilestones(ref = 'main') {
   let log = ''
   try {
@@ -125,8 +152,7 @@ function shippedMilestones(ref = 'main') {
   }
   const shipped = new Set()
   for (const subject of log.split('\n')) {
-    const head = subject.split(':')[0] // `M111+M112` from `M111+M112: report honesty …`
-    for (const m of head.matchAll(/\bM(\d+)/g)) shipped.add(m[1])
+    for (const token of milestoneTokens(subject)) shipped.add(token)
   }
   return shipped
 }
@@ -214,14 +240,18 @@ export function check({ ledger, plans, shipped }) {
   }
 
   const byId = new Map(rows.map((r) => [r.id, r]))
-  for (const { file, milestone, ids } of plans) {
-    if (shipped && !shipped.has(milestone)) continue
+  for (const { file, milestone, closesAt, ids } of plans) {
+    // A staged plan is finished by its last stage, not its first. Without `closesAt` this asks
+    // "has anything called M125 shipped?", which `M125b1` answers yes to while `M125c`/`d`/`e` are
+    // still unwritten — so every row those stages owe reads as stale the day the first stage merges.
+    const gate = closesAt ?? milestone
+    if (shipped && !shipped.has(gate)) continue
     for (const id of ids) {
       const row = byId.get(id)
       if (!row) continue // the plan cites a row from another corpus, or a typo — not this check's business
       if (classify(row.status) === 'open' && !row.status.startsWith('🟨'))
         problems.push(
-          `${file} says M${milestone} closes \`${id}\` and M${milestone} is on main, but §6:${row.line} still reads "${row.status.slice(0, 40)}"`,
+          `${file} says M${milestone} closes \`${id}\` and M${gate} is on main, but §6:${row.line} still reads "${row.status.slice(0, 40)}"`,
         )
     }
   }
@@ -244,16 +274,28 @@ export function check({ ledger, plans, shipped }) {
   return { problems, derived, published, rows }
 }
 
+/**
+ * The marker a plan uses to say it ships in stages, and which stage finishes it:
+ * `<!-- plan:closes-at M125e -->`. Read from anywhere in the file rather than the 12-line header —
+ * it is a single unambiguous token, and burning a header line (the one thing `planClaims` reads) on
+ * bookkeeping would change what the plan claims.
+ */
+const CLOSES_AT = /<!--\s*plan:closes-at\s+M([0-9a-z]+)\s*-->/
+
 /** Collect the shipped plans from the repo root. */
 function loadPlans(root) {
   return readdirSync(root)
     .filter((f) => /^PLAN_M\d+_.*\.md$/.test(f))
     .sort()
-    .map((f) => ({
-      file: f,
-      milestone: f.match(/^PLAN_M(\d+)_/)[1],
-      ids: planClaims(readFileSync(join(root, f), 'utf8')),
-    }))
+    .map((f) => {
+      const text = readFileSync(join(root, f), 'utf8')
+      return {
+        file: f,
+        milestone: f.match(/^PLAN_M(\d+)_/)[1],
+        closesAt: text.match(CLOSES_AT)?.[1] ?? null,
+        ids: planClaims(text),
+      }
+    })
 }
 
 function main() {

@@ -172,10 +172,21 @@ function editDistance(a: string, b: string): number {
  *
  * A word that *exactly* equals a candidate still gets nothing: the caller is erroring for some
  * other reason, and "did you mean `x`?" about the `x` already typed is noise.
+ *
+ * The threshold is keyed on the **longer** of the typed word and the candidate (M125b2, `FU-20c`,
+ * D261), not on the typed word alone. Keyed on the typed word, *abbreviating* is judged against the
+ * abbreviation's own budget: `prodId` for `productId` is distance 3 against a 6-character word's
+ * budget of 2, so it falls out — which is exactly backwards, since the longer the intended name,
+ * the further a plausible typo can diverge from it. Ranked selection and the single-best return are
+ * unchanged, so the only new behaviour is admitting a best-match that was previously discarded.
+ *
+ * `suggest` is the single suggestion engine for the whole language — methods, keywords, matchers,
+ * variables, actions, services, sessions — so this widens every "did you mean" at once, and a
+ * confidently wrong suggestion is worse than none. That is why the ladder in
+ * `suggestThreshold.test.ts` pins the *non*-suggestions as hard as the suggestions.
  */
 export function suggest(word: string, candidates: readonly string[]): string | undefined {
   const w = word.toLowerCase();
-  const threshold = w.length <= 4 ? 1 : w.length <= 7 ? 2 : 3;
   let best: string | undefined;
   let bestDist = Infinity;
   for (const cand of candidates) {
@@ -186,7 +197,14 @@ export function suggest(word: string, candidates: readonly string[]): string | u
       best = cand;
     }
   }
-  return best !== undefined && bestDist <= threshold ? best : undefined;
+  if (best === undefined) return undefined;
+  return bestDist <= suggestThreshold(Math.max(w.length, best.length)) ? best : undefined;
+}
+
+/** Edit-distance budget for a word of length `len`. Unchanged from M61 in shape and in every
+ * boundary; only what gets *passed* to it moved (D261). */
+function suggestThreshold(len: number): number {
+  return len <= 4 ? 1 : len <= 7 ? 2 : 3;
 }
 
 // ---------------------------------------------------------------------------

@@ -41,16 +41,16 @@ test('a connection refused (closed local port) gets a named hint, not a bare "fe
 
 test('fetchErrorHint names a DNS failure (ENOTFOUND)', () => {
   const err = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
-  assert.match(fetchErrorHint(err), /DNS lookup failed/);
+  assert.match(fetchErrorHint(err, 'http://example.test/x'), /DNS lookup failed/);
 });
 
 test('fetchErrorHint returns nothing for an unrecognised cause code', () => {
   const err = new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } });
-  assert.equal(fetchErrorHint(err), '');
+  assert.equal(fetchErrorHint(err, 'http://example.test/x'), '');
 });
 
 test('fetchErrorHint returns nothing when there is no cause at all', () => {
-  assert.equal(fetchErrorHint(new Error('boom')), '');
+  assert.equal(fetchErrorHint(new Error('boom'), 'http://example.test/x'), '');
 });
 
 test('a typo under the reserved `tflw://` scheme is named, not handed to fetch (M118, FU-04)', async () => {

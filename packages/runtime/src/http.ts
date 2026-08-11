@@ -5,6 +5,7 @@
 // purely the human-readable trace text shown in the report.
 
 import { RuntimeError } from './eval.js';
+import { blockedPort } from './blockedPorts.js';
 import { sendMtlsRequest } from './mtlsWorker.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
@@ -131,8 +132,16 @@ function buildHeaderMap(resHeaders: Headers): Record<string, string> {
  * corporate-QA's two most common failure modes (a self-signed/private-CA staging cert, a proxy or
  * DNS misconfiguration) would otherwise surface as that same opaque message with no lead at all
  * (decision 78). Unwraps the cause chain into a named hint; returns '' for anything unrecognised
- * (the raw `err.message` still gets through unmodified from the caller). */
-export function fetchErrorHint(err: unknown): string {
+ * (the raw `err.message` still gets through unmodified from the caller).
+ *
+ * `url` is the request's own URL and is **required**, not optional: it is the sole evidence behind
+ * the blocked-port hint (M125b2, `FU-20a`, D260), and making it required is what stops a call site
+ * from silently dropping the one input that hint depends on — the typechecker refuses instead.
+ * `localhost:9` and `localhost:19` used to answer a bare `fetch failed` with nothing else, because
+ * the fetch standard refuses those ports before any socket opens and so there is no `cause.code`
+ * for the switch below to have missed. The port either is on the standard's list or is not; see
+ * `blockedPorts.ts` for why that question is answered from the URL rather than from undici's prose. */
+export function fetchErrorHint(err: unknown, url: string): string {
   const cause = (err as { cause?: { code?: unknown } } | undefined)?.cause;
   const code = typeof cause?.code === 'string' ? cause.code : undefined;
   switch (code) {
@@ -147,8 +156,15 @@ export function fetchErrorHint(err: unknown): string {
     case 'ECONNREFUSED':
       return ` — connection refused; is the service actually listening at that host:port?`;
     default:
-      return '';
+      break;
   }
+  // Only once no code matched: a blocked port produces no code at all, so reaching here is a
+  // precondition of the check rather than a fallback ordering choice.
+  const port = blockedPort(url);
+  if (port !== undefined) {
+    return ` — port ${port} is on the fetch standard's blocked-ports list (https://fetch.spec.whatwg.org/#bad-port), so no request was sent and no socket was opened; this is the standard refusing the port, not tflw and not your network. Move the service to a port that isn't on that list.`;
+  }
+  return '';
 }
 
 export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTrace> {
@@ -174,7 +190,7 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
       if (err instanceof RedirectLimitError) throw err;
       if (isRedirectLimitCause(err)) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
       if ((err as { timedOut?: boolean }).timedOut) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
-      throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
+      throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err, opts.url)}`);
     }
   }
   const controller = new AbortController();
@@ -210,7 +226,7 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     if (err instanceof RedirectLimitError) throw err;
     if (isRedirectLimitCause(err)) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
     if (controller.signal.aborted) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
-    throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err)}`);
+    throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err, opts.url)}`);
   } finally {
     clearTimeout(timer);
   }

@@ -2777,6 +2777,7 @@ async function initCommand(argv: string[]): Promise<number> {
   const configPath = join(cwd, 'tflw.config');
   const examplePath = join(cwd, 'example.tflw');
   const envExamplePath = join(cwd, '.env.example');
+  const packageJsonPath = join(cwd, 'package.json');
   // `tflw init --load` (M29, D30) — bundled into the first grammar milestone rather than
   // deferred: it only needs the `ramp`/`threshold` grammar this milestone already builds (M50,
   // D93-D95: written inside an ordinary `test` body, not a separate `scenario` keyword), and
@@ -2808,6 +2809,21 @@ async function initCommand(argv: string[]): Promise<number> {
   if (!(await exists(envExamplePath))) {
     await writeFile(envExamplePath, SCAFFOLD_ENV_EXAMPLE, 'utf8');
     created.push('.env.example');
+  }
+  // The other half of `FU-15` (M125b2, D259). The documented `.ts` escape hatch loads via Node's
+  // native type stripping, and Node warns loudly when it has to *guess* the module type — which it
+  // does whenever a `package.json` exists and declares no `"type"`. **Measured, and not what the row
+  // implied:** with no `package.json` anywhere above the helper Node emits nothing at all, so the
+  // trigger is a manifest without the key, not the absence of a manifest.
+  //
+  // Which makes the key here mandatory rather than a nicety: `init` writing a `package.json` at all
+  // is what creates the condition, so writing one *without* `"type": "module"` would hand a fresh
+  // project the exact warning this row is about. Created only when absent, like `.env.example` and
+  // `.gitignore` above — a `package.json` a user already has is theirs, and adding a key to it is
+  // not `init`'s business.
+  if (!(await exists(packageJsonPath))) {
+    await writeFile(packageJsonPath, SCAFFOLD_PACKAGE_JSON, 'utf8');
+    created.push('package.json');
   }
   if (await ensureGitignore(cwd)) created.push('.gitignore');
 
@@ -2862,6 +2878,16 @@ env local default
 // local dev; real environment variables always win over it, and every \`env(NAME)\` value is
 // redacted from reports automatically.
 const SCAFFOLD_ENV_EXAMPLE = `API_TOKEN=
+`;
+
+// `"type": "module"` is the whole point (M125b2, `FU-15`): without it, the first `use "./x.ts"`
+// makes Node guess the module type and say so, in four lines, above the results. `private: true`
+// because a test suite is not a package anyone publishes, and leaving it off makes an accidental
+// `npm publish` in this directory a live possibility.
+const SCAFFOLD_PACKAGE_JSON = `{
+  "private": true,
+  "type": "module"
+}
 `;
 
 const SCAFFOLD_TEST = `# An API test. \`api\` sends a request; \`expect\` asserts against the last response.

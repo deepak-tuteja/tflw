@@ -184,7 +184,7 @@ test('`tflw init` scaffolds a working project from the installed binary', async 
   await mkdir(initDir, { recursive: true });
 
   const { stdout } = await execFileAsync(tflwBin, ['init'], { cwd: initDir });
-  assert.match(stdout, /created tflw\.config, example\.tflw, \.env\.example, \.gitignore/);
+  assert.match(stdout, /created tflw\.config, example\.tflw, \.env\.example, package\.json, \.gitignore/);
   await access(join(initDir, 'tflw.config'));
   await access(join(initDir, 'example.tflw'));
 
