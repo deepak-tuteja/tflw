@@ -400,7 +400,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
   {
     id: 'http-request-failed',
     file: 'http.ts',
-    excerpt: 'fetchErrorHint(err)',
+    excerpt: 'fetchErrorHint(err, opts.url)',
     sites: 2,
     decidable: 'needs-io',
     note: 'the network',
@@ -408,7 +408,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
   {
     id: 'http-pinned-request-failed',
     file: 'httpPinned.ts',
-    excerpt: 'fetchErrorHint({ cause: err })',
+    excerpt: 'fetchErrorHint({ cause: err }, opts.url)',
     sites: 2,
     decidable: 'needs-io',
     note: 'the network, under a pinned-certificate agent',

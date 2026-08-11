@@ -218,7 +218,7 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: KeepAli
         });
       } catch (err) {
         if (timedOut || isTimeoutError(err)) throw timeoutError();
-        throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
+        throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err }, opts.url)}`);
       }
       // Filed under the URL this hop was sent to, before the redirect branch below can `continue`
       // past it — `current.url` is reassigned there, and after the loop it names the terminus, which
@@ -235,7 +235,7 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: KeepAli
         for await (const chunk of res) chunks.push(chunk as Buffer);
       } catch (err) {
         if (timedOut || isTimeoutError(err)) throw timeoutError();
-        throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err })}`);
+        throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint({ cause: err }, opts.url)}`);
       }
       const bodyBytes = Buffer.concat(chunks);
       const status = res.statusCode ?? 0;

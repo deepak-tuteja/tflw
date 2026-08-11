@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
-import { check, classify, isWellFormed, parseIndex, planClaims, newestPublishedTally } from './verify-ledger.mjs'
+import { check, classify, isWellFormed, milestoneTokens, parseIndex, planClaims, newestPublishedTally } from './verify-ledger.mjs'
 
 const execFileAsync = promisify(execFile)
 const SCRIPT = fileURLToPath(new URL('verify-ledger.mjs', import.meta.url))
@@ -142,6 +142,49 @@ test('a 🟨 partial named by a shipped plan is not flagged', () => {
   // Without this carve-out the guard cries wolf on every honest partial and gets switched off.
   const { problems } = check(sound({ plans: [{ file: 'PLAN_M97_X.md', milestone: '97', ids: ['A4-07'] }], shipped: new Set(['97']) }))
   assert.deepEqual(problems, [])
+})
+
+// ---- 2b. staged plans ------------------------------------------------------------------------
+//
+// A plan that ships in stages is finished by its LAST stage. Keying the check on the bare milestone
+// number asks "has anything called M125 shipped?", which `M125b1` answers yes to while `M125c`,
+// `M125d` and `M125e` are still unwritten — so every row those stages owe reads as stale from the
+// day the first stage merges.
+//
+// **This was found by using the tool, and it could not have been found earlier.** A milestone is
+// never on `main` while its own gate is running, so `M125b1`'s gate was green; the check went red
+// the moment `M125b1` was merged, during the *next* milestone, reporting ten rows nobody had
+// touched. Same shape as every other defect this file guards: the instrument was right about its
+// rule and wrong about when the rule applies.
+
+test('a commit subject names both its suffixed milestone and its bare number', () => {
+  // `125b1` is what a staged plan's `closes-at` matches; `125` is what every unstaged plan has
+  // always matched. Dropping either one silently disables one of the two behaviours.
+  assert.deepEqual(milestoneTokens('M125b1: an absolute URL is the address'), ['125b1', '125'])
+  assert.deepEqual(milestoneTokens('M97a: the runtime rules the checker owes'), ['97a', '97'])
+  assert.deepEqual(milestoneTokens('M111+M112: report honesty'), ['111', '112'])
+  // A milestone named only in the body, after the colon, is not a claim that it shipped.
+  assert.deepEqual(milestoneTokens('M123: the fix M114 asked for'), ['123'])
+})
+
+test('a staged plan is not judged by its first stage', () => {
+  const plans = [{ file: 'PLAN_M99_X.md', milestone: '99', closesAt: '99c', ids: ['A3-05', 'A3-08'] }]
+  const { problems } = check(sound({ ledger: ledger({ rows: STALE_M99 }), plans, shipped: new Set(['99', '99a']) }))
+  assert.deepEqual(problems, [], problems.join('\n'))
+})
+
+test('…and IS judged once its last stage ships', () => {
+  // The control. Same plan, same ledger; only the shipped set moves on. Without this, "never flag a
+  // staged plan" would pass the test above and switch the check off for every staged plan forever.
+  const plans = [{ file: 'PLAN_M99_X.md', milestone: '99', closesAt: '99c', ids: ['A3-05', 'A3-08'] }]
+  const { problems } = check(sound({ ledger: ledger({ rows: STALE_M99 }), plans, shipped: new Set(['99', '99c']) }))
+  assert.equal(problems.filter((pr) => /says M99 closes/.test(pr)).length, 2, problems.join('\n'))
+})
+
+test('an unstaged plan is unaffected — `closesAt` absent behaves exactly as before', () => {
+  const plans = [{ file: 'PLAN_M99_X.md', milestone: '99', closesAt: null, ids: ['A3-05', 'A3-08'] }]
+  const { problems } = check(sound({ ledger: ledger({ rows: STALE_M99 }), plans, shipped: new Set(['99']) }))
+  assert.equal(problems.filter((pr) => /says M99 closes/.test(pr)).length, 2, problems.join('\n'))
 })
 
 test('a plan claims only the rows in its opening paragraph', () => {

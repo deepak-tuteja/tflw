@@ -944,6 +944,37 @@ const REGISTRY = [
     find: '    const span = found.result.spans.find((s) => spanContains(s, found.offset));',
     replace: '    const span = found.result.spans[0];',
   },
+  // M125b2 (`FU-20a` · `FU-20c` · `FU-15`) — same rule as below, one per decision, each stating the
+  // *silent* failure. All three of these leave the feature visibly present and working, which is
+  // why the tests aimed at them had to be written to fail on the reversion specifically rather than
+  // on the feature's absence.
+  {
+    id: 'blocked-port-hint-reads-undicis-prose',
+    milestone: 'm125b2',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/http.ts',
+    what: "the blocked-port hint is gated on `err.cause.message === 'bad port'` instead of being derived from the URL — D260's whole point, inverted. It passes every test in `blocked-ports.test.ts` except the one written for exactly this, because undici says `bad port` today. What it does is fail *closed* on the next minor bump: the hint disappears, the user is back to a bare `fetch failed`, and nothing anywhere goes red",
+    find: '  const port = blockedPort(url);',
+    replace: "  const port = String((cause as { message?: unknown } | undefined)?.message ?? '') === 'bad port' ? blockedPort(url) : undefined;",
+  },
+  {
+    id: 'suggest-threshold-back-on-the-typed-word',
+    milestone: 'm125b2',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/diagnostic.ts',
+    what: "`suggest`'s budget is keyed on the typed word again, so abbreviating a long name is judged against the abbreviation's own length and `prodId` stops suggesting `productId`. The reason this mutant has to exist, and has to be checked with that exact pair: **every suggestion test in the repo predating M125b2 passes under either keying**, which is how the defect survived forty milestones of green suites before anyone drove the binary",
+    find: '  return bestDist <= suggestThreshold(Math.max(w.length, best.length)) ? best : undefined;',
+    replace: '  return bestDist <= suggestThreshold(w.length) ? best : undefined;',
+  },
+  {
+    id: 'warning-handler-installed-without-delegation',
+    milestone: 'm125b2',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/helpers.ts',
+    what: "the `warning` handler stops calling the captured listeners, so tflw owns every process warning for the length of the helper-loading loop and silently eats the ones it does not claim — an `ExperimentalWarning` or a `DeprecationWarning` from a dependency simply never prints. D259's second row. Nothing fails: the typeless-module warning is still suppressed and still restated, the run is still green, and the only evidence is output that isn't there",
+    find: '    for (const fn of captured) fn(warning);',
+    replace: '',
+  },
   // M125b1 (`FU-18`) — one per decision that could be silently undone, and "silently" is doing the
   // work in every one of them. A mutation that deletes the absolute-URL branch outright is caught
   // by the first test that writes `api GET https://…`; these five each leave the feature visibly

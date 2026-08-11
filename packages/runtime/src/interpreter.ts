@@ -75,7 +75,7 @@ import {
   type ResolvedLocator,
 } from './browser.js';
 import { evaluateSnapshot, snapshotPaths } from './snapshot.js';
-import { camelCaseName, loadHelperModule } from './helpers.js';
+import { camelCaseName, interceptTypelessModuleWarning, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
 import { headerMatchesRedactPattern, maskDetailValue, pathMatchesRedactPattern, redactFields, redactHeaderFields, redactUrlQuery } from './fieldRedact.js';
@@ -1901,18 +1901,33 @@ async function buildRegistry(program: Program, baseDir: string): Promise<CallReg
   }
 
   const helpers = new Map<string, HelperFn>();
-  for (const u of program.uses) {
-    const abs = resolvePath(baseDir, u.path.value);
-    let mod: Record<string, unknown>;
-    try {
-      mod = await loadHelperModule(abs);
-    } catch (err) {
-      throw new RuntimeError(`could not load JS helper module "${u.path.value}" (resolved ${abs}): ${(err as Error).message}`);
+  // The only window in which Node can emit `MODULE_TYPELESS_PACKAGE_JSON` (M125b2, `FU-15`, D259):
+  // installed here rather than at CLI start so `tflw watch`'s long-lived process doesn't accumulate
+  // handlers, and skipped entirely when there is nothing to load.
+  const restoreWarnings = program.uses.length > 0 ? interceptTypelessModuleWarning() : undefined;
+  try {
+    for (const u of program.uses) {
+      const abs = resolvePath(baseDir, u.path.value);
+      let mod: Record<string, unknown>;
+      try {
+        mod = await loadHelperModule(abs);
+      } catch (err) {
+        throw new RuntimeError(`could not load JS helper module "${u.path.value}" (resolved ${abs}): ${(err as Error).message}`);
+      }
+      for (const [exportName, fn] of Object.entries(mod)) {
+        if (typeof fn !== 'function') continue;
+        if (helpers.has(exportName)) throw new RuntimeError(`duplicate JS helper export "${exportName}" (from "${u.path.value}")`);
+        helpers.set(exportName, fn as HelperFn);
+      }
     }
-    for (const [exportName, fn] of Object.entries(mod)) {
-      if (typeof fn !== 'function') continue;
-      if (helpers.has(exportName)) throw new RuntimeError(`duplicate JS helper export "${exportName}" (from "${u.path.value}")`);
-      helpers.set(exportName, fn as HelperFn);
+  } finally {
+    // `process.emitWarning` defers to the nextTick queue, so the warning for the *last* module can
+    // still be in flight when the loop's final `await` resumes. One `setImmediate` drains it while
+    // our handler is still installed — without it the interception is correct for every helper but
+    // the last, and it fails the way this whole row is about: silently, back to raw Node output.
+    if (restoreWarnings) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      restoreWarnings();
     }
   }
   return { actions, helpers };
