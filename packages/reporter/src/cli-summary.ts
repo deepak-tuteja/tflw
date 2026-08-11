@@ -53,15 +53,49 @@ export function renderCliSummary(report: RunReport, color = true): string {
     lines.push(`${c.red}${c.bold}⚠ unmasked secret${report.unmaskableSecrets.length === 1 ? '' : 's'}: ${names}${c.reset}${c.dim} — shorter than ${MIN_REDACTABLE_LENGTH} characters, so too short to mask without corrupting unrelated report text; ${report.unmaskableSecrets.length === 1 ? 'its value appears' : 'their values appear'} in full above and in report.html${c.reset}`);
   }
   if (report.selfDiagnosis) lines.push(generatorLine(report.selfDiagnosis, c));
-  if (report.inconclusive) lines.push(`${c.red}${c.bold}⚠ inconclusive${c.reset}${c.dim} — tflw itself is the bottleneck; workload numbers above reflect tflw contending with itself, not the system under test${c.reset}`);
+  if (report.inconclusive) lines.push(`${c.red}${c.bold}⚠ inconclusive${c.reset}${c.dim} — tflw itself is the bottleneck; workload numbers above reflect tflw contending with itself, not the system under test${c.reset}${backOffRelation(report, c)}`);
   if (report.aborted) lines.push(`${c.red}${c.bold}⚠ aborted${c.reset}${c.dim} — ${report.abortedMessage ?? 'stopped before its planned duration elapsed'}${c.reset}`);
   return lines.join('\n');
+}
+
+/** `FU-19` — the row filed "adjacent lines blaming opposite parties": a per-test back-off warning
+ * ("the target slowed down") printed directly above the run-level saturation verdict ("tflw is the
+ * bottleneck"). `M125a` failed to reproduce the pair across ten configurations and found out why —
+ * throttling the target 8× drove generator CPU *down*, 36 % → 8-10 %, because a generator waiting
+ * on a slow system is definitionally not saturated. Under a closed model the two conditions are
+ * close to mutually exclusive, so the pair is rare rather than impossible.
+ *
+ * That measurement is what decides the wording. They are not contradictory and there is nothing to
+ * reconcile: they are two readings of one overloaded machine, and the useful thing to say is which
+ * of the two to believe. A saturated generator times its own requests badly, so the back-off
+ * estimate is derived from numbers the saturation already distorted — the generator is the one to
+ * fix first, and the target's verdict is not evidence until it has been re-measured with headroom.
+ *
+ * Emitted only when both actually fired, so the ordinary single-warning run reads exactly as before. */
+function backOffRelation(report: RunReport, c: typeof C): string {
+  const backedOff = report.tests.some((t) => t.kind === 'workload' && (t as WorkloadTestResult).backOff?.warning);
+  if (!backedOff) return '';
+  return `\n${c.dim}    ↳ a back-off warning above blames the target system instead — these are two readings of one overloaded machine, not a contradiction. Believe this line first: a saturated generator mistimes its own requests, so the back-off estimate is computed from numbers this saturation already distorted. Give tflw more headroom, re-run, and only then read the target's verdict.${c.reset}`;
 }
 
 function testLine(test: TestResult, c: typeof C): string {
   const mark = test.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
   const flaky = test.flaky ? ` ${c.dim}(flaky)${c.reset}` : '';
-  return `  ${mark} ${test.name}${flaky} ${c.dim}(${test.durationMs} ms)${c.reset}`;
+  return `  ${mark} ${test.name}${flaky}${attemptSuffix(test, c)} ${c.dim}(${test.durationMs} ms)${c.reset}`;
+}
+
+/** `FU-25` — `(flaky)` only ever marks a *later-attempt pass*, so a test that exhausted its `retry`
+ * budget failing every time printed exactly what a test that ran once and failed printed. Measured
+ * on both: byte-identical lines, while `results.json` carried `attempts: 2` for one and no
+ * `attempts` field at all for the other. The number was always there; the console just never read it.
+ *
+ * `attempts` is present only when more than one ran (`types.ts`), so its presence is the condition —
+ * no `> 1` guard that could drift from the field's own meaning. Suppressed when `flaky` already
+ * rendered, because "(flaky)" on a passing test is the same fact stated better: it says a retry
+ * saved this test, where a bare count would only say retries happened. */
+function attemptSuffix(test: TestResult, c: typeof C): string {
+  if (!test.attempts || test.flaky) return '';
+  return ` ${c.dim}(${test.attempts.length} attempts)${c.reset}`;
 }
 
 /** M56 (Phase 3, D122) — a workload test's console lines, folded into the one final summary

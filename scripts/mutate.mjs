@@ -944,6 +944,72 @@ const REGISTRY = [
     find: '    const span = found.result.spans.find((s) => spanContains(s, found.offset));',
     replace: '    const span = found.result.spans[0];',
   },
+  // M125d (`FU-16` · `FU-25` · `FU-23` · `FU-19`) — the plan named one of these in advance (the
+  // report's failure-first behaviour applying to a green run). The rest are the decisions that a
+  // later edit could undo while leaving a report that still looks right: the filter that is
+  // highlighted but never applied, the evidence folded away on the very step that failed, the final
+  // attempt badge that always reads `passed`, and the filter recorded as `''` rather than absent.
+  {
+    id: 'report-failure-first-on-a-green-run',
+    milestone: 'm125d',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/html.ts',
+    what: "D249's explicit boundary: a green run must be unchanged in every respect. Defaulting every report to the Failed tab makes an all-passing run open on an empty list — the reader's first impression of a successful suite is that nothing ran. Both the button and the script still agree with each other, so nothing looks broken",
+    find: '  return report.failed > 0 ? \'fail\' : \'all\';',
+    replace: "  return 'fail';",
+  },
+  {
+    id: 'filter-highlighted-but-never-applied',
+    milestone: 'm125d',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/html.ts',
+    what: 'the Failed button renders `active` and the script initialises `statusFilter` to match, but nothing applies it until the reader clicks something. The report then shows a highlighted "Failed" tab over the complete, unfiltered list — a label that lies, which is worse than the "All" default it replaced. Every markup assertion about the button and the variable still passes',
+    // The leading newline is load-bearing: bare `  applyFilter();` also matches the tail of the
+    // click handler's six-space-indented call, making this match twice and land as `stale` — run by
+    // nothing, reported as neither killed nor survived (M123's lesson about reading the line under
+    // the headline). `\n  ` matches only the two-space init call.
+    find: '\n  applyFilter();',
+    replace: '',
+  },
+  {
+    id: 'evidence-collapsed-on-the-failing-step-too',
+    milestone: 'm125d',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/html.ts',
+    what: "the disclosure closes on every step including the one that failed, so the request and response for the failure — the reason the file was opened — sit behind a click. The report is smaller and tidier than before, and fails `PLAN_LAUNCH_REVIEW.md` §B.3's attach-to-a-ticket test in a way that reads as a deliberate design",
+    find: '  return `<details class="evidence"${ok ? \'\' : \' open\'}><summary>',
+    replace: '  return `<details class="evidence"><summary>',
+  },
+  {
+    id: 'final-attempt-always-reads-passed',
+    milestone: 'm125d',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/html.ts',
+    what: 'restores the defect M125d\'s probe found: the final-attempt badge is emitted whenever `attempts` exists and hard-codes "passed", so a test that failed every attempt gets a green `attempt 2 of 2 — passed` inside a panel whose dot, class and run badge all say it failed. The report contradicts itself and the console, and only the badge is wrong',
+    find: '${test.attempts ? `<p class="attempt-final-label"><span class="attempt-badge ${test.ok ? \'ok\' : \'fail\'}">attempt ${test.attempts.length} of ${test.attempts.length} — ${test.ok ? \'passed\' : \'failed\'}</span></p>` : \'\'}',
+    replace: '${test.attempts ? `<p class="attempt-final-label"><span class="attempt-badge ok">attempt ${test.attempts.length} of ${test.attempts.length} — passed</span></p>` : \'\'}',
+  },
+  {
+    id: 'retry-count-never-printed',
+    milestone: 'm125d',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/cli-summary.ts',
+    what: '`FU-25` restored exactly as filed: a test that burned its whole `retry` budget failing prints the same line as one that ran once and failed. `results.json` still carries `attempts`, the report still renders every attempt — only the surface a reader actually watches stays silent',
+    // Blanks the suffix rather than short-circuiting above the guard: an early `return` would leave
+    // the guard unreachable, and unreachable code is a compile-time complaint, not a surviving
+    // mutant. A mutant has to be *plausible source*, not merely wrong behaviour.
+    find: '  return ` ${c.dim}(${test.attempts.length} attempts)${c.reset}`;',
+    replace: "  return '';",
+  },
+  {
+    id: 'last-run-filter-recorded-as-empty-string',
+    milestone: 'm125d',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/last-run.ts',
+    what: "`describeRunFilter` returns `''` instead of `undefined` for a full run, so `renderLastRun` writes a `filter` key on every record. `--failed` keys its clause on presence, so every replay — including one after a completely unfiltered run — claims the last run was \"filtered by ``\". The file still parses, still round-trips, and the filtered case still reads correctly",
+    find: "  return parts.length > 0 ? parts.join(' ') : undefined;",
+    replace: "  return parts.join(' ');",
+  },
   // M125c (`FU-14` · `FU-21` ≡ `B4-11`) — the two the plan named in advance (the candidate count
   // re-derived from a second query, the speculative line replacing rather than preceding the final
   // diagnosis) plus two for `B4-11`'s halves. Every one leaves the diagnosis visibly present, well

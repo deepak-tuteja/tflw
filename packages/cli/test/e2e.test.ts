@@ -2724,6 +2724,56 @@ test('`tflw run --failed` re-runs only the previous run\'s failing tests (decisi
   });
 });
 
+test('`FU-23`/D250: `--failed` says what it is replaying, and says when the last run was filtered', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-failed-filter-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a.tflw'), `@smoke\ntest "passes"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      await writeFile(join(dir, 'b.tflw'), `test "fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+
+      // A full run: the record names the failure and carries no filter.
+      await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }));
+      const full = JSON.parse(await readFile(join(dir, 'report', '.last-run.json'), 'utf8')) as { failed: unknown[]; filter?: string };
+      assert.equal(full.failed.length, 1);
+      assert.equal(full.filter, undefined, 'an unfiltered run records no filter');
+
+      // Replaying it names the count, and says nothing about a filter, because there was none.
+      const replay = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string });
+      assert.match(replay.stdout, /re-running 1 test that failed in the last run/);
+      assert.doesNotMatch(replay.stdout, /which was filtered by/);
+
+      // Now the defect's actual shape: a tag-filtered run overwrites the record. It still records
+      // what it found (D250 keeps the overwrite), but now it records that it was narrowed.
+      await execFileAsync('node', [cliEntry, 'run', '--tag', 'smoke', '--no-color'], { cwd: dir });
+      const filtered = JSON.parse(await readFile(join(dir, 'report', '.last-run.json'), 'utf8')) as { failed: unknown[]; filter?: string };
+      assert.equal(filtered.failed.length, 0, 'the smoke run passed, so it records no failures');
+      assert.equal(filtered.filter, '--tag smoke');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`FU-23`: the "which was filtered by" clause fires when the replayed record was a narrowed one', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-failed-narrowed-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      // Both tagged, one failing: a `--tag smoke` run therefore records a failure *and* a filter,
+      // which is the state in which `--failed` most badly needed to stop being silent.
+      await writeFile(join(dir, 'a.tflw'), `@smoke\ntest "passes"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      await writeFile(join(dir, 'b.tflw'), `@smoke\ntest "fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+
+      await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--tag', 'smoke', '--no-color'], { cwd: dir }));
+      const replay = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string });
+      assert.match(replay.stdout, /re-running 1 test that failed in the last run — which was filtered by `--tag smoke`, not the whole suite/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('`tflw run --failed` with no prior state falls back to the full suite, with a note (decision 111.2)', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-failed-empty-'));

@@ -14,19 +14,35 @@ export interface LastRunFailure {
 
 export interface LastRun {
   readonly failed: readonly LastRunFailure[];
+  /** `FU-23`/D250 — the filters this run was narrowed by, as the user typed them, or absent for a
+   * full run. The defect was never that a filtered run overwrites the record; it is that `--failed`
+   * then replays it while describing itself as "the last run", with no way to know the difference.
+   * One field is what turns a silent redefinition into a stated one. */
+  readonly filter?: string;
 }
 
-export function renderLastRun(report: RunReport): LastRun {
-  return { failed: report.tests.filter((t) => !t.ok).map((t) => ({ file: t.file ?? '', test: t.name })) };
+/** `undefined` for a full run — so `renderLastRun` omits the key entirely and an unfiltered record
+ * stays byte-identical to what every version before this one wrote. */
+export function describeRunFilter(f: { readonly tags?: readonly string[]; readonly only?: string; readonly failed?: boolean }): string | undefined {
+  const parts: string[] = [];
+  if (f.tags?.length) parts.push(`--tag ${f.tags.join(',')}`);
+  if (f.only) parts.push(`--only ${f.only}`);
+  if (f.failed) parts.push('--failed');
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+export function renderLastRun(report: RunReport, filter?: string): LastRun {
+  const failed = report.tests.filter((t) => !t.ok).map((t) => ({ file: t.file ?? '', test: t.name }));
+  return filter === undefined ? { failed } : { failed, filter };
 }
 
 /** Always overwrites — every run (including one already filtered by `--failed`) records exactly
  * what it actually found, so repeated `--failed` invocations narrow further as tests get fixed. */
-export async function writeLastRun(report: RunReport, dir: string): Promise<string> {
+export async function writeLastRun(report: RunReport, dir: string, filter?: string): Promise<string> {
   const outDir = resolve(dir);
   await mkdir(outDir, { recursive: true });
   const path = join(outDir, '.last-run.json');
-  await writeFile(path, JSON.stringify(renderLastRun(report), null, 2) + '\n', 'utf8');
+  await writeFile(path, JSON.stringify(renderLastRun(report, filter), null, 2) + '\n', 'utf8');
   return path;
 }
 

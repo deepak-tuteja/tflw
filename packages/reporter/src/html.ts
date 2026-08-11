@@ -66,13 +66,13 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
   ${report.inconclusive ? '<div class="insecure-warning">⚠ tflw\'s own generator process saturated during this run — see any workload test\'s "generator" line below. These workload numbers reflect tflw contending with itself, not the system under test.</div>' : ''}
 </header>
 <div class="layout">
-${renderSidebar(groups)}
+${renderSidebar(groups, defaultStatusFilter(report))}
 <main>
 ${slots.map((s) => renderTest(s, s.id === defaultActiveId, assetHrefs, logLevelThreshold, report.selfDiagnosis)).join('\n')}
 </main>
 </div>
 <footer>${renderFooter(report, assetHrefs)}</footer>
-<script>${SCRIPT.replace('__DEFAULT_ID__', defaultActiveId ?? '')}</script>
+<script>${SCRIPT.replace('__DEFAULT_ID__', defaultActiveId ?? '').replace('__DEFAULT_STATUS__', defaultStatusFilter(report))}</script>
 </body>
 </html>
 `;
@@ -148,14 +148,23 @@ function renderUnmaskableWarning(names: readonly string[] | undefined): string {
   return `<div class="insecure-warning">⚠ unmasked secret${plural}: ${rendered} — shorter than ${MIN_REDACTABLE_LENGTH} characters, so too short to mask without corrupting unrelated text in this report. ${names.length === 1 ? 'Its value appears' : 'Their values appear'} below in full.</div>`;
 }
 
-function renderSidebar(groups: ReadonlyMap<string, TestSlot[]>): string {
+/** `FU-16`/D249 — a run that failed opens on its failures; a green run is unchanged in every
+ * respect. Exported because the sidebar's `active` class and the script's `statusFilter` variable
+ * have to agree, and the only way to guarantee two things agree is to derive both from one. */
+export function defaultStatusFilter(report: RunReport): 'all' | 'fail' {
+  return report.failed > 0 ? 'fail' : 'all';
+}
+
+function renderSidebar(groups: ReadonlyMap<string, TestSlot[]>, defaultStatus: 'all' | 'fail'): string {
+  const statusButton = (status: string, label: string): string =>
+    `<button type="button" data-status="${status}"${status === defaultStatus ? ' class="active"' : ''}>${label}</button>`;
   return `<nav class="sidebar">
   <div class="filterbar">
     <input type="search" id="tf-filter" placeholder="filter tests…" autocomplete="off">
     <div class="statusfilter" id="tf-statusfilter">
-      <button type="button" data-status="all" class="active">All</button>
-      <button type="button" data-status="fail">Failed</button>
-      <button type="button" data-status="ok">Passed</button>
+      ${statusButton('all', 'All')}
+      ${statusButton('fail', 'Failed')}
+      ${statusButton('ok', 'Passed')}
     </div>
   </div>
   <div class="tree">
@@ -198,7 +207,7 @@ function renderFunctionalTest(slot: TestSlot, test: TestResult, active: boolean,
   <h2><span class="dot ${test.ok ? 'ok' : 'fail'}"></span>${esc(test.name)}${test.flaky ? ' <span class="flaky">flaky</span>' : ''}${parallelBadge(test.concurrency)} <span class="tms">${test.durationMs} ms</span></h2>
   ${test.error ? `<p class="error">${esc(test.error)}</p>` : ''}
   ${priorAttempts.map((a) => renderAttempt(a, assetHrefs, logLevelThreshold)).join('\n')}
-  ${test.attempts ? `<p class="attempt-final-label"><span class="attempt-badge ok">attempt ${test.attempts.length} of ${test.attempts.length} — passed</span></p>` : ''}
+  ${test.attempts ? `<p class="attempt-final-label"><span class="attempt-badge ${test.ok ? 'ok' : 'fail'}">attempt ${test.attempts.length} of ${test.attempts.length} — ${test.ok ? 'passed' : 'failed'}</span></p>` : ''}
   ${renderTraceLink(test.trace, assetHrefs)}
   <ol class="steps">
 ${test.steps.map((s) => renderStep(s, assetHrefs, logLevelThreshold)).join('\n')}
@@ -334,13 +343,27 @@ function renderStep(step: StepResult, assetHrefs: ReadonlyMap<string, string>, l
   // recorded"), just not one of this page's `<li>`s.
   if (step.kind === 'log') return renderLogStep(step, logLevelThreshold);
   const panels = step.request ? renderTrace(step.request, step.response) : '';
+  const evidence = `${renderScreenshot(step.screenshot, assetHrefs)}${renderSnapshotDiff(step.snapshotDiff, assetHrefs)}${panels}`;
+  const labels = [step.screenshot ? 'screenshot' : '', step.snapshotDiff ? 'snapshot diff' : '', step.request ? 'request & response' : ''].filter(Boolean);
   return `<li class="step ${step.ok ? 'ok' : 'fail'} kind-${step.kind}">
     <div class="line"><span class="mark">${step.ok ? '✓' : '✗'}</span><code>${esc(step.source)}</code><span class="sms">${step.durationMs} ms</span></div>
     ${step.detail ? `<div class="detail ${step.ok ? '' : 'baddetail'}">${esc(step.detail)}</div>` : ''}
-    ${renderScreenshot(step.screenshot, assetHrefs)}
-    ${renderSnapshotDiff(step.snapshotDiff, assetHrefs)}
-    ${panels}
+    ${renderEvidence(evidence, labels, step.ok)}
   </li>`;
+}
+
+/** `FU-16`/D249 — the ~4300 px the row complains about is almost entirely this: response headers,
+ * and the same JSON body rendered twice, expanded under every step whether or not it is the step
+ * that broke. Collapsed on a passing step, left open on a failing one, so the evidence for the
+ * failure is still where the eye already is and everything else is one click away rather than one
+ * scroll-past.
+ *
+ * The assertion text (`.detail`) is deliberately NOT in here. It is the answer to "what broke",
+ * which is the question the reader opened the file with; hiding it behind a disclosure would fail
+ * the attach-to-a-ticket test this change exists to pass. */
+function renderEvidence(evidence: string, labels: readonly string[], ok: boolean): string {
+  if (!evidence.trim()) return '';
+  return `<details class="evidence"${ok ? '' : ' open'}><summary>${labels.length ? esc(labels.join(', ')) : 'details'}</summary>${evidence}</details>`;
 }
 
 function renderLogStep(step: StepResult, logLevelThreshold: LogLevel): string {
@@ -467,6 +490,12 @@ ol.steps{list-style:none;margin:0;padding:0}
 .mark{width:14px;text-align:center;font-weight:700}.step.ok .mark{color:var(--ok)}.step.fail .mark{color:var(--fail)}
 .detail{color:var(--mut);margin:2px 0 2px 22px;white-space:pre-wrap;overflow-wrap:anywhere}
 .detail.baddetail{color:var(--fail)}
+/* D249. Deliberately placed AFTER the .detail rules above: testFlow-tests'
+   verify-report-no-overflow.mjs matches the FIRST '.detail{' in this stylesheet and asserts it sets
+   overflow-wrap, so any rule whose selector ends in '.detail' must never be hoisted above them. */
+.evidence{margin:2px 0 2px 22px}
+.evidence>summary{color:var(--mut);cursor:pointer;font-size:11px;letter-spacing:.03em;text-transform:uppercase;list-style:revert}
+.evidence>summary:hover{color:var(--fg)}
 .log-badge{display:inline-block;width:40px;flex:0 0 auto;padding:0 4px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.03em;text-align:center;color:#fff}
 .log-badge.log-debug{background:var(--mut)}
 .log-badge.log-info{background:var(--info)}
@@ -519,7 +548,7 @@ const SCRIPT = `
     link.addEventListener('click', function(){ activate(link.getAttribute('data-target')); });
   });
 
-  var statusFilter = 'all';
+  var statusFilter = '__DEFAULT_STATUS__';
   function applyFilter(){
     var q = (document.getElementById('tf-filter').value || '').toLowerCase();
     sidebar.querySelectorAll('details.filegroup').forEach(function(group){
@@ -546,5 +575,14 @@ const SCRIPT = `
   });
 
   activate('__DEFAULT_ID__');
+  // The button carrying \`active\` and the list it claims to describe are two different things, and
+  // only this call makes them the same thing. Without it a failing run renders "Failed" highlighted
+  // over an unfiltered list — a label that lies, which is worse than the "All" default it replaced.
+  applyFilter();
+  // D249's third change: land on the failing step, not the top of a panel whose failure is below a
+  // screen of response headers. Scoped to the active panel so it cannot jump to another test's
+  // failure, and 'nearest' so a failure already in view does not scroll at all.
+  var firstFailure = main.querySelector('.test.active .step.fail');
+  if (firstFailure && firstFailure.scrollIntoView) firstFailure.scrollIntoView({ block: 'nearest' });
 })();
 `;
