@@ -6,6 +6,34 @@ import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type
 // intentionally left unset — VitePress's default (`true`)
 // already shows a light/dark toggle that respects the reader's OS preference (decision 16.12);
 // overriding it would be the wrong direction.
+
+/** The guide rail, hoisted to a `const` so the two sidebar keys that need it (`/guide/` and
+ * `/getting-started`, `M125e`/`FU-30`) name one array instead of holding two copies of it. */
+const GUIDE_SIDEBAR = [
+  {
+    text: 'Getting started',
+    items: [{ text: 'Install & quickstart', link: '/getting-started' }],
+  },
+  {
+    text: 'Guide',
+    items: [
+      { text: '1. Writing your first test', link: '/guide/first-test' },
+      { text: '2. Config & environments', link: '/guide/config' },
+      { text: '3. Sessions & auth', link: '/guide/sessions' },
+      { text: '4. Assertions in depth', link: '/guide/assertions' },
+      { text: '5. Variables, generators & expressions', link: '/guide/variables' },
+      { text: '6. Actions, imports & the JS escape hatch', link: '/guide/actions' },
+      { text: '7. Browser testing: interacting with a UI', link: '/guide/browser-basics' },
+      { text: '8. Browser testing: advanced scenarios', link: '/guide/browser-advanced' },
+      { text: '9. Data-driven tests & hooks', link: '/guide/data-and-hooks' },
+      { text: '10. Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
+      { text: '11. CI, reporting & safety', link: '/guide/ci-and-reporting' },
+      { text: '12. Running & debugging tests', link: '/guide/debugging' },
+      { text: '13. Load testing: scenarios & thresholds', link: '/guide/load-testing' },
+    ],
+  },
+];
+
 export default defineConfig({
   title: 'tflw',
   description: 'A testing DSL for API and browser tests — reports first, syntax second.',
@@ -61,30 +89,17 @@ export default defineConfig({
     ],
 
     sidebar: {
-      '/guide/': [
-        {
-          text: 'Getting started',
-          items: [{ text: 'Install & quickstart', link: '/getting-started' }],
-        },
-        {
-          text: 'Guide',
-          items: [
-            { text: '1. Writing your first test', link: '/guide/first-test' },
-            { text: '2. Config & environments', link: '/guide/config' },
-            { text: '3. Sessions & auth', link: '/guide/sessions' },
-            { text: '4. Assertions in depth', link: '/guide/assertions' },
-            { text: '5. Variables, generators & expressions', link: '/guide/variables' },
-            { text: '6. Actions, imports & the JS escape hatch', link: '/guide/actions' },
-            { text: '7. Browser testing: interacting with a UI', link: '/guide/browser-basics' },
-            { text: '8. Browser testing: advanced scenarios', link: '/guide/browser-advanced' },
-            { text: '9. Data-driven tests & hooks', link: '/guide/data-and-hooks' },
-            { text: '10. Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
-            { text: '11. CI, reporting & safety', link: '/guide/ci-and-reporting' },
-            { text: '12. Running & debugging tests', link: '/guide/debugging' },
-            { text: '13. Load testing: scenarios & thresholds', link: '/guide/load-testing' },
-          ],
-        },
-      ],
+      // `M125e`/`FU-30`/D282. `getting-started.md` lives at `/getting-started`, not under
+      // `/guide/`, so before this it matched no key but the `/` fallback and the page the home
+      // page's primary CTA points at rendered the *More* rail — Grammar, Playground, Changelog —
+      // instead of the thirteen-step guide it is the entrance to.
+      //
+      // Two keys naming ONE array, not two copies. VitePress resolves the longest matching path
+      // prefix, so `/getting-started` beats `/` with no effect on any other page. Moving the file
+      // under `guide/` was the other repair and was rejected: it changes a published URL that the
+      // home CTA, the README and the npm page all point at, to fix a left rail.
+      '/guide/': GUIDE_SIDEBAR,
+      '/getting-started': GUIDE_SIDEBAR,
       '/reference/': [
         {
           text: 'Reference',

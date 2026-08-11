@@ -139,6 +139,87 @@ export const GENERATORS: readonly GeneratorEntry[] = [
   { id: 'transform-url', family: 'transform', syntax: '`url encode(...)` / `url decode(...)`', notes: 'pure deterministic value transform, not a fresh-value generator (decision 98)', example: '`url encode("{query}")`' },
 ] as const;
 
+/**
+ * One step keyword — the word a step line starts with (`M125e`, `FU-24`, D251/D277).
+ *
+ * The row this closes was not "hover has a bug". `completion.ts` held thirty-seven bare strings
+ * consumed as `.map((label) => ({ label }))`, and that single fact was underneath both halves of it:
+ * completion offered `api` without saying what it does, and hover had nothing to draw on for it. So
+ * this is the same manifest shape `MATCHERS`/`GENERATORS` already are, for the same reason — one
+ * table, two consumers, no restatement.
+ *
+ * **Held to `parser.ts`, not to prose (D277).** Unlike matchers and generators, step keywords have
+ * a second authority: `STATEMENT_KEYWORDS` is the list the parser actually dispatches on.
+ * `stepKeywords.test.ts` asserts two-way parity against it plus `WORKLOAD_DIRECTIVES`, so an entry
+ * for a keyword the parser rejects and a keyword the parser accepts with no entry are both test
+ * failures rather than a drift nobody notices. The two retired spellings (`think`, `uncheck`) are
+ * deliberately absent: they exist only so the parser can reject them by name, and a manifest that
+ * documented them would be teaching a spelling that is itself an error.
+ *
+ * `header "…" is "…"` is knowingly not here. It is a `Step` node, but it is dispatched inside an
+ * `api`/`wait until api` block rather than by keyword, so it is in neither parity list — adding it
+ * would mean the manifest offers a word completion does not, which is the drift this table exists
+ * to prevent. Give it a home in both lists, or leave it in neither.
+ */
+export interface StepKeywordEntry {
+  /** The keyword exactly as it is typed and exactly as completion labels it. */
+  readonly id: string;
+  readonly family: 'api' | 'assertion' | 'value' | 'browser' | 'workload';
+  /** Markdown-ready, and free of `|` — this string is rendered into a SPEC.md table cell, where an
+   * unescaped pipe silently becomes a column break. Alternatives use ` / `, the form `GENERATORS`
+   * already uses (`random number A to B` / `random decimal A to B`). */
+  readonly syntax: string;
+  readonly summary: string;
+  readonly example: string;
+}
+
+/** The five workload words `parseTestBody` dispatches before `parseStep()` is ever reached (§4.5),
+ * plus the two clause keywords that share that loop. Not `STATEMENT_KEYWORDS` members — but they
+ * are what a user types at the same cursor position, so completion has always offered them, and
+ * D277's parity assertion needs them to have a name to be asserted against. FS-06: leading here
+ * reserves nothing, so `run checkout("1")` stays a callable action. */
+export const WORKLOAD_DIRECTIVES = ['ramp', 'hold', 'step', 'spike', 'run', 'threshold', 'cleanup'] as const;
+
+export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
+  { id: 'api', family: 'api', syntax: '`api [<service>] <METHOD> <target> [body …] [timeout <dur>] [without redirects]`', summary: 'issue one HTTP request; `<target>` is a path against the env base URL or an absolute URL', example: '`api POST /orders body { name: "Widget", qty: 1 }`' },
+  { id: 'wait', family: 'api', syntax: '`wait until api <METHOD> <target>` + indented expects, or `wait until <locator> [is] <matcher> [for <dur>]`', summary: 're-issue a request, or re-poll a UI condition, until it passes or the wait budget elapses', example: '`wait until button "Submit" is enabled`' },
+  { id: 'expect', family: 'assertion', syntax: '`expect <subject> [not] <matcher> [value]`', summary: 'hard assertion — evaluated once against the received response, fails the test immediately', example: '`expect status equals 201`' },
+  { id: 'check', family: 'assertion', syntax: '`check <subject> [not] <matcher> [value]`', summary: 'the soft twin of `expect`: records a failure and keeps going. Not the checkbox action — that is `tick` (FS-04)', example: '`check body.total equals 42`' },
+  { id: 'let', family: 'value', syntax: '`let <name> = <expr>`', summary: 'bind a value — a literal, a generator, an expression, or a call — for later steps to interpolate as `{name}`', example: '`let email = unique email`' },
+  { id: 'capture', family: 'value', syntax: '`capture <subject> as <name>`', summary: 'bind a value off the response; a capture that resolves to nothing fails the step rather than binding `undefined`', example: '`capture body.id as orderId`' },
+  { id: 'log', family: 'value', syntax: '`log [<level>] "<message>"`', summary: 'emit one user-authored line into the run log and the report', example: '`log "created order {orderId}"`' },
+  { id: 'give', family: 'value', syntax: '`give <expr>`', summary: "an action's return value; ends its step sequence", example: '`give {orderId}`' },
+  { id: 'open', family: 'browser', syntax: '`open "<path-or-url>"`', summary: 'navigate the active page — a path resolves against the env `web` base URL, an absolute URL is the address', example: '`open "/checkout"`' },
+  { id: 'click', family: 'browser', syntax: '`click <locator>`', summary: 'left-click the element a locator resolves to', example: '`click button "Add to cart"`' },
+  { id: 'double', family: 'browser', syntax: '`double click <locator>`', summary: 'double-click the element a locator resolves to', example: '`double click button "Row"`' },
+  { id: 'right', family: 'browser', syntax: '`right click <locator>`', summary: 'right-click (context-menu click) the element a locator resolves to', example: '`right click button "Row"`' },
+  { id: 'fill', family: 'browser', syntax: '`fill <locator> with <value>`, or `fill form` + an indented table', summary: 'type a value into one field, or fill several from a table where each row reports as its own sub-step', example: '`fill field "Email" with {email}`' },
+  { id: 'select', family: 'browser', syntax: '`select "<option>" from <locator>`', summary: 'choose an option in a `<select>`', example: '`select "Widget" from field "Size"`' },
+  { id: 'tick', family: 'browser', syntax: '`tick <locator>`', summary: 'tick a checkbox or radio. Spelled `tick`, not `check` — `check` is the soft assertion and nothing else (FS-04)', example: '`tick field "Accept terms"`' },
+  { id: 'untick', family: 'browser', syntax: '`untick <locator>`', summary: 'untick a checkbox', example: '`untick field "Accept terms"`' },
+  { id: 'press', family: 'browser', syntax: '`press "<key>" [on <locator>]`', summary: 'send a key press — page-level, or scoped to one locator', example: '`press "Enter" on field "Search"`' },
+  { id: 'hover', family: 'browser', syntax: '`hover <locator>`', summary: 'move the pointer over the element a locator resolves to', example: '`hover button "Menu"`' },
+  { id: 'scroll', family: 'browser', syntax: '`scroll to <locator>`', summary: 'scroll the element into view', example: '`scroll to button "Load more"`' },
+  { id: 'within', family: 'browser', syntax: '`within <locator>` or `within frame <locator>` + an indented block', summary: "scope nested steps to one container — or, with `frame`, into an iframe's own document", example: '`within list "Cart items"`' },
+  { id: 'accept', family: 'browser', syntax: '`accept dialog`', summary: 'arm a one-shot handler accepting the *next* native dialog; without it Playwright auto-dismisses silently', example: '`accept dialog`' },
+  { id: 'dismiss', family: 'browser', syntax: '`dismiss dialog`', summary: 'arm a one-shot handler dismissing the next native dialog', example: '`dismiss dialog`' },
+  { id: 'switch', family: 'browser', syntax: '`switch to new tab` + an indented block, or `switch to tab <N>`', summary: 'make another tab active — the block form arms the popup listener before running, so a fast tab cannot race past it', example: '`switch to tab 1`' },
+  { id: 'close', family: 'browser', syntax: '`close tab`', summary: 'close the active tab and fall back to the previous one; closing the last tab is a runtime error', example: '`close tab`' },
+  { id: 'download', family: 'browser', syntax: '`download as <name>` + an indented block', summary: "run the block with a download listener armed, then bind the download's suggested filename", example: '`download as file`' },
+  { id: 'drag', family: 'browser', syntax: '`drag <locator> to <locator>`', summary: 'dispatch a real native drag-and-drop sequence with a genuine `DataTransfer`', example: '`drag text "First item" to text "Second item"`' },
+  { id: 'drop', family: 'browser', syntax: '`drop file "<path>" onto <locator>`', summary: 'drop a real file onto a dropzone that has no `<input type="file">`', example: '`drop file "./receipt.png" onto css "#dropzone"`' },
+  { id: 'screenshot', family: 'browser', syntax: '`screenshot "<name>"`', summary: 'capture the active page unconditionally; binary evidence, so only captured at `evidence full`', example: '`screenshot "before payment"`' },
+  { id: 'stub', family: 'browser', syntax: '`stub <METHOD> "<url-pattern>" respond status <N> [body …]`', summary: 'intercept a matching network request and answer it, without touching the server', example: '`stub POST "/api/payments/**" respond status 500`' },
+  { id: 'pause', family: 'browser', syntax: '`pause <duration>`', summary: 'wait a fixed duration. Renamed from `think` (FS-05); a real wait belongs in `wait until`, not here', example: '`pause 500ms`' },
+  { id: 'ramp', family: 'workload', syntax: '`ramp to N users over <dur>` / `ramp to N rps over <dur>`', summary: 'linear ramp from zero to the target — makes the test workload-bearing', example: '`ramp to 50 users over 30s`' },
+  { id: 'hold', family: 'workload', syntax: '`hold N users for <dur>` / `hold N rps for <dur>`', summary: 'a flat target for the whole duration, with no ramp-in', example: '`hold 20 rps for 2m`' },
+  { id: 'step', family: 'workload', syntax: '`step users` / `step rps` + indented `to N for <dur>` lines', summary: 'a staircase of instant jumps, each held for its own duration', example: '`step users`' },
+  { id: 'spike', family: 'workload', syntax: '`spike users` / `spike rps` + indented `hold N for <dur>` / `to N over <dur>` lines', summary: 'a baseline → burst → recovery shape, mixing flat and ramped stages in any order', example: '`spike rps`' },
+  { id: 'run', family: 'workload', syntax: '`run N iterations [per user] across M users`', summary: 'count-bounded load with no duration; the count is exact and independent of `--workers`', example: '`run 500 iterations across 10 users`' },
+  { id: 'threshold', family: 'workload', syntax: '`threshold <metric> is less than <value>`', summary: "the pass/fail rule for a workload-bearing test — decided once, after the run, against the run's aggregate metrics", example: '`threshold p95 duration is less than 800ms`' },
+  { id: 'cleanup', family: 'workload', syntax: '`cleanup` + an indented block', summary: 'steps that run once after a workload finishes, whatever its verdict', example: '`cleanup`' },
+] as const;
+
 /** One CLI flag, entered by hand (decision 16.4 — `cli.ts`'s arg parsing has nothing to
  * introspect). Feeds `packages/docs-site`'s `Reference/cli.md` (replacing README's old flag
  * table, decision 16.10) and a later LSP's signature help. */

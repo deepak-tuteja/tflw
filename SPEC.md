@@ -830,6 +830,61 @@ the CLI's pre-run `scenario "…" — …` line, the run summary, `report.html`'
 formatter over that one value, so the pre-run line and the summary line are the same string by
 construction rather than by two functions agreeing.
 
+### 4.6 Step keyword quick reference (M125e, `FU-24`, D277)
+
+Every word a step line may begin with, in one table. Generated from `packages/lang/src/spec-data.ts`
+by `npm run docs:gen -w @tflw/lang` — the same manifest the editor's hover text and completion
+`detail` come from, so what an editor tells you about a keyword and what this table says are one
+string, not two that agree.
+
+Held to `parser.ts`'s own `STATEMENT_KEYWORDS` (plus the workload directives `parseTestBody`
+dispatches) by a two-way parity test: a row here for a word the parser rejects, or a word the parser
+accepts with no row here, is a test failure. The two retired spellings are deliberately absent —
+`think` (now `pause`) and `uncheck` (now `untick`) are recognised only in order to be rejected by
+name (§17), and documenting them would be teaching a spelling that is itself an error.
+
+<!-- GENERATED:step-keywords:start -->
+| Family | Keyword | Syntax | What it does | Example |
+|---|---|---|---|---|
+| api | `api` | `api [<service>] <METHOD> <target> [body …] [timeout <dur>] [without redirects]` | issue one HTTP request; `<target>` is a path against the env base URL or an absolute URL | `api POST /orders body { name: "Widget", qty: 1 }` |
+| api | `wait` | `wait until api <METHOD> <target>` + indented expects, or `wait until <locator> [is] <matcher> [for <dur>]` | re-issue a request, or re-poll a UI condition, until it passes or the wait budget elapses | `wait until button "Submit" is enabled` |
+| assertion | `expect` | `expect <subject> [not] <matcher> [value]` | hard assertion — evaluated once against the received response, fails the test immediately | `expect status equals 201` |
+| assertion | `check` | `check <subject> [not] <matcher> [value]` | the soft twin of `expect`: records a failure and keeps going. Not the checkbox action — that is `tick` (FS-04) | `check body.total equals 42` |
+| value | `let` | `let <name> = <expr>` | bind a value — a literal, a generator, an expression, or a call — for later steps to interpolate as `{name}` | `let email = unique email` |
+| value | `capture` | `capture <subject> as <name>` | bind a value off the response; a capture that resolves to nothing fails the step rather than binding `undefined` | `capture body.id as orderId` |
+| value | `log` | `log [<level>] "<message>"` | emit one user-authored line into the run log and the report | `log "created order {orderId}"` |
+| value | `give` | `give <expr>` | an action's return value; ends its step sequence | `give {orderId}` |
+| browser | `open` | `open "<path-or-url>"` | navigate the active page — a path resolves against the env `web` base URL, an absolute URL is the address | `open "/checkout"` |
+| browser | `click` | `click <locator>` | left-click the element a locator resolves to | `click button "Add to cart"` |
+| browser | `double` | `double click <locator>` | double-click the element a locator resolves to | `double click button "Row"` |
+| browser | `right` | `right click <locator>` | right-click (context-menu click) the element a locator resolves to | `right click button "Row"` |
+| browser | `fill` | `fill <locator> with <value>`, or `fill form` + an indented table | type a value into one field, or fill several from a table where each row reports as its own sub-step | `fill field "Email" with {email}` |
+| browser | `select` | `select "<option>" from <locator>` | choose an option in a `<select>` | `select "Widget" from field "Size"` |
+| browser | `tick` | `tick <locator>` | tick a checkbox or radio. Spelled `tick`, not `check` — `check` is the soft assertion and nothing else (FS-04) | `tick field "Accept terms"` |
+| browser | `untick` | `untick <locator>` | untick a checkbox | `untick field "Accept terms"` |
+| browser | `press` | `press "<key>" [on <locator>]` | send a key press — page-level, or scoped to one locator | `press "Enter" on field "Search"` |
+| browser | `hover` | `hover <locator>` | move the pointer over the element a locator resolves to | `hover button "Menu"` |
+| browser | `scroll` | `scroll to <locator>` | scroll the element into view | `scroll to button "Load more"` |
+| browser | `within` | `within <locator>` or `within frame <locator>` + an indented block | scope nested steps to one container — or, with `frame`, into an iframe's own document | `within list "Cart items"` |
+| browser | `accept` | `accept dialog` | arm a one-shot handler accepting the *next* native dialog; without it Playwright auto-dismisses silently | `accept dialog` |
+| browser | `dismiss` | `dismiss dialog` | arm a one-shot handler dismissing the next native dialog | `dismiss dialog` |
+| browser | `switch` | `switch to new tab` + an indented block, or `switch to tab <N>` | make another tab active — the block form arms the popup listener before running, so a fast tab cannot race past it | `switch to tab 1` |
+| browser | `close` | `close tab` | close the active tab and fall back to the previous one; closing the last tab is a runtime error | `close tab` |
+| browser | `download` | `download as <name>` + an indented block | run the block with a download listener armed, then bind the download's suggested filename | `download as file` |
+| browser | `drag` | `drag <locator> to <locator>` | dispatch a real native drag-and-drop sequence with a genuine `DataTransfer` | `drag text "First item" to text "Second item"` |
+| browser | `drop` | `drop file "<path>" onto <locator>` | drop a real file onto a dropzone that has no `<input type="file">` | `drop file "./receipt.png" onto css "#dropzone"` |
+| browser | `screenshot` | `screenshot "<name>"` | capture the active page unconditionally; binary evidence, so only captured at `evidence full` | `screenshot "before payment"` |
+| browser | `stub` | `stub <METHOD> "<url-pattern>" respond status <N> [body …]` | intercept a matching network request and answer it, without touching the server | `stub POST "/api/payments/**" respond status 500` |
+| browser | `pause` | `pause <duration>` | wait a fixed duration. Renamed from `think` (FS-05); a real wait belongs in `wait until`, not here | `pause 500ms` |
+| workload | `ramp` | `ramp to N users over <dur>` / `ramp to N rps over <dur>` | linear ramp from zero to the target — makes the test workload-bearing | `ramp to 50 users over 30s` |
+| workload | `hold` | `hold N users for <dur>` / `hold N rps for <dur>` | a flat target for the whole duration, with no ramp-in | `hold 20 rps for 2m` |
+| workload | `step` | `step users` / `step rps` + indented `to N for <dur>` lines | a staircase of instant jumps, each held for its own duration | `step users` |
+| workload | `spike` | `spike users` / `spike rps` + indented `hold N for <dur>` / `to N over <dur>` lines | a baseline → burst → recovery shape, mixing flat and ramped stages in any order | `spike rps` |
+| workload | `run` | `run N iterations [per user] across M users` | count-bounded load with no duration; the count is exact and independent of `--workers` | `run 500 iterations across 10 users` |
+| workload | `threshold` | `threshold <metric> is less than <value>` | the pass/fail rule for a workload-bearing test — decided once, after the run, against the run's aggregate metrics | `threshold p95 duration is less than 800ms` |
+| workload | `cleanup` | `cleanup` + an indented block | steps that run once after a workload finishes, whatever its verdict | `cleanup` |
+<!-- GENERATED:step-keywords:end -->
+
 ## 5. API steps (P#3, P#7, P#29, P#32, P#33) ✅
 
 ### 5.1 Request line

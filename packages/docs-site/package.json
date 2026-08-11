@@ -10,7 +10,7 @@
     "build": "vitepress build .",
     "preview": "vitepress preview .",
     "test": "node --test scripts/*.test.mjs && node scripts/verify-docs.mjs",
-    "test:links": "node scripts/verify-links.mjs"
+    "test:links": "node scripts/verify-links.mjs && node scripts/verify-sidebars.mjs"
   },
   "dependencies": {
     "@tflw/lang": "*",
