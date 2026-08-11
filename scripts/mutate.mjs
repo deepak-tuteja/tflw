@@ -944,6 +944,55 @@ const REGISTRY = [
     find: '    const span = found.result.spans.find((s) => spanContains(s, found.offset));',
     replace: '    const span = found.result.spans[0];',
   },
+  // M125c (`FU-14` · `FU-21` ≡ `B4-11`) — the two the plan named in advance (the candidate count
+  // re-derived from a second query, the speculative line replacing rather than preceding the final
+  // diagnosis) plus two for `B4-11`'s halves. Every one leaves the diagnosis visibly present, well
+  // formatted, and wrong only in the way its row was filed about.
+  {
+    id: 'ambiguity-count-from-a-second-query',
+    milestone: 'm125c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    what: "the ambiguity message reports the caller's `.count()` again while listing a separately-queried set of matches, restoring the two-independent-queries shape that is the only explanation for `FU-21`'s filed \"matched 2 elements … 1 shown … and 1 more\". On a stable page the two queries agree and every existing assertion passes; the arithmetic only comes apart on a DOM that changes between them, which is exactly when someone is reading the message",
+    find: "  const more = matches.length > shown.length ? `\\n  … and ${matches.length - shown.length} more` : '';",
+    replace: "  const more = observedCount > shown.length ? `\\n  … and ${observedCount - shown.length} more` : '';",
+  },
+  {
+    id: 'ambiguity-list-without-discriminators',
+    milestone: 'm125c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    what: 'the per-candidate discriminator is computed and then not printed, so the list goes back to N identical quoted labels. Measured before the fix: twelve matches, five candidates shown, **one distinct string among them** — a list carrying zero bits for the choice it demands the reader make. The message still names the count, still says `within <container>`, and still looks like a diagnosis',
+    find: "    return `  ${i + 1}. ${text}${m.discriminator ? ` — ${m.discriminator}` : ''}`;",
+    replace: '    return `  ${i + 1}. ${text}`;',
+  },
+  {
+    id: 'nearest-matches-not-deduped',
+    milestone: 'm125c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    what: "`B4-11`: byte-identical suggestions are offered again, so a page with two `Save` buttons prints ``- `button \"Save\"`` twice and a page with twelve identical controls spends all five candidate slots on one string — the crowding-out half, where a genuinely different candidate cannot be shown at all. The list is still ranked, still capped, still labelled `nearest matches on the page`",
+    find: '  return dedupeCandidates([...named, ...unnamed]).slice(0, MAX_DIAGNOSIS_CANDIDATES);',
+    replace: '  return [...named, ...unnamed].map((c) => ({ ...c, matches: 1 })).slice(0, MAX_DIAGNOSIS_CANDIDATES);',
+  },
+  {
+    id: 'suggestion-offered-without-its-ambiguity-caveat',
+    milestone: 'm125c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    what: "the deduped suggestion is printed bare, with no note that N elements render it. This is the subtler half of `B4-11` and the one dedup alone does not fix: SPEC §9.3 calls these ready-to-paste, and pasting `button \"Save\"` into a page with two of them produces the *ambiguity* error — a different failure than the one being diagnosed. Deduping without the caveat looks like a clean, unique, actionable suggestion",
+    find: "    const caveat = c.matches > 1 ? ` — ${c.matches} elements render this same locator, so pasting it as-is is ambiguous; add \\`within <container>\\`` : '';",
+    replace: "    const caveat = '';",
+  },
+  {
+    id: 'speculative-line-replaces-the-final-diagnosis',
+    milestone: 'm125c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/browser.ts',
+    what: "`FU-14`/D248 inverted: the step gives up at the speculative mark instead of speaking and continuing, so ~3 s becomes a *deadline* rather than a progress point. This is the genuine fast-fail option the decision rejected, and rejecting it is the whole reason `M119`'s guard could stay untouched — under this mutant a slow-rendering app that legitimately resolves at 8 s now fails, turning a green suite red for a reason the user never asked for",
+    find: '  const deadline = startedAt + timeoutMs;',
+    replace: '  const deadline = startedAt + Math.min(timeoutMs, SPECULATIVE_DIAGNOSIS_MS);',
+  },
   // M125b2 (`FU-20a` · `FU-20c` · `FU-15`) — same rule as below, one per decision, each stating the
   // *silent* failure. All three of these leave the feature visibly present and working, which is
   // why the tests aimed at them had to be written to fail on the reversion specifically rather than
