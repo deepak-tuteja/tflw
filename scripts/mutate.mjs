@@ -115,6 +115,42 @@ const SIDE_EFFECT_FILES = ['SPEC.md'];
  * noise. Each distinct package is baselined once, on first use. */
 const DEFAULT_PKG = '@tflw/lang';
 
+/**
+ * M127 (`M126-01`) — one run of each package's suite, in seconds, on a 2-core GitHub runner.
+ *
+ * **Balancing hint only.** `partition()` is total and disjoint whatever these numbers say; a stale
+ * entry makes a shard slower or faster than its siblings and can make nothing else go wrong. That
+ * property is the reason a measured table is affordable here at all, and it is why there is no
+ * machinery to keep it fresh.
+ *
+ * Measured rather than guessed, which is what `M126-01` asked for. Run 31540764432's `mutation
+ * controls` job printed a timestamp per mutation and per baseline; the deltas group by package as:
+ *
+ *     package             baseline    n   per-mutation   total
+ *     @tflw/runtime            58s   36          59.6s   36.8m
+ *     tflw                    163s    7         160.8s   21.5m
+ *     root:test:scripts        41s   12          30.9s    6.9m
+ *     @tflw/lang                8s   49           6.6s    5.6m
+ *     @tflw/lsp-server          4s    8           7.4s    1.1m
+ *     @tflw/reporter            3s    9           2.6s    0.4m
+ *     @tflw/docs-site           4s    1           4.5s    0.1m
+ *
+ * Two things in that table decide the whole design. **A baseline costs almost exactly one mutation
+ * of the same package** — it is the same suite run — so a shard's price is `(1 + n) × suite` per
+ * package it touches, and splitting a package across shards is charged one extra suite run each
+ * time. And **two packages hold 81% of the clock**, so sharding by milestone — the axis `M126-01`
+ * reached for first — would have split the registry along a line the cost does not follow.
+ */
+const SUITE_SECONDS = {
+  '@tflw/lang': 7,
+  '@tflw/runtime': 60,
+  '@tflw/reporter': 3,
+  '@tflw/lsp-server': 7,
+  '@tflw/docs-site': 5,
+  tflw: 161,
+  [ROOT_SUITE]: 31,
+};
+
 // The two adjacent branches in `parsePrimary`'s number path, verbatim, so the ordering mutation is a
 // swap of whole blocks rather than a hand-retyped approximation of them.
 const DURATION_BRANCH = `        if (unitTok.type === 'ident' && unitTok.span.start.offset === tok.span.end.offset && (DURATION_UNITS as readonly string[]).includes(unitTok.value)) {
@@ -1373,6 +1409,26 @@ export function coverage(mutations = MUTATIONS) {
  * means flagging it *and* dropping it from `UNRECONSTRUCTED`; doing either alone turns the sweep
  * red on its next run rather than silently overstating coverage.
  */
+/**
+ * M127 — every package the registry names has a measured suite time.
+ *
+ * A missing entry costs no correctness (`partition()` is a partition whatever the weights say) but
+ * it silently weights a package at the 60s fallback, and the two packages that dominate this sweep
+ * are 161s and 60s. A new `pkg:` whose suite runs for three minutes would be dealt as if it ran for
+ * one, and the only symptom would be one shard finishing much later than its siblings — read as
+ * ordinary noise, on a job nobody watches the shape of. Cheaper to refuse and ask for a number.
+ */
+export function costProblem(mutations = MUTATIONS, costs = SUITE_SECONDS) {
+  const missing = [...new Set(mutations.map((m) => m.pkg ?? DEFAULT_PKG))].filter((pkg) => !(pkg in costs));
+  if (missing.length === 0) return undefined;
+  return (
+    `mutate.mjs has no measured suite time for: ${missing.join(', ')}\n` +
+    `  Add each to SUITE_SECONDS with the seconds one run of its suite takes on a 2-core runner.\n` +
+    `  The number only balances the shards — it cannot make a sweep wrong — but guessing it is how\n` +
+    `  one shard quietly becomes the long pole again.`
+  );
+}
+
 export function coverageProblem(mutations = MUTATIONS) {
   const problems = [];
   for (const [ms, planned] of Object.entries(M98_PLAN)) {
@@ -1540,6 +1596,168 @@ function repairStaleJournal() {
 }
 
 // ---------------------------------------------------------------------------
+// Shards. M127 (`M126-01`).
+//
+// The sweep took 1h13m11s on run 31540764432 against `timeout-minutes: 90`, having grown
+// 51m → 53m → 55m → 59m → 69m → 71m → 73m in seven milestones. The failure waiting at the end of
+// that line is not a red test: it is PR #48's, where the sweep finished *green* and the job was
+// killed in a later step with the work done and thrown away.
+//
+// A bigger number would be the third application of a fix that has not held twice, and `M114`'s
+// rule forbids the cheap structural one — scoping the sweep on PRs is how `M122-01` stayed
+// invisible, a merged registry entry leaving one mutation not merely surviving but *absent*, with
+// every scoped run green about a mutation that no longer existed. So: every mutation still runs on
+// every pull request, and what changes is how many machines run them.
+//
+// WHAT A SHARD MUST NOT BE ABLE TO DO. Splitting a sweep introduces exactly one new way to be
+// green about nothing — a mutation that lands in no shard, or a shard that runs zero mutations and
+// exits 0. That is this file's oldest recurring shape, and it is designed against three times over
+// rather than once:
+//
+//   1. `partition()` is total and disjoint by construction, and says so — it throws rather than
+//      returning a partition that lost or duplicated an entry, so the bug cannot be silent.
+//   2. An empty shard is an error, not an early return (`main`). Zero mutations run is never a
+//      thing this tool reports success about.
+//   3. The workflow's matrix and this tool's `n` are two numbers that can drift apart, and no
+//      amount of care inside one file fixes that. So each shard writes down what it actually ran
+//      (`--manifest=`) and `scripts/verify-shards.mjs` re-assembles the registry from those
+//      manifests in a job of its own. A shard silently dropped from the matrix fails *there*.
+
+/** Mutations grouped by resolved package, in registry order, as `[pkg, mutations[]]`. */
+function byPackage(mutations) {
+  const groups = new Map();
+  for (const m of mutations) {
+    const pkg = m.pkg ?? DEFAULT_PKG;
+    if (!groups.has(pkg)) groups.set(pkg, []);
+    groups.get(pkg).push(m);
+  }
+  return [...groups];
+}
+
+/** What `n` mutations of `pkg` cost when they are the only ones of that package in a shard: their
+ *  own suite runs plus the one baseline the shard has to pay before the first of them. */
+function chunkCost(pkg, n) {
+  return (n + 1) * (SUITE_SECONDS[pkg] ?? 60);
+}
+
+/** `ms` split into `k` contiguous, near-equal slices. Contiguous because registry order is
+ *  milestone order, and a shard whose mutations come from one stretch of the registry is far easier
+ *  to read a failure out of than one holding every seventh entry. */
+function slices(ms, k) {
+  const out = [];
+  let taken = 0;
+  for (let i = 0; i < k; i++) {
+    const size = Math.round(((i + 1) * ms.length) / k) - taken;
+    out.push(ms.slice(taken, taken + size));
+    taken += size;
+  }
+  return out.filter((s) => s.length > 0);
+}
+
+/**
+ * `mutations` dealt into `n` shards, deterministically.
+ *
+ * Chunk, then pack. Each package is cut into as many pieces as its cost exceeds an even share, and
+ * the pieces are then packed longest-first into whichever shard they make cheapest — counting the
+ * baseline only when that shard does not already hold the package. The target share is recomputed
+ * after cutting, because cutting is what adds the extra baselines that move it; three passes is
+ * enough for it to settle on this registry and the loop stops when it does.
+ *
+ * Deterministic at every step that could be arbitrary: slices are contiguous and in registry order,
+ * the pack order breaks cost ties on package name then first id, and the "cheapest shard" search
+ * keeps the lowest index on a tie. The same registry always deals the same hands — which is what
+ * makes a shard's contents reproducible from the shard number alone when one of them goes red.
+ */
+export function partition(mutations, n) {
+  if (!Number.isInteger(n) || n < 1) throw new Error(`shard count must be a positive integer, got ${n}`);
+  const groups = byPackage(mutations);
+
+  let target = groups.reduce((a, [pkg, ms]) => a + chunkCost(pkg, ms.length), 0) / n;
+  let chunks = [];
+  for (let pass = 0; pass < 3; pass++) {
+    chunks = [];
+    for (const [pkg, ms] of groups) {
+      const pieces = Math.max(1, Math.min(ms.length, Math.ceil(chunkCost(pkg, ms.length) / target)));
+      for (const part of slices(ms, pieces)) chunks.push({ pkg, ms: part });
+    }
+    const settled = chunks.reduce((a, c) => a + chunkCost(c.pkg, c.ms.length), 0) / n;
+    if (Math.abs(settled - target) < 1) break;
+    target = settled;
+  }
+
+  // Cost-driven cutting can leave fewer chunks than shards — at `n` near the size of the registry
+  // the shares are smaller than a single suite run, and the cut is capped at one chunk per
+  // mutation per package. Keep halving the widest chunk until there is one for every shard, which
+  // is always reachable while `n` does not exceed the number of mutations. Without this the packer
+  // below hands out fewer chunks than it has bins and a shard comes out empty — found by the
+  // totality assertion at the bottom of this function, on the first run of the test that exercises
+  // every shard count the registry can take.
+  while (chunks.length < n) {
+    let widest = 0;
+    for (let i = 1; i < chunks.length; i++) if (chunks[i].ms.length > chunks[widest].ms.length) widest = i;
+    if (chunks[widest].ms.length < 2) break;
+    const [left, right] = slices(chunks[widest].ms, 2);
+    chunks.splice(widest, 1, { pkg: chunks[widest].pkg, ms: left }, { pkg: chunks[widest].pkg, ms: right });
+  }
+
+  chunks.sort(
+    (a, b) =>
+      chunkCost(b.pkg, b.ms.length) - chunkCost(a.pkg, a.ms.length) ||
+      a.pkg.localeCompare(b.pkg) ||
+      a.ms[0].id.localeCompare(b.ms[0].id),
+  );
+
+  const bins = Array.from({ length: n }, () => ({ cost: 0, pkgs: new Set(), ms: [] }));
+  chunks.forEach((c, nth) => {
+    const suite = SUITE_SECONDS[c.pkg] ?? 60;
+    let best = nth;
+    let bestAfter = 0;
+    if (nth >= n) {
+      // Past the seeding round, a chunk goes wherever it lands cheapest — and landing in a shard
+      // that already holds its package is cheaper by one baseline, which is what keeps a package
+      // from being scattered across every shard and paying for itself six times.
+      bestAfter = Infinity;
+      for (let i = 0; i < n; i++) {
+        const after = bins[i].cost + c.ms.length * suite + (bins[i].pkgs.has(c.pkg) ? 0 : suite);
+        if (after < bestAfter) {
+          bestAfter = after;
+          best = i;
+        }
+      }
+    } else {
+      // The `n` most expensive chunks are dealt one per shard before anything is stacked. Classic
+      // longest-processing-time seeding, and it is also what makes an empty shard impossible.
+      bestAfter = chunkCost(c.pkg, c.ms.length);
+    }
+    bins[best].cost = bestAfter;
+    bins[best].pkgs.add(c.pkg);
+    bins[best].ms.push(...c.ms);
+  });
+
+  const order = new Map(mutations.map((m, i) => [m.id, i]));
+  const dealt = bins.map((b) => b.ms.sort((x, y) => order.get(x.id) - order.get(y.id)));
+
+  // The guard, not an assertion of the obvious. Every other check in this file exists because the
+  // silent version of this bug shipped once; this one is written before it can.
+  const seen = new Set(dealt.flat().map((m) => m.id));
+  const total = dealt.reduce((a, s) => a + s.length, 0);
+  if (total !== mutations.length || seen.size !== mutations.length) {
+    throw new Error(
+      `partition lost or duplicated entries: ${mutations.length} in, ${total} out across ${n} shard(s), ${seen.size} distinct. ` +
+        `A shard split that is not a partition is a sweep that is green about mutations nobody ran.`,
+    );
+  }
+  return dealt;
+}
+
+/** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
+ *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
+export function shardCost(shard) {
+  const groups = byPackage(shard);
+  return groups.reduce((a, [pkg, ms]) => a + chunkCost(pkg, ms.length), 0);
+}
+
+// ---------------------------------------------------------------------------
 // Arguments. M123 (D228): `M118-03` began life as `mutate.mjs m118 --list`, typed expecting a
 // listing — `--list` was silently ignored, `m118` was taken as a scope, and the tool started
 // rewriting tracked sources. An unrecognised argument is an error here, never a filter that happens
@@ -1548,10 +1766,43 @@ export function parseArgs(argv) {
   const args = argv.slice(2);
   const flags = args.filter((a) => a.startsWith('-'));
   const positional = args.filter((a) => !a.startsWith('-'));
-  const unknown = flags.filter((f) => f !== '--list');
-  if (unknown.length > 0) return { error: `unknown option${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')} — the only option is --list. Usage: mutate.mjs [--list] [<id>|<milestone>]` };
+  const unknown = flags.filter((f) => f !== '--list' && !f.startsWith('--shard=') && !f.startsWith('--manifest='));
+  if (unknown.length > 0) return { error: `unknown option${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')} — the options are --list, --shard=<i>/<n> and --manifest=<file>. Usage: mutate.mjs [--list] [--shard=<i>/<n>] [--manifest=<file>] [<id>|<milestone>]` };
   if (positional.length > 1) return { error: `expected at most one id or milestone, got ${positional.length}: ${positional.join(', ')}` };
-  return { list: flags.includes('--list'), scope: positional[0] };
+
+  // M127. `--shard=3/6`, joined rather than spaced: `--shard 3/6` would leave `3/6` looking exactly
+  // like a scope to the split above, and a mistyped shard silently becoming a scope that matches
+  // nothing is the `M118-03` shape again.
+  const shardFlag = flags.find((f) => f.startsWith('--shard='));
+  let shard;
+  if (shardFlag !== undefined) {
+    const m = /^--shard=(\d+)\/(\d+)$/.exec(shardFlag);
+    if (!m) return { error: `--shard wants <i>/<n>, e.g. --shard=3/6 — got ${JSON.stringify(shardFlag.slice('--shard='.length))}` };
+    const [index, of] = [Number(m[1]), Number(m[2])];
+    if (of < 1) return { error: `--shard=${index}/${of}: a sweep cannot be split into ${of} shards` };
+    if (index < 1 || index > of) return { error: `--shard=${index}/${of}: shard numbers run 1..${of}, and ${index} is not one of them` };
+    if (positional.length > 0) {
+      return {
+        error:
+          `--shard=${index}/${of} cannot be combined with the scope "${positional[0]}". A shard is a slice of the whole ` +
+          `registry, and slicing an already-scoped run would report a fraction of a fraction as if it were the sweep.`,
+      };
+    }
+    shard = { index, of };
+  }
+
+  const manifestFlag = flags.find((f) => f.startsWith('--manifest='));
+  const manifest = manifestFlag?.slice('--manifest='.length);
+  if (manifestFlag !== undefined && !manifest) return { error: `--manifest wants a path, e.g. --manifest=shard-3.json` };
+  if (manifest && flags.includes('--list')) {
+    return {
+      error:
+        `--manifest cannot be combined with --list. A manifest is this tool's word that the mutations in it were ` +
+        `applied and judged; --list applies nothing, so the file would attest a sweep that never ran.`,
+    };
+  }
+
+  return { list: flags.includes('--list'), scope: positional[0], shard, manifest };
 }
 
 // M112. Every suite run is bounded, because until now none of them was.
@@ -1681,7 +1932,30 @@ function killReason(out) {
   return 'suite exited non-zero (a guard script, not a node:test assertion)';
 }
 
-function sweep(selected, scope) {
+/**
+ * The headline a sweep ends on.
+ *
+ * A pure function since M127, for the reason `M98d` left behind — a control whose harness cannot
+ * observe the thing it names is not a control. The shard form of this line was otherwise reachable
+ * only by running a whole shard, thirteen minutes of suites, which is to say it would have been
+ * asserted by nothing.
+ *
+ * M126 (`M125e-02`) put the M98 gap *in* the tally rather than in a paragraph under it, because a
+ * number under a headline is a number nobody reads. M127 applies the same rule to the count it
+ * introduces: `41 mutation(s) run; 0 survived` is a true sentence about a sixth of the sweep, and
+ * reads exactly like a sentence about all of it.
+ */
+export function tallyLine({ ran, survived, stale, timedOut = 0, shard, registry = MUTATIONS.length, cov = coverage() }) {
+  const count = shard
+    ? `${ran} of ${registry} mutation(s) run — shard ${shard.index} of ${shard.of}`
+    : `${ran} mutation(s) run`;
+  return (
+    `${count}; ${survived} survived, ${stale} stale${timedOut > 0 ? `, ${timedOut} timed out` : ''} ` +
+    `— over a registry that reconstructs ${cov.reconstructed} of the M98 plan's ${cov.planned} mutations, ${cov.missing} not.`
+  );
+}
+
+function sweep(selected, scope, shard) {
   const survivors = [];
   for (const m of selected) {
     const pkg = m.pkg ?? DEFAULT_PKG;
@@ -1769,12 +2043,21 @@ function sweep(selected, scope) {
   // scope these groups actually belong to, reported a clean number and disclosed nothing. Three
   // findings on this board now share the shape *read the line under the headline*; the fix for the
   // third is to stop having a line under the headline.
-  const cov = coverage();
   console.log(
-    `\n${selected.length} mutation(s) run; ${survivors.filter((s) => s.verdict === 'survived').length} survived, ` +
-      `${survivors.filter((s) => s.verdict === 'stale').length} stale${timedOut > 0 ? `, ${timedOut} timed out` : ''} ` +
-      `— over a registry that reconstructs ${cov.reconstructed} of the M98 plan's ${cov.planned} mutations, ${cov.missing} not.`,
+    `\n${tallyLine({
+      ran: selected.length,
+      survived: survivors.filter((s) => s.verdict === 'survived').length,
+      stale: survivors.filter((s) => s.verdict === 'stale').length,
+      timedOut,
+      shard,
+    })}`,
   );
+  if (shard) {
+    console.log(
+      `  This shard is not the sweep. The other ${shard.of - 1} run elsewhere, and only \`verify-shards.mjs\` over all ${shard.of} manifests\n` +
+        `  can say the registry was covered.`,
+    );
+  }
 
   // Itemised for the scope in hand: everything when unscoped, that milestone's own gap when not.
   // A scope with nothing missing says so rather than staying quiet, because silence here is what
@@ -1791,19 +2074,19 @@ function sweep(selected, scope) {
 }
 
 function main(argv = process.argv) {
-  const problem = registryProblem() ?? coverageProblem();
+  const problem = registryProblem() ?? coverageProblem() ?? costProblem();
   if (problem) {
     console.error(problem);
     return 2;
   }
 
-  const { error, list, scope } = parseArgs(argv);
+  const { error, list, scope, shard, manifest } = parseArgs(argv);
   if (error) {
     console.error(error);
     return 2;
   }
 
-  const selected = MUTATIONS.filter((m) => !scope || m.id === scope || m.milestone === scope);
+  let selected = MUTATIONS.filter((m) => !scope || m.id === scope || m.milestone === scope);
   if (selected.length === 0) {
     console.error(`no mutation matches "${scope}" — ids: ${MUTATIONS.map((m) => m.id).join(', ')}`);
     return 2;
@@ -1813,6 +2096,22 @@ function main(argv = process.argv) {
   // disk is still wrong, and there is no mode of this tool in which leaving it that way is right.
   const repair = repairStaleJournal();
   if (repair !== 0) return repair;
+
+  if (shard) {
+    if (shard.of > selected.length) {
+      console.error(`✗ ${shard.of} shards over ${selected.length} mutation(s) would leave some shard with nothing to run,`);
+      console.error(`  and a shard that runs nothing still exits 0. Use at most ${selected.length}.`);
+      return 2;
+    }
+    selected = partition(selected, shard.of)[shard.index - 1];
+    // Unreachable while `partition` holds — which is the point of checking anyway. The one thing
+    // this tool must never do is report a clean run over an empty selection (M127).
+    if (selected.length === 0) {
+      console.error(`✗ shard ${shard.index}/${shard.of} came out empty. Refusing to exit 0 over zero mutations.`);
+      return 2;
+    }
+    console.log(`shard ${shard.index} of ${shard.of} — ${selected.length} of ${MUTATIONS.length} mutation(s), ~${Math.round(shardCost(selected) / 60)}m of suite time\n`);
+  }
 
   // `--list` applies nothing. It exists because `M118-03` was opened by someone typing exactly this
   // and getting a sweep instead (D228).
@@ -1845,7 +2144,20 @@ function main(argv = process.argv) {
     });
   }
 
-  return sweep(selected, scope);
+  try {
+    return sweep(selected, scope, shard);
+  } finally {
+    // In a `finally` because a shard that finds a survivor still has to say what it ran: the job
+    // fails on the exit code, and `verify-shards.mjs` must still be able to tell "this shard ran and
+    // found something" apart from "this shard never ran", which are the same missing file otherwise.
+    if (manifest) {
+      writeFileSync(
+        manifest,
+        `${JSON.stringify({ shard: shard?.index ?? 1, of: shard?.of ?? 1, registry: MUTATIONS.length, ids: selected.map((m) => m.id) }, null, 2)}\n`,
+      );
+      console.log(`\nwrote ${manifest} — ${selected.length} id(s), the record this shard is judged complete by.`);
+    }
+  }
 }
 
 // D224 — the `main` guard. `M122` reproduced `M118-03` by `import()`-ing this file to read
