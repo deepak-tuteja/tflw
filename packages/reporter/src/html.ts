@@ -60,6 +60,7 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
   </div>
   ${report.insecure ? '<div class="insecure-warning">⚠ insecure: true — TLS certificate verification was disabled for this run</div>' : ''}
   ${report.demo ? '<div class="demo-badge">ℹ demo run — this targeted tflw\'s built-in demo service, not a service of yours. Point <code>api</code> at your own in <code>tflw.config</code>.</div>' : ''}
+  ${(report.authorizedTargets ?? []).map((t) => `<div class="demo-badge">ℹ authorized target <code>${esc(t.target)}</code> — ${esc(t.reason)}</div>`).join('\n  ')}
   ${renderUnmaskableWarning(report.unmaskableSecrets)}
   ${report.browserEngine ? `<div class="engine-badge">browser <code>${esc(report.browserEngine)}</code></div>` : ''}
   ${report.aborted ? `<div class="insecure-warning">⚠ ${esc(report.abortedMessage ?? 'aborted before its planned duration elapsed')} — every workload number below reflects only what completed before Ctrl-C.</div>` : ''}

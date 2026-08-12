@@ -102,6 +102,37 @@ export interface ProgramCheckOptions {
    * no `tflw.config` can exist even in principle.
    */
   readonly envAllowHosts?: EnvAllowHosts;
+  /**
+   * The active env's accumulated `authorized target` declarations and its default `api` base URL
+   * (M128b, D291) — see `EnvAuthorizedTargets`.
+   *
+   * The seventh field to carry the `undefined`-vs-empty rule, and it sits on the same side of it as
+   * `envAllowHosts`: `{ targets: [] }` is not "nothing to check against", it is "a config was read
+   * and authorizes nothing", which is exactly the state `TF060` reports. `undefined` still means
+   * nobody looked, and still skips — without which the docs-site editor demo, which runs in a
+   * browser where no `tflw.config` can exist, would report every security assertion in every
+   * example as unauthorized.
+   */
+  readonly envAuthorizedTargets?: EnvAuthorizedTargets;
+}
+
+/**
+ * The active env's `authorized target` declarations, as `TF060` needs them (M128b, D291).
+ *
+ * **Accumulated across `defaults` + `env` by the caller**, for the reason `EnvAllowHosts` gives at
+ * length: SPEC §3.7 makes the two additive, and a suite keeping its declaration in `defaults` — the
+ * arrangement the SPEC recommends — would otherwise be reported here as authorizing nothing.
+ *
+ * `apiBaseUrl` is the *literal* default `api` base for this env, or `null` when the env declares
+ * none or writes one containing an `{interpolation}`. Null skips the pass rather than failing it:
+ * what an interpolated base URL's host will be is precisely what this pass cannot know, and the
+ * same conservatism `TF030` states for variables applies. The narrowness is deliberate and matches
+ * `checkAllowHostsCoversBaseUrls` — a URL a test composes at runtime is not decidable here.
+ */
+export interface EnvAuthorizedTargets {
+  readonly envName: string;
+  readonly targets: readonly { readonly target: string; readonly reason: string }[];
+  readonly apiBaseUrl: string | null;
 }
 
 /**
@@ -219,11 +250,55 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     // rather than by skipping it, because "no config was resolved" is still a case with a
     // diagnostic to emit here.
     ...checkAbsoluteUrls(program, opts),
+    // M128b (D291) — wired unconditionally for the same reason `checkAbsoluteUrls` is: the
+    // skip-without-a-config decision is made *inside* the pass, from `opts.envAuthorizedTargets`,
+    // because "a config was resolved and authorizes nothing" is a case with a diagnostic to emit.
+    ...checkAuthorizedTargets(program, opts),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkActionCycles(program, opts),
     ...checkResponseScopes(program),
   ]);
+}
+
+/**
+ * `TF061` — an `authorized target` must name one origin, and must parse (M128b, D291).
+ *
+ * **Why a wildcard is rejected here when `allow hosts` accepts one.** The two declarations look
+ * alike and mean opposite kinds of thing. `allow hosts` bounds where a suite may send *ordinary*
+ * traffic, and a bound expressed as a pattern is still a bound — `*.example.com` genuinely narrows
+ * the blast radius. This declaration is not a bound; it is an author affirming, in writing, that
+ * they are permitted to point a security scanner at a named host. Nobody is authorized to scan
+ * `*.com`, and nobody can know the scope of what a pattern will match at the moment they write it,
+ * so accepting one would record a claim its author could not have made truthfully.
+ *
+ * An unparseable target is the same error one step earlier: `authorized target "staging.example.com"`
+ * (no scheme) reads like a declaration and authorizes nothing, since `TF060` compares origins.
+ */
+function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): void {
+  if (entry.type !== 'AuthorizedTargetDecl') return;
+  const raw = entry.target.value;
+  if (raw.includes('*')) {
+    diags.push({
+      code: Codes.AUTHORIZED_TARGET_WILDCARD,
+      severity: 'error',
+      message: `\`authorized target\` cannot contain a wildcard ("${raw}")`,
+      span: entry.target.span,
+      hint: 'this declaration is an affirmation that you are permitted to scan one named host, not an allowlist pattern — name the origin in full, e.g. `authorized target "https://staging.example.com"`. (`allow hosts` is the one that takes patterns.)',
+    });
+    return;
+  }
+  if (literalOrigin(raw) === null) {
+    diags.push({
+      code: Codes.AUTHORIZED_TARGET_WILDCARD,
+      severity: 'error',
+      message: `\`authorized target\` must be an absolute URL with a scheme ("${raw}" is not)`,
+      span: entry.target.span,
+      // Naming the consequence matters more than naming the fix: silently authorizing nothing is
+      // the failure mode, and it looks exactly like a working config until a scan is written.
+      hint: 'it is compared against the env\'s base URL by origin (scheme + host + port), so a bare hostname authorizes nothing — write `https://staging.example.com` or `https://localhost:8443`',
+    });
+  }
 }
 
 /** Keys valid only in `defaults`, only in `env`, or in both. */
@@ -238,6 +313,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
       if (ENV_ONLY.has(entry.type)) {
         diags.push(contextError(entry, 'defaults', 'an `env` block'));
       }
+      checkAuthorizedTargetLiteral(entry, diags);
     }
   }
 
@@ -259,6 +335,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
       if (DEFAULTS_ONLY.has(entry.type)) {
         diags.push(contextError(entry, `env ${env.name}`, 'the `defaults` block'));
       }
+      checkAuthorizedTargetLiteral(entry, diags);
     }
   }
 
@@ -1068,6 +1145,13 @@ function readsResponse(subject: Subject): boolean {
     case 'BodyCsvSubject':
     case 'BodyPdfTextSubject':
     case 'RequestSubject':
+    // M128b — `response` reads the last `api` step's response the same way `status` does; it just
+    // reads all of it. So it is on this side of the line and inherits `TF039` unchanged: `expect
+    // response has no security violations` with no `api` step above it is the same authoring
+    // mistake as `expect status equals 200` there, and gets the same diagnostic rather than a new
+    // one. Note this is *not* D285 — that is about a scan whose rules all stood down, which is a
+    // run-time verdict about a response that did arrive.
+    case 'ResponseSubject':
       return true;
     case 'NetworkRequestSubject':
     case 'LocatorSubject':
@@ -1274,6 +1358,11 @@ const LIVE_HANDLE_MATCHERS: ReadonlyMap<MatcherName, string> = new Map([
   ['fails', 'fails'],
   ['wasMade', 'was made'],
   ['hasNoA11yViolations', 'has no a11y violations'],
+  // M128b/D290 — a security scan needs an observed response: its status line, its headers, its
+  // `Set-Cookie` lines and the request that produced them. A bound value carries none of that,
+  // whatever its type, which is the same structural reason (not a type guess) every other row here
+  // qualifies on.
+  ['hasNoSecurityViolations', 'has no security violations'],
   ['matchesSnapshot', 'matches snapshot'],
 ]);
 
@@ -1384,6 +1473,7 @@ const SUBJECT_KINDS = {
   ValueSubject: 'value',
   LocatorSubject: 'locator',
   PageSubject: 'page',
+  ResponseSubject: 'response',
   RequestSubject: 'request',
   NetworkRequestSubject: 'network-request',
 } satisfies Record<Subject['type'], SubjectKind>;
@@ -1393,6 +1483,7 @@ const KIND_LABELS: Readonly<Record<SubjectKind, string>> = {
   value: 'a value',
   locator: 'a UI locator',
   page: '`page`',
+  response: '`response`',
   request: '`request`',
   'network-request': '`request to "…"`',
 };
@@ -1853,6 +1944,8 @@ function subjectKeyword(subject: Subject): string {
       return subject.locator.kind;
     case 'PageSubject':
       return 'page';
+    case 'ResponseSubject':
+      return 'response';
     case 'ValueSubject':
       return `{${refLabel(subject.ref)}}`;
   }
@@ -2330,6 +2423,8 @@ function keyName(entry: ConfigEntry): string {
       return 'key';
     case 'AllowHostsDecl':
       return 'allow hosts';
+    case 'AuthorizedTargetDecl':
+      return 'authorized target';
     case 'EvidenceDecl':
       return 'evidence';
     case 'RedactDecl':
@@ -3142,6 +3237,82 @@ function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts, diags
  * filtered out afterwards, which is the version of this that rots the first time a fourth
  * pattern-bearing node type is added.
  */
+// ---------------------------------------------------------------------------
+// `TF060` — a security assertion with no `authorized target` behind it (M128b, D291)
+// ---------------------------------------------------------------------------
+
+/** Whether a declared target covers a base URL. Origin equality — scheme, host and port — because
+ * that is the granularity at which somebody is or is not authorized to scan something. A
+ * declaration for `https://staging.example.com` does not authorize scanning
+ * `https://staging.example.com:8443`, which is a different listener that may belong to a different
+ * team; and it does not authorize `http://` either, which is a different conversation entirely.
+ *
+ * Deliberately *not* `hostMatchesAllowPattern`, the matcher `allow hosts` uses. That one accepts
+ * `*.example.com` on purpose. Reusing it here would quietly make wildcards work, which is the one
+ * thing D291 says this declaration must never do — `TF061` rejects them, and a matcher that
+ * accepted them anyway would leave the two halves disagreeing. */
+function targetCoversBaseUrl(target: string, baseUrl: string): boolean {
+  const a = literalOrigin(target);
+  const b = literalOrigin(baseUrl);
+  return a !== null && b !== null && a === b;
+}
+
+function literalOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * **D291 — Tier 1 requires the declaration, in the milestone that introduces it.**
+ *
+ * `expect`/`check response has no … security violations` is a checker error unless the active env's
+ * `api` base URL is covered by an `authorized target` declaration. This is the whole point of
+ * putting the declaration in `M128b` rather than `M128c`: the alternative — ship the grammar, and
+ * enforce it in the milestone that first sends a probe — means shipping a safety control that
+ * nothing exercises, which is the same criticism relocated. Making it load-bearing here means the
+ * affirmation-plus-reason is already habitual before anything sends a packet, and D21 layer 2 is
+ * tested rather than asserted.
+ *
+ * **No loopback or RFC1918 exemption.** D21 layer 3 does treat private addresses as lower-risk, and
+ * exempting them was considered and rejected: it would exempt precisely the target this arc tests
+ * against (`https://localhost:8443`), shipping the requirement untested.
+ *
+ * Narrow, in exactly the ways `checkAllowHostsCoversBaseUrls` is narrow, and for the same reason —
+ * being wrong here means refusing a suite that is entirely above board:
+ * - **only the env's default `api` base**, not a named service and not an absolute URL a step
+ *   writes for itself. Those need a response-time answer this pass cannot give.
+ * - **only a fully literal base URL.** `api "https://{API_HOST}/v1"` is skipped, not guessed at.
+ * - **`undefined` options skip entirely**, so a `parse` with no config resolved reports nothing.
+ */
+export function checkAuthorizedTargets(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const declared = opts.envAuthorizedTargets;
+  if (!declared) return diags;
+  const base = declared.apiBaseUrl;
+  if (base === null || literalOrigin(base) === null) return diags;
+  if (declared.targets.some((t) => targetCoversBaseUrl(t.target, base))) return diags;
+
+  const shape = `authorized target "${literalOrigin(base)}" reason "<why you may scan it>"`;
+  const hint = declared.targets.length
+    ? `env \`${declared.envName}\` authorizes ${declared.targets.map((t) => `"${t.target}"`).join(', ')}, none of which is this base URL's origin. Add \`${shape}\` to \`tflw.config\` (SPEC §3.10)`
+    : `env \`${declared.envName}\` declares no \`authorized target\`. Add \`${shape}\` to \`tflw.config\` — the reason is printed in the run summary and embedded in the report, so the claim travels with the evidence (SPEC §3.10, D21)`;
+
+  forEachExpect(program, (expect) => {
+    if (expect.matcher.name !== 'hasNoSecurityViolations') return;
+    diags.push({
+      code: Codes.SECURITY_ASSERTION_UNAUTHORIZED,
+      severity: 'error',
+      message: `a security scan against "${base}" needs an \`authorized target\` declaration naming it`,
+      span: expect.span,
+      hint,
+    });
+  });
+  return diags;
+}
+
 export function checkAbsoluteUrls(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
   const diags: Diagnostic[] = [];
   for (const test of program.tests) checkAbsoluteUrlsInSteps(test.body, opts, diags);
@@ -3252,6 +3423,10 @@ function checkOneAbsoluteTarget(
 const UNCAPTURABLE_HINTS: Readonly<Record<Exclude<SubjectKind, 'value'>, string>> = {
   locator: 'a UI locator is something to assert about — use `expect`/`check` against it, or `capture text "…"`-style value subject if you want its content (SPEC §9.4)',
   page: '`page` is only ever an a11y subject — `expect`/`check page has no … a11y violations` (SPEC §9.8)',
+  // Deliberately points at the addressable subjects rather than only naming the restriction: a user
+  // who wrote `capture response as r` almost certainly wanted the body, and `response` is the one
+  // subject in the language whose name makes that the obvious guess.
+  response: '`response` is only ever a security-scan subject — `expect`/`check response has no … security violations` (SPEC §9.10). To bind part of the response, name it: `capture body.…`, `capture status`, `capture header "…"`',
   request: '`request` reports whether the last api step connected — `expect`/`check request connects`/`fails` (SPEC §6.2.2)',
   'network-request': 'an observed network request is something to assert about, not a value to bind — use `expect`/`check` against it (SPEC §9.7)',
 };

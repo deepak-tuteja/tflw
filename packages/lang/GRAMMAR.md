@@ -247,6 +247,9 @@ Subject     := 'status' NetworkRef?
                                                                   # form above by whether `to` follows
              | 'page'                                            # (§9.8, M3e) — the active browser page;
                                                                   # only `has no … a11y violations` reads it
+             | 'response'                                        # (§9.10, M128b) — the last `api` step's
+                                                                  # response scanned as a whole; only
+                                                                  # `has no … security violations` reads it
 BodyPath    := ('.' IDENT | '[' NUMBER ']')+                     # .items[0].price
 NetworkRef  := 'to' STRING ('with' 'method' STRING)?              # (§9.7, M3d)
              | 'of' 'request' 'to' STRING ('with' 'method' STRING)?  # trailing clause on status/header/body/body text
@@ -275,11 +278,16 @@ SnapshotMask := 'mask' Locator                                    # dynamic regi
                                                                   #   before the comparison. Parses
                                                                   #   after any matcher; the checker
                                                                   #   rejects a stray one.
-             | 'has' 'no' A11ySeverity? 'a11y' 'violations'       # `page` subject only (§9.8, M3e) —
+             | 'has' 'no' Severity? 'a11y' 'violations'           # `page` subject only (§9.8, M3e) —
                                                                    # severity is a *floor*, not an exact
                                                                    # match: `serious` also counts `critical`
+             | 'has' 'no' Severity? 'security' 'violations'       # `response` subject only (§9.10, M128b)
+                                                                   # — same floor semantics; the floor
+                                                                   # also narrows which rules run at all
 StateWord   := 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked'
-A11ySeverity := 'minor' | 'moderate' | 'serious' | 'critical'      # axe-core's own impact scale (§9.8)
+Severity    := 'minor' | 'moderate' | 'serious' | 'critical'       # one scale for both scans: axe-core's
+                                                                   # own impact scale (§9.8), reused by the
+                                                                   # security pack rather than forked
 ```
 
 A step combining a `request`-subject assertion with a `status`/`header`/`body`/`duration` one on
@@ -306,6 +314,8 @@ CaptureStmt := 'capture' Subject 'as' IDENT NEWLINE
               # production) but are likewise runtime errors — no `capture` form exists for a
               # network-observation subject, only `expect`/`check` (§9.7, M3d). Same for `page`
               # (§9.8, M3e) — a page's a11y findings are asserted, never captured as a value.
+              # `response` is the same (§9.10, M128b): a scan result is asserted, not bound. To bind
+              # part of a response, name the part — `body.…`, `status`, `header "…"`.
 GiveStmt    := 'give' Value NEWLINE                               # an action's return value (§8)
 LogStmt     := 'log' LogLevel? STRING ('to' LogDestination)? NEWLINE
               # (§7.7, M27) — narrates what a test is doing, in the author's own words; always
@@ -498,6 +508,11 @@ InsecureDecl    := 'insecure' ('true' | 'false')
 CertDecl        := 'cert' STRING
 KeyDecl         := 'key' STRING
 AllowHostsDecl  := 'allow' 'hosts' STRING (',' STRING)*           # accumulates across defaults+env (§3.7)
+AuthorizedTargetDecl := 'authorized' 'target' STRING 'reason' STRING
+                                                                  # (§3.10, M128b, D291) — D21's declaration
+                                                                  #   layer. Accumulates like `allow hosts`.
+                                                                  #   `reason` is required; a wildcard in the
+                                                                  #   target is a checker error (`TF061`)
 EvidenceDecl    := 'evidence' STRING                              # "full" | "headers-only" | "none" (§13)
 RedactDecl      := 'redact' RedactPattern (',' RedactPattern)*    # accumulates across defaults+env (§3.4)
 RedactPattern   := 'body' ('.' IDENT | '.' '*')+
@@ -507,7 +522,7 @@ RedactPattern   := 'body' ('.' IDENT | '.' '*')+
 LogDestinationDecl := 'log' 'destination' STRING                  # "console" | "html" | "both" (§3.8,
                                                                    # M27) — `--log-output` overrides
 LogLevelDecl    := 'log' 'level' STRING                           # "debug"|"info"|"warn"|"error"
-                                                                   # (§3.8) — `--log-level` overrides
+                                                                   # (§3.10) — `--log-level` overrides
 ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height, px (§9, M3c, D11);
                                                                    # `defaults`-only, like `workers`/
                                                                    # `report`; omitted = Playwright's

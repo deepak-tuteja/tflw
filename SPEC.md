@@ -578,6 +578,39 @@ exclude "tflw-acceptance", "fixtures/broken"
   currently exist (typo, or excluding a not-yet-created directory) is silently a no-op, same
   tolerance a `.gitignore` line has for a pattern matching nothing.
 
+### 3.10 Authorized targets — `authorized target` (M128b, D21/D291) ✅
+
+```
+defaults
+  authorized target "https://localhost:8443" reason "self-hosted test fixture"
+
+env staging
+  api "https://stg.example.com"
+  authorized target "https://stg.example.com" reason "our own staging, sign-off in TICKET-4412"
+```
+
+- **Required before any security assertion (§9.10).** `expect response has no … security
+  violations` against an env whose `api` base URL no declaration names is `TF060`, a checker error.
+  This is layer 2 of the D21 safety model, and it is enforced from the milestone that introduces it
+  rather than from the one that first sends a probe — shipping a safety control that nothing
+  exercises is not shipping a safety control.
+- **Named, never a wildcard.** `authorized target "https://*.example.com"` is `TF061`. This
+  declaration is not an allowlist: it is an author affirming, in writing, that they are permitted to
+  point a scanner at one named host, and nobody is authorized to scan `*.com`. A bare hostname with
+  no scheme is the same error one step earlier — matching is by **origin** (scheme + host + port),
+  so `staging.example.com` authorizes nothing, and `https://x.example.com` does not authorize
+  `https://x.example.com:8443`, which may be a different team's listener.
+- **`reason` is required and is the point.** It is printed in the CLI summary and embedded in
+  `report.html`, so every artifact a run produces records the claim that permitted the scan. A
+  declaration without one would be a checkbox.
+- **No loopback or private-address exemption.** D21 layer 3 does treat those as lower-risk, but
+  exempting them here would exempt precisely the target this arc is tested against, shipping the
+  requirement untested.
+- Accumulates across `defaults` + `env`, like `allow hosts` (§3.7) — not override semantics.
+- **Deferred to the milestone that first sends a probe** (Tier 3): the public-target CLI flag that
+  cannot live in config, per-class destructive opt-in, and default throttling. Those guard a threat
+  that does not exist yet.
+
 ## 4. Tests & structure ✅
 
 ### 4.1 `test`
@@ -1170,6 +1203,7 @@ them callable.
 | `fails` / `fails matching "<regex>"` | `request` | `expect request fails matching "certificate"` |
 | `was made` | `request to "<url>"` | `expect request to "/api/orders" was made` |
 | `has no [minor/moderate/serious/critical] a11y violations` | `page` | `expect page has no critical a11y violations` |
+| `has no [minor/moderate/serious/critical] security violations` | `response` | `expect response has no serious security violations` |
 | `matches snapshot "<name>" [mask <locator>]*` | `page`, UI locators | `expect page matches snapshot "checkout-page" mask css ".timestamp"` |
 <!-- GENERATED:matchers:end -->
 
@@ -1634,7 +1668,7 @@ ordinary string: `{var}` interpolation works exactly like every other string-bea
 unbound reference is the same `TF030` unknown-variable diagnostic `capture`/`check` already give.
 
 - **Level** (`debug`/`info`/`warn`/`error`, default `info` when omitted) is a semantic label — it
-  never affects whether a step runs or what it does, only how loud it is once `log level` (§3.8)/
+  never affects whether a step runs or what it does, only how loud it is once `log level` (§3.10)/
   `--log-level` (§12) set a rendering threshold.
 - **Destination** (`to console`/`to html`/`to both`) picks where this call ends up; omitted, it
   falls back to `tflw.config`'s `log destination` (§3.8, itself defaulting to `both`).
@@ -2132,6 +2166,122 @@ expect list "Cart items" matches snapshot "cart-badge"
   quantifiers (there's no array to quantify over); a configurable diff-pixel-ratio tolerance (see
   above — deliberately not exposed).
 
+### 9.10 Security hygiene scan (M128b, D283–D296) ✅
+
+```
+authorized target "https://localhost:8443" reason "self-hosted test fixture"   # tflw.config, §3.10
+
+api GET /orders
+expect response has no security violations              # every severity
+expect response has no serious security violations      # a floor, not an exact match
+check  response has no security violations              # soft form, §6.4
+```
+
+- **`expect`/`check response has no [<severity>] security violations`** — runs a built-in pack of
+  ten hygiene rules over the response the last `api` step actually received (its status line, its
+  headers, every `Set-Cookie` line including ones set on an earlier redirect hop, and the request
+  that produced them). `<severity>` uses the same four-level scale as §9.8 and the same floor
+  semantics — `has no serious security violations` also counts `critical`.
+- **`response` is a scan subject, not an addressable one.** §5.3's subjects each name one part of
+  the response and compare it against an operand; a scan reads all of it and returns a list, so
+  there is no part to name. `capture response as x` is a runtime error naming the parts that *can*
+  be bound (`body.…`, `status`, `header "…"`), and `{variable}` in this position is `TF041`.
+- **Applicability is a third state (D284).** Every rule declares a precondition, and a rule whose
+  precondition is unmet is **not applicable** — never a violation, and never a silent pass. Without
+  this the pack's zero-false-positive bar is unreachable: over `http://` a `Secure` cookie is not
+  merely unset but *unsettable*, and HSTS is ignored by browsers, so both rules would fire on every
+  response in a plaintext suite and the fix each implied would break it.
+
+  | rule | severity | applies when |
+  | --- | --- | --- |
+  | `sec/cookie-not-httponly` | critical | the response sets a cookie |
+  | `sec/cookie-not-secure` | critical | the scheme is https AND the response sets a cookie |
+  | `sec/cors-wildcard-with-credentials` | critical | the response carries `Access-Control-Allow-Origin` |
+  | `sec/hsts-missing` | serious | the scheme is https |
+  | `sec/csp-missing` | serious | the response is a document (`text/html`) |
+  | `sec/tls-version-old` | serious | the scheme is https and the TLS probe succeeded |
+  | `sec/tls-weak-cipher` | serious | the scheme is https and the TLS probe succeeded |
+  | `sec/x-frame-options` | moderate | the response is a document (`text/html`) |
+  | `sec/cookie-samesite-none` | moderate | the response sets a cookie |
+  | `sec/nosniff-missing` | moderate | always |
+  | `sec/authenticated-response-cacheable` | moderate | the request carried session or bearer credentials |
+  | `sec/server-version-disclosure` | minor | always |
+
+  Severity is static and built in, not user-editable — the same arrangement §9.8 has with axe-core's
+  impact scale. The floor is the filter.
+- **Zero applicable rules is a failure (D285).** An assertion where every rule stood down had no
+  power to fail, so passing it would report "checked and clean" about a response nothing checked.
+  The failure names each rule and the precondition it wanted. This is the `M127` "an empty shard is
+  an error, not an early return" rule one layer up.
+- **The floor narrows the pack before applicability, not the findings afterwards (D296).** `has no
+  critical security violations` considers three rules, not twelve — so the printed denominator
+  describes the work the assertion actually did, and a critical-floor assertion against a plain JSON
+  GET correctly reports that nothing engaged rather than collecting a green.
+- **Counts are printed on one line, all three of them** — `12 rules — 7 applicable, 5 not
+  applicable, 2 violations` — on pass and on failure alike (`M126`: a count and its denominator
+  belong together). A **passing negated** assertion (`not has no … violations`, which asserts that
+  something *is* wrong) lists the findings it found: that is the one fact it exists to establish, and
+  withholding it on the green line leaves it in no artifact at all.
+- **A rule blocked by a failed instrument is announced; one blocked by its precondition is not**
+  (D300). The first means the assertion did less than it was asked to, and it is reported on every
+  result line including a passing one:
+  `note: sec/tls-version-old, sec/tls-weak-cipher could not be evaluated — …`. The second is the
+  ordinary third state, and listing every not-applicable rule on every line would bury the counts.
+- **The two TLS rules read a second connection, and say so (D288).** The runtime drives Node's
+  global `fetch`, which exposes neither the negotiated protocol version nor the cipher, and the
+  dependency that would (`undici`) is the one decision 43 declined. So tflw opens its own
+  `tls.connect()` to the same `host:port`, reads `getProtocol()`/`getCipher()`, and closes — stdlib
+  only, **once per `host:port` per run**, never once per response. It honours `allow hosts` and
+  requires an `authorized target` covering the origin it is about to reach, checked against where the
+  run actually *ended up* rather than the base URL the checker could see. A probe that cannot connect
+  — refused, timed out, or a certificate this run declines to trust — makes both rules **not
+  applicable**, with the handshake's own failure quoted in the listing. It is never an error: a
+  network hiccup is not a security verdict.
+
+  What that buys, stated because both rules would otherwise over-claim: the facts describe *one
+  fresh connection, made with this run's own client parameters*. Not the asserted request (behind a
+  load balancer with unlike nodes the two can differ), and not the server's whole offer (a host that
+  supports RC4 alongside AES-GCM negotiates AES-GCM and is correctly silent — enumerating everything
+  a server would accept takes one handshake per suite, and belongs to `tflw scan`). The question
+  answered is **"what does this host give a current client?"**
+
+  The probe deliberately offers a **TLS 1.0 floor**, below Node's own `DEFAULT_MIN_VERSION` of
+  TLS 1.2. Without that, a host speaking nothing but a deprecated protocol simply refuses the
+  handshake and `sec/tls-version-old` reports "could not tell" in exactly the case it exists for.
+  Offering an old floor cannot drag a healthy server down — the server still picks the best version
+  both sides speak. Cipher suites are *not* widened the same way, because reaching a legacy-cipher-
+  only peer requires OpenSSL's `@SECLEVEL=0`, which also lowers what counts as an acceptable
+  certificate; that is a verification cost paid for a cipher reach.
+- **The TLS rules are response-scoped only (D297).** Unlike the cookie rules, they are not carried
+  through the session channel below. A login response's `Set-Cookie` is a fact only that response
+  carries; a TLS version is a property of the *host*, which any assertion pointed at that host
+  rediscovers directly — so probing at establishment would report the same finding twice.
+- **A session's own login response is scanned once, at establishment (D287).** Findings are labelled
+  `session "<name>" login — …` and folded into every security assertion in a test that opted into
+  that session, filtered by *that assertion's* floor. Without this, a suite whose session cookie
+  lacks `HttpOnly` reports clean — close to the single most important thing the pack could catch.
+  Nothing inspects a cookie jar: the login response is a response the run genuinely made.
+- **No retry**, unlike §9.8's a11y assertion. That one re-scans a live DOM because a hydrating page
+  can fix its own gaps; this judges a response already received in full, and re-polling cannot change
+  a header that already arrived. It is rejected inside `wait until api` for the same reason `TF041`
+  rejects value subjects there.
+- **Coverage is per-assertion, by design (D286).** There is no config key that auto-asserts on every
+  response: a hidden assertion no line of the test file shows would make a passing suite's
+  guarantees unreadable from the suite.
+
+  There is also **no hook shortcut**, and this corrects D286's own sketch, which proposed teaching
+  an `after each` hook as the whole-file idiom. Two things make that unwritable: this language has
+  no `before each`/`after each` (§4 — `each` is exclusively a `with each` keyword), and a bare
+  `after` hook runs in its own scope where `TF039` applies, because a response never crosses out of
+  a hook into the body that called it. The assertion therefore sits in the test body beside the
+  request it judges, which is the shape D286's own reasoning wanted anyway.
+- **Requires an `authorized target` declaration** naming the env's base URL (§3.10). Writing this
+  assertion without one is `TF060`, a checker error.
+- **Not in this milestone:** the two TLS rules (`sec/tls-version-old`, `sec/tls-weak-cipher`), which
+  need an out-of-band `tls.connect()` probe; SARIF output and a standalone scan report, which land
+  with `tflw scan`; and per-rule suppression by id, which §9.8 records as deliberately unsupported
+  for a11y and which would create an asymmetry here.
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
@@ -2175,7 +2325,7 @@ nothing — the trigger is a manifest missing the key, not a missing manifest, w
 | Command | Purpose |
 |---|---|
 | `tflw init [--load]` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) + `package.json` (`{"private": true, "type": "module"}`) — decision 82; API-only, `--ui` is M3. Every file after `tflw.config` is written **only if absent**, never merged into or overwritten; `package.json` is there so the §11 `.ts` escape hatch doesn't make Node guess the module type on first use (M125b2, `FU-15`). The scaffolded config points `api` at `tflw://demo` (§3.1, M118/`FU-04`), so `tflw init` followed by `tflw run` is green in an empty directory — swapping that one line for your own service is the intended first edit. `--load` (M29/D30) additionally scaffolds a `load.tflw` holding a workload-bearing `test` in the open (`rps`) model, run by plain `tflw run` like any other file |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.8) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkSessionServices`, then `checkProgram` — the one composed per-file pass list, `checkServices`/`checkDataTables`/`checkSessions`/`checkActionDecls`/`checkUnknownVariables`/`checkRequestAssertions`/`checkWorkloadTests` — shared verbatim with the language server and the docs-site editor demo since M60, so all three report the same thing), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints JSON instead, for editor and CI integrations: an array with **one `{ "file": "<path>", "diagnostics": [ … ] }` entry per file checked**, in discovery order, paths relative to the cwd and POSIX-separated. Clean files are listed with an empty `diagnostics` array — a consumer that draws diagnostics needs to know a file was checked and found clean in order to clear the ones it drew last time (M70; before that this was a flat `Diagnostic[]` concatenated across files, and `Diagnostic` carries a span but no file, so it only worked when exactly one file was named). A config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout — which under this shape means "nothing was checked" rather than being ambiguous with "everything was clean". Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this — a reuse hint is a cross-file suggestion carrying a diff preview, not a diagnostic anchored to a span, so it does not belong in a per-file diagnostics array |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
@@ -2629,6 +2779,8 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF057` | Checker (M125b1, `FU-18`, D245): an `api`/`wait until api`/`open` step whose target is written as an absolute URL rather than a path under the active env's base. Absolute URLs became legal in M125b1 — before it, `api GET https://x/y` was a parse error and `open "https://x/y"` was *silently concatenated* onto the `web` base, opening `http://localhost:5173/https://x/y`, which loads on any SPA with a catch-all route and fails later on an unrelated assertion. This warning is the cost of making it legal: the step is fixed wherever it points, so `--env staging` moves every other request in the suite and not this one. **Not phrased as a mistake, because it frequently is not one** — a one-off request to a second host is the case the row was filed about, and the warning exists so that "this step ignores the env" is something the file says out loud rather than something a reader has to notice. Emitted when the caller resolved no config at all (nothing can be predicted about a refusal) or when an allowlist exists; when a config *was* resolved and declares none, `TF058` is emitted instead, because a step that is going to be refused does not also need to be told it is unportable. | `api GET https://api.example.com/orders` → `` `--env` will not move it ``; `open "https://example.com/checkout"` → `absolute URL` |
 | `TF058` | Checker (M125b1, `FU-18`, D246): an absolute URL in a suite whose resolved env declares no `allow hosts` — the run will refuse to send it. **This is the one place in the language where the *absence* of an allowlist means enforcement rather than the lack of it**, and that inversion is the rule: `allow hosts` is opt-in and unset means every host is permitted (`allowHosts.ts:30`), which is the right default for a suite written entirely against its env's base URL, because that base *is* the declaration of where it talks. An absolute URL is the one form that can reach a host `tflw.config` never mentions, so writing one opts the suite into declaring where it may reach. **A warning here and a refusal at run time, and the split is D147**: `allow hosts` is read from `tflw.config` and differs per env, so the checker is predicting what *this* run would do — a suite whose CI env declares an allowlist is correct, and an error would make it unrunnable with no override — while the runtime has resolved the config and is looking at the URL it is about to fetch, so it observes and may refuse outright. Requires the caller to distinguish "a config was resolved and declares none" from "no config was resolved": the first is this rule, the second is `TF057`. | `api GET https://api.example.com/orders` → `the run will refuse to send it` |
 | `TF059` | Checker (M125b1, `FU-18`, D266): a named api service and an absolute URL on the same step — `api billing GET https://other.example/x`. A service names the base URL to send to and an absolute URL already is one, so one of the two is dead text the author believes is doing something, and picking a winner silently is the failure class this whole row was filed about. **An error rather than a warning, and the contrast with the two codes above it is the clearest statement of D147 in the manifest**: both of `TF059`'s operands are written in the file, so no config can make the combination meaningful and there is nothing to predict — exactly `M124`'s line, one milestone later. The hint names both ways out without preferring one, since which of the two the author meant is genuinely not knowable from the step. | `api billing GET https://other.example/x` → `names a service and an absolute URL` |
+| `TF060` | Checker (M128b, D291): `expect`/`check response has no … security violations` written against an env whose `api` base URL no `authorized target` declaration names. D21's declaration layer, made load-bearing in the milestone that introduces it — the alternative, ship the grammar and enforce it once something actually sends a probe, means shipping a safety control nothing exercises, which is the same criticism relocated. Matching is by **origin** (scheme + host + port), not by the pattern rules `allow hosts` uses: a declaration for `https://x.example.com` does not authorize `https://x.example.com:8443`, which is a different listener that may belong to a different team. **Loopback is not exempt**, deliberately — exempting it would exempt exactly the target this arc is tested against, shipping the requirement untested. Narrow in the same three ways `TF036` is: only the env's default `api` base, only a fully literal one, and skipped entirely when no config was resolved. | `api GET /orders` then `expect response has no security violations` → `` needs an `authorized target` declaration `` |
+| `TF061` | Checker (M128b, D291): an `authorized target` that contains a wildcard, or that is not an absolute URL. **Why a wildcard is rejected here when `allow hosts` accepts one**: the two declarations look alike and mean opposite kinds of thing. `allow hosts` bounds where a suite may send ordinary traffic, and a bound expressed as a pattern is still a bound. This one is not a bound — it is an author affirming in writing that they are permitted to point a scanner at a named host, and nobody is authorized to scan `*.com`. A pattern records a claim whose scope its author could not have known when they wrote it. The non-absolute case is the same error one step earlier: `authorized target "staging.example.com"` reads like a declaration and authorizes nothing, because `TF060` compares origins and a bare hostname has none. | `defaults` then `authorized target "https://*.example.com" reason "staging"` in `tflw.config` → `cannot contain a wildcard`; `defaults` then `authorized target "staging.example.com" reason "staging"` in `tflw.config` → `must be an absolute URL with a scheme` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

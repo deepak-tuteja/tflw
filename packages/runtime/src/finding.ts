@@ -7,9 +7,9 @@
 // pure and has no axe-core/Playwright import — `a11y.ts` is the only file that knows how to
 // *produce* a `Finding[]`; this file only knows how to filter and describe one.
 
-import type { A11ySeverity } from '@tflw/lang';
+import type { FindingSeverity } from '@tflw/lang';
 
-export type Severity = A11ySeverity;
+export type Severity = FindingSeverity;
 
 /** Increasing severity — mirrors axe-core's own `impact` scale exactly (SPEC §9.8) so a future
  * non-a11y scan source only needs to map its own vocabulary onto these four buckets, not invent a

@@ -7,10 +7,11 @@ import type { Position, Span, Token } from './token.js';
 import { describeToken, describeTokenType } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import type {
-  A11ySeverity,
+  FindingSeverity,
   AcceptDialogStmt,
   ActionDecl,
   AllowHostsDecl,
+  AuthorizedTargetDecl,
   ApiBody,
   ApiHeader,
   ApiRequestSpec,
@@ -226,7 +227,7 @@ export const STATEMENT_KEYWORDS = [
  * outright rather than left to a did-you-mean. */
 export const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think', 'uncheck'];
 const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
+const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page', 'response'] as const;
 /** What may stand in subject position, for the "expected …" half of every `TF013`. `{variable}` is
  * *not* a keyword (M96/`FU-11`, D129 — one token of lookahead distinguishes it), so it cannot be
  * appended to the joined list; it is named separately here so the two error sites can't drift. */
@@ -287,15 +288,19 @@ function boundPhrase(tok: Token, after: Token): string | undefined {
  * `unchecked`, `unhidden`, `notvisible`. There are no negated state words in this grammar: negation
  * is the `not` prefix, once, in front of the positive word. See `negatedStateWord`. */
 const NEGATION_PREFIXES = ['not', 'non', 'un', 'in', 'im', 'dis'] as const;
-/** `has no [<severity>] a11y violations` (M3e, SPEC §9.8) — increasing severity, matching axe-core's
- * own `impact` scale (`A11ySeverity`, ast.ts). */
-const A11Y_SEVERITY_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
-/** As `MATCHER_VOCABULARY_HELP`, for the three-word `a11y violations` construct (review finding
+/** The severity floor both scan matchers accept — `has no [<severity>] a11y violations` (M3e, SPEC
+ * §9.8) and `has no [<severity>] security violations` (M128b, SPEC §9.10). Increasing severity,
+ * matching axe-core's own `impact` scale (`FindingSeverity`, ast.ts). */
+const SEVERITY_FLOOR_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
+/** Which scan `has no … violations` is asking for (M128b, D290). Two words, one construct — see
+ * `parseScanViolationsMatcher`. */
+const SCAN_KIND_WORDS = ['a11y', 'security'] as const;
+/** As `MATCHER_VOCABULARY_HELP`, for the three-word `<scan> violations` construct (review finding
  * A3-15) — every one of its failure modes used to be a bare `expectKw`, naming one keyword of three
  * and never the severity vocabulary sitting in the constant directly above. */
-const A11Y_MATCHER_HELP =
-  `expected \`a11y violations\`, optionally with a severity floor in front ` +
-  `(${A11Y_SEVERITY_WORDS.join('/')}) — e.g. \`has no serious a11y violations\``;
+const SCAN_MATCHER_HELP =
+  `expected \`a11y violations\` or \`security violations\`, optionally with a severity floor in front ` +
+  `(${SEVERITY_FLOOR_WORDS.join('/')}) — e.g. \`has no serious a11y violations\``;
 
 /**
  * The state word hiding behind a negation prefix (`invisible` → `visible`), or `undefined`.
@@ -316,13 +321,13 @@ function negatedStateWord(word: string): string | undefined {
   return undefined;
 }
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
-const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'evidence', 'redact', 'viewport', 'log'] as const;
+const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'redact', 'viewport', 'log'] as const;
 /** Which block a config key belongs in — the parser's view of the rule the checker enforces as
  * `TF025` (checker.ts `DEFAULTS_ONLY`/`ENV_ONLY`, keyed there on AST node type rather than on the
  * word). The parser needs it only to keep a *suggestion* from naming a key the checker will then
  * turn around and reject (M84, C11/`A2-07b`). Two statements of one rule is a drift risk, so
- * `teaching.test.ts`'s round-trip guard walks all fourteen keys in both blocks and fails if what a
- * hint claims about placement is not what the checker then does. */
+ * `teaching.test.ts`'s round-trip guard walks every key in both blocks and fails if what a hint
+ * claims about placement is not what the checker then does. */
 const DEFAULTS_ONLY_KEYS: readonly string[] = ['workers', 'report', 'viewport'];
 const ENV_ONLY_KEYS: readonly string[] = ['web', 'api'];
 type ConfigBlockKind = 'defaults' | 'env';
@@ -335,7 +340,7 @@ function configKeyHome(key: string): string {
 }
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 /** `log [<level>] "…" [to <destination>]` (M27, PLAN_LOG.md) — bare-keyword enums, same shape as
- * `A11Y_SEVERITY_WORDS`/`LOCATOR_KEYWORDS`. Also reused (against a quoted string, not a bare
+ * `SEVERITY_FLOOR_WORDS`/`LOCATOR_KEYWORDS`. Also reused (against a quoted string, not a bare
  * keyword) by `log destination "…"`/`log level "…"` in the config dialect, mirroring how
  * `EVIDENCE_LEVELS` validates `evidence "…"`. */
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
@@ -406,7 +411,8 @@ export const SUGGESTION_VOCABULARIES = {
   locator: LOCATOR_KEYWORDS,
   logLevel: LOG_LEVELS,
   logDestination: LOG_DESTINATIONS,
-  a11ySeverity: A11Y_SEVERITY_WORDS,
+  severityFloor: SEVERITY_FLOOR_WORDS,
+  scanKind: SCAN_KIND_WORDS,
   statement: SUGGESTABLE_STATEMENT_KEYWORDS,
 } as const satisfies Record<string, readonly string[]>;
 
@@ -1359,6 +1365,8 @@ class Parser {
         return this.wrap(this.parseKeyDecl());
       case 'allow':
         return this.wrap(this.parseAllowHostsDecl());
+      case 'authorized':
+        return this.wrap(this.parseAuthorizedTargetDecl());
       case 'evidence':
         return this.wrap(this.parseEvidenceDecl());
       case 'log':
@@ -1587,6 +1595,26 @@ class Parser {
     }
     this.endLine();
     return { type: 'AllowHostsDecl', hosts, span: this.spanFrom(start) };
+  }
+
+  /** `authorized target "<url>" reason "<text>"` (M128b, D291, SPEC §3.10) — a compound key, the same
+   * `allow hosts` shape: `authorized` alone disambiguates on the next bare word, leaving room for
+   * whatever else D21's later layers need to authorize without a second top-level keyword.
+   *
+   * `reason` is parsed as required rather than optional. Making it optional would be one character
+   * of grammar and would quietly turn the declaration into a checkbox — the thing D21 was written
+   * instead of — so the omission is a parse error with the whole form in the message. */
+  private parseAuthorizedTargetDecl(): AuthorizedTargetDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `authorized`
+    if (!this.expectKw('target')) return null;
+    const target = this.expectString('a target base URL, e.g. `authorized target "https://staging.example.com"`');
+    if (!target) return null;
+    if (!this.expectKw('reason')) return null;
+    const reason = this.expectString('why you are permitted to scan this target, e.g. `reason "self-hosted test fixture"`');
+    if (!reason) return null;
+    this.endLine();
+    return { type: 'AuthorizedTargetDecl', target, reason, span: this.spanFrom(start) };
   }
 
   private parseEvidenceDecl(): EvidenceDecl | null {
@@ -2666,6 +2694,10 @@ class Parser {
         this.advance();
         return { type: 'PageSubject', span: this.spanFrom(start) };
       }
+      case 'response': {
+        this.advance();
+        return { type: 'ResponseSubject', span: this.spanFrom(start) };
+      }
       default: {
         const hint = suggest(tok.value, SUBJECT_KEYWORDS);
         this.error(
@@ -2885,7 +2917,7 @@ class Parser {
         }
         if (this.isKw(next, 'no')) {
           this.advance();
-          return this.parseA11yViolationsMatcher(start, negated);
+          return this.parseScanViolationsMatcher(start, negated);
         }
         // FU-09's second spelling: `has at least 1` / `has more than 1`. The message was already
         // right (`count`, `value` or `no` is genuinely what belongs here) and carried no hint at
@@ -2948,35 +2980,47 @@ class Parser {
     }
   }
 
-  /** `no [<severity>] a11y violations` (M3e, SPEC §9.8) — caller has already consumed `has no`.
-   * `<severity>` is an optional bare word (`minor`/`moderate`/`serious`/`critical`, a *floor*, not
-   * an exact-match filter — see `Matcher.a11ySeverity`'s doc comment in ast.ts); omitted means every
-   * severity counts. */
-  private parseA11yViolationsMatcher(start: Position, negated: boolean): Matcher | null {
+  /** `no [<severity>] (a11y|security) violations` (M3e SPEC §9.8; M128b SPEC §9.10, D290) — caller
+   * has already consumed `has no`. `<severity>` is an optional bare word
+   * (`minor`/`moderate`/`serious`/`critical`, a *floor*, not an exact-match filter — see
+   * `Matcher.severityFloor`'s doc comment in ast.ts); omitted means every severity counts.
+   *
+   * **One production for both scans, because they are one construct with one word swapped.** D290
+   * chose `violations` for the security matcher precisely so the noun would be shared; parsing them
+   * separately would then be two copies of the same three-token walk, and the A3-15 comment below
+   * describes what happens to error quality when a construct's spellings drift apart. Which scan
+   * was asked for is the *only* difference, and it decides one thing: the `MatcherName` returned. */
+  private parseScanViolationsMatcher(start: Position, negated: boolean): Matcher | null {
     const sevTok = this.peek();
-    let a11ySeverity: A11ySeverity | undefined;
-    if (sevTok.type === 'ident' && (A11Y_SEVERITY_WORDS as readonly string[]).includes(sevTok.value)) {
-      a11ySeverity = this.advance().value as A11ySeverity;
+    let severityFloor: FindingSeverity | undefined;
+    if (sevTok.type === 'ident' && (SEVERITY_FLOOR_WORDS as readonly string[]).includes(sevTok.value)) {
+      severityFloor = this.advance().value as FindingSeverity;
     }
     // A3-15: both keywords were bare `expectKw`s, so all three ways to get this construct wrong
     // reported one keyword of a three-word phrase and never the vocabulary — `expect page has no
     // violations` (the likeliest slip: `a11y` forgotten) said ``expected `a11y`, found
-    // `violations` ``, with `A11Y_SEVERITY_WORDS` and `suggest` both in scope and neither used.
+    // `violations` ``, with `SEVERITY_FLOOR_WORDS` and `suggest` both in scope and neither used.
     // The `log … to <dest>` branch below has always done this properly; nothing here is different.
-    for (const kw of ['a11y', 'violations'] as const) {
-      const tok = this.peek();
-      if (this.isKw(tok, kw)) {
-        this.advance();
-        continue;
-      }
-      // A severity is still legal in front of `a11y`, so it belongs in the candidate pool — but
-      // only until one has been read, after which it is no longer a thing the user may write here.
-      const candidates = kw === 'a11y' && a11ySeverity === undefined ? [...A11Y_SEVERITY_WORDS, kw] : [kw];
-      const hint = tok.type === 'ident' ? suggest(tok.value, candidates) : undefined;
-      this.error(Codes.UNEXPECTED_TOKEN, `expected \`${kw}\`, found ${describeToken(tok)}`, tok.span, hint ? `did you mean \`${hint}\`?` : A11Y_MATCHER_HELP);
+    const kindTok = this.peek();
+    const kind = SCAN_KIND_WORDS.find((k) => this.isKw(kindTok, k));
+    if (kind === undefined) {
+      // A severity is still legal in front of the scan word, so it belongs in the candidate pool —
+      // but only until one has been read, after which it is no longer a thing the user may write.
+      const candidates = severityFloor === undefined ? [...SCAN_KIND_WORDS, ...SEVERITY_FLOOR_WORDS] : [...SCAN_KIND_WORDS];
+      const hint = kindTok.type === 'ident' ? suggest(kindTok.value, candidates) : undefined;
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`a11y\` or \`security\`, found ${describeToken(kindTok)}`, kindTok.span, hint ? `did you mean \`${hint}\`?` : SCAN_MATCHER_HELP);
       return null;
     }
-    return { type: 'Matcher', name: 'hasNoA11yViolations', negated, value: null, a11ySeverity, span: this.spanFrom(start) };
+    this.advance();
+    const violationsTok = this.peek();
+    if (!this.isKw(violationsTok, 'violations')) {
+      const hint = violationsTok.type === 'ident' ? suggest(violationsTok.value, ['violations']) : undefined;
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`violations\`, found ${describeToken(violationsTok)}`, violationsTok.span, hint ? `did you mean \`${hint}\`?` : SCAN_MATCHER_HELP);
+      return null;
+    }
+    this.advance();
+    const name = kind === 'a11y' ? 'hasNoA11yViolations' : 'hasNoSecurityViolations';
+    return { type: 'Matcher', name, negated, value: null, severityFloor, span: this.spanFrom(start) };
   }
 
   // -- UI / browser steps (SPEC §9, M3a) --------------------------------------
@@ -3420,7 +3464,7 @@ class Parser {
 
   /** `log [debug|info|warn|error] "message with {var}" [to console|html|both]` (M27, PLAN_LOG.md
    * decisions 113-121). Level and destination are both optional bare-keyword lookaheads (same
-   * shape as `parseA11yViolationsMatcher`'s optional severity word) — omitting the level defaults
+   * shape as `parseScanViolationsMatcher`'s optional severity word) — omitting the level defaults
    * to `info` (decision 114); omitting `to` leaves `destination: null`, resolved against
    * `tflw.config`'s `logDestination` (default `both`) at run time, not here (decision 116) — the
    * parser has no config in scope. */

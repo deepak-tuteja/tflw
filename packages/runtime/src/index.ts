@@ -6,6 +6,7 @@ export { MIN_REDACTABLE_LENGTH, Redactor, redactEvent, redactReport } from './re
 export { RuntimeError } from './eval.js';
 export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSelection } from './resolve.js';
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
+export { TlsProber, type TlsProbePolicy } from './tlsProbe.js';
 export { runLoadShard, mergeLoadShardReports, spliceLoadReportIntoRunReport, type LoadOptions } from './interpreter.js';
 // M89b (D-M89-5) — the CLI's pre-run `scenario "…" — <description>` line formats *this* value
 // through the reporter's one `describeWorkload`, instead of switching over the AST itself.

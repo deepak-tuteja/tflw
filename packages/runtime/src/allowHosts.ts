@@ -49,6 +49,13 @@ export function allowHostsRefusal(url: string, allowHosts: readonly string[], or
   switch (origin.kind) {
     case 'request':
       return `host "${hostname}" is not in ${list} — refusing to send this request`;
+    // M128c. Its own variant rather than reusing `request`, for the reason every variant here
+    // exists: "refusing to send this request" points the author at a step they wrote, and the TLS
+    // probe is not one — it is a second connection tflw opens on its own initiative to read the
+    // negotiated protocol and cipher (D288). An author told the `request` sentence would go
+    // re-reading an `api` step that was allowed and did send.
+    case 'tls-probe':
+      return `host "${hostname}" is not in ${list} — refusing to open the TLS probe connection (this is a second connection tflw makes to read the negotiated protocol and cipher, not one your step wrote; the request itself was allowed)`;
     case 'redirect':
       return `${origin.from} redirected to "${url}", whose host "${hostname}" is not in ${list} — refusing to follow it (the redirect target is chosen by the server, not by this step; add the host if the hop is expected)`;
     case 'browser':
@@ -89,5 +96,6 @@ export function absoluteUrlNeedsAllowHosts(url: string): string {
 
 export type RefusalOrigin =
   | { readonly kind: 'request' }
+  | { readonly kind: 'tls-probe' }
   | { readonly kind: 'redirect'; readonly from: string }
   | { readonly kind: 'browser'; readonly navigation: boolean; readonly pageUrl: string; readonly resourceType: string };

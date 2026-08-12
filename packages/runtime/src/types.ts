@@ -23,6 +23,14 @@ export interface ResolvedHeader {
   readonly service: string | null;
 }
 
+/** One `authorized target "<url>" reason "<text>"` declaration (M128b, D291). Both halves are kept:
+ * the reason is not commentary on the config, it is what gets printed in the run summary and
+ * embedded in the report so every artifact records the claim that let the scan run. */
+export interface AuthorizedTarget {
+  readonly target: string;
+  readonly reason: string;
+}
+
 export interface ResolvedTimeouts {
   readonly step: number;
   /** `timeout expect` — the retry budget for a UI `expect`/`check` (M3a, `execUiExpect` in
@@ -65,6 +73,14 @@ export interface ResolvedConfig {
    * declared, no enforcement (backward compatible). Accumulates across `defaults` + `env`, unlike
    * the override-semantics fields above. */
   readonly allowHosts: readonly string[] | null;
+  /** `authorized target "…" reason "…"` — D21's declaration layer (M128b, D291, SPEC §3.10).
+   * Accumulates across `defaults` + `env` exactly as `allowHosts` does.
+   *
+   * `[]` rather than `null` for the absent case, unlike `allowHosts`, and the difference is real:
+   * an empty `allowHosts` would mean "enforce nothing", so the two states have to be told apart. An
+   * empty list here means "no security assertion in this suite is permitted to run", which is the
+   * same thing the absent case means. There is nothing to distinguish. */
+  readonly authorizedTargets: readonly AuthorizedTarget[];
   /** `evidence full|headers-only|none` — how much of the request/response trace lands in the
    * report-only trace (SPEC §13, PLAN decision 101c). Override semantics (env wins), default
    * `'full'` (today's unchanged behavior). `--evidence` overrides this again for one run. */
@@ -342,6 +358,15 @@ export interface RunReport {
    * reason: a green `PASS 1/1` from the quickstart must never be mistakable for evidence about a
    * real system. Optional and omitted when false, so every existing fixture keeps compiling. */
   readonly demo?: boolean;
+  /** The `authorized target` declarations in force for this run (M128b, D291). Recorded here so
+   * that the claim which *permitted* a security scan travels in the same artifact as the scan's
+   * findings — a report showing security results with no record of who said the scan was allowed is
+   * half a document, and the half it is missing is the one an auditor asks for.
+   *
+   * Emitted whenever the config declares any, not only when a security assertion ran: a declaration
+   * is a claim its author made, and the run either honoured it or had no use for it. Optional and
+   * omitted when empty, so every existing `RunReport` fixture keeps compiling. */
+  readonly authorizedTargets?: readonly AuthorizedTarget[];
   /** Names declared secret — via `env(NAME)`/`require env`, or a `capture` whose subject a `redact`
    * pattern covers — whose value was too short for `MIN_REDACTABLE_LENGTH` to mask safely, so it
    * ships in the clear (review finding `A12-01`). Surfaced as a warning beside `insecure`'s, for

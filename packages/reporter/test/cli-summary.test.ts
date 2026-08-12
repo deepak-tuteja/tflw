@@ -134,3 +134,40 @@ test('a completed run still ticks its thresholds and still prints PASS', () => {
   assert.match(out, /✓ error rate < 50\.00% \(actual: 0\.00%\)$/m);
   assert.doesNotMatch(out, /no verdict/);
 });
+
+// --- `authorized target` (M128b, D291) --------------------------------------
+//
+// D291 requires that the reason travel with the evidence: whatever a run's security assertions
+// found, the artifact also records the claim that permitted them to run at all. That is only true
+// if the line is actually rendered, which is what these pin.
+
+test('the summary prints each authorized target with its reason (D291)', () => {
+  const out = renderCliSummary(
+    { ...baseReport, authorizedTargets: [{ target: 'https://localhost:8443', reason: 'self-hosted test fixture' }] },
+    false,
+  );
+  assert.match(out, /ℹ authorized target https:\/\/localhost:8443 — self-hosted test fixture/);
+});
+
+test('every declaration is printed, not just the first', () => {
+  // They accumulate across `defaults` + `env`, so a suite scanning two hosts has two claims to
+  // record — and recording one of two would be worse than recording neither.
+  const out = renderCliSummary(
+    {
+      ...baseReport,
+      authorizedTargets: [
+        { target: 'https://a.test', reason: 'ours' },
+        { target: 'https://b.test', reason: 'also ours' },
+      ],
+    },
+    false,
+  );
+  assert.match(out, /authorized target https:\/\/a\.test — ours/);
+  assert.match(out, /authorized target https:\/\/b\.test — also ours/);
+});
+
+test('an ordinary run says nothing about authorized targets', () => {
+  // The overwhelming majority of suites never declare one; the line must not be ambient.
+  assert.doesNotMatch(renderCliSummary(baseReport, false), /authorized target/);
+  assert.doesNotMatch(renderCliSummary({ ...baseReport, authorizedTargets: [] }, false), /authorized target/);
+});

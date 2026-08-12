@@ -39,6 +39,7 @@ const SUBJECT_SOURCE: Readonly<Record<SubjectKind, string>> = {
   value: 'status',
   locator: 'button "Pay"',
   page: 'page',
+  response: 'response',
   request: 'request',
   'network-request': 'request to "/api/orders"',
 };
@@ -64,6 +65,7 @@ const MATCHER_SOURCE: Readonly<Record<MatcherName, string>> = {
   fails: 'fails',
   wasMade: 'was made',
   hasNoA11yViolations: 'has no critical a11y violations',
+  hasNoSecurityViolations: 'has no critical security violations',
   matchesSnapshot: 'matches snapshot "s"',
 };
 
@@ -103,6 +105,7 @@ test('every structured subject kind is still claimed by the row\'s own prose', (
     value: ['value', 'string', 'array', 'object', 'number', 'duration', 'bytes'],
     locator: ['UI'],
     page: ['`page`'],
+    response: ['`response`'],
     request: ['`request`'],
     'network-request': ['`request to'],
   };

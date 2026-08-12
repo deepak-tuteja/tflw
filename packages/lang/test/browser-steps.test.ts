@@ -496,30 +496,30 @@ test('`stub` missing `respond status` is a diagnosed error, not a silent parse',
 test('`expect page has no a11y violations` parses a PageSubject with the hasNoA11yViolations matcher, no severity', () => {
   const step = firstStep('test "ok"\n  expect page has no a11y violations\n') as {
     subject: { type: string };
-    matcher: { name: string; negated: boolean; a11ySeverity: string | undefined };
+    matcher: { name: string; negated: boolean; severityFloor: string | undefined };
   };
   assert.equal(step.subject.type, 'PageSubject');
   assert.equal(step.matcher.name, 'hasNoA11yViolations');
   assert.equal(step.matcher.negated, false);
-  assert.equal(step.matcher.a11ySeverity, undefined);
+  assert.equal(step.matcher.severityFloor, undefined);
 });
 
 test('`expect page has no <severity> a11y violations` carries the severity for each of minor/moderate/serious/critical', () => {
   for (const severity of ['minor', 'moderate', 'serious', 'critical']) {
     const step = firstStep(`test "ok"\n  expect page has no ${severity} a11y violations\n`) as {
-      matcher: { a11ySeverity: string | undefined };
+      matcher: { severityFloor: string | undefined };
     };
-    assert.equal(step.matcher.a11ySeverity, severity);
+    assert.equal(step.matcher.severityFloor, severity);
   }
 });
 
 test('`expect page not has no critical a11y violations` negates via the ordinary `not` prefix', () => {
   const step = firstStep('test "ok"\n  expect page not has no critical a11y violations\n') as {
-    matcher: { name: string; negated: boolean; a11ySeverity: string | undefined };
+    matcher: { name: string; negated: boolean; severityFloor: string | undefined };
   };
   assert.equal(step.matcher.name, 'hasNoA11yViolations');
   assert.equal(step.matcher.negated, true);
-  assert.equal(step.matcher.a11ySeverity, 'critical');
+  assert.equal(step.matcher.severityFloor, 'critical');
 });
 
 test('`check page has no a11y violations` parses as the soft ExpectStmt form, same as any other subject', () => {

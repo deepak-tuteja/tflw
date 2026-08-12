@@ -52,6 +52,13 @@ export function renderCliSummary(report: RunReport, color = true): string {
     const names = report.unmaskableSecrets.join(', ');
     lines.push(`${c.red}${c.bold}⚠ unmasked secret${report.unmaskableSecrets.length === 1 ? '' : 's'}: ${names}${c.reset}${c.dim} — shorter than ${MIN_REDACTABLE_LENGTH} characters, so too short to mask without corrupting unrelated report text; ${report.unmaskableSecrets.length === 1 ? 'its value appears' : 'their values appear'} in full above and in report.html${c.reset}`);
   }
+  // D291 — the affirmation that permitted this run's security scans, printed beside the findings it
+  // produced. Not a warning, so not red: a declared target is a run doing the right thing. It is
+  // here because a scan's *result* and the claim that authorized it belong in the same artifact,
+  // and the CLI summary is the artifact most runs are actually read from.
+  for (const t of report.authorizedTargets ?? []) {
+    lines.push(`${c.dim}ℹ authorized target ${t.target} — ${t.reason}${c.reset}`);
+  }
   if (report.selfDiagnosis) lines.push(generatorLine(report.selfDiagnosis, c));
   if (report.inconclusive) lines.push(`${c.red}${c.bold}⚠ inconclusive${c.reset}${c.dim} — tflw itself is the bottleneck; workload numbers above reflect tflw contending with itself, not the system under test${c.reset}${backOffRelation(report, c)}`);
   if (report.aborted) lines.push(`${c.red}${c.bold}⚠ aborted${c.reset}${c.dim} — ${report.abortedMessage ?? 'stopped before its planned duration elapsed'}${c.reset}`);

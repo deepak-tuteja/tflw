@@ -133,6 +133,11 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
   checkSessionServices: { verdict: 'n/a', reason: 'subsumed: `checkSessionBody` folds it in so callers have one entry point' },
   validateConfig: { verdict: 'n/a', reason: 'validates config *declarations* (which key in which block), not step bodies' },
   checkAllowHostsCoversBaseUrls: { verdict: 'n/a', reason: 'reasons about an env\'s own base URLs against its `allow hosts` — a whole-env property, not a step one' },
+  checkAuthorizedTargets: {
+    verdict: 'n/a',
+    reason:
+      'walks `expect`/`check` steps for the `hasNoSecurityViolations` matcher (M128b, `TF060`). A `session` body cannot contain one: SPEC §3.3 limits it to `api`/`header`/`capture`/`let`, and a session establishes credentials rather than asserting about the response it got. If that ever widens, this verdict is what has to change first',
+  },
 
   checkDataTables: {
     verdict: 'n/a',

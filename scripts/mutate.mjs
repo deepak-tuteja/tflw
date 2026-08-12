@@ -1342,6 +1342,146 @@ const REGISTRY = [
     find: '  const ext = dot > slash + 1 ? path.slice(dot).toLowerCase() : \'\';',
     replace: '  const ext = dot > slash + 1 ? path.slice(dot) : \'\';',
   },
+
+  // ---- M128b — the pentest arc's Tier 1 pack, and the declaration that gates it ----
+  //
+  // Six mutants, one per claim this milestone makes that a reader would otherwise have to take on
+  // trust. Four of them re-introduce a *plausible* implementation — the shape somebody would write
+  // first and ship — rather than obvious sabotage, which is the only kind worth spending a suite run
+  // on.
+  {
+    id: 'applicability-collapses-to-pass',
+    milestone: 'm128b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/securityRules.ts',
+    what: 'a not-applicable rule is counted as applicable-and-silent — D284 deleted, and it deletes quietly: every suite still passes, just with a bigger `applicable` number and no rule that can ever say "this question did not apply here"',
+    find: '    const outcome = rule.evaluate(o);\n    if (!outcome.applicable) {\n      notApplicable.push({ rule, because: outcome.because ?? rule.appliesWhen });\n      continue;\n    }',
+    replace: '    const outcome = rule.evaluate(o);\n    if (!outcome.applicable) {\n      applicable.push(rule);\n      continue;\n    }',
+  },
+  {
+    id: 'floor-filters-findings-not-rules',
+    milestone: 'm128b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/securityRules.ts',
+    what: 'D296 inverted: the floor filters findings afterwards instead of narrowing the pack first. The obvious implementation, and symmetric with `filterBySeverity` — it just makes the denominator describe work the assertion did not do, and puts D285 out of reach through the floor',
+    find: '  const inPlay = floor ? pack.filter((r) => SEVERITY_RANK[r.severity] >= SEVERITY_RANK[floor]) : pack;',
+    replace: '  const inPlay = pack;',
+  },
+  {
+    id: 'no-power-to-fail-passes',
+    milestone: 'm128b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'D285 reversed — an assertion where every rule stood down reports a pass. This is the shape the codebase keeps re-filing (a control that reports success over nothing), and it is invisible in a green run by construction',
+    find: '  if (result.applicable.length === 0 && findings.length === 0) {',
+    replace: '  if (false && result.applicable.length === 0 && findings.length === 0) {',
+  },
+  {
+    id: 'session-findings-dropped',
+    milestone: 'm128b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'D287 removed: the session login scan still runs and its findings are still carried, they just never reach the assertion. A suite whose session cookie lacks `HttpOnly` goes back to reporting clean',
+    find: '  const sessionFindings = filterBySeverity(ctx.sessionFindings ?? [], floor);',
+    replace: '  const sessionFindings = filterBySeverity([], floor);',
+  },
+  {
+    id: 'request-headers-not-lowercased',
+    milestone: 'm128b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the real bug this milestone shipped and then found: request headers keep the case the author wrote, so `authenticated-response-cacheable` never fires against any suite that writes `Authorization` the normal way. Passes any test that happens to spell the header lower-case',
+    find: "    requestHeaders: Object.fromEntries(Object.entries(request.headers).map(([k, v]) => [k.toLowerCase(), v])),",
+    replace: '    requestHeaders: request.headers,',
+  },
+  {
+    id: 'authorized-target-accepts-wildcards',
+    milestone: 'm128b',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: '`TF061` stops rejecting wildcards, so `authorized target "https://*.com"` is a valid affirmation. D291\'s one hard rule, and the mutant is exactly the code somebody writes by reusing `allow hosts`\' matcher',
+    find: "  if (raw.includes('*')) {",
+    replace: '  if (false) {',
+  },
+
+  // ---- M128c — the TLS probe, and the two rules that read it ----
+  //
+  // Six mutants. The first is the reason `connectionOptions` is exported at all: on OpenSSL 3.x a
+  // TLS 1.0 listener cannot be constructed, so deleting D298's floor changes no handshake anywhere
+  // and no ordinary test can see it. A decision no test can distinguish from its opposite is one
+  // that gets silently reverted, and a mutation registry is exactly where that gets caught.
+  {
+    id: 'tls-probe-floor-left-at-default',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tlsProbe.ts',
+    what: "D298 deleted: the probe uses Node's `DEFAULT_MIN_VERSION` of TLSv1.2, so a host speaking nothing but a deprecated protocol refuses the handshake and `sec/tls-version-old` reports \"could not tell\" in exactly the case it exists for. Invisible on any modern machine — the rule keeps passing every test, because no listener here can negotiate TLS 1.0 either way",
+    find: "    minVersion: 'TLSv1',",
+    replace: '',
+  },
+  {
+    id: 'tls-probe-ignores-insecure-in-cache-key',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tlsProbe.ts',
+    what: 'the cache keys on `host:port` alone, so a strict run inherits the answer a lax run already cached for the same host — a certificate failure and a successful handshake sharing one entry, decided by whichever file ran first',
+    find: "  return `${url.hostname}:${port}${policy.insecure ? ' insecure' : ''}`;",
+    replace: '  return `${url.hostname}:${port}`;',
+  },
+  {
+    id: 'tls-probe-authorized-target-unchecked',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tlsProbe.ts',
+    what: "D291's runtime half removed: the probe opens its second connection to wherever the run ended up, declared or not. The checker's `TF060` still passes, because it judges the *base URL* — this is the redirect case that only exists at run time",
+    find: '    if (!authorizedFor(parsed, policy.authorizedTargets)) {',
+    replace: '    if (false) {',
+  },
+  {
+    id: 'tls-facts-absent-counts-as-applicable',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/securityRules.ts',
+    what: 'a response nobody probed is treated as a response with nothing wrong: the two TLS rules join the applicable set over plaintext and report silent. The counts line then claims two more questions were asked than were, which is D284 broken in the direction nothing goes red for',
+    find: '      if (o.tls === undefined) return { applicable: false, findings: [] };',
+    replace: '      if (o.tls === undefined) return { applicable: true, findings: [] };',
+  },
+  {
+    id: 'tls-version-old-fires-on-unknown-protocol',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/securityRules.ts',
+    what: 'the closed dead-protocol set becomes an open "anything not on the modern list", so a future `TLSv1.4` is reported as deprecated by a rule that has never heard of it. The plausible implementation, and the one that ages into a false positive rather than announcing itself',
+    find: "const DEAD_PROTOCOLS = new Set(['SSLv2', 'SSLv3', 'TLSv1', 'TLSv1.1']);",
+    replace: "const DEAD_PROTOCOLS = { has: (p) => !['TLSv1.2', 'TLSv1.3'].includes(p) };",
+  },
+  {
+    id: 'probe-opens-a-connection-the-floor-discarded',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the TLS probe opens its second connection even when the severity floor has already dropped both rules that read it, so a suite written entirely at a `critical` floor pays a handshake per host whose answer is thrown away. Nothing goes red — the assertion is correct either way — and the connection is exactly the kind this arc\'s safety model exists to make deliberate',
+    find: "  if (floor && !SECURITY_RULES.some((r) => r.id.startsWith('sec/tls-') && SEVERITY_RANK[r.severity] >= SEVERITY_RANK[floor])) return undefined;",
+    replace: '',
+  },
+  {
+    id: 'negated-pass-hides-its-findings',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "a passing `not has no … violations` goes back to printing only a count. The form exists to assert that something *is* wrong, so the rule ids are the whole answer — and the report is the only record, so nothing downstream can recover them. Invisible: the assertion is green either way",
+    find: "    return { ok: true, message: `response ${state} — ${counts}${findings.length > 0 ? `:\\n${listing()}` : ''}${note}` };",
+    replace: '    return { ok: true, message: `response ${state} — ${counts}${note}` };',
+  },
+  {
+    id: 'degraded-probe-not-announced',
+    milestone: 'm128c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'D300 removed: a rule blocked by a *failed instrument* goes back to being indistinguishable from one blocked by its precondition, so a green `expect response has no security violations` whose TLS probe never connected prints a clean line and says nothing. The silent-cap shape, in the control built to avoid it',
+    find: '  if (byReason.size === 0) return \'\';',
+    replace: '  return \'\';\n  if (byReason.size === 0) return \'\';',
+  },
 ];
 
 /**

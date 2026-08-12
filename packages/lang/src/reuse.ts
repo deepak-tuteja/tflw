@@ -324,7 +324,7 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
             schemaName: step.matcher.schemaName?.value ?? null,
             schemaSource: step.matcher.schemaSource?.value ?? null,
             filePath: step.matcher.filePath?.value ?? null,
-            a11ySeverity: step.matcher.a11ySeverity ?? null,
+            severityFloor: step.matcher.severityFloor ?? null,
             snapshotName: step.matcher.snapshotName?.value ?? null,
           },
           masks: step.masks.map(locatorShape),
