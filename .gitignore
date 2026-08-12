@@ -44,3 +44,8 @@ REVIEW_*.md
 # cannot be committed at all). It holds the pre-mutation contents of a tracked source and exists
 # only while a sweep is running or after one died — never something to commit.
 .tflw-mutate-journal.json
+
+# M127 — a sharded sweep's manifest (`mutate.mjs --manifest=`), the record CI reassembles the
+# registry from. Written at the end of a run, uploaded as an artifact, and meaningful only for the
+# revision that produced it — a committed one would be a stale claim about which mutations ran.
+shard-*.json

@@ -142,15 +142,47 @@ jobs:
   #
   # Node 22 only, for the reason it always was: mutations are source edits, identical under every
   # runtime, so the matrix would just pay for it twice.
+  #
+  # ---------------------------------------------------------------------------
+  # M127 (`M126-01`) — and now sharded, because M124's own number came due.
+  #
+  # M124 gave the sweep this job and 90 minutes against a measured 51m24s. Seven milestones later it
+  # measured **1h13m11s** (run 31540764432), having gone 51m → 53m → 55m → 59m → 69m → 71m → 73m in
+  # about two days: 17 minutes of headroom, and the estimate that called it "roughly eleven more
+  # milestones" had bought five. A fourth larger number is not a fix, and `M114`'s rule forbids the
+  # cheap structural one — scoping the sweep on PRs is how `M122-01` stayed invisible.
+  #
+  # So the registry is dealt across six machines and every mutation still runs on every pull
+  # request. Six from the measurement rather than taste: the cost is per *package* (a baseline is
+  # one more run of the same suite), `@tflw/runtime` and `tflw` hold 81% of it, and the deal that
+  # falls out models at **12.4m–13.6m of suite time per shard** against ~12m for the `test` matrix
+  # beside it — so the workflow's critical path barely moves and no shard is the long pole. Four
+  # shards would leave 19.5m; eight cost 4 more minutes of CPU and save nothing, because the longest
+  # shard is then bound by a single package's suite rather than by the split. Total CPU goes
+  # 72m → 78m, which is the six extra baselines, paid once.
+  #
+  # MEASURED on the first sharded run (31582297232, PR #57) — the number to trust over the model:
+  # 13m32s · 14m09s · 14m31s · 15m05s · 15m18s · **16m43s**, a 23% spread. The model predicts *suite*
+  # time and a job is suite time plus ~50s of setup plus runner variance, so it reads about 15% light
+  # in absolute terms. That does not matter: what the packing controls is the spread, not the
+  # absolute. The whole workflow's critical path goes **1h13m11s → 16m43s**.
+  #
+  # 30 minutes per shard — 1.8× the measured longest, deliberately less than the 2× the `test` job's
+  # number is chosen for. This is the one job with an *inward* backstop: `mutate.mjs` bounds each
+  # package's suite at 10m and names the package that hung (M112), so this number does not have to
+  # catch a hang, only survive ordinary growth. The lever when it comes due is the `shard:` list
+  # below — a one-line edit, which is the actual point of this milestone.
   mutations:
-    name: mutation controls
+    name: mutation controls (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
-    # 90 against a measured 51m24s — 1.75×, and deliberately not the 2× the `test` job's number is
-    # chosen for. The sweep is the one step here with an *inward* backstop: `mutate.mjs` bounds each
-    # package's suite at 10m and names the package that hung (M112), so this number no longer has to
-    # be the thing that catches a hang. It has to be the thing that survives ordinary growth, and
-    # 90 buys roughly eleven more milestones' worth at M123's rate.
-    timeout-minutes: 90
+    timeout-minutes: 30
+    strategy:
+      # A shard that fails must not cancel its siblings: their manifests are what `mutation
+      # controls` reassembles, and a cancelled shard uploads nothing. One red shard would otherwise
+      # turn a precise "these mutations survived" into "the sweep did not cover the registry".
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v4
 
@@ -178,5 +210,63 @@ jobs:
       # Unscoped, and that is `M114`'s rule rather than a default: a scoped sweep is how `M122-01`
       # stayed invisible — a merged registry entry left one mutation not merely surviving but
       # *absent*, and every scoped run was green about a mutation that no longer existed.
+      #
+      # A shard is not a scope. `--shard=i/6` is a slice of the *whole* registry — the union of the
+      # six is the registry, and `mutation controls` below is what proves that rather than assumes
+      # it. `mutate.mjs` refuses `--shard` combined with a scope for exactly this reason.
       - name: Mutation controls
-        run: xvfb-run -a npm run verify:mutations
+        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/6 --manifest=shard-${{ matrix.shard }}.json
+
+      # `always()` because a shard that found a survivor still has to say what it ran. Otherwise a
+      # red shard and a shard that never started are the same missing file, and the job below cannot
+      # tell "a mutation survived" from "thirty mutations were never applied".
+      - name: Upload this shard's manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-shard-${{ matrix.shard }}
+          path: shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # M127 — the job that says the shards added up, and the only one entitled to.
+  #
+  # Each shard above is green about itself and cannot be green about the others. The number of
+  # shards is written twice — in `shard:` and in `--shard=i/6` — and nothing in YAML holds those
+  # together: delete `4` from the matrix and five jobs run, all five pass, and thirty mutations are
+  # never applied. Every one of those jobs is telling the truth.
+  #
+  # So this reassembles the registry from what the shards wrote down. It keeps the old job's name on
+  # purpose: `mutation controls` is the check that has always meant "every mutation ran and none
+  # survived", and it still does — it is just no longer the job that runs them.
+  mutation-controls:
+    name: mutation controls
+    needs: mutations
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No `npm ci`: `verify-shards.mjs` and the registry it reads are stdlib-only, and a dependency
+      # install is one more way for this check to fail for reasons that have nothing to do with it.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mutation-shard-*
+          path: shards
+
+      # The shards' own verdicts first — a survivor is the more useful thing to read at the top of a
+      # failure than a coverage sum. `needs.mutations.result` collapses the whole matrix to one word.
+      - name: Every shard passed
+        if: needs.mutations.result != 'success'
+        run: |
+          echo "::error::the mutation shards did not all pass (${{ needs.mutations.result }}) — read the shard jobs for which mutation survived"
+          exit 1
+
+      # And then coverage, which is the half no individual shard can attest to.
+      - name: Every mutation was run by some shard
+        run: node scripts/verify-shards.mjs shards --of=6

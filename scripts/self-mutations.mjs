@@ -73,7 +73,14 @@ export const SELF_MUTATIONS = [
     pkg: ROOT_SUITE,
     file: SELF,
     what: 'unrecognised flags are silently dropped again — `mutate.mjs m118 --list` starts a sweep instead of listing, which is the keystroke that opened `M118-03`',
-    find: "  const unknown = flags.filter((f) => f !== '--list');",
+    // M127 widened this line to admit `--shard=` and `--manifest=`, and the `find:` was not updated
+    // with it — so this control reported `target matched 0 times … NOT RUN` on the first real sweep
+    // after the change. Caught, which is the whole point: a mutation whose target has drifted is
+    // counted as a survivor and turns the run red, exactly so that it cannot be a quiet zero. It is
+    // also the second time this milestone's own edits have gone stale against this file, the first
+    // being the tally line below — the standing cost of a control that quotes the code verbatim, and
+    // cheaper than the alternative of not quoting it.
+    find: "  const unknown = flags.filter((f) => f !== '--list' && !f.startsWith('--shard=') && !f.startsWith('--manifest='));",
     replace: '  const unknown = [];',
   },
   {
@@ -145,7 +152,25 @@ export const SELF_MUTATIONS = [
     pkg: ROOT_SUITE,
     file: SELF,
     what: '`M125e-02` itself: the denominator leaves the summary line, so the sweep ends on a complete-sounding `N mutation(s) run; 0 survived` over a registry that covers part of the plan — the shape three findings on this board now share',
-    find: '      `— over a registry that reconstructs ${cov.reconstructed} of the M98 plan\'s ${cov.planned} mutations, ${cov.missing} not.`,',
-    replace: "      '.',",
+    find: '    `— over a registry that reconstructs ${cov.reconstructed} of the M98 plan\'s ${cov.planned} mutations, ${cov.missing} not.`',
+    replace: "    ''",
+  },
+  {
+    id: 'shard-partition-drops-a-chunk',
+    milestone: 'm127',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: "M127's partition stops being a partition: the last chunk is never packed, so one shard's worth of mutations is run by nobody and every shard is green about the rest. The totality guard inside `partition()` is what has to notice, because CI cannot — five green shards look exactly like six",
+    find: '  chunks.forEach((c, nth) => {',
+    replace: '  chunks.slice(0, -1).forEach((c, nth) => {',
+  },
+  {
+    id: 'empty-shard-runs-clean',
+    milestone: 'm127',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: 'the guard against splitting a registry into more shards than it has mutations is removed, so `--shard=200/200` sweeps nothing, prints a tally, and exits 0 — the vacuous-green shape this file keeps returning to, reached this time through the flag added to prevent it',
+    find: '    if (shard.of > selected.length) {',
+    replace: '    if (false) {',
   },
 ];

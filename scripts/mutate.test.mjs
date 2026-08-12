@@ -19,10 +19,14 @@ import {
   MUTATIONS,
   ROOT_SUITE,
   UNRECONSTRUCTED,
+  costProblem,
   coverage,
   coverageProblem,
   parseArgs,
+  partition,
   registryProblem,
+  shardCost,
+  tallyLine,
   suiteCommand,
 } from './mutate.mjs';
 
@@ -88,6 +92,33 @@ test('every mutation names a file that exists and a unique id', () => {
   }
 });
 
+test('every mutation still matches the source it quotes, exactly once', () => {
+  // M127, and it cost a sweep to learn. This milestone widened `parseArgs`'s unknown-option line to
+  // admit `--shard=`, and `unknown-option-ignored` quotes that line verbatim as its `find:`. The
+  // control did not fail — it went **stale**, `target matched 0 times, not 1; NOT RUN`, and said so
+  // 45 minutes into a six-shard run on the box. Nothing was wrong with the runner: a drifted target
+  // is counted as a survivor precisely so it cannot be a quiet zero. What was wrong is *when* it is
+  // discovered, and the answer was "after every suite in the shard ahead of it has run".
+  //
+  // This is that discovery moved to the front, for all of them rather than for the self-mutations
+  // that happen to be edited most often. It replicates the runner's own precondition exactly,
+  // including the `edits:` chain — each edit applies to the text the previous one produced, so the
+  // second edit of a pair is checked against the mutated source and not the original.
+  for (const m of MUTATIONS) {
+    let text = readFileSync(path.join(ROOT, m.file), 'utf8');
+    for (const [find, replace] of m.edits ?? [[m.find, m.replace]]) {
+      const occurrences = text.split(find).length - 1;
+      assert.equal(
+        occurrences,
+        1,
+        `${m.id} (${m.milestone}) matches ${m.file} ${occurrences} times, not 1 — the source moved and the mutation's \`find:\` did not follow. ` +
+          `It would run as \`stale\`, which is a red sweep rather than a wrong one, but only after every suite ahead of it.`,
+      );
+      text = text.replace(find, replace);
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // D228 — arguments.
 
@@ -104,10 +135,16 @@ test('parseArgs rejects two scopes rather than quietly using the first', () => {
 });
 
 test('parseArgs understands --list, in either position, with or without a scope', () => {
-  assert.deepEqual(parseArgs(['node', 'mutate.mjs', '--list']), { list: true, scope: undefined });
-  assert.deepEqual(parseArgs(['node', 'mutate.mjs', 'm118', '--list']), { list: true, scope: 'm118' });
-  assert.deepEqual(parseArgs(['node', 'mutate.mjs', '--list', 'm118']), { list: true, scope: 'm118' });
-  assert.deepEqual(parseArgs(['node', 'mutate.mjs']), { list: false, scope: undefined });
+  // M127 widened the return shape with `shard`/`manifest`; what this test is about is `list` and
+  // `scope`, so it asserts those rather than re-pinning the whole object every time a flag is added.
+  const parsed = (...args) => {
+    const { list, scope } = parseArgs(['node', 'mutate.mjs', ...args]);
+    return { list, scope };
+  };
+  assert.deepEqual(parsed('--list'), { list: true, scope: undefined });
+  assert.deepEqual(parsed('m118', '--list'), { list: true, scope: 'm118' });
+  assert.deepEqual(parsed('--list', 'm118'), { list: true, scope: 'm118' });
+  assert.deepEqual(parsed(), { list: false, scope: undefined });
 });
 
 test('--list applies nothing and runs no suite', () => {
@@ -413,6 +450,137 @@ test('a scoped sweep prints the coverage clause too — the half the old report 
     );
     // And it is on the tally line, not beneath it: nothing separates the count from its denominator.
     assert.doesNotMatch(r.stdout, /0 stale\.\n/);
+  } finally {
+    if (readFileSync(LEXER, 'utf8') !== before) writeFileSync(LEXER, before);
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// M127 (`M126-01`) — shards.
+//
+// The sweep outgrew its job's clock, and the fix splits it across machines. Splitting a control
+// suite introduces exactly one new way to be green about nothing — a mutation nobody ran — so what
+// is asserted here is coverage first and balance second. Balance is a preference; totality is the
+// property the whole instrument rests on.
+
+test('a partition is total and disjoint at every shard count the registry can take', () => {
+  const ids = MUTATIONS.map((m) => m.id);
+  for (const n of [1, 2, 3, 5, 6, 7, 8, 11, 16, MUTATIONS.length]) {
+    const shards = partition(MUTATIONS, n);
+    assert.equal(shards.length, n, `expected ${n} shards`);
+    const dealt = shards.flat().map((m) => m.id);
+    assert.equal(dealt.length, ids.length, `n=${n}: ${dealt.length} mutations dealt from a registry of ${ids.length}`);
+    assert.equal(new Set(dealt).size, ids.length, `n=${n}: a mutation was dealt to two shards`);
+    assert.deepEqual([...dealt].sort(), [...ids].sort(), `n=${n}: the shards are not the registry`);
+    for (const [i, s] of shards.entries()) assert.ok(s.length > 0, `n=${n}: shard ${i + 1} is empty, and an empty shard still exits 0`);
+  }
+});
+
+test('the same registry always deals the same hands', () => {
+  // A shard number has to be enough to reproduce what a red shard ran. If the deal moved between
+  // runs, the only way to find out what shard 4 held would be to read the log of the run that
+  // failed — which is exactly the thing you do not have when the job was killed.
+  const a = partition(MUTATIONS, 6).map((s) => s.map((m) => m.id));
+  const b = partition(MUTATIONS, 6).map((s) => s.map((m) => m.id));
+  assert.deepEqual(a, b);
+});
+
+test('a partition refuses a shard count it cannot honour, rather than returning fewer', () => {
+  for (const n of [0, -1, 1.5, '6']) {
+    assert.throws(() => partition(MUTATIONS, n), /positive integer/, `partition(_, ${n})`);
+  }
+});
+
+test('shards are balanced by measured suite time, not by mutation count', () => {
+  // The property that matters is that the split follows the cost. `@tflw/lang`'s 49 mutations are
+  // cheaper together than `tflw`'s seven, so a count-balanced split would be wrong by ~3×; the
+  // shard holding the most mutations must not be the most expensive one.
+  const shards = partition(MUTATIONS, 6);
+  const costs = shards.map(shardCost);
+  const biggest = shards.indexOf(shards.reduce((a, b) => (b.length > a.length ? b : a)));
+  assert.ok(costs[biggest] <= Math.max(...costs), 'the largest shard by count is also the most expensive — the deal ignored cost');
+  assert.ok(Math.max(...costs) / Math.min(...costs) < 1.5, `shards are lopsided: ${costs.map((c) => Math.round(c / 60) + 'm').join(', ')}`);
+});
+
+test('every package the registry names has a measured suite time', () => {
+  assert.equal(costProblem(), undefined);
+  const problem = costProblem([...MUTATIONS, { id: 'x', milestone: 'm127', pkg: '@tflw/unmeasured', file: 'x', what: 'x' }]);
+  assert.match(problem, /no measured suite time for: @tflw\/unmeasured/);
+});
+
+test('parseArgs understands --shard, and rejects every way of getting it wrong', () => {
+  assert.deepEqual(parseArgs(['node', 'x', '--shard=3/6']).shard, { index: 3, of: 6 });
+  assert.match(parseArgs(['node', 'x', '--shard=3']).error, /--shard wants <i>\/<n>/);
+  assert.match(parseArgs(['node', 'x', '--shard=']).error, /--shard wants <i>\/<n>/);
+  assert.match(parseArgs(['node', 'x', '--shard=0/6']).error, /shard numbers run 1\.\.6/);
+  assert.match(parseArgs(['node', 'x', '--shard=7/6']).error, /shard numbers run 1\.\.6/);
+  assert.match(parseArgs(['node', 'x', '--shard=1/0']).error, /cannot be split into 0 shards/);
+  // A shard of a scope is a fraction of a fraction reported as if it were the sweep.
+  assert.match(parseArgs(['node', 'x', '--shard=1/6', 'm98c']).error, /cannot be combined with the scope "m98c"/);
+});
+
+test('a manifest cannot be written by a run that applies nothing', () => {
+  // The manifest is the only evidence `verify-shards.mjs` has that a shard ran. If `--list` could
+  // write one, a workflow that listed instead of swept would produce a complete-looking set of
+  // attestations for a sweep that never happened.
+  assert.match(parseArgs(['node', 'x', '--list', '--manifest=s.json']).error, /would attest a sweep that never ran/);
+  assert.equal(parseArgs(['node', 'x', '--manifest=s.json']).manifest, 's.json');
+  assert.match(parseArgs(['node', 'x', '--manifest=']).error, /--manifest wants a path/);
+});
+
+test('the tally names its denominator when the run is one shard of several', () => {
+  const cov = { reconstructed: 13, planned: 31, missing: 18 };
+  const whole = tallyLine({ ran: 122, survived: 0, stale: 0, cov });
+  assert.match(whole, /^122 mutation\(s\) run; 0 survived/);
+  const sharded = tallyLine({ ran: 21, survived: 0, stale: 0, shard: { index: 3, of: 6 }, registry: 122, cov });
+  assert.match(sharded, /^21 of 122 mutation\(s\) run — shard 3 of 6; 0 survived/);
+  // The clause M126 moved onto this line stays on it under a shard.
+  assert.match(sharded, /reconstructs 13 of the M98 plan's 31 mutations, 18 not\.$/);
+});
+
+test('more shards than mutations is refused, not run empty', () => {
+  // The failure this guard exists for exits 0 with a tally in it. `mutate.mjs --shard=200/200`
+  // would sweep nothing, print `0 of 122 mutation(s) run`, and pass.
+  const { file, cleanup } = sandboxJournal();
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, '--shard=200/200'], { cwd: ROOT, encoding: 'utf8', env: withJournal(file) });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /would leave some shard with nothing to run/);
+    assert.doesNotMatch(r.stdout, /mutation\(s\) run/);
+  } finally {
+    cleanup();
+  }
+});
+
+test('--list --shard shows what one shard holds, with the registry it is a fraction of', () => {
+  const { file, cleanup } = sandboxJournal();
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, '--list', '--shard=2/6'], { cwd: ROOT, encoding: 'utf8', env: withJournal(file) });
+    assert.equal(r.status, 0);
+    const header = new RegExp(`shard 2 of 6 — \\d+ of ${MUTATIONS.length} mutation\\(s\\)`);
+    assert.match(r.stdout, header);
+    assert.match(r.stdout, /no mutation was applied and no suite was run\./);
+    const listed = partition(MUTATIONS, 6)[1];
+    for (const m of listed) assert.ok(r.stdout.includes(m.id), `${m.id} is in shard 2 but was not listed`);
+  } finally {
+    cleanup();
+  }
+});
+
+test('a sweep writes down what it ran, and the file says the same thing the run did', () => {
+  // End-to-end rather than a unit test of the writer (M98d): the manifest is what CI trusts, so
+  // what is asserted is the file a real sweep leaves behind.
+  const before = readFileSync(LEXER, 'utf8');
+  const { file, cleanup } = sandboxJournal();
+  const out = path.join(path.dirname(file), 'shard-1.json');
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, `--manifest=${out}`, 'bom-col'], { cwd: ROOT, encoding: 'utf8', env: withJournal(file) });
+    assert.equal(r.status, 0);
+    const manifest = JSON.parse(readFileSync(out, 'utf8'));
+    assert.deepEqual(manifest.ids, ['bom-col']);
+    assert.equal(manifest.registry, MUTATIONS.length);
+    assert.match(r.stdout, /wrote .*shard-1\.json — 1 id\(s\)/);
   } finally {
     if (readFileSync(LEXER, 'utf8') !== before) writeFileSync(LEXER, before);
     cleanup();
