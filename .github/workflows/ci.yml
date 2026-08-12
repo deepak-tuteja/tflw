@@ -155,15 +155,23 @@ jobs:
   # So the registry is dealt across six machines and every mutation still runs on every pull
   # request. Six from the measurement rather than taste: the cost is per *package* (a baseline is
   # one more run of the same suite), `@tflw/runtime` and `tflw` hold 81% of it, and the deal that
-  # falls out lands at **~13.6m for the longest shard** against ~13m for the `test` matrix beside
-  # it — so the workflow's critical path is unchanged and no shard is the long pole. Four shards
-  # would leave 19.5m; eight cost 4 more minutes of CPU and save nothing, because the longest shard
-  # is then bound by a single package's suite rather than by the split. Total CPU goes 72m → 78m,
-  # which is the six extra baselines, paid once.
+  # falls out models at **12.4m–13.6m of suite time per shard** against ~12m for the `test` matrix
+  # beside it — so the workflow's critical path barely moves and no shard is the long pole. Four
+  # shards would leave 19.5m; eight cost 4 more minutes of CPU and save nothing, because the longest
+  # shard is then bound by a single package's suite rather than by the split. Total CPU goes
+  # 72m → 78m, which is the six extra baselines, paid once.
   #
-  # 30 minutes per shard: 2.2× the longest, the multiple this file's other timeout is chosen for.
-  # The number to re-measure is now per shard, and the lever when it comes due is `shard:` below —
-  # which is a cheaper edit than anything this milestone had to do, and the actual point of it.
+  # MEASURED on the first sharded run (31582297232, PR #57) — the number to trust over the model:
+  # 13m32s · 14m09s · 14m31s · 15m05s · 15m18s · **16m43s**, a 23% spread. The model predicts *suite*
+  # time and a job is suite time plus ~50s of setup plus runner variance, so it reads about 15% light
+  # in absolute terms. That does not matter: what the packing controls is the spread, not the
+  # absolute. The whole workflow's critical path goes **1h13m11s → 16m43s**.
+  #
+  # 30 minutes per shard — 1.8× the measured longest, deliberately less than the 2× the `test` job's
+  # number is chosen for. This is the one job with an *inward* backstop: `mutate.mjs` bounds each
+  # package's suite at 10m and names the package that hung (M112), so this number does not have to
+  # catch a hang, only survive ordinary growth. The lever when it comes due is the `shard:` list
+  # below — a one-line edit, which is the actual point of this milestone.
   mutations:
     name: mutation controls (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
