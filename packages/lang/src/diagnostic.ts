@@ -118,6 +118,17 @@ export const Codes = {
   ABSOLUTE_URL_NOT_PORTABLE: 'TF057',
   ABSOLUTE_URL_NEEDS_ALLOW_HOSTS: 'TF058',
   SERVICE_WITH_ABSOLUTE_URL: 'TF059',
+  // M128b (`PLAN_M128_PENTEST_TIER1.md`, D291) — D21's declaration layer, and the two ways to get
+  // it wrong. Both are **errors**, and both are decidable from config × AST with no I/O, which is
+  // what makes them the checker's rather than the runtime's (D137 clause 2).
+  //
+  // The tier is worth stating, because `TF057`/`TF058` directly above are warnings for a
+  // superficially similar reason (a config-derived prediction about what a run would do). The
+  // difference is what is being predicted: those predict a *refusal*, which a different env could
+  // legitimately change. These predict nothing. A security assertion with no declaration behind it
+  // is not permitted to run in any env, and a wildcard target is not a claim anyone can make.
+  SECURITY_ASSERTION_UNAUTHORIZED: 'TF060',
+  AUTHORIZED_TARGET_WILDCARD: 'TF061',
 } as const;
 
 // ---------------------------------------------------------------------------

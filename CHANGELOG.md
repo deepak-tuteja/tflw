@@ -108,6 +108,54 @@ performance arc closed 2026-08-02 and is included below.
   `results.json` — there are no separate `load-*` artifacts (decisions 116–122).
 - An `exclude` config directive for file discovery (decision 127).
 
+### Added — pen-test arc, Tier 1 (`0.4` internal milestone, M128)
+
+- **`expect`/`check response has no [<severity>] security violations`** — a built-in pack of twelve
+  HTTP hygiene rules (cookie flags, HSTS/CSP/`X-Frame-Options`/nosniff, credentialed CORS
+  wildcards, cacheable authenticated responses, version disclosure, TLS protocol version and cipher
+  suite) run over the response the last `api` step received, reusing the `Finding`/severity model
+  the a11y scan introduced (decisions 283, 289, 290).
+- **Applicability is a third state.** Every rule declares a precondition; a rule whose precondition
+  is unmet reports *not applicable*, which is neither a violation nor a silent pass. Without it,
+  `hsts-missing` and `cookie-not-secure` would fire on every response of every plaintext suite
+  (decision 284).
+- **An assertion where no rule applied fails**, with a dedicated message naming each precondition
+  that went unmet — a scan that could not have failed must not report a pass (decision 285). A
+  severity floor narrows which rules run at all, so the printed counts describe the work actually
+  done (decision 296).
+- **A `session` block's own login response is scanned once, at establishment**, with findings
+  attributed to the session by name and folded into that test's security assertions — otherwise a
+  suite whose session cookie lacks `HttpOnly` reports clean (decision 287).
+- **`authorized target "<url>" reason "<text>"`** in `tflw.config` — the declaration layer of the
+  safety model, required before any security assertion (`TF060`) and rejecting wildcards and
+  scheme-less targets (`TF061`). The reason is printed in the CLI summary and embedded in
+  `report.html`, so every artifact records the claim that permitted the scan (decisions 21, 291).
+- **`sec/tls-version-old` and `sec/tls-weak-cipher`**, from a stdlib `tls.connect()` probe to the
+  same host — the runtime drives Node's `fetch`, which exposes neither the negotiated protocol nor
+  the cipher, and the dependency that would is the one the zero-runtime-dep bundle declined. One
+  handshake per `host:port` per **run**, obeying `allow hosts` and re-checking the `authorized
+  target` declaration against where the run actually ended up rather than the base URL the checker
+  could see (decision 288).
+- The probe deliberately offers a **TLS 1.0 floor**, below Node's own `DEFAULT_MIN_VERSION` — a host
+  speaking nothing but a deprecated protocol would otherwise refuse the handshake, leaving
+  `tls-version-old` unable to fire in the one case it exists for. Measured: offering an old floor
+  never drags a healthy server down, because the server still picks the newest version both sides
+  speak. Cipher suites are *not* widened the same way, since reaching a legacy-cipher-only peer
+  needs OpenSSL's `@SECLEVEL=0`, which also lowers what counts as an acceptable certificate
+  (decision 298).
+- Both TLS rules answer **"what does this host give a current client?"** — not what the asserted
+  request negotiated (the probe is a second connection), and not the server's whole offer (a host
+  supporting RC4 alongside AES-GCM negotiates AES-GCM and is correctly silent). Enumerating
+  everything a server would accept takes one handshake per suite, and belongs to `tflw scan`
+  (decision 299).
+- No handshake at all when the severity floor has already excluded both TLS rules — the floor
+  narrows the pack before applicability, so a `critical`-floor assertion never consults them, and a
+  connection opened for an assertion that cannot use it is one nobody asked for (decision 302).
+- A probe that cannot connect makes both rules *not applicable*, never an error — a network failure
+  is not a security verdict. But it is **announced** on every result line, passing ones included:
+  a rule blocked by a failed instrument is reported differently from one blocked by its
+  precondition, because the first means the assertion did less than it was asked to (decision 300).
+
 ### Changed — grammar freeze (M66–M69)
 
 The shipped grammar is frozen additive-only from `1.0.0` on, so every incompatible change had to

@@ -2,7 +2,7 @@
 // active-env selection (P#28), defaults+env merge, per-service base URLs (P#29).
 
 import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern } from '@tflw/lang';
-import { DEFAULT_TIMEOUTS, type ResolvedConfig, type ResolvedHeader, type ResolvedTimeouts } from './types.js';
+import { DEFAULT_TIMEOUTS, type AuthorizedTarget, type ResolvedConfig, type ResolvedHeader, type ResolvedTimeouts } from './types.js';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -54,6 +54,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   let certPath: string | null = null;
   let keyPath: string | null = null;
   let allowHosts: string[] | null = null;
+  const authorizedTargets: AuthorizedTarget[] = [];
   let evidenceLevel: EvidenceLevel = 'full';
   const redactPatterns: RedactPattern[] = [];
   let viewport: { width: number; height: number } | null = null;
@@ -94,6 +95,11 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
         case 'AllowHostsDecl':
           // Accumulates (like `header`), not override — a baseline in `defaults` plus more per env.
           allowHosts = [...(allowHosts ?? []), ...entry.hosts.map((h) => h.value)];
+          break;
+        case 'AuthorizedTargetDecl':
+          // Accumulates like `allow hosts`, and for the same reason (SPEC §3.7): a suite that scans
+          // one host in every env declares it once in `defaults` rather than repeating it per env.
+          authorizedTargets.push({ target: entry.target.value, reason: entry.reason.value });
           break;
         case 'EvidenceDecl':
           evidenceLevel = entry.level;
@@ -146,6 +152,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     sessions,
     mtls,
     allowHosts,
+    authorizedTargets,
     evidenceLevel,
     redactPatterns,
     viewport,

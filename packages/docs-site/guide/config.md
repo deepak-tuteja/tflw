@@ -133,4 +133,20 @@ so (`TF036`) rather than letting every step fail identically at run time. It che
 selected, not every env in the file — so a suite can keep a deliberately-blocked env around as the
 negative-case fixture for this feature, and only hears about it when it actually runs that env.
 
+### `authorized target` — what this suite may scan
+
+```tflw-config
+env secureLocal
+  api "https://localhost:8443/v1"
+  authorized target "https://localhost:8443" reason "self-hosted test fixture"
+```
+
+Required before any `expect response has no … security violations` assertion, and only for those —
+an ordinary suite never needs this key. Unlike `allow hosts` directly above, it takes **no
+wildcards**: it is an affirmation that you may point a scanner at one named host, and a pattern is
+not something anyone can affirm. The `reason` is required and is printed in the run summary and the
+report, so the claim travels with the findings.
+
+See [Security hygiene scanning](/guide/security-scanning).
+
 Full reference: [SPEC.md §3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#3-the-config-dialect--tflwconfig-p27-31).

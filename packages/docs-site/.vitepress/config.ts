@@ -30,6 +30,7 @@ const GUIDE_SIDEBAR = [
       { text: '11. CI, reporting & safety', link: '/guide/ci-and-reporting' },
       { text: '12. Running & debugging tests', link: '/guide/debugging' },
       { text: '13. Load testing: scenarios & thresholds', link: '/guide/load-testing' },
+      { text: '14. Security hygiene scanning', link: '/guide/security-scanning' },
     ],
   },
 ];

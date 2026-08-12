@@ -61,6 +61,7 @@ import {
   redactEvent,
   redactReport,
   SessionCache,
+  TlsProber,
   BrowserManager,
   SUPPORTED_BROWSER_ENGINES,
   LOG_LEVEL_ORDER,
@@ -80,6 +81,7 @@ import {
   type PickSessionHandle,
   type LoadShardResult,
   type LoadProgressSnapshot,
+  type AuthorizedTarget,
   type SelfDiagnosis,
 } from '@tflw/runtime';
 import { spawn, fork, type ChildProcess } from 'node:child_process';
@@ -1068,6 +1070,16 @@ async function loadAndValidate(
   // reports. Passing `undefined` through here would say "nobody resolved a config" about a config
   // this function has, by that point, definitely read.
   const envAllowHosts = { envName: resolved.envName, hosts: resolved.allowHosts ?? [] };
+  // M128b/D291 — `TF060`'s config half. Read off the resolved config for the same reason
+  // `envAllowHosts` is: `resolve.ts` already accumulates `defaults` + `env` the way SPEC §3.7 says
+  // they compose, and a second accumulation here is the "two copies of a matching rule" that
+  // `checkAllowHostsCoversBaseUrls` has a paragraph warning about.
+  //
+  // The base URL is passed as the *literal* the env declared, not a normalized one, so the
+  // diagnostic quotes back the string the author actually wrote. `resolved.apiBaseUrl` is already
+  // interpolation-resolved, which is what makes an `api "https://{API_HOST}/v1"` env checkable here
+  // at all rather than skipped — the interpolation happened before this line.
+  const envAuthorizedTargets = { envName: resolved.envName, targets: resolved.authorizedTargets, apiBaseUrl: resolved.apiBaseUrl };
   const configEnvDiags = [
     ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
@@ -1132,6 +1144,10 @@ async function loadAndValidate(
       // same reason: which hosts a suite may reach is a whole-suite fact that a per-step diagnostic
       // has to be told.
       envAllowHosts,
+      // M128b/D291 — `TF060`. Same derivation and the same reason again: whether this suite is
+      // permitted to scan its target is a whole-suite fact, and the per-assertion diagnostic that
+      // reports it has to be told.
+      envAuthorizedTargets,
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
@@ -1379,6 +1395,9 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   //    globally distinct.
   const redactor = new Redactor();
   const sessionCache = new SessionCache();
+  // M128c (D288) — one prober for the whole run, alongside the one session cache, so the TLS probe
+  // opens a single handshake per `host:port` across every file rather than one per file.
+  const tlsProber = new TlsProber();
   const seed = resolveRunSeed(seedArg);
   const now = resolveRunClock(nowArg).toISOString();
   const uniqueSeq = makeUniqueSeq();
@@ -1592,6 +1611,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
               environ,
               redactor,
               sessionCache,
+              tlsProber,
               browserManager,
               seed,
               now,
@@ -1632,6 +1652,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
             environ,
             redactor,
             sessionCache,
+            tlsProber,
             browserManager,
             seed,
             now,
@@ -1715,7 +1736,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   //    a secret first registered by one file (e.g. running later, or concurrently under
   //    `--workers`) can still retroactively mask an earlier file's already-built report once
   //    everything is merged.
-  const merged = redactReport(mergeReports(reports, resolved.envName, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo), redactor);
+  const merged = redactReport(mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo), redactor);
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
@@ -2430,6 +2451,7 @@ async function runWithConcurrency<T, R>(
 function mergeReports(
   reports: readonly RunReport[],
   envName: string,
+  authorizedTargets: readonly AuthorizedTarget[],
   seed: number,
   now: string,
   insecure: boolean,
@@ -2466,6 +2488,9 @@ function mergeReports(
     // Omitted rather than `false` for an ordinary run (M118/D202): the flag exists to mark the
     // unusual case, and every pre-M118 `RunReport` fixture stays valid without it.
     ...(demo ? { demo: true } : {}),
+    // D291 — omitted rather than `[]` for the same reason `demo` is: the field marks the unusual
+    // case (a suite that scans something), and every pre-M128b fixture stays valid without it.
+    ...(authorizedTargets.length > 0 ? { authorizedTargets } : {}),
     ...(unmaskableSecrets.length > 0 ? { unmaskableSecrets } : {}),
     ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
     ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),

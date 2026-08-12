@@ -63,7 +63,7 @@ const KEYWORDS = new Set([
 const OPERATORS = new Set([
   'equals', 'contains', 'matches', 'subset', 'file', 'has', 'is', 'not', 'count', 'value', 'greater', 'less', 'than',
   'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
-  'was', 'made', 'no', 'a11y', 'violations', 'minor', 'moderate', 'serious', 'critical', 'snapshot',
+  'was', 'made', 'no', 'a11y', 'security', 'violations', 'minor', 'moderate', 'serious', 'critical', 'snapshot',
 ]);
 
 /** Subject words (tflw.tmLanguage.json's `keywords-subject`), plus the M3a/M3e locator-noun and
@@ -71,7 +71,7 @@ const OPERATORS = new Set([
  * testing metric/target nouns `users`/`rps` (`ramp to N users|rps over …`) and `error`/`rate`
  * (`threshold error rate is …`) — M33 catch-up, same "noun the value is measured in/against" role
  * `duration`/`status` already play here. */
-const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request', 'button', 'field', 'list', 'css', 'xpath', 'page', 'users', 'rps', 'error', 'rate']);
+const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request', 'button', 'field', 'list', 'css', 'xpath', 'page', 'response', 'users', 'rps', 'error', 'rate']);
 
 /** `p50`/`p90`/`p95`/`p99`/… (M29 `threshold p95 duration is less than 800ms`, D24a) — a dynamic
  * ident, not fixed vocabulary (parser.ts's `parseThresholdDecl` accepts any `/^p([1-9][0-9]?)$/`),

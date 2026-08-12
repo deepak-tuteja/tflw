@@ -8,6 +8,8 @@ import { subSeed, mulberry32 } from './seed.js';
 import type { CookieJar } from './cookieJar.js';
 import type { BrowserManager, BrowserPageState, LocatorScope } from './browser.js';
 import type { SessionRef } from './interpreter.js';
+import type { Finding } from './finding.js';
+import type { Observation } from './securityRules.js';
 
 /** This test attempt's browser state (M3a) — present whenever the run was given a
  * `BrowserManager` (SPEC §9), regardless of whether this particular test ends up using a browser
@@ -65,6 +67,28 @@ export interface EvalCtx {
    * before retrying once — the general auto-refresh-on-401 mechanism every session gets "for
    * free", not just `oauth2` ones. */
   readonly sessionNames: readonly string[];
+  /** M128b/D287 — security findings from the *login responses* of the sessions this test opted
+   * into, scanned once when each session was established and carried here so that every
+   * `expect response has no … security violations` in the test can see them.
+   *
+   * Without this, Tier 1 reports clean on a suite whose session cookie lacks `HttpOnly` — close to
+   * the single most important thing the pack could catch, and precisely the shape of the real
+   * `cookie-not-secure` defect that scoping this arc turned up in `testFlow-tests`. The session's
+   * login response is a response the run genuinely made; nothing here inspects a cookie jar or
+   * invents a cross-request subject (both were rejected in D287).
+   *
+   * Empty for an anonymous test, and `undefined` outside a test entirely. */
+  readonly sessionFindings?: readonly Finding[];
+  /** M128b/D287 — where a *session's own* establishment run records what its api steps observed, so
+   * the scan can run against the live request/response pair rather than the redacted report copy
+   * (`cookieEvents` is `[]` in that copy at every evidence level, which is exactly the field the
+   * cookie rules read). Set only while a `session` block's body is executing; `undefined`
+   * everywhere else, so an ordinary test pays nothing for it.
+   *
+   * The same sink shape `headerSink` already uses one field down, for the same reason: a session
+   * body needs to hand something back that its steps produced, and the alternative is threading a
+   * return value through every statement type. */
+  readonly securitySink?: Observation[];
   /** Opaque `SessionCache` handles (M37, D45) for the sessions named in `sessionNames`, as of when
    * `sessionHeaders`/`cookieJar` were last read from the cache — undefined outside a load
    * iteration (a regular `tflw run`/`test` attempt never populates this). Lets a 401-triggered

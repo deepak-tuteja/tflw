@@ -541,6 +541,7 @@ export type Subject =
   | NetworkRequestSubject
   | LocatorSubject
   | PageSubject
+  | ResponseSubject
   | ValueSubject;
 
 /** `expect {orderId} is greater than 0` / `expect all {items.price} …` (M96, `FU-11`, SPEC §6.1) —
@@ -629,6 +630,25 @@ export interface PageSubject extends Node {
   readonly type: 'PageSubject';
 }
 
+/** `response` (M128b, D290, SPEC §9.10) — the last `api` step's response *as a whole*, scanned
+ * rather than addressed. Deliberately parallel to `PageSubject`: a bare subject carrying no data of
+ * its own, whose meaning comes entirely from the matcher after it.
+ *
+ * **Why a new subject rather than a new matcher on an existing one.** SPEC §5.3's subjects
+ * (`status`, `header "…"`, `body.…`) each name *one addressable part* of the response and compare
+ * it against an operand. A hygiene scan reads the status line, every header, every `Set-Cookie` and
+ * the request that produced them, and returns a list — there is no part to name and no operand to
+ * compare against. `response` is the whole thing, which is what the scan actually takes.
+ *
+ * **Why not `security` as the subject** (the rejected alternative in D290): it keeps §5.3's subject
+ * list closed, but it gives the scan a subject that is not a thing the run observed. `response` is.
+ *
+ * Not capturable (`TF053`) and not a value (`TF041`) — see `checkCapturableSubjects` and
+ * `LIVE_HANDLE_MATCHERS` for both, which is the same pair of exclusions `page` already carries. */
+export interface ResponseSubject extends Node {
+  readonly type: 'ResponseSubject';
+}
+
 export interface HeaderSubject extends Node {
   readonly type: 'HeaderSubject';
   readonly name: StringLit;
@@ -701,13 +721,15 @@ export type MatcherName =
   | 'fails'
   | 'wasMade'
   | 'hasNoA11yViolations'
+  | 'hasNoSecurityViolations'
   | 'matchesSnapshot';
 
-/** axe-core's own impact scale (M3e, SPEC §9.8), increasing severity. Shared with
- * `@tflw/runtime`'s `finding.ts` — the generic `Severity`/`Finding` model the pentest scan arc
- * (v1.2.0) is meant to reuse (PLAN_BROWSER_PERF_SECURITY.md §1.10, D14) rather than reimplementing
- * its own severity vocabulary. */
-export type A11ySeverity = 'minor' | 'moderate' | 'serious' | 'critical';
+/** The severity scale every *scan* in this language shares, increasing. Originally axe-core's own
+ * `impact` scale (M3e, SPEC §9.8), adopted wholesale so that a second scanner would have four
+ * buckets to map onto rather than a fifth ordering to invent (PLAN_BROWSER_PERF_SECURITY.md §1.10,
+ * D14) — and `M128b`'s security pack is that second scanner, which is why this is no longer named
+ * for a11y. Shared with `@tflw/runtime`'s `finding.ts`, which re-exports it as `Severity`. */
+export type FindingSeverity = 'minor' | 'moderate' | 'serious' | 'critical';
 
 export interface Matcher extends Node {
   readonly type: 'Matcher';
@@ -729,11 +751,20 @@ export interface Matcher extends Node {
    * read directly, never run through `evalValue`). Resolved against the test file's own directory
    * at runtime, same as `schemaSource`'s relative-path handling. */
   readonly filePath?: StringLit;
-  /** `has no [<severity>] a11y violations` (M3e) — set only when `name === 'hasNoA11yViolations'`.
-   * `undefined` (bare `has no a11y violations`) means every severity counts; otherwise a *floor*
-   * — `serious` also counts `critical` findings, since a "no serious violations" bar that a worse
-   * violation could quietly slip under would be a teaching trap, not a convenience. */
-  readonly a11ySeverity?: A11ySeverity;
+  /** The optional severity word in `has no [<severity>] a11y violations` (M3e) and `has no
+   * [<severity>] security violations` (M128b) — set only for those two matchers.
+   *
+   * `undefined` means every severity counts; otherwise a *floor* — `serious` also counts `critical`
+   * findings, since a "no serious violations" bar that a worse violation could quietly slip under
+   * would be a teaching trap, not a convenience.
+   *
+   * **One field, not one per scan.** It was `a11ySeverity` until `M128b`, when the security pack
+   * arrived needing the identical word list, the identical floor semantics and the identical AST
+   * position. A second field would have been a fork of this one — the shape `M125e` filed against a
+   * display label derived from an identity key — so the field was renamed to what it has always
+   * actually been. What differs between the two scans is which *rules* the floor selects, and that
+   * lives in each scanner, not here. */
+  readonly severityFloor?: FindingSeverity;
   /** `matches snapshot "<name>"` (M4b, D15) — set only when `name === 'matchesSnapshot'`. Becomes
    * the baseline's file name (slugified) under `snapshots/<file>/<test>/<name>.png` — not a file
    * path itself, the same "display label, not a path" framing `ScreenshotStmt.name` already uses. */
@@ -1317,6 +1348,7 @@ export type ConfigEntry =
   | CertDecl
   | KeyDecl
   | AllowHostsDecl
+  | AuthorizedTargetDecl
   | EvidenceDecl
   | RedactDecl
   | ViewportDecl
@@ -1391,6 +1423,29 @@ export interface KeyDecl extends Node {
 export interface AllowHostsDecl extends Node {
   readonly type: 'AllowHostsDecl';
   readonly hosts: readonly StringLit[];
+}
+
+/** `authorized target "<url>" reason "<text>"` (M128b, D291, SPEC §3.10) — D21's declaration layer,
+ * and the gate on every security assertion in the suite.
+ *
+ * **Named, never a wildcard.** `allow hosts` accepts `*.example.com` because its job is to bound
+ * where a suite may send *ordinary* traffic, and a bound with a pattern in it is still a bound.
+ * This declaration's job is different: it is an author affirming, in writing, that they are
+ * permitted to point a security scanner at a specific host. A pattern cannot make that affirmation
+ * — nobody is authorized to scan `*.com` — so the checker rejects one rather than accepting a claim
+ * whose scope its author could not have known. That rejection is `TF061`.
+ *
+ * **`reason` is required, and is the point.** It is not documentation of the config; it is the
+ * sentence that gets printed in the CLI summary and embedded in the report, so every artifact a run
+ * produces records what was claimed and by whom it was written. A declaration with no reason would
+ * be a checkbox, and a checkbox is what D21 exists instead of.
+ *
+ * Accumulates across `defaults` + `env` exactly as `allow hosts` does (SPEC §3.7's composition
+ * rule): a suite that scans one host in every env declares it once in `defaults`. */
+export interface AuthorizedTargetDecl extends Node {
+  readonly type: 'AuthorizedTargetDecl';
+  readonly target: StringLit;
+  readonly reason: StringLit;
 }
 
 export type EvidenceLevel = 'full' | 'headers-only' | 'none';

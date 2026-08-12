@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { basename, join, resolve as resolvePath } from 'node:path';
 import { isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
-  A11ySeverity,
+  FindingSeverity,
   ApiBody,
   ApiRequestSpec,
   ApiStep,
@@ -43,7 +43,9 @@ import { evalValue, interpolatePath, navigate, resolveRef, RuntimeError, stringi
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
 import { evalUiMatcherOnce } from './uiMatcher.js';
 import { runA11yScan } from './a11y.js';
-import { filterBySeverity, type Finding } from './finding.js';
+import { filterBySeverity, SEVERITY_RANK, type Finding } from './finding.js';
+import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, type TlsObservation } from './securityRules.js';
+import { TlsProber } from './tlsProbe.js';
 import {
   BrowserPageState,
   captureFailureScreenshot,
@@ -183,6 +185,12 @@ export interface RunOptions {
   /** Shared across every file in a run so each `session` block executes at most once (SPEC §3.3,
    * P#42); the caller creates one and reuses it across every `runProgram` call in the run. */
   readonly sessionCache?: SessionCache;
+  /** M128c (D288) — shared across every file in a run so the TLS probe opens **one** handshake per
+   * `host:port` for the whole run, not one per file. Same contract as `sessionCache` directly above,
+   * and shared for the same reason: a per-file prober would satisfy the letter of "cached" while a
+   * 30-file suite still paid 30 handshakes. Omitted by single-`runProgram`-call callers, which then
+   * get their own. */
+  readonly tlsProber?: TlsProber;
   /** Precomputed, deterministic answer to "which globally-indexed test case owns each session's
    * step-splicing" (session name → that case's global test index, `testIndexOffset`-relative) —
    * the CLI computes this up front, across every file, in sorted-file/declaration order, so it
@@ -278,6 +286,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const uniqueSeq = opts.uniqueSeq ?? makeUniqueSeq();
   const testIndexOffset = opts.testIndexOffset ?? 0;
   const sessionCache = opts.sessionCache ?? new SessionCache();
+  const tlsProber = opts.tlsProber ?? new TlsProber();
   const filePath = opts.filePath ?? 'inline';
   const updateSnapshots = opts.updateSnapshots ?? false;
   const registry = await buildRegistry(program, baseDir);
@@ -300,7 +309,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length + scenarios.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
@@ -443,7 +452,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -941,6 +950,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     // applies here too, which the old snapshot design never benefited from either.
     const sessionHeaders: Record<string, string> = {};
     const cookieJar = new CookieJar();
+    const sessionFindings: Finding[] = [];
     const sessionRefs = new Map<string, SessionRef>();
     for (const sessionName of scenario.sessions) {
       const decl = config.sessions.get(sessionName);
@@ -948,6 +958,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       const outcome = await sessionCache.ensure(sessionName, decl, config, iterTc, false);
       if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
       Object.assign(sessionHeaders, outcome.headers);
+      sessionFindings.push(...outcome.securityFindings);
       cookieJar.mergeFrom(outcome.cookieJar.clone());
       const ref = sessionCache.currentRef(sessionName);
       if (ref !== undefined) sessionRefs.set(sessionName, ref);
@@ -962,6 +973,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       uniqueSeq,
       sessionHeaders,
       sessionNames: scenario.sessions,
+      sessionFindings,
       sessionRefs,
       cookieJar,
     };
@@ -1243,10 +1255,11 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   const runClock = resolveRunClock(opts.now);
   const uniqueSeq = makeUniqueSeq();
   const sessionCache = new SessionCache();
+  const tlsProber = new TlsProber();
   const registry = await buildRegistry(program, baseDir);
   const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
   const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
-  const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, filePath: baseDir, updateSnapshots: false };
+  const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, filePath: baseDir, updateSnapshots: false };
 
   const startedAt = new Date().toISOString();
   const runStart = performance.now();
@@ -1952,6 +1965,11 @@ interface TestCtx {
   readonly runClock: Date;
   readonly uniqueSeq: { next(): number };
   readonly sessionCache: SessionCache;
+  /** M128c (D288) — the run-lifetime TLS probe cache. Threaded on `TestCtx` exactly as
+   * `sessionCache` is, and for the same reason: D288 says *once per `host:port` per run*, and a
+   * prober created per file would re-handshake per file while still calling itself a run-level
+   * cache. A session's derived context inherits it through `sessionCtx`'s spread. */
+  readonly tlsProber: TlsProber;
   readonly browserManager?: BrowserManager;
   /** M4b, D15 — see `RunOptions.filePath`/`updateSnapshots`. */
   readonly filePath: string;
@@ -1979,6 +1997,11 @@ export interface SessionOutcome {
    * enterprise arc) — set from an `oauth2` session's `expires_in`, undefined for a hand-written
    * session (which has no built-in expiry concept; it still gets *reactive* refresh-on-401). */
   readonly expiresAt?: number;
+  /** M128b/D287 — what the security pack found in this session's own login responses, scanned once
+   * here rather than re-derived at every assertion. Deduplicated by rule id + detail: a session
+   * whose body makes three requests to the same host would otherwise report one `hsts-missing` per
+   * request, and the finding is about the host, not about how many times the session called it. */
+  readonly securityFindings: readonly Finding[];
 }
 
 /** Opaque handle to a `SessionCache` entry (M37, D45) — compared only by `===` identity, never
@@ -2095,10 +2118,18 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
   const headerSink: Record<string, string> = {};
   const scope = new Map<string, unknown>();
   const cookieJar = new CookieJar();
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, cookieJar };
+  const securitySink: Observation[] = [];
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, cookieJar, securitySink };
   const emptyRegistry: CallRegistry = { actions: new Map(), helpers: new Map() };
   const exec = await execSteps(decl.body, config, ctx, sessionTc, `session ${decl.name}`, emptyRegistry);
-  return { headers: headerSink, cookieJar, ok: exec.ok, ...(exec.error ? { error: exec.error } : {}), steps: exec.steps };
+  return {
+    headers: headerSink,
+    cookieJar,
+    ok: exec.ok,
+    ...(exec.error ? { error: exec.error } : {}),
+    steps: exec.steps,
+    securityFindings: scanSessionObservations(decl.name, securitySink),
+  };
 }
 
 /**
@@ -2153,6 +2184,7 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
   const src = (tc.lines[oauth2.span.start.line - 1] ?? '').trim();
 
   const fail = (error: string, request?: RequestTrace, response?: ResponseTrace): SessionOutcome => ({
+    securityFindings: [],
     headers: {},
     cookieJar,
     ok: false,
@@ -2202,6 +2234,11 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
     cookieJar,
     ok: true,
     steps: [mkStep('api', src, oauth2.span, true, start, detail, redactedRequest, redactedResponse)],
+    // D287 applies to an `oauth2` session exactly as it does to a hand-written one: the token
+    // endpoint's response is a login response, and it is the one this session actually made. Scanned
+    // from the *live* `request`/`response` above rather than the redacted pair one line up, for the
+    // reason `toObservation` gives.
+    securityFindings: scanSessionObservations(name, [toObservation(request, response)]),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
   };
 }
@@ -2421,6 +2458,7 @@ async function runTestAttemptBody(
   // the rule is defined regardless, for whenever it doesn't.
   const sessionHeaders: Record<string, string> = {};
   const cookieJar = new CookieJar();
+  const sessionFindings: Finding[] = [];
   for (const sessionName of test.sessions) {
     const decl = config.sessions.get(sessionName);
     if (!decl) {
@@ -2434,6 +2472,7 @@ async function runTestAttemptBody(
       return { kind: 'functional', name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
     }
     Object.assign(sessionHeaders, outcome.headers);
+    sessionFindings.push(...outcome.securityFindings);
     // Clone, not the live shared instance (SPEC §3.3) — this test's own subsequent cookie updates
     // must never leak back into the session cache or a concurrently-running sibling test.
     cookieJar.mergeFrom(outcome.cookieJar.clone());
@@ -2442,6 +2481,7 @@ async function runTestAttemptBody(
     ...nameCtx,
     sessionHeaders,
     sessionNames: test.sessions,
+    sessionFindings,
     cookieJar,
     ...(tc.browserManager && browserPageState ? { browser: { manager: tc.browserManager, page: browserPageState, scope: null } } : {}),
   };
@@ -2576,6 +2616,11 @@ function locatorDetail(locatorAst: LocatorAst, name: string, via: string): strin
 async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: EvalCtx, tc: TestCtx, testName: string, registry: CallRegistry): Promise<StepsExec> {
   const results: StepResult[] = [];
   let lastResponse: ResponseTrace | null = null;
+  // M128b — the security pack's `authenticated-response-cacheable` rule has to know whether the
+  // *request* carried credentials, so the pair travels together. Tracked here rather than reached
+  // for out of the step result, because `result` holds the **redacted** copy and a rule that reads
+  // a redacted `authorization` header would judge the mask instead of the request.
+  let lastRequest: RequestTrace | null = null;
   // Set only by an `ApiStep` opted into catching a connection failure (below); read by
   // `expect`/`check request connects`/`fails` via `evaluateExpect`. Reset to null on every
   // *other* `ApiStep` (including a non-opted-in one), so it can never leak across requests.
@@ -2633,6 +2678,10 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
               }
             }
             lastResponse = trace.response;
+            lastRequest = trace.request;
+            // D287's first half. Live trace, not `redacted` — the report copy carries `cookieEvents: []`
+            // at every evidence level, and that is the field every cookie rule reads.
+            ctx.securitySink?.push(toObservation(trace.request, trace.response));
             lastConnectionError = null;
             // Report visibility for retries is a standing principle here (P#5/P#16, the same one
             // `test … retry N`'s `flaky` badge already follows) — a `retry honoring` step that
@@ -2653,6 +2702,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
             const redactedMessage = tc.redactor.redact(message);
             lastResponse = null;
+            lastRequest = null;
             lastConnectionError = redactedMessage;
             // Reported `ok: true` on the `api` line itself (like every other request, whatever
             // status code it got back) — this step's job is just to attempt the request; the
@@ -2683,7 +2733,9 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
                 ? await execUiExpect(step, ctx, src, stepStart, config)
                 : step.subject.type === 'PageSubject'
                   ? await execA11yExpect(step, ctx, src, stepStart, config)
-                  : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
+                  : step.subject.type === 'ResponseSubject'
+                    ? await execSecurityExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc.tlsProber)
+                    : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
         case 'LetStmt': {
@@ -2716,6 +2768,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'WaitUntilApiStmt': {
           const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, src, stepStart, tc.pinnedAgents);
           lastResponse = waited.response;
+          lastRequest = waited.request;
           // `wait until api` never opts into catching a connection failure (checker-enforced,
           // decision 18) — reaching here always means a real response came back (a genuine
           // connection failure instead throws out of `execApi`, uncaught, straight to this
@@ -3083,6 +3136,7 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       uniqueSeq: callerCtx.uniqueSeq,
       sessionHeaders: callerCtx.sessionHeaders,
       sessionNames: callerCtx.sessionNames,
+      ...(callerCtx.sessionFindings ? { sessionFindings: callerCtx.sessionFindings } : {}),
       // Shares the caller's live jar (by reference, not cloned) — an action's own api steps read
       // and update the same cookies its caller sees on the next step, the same way it shares the
       // caller's `rng`/`redactor`/etc.
@@ -3642,7 +3696,7 @@ async function execA11yExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start
   }
   const browser = requireBrowserCtx(ctx);
   const page = await browser.page.ensurePage(browser.manager);
-  const floor = step.matcher.a11ySeverity ?? null;
+  const floor = step.matcher.severityFloor ?? null;
   const deadline = performance.now() + config.timeouts.expect;
   for (;;) {
     const violations = filterBySeverity(await runA11yScan(page), floor);
@@ -3659,7 +3713,7 @@ async function execA11yExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start
  * point is "here's enough to start fixing", not a full audit dump); the full axe-core result isn't
  * surfaced anywhere else, unlike a response body, so this is the only place worth being generous
  * with detail per item shown. */
-function describeA11yOutcome(step: ExpectStmt, floor: A11ySeverity | null, violations: readonly Finding[]): MatchOutcome {
+function describeA11yOutcome(step: ExpectStmt, floor: FindingSeverity | null, violations: readonly Finding[]): MatchOutcome {
   const kind = floor ? `${floor} a11y violation` : 'a11y violation';
   const negated = step.matcher.negated;
   const noneFound = violations.length === 0;
@@ -3674,6 +3728,241 @@ function describeA11yOutcome(step: ExpectStmt, floor: A11ySeverity | null, viola
   const shown = violations.slice(0, 5).map((v) => `  - [${v.severity}] ${v.id}: ${v.description} (${v.detail})`);
   const more = violations.length > 5 ? [`  … and ${violations.length - 5} more`] : [];
   return { ok: false, message: `expected page to have no ${kind}s, but found ${violations.length}:\n${[...shown, ...more].join('\n')}` };
+}
+
+// ---------------------------------------------------------------------------
+// `expect`/`check response has no [<severity>] security violations` (M128b, D283-D290, SPEC §9.10)
+// ---------------------------------------------------------------------------
+
+/** Flattens an observed request/response pair into the only thing `securityRules.ts` is allowed to
+ * see. Kept here rather than in that module so the rule pack stays free of `ResponseTrace` — the
+ * same boundary `a11y.ts` keeps against `PWPage`.
+ *
+ * **`cookieEvents`, not `headers['set-cookie']`.** The header map is `Record<string, string>`, so a
+ * response setting three cookies arrives there as one `\n`-joined string; the cookie rules report
+ * one finding per cookie and cannot do that from the joined form. `cookieEvents` keeps every hop's
+ * lines unjoined for exactly this reason (M88c1) — including hops *earlier in a redirect chain*,
+ * which is where the commonest login shape actually sets its session cookie. */
+/**
+ * D287's first half — scan every response a `session` block's own steps observed, once, at
+ * establishment, and label each finding with the session it came from.
+ *
+ * **No severity floor here.** The floor belongs to the assertion, which has not been written yet at
+ * establishment time and may differ between two tests using the same session. Scanning unfiltered
+ * and letting each assertion filter is the only order that lets one cached session serve both
+ * `has no security violations` and `has no critical security violations` honestly.
+ *
+ * Deduplicated on rule id + detail: a session body that makes three calls to the same host produces
+ * three identical `hsts-missing` findings, and the finding is about the host, not about how many
+ * requests the login happened to take.
+ *
+ * **The TLS rules are deliberately not fed through this channel (M128c, D297).** `o.tls` is left
+ * absent here, so `sec/tls-version-old` and `sec/tls-weak-cipher` report not-applicable for every
+ * session observation. D287's argument is cookie-shaped and does not generalize: a login response's
+ * `Set-Cookie` is a fact *only that response* carries, which is why it has to be carried forward,
+ * while a TLS protocol version is a property of the **host** that any assertion pointed at that host
+ * rediscovers directly. Probing here would therefore report the same finding twice — once prefixed
+ * `session "x" login —` and once not — for a host the assertion was already judging.
+ *
+ * What that gives up, stated rather than hidden: a suite whose session logs in over one host and
+ * asserts against another never has the login host's TLS examined. That is D286's accepted gap (an
+ * unasserted endpoint is unscanned) rather than a new one, and the fix for it is an assertion.
+ */
+function scanSessionObservations(sessionName: string, observations: readonly Observation[]): Finding[] {
+  const seen = new Map<string, Finding>();
+  for (const o of observations) {
+    for (const f of runSecurityScan(o).findings) {
+      const key = `${f.id} ${f.detail}`;
+      if (!seen.has(key)) seen.set(key, { ...f, detail: `session "${sessionName}" login — ${f.detail}` });
+    }
+  }
+  return [...seen.values()];
+}
+
+function toObservation(request: RequestTrace, response: ResponseTrace, tls?: TlsObservation): Observation {
+  return {
+    url: response.finalUrl,
+    ...(tls ? { tls } : {}),
+    headers: response.headers,
+    setCookie: response.cookieEvents.flatMap((e) => e.setCookie),
+    // **Request headers are lowercased here; response headers already are.** The asymmetry is real
+    // and easy to miss: `http.ts` normalizes what comes back, but `setHeader` deliberately preserves
+    // the case an author *wrote* on the way out (`header "Authorization" is …` stays `Authorization`)
+    // so the report shows the request as typed. A rule doing a bare `requestHeaders['authorization']`
+    // lookup therefore misses every real bearer-auth suite in existence while still passing a test
+    // that happens to spell the header in lower case — which is exactly how this was found.
+    requestHeaders: Object.fromEntries(Object.entries(request.headers).map(([k, v]) => [k.toLowerCase(), v])),
+  };
+}
+
+/**
+ * D288's connection, made only when it can tell us something.
+ *
+ * Plaintext responses are skipped outright rather than probed-and-refused: `undefined` here means
+ * *nobody looked*, which is the honest state for an http response and the one the two TLS rules
+ * report as a plain not-applicable. Sending a probe at an http URL just to receive a refusal would
+ * manufacture an `ok: false` — "the probe ran and could not answer" — for a response where nothing
+ * was ever worth asking.
+ *
+ * `timeouts.step` is the budget, not a constant of its own. A probe is a connection to the same host
+ * the step just talked to, so the step's own patience is the number that already describes how long
+ * this suite is willing to wait on that host; a second knob would be one more thing to keep in sync
+ * for no new information.
+ */
+async function probeTlsFor(finalUrl: string, floor: FindingSeverity | null, config: ResolvedConfig, prober: TlsProber): Promise<TlsObservation | undefined> {
+  if (!finalUrl.startsWith('https:')) return undefined;
+  // **Not probed when the floor has already discarded both rules that read it.** D296 narrows the
+  // pack *before* applicability, so `expect response has no critical security violations` never
+  // consults a TLS rule at all — and opening a handshake whose answer is then thrown away is a
+  // connection the assertion did not ask for. That is a small cost and a large principle: this whole
+  // milestone's safety story is that tflw's second connection is deliberate, declared and needed, and
+  // one made for an assertion that cannot use it is none of the three.
+  //
+  // Derived from the pack rather than from a hardcoded `'serious'`, so re-grading either rule cannot
+  // silently leave this reading the old severity.
+  if (floor && !SECURITY_RULES.some((r) => r.id.startsWith('sec/tls-') && SEVERITY_RANK[r.severity] >= SEVERITY_RANK[floor])) return undefined;
+  return prober.probe(finalUrl, {
+    timeoutMs: config.timeouts.step,
+    insecure: config.insecure,
+    allowHosts: config.allowHosts,
+    authorizedTargets: config.authorizedTargets,
+  });
+}
+
+/**
+ * Runs the pack and turns the result into a step outcome.
+ *
+ * **No retry, unlike `execA11yExpect` directly above.** That one re-scans a live DOM on every poll
+ * because a page still hydrating can legitimately fix its own accessibility gaps inside the
+ * assertion's budget. This judges a response that has already been received in full: re-polling
+ * cannot change a header that already arrived, so a retry loop would only turn a fast failure into
+ * a slow one. Determinable, not grilled — D290 records it.
+ */
+async function execSecurityExpect(
+  step: ExpectStmt,
+  request: RequestTrace | null,
+  response: ResponseTrace | null,
+  ctx: EvalCtx,
+  src: string,
+  start: number,
+  config: ResolvedConfig,
+  tlsProber: TlsProber,
+): Promise<StepResult> {
+  if (step.matcher.name !== 'hasNoSecurityViolations') {
+    throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`response\` — only \`has no [<severity>] security violations\` (SPEC §9.10)`);
+  }
+  // `TF039`'s runtime half. `checkResponseScopes` already rejects this statically (`readsResponse`
+  // lists `ResponseSubject`), so reaching here means the file was run without a check pass.
+  if (!response || !request) {
+    throw new RuntimeError('no response yet — an `api` step must run before `expect response has no … security violations`');
+  }
+  const floor = step.matcher.severityFloor ?? null;
+  const tls = await probeTlsFor(response.finalUrl, floor, config, tlsProber);
+  const result = runSecurityScan(toObservation(request, response, tls), floor);
+  // D287's second half. The session's own login response was scanned at establishment, unfiltered;
+  // this assertion's floor is applied to those findings now, so one cached session can serve a
+  // `has no security violations` in one test and a `has no critical security violations` in another
+  // without either being told the other's answer.
+  const sessionFindings = filterBySeverity(ctx.sessionFindings ?? [], floor);
+  const outcome = describeSecurityOutcome(step, floor, result, sessionFindings);
+  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+}
+
+/**
+ * **No silent caps (M128c).** A rule that stood down because its *precondition* is unmet needs no
+ * announcement — that is the ordinary, expected third state, and listing seven of them on every
+ * green line would bury the counts. A rule that stood down because the instrument it depends on
+ * **failed** is a different thing: the assertion did less work than it was asked to, and reporting
+ * only "not applicable" for that is the shape `REVIEW_FINDINGS.md` keeps re-filing — a control that
+ * reports success over something it silently skipped.
+ *
+ * Only the TLS rules can produce this today (a refused handshake, a timeout, a certificate the run
+ * declines to trust, a target no `authorized target` covers), and grouping by reason means the usual
+ * case — both rules blocked by one connection failure — is one line rather than two.
+ *
+ * Deliberately appended to the **passing** message too. A green `expect response has no security
+ * violations` whose TLS probe never connected is exactly the assertion a reader would otherwise
+ * believe had checked the protocol version.
+ */
+function degradedNote(result: ScanResult): string {
+  const byReason = new Map<string, string[]>();
+  for (const n of result.notApplicable) {
+    // The static text means "the precondition did not hold", which is not a degradation. Anything
+    // else is a rule reporting that it *could not find out*.
+    if (n.because === n.rule.appliesWhen) continue;
+    const list = byReason.get(n.because) ?? [];
+    list.push(n.rule.id);
+    byReason.set(n.because, list);
+  }
+  if (byReason.size === 0) return '';
+  return [...byReason].map(([because, ids]) => `\n  note: ${ids.join(', ')} could not be evaluated — ${because}`).join('');
+}
+
+/** The three-count line D292 requires, in M126's shape — every count on the same line as its
+ * denominator, so nobody has to hold two numbers from two places in their head to know what the
+ * assertion actually did. */
+function scanCounts(result: ScanResult): string {
+  return `${result.considered} rule${result.considered === 1 ? '' : 's'} — ${result.applicable.length} applicable, ${result.notApplicable.length} not applicable, ${result.findings.length} violation${result.findings.length === 1 ? '' : 's'}`;
+}
+
+/**
+ * **D285 — zero applicable rules is a failure, not a pass.**
+ *
+ * This is `M127`'s "an empty shard is an error, not an early return" applied one layer up, against
+ * what `REVIEW_FINDINGS.md` calls its oldest recurring shape: a control that reports success over
+ * nothing. An assertion where every rule stood down had no power to fail, so greening it would
+ * teach a reader that this endpoint was checked and found clean when it was never checked at all.
+ *
+ * It is also what makes the target choice self-enforcing. `expect response has no critical security
+ * violations` against a plain JSON GET that sets no cookie and carries no CORS header engages
+ * nothing whatsoever (D296 narrows the pack by the floor first) — and rather than collect a green
+ * there, the author is told which preconditions went unmet, which is the sentence that explains
+ * both what is wrong and what to write instead.
+ */
+function describeSecurityOutcome(step: ExpectStmt, floor: FindingSeverity | null, result: ScanResult, sessionFindings: readonly Finding[]): MatchOutcome {
+  const kind = floor ? `${floor} security violation` : 'security violation';
+  const counts = scanCounts(result);
+  const findings = [...sessionFindings, ...result.findings];
+  // D285 is about *this response's* scan having no power to fail — but a session finding is a real
+  // failure this assertion is entitled to report, so it takes precedence over the no-power verdict.
+  // Ordering these the other way round would let a suite whose session cookie lacks `HttpOnly`
+  // escape with a "nothing applied" message, which is the exact miss D287 exists to prevent.
+  if (result.applicable.length === 0 && findings.length === 0) {
+    // Deliberately fails in the negated case too. `check response has not no … violations` is a
+    // strange thing to write, but if someone writes it, "nothing applied" is still the answer, and
+    // an assertion with no power to fail also has no power to succeed at finding something.
+    const why = result.notApplicable.map((n) => `  - ${n.rule.id} applies when: ${n.because}`);
+    return {
+      ok: false,
+      message:
+        `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}security rule applied to this response (${counts}).\n` +
+        `${why.join('\n')}\n` +
+        `  Point it at a response one of these rules can judge${floor ? ', or lower the severity floor' : ''} (SPEC §9.10, D285).`,
+    };
+  }
+  const negated = step.matcher.negated;
+  const noneFound = findings.length === 0;
+  const ok = negated ? !noneFound : noneFound;
+  const note = degradedNote(result);
+  // No truncation, unlike the a11y listing directly above, and the difference is the pack size: a
+  // real page can carry dozens of instances of one axe rule, while this pack is twelve rules and can
+  // physically produce only a handful more findings than that. Cutting at five here would hide a
+  // finding for no benefit.
+  const listing = (): string => findings.map((v) => `  - [${v.severity}] ${v.id}: ${v.description} (${v.detail})`).join('\n');
+  if (ok) {
+    const state = negated ? `has ${findings.length} ${kind}${findings.length === 1 ? '' : 's'}` : `has no ${kind}s`;
+    // **A passing *negated* assertion lists what it found (M128c).** `not has no … violations` means
+    // "something must be wrong here", so a green line saying only `has 2 critical security
+    // violations` withholds the one fact the assertion exists to establish — and the report is then
+    // the only record, so nothing downstream can recover it either. It is the same silent-coverage
+    // shape D300 closes for a blocked rule, one state over. The plain form's pass has nothing to
+    // list, by construction.
+    return { ok: true, message: `response ${state} — ${counts}${findings.length > 0 ? `:\n${listing()}` : ''}${note}` };
+  }
+  if (negated) {
+    return { ok: false, message: `expected response to have at least one ${kind}, but found none — ${counts}${note}` };
+  }
+  return { ok: false, message: `expected response to have no ${kind}s, but found ${findings.length} — ${counts}:\n${listing()}${note}` };
 }
 
 /** Gap #15 (TFLW-GAPS.md): a plain (non-quantified) `body.<path>` assertion's own detail text can
@@ -3859,10 +4148,10 @@ async function execWaitUntilApi(
   src: string,
   start: number,
   pinnedAgents?: KeepAliveAgents,
-): Promise<{ result: StepResult; response: ResponseTrace | null }> {
+): Promise<{ result: StepResult; response: ResponseTrace | null; request: RequestTrace | null }> {
   const deadline = performance.now() + config.timeouts.wait;
   let attempt = 0;
-  let last: { redacted: ApiExec['redacted']; response: ResponseTrace; message: string } | null = null;
+  let last: { redacted: ApiExec['redacted']; response: ResponseTrace; request: RequestTrace; message: string } | null = null;
   for (;;) {
     // If the deadline already passed (e.g. eaten by the previous poll + inter-poll sleep), report the
     // timeout using the last completed poll's result rather than firing off another request — issuing
@@ -3874,6 +4163,7 @@ async function execWaitUntilApi(
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last.redacted.request, last.redacted.response),
         response: last.response,
+        request: last.request,
       };
     }
     attempt++;
@@ -3896,15 +4186,17 @@ async function execWaitUntilApi(
       return {
         result: mkStep('wait', src, step.span, true, start, redactor.redact(detail), redacted.request, redacted.response),
         response: trace.response,
+        request: trace.request,
       };
     }
     const lastMessage = outcomes.find((o) => !o.ok)!.message;
-    last = { redacted, response: trace.response, message: lastMessage };
+    last = { redacted, response: trace.response, request: trace.request, message: lastMessage };
     if (performance.now() >= deadline) {
       const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${lastMessage}`;
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), redacted.request, redacted.response),
         response: trace.response,
+        request: trace.request,
       };
     }
     await sleep(WAIT_POLL_INTERVAL_MS);
@@ -4075,6 +4367,15 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
   // intercepts every `PageSubject` expect/check (SPEC §9.8); reached only via `capture page as x`.
   if (subject.type === 'PageSubject') {
     throw new RuntimeError('`page` is not a capturable value — only `expect`/`check page has no … a11y violations` (SPEC §9.8)');
+  }
+  // M128b, same shape one subject over: `execSecurityExpect` intercepts every `ResponseSubject`
+  // expect/check, so this is reached only via `capture response as x`. Named separately from `page`
+  // rather than folded in with it, because the useful half of the message is different — a reader
+  // who wrote this wanted *part* of the response, and the parts have names.
+  if (subject.type === 'ResponseSubject') {
+    throw new RuntimeError(
+      '`response` is not a capturable value — only `expect`/`check response has no … security violations` (SPEC §9.10). To bind part of it, name the part: `capture body.…`, `capture status`, `capture header "…"`',
+    );
   }
   if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion/capture');
   switch (subject.type) {

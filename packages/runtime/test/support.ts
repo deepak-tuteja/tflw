@@ -116,6 +116,10 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     sessions: new Map(),
     mtls: null,
     allowHosts: null,
+    // M128b — the runtime never reads this (D291 is enforced by the checker, and the CLI is what
+    // prints it); it is here so a fixture config is a complete `ResolvedConfig` rather than one that
+    // happens to compile.
+    authorizedTargets: [],
     evidenceLevel: 'full',
     redactPatterns: [],
     viewport: null,
