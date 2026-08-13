@@ -3772,7 +3772,7 @@ function scanSessionObservations(sessionName: string, observations: readonly Obs
   const seen = new Map<string, Finding>();
   for (const o of observations) {
     for (const f of runSecurityScan(o).findings) {
-      const key = `${f.id} ${f.detail}`;
+      const key = `${f.id}\u0000${f.detail}`;
       if (!seen.has(key)) seen.set(key, { ...f, detail: `session "${sessionName}" login — ${f.detail}` });
     }
   }
