@@ -814,6 +814,19 @@ interface RunArgs {
    * if the active env has `insecure true` in effect — a CI policy gate against accidentally
    * shipping a TLS-verification bypass. No config representation, `run` only. */
   readonly forbidInsecure: boolean;
+  /** `--allow-public-target <origin>` (M131a, D340) — D21 §3.2(3)'s affirmation that an
+   * originating scan may point at a host outside the private address ranges.
+   *
+   * **Repeatable, origin-valued, and with no `tflw.config` representation, which is the entire
+   * point of it.** `authorized target` is the declaration layer and lives in config; this is the
+   * layer that says a *committed* config can never by itself make CI scan the internet, so a
+   * config key here would delete the control. Origin-valued rather than a bare boolean because a
+   * boolean affirms a category and would survive any later edit of the config, silently covering
+   * whatever new host somebody points the suite at — `TF061`'s argument reused: nobody can affirm
+   * the scope of a target they have not named. No `--reason`: D291 already puts that in config,
+   * where it travels with the report artifact, and a second reason on the command line could only
+   * duplicate or contradict it with no defined winner. */
+  readonly allowPublicTargets: readonly string[];
   /** Raw `--evidence` text, validated in `runCommand` against `EVIDENCE_LEVELS` (decision 101c) —
    * overrides `tflw.config`'s `evidence` key for this run only. */
   readonly evidenceRaw?: string | undefined;
@@ -879,6 +892,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let noColor = false;
   let verbose = false;
   let forbidInsecure = false;
+  const allowPublicTargets: string[] = [];
   let evidenceRaw: string | undefined;
   let failed = false;
   let bail = false;
@@ -910,6 +924,11 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--no-color') noColor = true;
     else if (a === '--verbose') verbose = true;
     else if (a === '--forbid-insecure') forbidInsecure = true;
+    // Repeatable (D340): each occurrence names exactly one origin. No comma-separated form and no
+    // wildcard, for `TF061`'s reason — a list is one string an author can extend without rereading,
+    // and a wildcard is a claim whose scope its author could not have known when they wrote it.
+    else if (a === '--allow-public-target') allowPublicTargets.push(flagValue(argv, ++i, a));
+    else if (a.startsWith('--allow-public-target=')) allowPublicTargets.push(inlineFlagValue(a, '--allow-public-target'));
     else if (a === '--evidence') evidenceRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--evidence=')) evidenceRaw = inlineFlagValue(a, '--evidence');
     else if (a === '--failed') failed = true;
@@ -958,6 +977,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     noColor,
     verbose,
     forbidInsecure,
+    allowPublicTargets,
     evidenceRaw,
     failed,
     bail,
@@ -1012,6 +1032,11 @@ async function loadAndValidate(
   envFlag: string | undefined,
   color: boolean,
   onFileDiagnostics?: (file: string, source: string, diagnostics: readonly Diagnostic[]) => void,
+  /** `--allow-public-target` values this invocation carried (M131a, D340/D345), for `TF065`/`TF066`.
+   *  Trailing and defaulted rather than threaded through every caller, because it is the one input
+   *  here that comes from the command line rather than from the project: `migrate` and the load
+   *  worker have no such affirmation to pass, and `[]` states that truthfully. */
+  allowPublicTargets: readonly string[] = [],
 ): Promise<ValidatedProject | number> {
   // 1. Load + parse tflw.config (declaration-only dialect).
   const configPath = join(cwd, 'tflw.config');
@@ -1084,7 +1109,19 @@ async function loadAndValidate(
   // diagnostic quotes back the string the author actually wrote. `resolved.apiBaseUrl` is already
   // interpolation-resolved, which is what makes an `api "https://{API_HOST}/v1"` env checkable here
   // at all rather than skipped — the interpolation happened before this line.
-  const envAuthorizedTargets = { envName: resolved.envName, targets: resolved.authorizedTargets, apiBaseUrl: resolved.apiBaseUrl };
+  //
+  // M131a/D343 adds `services`, and it is the field that closes the hole this milestone found while
+  // scoping: `TF060` gated only the default `api` base, so a scan against a declared `@service`
+  // origin required no declaration and no affirmation — a different host, entirely ungated. Read
+  // off `resolved.services` for the same reason the rest of this object is read off `resolved`:
+  // `resolve.ts` has already composed `defaults` + `env`, and a second composition here is the
+  // "two copies of a matching rule" this file keeps warning about.
+  const envAuthorizedTargets = {
+    envName: resolved.envName,
+    targets: resolved.authorizedTargets,
+    apiBaseUrl: resolved.apiBaseUrl,
+    services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
+  };
   const configEnvDiags = [
     ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
@@ -1153,6 +1190,10 @@ async function loadAndValidate(
       // same reason: which hosts a suite may reach is a whole-suite fact that a per-step diagnostic
       // has to be told.
       envAllowHosts,
+      // M131a/D340 — `TF065`/`TF066`. The one option in this list that describes the *invocation*
+      // rather than the project, which is exactly what D21 §3.2(3) asks for: the affirmation has to
+      // come from somewhere a committed `tflw.config` cannot reach.
+      allowPublicTargets,
       // M128b/D291 — `TF060`. Same derivation and the same reason again: whether this suite is
       // permitted to scan its target is a whole-suite fact, and the per-assertion diagnostic that
       // reports it has to be told.
@@ -1340,7 +1381,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     browserEngine = args.browserRaw as BrowserEngine;
   }
 
-  const loaded = await loadAndValidate(cwd, args.files, args.env, color);
+  const loaded = await loadAndValidate(cwd, args.files, args.env, color, undefined, args.allowPublicTargets);
   if (typeof loaded === 'number') return loaded;
   const { parsedFiles, environ, configLines } = loaded;
   // `--evidence`/`--log-output`/`--log-level` each override one `tflw.config` key for this run
@@ -1351,6 +1392,10 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // no `to …` clause, so an explicit per-statement destination is never touched here.
   const configured: ResolvedConfig = {
     ...loaded.resolved,
+    // M131a/D340 — the only path by which this field is ever non-empty. `resolveConfig` hard-codes
+    // `[]` because its input is a file; the affirmation has to arrive from the command line or the
+    // control it implements does not exist.
+    allowPublicTargets: args.allowPublicTargets,
     ...(evidenceArg !== undefined ? { evidenceLevel: evidenceArg } : {}),
     ...(logOutputArg !== undefined ? { logDestination: logOutputArg } : {}),
     ...(logLevelArg !== undefined ? { logLevel: logLevelArg } : {}),
@@ -1644,7 +1689,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
               ...(fileEmit ? { emit: fileEmit } : {}),
             }),
             ...Array.from({ length: loadWorkers - 1 }, (_unused, i2) =>
-              runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(seed), nowRaw: now, demoBaseUrl: activeDemo?.baseUrl }, i2 + 1, loadWorkers, {
+              runShardInChildProcess({ cwd, file, env: args.env, seedRaw: String(seed), nowRaw: now, demoBaseUrl: activeDemo?.baseUrl, allowPublicTargets: args.allowPublicTargets }, i2 + 1, loadWorkers, {
                 abortSignal: abortController.signal,
                 onProgress: (snapshot) => printShardProgress(i2 + 1, snapshot),
               }),
@@ -1825,6 +1870,12 @@ interface LoadWorkerStartMessage {
    * the reserved URL itself; it must never start a second server, or each shard would be measuring
    * a different one. Absent for every run against a real service. */
   readonly demoBaseUrl?: string;
+  /** M131a/D340 — the parent's `--allow-public-target` values. The child re-validates the same file
+   * from disk, so without this it would run `checkPublicTargets` with an empty affirmation list and
+   * refuse a file the parent had just accepted. **The affirmation belongs to the invocation, and a
+   * forked shard is the same invocation**; this is the IPC equivalent of the flag not living in
+   * config, not an exception to it — nothing here reads it from a file. */
+  readonly allowPublicTargets?: readonly string[];
 }
 
 /** M32 (R5) — sent by the parent once its own `abortSignal` fires (Ctrl-C), so a running child
@@ -1864,7 +1915,7 @@ async function loadWorkerCommand(): Promise<number> {
         try {
           let seedArg: number | undefined;
           if (msg.seedRaw !== undefined) seedArg = Number(msg.seedRaw);
-          const loaded = await loadAndValidate(msg.cwd, [msg.file], msg.env, false);
+          const loaded = await loadAndValidate(msg.cwd, [msg.file], msg.env, false, undefined, msg.allowPublicTargets ?? []);
           if (typeof loaded === 'number') {
             process.send?.({ type: 'error', message: `worker failed to load ${msg.file}` } satisfies LoadWorkerToParentMessage);
             resolvePromise(EXIT_USAGE);
@@ -2033,6 +2084,14 @@ interface CheckArgs {
   readonly noColor: boolean;
   /** `--format json` (decision 94) — only `json` is recognized; anything else is a usage error. */
   readonly format?: string | undefined;
+  /** `--allow-public-target <origin>`, repeatable — the same flag `run` takes, and `check` takes it
+   * for a reason that is not ceremony (D345): `check` answers *"will this run?"*, and after D342
+   * the answer genuinely depends on it. Without it a project legitimately scanning a public staging
+   * host could never get a clean `tflw check`, which would train everyone to ignore its output —
+   * and an output everyone ignores is the failure mode this whole arc's diagnostics exist against.
+   * Refused for `migrate`, like `--format`: migrate rewrites source and runs no checker pass whose
+   * verdict this could change. */
+  readonly allowPublicTargets: readonly string[];
 }
 
 /** Shared by `tflw check` and `tflw migrate`, which take *almost* the same flags — `command` is
@@ -2048,6 +2107,7 @@ function parseCheckArgs(argv: string[], command: 'check' | 'migrate'): CheckArgs
   let env: string | undefined;
   let noColor = false;
   let format: string | undefined;
+  const allowPublicTargets: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = flagValue(argv, ++i, a);
@@ -2056,10 +2116,13 @@ function parseCheckArgs(argv: string[], command: 'check' | 'migrate'): CheckArgs
     else if (a === '--format' || a.startsWith('--format=')) {
       if (command !== 'check') unknownFlag(command, a);
       format = a === '--format' ? flagValue(argv, ++i, a) : inlineFlagValue(a, '--format');
+    } else if (a === '--allow-public-target' || a.startsWith('--allow-public-target=')) {
+      if (command !== 'check') unknownFlag(command, a);
+      allowPublicTargets.push(a === '--allow-public-target' ? flagValue(argv, ++i, a) : inlineFlagValue(a, '--allow-public-target'));
     } else if (a.startsWith('--')) unknownFlag(command, a);
     else files.push(a);
   }
-  return { files, env, noColor, format };
+  return { files, env, noColor, format, allowPublicTargets };
 }
 
 /** Validate-only: the exact same parse+checker pipeline `tflw run` runs before it executes
@@ -2095,15 +2158,22 @@ async function checkCommand(argv: string[]): Promise<number> {
     // Paths are relative to the cwd and POSIX-separated — text output matches the platform, a
     // machine contract should not.
     const collected: { file: string; diagnostics: Diagnostic[] }[] = [];
-    const loaded = await loadAndValidate(cwd, args.files, args.env, false, (file, _source, diagnostics) => {
-      collected.push({ file: relative(cwd, file).split('\\').join('/'), diagnostics: [...diagnostics] });
-    });
+    const loaded = await loadAndValidate(
+      cwd,
+      args.files,
+      args.env,
+      false,
+      (file, _source, diagnostics) => {
+        collected.push({ file: relative(cwd, file).split('\\').join('/'), diagnostics: [...diagnostics] });
+      },
+      args.allowPublicTargets,
+    );
     process.stdout.write(JSON.stringify(collected) + '\n');
     return typeof loaded === 'number' ? loaded : EXIT_OK;
   }
 
   const color = args.noColor ? false : process.stdout.isTTY === true;
-  const loaded = await loadAndValidate(cwd, args.files, args.env, color);
+  const loaded = await loadAndValidate(cwd, args.files, args.env, color, undefined, args.allowPublicTargets);
   if (typeof loaded === 'number') return loaded;
 
   const n = loaded.parsedFiles.length;
@@ -3054,7 +3124,8 @@ function printUsage(): void {
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
       '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]',
-      '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--evidence full|headers-only|none] [--log-output console|html|both|none]',
+      '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
+      '            [--log-output console|html|both|none]',
       '            [--log-level debug|info|warn|error]',
       '                                                      run .tflw tests (default: all under cwd), functional and workload-bearing (a `ramp to …`',
       '                                                      line, or another of the 5 workload shapes) alike, in file declaration order — a `parallel`/',
@@ -3073,6 +3144,8 @@ function printUsage(): void {
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
       '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',
       '                                                      --evidence <level> how much request/response detail the report keeps: full (default), headers-only, none',
+      '                                                      --allow-public-target <origin> affirms an originating scan may reach a host outside the private',
+      '                                                      ranges (SPEC §3.10, TF065); repeatable, must match an `authorized target`; no tflw.config key by design',
       '                                                      --log-output <dest> where a bare `log "…"` goes: console|html|both|none',
       '                                                      --log-level <level> minimum level a `log` step must clear to be rendered: debug|info|warn|error',
       '                                                      --parallel <n> runs up to n *files* concurrently in this process (default: tflw.config\'s `workers`)',
@@ -3083,9 +3156,11 @@ function printUsage(): void {
       '                                                      tests render inline alongside functional ones, no separate load-* artifacts (M56)',
       '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
       '                                                      Ctrl-C flushes a partial report; exit 3 = inconclusive (generator saturated), 130 = aborted, else 0/1',
-      '  tflw check [files...] [--env <name>] [--no-color] [--format json]',
+      '  tflw check [files...] [--env <name>] [--no-color] [--format json] [--allow-public-target <origin>]',
       '                                                      validate only — no execution, no secrets needed;',
       '                                                      --format json is for editor integrations (VS Code)',
+      '                                                      --allow-public-target <origin> the same affirmation `run` takes, so a suite that legitimately',
+      '                                                      scans a public host can still get a clean check (repeatable)',
       '  tflw init [--load]                                 scaffold tflw.config + example.tflw',
       '                                                      --load also scaffolds load.tflw (a workload-bearing `test`, M29/M50)',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',

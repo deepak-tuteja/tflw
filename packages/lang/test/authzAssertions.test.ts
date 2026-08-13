@@ -239,7 +239,7 @@ test('the pass is wired into `checkProgram`, not merely exported', () => {
 });
 
 test('TF060 gates the authorization matcher too, and names the scan it refused', () => {
-  const opts = { envAuthorizedTargets: { envName: 'local', targets: [], apiBaseUrl: 'https://localhost:8443/v1' } };
+  const opts = { envAuthorizedTargets: { envName: 'local', targets: [], apiBaseUrl: 'https://localhost:8443/v1', services: [] } };
   const found = checkProgram(program(`test "t" as shopper\n  api GET /orders/1\n  ${ASSERT}\n`), opts);
   const gate = found.find((d) => d.code === Codes.SECURITY_ASSERTION_UNAUTHORIZED);
   assert.ok(gate, `expected TF060, got ${found.map((d) => d.code).join(', ')}`);

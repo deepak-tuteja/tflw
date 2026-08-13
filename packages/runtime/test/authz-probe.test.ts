@@ -25,7 +25,13 @@ import {
 import { CookieJar } from '../src/cookieJar.js';
 import type { RequestTrace, ResponseTrace } from '../src/types.js';
 
-const POLICY: ProbePolicy = { timeoutMs: 5_000, allowHosts: null, insecure: false, probeMutating: false };
+// `api.test` is a public origin as far as `classifyAddress` is concerned — RFC 6761 reserves the
+// name, but D338 grants a name-based exemption to `localhost` and nothing else, so every probe in
+// this file needs the affirmation D21 §3.2(3) asks for. Stating it here rather than moving the
+// fixtures to loopback is deliberate: these tests describe a suite scanning a host it does not own
+// the address space of, which is the case the gate exists for, and a file that quietly sidestepped
+// the gate would stop noticing the day the gate broke.
+const POLICY: ProbePolicy = { timeoutMs: 5_000, allowHosts: null, insecure: false, probeMutating: false, allowPublicTargets: ['https://api.test'] };
 
 function req(over: Partial<RequestTrace> = {}): RequestTrace {
   return {
@@ -269,6 +275,76 @@ test('D325: cookie-borne is read off the principal’s own establishment outcome
   assert.equal(isCookieBorne(principal('peer', { headers: { authorization: 'Bearer A' }, cookieJar: jar }), origin), false, 'case-insensitively');
   assert.equal(isCookieBorne(principal(ANONYMOUS), origin), false);
   assert.equal(isCookieBorne(principal('shopper', { cookieJar: jarWith('https://elsewhere.test', 'sid=s') }), origin), false, 'cookies for another origin are not an identity here');
+});
+
+// ---------------------------------------------------------------------------
+// `TF065`'s runtime door — D21 §3.2(3) (M131a, D342). The load-bearing half, because it judges the
+// origin the packet is actually going to rather than one a config predicted on somebody's laptop.
+// ---------------------------------------------------------------------------
+
+test('a public origin with no affirmation is refused, and sends NOTHING', async () => {
+  const sender = recordingSender();
+  const prober = new AuthzProber(sender.send);
+  const probes = await prober.probeAll(req(), ['a1'], [principal('mallory')], { ...POLICY, allowPublicTargets: [] });
+
+  assert.equal(prober.sentCount, 0, 'a refused scan must put nothing on the wire — the whole control is the absence of these packets');
+  assert.equal(probes[0]!.outcome.kind, 'not-probed');
+  assert.match((probes[0]!.outcome as { reason: string }).reason, /TF065/);
+  assert.match((probes[0]!.outcome as { reason: string }).reason, /--allow-public-target https:\/\/api\.test/);
+});
+
+test('the refusal is checked before the mutating opt-in, and before any session is established', async () => {
+  // Ordering is a real claim, not a detail: whether this run may talk to that host at all is a
+  // different question from what it would send, and answering the second first would cost a session
+  // establishment (and its credential) for a scan that was never permitted.
+  const sender = recordingSender();
+  const probes = await new AuthzProber(sender.send).probeAll(req({ method: 'DELETE' }), ['a1'], [principal('mallory', { unavailable: 'login returned 500' })], {
+    ...POLICY,
+    allowPublicTargets: [],
+  });
+  const reason = (probes[0]!.outcome as { reason: string }).reason;
+  assert.match(reason, /TF065/);
+  assert.doesNotMatch(reason, /probe mutating/);
+  assert.doesNotMatch(reason, /could not be established/);
+});
+
+test('every principal is refused, so the assertion loses all power to fail and goes red (D285)', async () => {
+  // The gate is fail-closed by construction rather than by a second rule: with no principal probed,
+  // `runAuthzScan` finds nothing applicable, and `describeAuthzOutcome` already reports "no power to
+  // fail" as a *failure*. A refusal that let the assertion pass green with a note would be a safety
+  // control whose entire observable effect was a line of prose.
+  const sender = recordingSender();
+  const probes = await new AuthzProber(sender.send).probeAll(req(), ['a1'], probeOrder([principal('mallory'), principal(ANONYMOUS)]), {
+    ...POLICY,
+    allowPublicTargets: [],
+  });
+  assert.equal(probes.length, 2);
+  assert.ok(probes.every((p) => p.outcome.kind === 'not-probed'));
+});
+
+test('a loopback origin needs no affirmation, however it is written', async () => {
+  for (const url of ['http://localhost:4001/v1/orders/a1', 'http://127.0.0.1:4001/v1/orders/a1', 'http://[::1]:4001/v1/orders/a1', 'http://10.1.2.3/v1/orders/a1']) {
+    const sender = recordingSender();
+    const prober = new AuthzProber(sender.send);
+    await prober.probeAll(req({ url }), ['a1'], [principal('mallory')], { ...POLICY, allowPublicTargets: [] });
+    assert.equal(prober.sentCount, 1, url);
+  }
+});
+
+test('the affirmation matches by origin, so a different port does not carry over', async () => {
+  const sender = recordingSender();
+  const prober = new AuthzProber(sender.send);
+  const probes = await prober.probeAll(req(), ['a1'], [principal('mallory')], { ...POLICY, allowPublicTargets: ['https://api.test:8443'] });
+  assert.equal(prober.sentCount, 0);
+  assert.match((probes[0]!.outcome as { reason: string }).reason, /TF065/);
+});
+
+test('a URL that will not parse is refused rather than assumed private', async () => {
+  const sender = recordingSender();
+  const prober = new AuthzProber(sender.send);
+  const probes = await prober.probeAll(req({ url: 'not a url' }), ['a1'], [principal('mallory')], POLICY);
+  assert.equal(prober.sentCount, 0);
+  assert.match((probes[0]!.outcome as { reason: string }).reason, /TF065/);
 });
 
 // ---------------------------------------------------------------------------

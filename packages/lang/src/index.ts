@@ -56,6 +56,7 @@ export {
   checkHoldWindows,
   checkAbsoluteUrls,
   checkAuthorizedTargets,
+  checkPublicTargets,
   checkAuthzAssertions,
   identityCensus,
   type IdentityCensus,
@@ -70,6 +71,10 @@ export {
   type FileReference,
 } from './checker.js';
 export { hostMatchesAllowPattern } from './allowHostsPattern.js';
+// M131a/D338 — exported for `@tflw/runtime`, which asks the same question of a URL the checker
+// could not predict. The two halves of `TF065` must classify identically or the gate means one
+// thing at `tflw check` and another at the socket; one function, two callers, no second table.
+export { classifyAddress, type AddressClass } from './addressClass.js';
 // M125b1 (`FU-18`, D265) — exported for `@tflw/runtime`, which must agree with the lexer about what
 // "absolute" means or it will concatenate a base URL onto something the lexer already accepted as a
 // whole address. Same reason `hostMatchesAllowPattern` is exported one line above.

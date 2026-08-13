@@ -152,6 +152,34 @@ Fails **before any test runs** if `insecure true` (TLS verification disabled —
 [Config & environments](/guide/config)) is active for the env actually running. Use it in CI to
 make sure a self-signed-cert workaround never silently ships as the default for a shared pipeline.
 
+## `--allow-public-target` — the affirmation CI cannot commit
+
+```sh
+npx tflw run --allow-public-target https://stg.example.com
+```
+
+Required before an **originating** scan — `expect response has no authorization violations`, which
+re-issues your request under every other declared principal — may reach a host outside the private
+address ranges. Missing, it is `TF065`; naming an origin the run does not scan or does not declare,
+`TF066`.
+
+The point of it being a flag is what it is *not*: there is no `tflw.config` key, and there will not
+be one. `authorized target` (the declaration, in config) says *what* may be scanned and why;
+this says *this invocation* is permitted to do it. A config is a file you can merge into `main`, so
+if it could grant both, a pull request could make your pipeline scan the internet on its own.
+
+Two consequences for a pipeline:
+
+- **Put it in the CI job for the environment that needs it, not in a shared base config.** A flag
+  parked in every job is a flag that affirms nothing, and it will silently cover whatever host
+  someone points that env at later — which is why it takes an *origin* and not a bare `--yes`.
+- **`tflw check` accepts it too**, so a lint job for a suite that scans a public staging host can
+  still come back clean. `check` still sends nothing; the flag only changes which diagnostics it
+  reports.
+
+A `has no security violations` assertion needs no flag at all — it inspects a response your suite
+already asked for, so there is no extra packet to authorize.
+
 ## Replaying failures — `--failed` and `--bail`
 
 ```sh

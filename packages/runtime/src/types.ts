@@ -88,6 +88,17 @@ export interface ResolvedConfig {
    * empty list here means "no security assertion in this suite is permitted to run", which is the
    * same thing the absent case means. There is nothing to distinguish. */
   readonly authorizedTargets: readonly AuthorizedTarget[];
+  /** `--allow-public-target <origin>`, repeatable — D21 §3.2(3)'s affirmation (M131a, D340).
+   *
+   * **The one field on this object that no `tflw.config` key can ever set, and that is the whole
+   * feature.** `resolveConfig` always produces `[]` here; only the CLI overlays real values, from
+   * the command line. Anything that lets a committed file populate this has deleted the control it
+   * implements — the layer exists precisely so that a config, which is a thing you can merge into
+   * `main`, cannot by itself point a scanner at the internet.
+   *
+   * Empty means "nothing was affirmed", which is the same thing absent would mean, so unlike
+   * `allowHosts` there is no `null` case to distinguish. */
+  readonly allowPublicTargets: readonly string[];
   /** `evidence full|headers-only|none` — how much of the request/response trace lands in the
    * report-only trace (SPEC §13, PLAN decision 101c). Override semantics (env wins), default
    * `'full'` (today's unchanged behavior). `--evidence` overrides this again for one run. */

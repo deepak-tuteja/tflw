@@ -31,6 +31,7 @@ import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import { isDecodable, regexCompileError } from './literalValidity.js';
 import { hostMatchesAllowPattern } from './allowHostsPattern.js';
+import { classifyAddress } from './addressClass.js';
 import { absoluteUrlHost, isAbsoluteUrl } from './absoluteUrl.js';
 import { MATCHERS, MATCHER_ROW_BY_NAME, type SubjectKind } from './spec-data.js';
 import { parseStringParts } from './parser.js';
@@ -125,6 +126,18 @@ export interface ProgramCheckOptions {
    * example as unauthorized.
    */
   readonly envAuthorizedTargets?: EnvAuthorizedTargets;
+  /**
+   * Every `--allow-public-target <origin>` this invocation carried (M131a, D340) — D21 §3.2(3)'s
+   * affirmation, which exists precisely so that it **cannot** come from `tflw.config`.
+   *
+   * The one option in this interface where `undefined` and `[]` mean the same thing, and the
+   * exception is principled rather than sloppy: every field above describes a *config* that either
+   * was or was not read, so conflating "nobody looked" with "there is nothing" invents a fact. This
+   * one describes a *command line*, and a command line nobody passed is a command line with no
+   * flags on it. The "nobody looked" rule still applies to the pass — it is carried by
+   * `envAuthorizedTargets`, without which `checkPublicTargets` returns nothing at all.
+   */
+  readonly allowPublicTargets?: readonly string[];
 }
 
 /**
@@ -144,6 +157,16 @@ export interface EnvAuthorizedTargets {
   readonly envName: string;
   readonly targets: readonly { readonly target: string; readonly reason: string }[];
   readonly apiBaseUrl: string | null;
+  /**
+   * The env's named services and their base URLs (M131a, D343) — `api @billing "…"`.
+   *
+   * **Required, not optional, and that is the point.** `TF060` shipped reading only the default
+   * `api` base, so a scan against a service origin was gated by nothing at all: no declaration
+   * required, no affirmation required, a different host entirely. Making this field optional would
+   * let a caller reopen that hole by forgetting a line, so the compiler asks every construction
+   * site instead. `[]` is the honest answer for an env that declares no services.
+   */
+  readonly services: readonly { readonly name: string; readonly url: string }[];
 }
 
 /**
@@ -265,6 +288,11 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     // skip-without-a-config decision is made *inside* the pass, from `opts.envAuthorizedTargets`,
     // because "a config was resolved and authorizes nothing" is a case with a diagnostic to emit.
     ...checkAuthorizedTargets(program, opts),
+    // M131a (D340–D345) — D21 §3.2(3)'s static door. Wired next to the declaration pass because the
+    // two are the two halves of one design and read as one message when both fire: `TF060` says
+    // this origin is not declared, `TF065` says it is not affirmed for the command line. Neither
+    // subsumes the other, which is why they are separate passes rather than one with two branches.
+    ...checkPublicTargets(program, opts),
     // M130b (D315/D328/D329) — wired unconditionally, like the two above. Only its `every session
     // is privileged` door needs the caller's config; the rest are AST-only facts, and skipping the
     // whole pass without a config would lose them in exactly the editor where a first authorization
@@ -3302,6 +3330,16 @@ function targetCoversBaseUrl(target: string, baseUrl: string): boolean {
 }
 
 function literalOrigin(url: string): string | null {
+  // **An unresolved `{interpolation}` is not a literal origin, and `URL` will not tell you that.**
+  // `{` and `}` are not forbidden host code points, so `new URL('https://{API_HOST}/v1').origin` is
+  // the string `"https://{api_host}"` — a perfectly well-formed answer to the wrong question. Both
+  // this file's doc comments have claimed since M128b that such a base URL is "skipped, not guessed
+  // at", and until M131a that claim was false: `TF060` would demand an `authorized target` for an
+  // origin nobody can declare. Nothing in production reached it, because `cli.ts` resolves
+  // interpolations before it gets here — which is exactly why it went unnoticed, and exactly why it
+  // is worth closing now: `TF065` would otherwise print `--allow-public-target https://{api_host}`,
+  // a flag no one can type, as the repair for a suite that is entirely above board.
+  if (url.includes('{') || url.includes('}')) return null;
   try {
     return new URL(url).origin.toLowerCase();
   } catch {
@@ -3324,25 +3362,43 @@ function literalOrigin(url: string): string | null {
  * exempting them was considered and rejected: it would exempt precisely the target this arc tests
  * against (`https://localhost:8443`), shipping the requirement untested.
  *
+ * **M131a/D343 widens it from the default `api` base to every scannable origin.** A step naming a
+ * service (`api @billing GET /invoices`) reaches a different host, and a scan there used to be
+ * gated by nothing whatsoever — not by a declaration, and under a naive reading of D340 not by the
+ * public-target flag either. Same affirmation, same class of destination, so the same code: the
+ * repair is identical (add an `authorized target` naming the origin), and `SCAN_LABELS` below
+ * already states this codebase's rule that one repair is one code.
+ *
+ * That widening is a **breaking change** for any config that declares services and writes security
+ * assertions. It is the right kind of breaking — it refuses something that was silently
+ * unprotected — and there is no additive predecessor, which is why it merges under the `M85`
+ * discipline with its companion PR in the same sitting.
+ *
  * Narrow, in exactly the ways `checkAllowHostsCoversBaseUrls` is narrow, and for the same reason —
  * being wrong here means refusing a suite that is entirely above board:
- * - **only the env's default `api` base**, not a named service and not an absolute URL a step
- *   writes for itself. Those need a response-time answer this pass cannot give.
- * - **only a fully literal base URL.** `api "https://{API_HOST}/v1"` is skipped, not guessed at.
+ * - **only origins the env itself declares**, never an absolute URL a step writes for itself. That
+ *   needs a response-time answer this pass cannot give, which is what `authzProbe`'s door is for.
+ * - **only fully literal base URLs.** `api "https://{API_HOST}/v1"` is skipped, not guessed at.
  * - **`undefined` options skip entirely**, so a `parse` with no config resolved reports nothing.
  */
 export function checkAuthorizedTargets(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
   const diags: Diagnostic[] = [];
   const declared = opts.envAuthorizedTargets;
   if (!declared) return diags;
-  const base = declared.apiBaseUrl;
-  if (base === null || literalOrigin(base) === null) return diags;
-  if (declared.targets.some((t) => targetCoversBaseUrl(t.target, base))) return diags;
+  const scannable = scannableOrigins(declared);
+  if (scannable.length === 0) return diags;
+  const uncovered = scannable.filter((s) => !declared.targets.some((t) => targetCoversBaseUrl(t.target, s.url)));
+  if (uncovered.length === 0) return diags;
 
-  const shape = `authorized target "${literalOrigin(base)}" reason "<why you may scan it>"`;
+  const shapes = uncovered.map((u) => `authorized target "${u.origin}" reason "<why you may scan it>"`);
+  // The label rides along even when there is only one uncovered origin, because D343's widening is
+  // exactly what makes "which one?" a real question: before it, the answer was always the default
+  // `api` base and naming it would have been noise. A message that quotes a service's URL without
+  // saying it is a service sends the reader to the wrong line of `tflw.config`.
+  const reach = `against ${uncovered.map((u) => `"${u.url}" (${u.label})`).join(' and ')}`;
   const hint = declared.targets.length
-    ? `env \`${declared.envName}\` authorizes ${declared.targets.map((t) => `"${t.target}"`).join(', ')}, none of which is this base URL's origin. Add \`${shape}\` to \`tflw.config\` (SPEC §3.10)`
-    : `env \`${declared.envName}\` declares no \`authorized target\`. Add \`${shape}\` to \`tflw.config\` — the reason is printed in the run summary and embedded in the report, so the claim travels with the evidence (SPEC §3.10, D21)`;
+    ? `env \`${declared.envName}\` authorizes ${declared.targets.map((t) => `"${t.target}"`).join(', ')}, which does not cover ${uncovered.length === 1 ? "this base URL's origin" : 'every origin this env can scan'}. Add ${shapes.map((s) => `\`${s}\``).join(' and ')} to \`tflw.config\` (SPEC §3.10)`
+    : `env \`${declared.envName}\` declares no \`authorized target\`. Add ${shapes.map((s) => `\`${s}\``).join(' and ')} to \`tflw.config\` — the reason is printed in the run summary and embedded in the report, so the claim travels with the evidence (SPEC §3.10, D21)`;
 
   forEachExpect(program, (expect) => {
     // M130b/D315 — the gate covers every scan this declaration authorizes, and `authorization
@@ -3355,12 +3411,33 @@ export function checkAuthorizedTargets(program: Program, opts: ProgramCheckOptio
     diags.push({
       code: Codes.SECURITY_ASSERTION_UNAUTHORIZED,
       severity: 'error',
-      message: `${scan} against "${base}" needs an \`authorized target\` declaration naming it`,
+      message: `${scan} ${reach} needs an \`authorized target\` declaration naming it`,
       span: expect.span,
       hint,
     });
   });
   return diags;
+}
+
+/**
+ * Every origin a scan in this env could reach *and this pass can name*: the default `api` base plus
+ * each declared service (D343).
+ *
+ * A service whose URL is interpolated or unparseable is dropped rather than guessed at, the same
+ * conservatism the default base gets — `literalOrigin` returning `null` is this file's standing
+ * signal for "not decidable here", and it is why the runtime half of `TF065` is the load-bearing
+ * one rather than a belt to this pass's braces.
+ */
+function scannableOrigins(declared: EnvAuthorizedTargets): { readonly label: string; readonly url: string; readonly origin: string }[] {
+  const out: { label: string; url: string; origin: string }[] = [];
+  const add = (label: string, url: string | null): void => {
+    if (url === null) return;
+    const origin = literalOrigin(url);
+    if (origin !== null) out.push({ label, url, origin });
+  };
+  add('the default `api` base', declared.apiBaseUrl);
+  for (const s of declared.services) add(`service \`@${s.name}\``, s.url);
+  return out;
 }
 
 /** The scans `TF060` gates, and what to call each one in its message (M128b D291; M130b D315). A
@@ -3370,6 +3447,120 @@ const SCAN_LABELS: Partial<Record<MatcherName, string>> = {
   hasNoSecurityViolations: 'a security scan',
   hasNoAuthzViolations: 'an authorization scan',
 };
+
+// ---------------------------------------------------------------------------
+// `TF065`/`TF066` — D21 §3.2(3)'s public-target affirmation (M131a, D340–D345)
+// ---------------------------------------------------------------------------
+
+/**
+ * The scans that **originate traffic**, which is the set `--allow-public-target` gates (D341).
+ *
+ * A strict subset of `SCAN_LABELS`, and the difference is the whole of D341: `security violations`
+ * inspects a response the suite already asked for under `allow hosts`, so there is no extra packet
+ * to authorize, while `authorization violations` re-issues that request under every other declared
+ * principal. Gating both uniformly would be one fewer sentence of rule and would predictably train
+ * teams to park the flag in CI permanently — and a control everybody leaves on is not a control.
+ *
+ * `authorized target` stays unconditional for **both**, so D291's objection (ship the grammar,
+ * enforce it later, and the control is one nothing exercises) stays unraisable. This is a second
+ * gate on top of that one, never a replacement for it.
+ */
+const ORIGINATING_SCAN_LABELS: Partial<Record<MatcherName, string>> = {
+  hasNoAuthzViolations: 'an authorization scan',
+};
+
+/**
+ * **D21 §3.2(3), the layer that says a committed config can never make CI scan the internet by
+ * itself** — the static door of it (D342).
+ *
+ * `TF065`: this run would originate a scan against an origin that classifies `public` (D338/D339),
+ * and no `--allow-public-target` on the command line names it. The repair is the flag.
+ * `TF066`: a flag was passed naming an origin this run does not scan or does not declare. The
+ * repair is the flag's *value*, which is a different mistake with a different fix, so it is a
+ * different code — this codebase's rule that a code is one repair, not one topic.
+ *
+ * **This half is not the load-bearing one, and the docs say so.** `resolved.apiBaseUrl` is
+ * interpolation-resolved against the local environment (`cli.ts:1084`), so `API_HOST` on a laptop
+ * and `API_HOST` in CI can classify differently and this pass can be right on one machine and
+ * silent on the other. The guarantee lives in `authzProbe`, which judges the origin the packet is
+ * actually going to. What this buys is the pre-flight answer — refused with no server, no
+ * credentials and no cross-identity request — which is the same trade `checkAuthzAssertions` makes
+ * one function down.
+ *
+ * Gated on `envAuthorizedTargets` for the usual `undefined`-means-nobody-looked reason, which is
+ * also why `allowPublicTargets` needs no such distinction of its own: it describes an
+ * *invocation*, and an absent invocation is an empty one.
+ */
+export function checkPublicTargets(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const declared = opts.envAuthorizedTargets;
+  if (!declared) return diags;
+
+  const scannable = scannableOrigins(declared);
+  const affirmed = (opts.allowPublicTargets ?? []).map((v) => ({ raw: v, origin: literalOrigin(v) }));
+
+  const unaffirmed = scannable.filter((s) => classifyAddress(s.url) === 'public' && !affirmed.some((a) => a.origin === s.origin));
+  // A flag matches when it names an origin this run scans **and** an `authorized target` declares
+  // it. Both halves, because affirming an origin nothing here talks to is a typo, and affirming one
+  // the config never declared is an affirmation with no declaration under it — D291's two-part
+  // design says the flag is additive on top of the declaration, never a way around it.
+  const unmatched = affirmed.filter(
+    (a) =>
+      a.origin === null ||
+      // **`scannable.length > 0` is load-bearing and is the narrowness rule this whole file keeps
+      // restating.** Without it, an env whose base URL this pass cannot name — an unresolved
+      // `{interpolation}`, an unparseable literal — yields an *empty* origin list, and "matches
+      // nothing this run would scan" then fires on a perfectly correct invocation. That is a false
+      // **error**, so it refuses a suite that is entirely above board, which is the one direction a
+      // checker is not allowed to be wrong in (`checkAllowHostsCoversBaseUrls` has the same
+      // paragraph). Nothing to compare against is "not decidable here", never "no match".
+      (scannable.length > 0 && !scannable.some((s) => s.origin === a.origin)) ||
+      // Not guarded, and deliberately: whether the config declares this origin is decidable from
+      // `targets` alone, whatever the base URL turned out to be. An affirmation with no declaration
+      // under it is D340's error however little else is knowable.
+      !declared.targets.some((t) => literalOrigin(t.target) === a.origin),
+  );
+
+  if (unaffirmed.length === 0 && unmatched.length === 0) return diags;
+
+  forEachExpect(program, (expect) => {
+    const scan = ORIGINATING_SCAN_LABELS[expect.matcher.name];
+    if (scan === undefined) return;
+    for (const s of unaffirmed) {
+      diags.push({
+        code: Codes.PUBLIC_TARGET_NOT_AFFIRMED,
+        severity: 'error',
+        message: `${scan} against "${s.url}" (${s.label}) needs \`--allow-public-target ${s.origin}\` on the command line`,
+        span: expect.span,
+        // The asymmetry is stated in the diagnostic rather than only in the docs, because the
+        // reader most likely to ask "why does my *security* assertion not need this?" is the one
+        // staring at this message.
+        hint: `env \`${declared.envName}\` scans an address outside the private ranges, and D21 requires that affirmation to live on the command line where a committed \`tflw.config\` cannot supply it. ${AFFIRMATION_ASYMMETRY}`,
+      });
+    }
+    for (const a of unmatched) {
+      const why =
+        a.origin === null
+          ? 'that is not an absolute URL with an origin'
+          : !scannable.some((s) => s.origin === a.origin)
+            ? `env \`${declared.envName}\` scans ${scannable.length === 0 ? 'no origin this pass can name' : scannable.map((s) => `"${s.origin}"`).join(', ')}`
+            : `env \`${declared.envName}\` declares no \`authorized target\` for it`;
+      diags.push({
+        code: Codes.PUBLIC_TARGET_AFFIRMATION_UNMATCHED,
+        severity: 'error',
+        message: `\`--allow-public-target ${a.raw}\` matches nothing this run would scan — ${why}`,
+        span: expect.span,
+        hint: 'the flag names one origin (scheme + host + port) and must match a target this env both scans and declares — repeat the flag to affirm more than one. Affirming an origin nobody scans is how a stale flag survives a config change and silently covers a host its author never read (SPEC §3.10)',
+      });
+    }
+  });
+  return diags;
+}
+
+/** Quoted into `TF065`'s hint, and into the docs, from one place — two wordings of an asymmetry are
+ *  how the two come to disagree about which scans the flag covers. */
+const AFFIRMATION_ASYMMETRY =
+  'An authorization scan originates requests your suite did not write; a security scan only inspects a response you already asked for, which is why that one needs no flag.';
 
 // ---------------------------------------------------------------------------
 // M130b — `expect|check response has no [<severity>] authorization violations`.

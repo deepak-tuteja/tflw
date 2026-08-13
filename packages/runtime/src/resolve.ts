@@ -159,6 +159,13 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     mtls,
     allowHosts,
     authorizedTargets,
+    // M131a/D340 — **always empty here, deliberately.** The public-target affirmation is a fact
+    // about the command line, and this function's entire input is `tflw.config`. There is no
+    // `case 'AllowPublicTargetDecl'` above and there must never be one: D21 §3.2(3) is the layer
+    // that says a committed config cannot make CI scan the internet by itself, so a config key
+    // granting it would not be a feature, it would be the removal of this control. `cli.ts`
+    // overlays the real values.
+    allowPublicTargets: [],
     evidenceLevel,
     redactPatterns,
     viewport,

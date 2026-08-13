@@ -25,6 +25,7 @@ const LOCAL: EnvAuthorizedTargets = {
   envName: 'secureLocal',
   targets: [{ target: 'https://localhost:8443', reason: 'self-hosted test fixture' }],
   apiBaseUrl: 'https://localhost:8443/v1',
+  services: [],
 };
 
 function scanCodes(opts: EnvAuthorizedTargets | undefined, ...steps: string[]): string[] {
@@ -109,7 +110,7 @@ test('TF060: a path on the declaration is ignored — origins have no path', () 
 test('TF060: loopback gets no exemption', () => {
   // D21 layer 3 treats private addresses as lower-risk, and exempting them here was considered and
   // rejected: it would exempt exactly the target this arc is tested against.
-  const loopback = { envName: 'local', targets: [], apiBaseUrl: 'http://127.0.0.1:4001/v1' };
+  const loopback = { envName: 'local', targets: [], apiBaseUrl: 'http://127.0.0.1:4001/v1', services: [] };
   assert.deepEqual(scanCodes(loopback, 'api GET /orders', 'expect response has no security violations'), ['TF060']);
 });
 
@@ -135,11 +136,11 @@ test('no resolved config skips the pass entirely, rather than reporting every as
 });
 
 test('an env with no `api` base URL is skipped, not failed', () => {
-  assert.deepEqual(scanCodes({ envName: 'x', targets: [], apiBaseUrl: null }, 'api GET /o', 'expect response has no security violations'), []);
+  assert.deepEqual(scanCodes({ envName: 'x', targets: [], apiBaseUrl: null, services: [] }, 'api GET /o', 'expect response has no security violations'), []);
 });
 
 test('an unparseable base URL is skipped rather than guessed at', () => {
-  assert.deepEqual(scanCodes({ envName: 'x', targets: [], apiBaseUrl: '{API_HOST}/v1' }, 'api GET /o', 'expect response has no security violations'), []);
+  assert.deepEqual(scanCodes({ envName: 'x', targets: [], apiBaseUrl: '{API_HOST}/v1', services: [] }, 'api GET /o', 'expect response has no security violations'), []);
 });
 
 // --- the hint earns its place -----------------------------------------------

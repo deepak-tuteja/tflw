@@ -147,6 +147,21 @@ export const Codes = {
   AUTHZ_STEP_NAMES_OWN_CREDENTIAL: 'TF062',
   AUTHZ_ASSERTION_NO_PRINCIPAL: 'TF063',
   AUTHZ_ASSERTION_REPEATED_REQUEST: 'TF064',
+  // M131a (`PLAN_M131_SAFETY_COMPLETION.md`, D340/D344) — D21 §3.2(3)'s affirmation, the layer
+  // whose entire point is that **no config key can supply it**. Both errors.
+  //
+  // **Two codes, because there are two repairs.** `TF065` is answered by adding
+  // `--allow-public-target <origin>`; `TF066` is answered by correcting the value of a flag that is
+  // already there. Filing them together would have made one generated codes-reference row false,
+  // which is the defect class `M92` spent a milestone on and the rule that split `TF062`–`TF064`
+  // three ways one line above.
+  //
+  // `TF065` is also the one code in this table with a **runtime twin that reuses it** rather than a
+  // code of its own (`authzProbe`, D342). Same repair from the same reader's point of view — add
+  // the flag — and the two doors exist because the checker can be right on a laptop and silent in
+  // CI, not because the two are asking different questions.
+  PUBLIC_TARGET_NOT_AFFIRMED: 'TF065',
+  PUBLIC_TARGET_AFFIRMATION_UNMATCHED: 'TF066',
 } as const;
 
 // ---------------------------------------------------------------------------
