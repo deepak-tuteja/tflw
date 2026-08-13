@@ -66,6 +66,7 @@ const MATCHER_SOURCE: Readonly<Record<MatcherName, string>> = {
   wasMade: 'was made',
   hasNoA11yViolations: 'has no critical a11y violations',
   hasNoSecurityViolations: 'has no critical security violations',
+  hasNoAuthzViolations: 'has no critical authorization violations',
   matchesSnapshot: 'matches snapshot "s"',
 };
 

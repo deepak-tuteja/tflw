@@ -1204,6 +1204,7 @@ them callable.
 | `was made` | `request to "<url>"` | `expect request to "/api/orders" was made` |
 | `has no [minor/moderate/serious/critical] a11y violations` | `page` | `expect page has no critical a11y violations` |
 | `has no [minor/moderate/serious/critical] security violations` | `response` | `expect response has no serious security violations` |
+| `has no [minor/moderate/serious/critical] authorization violations` | `response` | `expect response has no authorization violations` |
 | `matches snapshot "<name>" [mask <locator>]*` | `page`, UI locators | `expect page matches snapshot "checkout-page" mask css ".timestamp"` |
 <!-- GENERATED:matchers:end -->
 

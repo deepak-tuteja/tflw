@@ -80,6 +80,7 @@ export const MATCHERS: readonly MatcherEntry[] = [
   { id: 'was-made', syntax: '`was made`', appliesTo: '`request to "<url>"`', example: '`expect request to "/api/orders" was made`', status: 'shipped', subjects: ['network-request'], quantifiable: false },
   { id: 'has-no-a11y-violations', syntax: '`has no [minor/moderate/serious/critical] a11y violations`', appliesTo: '`page`', example: '`expect page has no critical a11y violations`', status: 'shipped', subjects: ['page'], quantifiable: false },
   { id: 'has-no-security-violations', syntax: '`has no [minor/moderate/serious/critical] security violations`', appliesTo: '`response`', example: '`expect response has no serious security violations`', status: 'shipped', subjects: ['response'], quantifiable: false },
+  { id: 'has-no-authorization-violations', syntax: '`has no [minor/moderate/serious/critical] authorization violations`', appliesTo: '`response`', example: '`expect response has no authorization violations`', status: 'shipped', subjects: ['response'], quantifiable: false },
   { id: 'matches-snapshot', syntax: '`matches snapshot "<name>" [mask <locator>]*`', appliesTo: '`page`, UI locators', example: '`expect page matches snapshot "checkout-page" mask css ".timestamp"`', status: 'shipped', subjects: ['page', 'locator'], quantifiable: false },
 ] as const;
 
@@ -114,6 +115,7 @@ export const MATCHER_ROW_BY_NAME: Readonly<Record<string, string>> = {
   wasMade: 'was-made',
   hasNoA11yViolations: 'has-no-a11y-violations',
   hasNoSecurityViolations: 'has-no-security-violations',
+  hasNoAuthzViolations: 'has-no-authorization-violations',
   matchesSnapshot: 'matches-snapshot',
 };
 

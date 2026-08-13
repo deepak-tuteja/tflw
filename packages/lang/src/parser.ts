@@ -288,19 +288,29 @@ function boundPhrase(tok: Token, after: Token): string | undefined {
  * `unchecked`, `unhidden`, `notvisible`. There are no negated state words in this grammar: negation
  * is the `not` prefix, once, in front of the positive word. See `negatedStateWord`. */
 const NEGATION_PREFIXES = ['not', 'non', 'un', 'in', 'im', 'dis'] as const;
-/** The severity floor both scan matchers accept — `has no [<severity>] a11y violations` (M3e, SPEC
- * §9.8) and `has no [<severity>] security violations` (M128b, SPEC §9.10). Increasing severity,
- * matching axe-core's own `impact` scale (`FindingSeverity`, ast.ts). */
+/** The severity floor every scan matcher accepts — `has no [<severity>] a11y violations` (M3e, SPEC
+ * §9.8), `has no [<severity>] security violations` (M128b, SPEC §9.10) and `has no [<severity>]
+ * authorization violations` (M130b, SPEC §9.11). Increasing severity, matching axe-core's own
+ * `impact` scale (`FindingSeverity`, ast.ts). */
 const SEVERITY_FLOOR_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
-/** Which scan `has no … violations` is asking for (M128b, D290). Two words, one construct — see
- * `parseScanViolationsMatcher`. */
-const SCAN_KIND_WORDS = ['a11y', 'security'] as const;
+/** Which scan `has no … violations` is asking for (M128b, D290; M130b, D304). Three words, one
+ * construct — see `parseScanViolationsMatcher`. */
+const SCAN_KIND_WORDS = ['a11y', 'security', 'authorization'] as const;
+/** The scan word → `MatcherName` mapping, as a total record rather than a ternary chain. The chain
+ * was fine for two words and would have made a third one silently parse as the second — a `Record`
+ * over the same `as const` tuple makes adding a word to `SCAN_KIND_WORDS` a type error until it is
+ * given a matcher, which is where a completeness rule belongs. */
+const SCAN_MATCHER_NAMES: Readonly<Record<(typeof SCAN_KIND_WORDS)[number], MatcherName>> = {
+  a11y: 'hasNoA11yViolations',
+  security: 'hasNoSecurityViolations',
+  authorization: 'hasNoAuthzViolations',
+};
 /** As `MATCHER_VOCABULARY_HELP`, for the three-word `<scan> violations` construct (review finding
  * A3-15) — every one of its failure modes used to be a bare `expectKw`, naming one keyword of three
  * and never the severity vocabulary sitting in the constant directly above. */
 const SCAN_MATCHER_HELP =
-  `expected \`a11y violations\` or \`security violations\`, optionally with a severity floor in front ` +
-  `(${SEVERITY_FLOOR_WORDS.join('/')}) — e.g. \`has no serious a11y violations\``;
+  `expected \`a11y violations\`, \`security violations\` or \`authorization violations\`, optionally ` +
+  `with a severity floor in front (${SEVERITY_FLOOR_WORDS.join('/')}) — e.g. \`has no serious a11y violations\``;
 
 /**
  * The state word hiding behind a negation prefix (`invisible` → `visible`), or `undefined`.
@@ -1159,16 +1169,47 @@ class Parser {
     this.advance(); // `session`
     const name = this.expect('ident', 'a session name, e.g. `session admin`');
     if (!name) return null;
+    // `session <name> privileged oauth2` — one order is legal (below) and this is the other one.
+    // Reported here, before anything else reads the header, and then *recovered from by reading
+    // the header the way it was plainly meant*: left to `endLine()` it produced one honest error
+    // about `oauth2` followed by a wholly misleading second one, ``unknown step `token` … did you
+    // mean `open`?``, because the oauth2 body was then parsed as ordinary session steps. A rejected
+    // ordering should cost one diagnostic, not a cascade through a block the author wrote correctly.
+    const early = this.peek();
+    const misordered = this.isKw(early, 'privileged') && this.isKw(this.peek(1), 'oauth2');
+    if (misordered) {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`privileged` comes after `oauth2` on a `session` header',
+        early.span,
+        'write `session ' + name.value + ' oauth2 privileged` — the modifier is read last so that `oauth2` stays next to the indented block it introduces',
+      );
+      this.advance(); // `privileged`
+    }
     if (this.isKw(this.peek(), 'oauth2')) {
       this.advance(); // `oauth2`
+      const privileged = this.parsePrivilegedModifier() || misordered;
       this.endLine();
       const oauth2 = this.parseOauth2SessionConfig(start);
       if (!oauth2) return null;
-      return { type: 'SessionDecl', name: name.value, oauth2, body: [], span: this.spanFrom(start) };
+      return { type: 'SessionDecl', name: name.value, oauth2, body: [], privileged, span: this.spanFrom(start) };
     }
+    const privileged = this.parsePrivilegedModifier();
     this.endLine();
     const body = this.parseSessionBlock();
-    return { type: 'SessionDecl', name: name.value, oauth2: null, body, span: this.spanFrom(start) };
+    return { type: 'SessionDecl', name: name.value, oauth2: null, body, privileged, span: this.spanFrom(start) };
+  }
+
+  /** The optional trailing `privileged` on a `session` header (M130b, D307/D310) — read after
+   * `oauth2` when both are present, so `session svc oauth2 privileged` is the one spelling.
+   *
+   * A modifier rather than an indented sub-clause, unlike `probe mutating`: it is a property of the
+   * *name*, it takes no operand, and an `oauth2` session's indented block is a fixed sugar shape
+   * (`token url`/`client id`/…) that a stray keyword would have to be threaded through. */
+  private parsePrivilegedModifier(): boolean {
+    if (!this.isKw(this.peek(), 'privileged')) return false;
+    this.advance();
+    return true;
   }
 
   /** `session <name> oauth2` body — a fixed sugar shape, not ordinary steps (SPEC §3.3, decision
@@ -1603,7 +1644,15 @@ class Parser {
    *
    * `reason` is parsed as required rather than optional. Making it optional would be one character
    * of grammar and would quietly turn the declaration into a checkbox — the thing D21 was written
-   * instead of — so the omission is a parse error with the whole form in the message. */
+   * instead of — so the omission is a parse error with the whole form in the message.
+   *
+   * **M130b/D330 adds an optional indented sub-clause, and adds nothing to the line above it.**
+   * `probe mutating` grants this host permission to receive a `POST`/`PUT`/`PATCH`/`DELETE`
+   * re-issued under another principal. The declaration itself keeps its single-line spelling —
+   * `tflw-acceptance/security/tflw.config:33` and `:40` are on `main` written that way — so this is
+   * a line beneath, never a reformatting. Sub-clauses are how the config dialect already nests
+   * (`session`, `defaults`, `env`), and Tier 3's later per-class opt-ins land as siblings here
+   * instead of lengthening a line whose most important word would end up last. */
   private parseAuthorizedTargetDecl(): AuthorizedTargetDecl | null {
     const start = this.peek().span.start;
     this.advance(); // `authorized`
@@ -1614,7 +1663,42 @@ class Parser {
     const reason = this.expectString('why you are permitted to scan this target, e.g. `reason "self-hosted test fixture"`');
     if (!reason) return null;
     this.endLine();
-    return { type: 'AuthorizedTargetDecl', target, reason, span: this.spanFrom(start) };
+    const probeMutating = this.parseAuthorizedTargetSubClauses();
+    return { type: 'AuthorizedTargetDecl', target, reason, probeMutating, span: this.spanFrom(start) };
+  }
+
+  /** The optional indented block under an `authorized target` (M130b, D330). Absent block → `false`,
+   * which is the same answer as a block that declares something else, so the caller has one shape to
+   * handle. Unknown sub-clauses are an error *here* rather than in the enclosing config loop: by the
+   * time the loop sees an `indent` it has lost which declaration it belongs under, and the message
+   * would name a config key that is not what the author was writing. */
+  private parseAuthorizedTargetSubClauses(): boolean {
+    if (!this.check('indent')) return false;
+    this.advance(); // indent
+    let probeMutating = false;
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const tok = this.peek();
+      if (this.isKw(tok, 'probe')) {
+        this.advance();
+        if (this.expectKw('mutating', 'the only sub-clause an `authorized target` takes is `probe mutating`')) {
+          probeMutating = true;
+          this.endLine();
+        } else this.synchronize();
+      } else {
+        const hint = tok.type === 'ident' && suggest(tok.value, ['probe']) ? 'did you mean `probe mutating`?' : 'an `authorized target` takes one sub-clause: `probe mutating`';
+        this.error(Codes.UNEXPECTED_TOKEN, `expected \`probe mutating\` under \`authorized target\`, found ${describeToken(tok)}`, tok.span, hint);
+        this.synchronize();
+      }
+      // Same non-advance guard every recovery loop in this file carries.
+      if (this.pos === before) this.advance();
+    }
+    if (this.check('dedent')) this.advance();
+    return probeMutating;
   }
 
   private parseEvidenceDecl(): EvidenceDecl | null {
@@ -2980,16 +3064,19 @@ class Parser {
     }
   }
 
-  /** `no [<severity>] (a11y|security) violations` (M3e SPEC §9.8; M128b SPEC §9.10, D290) — caller
+  /** `no [<severity>] (a11y|security|authorization) violations` (M3e SPEC §9.8; M128b SPEC §9.10,
+   * D290; M130b SPEC §9.11, D304) — caller
    * has already consumed `has no`. `<severity>` is an optional bare word
    * (`minor`/`moderate`/`serious`/`critical`, a *floor*, not an exact-match filter — see
    * `Matcher.severityFloor`'s doc comment in ast.ts); omitted means every severity counts.
    *
-   * **One production for both scans, because they are one construct with one word swapped.** D290
+   * **One production for every scan, because they are one construct with one word swapped.** D290
    * chose `violations` for the security matcher precisely so the noun would be shared; parsing them
-   * separately would then be two copies of the same three-token walk, and the A3-15 comment below
-   * describes what happens to error quality when a construct's spellings drift apart. Which scan
-   * was asked for is the *only* difference, and it decides one thing: the `MatcherName` returned. */
+   * separately would then be copies of the same three-token walk, and the A3-15 comment below
+   * describes what happens to error quality when a construct's spellings drift apart. D304 kept the
+   * spelling for the authorization matcher for the same reason while deliberately *not* folding it
+   * into `security` — one production, three names, and the difference lives past the parser. Which
+   * scan was asked for is the *only* difference here, and it decides one thing: the `MatcherName`. */
   private parseScanViolationsMatcher(start: Position, negated: boolean): Matcher | null {
     const sevTok = this.peek();
     let severityFloor: FindingSeverity | undefined;
@@ -3008,7 +3095,10 @@ class Parser {
       // but only until one has been read, after which it is no longer a thing the user may write.
       const candidates = severityFloor === undefined ? [...SCAN_KIND_WORDS, ...SEVERITY_FLOOR_WORDS] : [...SCAN_KIND_WORDS];
       const hint = kindTok.type === 'ident' ? suggest(kindTok.value, candidates) : undefined;
-      this.error(Codes.UNEXPECTED_TOKEN, `expected \`a11y\` or \`security\`, found ${describeToken(kindTok)}`, kindTok.span, hint ? `did you mean \`${hint}\`?` : SCAN_MATCHER_HELP);
+      // Listed from the constant rather than spelled out, so a fourth scan word cannot leave this
+      // message naming two of three — the drift A3-15 was filed about, one scan later.
+      const expected = SCAN_KIND_WORDS.map((k) => `\`${k}\``).join(', ');
+      this.error(Codes.UNEXPECTED_TOKEN, `expected one of ${expected}, found ${describeToken(kindTok)}`, kindTok.span, hint ? `did you mean \`${hint}\`?` : SCAN_MATCHER_HELP);
       return null;
     }
     this.advance();
@@ -3019,8 +3109,7 @@ class Parser {
       return null;
     }
     this.advance();
-    const name = kind === 'a11y' ? 'hasNoA11yViolations' : 'hasNoSecurityViolations';
-    return { type: 'Matcher', name, negated, value: null, severityFloor, span: this.spanFrom(start) };
+    return { type: 'Matcher', name: SCAN_MATCHER_NAMES[kind], negated, value: null, severityFloor, span: this.spanFrom(start) };
   }
 
   // -- UI / browser steps (SPEC §9, M3a) --------------------------------------

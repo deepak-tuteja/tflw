@@ -69,7 +69,8 @@
           ]
         }
       },
-      "body": []
+      "body": [],
+      "privileged": false
     }
   ]
 }

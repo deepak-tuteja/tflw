@@ -1363,6 +1363,10 @@ const LIVE_HANDLE_MATCHERS: ReadonlyMap<MatcherName, string> = new Map([
   // whatever its type, which is the same structural reason (not a type guess) every other row here
   // qualifies on.
   ['hasNoSecurityViolations', 'has no security violations'],
+  // M130b/D304 — the same structural reason one line up, and one more besides: this scan does not
+  // only read the observed response, it re-issues the observed *request* under other principals. A
+  // bound value carries neither half.
+  ['hasNoAuthzViolations', 'has no authorization violations'],
   ['matchesSnapshot', 'matches snapshot'],
 ]);
 

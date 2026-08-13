@@ -99,7 +99,13 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
         case 'AuthorizedTargetDecl':
           // Accumulates like `allow hosts`, and for the same reason (SPEC §3.7): a suite that scans
           // one host in every env declares it once in `defaults` rather than repeating it per env.
-          authorizedTargets.push({ target: entry.target.value, reason: entry.reason.value });
+          //
+          // M130b/D330 changes nothing here: `probe mutating` rides along on the row, and two rows
+          // for one origin that disagree are resolved *at the lookup* (`mayProbeMutating`, which
+          // ORs across every matching row) rather than by folding them here. The accumulation rule
+          // is deliberately untouched — every declaration still travels to the report with its own
+          // reason, which is the half of D291 that makes the claim auditable.
+          authorizedTargets.push({ target: entry.target.value, reason: entry.reason.value, probeMutating: entry.probeMutating });
           break;
         case 'EvidenceDecl':
           evidenceLevel = entry.level;

@@ -170,6 +170,7 @@ function withWeakSession(config: ResolvedConfig): ResolvedConfig {
           name: 'admin',
           body: parseSource('test "s"\n  api POST /login\n').program.tests[0]!.body,
           oauth2: null,
+          privileged: false,
           span: { start: { line: 1, col: 1, offset: 0 }, end: { line: 1, col: 1, offset: 0 } },
         },
       ],

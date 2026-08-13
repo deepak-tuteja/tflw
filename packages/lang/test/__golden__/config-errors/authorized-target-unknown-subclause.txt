@@ -1,0 +1,7 @@
+error[TF010]: expected `mutating`, found `everything`
+ --> tflw.config:3:11
+  |
+3 |     probe everything
+  |           ^^^^^^^^^^
+  |
+  = help: the only sub-clause an `authorized target` takes is `probe mutating`

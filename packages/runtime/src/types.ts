@@ -29,6 +29,13 @@ export interface ResolvedHeader {
 export interface AuthorizedTarget {
   readonly target: string;
   readonly reason: string;
+  /** The indented `probe mutating` sub-clause (M130b, D311/D330) — may an authorization probe
+   * re-issue a mutating request under another principal against this host?
+   *
+   * **Accumulates by OR, not by last-writer.** Two declarations of the same target where either
+   * says `probe mutating` mean the opt-in holds: the clause is a claim about permission, and
+   * permission does not un-grant by repetition. */
+  readonly probeMutating: boolean;
 }
 
 export interface ResolvedTimeouts {
