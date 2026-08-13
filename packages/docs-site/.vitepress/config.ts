@@ -31,6 +31,7 @@ const GUIDE_SIDEBAR = [
       { text: '12. Running & debugging tests', link: '/guide/debugging' },
       { text: '13. Load testing: scenarios & thresholds', link: '/guide/load-testing' },
       { text: '14. Security hygiene scanning', link: '/guide/security-scanning' },
+      { text: '15. Authorization testing', link: '/guide/authorization-testing' },
     ],
   },
 ];

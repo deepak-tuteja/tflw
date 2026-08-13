@@ -26,7 +26,14 @@ version-by-version record, see the [Changelog](/changelog).
   saturated tflw process never masquerades as a real bottleneck. Validated against k6 and Artillery
   on a real application — see [Load testing](/guide/load-testing#validated-against-k6-and-artillery).
 
+- Security testing — HTTP hygiene scanning over the response your last `api` step received, and
+  **authorization testing**: the request your suite actually made, re-issued under every other
+  identity you declare, judged on whether one principal's resources came back to another. Both are
+  gated behind a written `authorized target` declaration, and every authorization finding emits a
+  `.tflw` you can re-run. See [Security hygiene scanning](/guide/security-scanning) and
+  [Authorization testing](/guide/authorization-testing).
+
 ## Coming next
 
-- Security-testing features.
+- The rest of the security arc: fuzzing and injection probes.
 - A first public npm release, once the security arc above lands alongside one final acceptance pass.

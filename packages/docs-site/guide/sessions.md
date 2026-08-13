@@ -74,5 +74,23 @@ instead of racing a live `401`). `client secret` is redacted in report evidence 
 other `env(...)`-sourced secret. A session block is either `oauth2` sugar or a hand-written
 sequence of steps, never both.
 
+## `privileged` — a principal that is meant to reach other people's data
+
+```tflw-config fragment
+session admin privileged
+  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
+  capture body.token as token
+  header "Authorization" is "Bearer {token}"
+```
+
+One keyword, read by one feature: `expect response has no authorization violations`
+([chapter 15](/guide/authorization-testing)) leaves a `privileged` session out of its probe set,
+because an admin reading somebody else's order is the system working. It changes nothing else — a
+`privileged` session establishes, caches and applies its headers exactly as any other does.
+
+It goes **after** `oauth2` when both are present (`session svc oauth2 privileged`), and it is a
+claim about authority rather than a way to make an assertion cheaper: marking every session
+privileged is refused (`TF063`).
+
 Full reference: [SPEC.md §3.3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#33-session-blocks--the-single-auth-concept-p20-p31-),
 [§3.6 (mTLS)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#36-client-certificates--mtls-plan-decision-99b-).

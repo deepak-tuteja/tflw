@@ -141,12 +141,26 @@ env secureLocal
   authorized target "https://localhost:8443" reason "self-hosted test fixture"
 ```
 
-Required before any `expect response has no … security violations` assertion, and only for those —
-an ordinary suite never needs this key. Unlike `allow hosts` directly above, it takes **no
-wildcards**: it is an affirmation that you may point a scanner at one named host, and a pattern is
-not something anyone can affirm. The `reason` is required and is printed in the run summary and the
-report, so the claim travels with the findings.
+Required before any `expect response has no … security violations` or `… authorization violations`
+assertion, and only for those — an ordinary suite never needs this key. Unlike `allow hosts`
+directly above, it takes **no wildcards**: it is an affirmation that you may point a scanner at one
+named host, and a pattern is not something anyone can affirm. The `reason` is required and is
+printed in the run summary and the report, so the claim travels with the findings.
 
-See [Security hygiene scanning](/guide/security-scanning).
+An optional indented `probe mutating` grants one further permission for *that host*: an
+authorization probe may re-issue a `POST`/`PUT`/`PATCH`/`DELETE` under another principal against it.
+
+```tflw-config fragment
+defaults
+  authorized target "http://localhost:4001" reason "self-hosted test fixture"
+    probe mutating
+```
+
+Without it, an authorization assertion on a mutating step reports `not probed` rather than silently
+sending writes somewhere nobody said it could. It hangs off the target because staging may be safe
+to read as a stranger and not safe to write to.
+
+See [Security hygiene scanning](/guide/security-scanning) and
+[Authorization testing](/guide/authorization-testing).
 
 Full reference: [SPEC.md §3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#3-the-config-dialect--tflwconfig-p27-31).
