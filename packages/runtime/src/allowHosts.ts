@@ -56,6 +56,12 @@ export function allowHostsRefusal(url: string, allowHosts: readonly string[], or
     // re-reading an `api` step that was allowed and did send.
     case 'tls-probe':
       return `host "${hostname}" is not in ${list} — refusing to open the TLS probe connection (this is a second connection tflw makes to read the negotiated protocol and cipher, not one your step wrote; the request itself was allowed)`;
+    // M130b1. Its own variant for the same reason `tls-probe` is: this is a request tflw composes on
+    // its own initiative, re-issuing a step's own request under a different identity, so neither
+    // "refusing to send this request" nor the TLS sentence points anywhere an author can act on. It
+    // names the principal, because that is the part of this request the author did not write.
+    case 'authz-probe':
+      return `host "${hostname}" is not in ${list} — refusing to send the authorization probe as \`${origin.principal}\` (this is a re-issue of your step's own request under another identity, not a step you wrote; the original request was allowed)`;
     case 'redirect':
       return `${origin.from} redirected to "${url}", whose host "${hostname}" is not in ${list} — refusing to follow it (the redirect target is chosen by the server, not by this step; add the host if the hop is expected)`;
     case 'browser':
@@ -97,5 +103,6 @@ export function absoluteUrlNeedsAllowHosts(url: string): string {
 export type RefusalOrigin =
   | { readonly kind: 'request' }
   | { readonly kind: 'tls-probe' }
+  | { readonly kind: 'authz-probe'; readonly principal: string }
   | { readonly kind: 'redirect'; readonly from: string }
   | { readonly kind: 'browser'; readonly navigation: boolean; readonly pageUrl: string; readonly resourceType: string };
