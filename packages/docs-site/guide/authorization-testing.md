@@ -198,6 +198,57 @@ It hangs off `authorized target` because it is a property of *that host*: stagin
 read as a stranger and not safe to write to. The one-line declaration is unchanged; `probe mutating`
 is an optional indented line beneath it.
 
+## Scanning anything but a private address needs the command line
+
+`authorized target` is the *declaration*, and it lives in `tflw.config` — a file somebody can merge
+into `main`. That is enough for a loopback fixture. Point the same suite at a host outside the
+private address ranges and the run also wants an affirmation the config is not allowed to make:
+
+```console
+$ tflw run
+✗ orders.tflw — an authorization scan against "https://stg.example.com/v1" (the default `api` base)
+  needs `--allow-public-target https://stg.example.com` on the command line  [TF065]
+
+$ tflw run --allow-public-target https://stg.example.com
+```
+
+The flag is repeatable, takes one origin each (scheme + host + port), and must name a target this
+env both scans and declares — a flag matching nothing is `TF066` rather than a silent no-op. There
+is deliberately **no `tflw.config` key for it**: the whole layer exists so that a committed config
+cannot by itself point a scanner at the internet, and a key granting it would not be a feature, it
+would be the removal of this control. It takes no `--reason` either — the reason belongs on the
+declaration, where it travels into the report.
+
+Three things worth knowing about how it decides:
+
+- **It never resolves DNS.** The address class is read from the URL as written. A control that
+  resolved a name would be sending a packet to decide whether it may send a packet, and the answer
+  would differ on a VPN, differ between your laptop and CI, and could change between the check and
+  the probe.
+- **Only `localhost` is exempt by name.** Loopback, RFC1918, IPv6 unique-local, link-local and CGNAT
+  addresses are exempt; every other hostname is public, including a genuinely private
+  `api.internal.corp`. Nothing in that string says it is private, so the flag is asked for. The
+  control over-asks rather than under-asks, on purpose.
+- **`tflw check` takes the same flag, and its answer is not a promise.** The check refuses what it
+  can prove without a server, but your env's base URL is resolved against *your* environment — so a
+  clean check on a laptop says nothing certain about CI. The probe engine re-judges the origin the
+  request is actually going to, and that verdict is the binding one.
+
+The sibling matcher, `has no security violations`, needs **no** flag. It only inspects a response
+your suite already asked for; there is no extra packet to authorize. Gating both would read simpler
+and would end with the flag parked permanently in CI, and a control everybody leaves on is not a
+control.
+
+## The probes are paced, and the pace is one at a time
+
+Per assertion, principals are probed **sequentially** — one request in flight, in declared order
+with `anonymous` last. So the traffic an assertion adds is one request per probeable principal, not
+a burst, and a run's total is bounded by the assertion count rather than by anything asynchronous.
+
+There is no `probe rate` knob, because there is nothing to slow down: the engine cannot exceed one
+in flight. That bound is held by a test rather than by the shape of a loop somebody might optimise
+later.
+
 ## Every finding comes with a test you can run
 
 A violation writes a `.tflw` file under `report/authz-repro/`, named from the rule, method, path and
@@ -251,3 +302,4 @@ Three more limits worth knowing:
   `authorized target` comes from
 - [Sessions & auth](/guide/sessions) — `session` blocks and `as <session>`
 - [Config & environments](/guide/config) — `privileged` and `probe mutating`
+- [CI & reporting](/guide/ci-and-reporting) — `--allow-public-target` alongside the other CI gates

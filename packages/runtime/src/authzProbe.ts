@@ -34,7 +34,7 @@
 // self-inflicted `429` becomes unlikely rather than merely well-classified. The cost is roughly one
 // step's latency per principal per assertion site, which D319 commits to recording as a number.
 
-import { RESERVED_PRINCIPAL } from '@tflw/lang';
+import { classifyAddress, RESERVED_PRINCIPAL } from '@tflw/lang';
 import { allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { containsAnyId, type ProbeOutcome, type ProbeResult } from './authzRules.js';
 import type { CookieJar } from './cookieJar.js';
@@ -121,6 +121,15 @@ export interface ProbePolicy {
   readonly insecure: boolean;
   /** D330's per-`authorized target` opt-in, already resolved for this request's origin. */
   readonly probeMutating: boolean;
+  /** `--allow-public-target` values this invocation carried (M131a, D340/D342) — D21 §3.2(3).
+   *
+   * **This is the load-bearing half of `TF065`, not a belt to the checker's braces.** The static
+   * pass sees the env's declared base URLs, already interpolation-resolved *against the machine
+   * running `tflw check`* — so `API_HOST` on a laptop and `API_HOST` in CI can classify
+   * differently, and a suite can pass the check on one and be refused on the other. Only this side
+   * sees the origin the packet is actually going to. Anything the static pass could not model
+   * arrives here anyway. */
+  readonly allowPublicTargets?: readonly string[];
 }
 
 export interface ProbeRequest {
@@ -135,6 +144,33 @@ export interface ProbeRequest {
 /** The seam. `interpreter.ts` supplies the real one in `M130b2`; the tests supply one that returns
  * hand-built responses, which is how every branch of D324 is reachable without a server. */
 export type ProbeSender = (req: ProbeRequest) => Promise<ResponseTrace>;
+
+/**
+ * `TF065` at run time (M131a, D342/D344) — `null` when the probe may proceed, or the reason it may
+ * not.
+ *
+ * **Reuses the checker's code rather than minting its own**, exactly as `execAuthzExpect` repeats
+ * `TF062`/`TF063`'s judgements at run time: the repair a reader has to make is identical (add the
+ * flag), and this codebase's splitting rule is one code per repair, not one per door.
+ *
+ * A URL that will not parse is refused too. Permission is never inferred from something that failed
+ * to parse — the rule `mayProbeMutating` states two functions up, and the direction that costs a
+ * `not probed` line rather than an unauthorized packet.
+ */
+export function publicTargetRefusal(url: string, allowPublicTargets: readonly string[]): string | null {
+  const klass = classifyAddress(url);
+  if (klass === 'exempt') return null;
+  const origin = originOf(url);
+  if (klass === 'invalid' || origin === undefined) {
+    return `\`TF065\`: the origin of "${url}" could not be read, so nothing can affirm it — an authorization scan may only originate requests against an address this run has named`;
+  }
+  if (allowPublicTargets.some((t) => originOf(t) === origin)) return null;
+  return (
+    `\`TF065\`: ${origin} is outside the private address ranges and no \`--allow-public-target ${origin}\` was given — ` +
+    'an authorization scan originates requests your suite did not write, so D21 requires that affirmation on the command line, ' +
+    'where a committed `tflw.config` cannot supply it (SPEC §3.10)'
+  );
+}
 
 function originOf(url: string): string | undefined {
   try {
@@ -312,9 +348,12 @@ export class AuthzProber {
     const results: ProbeResult[] = [];
     const origin = originOf(observed.url);
     const mutating = !isSafeMethod(observed.method);
+    // D342's runtime door, judged **once per assertion and before the first probe**, against the
+    // origin the packet is actually going to rather than against anything a config predicted.
+    const unaffirmedPublic = publicTargetRefusal(observed.url, policy.allowPublicTargets ?? []);
 
     for (const principal of probeOrder(principals)) {
-      results.push(await this.#probeOne(observed, ownerIds, principal, policy, { origin, mutating }));
+      results.push(await this.#probeOne(observed, ownerIds, principal, policy, { origin, mutating, unaffirmedPublic }));
     }
     return results;
   }
@@ -324,9 +363,21 @@ export class AuthzProber {
     ownerIds: readonly string[],
     principal: ProbePrincipal,
     policy: ProbePolicy,
-    ctx: { readonly origin: string | undefined; readonly mutating: boolean },
+    ctx: { readonly origin: string | undefined; readonly mutating: boolean; readonly unaffirmedPublic: string | null },
   ): Promise<ProbeResult> {
     const notProbed = (reason: string): ProbeResult => ({ principal: principal.name, outcome: { kind: 'not-probed', reason } });
+
+    // **First, before the mutating opt-in and before any session is established.** D21 §3.2(3) is
+    // about whether this run may talk to that host at all, so it is answered before anything about
+    // *what* would be sent.
+    //
+    // A refusal is an outcome rather than a `throw`, following `probeAll`'s own rule that a probe
+    // which could not run is `not applicable` rather than an error — and it is still **fail-closed**
+    // rather than a silent pass, because of D285: with every principal refused, no rule applies,
+    // and `describeAuthzOutcome` reports "this assertion had no power to fail" as a *failure*. The
+    // gate refuses the packets and the assertion goes red, which is both halves of what a safety
+    // control has to do.
+    if (ctx.unaffirmedPublic !== null) return notProbed(ctx.unaffirmedPublic);
 
     // Safe methods by default; a write needs the per-target affirmation D311 attaches to the host,
     // not a global flag. Checked before anything else, so an un-opted-in mutating step costs no

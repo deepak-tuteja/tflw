@@ -4194,6 +4194,9 @@ async function execAuthzExpect(
     allowHosts: config.allowHosts,
     insecure: config.insecure,
     probeMutating: mayProbeMutating(request.url, config.authorizedTargets),
+    // M131a/D340 — from the command line, never from `config`'s own file contents: `resolveConfig`
+    // hard-codes `[]` and `cli.ts` overlays the flag's values onto the resolved object.
+    allowPublicTargets: config.allowPublicTargets,
   };
   const probes = await new AuthzProber(authzSenderFor(config)).probeAll(request, ownerIds, probeOrder(principals), policy);
 

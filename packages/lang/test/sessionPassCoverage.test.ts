@@ -138,6 +138,11 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     reason:
       'walks `expect`/`check` steps for the two scan matchers (M128b `TF060`, widened by M130b/D315 to `hasNoAuthzViolations`). A `session` body cannot contain either: SPEC §3.3 limits it to `api`/`header`/`capture`/`let`, and a session establishes credentials rather than asserting about the response it got. If that ever widens, this verdict is what has to change first',
   },
+  checkPublicTargets: {
+    verdict: 'n/a',
+    reason:
+      'M131a/D341. Same door as `checkAuthorizedTargets` directly above and a narrower one still: this pass walks only the scans that *originate* traffic (`hasNoAuthzViolations`), and SPEC §3.3 admits no `expect` into a session body at all. The tempting reading is that a session body sends requests, so surely it should be gated too — but the affirmation gates a **scan**, and the requests a session makes are ordinary suite traffic bounded by `allow hosts`, exactly like the `api` step whose response Tier 1 inspects. If `expect` ever becomes legal in a session body, this verdict changes with `checkAuthorizedTargets`\' and not before',
+  },
   checkAuthzAssertions: {
     verdict: 'n/a',
     reason:

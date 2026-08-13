@@ -120,6 +120,11 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     // prints it); it is here so a fixture config is a complete `ResolvedConfig` rather than one that
     // happens to compile.
     authorizedTargets: [],
+    // M131a/D340 — `[]` because a fixture config is a *file*, and this field can only ever come
+    // from the command line. The runtime does read this one (unlike `authorizedTargets` above):
+    // `execAuthzExpect` hands it to the probe policy, where it is the load-bearing half of
+    // `TF065`. Fixtures point at `127.0.0.1`, which needs no affirmation.
+    allowPublicTargets: [],
     evidenceLevel: 'full',
     redactPatterns: [],
     viewport: null,
