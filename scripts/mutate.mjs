@@ -1377,6 +1377,21 @@ const REGISTRY = [
     replace: '  if (false && result.applicable.length === 0 && findings.length === 0) {',
   },
   {
+    // M130b2 — D285's second tenant, and it needs its own mutation because it has its own arithmetic:
+    // Tier 2 reaches "nothing applied" through **two** doors (an owner body the oracle refuses to
+    // read, D321; a probe set nobody could judge, D324) where Tier 1 has one. The sibling above
+    // cannot cover it — that is how this pair was found, when `no-power-to-fail-passes`' quoted line
+    // started matching twice and `mutate.test.mjs` refused the sweep in seconds rather than 49
+    // minutes in. That precondition-hoisted-into-a-test is `M127`'s own fix, working.
+    id: 'authz-no-power-to-fail-passes',
+    milestone: 'm130b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'D285 reversed for the authorization matcher — an assertion whose probe set nobody could judge, or whose owner body carries no readable resource id, reports a pass. The failure is toward silence and is invisible in a green run, which is the same shape `judgeable` already got wrong once inside this milestone',
+    find: '  const nothingApplied = result.applicable.length === 0 && findings.length === 0;',
+    replace: '  const nothingApplied = false;',
+  },
+  {
     id: 'session-findings-dropped',
     milestone: 'm128b',
     pkg: '@tflw/runtime',

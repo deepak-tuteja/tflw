@@ -25,7 +25,6 @@ version-by-version record, see the [Changelog](/changelog).
   thresholds, `--workers N` for multi-process load generation, and a generator self-diagnosis so a
   saturated tflw process never masquerades as a real bottleneck. Validated against k6 and Artillery
   on a real application — see [Load testing](/guide/load-testing#validated-against-k6-and-artillery).
-
 - Security testing — HTTP hygiene scanning over the response your last `api` step received, and
   **authorization testing**: the request your suite actually made, re-issued under every other
   identity you declare, judged on whether one principal's resources came back to another. Both are
@@ -35,5 +34,7 @@ version-by-version record, see the [Changelog](/changelog).
 
 ## Coming next
 
-- The rest of the security arc: fuzzing and injection probes.
+- The rest of the security arc. Its later tiers build on what shipped above — the observed request
+  is what a fuzzer mutates, and `probe mutating` is the per-class opt-in they inherit — but their
+  scope is not settled yet, so this line deliberately does not promise a feature list.
 - A first public npm release, once the security arc above lands alongside one final acceptance pass.

@@ -4271,7 +4271,13 @@ function describeAuthzOutcome(
   const note = probeNote(probes, privileged);
   const findings = result.findings;
 
-  if (result.applicable.length === 0 && findings.length === 0) {
+  // **Two doors, one verdict.** The pack can find nothing applicable because the owner's `2xx` body
+  // is a shape the oracle refuses to guess at (D321), or because no principal produced a judgeable
+  // response (D324) — a probe set entirely rate-limited, refused for CSRF, or never sent.
+  // `runAuthzScan` routes both through the same not-applicable path, which is what lets this stay
+  // one condition; naming it is what stops a reader taking it for Tier 1's single door.
+  const nothingApplied = result.applicable.length === 0 && findings.length === 0;
+  if (nothingApplied) {
     const why = result.notApplicable.map((n) => `  - ${n.rule.id} applies when: ${n.because}`);
     return {
       ok: false,
