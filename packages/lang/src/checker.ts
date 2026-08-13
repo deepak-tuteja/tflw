@@ -45,6 +45,17 @@ import { parseStringParts } from './parser.js';
 export interface ProgramCheckOptions {
   readonly knownServices?: readonly string[];
   readonly knownSessions?: readonly string[];
+  /**
+   * The subset of `knownSessions` declared `privileged` (M130b, D307) — principals `has no
+   * authorization violations` leaves out of its probe set because they are *meant* to reach other
+   * principals' resources.
+   *
+   * A subset of the roster above rather than a second roster, so the two cannot disagree about
+   * which sessions exist. Read only by `checkAuthzAssertions`, and only alongside `knownSessions`:
+   * on its own it could not tell "every session is privileged" from "the one session I was told
+   * about is privileged".
+   */
+  readonly privilegedSessions?: readonly string[];
   /** Actions this file's `import` lines bring into scope (M87), resolved by the caller because the
    * checker itself never touches the filesystem. Same `undefined`-vs-`[]` distinction as the two
    * above, and it carries more weight here than anywhere else: with `[]` a call matching no local
@@ -254,6 +265,11 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     // skip-without-a-config decision is made *inside* the pass, from `opts.envAuthorizedTargets`,
     // because "a config was resolved and authorizes nothing" is a case with a diagnostic to emit.
     ...checkAuthorizedTargets(program, opts),
+    // M130b (D315/D328/D329) — wired unconditionally, like the two above. Only its `every session
+    // is privileged` door needs the caller's config; the rest are AST-only facts, and skipping the
+    // whole pass without a config would lose them in exactly the editor where a first authorization
+    // assertion is most likely to be written wrong.
+    ...checkAuthzAssertions(program, opts),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkActionCycles(program, opts),
@@ -300,6 +316,16 @@ function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): 
     });
   }
 }
+
+/**
+ * The one principal name the language owns (M130b, D306/D333).
+ *
+ * `anonymous` is in every authorization probe set without being declared, so it is the one session
+ * name a config may not take. Defined here, in the lower package, and re-exported by
+ * `@tflw/runtime`'s `authzProbe.ts` as `ANONYMOUS` — a second string literal in the package that
+ * *sends* the probe is exactly how a checker comes to reserve a name the runtime does not use.
+ */
+export const RESERVED_PRINCIPAL = 'anonymous';
 
 /** Keys valid only in `defaults`, only in `env`, or in both. */
 const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl', 'ViewportDecl']);
@@ -360,6 +386,20 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
         message: `duplicate session \`${session.name}\``,
         span: session.span,
         hint: 'session names must be unique',
+      });
+    }
+    // M130b/D333 — `anonymous` is a built-in principal, present in every authorization probe set
+    // (D306). A declared session by that name is the same *kind* of mistake as a duplicate and gets
+    // the same code: one name, two things behind it, and one repair — rename the session. The
+    // failure it prevents is silent in both directions, since either the built-in shadows the
+    // declaration or the declaration shadows the built-in, and neither says so.
+    if (session.name === RESERVED_PRINCIPAL) {
+      diags.push({
+        code: Codes.CONFIG_SESSION_CONFLICT,
+        severity: 'error',
+        message: `\`${RESERVED_PRINCIPAL}\` is a reserved principal name`,
+        span: session.span,
+        hint: '`anonymous` is the built-in identity every `has no authorization violations` assertion probes with — a session by that name would either shadow it or be shadowed by it, in silence. Rename this session',
       });
     }
     seenSessions.add(session.name);
@@ -3305,16 +3345,251 @@ export function checkAuthorizedTargets(program: Program, opts: ProgramCheckOptio
     : `env \`${declared.envName}\` declares no \`authorized target\`. Add \`${shape}\` to \`tflw.config\` — the reason is printed in the run summary and embedded in the report, so the claim travels with the evidence (SPEC §3.10, D21)`;
 
   forEachExpect(program, (expect) => {
-    if (expect.matcher.name !== 'hasNoSecurityViolations') return;
+    // M130b/D315 — the gate covers every scan this declaration authorizes, and `authorization
+    // violations` is the one that most obviously needs it: Tier 1 reads a response the suite
+    // already asked for, while this one *originates* requests under identities the step never used.
+    // Adding the matcher to the list is the whole change; a second pass would have been two copies
+    // of one rule, drifting the first time either message was reworded.
+    const scan = SCAN_LABELS[expect.matcher.name];
+    if (scan === undefined) return;
     diags.push({
       code: Codes.SECURITY_ASSERTION_UNAUTHORIZED,
       severity: 'error',
-      message: `a security scan against "${base}" needs an \`authorized target\` declaration naming it`,
+      message: `${scan} against "${base}" needs an \`authorized target\` declaration naming it`,
       span: expect.span,
       hint,
     });
   });
   return diags;
+}
+
+/** The scans `TF060` gates, and what to call each one in its message (M128b D291; M130b D315). A
+ *  lookup rather than an `||` chain so that a third gated scan is a row, and so the message can say
+ *  which scan was refused instead of saying "a security scan" about an authorization one. */
+const SCAN_LABELS: Partial<Record<MatcherName, string>> = {
+  hasNoSecurityViolations: 'a security scan',
+  hasNoAuthzViolations: 'an authorization scan',
+};
+
+// ---------------------------------------------------------------------------
+// M130b — `expect|check response has no [<severity>] authorization violations`.
+// ---------------------------------------------------------------------------
+
+/**
+ * The three ways an authorization assertion can be written where it cannot do its job
+ * (`TF062`/`TF063`/`TF064`, D328/D329/D315), plus the workload case, which belongs to `TF033`.
+ *
+ * **Every rule here is half of a pair, and the other half is in the interpreter.** Calls in this
+ * language bind late — an `action` body is resolved against the *entry file's* registry, which is
+ * why `checker.ts:885` already limits its call-resolution frames to "a `test` or hook body, never
+ * an `action` body". So this pass deliberately stays silent inside an `action`, and `execAuthzExpect`
+ * repeats each judgement at run time with the executing test in hand. Fighting that boundary into a
+ * single static rule would either refuse a shared authorization check written once and reused — the
+ * language's only unit of reuse — or answer confidently about a frame it cannot see.
+ *
+ * What each rule buys by *also* being here is the pre-flight answer: `tflw check` refuses a file it
+ * can prove will fail, with no server, no credentials and no cross-identity packet.
+ */
+export function checkAuthzAssertions(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+
+  // D307's second door into `TF063`, computed once. Only when a config was actually resolved:
+  // `undefined` means nobody looked, the same rule every other option field in this file follows,
+  // and guessing here would fire on every authorization assertion in the docs-site editor demo.
+  const declared = opts.knownSessions;
+  const privileged = new Set(opts.privilegedSessions ?? []);
+  const noProbeablePrincipal = declared !== undefined && declared.length > 0 && declared.every((s) => privileged.has(s));
+
+  for (const test of program.tests) {
+    const frame: AuthzFrame = {
+      kind: 'test',
+      hasOwner: test.sessions.length > 0,
+      workload: test.workload !== null,
+      label: `test "${test.name.value}"`,
+    };
+    checkAuthzInSteps(test.body, frame, noProbeablePrincipal, declared, privileged, diags);
+  }
+  for (const hook of program.hooks) {
+    // A bare `before`/`after` runs once per test and shares its scope (`each` in the AST; there is
+    // no `before each` keyword — GRAMMAR.md § Tests), so the test's `as` is the hook's owner and
+    // this pass cannot know it — silent here, judged at run time. `before file`/`after file` run in
+    // their own scope (`ast.ts:57`) and can therefore never have one, which is a fact about the
+    // construct rather than about the suite.
+    const frame: AuthzFrame = {
+      kind: 'hook',
+      hasOwner: hook.scope === 'each',
+      workload: false,
+      label: `a \`${hook.when}${hook.scope === 'file' ? ' file' : ''}\` hook`,
+      ownerUnknowable: hook.scope === 'each',
+    };
+    checkAuthzInSteps(hook.body, frame, noProbeablePrincipal, declared, privileged, diags);
+  }
+  for (const action of program.actions) {
+    const frame: AuthzFrame = { kind: 'action', hasOwner: true, workload: false, label: `action \`${action.name}\``, ownerUnknowable: true };
+    checkAuthzInSteps(action.body, frame, noProbeablePrincipal, declared, privileged, diags);
+  }
+  return diags;
+}
+
+interface AuthzFrame {
+  readonly kind: 'test' | 'hook' | 'action';
+  readonly hasOwner: boolean;
+  readonly workload: boolean;
+  readonly label: string;
+  /** True where the owner is a *runtime* fact — an `action` body, a `before each` hook. `TF063`'s
+   *  owner door stays shut; the interpreter's backstop opens it with the real test in hand. */
+  readonly ownerUnknowable?: boolean;
+}
+
+function checkAuthzInSteps(
+  steps: readonly Step[],
+  frame: AuthzFrame,
+  noProbeablePrincipal: boolean,
+  declared: readonly string[] | undefined,
+  privileged: ReadonlySet<string>,
+  diags: Diagnostic[],
+): void {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    if (step.type === 'WaitUntilApiStmt') {
+      for (const expect of step.expects) {
+        if (expect.matcher.name !== 'hasNoAuthzViolations') continue;
+        diags.push({
+          code: Codes.AUTHZ_ASSERTION_REPEATED_REQUEST,
+          severity: 'error',
+          message: '`authorization violations` can\'t be asserted inside `wait until api`',
+          span: expect.span,
+          // The sharp half is not the wasted traffic, it is what a real finding turns into: `wait
+          // until api` re-polls until its expects pass, so a genuine BOLA would be re-probed under
+          // every principal on every poll and then reported as a *wait timeout*.
+          hint: '`wait until api` re-issues its request until its expects pass, so a real violation would be re-probed on every poll and finally reported as a timeout rather than as a finding — assert it on a plain `api` step after the block',
+        });
+      }
+      continue;
+    }
+    if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+      checkAuthzInSteps(step.body, frame, noProbeablePrincipal, declared, privileged, diags);
+      continue;
+    }
+    if (step.type !== 'ExpectStmt') continue;
+    if (step.matcher.name !== 'hasNoAuthzViolations') continue;
+
+    if (frame.workload) {
+      diags.push({
+        code: Codes.LOAD_INVALID,
+        severity: 'error',
+        message: "`authorization violations` can't be asserted inside a workload-bearing `test`",
+        span: step.span,
+        hint: 'each assertion sends one probe per declared principal, and a workload runs its body once per iteration per VU — so this multiplies cross-identity traffic by the load factor against a target you authorized for a scan, not for a scan times the VU count. Assert it in a functional test',
+      });
+    }
+    if (!frame.hasOwner && !frame.ownerUnknowable) {
+      diags.push({
+        code: Codes.AUTHZ_ASSERTION_NO_PRINCIPAL,
+        severity: 'error',
+        message: `\`authorization violations\` needs an owner, and ${frame.label} declares none`,
+        span: step.span,
+        hint:
+          frame.kind === 'hook'
+            ? 'a `before file`/`after file` hook runs in its own scope, isolated from every test, so it can never have an owner — move the assertion into a test that declares one with `as <session>`, or into a bare `before`/`after` hook, which runs once per test and shares its scope (SPEC §3.3)'
+            : 'the oracle is differential: it re-issues this request under every *other* declared principal and compares. With no `as <session>` there is no principal it is comparing against, so there is nothing to judge — add one, e.g. `test "…" as shopper` (SPEC §3.3)',
+      });
+    }
+    if (noProbeablePrincipal && !frame.workload) {
+      diags.push({
+        code: Codes.AUTHZ_ASSERTION_NO_PRINCIPAL,
+        severity: 'error',
+        message: '`authorization violations` has no principal to probe with — every declared `session` is `privileged`',
+        span: step.span,
+        hint: `\`tflw.config\` declares ${declared!.map((s) => `\`${s}\``).join(', ')}, and marks all of them \`privileged\`, so the probe set holds only \`anonymous\` — which tests authentication, not authorization. \`privileged\` is a claim that a principal is *meant* to reach other principals' resources; drop it from the one you want probed`,
+      });
+    }
+
+    const owner = nearestPrecedingApiStep(steps, i);
+    const named = owner ? literalIdentityHeader(owner) : null;
+    if (named) {
+      diags.push({
+        code: Codes.AUTHZ_STEP_NAMES_OWN_CREDENTIAL,
+        severity: 'error',
+        message: `the \`api\` step this asserts on names its own \`${named}\` header`,
+        span: step.span,
+        // Not a style objection. The probe strips the observed `Authorization`/`Cookie` and applies
+        // the probing principal's own — so a credential written onto the step is one the *owner's*
+        // sessions never supplied, and the differential comparison is then between two identities
+        // the run cannot name. A finding from that is confidently wrong in either direction.
+        hint: `the oracle compares this request re-issued under other principals against what the owner's \`as <session>\` actually contributed — a \`${named}\` written onto the step belongs to neither, so the comparison has no principal behind it. Move the credential into a \`session\` block and name it with \`as <session>\` (SPEC §3.3)`,
+      });
+    }
+  }
+}
+
+/** The nearest preceding `api` step **in the same body** — the request this assertion will judge.
+ *  Deliberately not a search that crosses into a call or out of a block: `checkResponseScopeInSteps`
+ *  already establishes that a response never crosses those boundaries, and a rule that reached
+ *  further would be answering about a request this frame cannot see. */
+function nearestPrecedingApiStep(steps: readonly Step[], from: number): ApiRequestSpec | null {
+  for (let i = from - 1; i >= 0; i--) {
+    const step = steps[i]!;
+    if (step.type === 'ApiStep') return step;
+    if (step.type === 'WaitUntilApiStmt') return step.request;
+  }
+  return null;
+}
+
+/** The identity header this step writes for itself, or null (D328's check-time half).
+ *
+ *  Case-insensitive, because a header map keeps the case its author typed — the assumption `M128`'s
+ *  `sec/authenticated-response-cacheable` got wrong, where it cost a rule that fired for nobody.
+ *  An **interpolated header name** is skipped rather than guessed at: `header "{h}" is …` may or may
+ *  not be `Authorization`, and this rule refuses a file, so being wrong here refuses a correct one.
+ *  The value is not read at all — a credential is a credential whether it is a literal or a
+ *  `{token}`, and D328's runtime half compares the actual bytes anyway. */
+function literalIdentityHeader(step: ApiRequestSpec): string | null {
+  for (const header of step.headers) {
+    if (header.name.parts.some((p) => p.kind === 'interp')) continue;
+    const name = header.name.value.toLowerCase();
+    if (name === 'authorization') return 'Authorization';
+    if (name === 'cookie') return 'Cookie';
+  }
+  return null;
+}
+
+/**
+ * D331 — the suite's identity census: how many `api` steps sit in a test that declares an owner.
+ *
+ * **This exists because D316's blind-spot count, as specified, could only ever be zero.** It asked
+ * the run to count `api` steps it could not attribute to a principal and named the `TF062`/`TF063`
+ * sites — but those are *errors*, so no run containing one ever executes. The intent survives as a
+ * static fact about the suite, printed once beside the `authorized target` reason, and it is the
+ * sentence that stops *we probed everything we asserted on* being read as *we probed everything*.
+ *
+ * The denominator is every `api`/`wait until api` step in the file, including those in `action` and
+ * hook bodies; the numerator counts only steps lexically inside a test that declares an owner. A
+ * step inside an `action` runs under whichever test called it, which is knowable at run time and not
+ * here — so it lands in the denominator and not the numerator, and the census under-claims rather
+ * than over-claims. That is the correct direction for a number whose whole job is to state a bound.
+ */
+export interface IdentityCensus {
+  readonly apiSteps: number;
+  readonly withOwner: number;
+}
+
+export function identityCensus(program: Program): IdentityCensus {
+  let apiSteps = 0;
+  let withOwner = 0;
+  const count = (steps: readonly Step[], owned: boolean): void => {
+    for (const step of steps) {
+      if (step.type === 'ApiStep' || step.type === 'WaitUntilApiStmt') {
+        apiSteps++;
+        if (owned) withOwner++;
+      }
+      if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') count(step.body, owned);
+    }
+  };
+  for (const test of program.tests) count(test.body, test.sessions.length > 0);
+  for (const action of program.actions) count(action.body, false);
+  for (const hook of program.hooks) count(hook.body, false);
+  return { apiSteps, withOwner };
 }
 
 export function checkAbsoluteUrls(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {

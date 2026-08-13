@@ -136,6 +136,10 @@ export class DocumentStore {
     // docs-site demo — a browser, where no config can exist even in principle — omits these.
     let knownServices: string[] = [];
     let knownSessions: string[] = [];
+    // M130b/D307 — a subset of the roster above, and it follows `knownServices`' rule rather than
+    // `envBaseUrls`': `[]` here means "no session is privileged", which is both the honest answer
+    // for a file outside any project and the answer that emits nothing.
+    let privilegedSessions: string[] = [];
     // `envBaseUrls` (M116/D148, `TF051`) stays `undefined` when no project resolves, and that is the
     // one option here that must NOT fall back to a permissive default. `[]` for services says "this
     // env declares none", which is a real error about a real env; `{api: false, web: false}` would
@@ -161,6 +165,7 @@ export class DocumentStore {
       if (project?.resolved) {
         knownServices = Object.keys(project.resolved.services);
         knownSessions = Array.from(project.resolved.sessions.keys());
+        privilegedSessions = knownSessions.filter((name) => project.resolved!.sessions.get(name)?.privileged === true);
         envBaseUrls = {
           envName: project.resolved.envName,
           api: project.resolved.apiBaseUrl !== null,
@@ -205,6 +210,7 @@ export class DocumentStore {
       ...checkProgram(parsed.program, {
         knownServices,
         knownSessions,
+        privilegedSessions,
         ...(importedActions === undefined ? {} : { importedActions }),
         ...(missingFiles === undefined ? {} : { missingFiles }),
         ...(envBaseUrls ? { envBaseUrls } : {}),

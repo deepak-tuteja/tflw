@@ -129,6 +129,24 @@ export const Codes = {
   // is not permitted to run in any env, and a wildcard target is not a claim anyone can make.
   SECURITY_ASSERTION_UNAUTHORIZED: 'TF060',
   AUTHORIZED_TARGET_WILDCARD: 'TF061',
+  // M130b (`PLAN_M130B_AUTHZ_ENGINE.md`, D328/D329/D315) — the three ways an `authorization
+  // violations` assertion can be written where it cannot do its job. All errors, all decidable from
+  // AST × config, all reported before a single cross-identity request goes out.
+  //
+  // **Three codes, where the plan budgeted two**, and the splitting rule is the codebase's own: a
+  // code is one *repair*, not one topic (`TF003`, split because re-indenting a block and changing an
+  // editor setting are unrelated fixes; `TF047`, widened because every one of its conditions is
+  // corrected by spelling the escape the way tflw spells it). These three have three repairs — stop
+  // naming the credential, give the assertion a principal, move it off a construct that re-runs its
+  // request — so filing them under two codes would have made one generated codes-reference row
+  // false, which is the defect class `M92` spent a milestone on.
+  //
+  // The workload case is deliberately **not** here: it is `TF033`, beside "browser steps aren't
+  // supported inside a workload-bearing test", because that is the same rule about the same
+  // construct with the same fix.
+  AUTHZ_STEP_NAMES_OWN_CREDENTIAL: 'TF062',
+  AUTHZ_ASSERTION_NO_PRINCIPAL: 'TF063',
+  AUTHZ_ASSERTION_REPEATED_REQUEST: 'TF064',
 } as const;
 
 // ---------------------------------------------------------------------------

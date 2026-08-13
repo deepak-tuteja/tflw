@@ -136,7 +136,12 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
   checkAuthorizedTargets: {
     verdict: 'n/a',
     reason:
-      'walks `expect`/`check` steps for the `hasNoSecurityViolations` matcher (M128b, `TF060`). A `session` body cannot contain one: SPEC §3.3 limits it to `api`/`header`/`capture`/`let`, and a session establishes credentials rather than asserting about the response it got. If that ever widens, this verdict is what has to change first',
+      'walks `expect`/`check` steps for the two scan matchers (M128b `TF060`, widened by M130b/D315 to `hasNoAuthzViolations`). A `session` body cannot contain either: SPEC §3.3 limits it to `api`/`header`/`capture`/`let`, and a session establishes credentials rather than asserting about the response it got. If that ever widens, this verdict is what has to change first',
+  },
+  checkAuthzAssertions: {
+    verdict: 'n/a',
+    reason:
+      'M130b/D315/D328/D329. Same door as `checkAuthorizedTargets` directly above, and a second one behind it: SPEC §3.3 admits no `expect` into a session body at all, so the matcher this pass walks for cannot appear there — and even if it could, every rule the pass carries is about a frame a session is not. `TF063` asks which principal a body belongs to, and a session *is* a principal rather than something that runs as one; `TF062` asks whether the step named a credential its owning session did not supply, which in a session body is the ordinary case and not a defect, since establishing that credential is the body\'s entire job. So this is a genuine n/a, not a deferral: the two halves would have to mean different things there, which is exactly the shape D142 exists to make somebody say out loud',
   },
 
   checkDataTables: {

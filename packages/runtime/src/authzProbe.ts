@@ -34,14 +34,19 @@
 // self-inflicted `429` becomes unlikely rather than merely well-classified. The cost is roughly one
 // step's latency per principal per assertion site, which D319 commits to recording as a number.
 
+import { RESERVED_PRINCIPAL } from '@tflw/lang';
 import { allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { containsAnyId, type ProbeOutcome, type ProbeResult } from './authzRules.js';
 import type { CookieJar } from './cookieJar.js';
 import type { AuthorizedTarget, RequestTrace, ResponseTrace } from './types.js';
 
 /** D306's built-in principal, and D333's reserved name — `session anonymous` is a checker error, so
- * this string can never collide with a declared session. */
-export const ANONYMOUS = 'anonymous';
+ * this string can never collide with a declared session.
+ *
+ * Re-exported from `@tflw/lang` rather than spelled again here. The checker reserves the name and
+ * this file uses it, and two string literals for one reserved word is how a checker comes to refuse
+ * a name the runtime never actually probes with. */
+export const ANONYMOUS: string = RESERVED_PRINCIPAL;
 
 /** The methods that do not change state, and therefore need no opt-in to probe.
  *

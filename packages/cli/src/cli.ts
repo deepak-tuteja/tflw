@@ -1113,6 +1113,9 @@ async function loadAndValidate(
   // let the others execute with real side effects. Parse+check each file up front; only start
   // running once every file is clean.
   const knownSessions = Array.from(resolved.sessions.keys());
+  // M130b/D307 — the subset, derived from the same map the roster comes from so the two cannot
+  // disagree about which sessions exist.
+  const privilegedSessions = knownSessions.filter((name) => resolved.sessions.get(name)?.privileged === true);
   const parsedFiles: { file: string; source: string; program: Program }[] = [];
   let hadErrors = false;
   // Seeded with the config stage's own warnings (M116/D151), not zeroed: a `cert` that is not
@@ -1127,6 +1130,7 @@ async function loadAndValidate(
     const checkDiags = checkProgram(parsed.program, {
       knownServices: Object.keys(resolved.services),
       knownSessions,
+      privilegedSessions,
       importedActions: await resolveImportedActions(file, parsed.program),
       // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
       // `importedActions` does: `@tflw/lang` does no I/O. Before this, `tflw check` printed `no
@@ -2212,6 +2216,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
   const cwd = process.cwd();
   const knownServices = Object.keys(loaded.resolved.services);
   const knownSessions = Array.from(loaded.resolved.sessions.keys());
+  const privilegedSessions = knownSessions.filter((name) => loaded.resolved.sessions.get(name)?.privileged === true);
   const readPending: ReadText = async (absPath) => pending.get(absPath) ?? (await readFile(absPath, 'utf8'));
   const existsPending: PathExists = async (absPath) => pending.has(absPath) || (await exists(absPath));
 
@@ -2223,6 +2228,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
       ...checkProgram(parsed.program, {
         knownServices,
         knownSessions,
+        privilegedSessions,
         importedActions: await resolveImportedActions(abs, parsed.program, readPending),
         missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),
       }),
