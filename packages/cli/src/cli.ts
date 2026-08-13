@@ -21,6 +21,7 @@ import {
   checkProgram,
   checkSessionBody,
   checkAllowHostsCoversBaseUrls,
+  identityCensus,
   suggest,
   detectReuse,
   renderCallSiteReplacement,
@@ -40,6 +41,9 @@ import {
 } from '@tflw/lang';
 import {
   runProgram,
+  type AuthzSink,
+  type AuthzFinding,
+  type AuthzDecline,
   resolveImportedActions,
   resolveMissingFiles,
   checkConfigFiles,
@@ -87,6 +91,7 @@ import {
 import { spawn, fork, type ChildProcess } from 'node:child_process';
 import {
   writeReport,
+  writeAuthzRepros,
   writeJunitXml,
   writeResultsJson,
   writeLastRun,
@@ -1113,6 +1118,9 @@ async function loadAndValidate(
   // let the others execute with real side effects. Parse+check each file up front; only start
   // running once every file is clean.
   const knownSessions = Array.from(resolved.sessions.keys());
+  // M130b/D307 — the subset, derived from the same map the roster comes from so the two cannot
+  // disagree about which sessions exist.
+  const privilegedSessions = knownSessions.filter((name) => resolved.sessions.get(name)?.privileged === true);
   const parsedFiles: { file: string; source: string; program: Program }[] = [];
   let hadErrors = false;
   // Seeded with the config stage's own warnings (M116/D151), not zeroed: a `cert` that is not
@@ -1127,6 +1135,7 @@ async function loadAndValidate(
     const checkDiags = checkProgram(parsed.program, {
       knownServices: Object.keys(resolved.services),
       knownSessions,
+      privilegedSessions,
       importedActions: await resolveImportedActions(file, parsed.program),
       // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
       // `importedActions` does: `@tflw/lang` does no I/O. Before this, `tflw check` printed `no
@@ -1562,6 +1571,14 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const browserManager = watchOpts?.browserManager ?? new BrowserManager({ engine: browserEngine, headless: !args.headed, viewport: resolved.viewport });
   watchOpts?.onBrowserManagerReady?.(browserManager);
 
+  // M130b (D331/D332) — one collector for the whole invocation, beside `sessionCache` and
+  // `tlsProber` and shared for their reason: the declines are the *run's* number, not any one
+  // file's, and the repro files are written once, after everything has finished, so `--workers N`
+  // and shards cannot interleave partial ones.
+  const authzFindings: AuthzFinding[] = [];
+  const authzDeclines: AuthzDecline[] = [];
+  const authzSink: AuthzSink = { finding: (f) => authzFindings.push(f), decline: (d) => authzDeclines.push(d) };
+
   interface FileRunResult {
     readonly report: RunReport;
   }
@@ -1612,6 +1629,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
               redactor,
               sessionCache,
               tlsProber,
+              authzSink,
               browserManager,
               seed,
               now,
@@ -1653,6 +1671,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
             redactor,
             sessionCache,
             tlsProber,
+            authzSink,
             browserManager,
             seed,
             now,
@@ -1736,7 +1755,22 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   //    a secret first registered by one file (e.g. running later, or concurrently under
   //    `--workers`) can still retroactively mask an earlier file's already-built report once
   //    everything is merged.
-  const merged = redactReport(mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo), redactor);
+  // D331 — the census is computed over `parsedFiles`, the whole **discovered** suite, and never
+  // over `runnable`, which `--tags`/`--only`/`--failed` may have narrowed. That is deliberate and
+  // the label says so: this is the *suite's* bound on what the tier can judge, not this run's, and
+  // a number whose base moved with the filter would be a different sentence every invocation.
+  const census = parsedFiles.reduce(
+    (acc, { program }) => {
+      const c = identityCensus(program);
+      return { apiSteps: acc.apiSteps + c.apiSteps, withOwner: acc.withOwner + c.withOwner };
+    },
+    { apiSteps: 0, withOwner: 0 },
+  );
+  const authzBlindSpot = buildAuthzBlindSpot(census, authzDeclines);
+  const merged = redactReport(mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo, authzBlindSpot), redactor);
+  // D332 — written after the run, from the collected findings, so `--workers N` and shards cannot
+  // interleave partial files.
+  await writeAuthzRepros(authzFindings, join(cwd, resolved.reportDir));
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
@@ -2212,6 +2246,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
   const cwd = process.cwd();
   const knownServices = Object.keys(loaded.resolved.services);
   const knownSessions = Array.from(loaded.resolved.sessions.keys());
+  const privilegedSessions = knownSessions.filter((name) => loaded.resolved.sessions.get(name)?.privileged === true);
   const readPending: ReadText = async (absPath) => pending.get(absPath) ?? (await readFile(absPath, 'utf8'));
   const existsPending: PathExists = async (absPath) => pending.has(absPath) || (await exists(absPath));
 
@@ -2223,6 +2258,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
       ...checkProgram(parsed.program, {
         knownServices,
         knownSessions,
+        privilegedSessions,
         importedActions: await resolveImportedActions(abs, parsed.program, readPending),
         missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),
       }),
@@ -2443,6 +2479,39 @@ async function runWithConcurrency<T, R>(
   return results.filter((r): r is R => r !== undefined);
 }
 
+/**
+ * D331 — the two blind-spot numbers, assembled for the report.
+ *
+ * **Two fields rather than one percentage**, and the reason is `M126`'s rule that a denominator
+ * travels on the same line as its count. `coverage` counts over the whole discovered suite, before
+ * any filter; `declines` counts over the assertions that actually ran. A single combined figure
+ * would have a base that moved with `--tags`, which is the shape this ledger keeps re-filing.
+ *
+ * Returns `undefined` when there is nothing to say — a suite with no `api` step at all and no
+ * decline — so an ordinary run's report and summary are byte-for-byte unchanged.
+ */
+function buildAuthzBlindSpot(
+  census: { apiSteps: number; withOwner: number },
+  declines: readonly AuthzDecline[],
+): RunReport['authzBlindSpot'] | undefined {
+  // Aggregated by principal + reason, because the useful unit is *what could not be judged and for
+  // whom*: five assertions all declining `shopper` for the same CSRF-shaped 403 is one fact with a
+  // count, not five lines.
+  const counts = new Map<string, { principal: string; reason: string; count: number }>();
+  for (const d of declines) {
+    const key = `${d.principal}\u0000${d.reason}`;
+    const row = counts.get(key);
+    if (row) row.count++;
+    else counts.set(key, { principal: d.principal, reason: d.reason, count: 1 });
+  }
+  const aggregated = [...counts.values()].sort((a, b) => b.count - a.count || a.principal.localeCompare(b.principal));
+  if (census.apiSteps === 0 && aggregated.length === 0) return undefined;
+  return {
+    ...(census.apiSteps > 0 ? { coverage: census } : {}),
+    ...(aggregated.length > 0 ? { declines: aggregated } : {}),
+  };
+}
+
 /** Combine per-file reports into one run report, in original file order regardless of the
  * per-file worker concurrency that produced them (P#47). M56 (Phase 3, D118): also merges each
  * file's own `selfDiagnosis`/`inconclusive`/`aborted` (present only for a file that had a
@@ -2458,6 +2527,7 @@ function mergeReports(
   browserEngine: BrowserEngine,
   evidenceLevel: EvidenceLevel,
   demo: boolean,
+  authzBlindSpot?: RunReport['authzBlindSpot'],
 ): RunReport {
   const tests: ReportEntry[] = reports.flatMap((r) => r.tests);
   const passed = tests.filter((t) => t.ok).length;
@@ -2491,6 +2561,9 @@ function mergeReports(
     // D291 — omitted rather than `[]` for the same reason `demo` is: the field marks the unusual
     // case (a suite that scans something), and every pre-M128b fixture stays valid without it.
     ...(authorizedTargets.length > 0 ? { authorizedTargets } : {}),
+    // D331 — omitted entirely for a suite with no authorization assertion and no `api` step, so a
+    // pre-M130b fixture stays valid and an ordinary run gains no line.
+    ...(authzBlindSpot ? { authzBlindSpot } : {}),
     ...(unmaskableSecrets.length > 0 ? { unmaskableSecrets } : {}),
     ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
     ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),

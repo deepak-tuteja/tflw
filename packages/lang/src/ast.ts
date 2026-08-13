@@ -722,6 +722,7 @@ export type MatcherName =
   | 'wasMade'
   | 'hasNoA11yViolations'
   | 'hasNoSecurityViolations'
+  | 'hasNoAuthzViolations'
   | 'matchesSnapshot';
 
 /** The severity scale every *scan* in this language shares, increasing. Originally axe-core's own
@@ -752,7 +753,8 @@ export interface Matcher extends Node {
    * at runtime, same as `schemaSource`'s relative-path handling. */
   readonly filePath?: StringLit;
   /** The optional severity word in `has no [<severity>] a11y violations` (M3e) and `has no
-   * [<severity>] security violations` (M128b) — set only for those two matchers.
+   * [<severity>] security violations` (M128b) and `has no [<severity>] authorization violations`
+   * (M130b, D304) — set only for those three matchers.
    *
    * `undefined` means every severity counts; otherwise a *floor* — `serious` also counts `critical`
    * findings, since a "no serious violations" bar that a worse violation could quietly slip under
@@ -762,8 +764,9 @@ export interface Matcher extends Node {
    * arrived needing the identical word list, the identical floor semantics and the identical AST
    * position. A second field would have been a fork of this one — the shape `M125e` filed against a
    * display label derived from an identity key — so the field was renamed to what it has always
-   * actually been. What differs between the two scans is which *rules* the floor selects, and that
-   * lives in each scanner, not here. */
+   * actually been. What differs between the scans is which *rules* the floor selects, and that
+   * lives in each scanner, not here. `M130b`'s authorization pack is the third tenant and needed no
+   * change at all, which is the renaming being paid back. */
   readonly severityFloor?: FindingSeverity;
   /** `matches snapshot "<name>"` (M4b, D15) — set only when `name === 'matchesSnapshot'`. Becomes
    * the baseline's file name (slugified) under `snapshots/<file>/<test>/<name>.png` — not a file
@@ -1307,6 +1310,15 @@ export interface SessionDecl extends Node {
   readonly name: string;
   readonly oauth2: Oauth2SessionConfig | null;
   readonly body: readonly Step[];
+  /** `session <name> [oauth2] privileged` (M130b, D307/D310) — this principal is *supposed* to be
+   * able to read other principals' resources, so `has no authorization violations` excludes it from
+   * the probe set instead of reporting the access it is entitled to as a finding.
+   *
+   * **A claim about authority, not a performance lever.** Marking every session privileged empties
+   * the probe set and is refused by the checker, precisely because the cheapest way to make a slow
+   * authz assertion fast would otherwise be to declare away the thing it measures. The lever for
+   * cost is fewer assertion sites. */
+  readonly privileged: boolean;
 }
 
 /** `session <name> oauth2 / token url … / client id … / client secret … / scope …` — OAuth2
@@ -1446,6 +1458,15 @@ export interface AuthorizedTargetDecl extends Node {
   readonly type: 'AuthorizedTargetDecl';
   readonly target: StringLit;
   readonly reason: StringLit;
+  /** The optional indented `probe mutating` sub-clause (M130b, D311/D330) — permission for
+   * `has no authorization violations` to re-issue a `POST`/`PUT`/`PATCH`/`DELETE` under another
+   * principal against *this host*. Without it a mutating step's assertion reports `not probed`
+   * rather than silently sending writes somewhere nobody said it could.
+   *
+   * A property of the host, not of the run: staging may be safe to read as a stranger and not safe
+   * to write to. The one-line `authorized target "<url>" reason "<text>"` form above is unchanged —
+   * this is a line *beneath* it, never a reformatting of it. */
+  readonly probeMutating: boolean;
 }
 
 export type EvidenceLevel = 'full' | 'headers-only' | 'none';

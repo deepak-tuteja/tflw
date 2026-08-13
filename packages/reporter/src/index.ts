@@ -22,6 +22,10 @@ export { describeWorkload } from './workload-format.js';
 export { renderJunitXml } from './junit.js';
 export { writeLastRun, readLastRun, renderLastRun, describeRunFilter, type LastRun, type LastRunFailure } from './last-run.js';
 export { writeEventsNdjson } from './events-ndjson.js';
+// M130b (D332) — the runnable `.tflw` per authorization finding. An emitter, not an evidence dump:
+// an evidence file can never be wrong, which is what makes it worth less than a file that goes red
+// until the bug is fixed and green afterwards.
+export { writeAuthzRepros, renderAuthzRepro, reproFileName, AUTHZ_REPRO_DIR } from './authz-repro.js';
 export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
 /** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links

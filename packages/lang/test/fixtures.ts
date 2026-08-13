@@ -498,6 +498,42 @@ env staging
 exclude "tflw-acceptance", "fixtures/broken"
 `,
   },
+  {
+    // M130b/D307/D330 — the whole of Tier 2's config surface in one fixture, because the two
+    // additions are only interesting *together*: `privileged` names a principal the probe set
+    // leaves out, and `probe mutating` names a host the probe set may write to.
+    //
+    // Both spellings of each are here on purpose. The one-line `authorized target` must keep
+    // parsing exactly as it did — `tflw-acceptance/security/tflw.config` is on `main` written that
+    // way — so the fixture carries a bare declaration beside a sub-claused one, and a `privileged`
+    // oauth2 session beside a `privileged` block session.
+    name: 'authz-declarations',
+    source: `defaults
+  authorized target "http://localhost:4001" reason "self-hosted test fixture"
+    probe mutating
+
+env staging
+  api "https://staging.example.com"
+  authorized target "https://staging.example.com" reason "contracted window, ticket SEC-441"
+
+session admin privileged
+  api POST /auth/login body { user: env(ADMIN_EMAIL), pass: env(ADMIN_PW) }
+  capture body.token as token
+  header "Authorization" is "Bearer {token}"
+
+session svc oauth2 privileged
+  token url "https://staging.example.com/oauth/token"
+  client id env(CLIENT_ID)
+  client secret env(CLIENT_SECRET)
+
+session peer
+  api POST /auth/login body { user: env(PEER_EMAIL), pass: env(PEER_PW) }
+  capture body.token as token
+  header "Authorization" is "Bearer {token}"
+
+require env ADMIN_EMAIL, ADMIN_PW, PEER_EMAIL, PEER_PW, CLIENT_ID, CLIENT_SECRET
+`,
+  },
 ];
 
 export const CONFIG_INVALID: readonly Fixture[] = [
@@ -648,6 +684,39 @@ env staging
   api "http://localhost:3001"
 
 exclude
+`,
+  },
+  {
+    // M130b/D330 — an unknown sub-clause under `authorized target`. Reported by the declaration's
+    // own parser, not by the enclosing config loop: by the time that loop sees an `indent` it no
+    // longer knows which declaration the block belongs to, and would answer with `unknown config
+    // key`, naming a slot the author was not writing in.
+    name: 'authorized-target-unknown-subclause',
+    source: `defaults
+  authorized target "http://localhost:4001" reason "fixture"
+    probe everything
+`,
+  },
+  {
+    // The half-written sub-clause. `probe` alone is not a claim about anything, and the message
+    // has to carry the missing word rather than the shape of the block.
+    name: 'authorized-target-bare-probe',
+    source: `defaults
+  authorized target "http://localhost:4001" reason "fixture"
+    probe
+`,
+  },
+  {
+    // `privileged` is a trailing modifier on the header, so writing it before `oauth2` is a
+    // trailing-token error rather than a second accepted spelling (D307). One order, one grammar.
+    name: 'session-privileged-before-oauth2',
+    source: `env local default
+  api "http://localhost:3001"
+
+session svc privileged oauth2
+  token url "http://localhost:3001/oauth/token"
+  client id env(CLIENT_ID)
+  client secret env(CLIENT_SECRET)
 `,
   },
 ];

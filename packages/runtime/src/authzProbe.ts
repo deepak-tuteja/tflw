@@ -34,14 +34,19 @@
 // self-inflicted `429` becomes unlikely rather than merely well-classified. The cost is roughly one
 // step's latency per principal per assertion site, which D319 commits to recording as a number.
 
+import { RESERVED_PRINCIPAL } from '@tflw/lang';
 import { allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { containsAnyId, type ProbeOutcome, type ProbeResult } from './authzRules.js';
 import type { CookieJar } from './cookieJar.js';
-import type { RequestTrace, ResponseTrace } from './types.js';
+import type { AuthorizedTarget, RequestTrace, ResponseTrace } from './types.js';
 
 /** D306's built-in principal, and D333's reserved name — `session anonymous` is a checker error, so
- * this string can never collide with a declared session. */
-export const ANONYMOUS = 'anonymous';
+ * this string can never collide with a declared session.
+ *
+ * Re-exported from `@tflw/lang` rather than spelled again here. The checker reserves the name and
+ * this file uses it, and two string literals for one reserved word is how a checker comes to refuse
+ * a name the runtime never actually probes with. */
+export const ANONYMOUS: string = RESERVED_PRINCIPAL;
 
 /** The methods that do not change state, and therefore need no opt-in to probe.
  *
@@ -53,6 +58,39 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export function isSafeMethod(method: string): boolean {
   return SAFE_METHODS.has(method.toUpperCase());
+}
+
+/**
+ * Whether `authorized target`'s `probe mutating` sub-clause (D330) covers the origin this request
+ * went to.
+ *
+ * **ORs across every matching declaration**, which is where D330's repetition rule is actually
+ * implemented: `resolve.ts` keeps accumulating rows so each declaration travels to the report with
+ * its own reason, so one origin can legitimately arrive as two rows. If either grants the opt-in,
+ * the opt-in holds — the clause is a claim about permission, and permission does not un-grant by
+ * being written down twice. Resolving it here rather than by folding rows at resolve time also
+ * means the *first* row found can never silently decide it.
+ *
+ * Origin equality, the same call `authorizedFor` and `checkAuthorizedTargets` make, and for D291's
+ * reason: a declaration is an affirmation about one named target, and matching it loosely would make
+ * the affirmation cover hosts its author never wrote down. An unparseable URL on either side is not
+ * a match — permission is never inferred from something that failed to parse.
+ */
+export function mayProbeMutating(requestUrl: string, targets: readonly AuthorizedTarget[]): boolean {
+  let origin: string;
+  try {
+    origin = new URL(requestUrl).origin;
+  } catch {
+    return false;
+  }
+  return targets.some((t) => {
+    if (!t.probeMutating) return false;
+    try {
+      return new URL(t.target).origin === origin;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**

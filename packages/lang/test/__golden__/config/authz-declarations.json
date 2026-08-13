@@ -1,0 +1,307 @@
+{
+  "type": "ConfigFile",
+  "defaults": {
+    "type": "DefaultsBlock",
+    "entries": [
+      {
+        "type": "AuthorizedTargetDecl",
+        "target": {
+          "type": "StringLit",
+          "value": "http://localhost:4001",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "http://localhost:4001"
+            }
+          ]
+        },
+        "reason": {
+          "type": "StringLit",
+          "value": "self-hosted test fixture",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "self-hosted test fixture"
+            }
+          ]
+        },
+        "probeMutating": true
+      }
+    ]
+  },
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "staging",
+      "isDefault": false,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "https://staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://staging.example.com"
+              }
+            ]
+          }
+        },
+        {
+          "type": "AuthorizedTargetDecl",
+          "target": {
+            "type": "StringLit",
+            "value": "https://staging.example.com",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "https://staging.example.com"
+              }
+            ]
+          },
+          "reason": {
+            "type": "StringLit",
+            "value": "contracted window, ticket SEC-441",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "contracted window, ticket SEC-441"
+              }
+            ]
+          },
+          "probeMutating": false
+        }
+      ]
+    }
+  ],
+  "requires": [
+    {
+      "type": "RequireDecl",
+      "names": [
+        "ADMIN_EMAIL",
+        "ADMIN_PW",
+        "PEER_EMAIL",
+        "PEER_PW",
+        "CLIENT_ID",
+        "CLIENT_SECRET"
+      ]
+    }
+  ],
+  "excludes": [],
+  "sessions": [
+    {
+      "type": "SessionDecl",
+      "name": "admin",
+      "oauth2": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/auth/login"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "user",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "ADMIN_EMAIL"
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "pass",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "ADMIN_PW"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true,
+          "retryAfter": null,
+          "tag": null
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "token"
+              }
+            ],
+            "of": null
+          },
+          "name": "token"
+        },
+        {
+          "type": "HeaderStmt",
+          "name": {
+            "type": "StringLit",
+            "value": "Authorization",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "Authorization"
+              }
+            ]
+          },
+          "value": {
+            "type": "StringLit",
+            "value": "Bearer {token}",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "Bearer "
+              },
+              {
+                "kind": "interp",
+                "ref": [
+                  {
+                    "kind": "prop",
+                    "name": "token"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "privileged": true
+    },
+    {
+      "type": "SessionDecl",
+      "name": "svc",
+      "oauth2": {
+        "type": "Oauth2SessionConfig",
+        "tokenUrl": {
+          "type": "StringLit",
+          "value": "https://staging.example.com/oauth/token",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "https://staging.example.com/oauth/token"
+            }
+          ]
+        },
+        "clientId": {
+          "type": "EnvRef",
+          "name": "CLIENT_ID"
+        },
+        "clientSecret": {
+          "type": "EnvRef",
+          "name": "CLIENT_SECRET"
+        },
+        "scope": null
+      },
+      "body": [],
+      "privileged": true
+    },
+    {
+      "type": "SessionDecl",
+      "name": "peer",
+      "oauth2": null,
+      "body": [
+        {
+          "type": "ApiStep",
+          "service": null,
+          "method": "POST",
+          "path": {
+            "type": "PathExpr",
+            "raw": "/auth/login"
+          },
+          "body": {
+            "type": "InlineBody",
+            "object": {
+              "type": "ObjectLit",
+              "fields": [
+                {
+                  "type": "Field",
+                  "key": "user",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "PEER_EMAIL"
+                  }
+                },
+                {
+                  "type": "Field",
+                  "key": "pass",
+                  "value": {
+                    "type": "EnvRef",
+                    "name": "PEER_PW"
+                  }
+                }
+              ]
+            }
+          },
+          "headers": [],
+          "timeoutMs": null,
+          "followRedirects": true,
+          "retryAfter": null,
+          "tag": null
+        },
+        {
+          "type": "CaptureStmt",
+          "subject": {
+            "type": "BodySubject",
+            "path": [
+              {
+                "kind": "prop",
+                "name": "token"
+              }
+            ],
+            "of": null
+          },
+          "name": "token"
+        },
+        {
+          "type": "HeaderStmt",
+          "name": {
+            "type": "StringLit",
+            "value": "Authorization",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "Authorization"
+              }
+            ]
+          },
+          "value": {
+            "type": "StringLit",
+            "value": "Bearer {token}",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "Bearer "
+              },
+              {
+                "kind": "interp",
+                "ref": [
+                  {
+                    "kind": "prop",
+                    "name": "token"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "privileged": false
+    }
+  ]
+}

@@ -57,12 +57,45 @@ export function renderCliSummary(report: RunReport, color = true): string {
   // here because a scan's *result* and the claim that authorized it belong in the same artifact,
   // and the CLI summary is the artifact most runs are actually read from.
   for (const t of report.authorizedTargets ?? []) {
-    lines.push(`${c.dim}ℹ authorized target ${t.target} — ${t.reason}${c.reset}`);
+    lines.push(`${c.dim}ℹ authorized target ${t.target} — ${t.reason}${c.reset}${t.probeMutating ? `${c.dim} (probe mutating)${c.reset}` : ''}`);
   }
+  // D331 — printed here, beside the claim that authorized the scans, because this is the sentence
+  // that keeps the scans' *results* from being read as broader than they are. Not a warning and
+  // not red: a suite with a small authorization footprint is not doing anything wrong, it is doing
+  // something bounded, and the bound is the fact worth stating.
+  lines.push(...authzBlindSpotLines(report, c));
   if (report.selfDiagnosis) lines.push(generatorLine(report.selfDiagnosis, c));
   if (report.inconclusive) lines.push(`${c.red}${c.bold}⚠ inconclusive${c.reset}${c.dim} — tflw itself is the bottleneck; workload numbers above reflect tflw contending with itself, not the system under test${c.reset}${backOffRelation(report, c)}`);
   if (report.aborted) lines.push(`${c.red}${c.bold}⚠ aborted${c.reset}${c.dim} — ${report.abortedMessage ?? 'stopped before its planned duration elapsed'}${c.reset}`);
   return lines.join('\n');
+}
+
+/**
+ * D331's two lines: the suite's static bound, then this run's own declines.
+ *
+ * **The label says "of the suite's", never "of this run's"** — the census is computed over every
+ * discovered file, before `--tags`/`--only`/`--failed` narrow anything, and a number whose base
+ * silently moved with the filter is the next thing in this codebase that would read confidently and
+ * mean something else. `M126`'s rule, applied: the denominator travels on the same line.
+ *
+ * The percentage is floored, not rounded — `41 of 1035` reads `3%`, not `4%`. A blind-spot figure
+ * that rounds *up* toward coverage is the one direction this line must never fail in.
+ */
+function authzBlindSpotLines(report: RunReport, c: typeof C): string[] {
+  const blind = report.authzBlindSpot;
+  if (!blind) return [];
+  const lines: string[] = [];
+  const cov = blind.coverage;
+  if (cov && cov.apiSteps > 0) {
+    const pct = Math.floor((cov.withOwner / cov.apiSteps) * 100);
+    lines.push(
+      `${c.dim}ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (${pct}%) — the rest are unjudgeable by \`authorization violations\`, which needs \`as <session>\` (SPEC §3.3)${c.reset}`,
+    );
+  }
+  for (const d of blind.declines ?? []) {
+    lines.push(`${c.dim}ℹ authz declined ${d.count}×: \`${d.principal}\` — ${d.reason}${c.reset}`);
+  }
+  return lines;
 }
 
 /** `FU-19` — the row filed "adjacent lines blaming opposite parties": a per-test back-off warning

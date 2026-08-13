@@ -199,11 +199,12 @@ claims is a line somebody can read in the file that claims it.
 
 ## What this does not do
 
-- **No TLS checks yet.** `sec/tls-version-old` and `sec/tls-weak-cipher` need a separate probe
-  connection and land in the next milestone.
-- **No authorization testing.** The pack reads what a response *says about itself*. Whether user A
-  can fetch user B's order is a different question, and a much more valuable one — it is the next
-  tier of this arc.
+- **No authorization testing — in *this* matcher.** The pack reads what a response *says about
+  itself*. Whether user A can fetch user B's order is a different question, and a much more
+  valuable one: it is [chapter 15](/guide/authorization-testing)'s `has no authorization
+  violations`, a **separate** matcher on the same `response` subject. Deliberately separate — folding
+  it in here would have made every assertion on this page start sending cross-identity traffic the
+  moment its author upgraded.
 - **No per-rule suppression.** A severity floor is the only filter. Allow-listing individual rule
   ids is deliberately unsupported, the same as for the a11y scan.
 - **No SARIF or standalone scan report.** A finding here is an assertion failure: it surfaces in the
@@ -215,3 +216,5 @@ claims is a line somebody can read in the file that claims it.
 - [Config & environments](/guide/config) — where `authorized target` lives
 - [Browser testing: advanced scenarios](/guide/browser-advanced) — the a11y scan this shares its
   finding model with
+- [Authorization testing](/guide/authorization-testing) — the other matcher on `response`, and the
+  question this one deliberately does not ask

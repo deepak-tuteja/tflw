@@ -1,0 +1,355 @@
+// `expect response has no authorization violations`, wired end to end (M130b2, D335) — a real
+// `node:http` fixture, real sessions established from a real `tflw.config`, and the interpreter in
+// between.
+//
+// **This file exists because `M128` paid for not having its twin.** `sec/authenticated-response-
+// cacheable` read a lowercase `authorization` key against a header map that preserves the case its
+// author typed, so it **fired for nobody while its unit tests passed** — because those tests spelled
+// the header lowercase too. A pure, injectable design makes unit tests reach every branch; it does
+// not make them right about the world. `authz-rules.test.ts` covers what the pack decides and
+// `authz-probe.test.ts` covers what the prober sends; what is only observable here is the *joins* —
+// that the probe set is really assembled from the config, that sessions really establish lazily,
+// that a probe really goes out carrying somebody else's identity, and that D324's taxonomy really
+// reaches the assertion's message.
+
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { parseConfigSource, parseSource } from '@tflw/lang';
+import { runProgram } from '../src/interpreter.js';
+import { resolveConfig } from '../src/resolve.js';
+import type { AuthzFinding, AuthzDecline } from '../src/interpreter.js';
+import type { ResolvedConfig } from '../src/types.js';
+
+// --- the fixture ---------------------------------------------------------------------------------
+//
+// One app, four identities, and every route below is a deliberate row of D324's table. Tokens are
+// the whole authorization model: `shopper` owns `a1`, `peer` owns `b7`, and the routes decide what
+// each principal is allowed to see.
+
+const TOKENS: Record<string, string> = { 'tok-shopper': 'shopper', 'tok-peer': 'peer', 'tok-admin': 'admin', 'tok-audit': 'audit' };
+const OWNER_OF: Record<string, string> = { a1: 'shopper', b7: 'peer' };
+
+let server: Server;
+let baseUrl: string;
+/** Flipped per test to steer the routes that have more than one behaviour to demonstrate. */
+let mode = 'safe';
+
+function whoami(req: IncomingMessage): string | null {
+  const auth = req.headers['authorization'];
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) return TOKENS[auth.slice(7)] ?? null;
+  const cookie = req.headers['cookie'];
+  if (typeof cookie === 'string') {
+    const m = /sid=([^;]+)/.exec(cookie);
+    if (m) return TOKENS[m[1]!] ?? null;
+  }
+  return null;
+}
+
+function json(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+}
+
+before(async () => {
+  server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://x');
+    const who = whoami(req);
+
+    // Login, one route per identity. A session body posts here and captures its token.
+    const login = /^\/login\/(\w+)$/.exec(url.pathname);
+    if (login) {
+      const name = login[1]!;
+      const token = `tok-${name}`;
+      // `audit` logs in by cookie alone and contributes no `Authorization` header — the shape D325
+      // is about, and the reason it is a *fixture* identity rather than a mocked flag.
+      if (name === 'audit') {
+        res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': `sid=${token}; Path=/` }).end('{"ok":true}');
+        return;
+      }
+      json(res, 200, { token });
+      return;
+    }
+
+    // The object endpoint. `/orders/a1` belongs to `shopper`.
+    const order = /^\/orders\/(\w+)$/.exec(url.pathname);
+    if (order) {
+      const id = order[1]!;
+      if (who === null) return json(res, 401, { error: 'unauthenticated' });
+      if (req.method !== 'GET') {
+        // A cookie-borne principal on a mutating method is refused before authorization is
+        // consulted — apiV2's real `AnyAuthGuard` shape (`M130-01`), reproduced.
+        if (who === 'audit') return json(res, 403, { error: 'missing X-CSRF-Token' });
+        if (who !== OWNER_OF[id] && who !== 'admin') return json(res, 403, { error: 'forbidden' });
+        return json(res, 200, { id, deleted: true });
+      }
+      if (who === 'admin') return json(res, 200, { id, total: 41 });
+      if (mode === 'leak') return json(res, 200, { id, total: 41 });
+      if (who !== OWNER_OF[id]) {
+        // A correct 404 that echoes the requested id — live in the dogfood target at
+        // `categories.service.ts:44`, and the reason containment runs on success statuses only.
+        return json(res, 404, { error: `order ${id} not found` });
+      }
+      return json(res, 200, { id, total: 41 });
+    }
+
+    // The collection endpoint: a correct answer is a *filtered* 200, invisible to a status oracle.
+    if (url.pathname === '/orders') {
+      if (who === null) return json(res, 401, { error: 'unauthenticated' });
+      if (mode === 'collection-leak') return json(res, 200, [{ id: 'a1' }, { id: 'b7' }]);
+      const mine = Object.entries(OWNER_OF).filter(([, owner]) => owner === who).map(([id]) => ({ id }));
+      return json(res, 200, mine);
+    }
+
+    if (url.pathname === '/throttled') {
+      if (who === 'shopper') return json(res, 200, { id: 'a1' });
+      return json(res, 429, { error: 'slow down' });
+    }
+    if (url.pathname === '/broken') {
+      if (who === 'shopper') return json(res, 200, { id: 'a1' });
+      return json(res, 500, { error: 'boom' });
+    }
+    if (url.pathname === '/html') {
+      if (who === 'shopper') return json(res, 200, { id: 'a1' });
+      res.writeHead(200, { 'content-type': 'text/html' }).end('<html>nope</html>');
+      return;
+    }
+    if (url.pathname === '/enveloped') {
+      return json(res, 200, { data: [{ id: 'a1' }], nextCursor: 'x' });
+    }
+    if (url.pathname === '/missing') {
+      return json(res, 404, { error: 'gone' });
+    }
+    json(res, 404, { error: 'no route' });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  baseUrl = `http://127.0.0.1:${address.port}`;
+});
+
+after(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+// --- the config, parsed and resolved rather than hand-built ---------------------------------------
+//
+// Through the real grammar and the real `resolveConfig`, so `privileged` and `probe mutating` are
+// exercised as written rather than as a field somebody set. That is half of what this file proves:
+// `M130b2`'s grammar commit and its engine commit have to agree, and only a config that travels the
+// whole way can say whether they do.
+
+function configSource(extra = ''): string {
+  return (
+    'defaults\n' +
+    `  authorized target "${baseUrl}" reason "self-hosted test fixture"\n` +
+    extra +
+    '\n' +
+    'env local default\n' +
+    `  api "${baseUrl}"\n` +
+    '\n' +
+    'session shopper\n' +
+    '  api POST /login/shopper\n' +
+    '  capture body.token as token\n' +
+    '  header "Authorization" is "Bearer {token}"\n' +
+    '\n' +
+    'session peer\n' +
+    '  api POST /login/peer\n' +
+    '  capture body.token as token\n' +
+    '  header "Authorization" is "Bearer {token}"\n' +
+    '\n' +
+    'session admin privileged\n' +
+    '  api POST /login/admin\n' +
+    '  capture body.token as token\n' +
+    '  header "Authorization" is "Bearer {token}"\n' +
+    '\n' +
+    'session audit\n' +
+    '  api POST /login/audit\n'
+  );
+}
+
+function resolved(extra = ''): ResolvedConfig {
+  const source = configSource(extra);
+  const { config, diagnostics } = parseConfigSource(source);
+  assert.deepEqual(diagnostics.map((d) => `${d.code}: ${d.message}`), [], 'the fixture config must parse and check clean');
+  return resolveConfig(config!, config!.envs[0]!);
+}
+
+interface RunResult {
+  readonly detail: string;
+  readonly ok: boolean;
+  readonly error: string | undefined;
+  readonly findings: AuthzFinding[];
+  readonly declines: AuthzDecline[];
+}
+
+async function run(source: string, cfg: ResolvedConfig = resolved()): Promise<RunResult> {
+  const findings: AuthzFinding[] = [];
+  const declines: AuthzDecline[] = [];
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
+  const { report } = await runProgram(program, cfg, {
+    source,
+    authzSink: { finding: (f) => findings.push(f), decline: (d) => declines.push(d) },
+  });
+  const t = report.tests[0]!;
+  const steps = t.kind === 'functional' ? t.steps : [];
+  const asserts = steps.filter((s) => s.kind === 'expect' || s.kind === 'check');
+  const last = asserts[asserts.length - 1];
+  return { detail: last?.detail ?? '', ok: last?.ok ?? false, error: t.kind === 'functional' ? t.error : undefined, findings, declines };
+}
+
+const asserting = (step: string, owner = 'shopper'): string =>
+  `test "t" as ${owner}\n  ${step}\n  expect response has no authorization violations\n`;
+
+// --- the join itself ------------------------------------------------------------------------------
+
+test('the probe set is assembled from the config: owner out, privileged out, anonymous in', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /orders/a1'));
+  // `shopper` is the owner, `admin` is privileged — so `peer`, `audit` and `anonymous` are probed.
+  assert.match(r.detail, /3 principals probed/);
+  assert.match(r.detail, /not probed as `admin` — declared `privileged`/);
+  assert.ok(r.ok, `expected a pass, got: ${r.detail}`);
+});
+
+test('the boundary holding is a pass, and the counts say what actually happened', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /orders/a1'));
+  assert.match(r.detail, /response has no authorization violations/);
+  assert.match(r.detail, /2 rules — 1 applicable, 1 not applicable, 0 violations/);
+  // `peer` and `anonymous` are refused; `audit` reads by cookie and a GET is not a mutating method,
+  // so it is refused too rather than inconclusive. Three refusals, no inconclusive rows.
+  assert.match(r.detail, /3 refused/);
+  assert.deepEqual(r.findings, [], 'a passing assertion records nothing for the repro emitter');
+});
+
+test('an object leak is a critical finding, naming the rule and the leaked id', async () => {
+  mode = 'leak';
+  const r = await run(asserting('api GET /orders/a1'));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /sec\/authz-object-leak/);
+  assert.match(r.detail, /\[critical\]/);
+  assert.match(r.detail, /a1/);
+  // One finding per violating principal (D320) — `peer` and `audit` both got the order.
+  assert.deepEqual(r.findings.map((f) => f.principal).sort(), ['audit', 'peer']);
+  assert.deepEqual([...new Set(r.findings.map((f) => f.rule))], ['sec/authz-object-leak']);
+  assert.deepEqual(r.findings[0]!.owners, ['shopper']);
+});
+
+test('a collection leak is caught where a status oracle sees only two 200s', async () => {
+  mode = 'collection-leak';
+  const r = await run(asserting('api GET /orders'));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /sec\/authz-collection-leak/);
+  // The whole reason this tier is differential rather than status-based: `peer`'s correct answer to
+  // `GET /orders` is also a `200`, and `authz.tflw` had to hand-write this case for the same reason.
+  assert.match(r.detail, /3 principals probed/);
+});
+
+test('a filtered collection is a pass — the correct answer is also a 200', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /orders'));
+  assert.ok(r.ok, `expected a pass, got: ${r.detail}`);
+  assert.match(r.detail, /served different content/);
+});
+
+// --- D324's remaining rows, each reaching the message ---------------------------------------------
+
+test('a 429 is inconclusive, never a boundary — a suite must not read its own throttle as a pass', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /throttled'));
+  assert.match(r.detail, /inconclusive/);
+  assert.match(r.detail, /rate limited/i);
+  // Every probe inconclusive means nothing was judged, so D285 fires rather than a green.
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /had no power to fail/);
+  assert.equal(r.declines.length, 3);
+});
+
+test('a 5xx is inconclusive for the same reason a 429 is', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /broken'));
+  assert.match(r.detail, /inconclusive/);
+  assert.equal(r.ok, false);
+});
+
+test('a non-JSON probe body is un-judged, never clean', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /html'));
+  assert.match(r.detail, /inconclusive/);
+  assert.match(r.detail, /a body that is not JSON/);
+});
+
+test('D325: a cookie-borne principal refused on a mutating method is inconclusive, and still probed', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api DELETE /orders/a1'), resolved('    probe mutating\n'));
+  // `audit` holds its identity in the jar alone, so its 403 on a DELETE may be CSRF rather than
+  // authorization — and the engine says so instead of scoring it as a boundary that held.
+  assert.match(r.detail, /`audit` inconclusive/);
+  assert.match(r.detail, /CSRF/);
+  // `peer` and `anonymous` still answered, so the assertion is judged rather than powerless.
+  assert.ok(r.ok, `expected a pass, got: ${r.detail}`);
+});
+
+test('without `probe mutating`, a mutating step probes nobody and says so', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api DELETE /orders/a1'));
+  assert.match(r.detail, /not probed/);
+  assert.match(r.detail, /probe mutating/);
+  assert.equal(r.ok, false, 'nothing was judged, so D285 fires');
+  assert.equal(r.declines.length, 3);
+});
+
+// --- D285's two doors -----------------------------------------------------------------------------
+
+test('an owner body the oracle refuses to guess at is a not-applicable, not a pass', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /enveloped'));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /had no power to fail/);
+  // The message names the shape it could not read, so the widening evidence arrives as a user
+  // report rather than as speculation (D321).
+  assert.match(r.detail, /no resource identity found/);
+});
+
+test('a 4xx owner response engages nothing, and fails rather than greening', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /missing'));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /had no power to fail/);
+});
+
+// --- the two runtime guards -----------------------------------------------------------------------
+
+test('TF062 runtime half: a credential the owner sessions never supplied fails before any probe', async () => {
+  mode = 'safe';
+  const src = `test "t" as shopper\n  api GET /orders/a1\n    header "Authorization" is "Bearer tok-peer"\n  expect response has no authorization violations\n`;
+  const r = await run(src);
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? r.detail, /carries a `Authorization` header that none of its owning session/);
+  assert.deepEqual(r.declines, [], 'the guard runs before the probe set is established, so nothing was declined');
+});
+
+test('TF063 runtime backstop: an ownerless test fails at the assertion, not silently', async () => {
+  // The checker refuses this statically too — but only for a test body it can see. This is the half
+  // that survives the assertion being written inside an `action`, which is why it is asserted here
+  // against the interpreter rather than trusted to the checker.
+  mode = 'safe';
+  // The action is named `read order`, not `check ownership`: `check` is the soft-assert keyword,
+  // so a call written `check ownership()` lexes as an assertion about a subject named `ownership`.
+  const src = 'action read order()\n  api GET /orders/a1\n  expect response has no authorization violations\n\ntest "t"\n  read order()\n';
+  const r = await run(src);
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? '', /needs an owner/);
+});
+
+// --- the severity floor ----------------------------------------------------------------------------
+
+test('the floor narrows the pack before applicability, exactly as it does for Tier 1', async () => {
+  mode = 'leak';
+  const src = 'test "t" as shopper\n  api GET /orders/a1\n  expect response has no critical authorization violations\n';
+  const r = await run(src);
+  // Both rules are critical, so a `critical` floor narrows nothing and the leak is still reported.
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /sec\/authz-object-leak/);
+});

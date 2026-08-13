@@ -300,13 +300,16 @@ const ROUND_TRIP: Record<keyof typeof SUGGESTION_VOCABULARIES, Record<string, st
     serious: 'expect page has no serious a11y violations',
     critical: 'expect page has no critical a11y violations',
   },
-  // M128b — the two scan words the same `has no …` production dispatches on. Each worked example
-  // uses its own subject, which is the half that matters here: `expect page has no security
-  // violations` parses and is then a `TF042`, so an example that shared one subject would prove
-  // the suggestion completes a *statement* without proving it completes a valid one.
+  // M128b, then M130b — the scan words the same `has no …` production dispatches on. Each worked
+  // example uses the subject its own matcher accepts, which is the half that matters here: `expect
+  // page has no security violations` parses and is then a `TF042`, so an example that reached for
+  // whichever subject was nearest would prove the suggestion completes a *statement* without
+  // proving it completes a valid one. `security` and `authorization` share `response` because they
+  // genuinely share it (D304) — a separate matcher on the same subject, not a folded one.
   scanKind: {
     a11y: 'expect page has no a11y violations',
     security: 'expect response has no security violations',
+    authorization: 'expect response has no authorization violations',
   },
   // Statement keywords get the cheaper property rather than 30-odd worked examples: the pool is
   // derived from the parser's own dispatch list minus `RETIRED_STATEMENT_KEYWORDS`, so the failure

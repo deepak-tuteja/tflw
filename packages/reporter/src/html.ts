@@ -60,7 +60,8 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
   </div>
   ${report.insecure ? '<div class="insecure-warning">⚠ insecure: true — TLS certificate verification was disabled for this run</div>' : ''}
   ${report.demo ? '<div class="demo-badge">ℹ demo run — this targeted tflw\'s built-in demo service, not a service of yours. Point <code>api</code> at your own in <code>tflw.config</code>.</div>' : ''}
-  ${(report.authorizedTargets ?? []).map((t) => `<div class="demo-badge">ℹ authorized target <code>${esc(t.target)}</code> — ${esc(t.reason)}</div>`).join('\n  ')}
+  ${(report.authorizedTargets ?? []).map((t) => `<div class="demo-badge">ℹ authorized target <code>${esc(t.target)}</code> — ${esc(t.reason)}${t.probeMutating ? ' <code>probe mutating</code>' : ''}</div>`).join('\n  ')}
+  ${renderAuthzBlindSpot(report.authzBlindSpot)}
   ${renderUnmaskableWarning(report.unmaskableSecrets)}
   ${report.browserEngine ? `<div class="engine-badge">browser <code>${esc(report.browserEngine)}</code></div>` : ''}
   ${report.aborted ? `<div class="insecure-warning">⚠ ${esc(report.abortedMessage ?? 'aborted before its planned duration elapsed')} — every workload number below reflects only what completed before Ctrl-C.</div>` : ''}
@@ -142,6 +143,31 @@ function joinWithAnd(parts: readonly string[]): string {
  * reader deciding whether `report.html` is safe to share needs to be told, in the header, that a
  * value the run was told to treat as a secret is sitting in the page in the clear. Names only —
  * printing the value here would be the very leak being warned about, twice over. */
+/**
+ * D331 — the same two sentences the CLI summary prints, in the artifact people forward.
+ *
+ * Rendered here rather than only in the terminal because `report.html` is the copy that outlives the
+ * run: a reader opening it a week later has the scan's findings and, without this, no way to see how
+ * much of the suite the scan was structurally able to look at. The percentage floors for the CLI's
+ * reason — a blind-spot figure that rounds toward coverage is wrong in the one direction that
+ * matters.
+ */
+function renderAuthzBlindSpot(blind: RunReport['authzBlindSpot']): string {
+  if (!blind) return '';
+  const rows: string[] = [];
+  const cov = blind.coverage;
+  if (cov && cov.apiSteps > 0) {
+    const pct = Math.floor((cov.withOwner / cov.apiSteps) * 100);
+    rows.push(
+      `<div class="demo-badge">ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (${pct}%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>`,
+    );
+  }
+  for (const d of blind.declines ?? []) {
+    rows.push(`<div class="demo-badge">ℹ authz declined ${d.count}×: <code>${esc(d.principal)}</code> — ${esc(d.reason)}</div>`);
+  }
+  return rows.join('\n  ');
+}
+
 function renderUnmaskableWarning(names: readonly string[] | undefined): string {
   if (!names?.length) return '';
   const plural = names.length === 1 ? '' : 's';

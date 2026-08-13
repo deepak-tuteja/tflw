@@ -660,10 +660,35 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'no-response-yet',
     file: 'interpreter.ts',
     excerpt: 'no response yet',
-    sites: 3,
+    sites: 4,
     decidable: 'static',
     checkerCode: 'TF039',
-    note: 'ordering within a step sequence is in the AST. M128b added the third site: `execSecurityExpect` needs an observed response for the same reason `status` does, and `readsResponse` lists `ResponseSubject` so `TF039` already decides it',
+    note: 'ordering within a step sequence is in the AST. M128b added the third site: `execSecurityExpect` needs an observed response for the same reason `status` does, and `readsResponse` lists `ResponseSubject` so `TF039` already decides it. M130b added the fourth, `execAuthzExpect`, for the identical reason and with no new rule — the two scan matchers share one subject and therefore one precondition',
+  },
+  {
+    // M130b (D329). **Not a `'static'` row with a filed gap, and not a duplicate of `TF063`
+    // either.** The checker decides this for a `test` body and a `before file` hook, which is
+    // everything it can see; what reaches here is the half it structurally cannot — an assertion
+    // inside an `action`, whose executing test is bound at run time against the entry file's
+    // registry (`checker.ts:885` already draws that line for call resolution). So the rule *is*
+    // decided statically wherever it is decidable, and this site covers the residue.
+    id: 'authz-assertion-no-owner',
+    file: 'interpreter.ts',
+    excerpt: 'needs an owner, and the running test declares none',
+    decidable: 'needs-values',
+    checkerCode: 'TF063',
+    note: 'D329’s two halves. The checker refuses a `test` with no `as <session>` and a `before file` hook; this backstop catches the same assertion written inside an `action`, where the owner is a late-bound fact. One policy, applied at the two layers that can each see part of it',
+  },
+  {
+    // M130b (D328). Same shape one rule over, and this half is a *comparison*: what the request
+    // actually carried, against what the owning sessions contributed as of that request. Both
+    // operands are known at run time and only one of them is knowable statically.
+    id: 'authz-step-names-own-credential',
+    file: 'interpreter.ts',
+    excerpt: 'header that none of its owning session',
+    decidable: 'needs-values',
+    checkerCode: 'TF062',
+    note: 'D328’s runtime half. The checker reads a literal `Authorization`/`Cookie` on the nearest preceding `api` step in the same body; this catches the credential applied inside an `action` or by a `use`d file, by comparing the observed request against the sessions’ own contribution. Runs before any probe is sent, so a request carrying an unattributable identity is never re-issued',
   },
   {
     id: 'quantifier-vs-matches-schema',

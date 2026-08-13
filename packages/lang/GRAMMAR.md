@@ -248,8 +248,9 @@ Subject     := 'status' NetworkRef?
              | 'page'                                            # (§9.8, M3e) — the active browser page;
                                                                   # only `has no … a11y violations` reads it
              | 'response'                                        # (§9.10, M128b) — the last `api` step's
-                                                                  # response scanned as a whole; only
-                                                                  # `has no … security violations` reads it
+                                                                  # response scanned as a whole; read by
+                                                                  # `has no … security violations` and, since
+                                                                  # M130b, `has no … authorization violations`
 BodyPath    := ('.' IDENT | '[' NUMBER ']')+                     # .items[0].price
 NetworkRef  := 'to' STRING ('with' 'method' STRING)?              # (§9.7, M3d)
              | 'of' 'request' 'to' STRING ('with' 'method' STRING)?  # trailing clause on status/header/body/body text
@@ -284,10 +285,19 @@ SnapshotMask := 'mask' Locator                                    # dynamic regi
              | 'has' 'no' Severity? 'security' 'violations'       # `response` subject only (§9.10, M128b)
                                                                    # — same floor semantics; the floor
                                                                    # also narrows which rules run at all
+             | 'has' 'no' Severity? 'authorization' 'violations'  # `response` subject only (§9.11, M130b)
+                                                                   # — re-issues the observed request under
+                                                                   # every declared principal but the
+                                                                   # owner's. A *separate* matcher from
+                                                                   # `security` on purpose (D304): folding
+                                                                   # them would make every shipped `security
+                                                                   # violations` assertion start sending
+                                                                   # cross-identity traffic on upgrade
 StateWord   := 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked'
-Severity    := 'minor' | 'moderate' | 'serious' | 'critical'       # one scale for both scans: axe-core's
+Severity    := 'minor' | 'moderate' | 'serious' | 'critical'       # one scale for every scan: axe-core's
                                                                    # own impact scale (§9.8), reused by the
-                                                                   # security pack rather than forked
+                                                                   # security and authorization packs
+                                                                   # rather than forked
 ```
 
 A step combining a `request`-subject assertion with a `status`/`header`/`body`/`duration` one on
@@ -508,11 +518,17 @@ InsecureDecl    := 'insecure' ('true' | 'false')
 CertDecl        := 'cert' STRING
 KeyDecl         := 'key' STRING
 AllowHostsDecl  := 'allow' 'hosts' STRING (',' STRING)*           # accumulates across defaults+env (§3.7)
-AuthorizedTargetDecl := 'authorized' 'target' STRING 'reason' STRING
+AuthorizedTargetDecl := 'authorized' 'target' STRING 'reason' STRING NEWLINE
+                          (INDENT AuthorizedTargetOpt+ DEDENT)?
                                                                   # (§3.10, M128b, D291) — D21's declaration
                                                                   #   layer. Accumulates like `allow hosts`.
                                                                   #   `reason` is required; a wildcard in the
                                                                   #   target is a checker error (`TF061`)
+AuthorizedTargetOpt := 'probe' 'mutating'                         # (§3.10, M130b, D330) — permission for an
+                                                                  #   authorization probe to re-issue a
+                                                                  #   POST/PUT/PATCH/DELETE against *this*
+                                                                  #   host. Optional and indented; the
+                                                                  #   declaration line above is unchanged
 EvidenceDecl    := 'evidence' STRING                              # "full" | "headers-only" | "none" (§13)
 RedactDecl      := 'redact' RedactPattern (',' RedactPattern)*    # accumulates across defaults+env (§3.4)
 RedactPattern   := 'body' ('.' IDENT | '.' '*')+
@@ -528,7 +544,14 @@ ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height
                                                                    # `report`; omitted = Playwright's
                                                                    # own default (1280×720)
 
-SessionDecl     := 'session' IDENT ('oauth2' NEWLINE INDENT Oauth2Config DEDENT | NEWLINE Block)
+SessionDecl     := 'session' IDENT ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
+                                    | 'privileged'? NEWLINE Block)
+                                                                  # `privileged` (§3.3, M130b, D307) — this
+                                                                  #   principal is meant to reach other
+                                                                  #   principals' resources, so `has no …
+                                                                  #   authorization violations` leaves it out
+                                                                  #   of the probe set. A whole config of
+                                                                  #   privileged sessions is a checker error
 Oauth2Config    := 'token' 'url' Value NEWLINE
                     'client' 'id' Value NEWLINE
                     'client' 'secret' Value NEWLINE

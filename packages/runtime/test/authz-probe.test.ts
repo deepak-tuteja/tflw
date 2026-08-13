@@ -16,6 +16,7 @@ import {
   classifyResponse,
   isCookieBorne,
   isSafeMethod,
+  mayProbeMutating,
   probeOrder,
   type ProbePolicy,
   type ProbePrincipal,
@@ -375,4 +376,40 @@ test('end to end: the four outcomes of one assertion, in one call', async () => 
     results.push(`${r!.principal}:${r!.outcome.kind}`);
   }
   assert.deepEqual(results, ['peer:leaked', 'oauthLong:refused', 'oauthShort:served-different', 'anonymous:inconclusive']);
+});
+
+// -- D330: `probe mutating` resolves per origin, across every declaration ------------------------
+
+const target = (t: string, probeMutating: boolean) => ({ target: t, reason: 'fixture', probeMutating });
+
+test('D330: `probe mutating` is granted per origin, and never by a neighbouring declaration', () => {
+  const targets = [target('http://a.test', true), target('http://b.test', false)];
+  assert.equal(mayProbeMutating('http://a.test/orders/7', targets), true);
+  assert.equal(mayProbeMutating('http://b.test/orders/7', targets), false, 'the grant belongs to the host it was written under');
+  assert.equal(mayProbeMutating('http://c.test/orders/7', targets), false, 'an undeclared host is never granted');
+});
+
+test('D330: two declarations of one origin OR together — permission does not un-grant by repetition', () => {
+  // `resolve.ts` keeps accumulating rather than folding, so each declaration reaches the report
+  // with its own reason and one origin can legitimately arrive as two rows. Resolving the flag
+  // here is what stops whichever row a lookup happened to find first from deciding it — and the
+  // order below is the one a `find` gets wrong.
+  const targets = [target('http://a.test', false), target('http://a.test', true)];
+  assert.equal(mayProbeMutating('http://a.test/orders', targets), true);
+  assert.equal(mayProbeMutating('http://a.test/orders', [...targets].reverse()), true, 'and the answer cannot depend on declaration order');
+});
+
+test('D330: matching is by origin, so a port, a scheme or a path never widens the grant', () => {
+  const targets = [target('https://x.test:8443/v1', true)];
+  assert.equal(mayProbeMutating('https://x.test:8443/v1/orders', targets), true, 'a path on the declaration is ignored, as it is for `TF060`');
+  assert.equal(mayProbeMutating('https://x.test/orders', targets), false, 'a different port is a different listener');
+  assert.equal(mayProbeMutating('http://x.test:8443/orders', targets), false, 'a different scheme is a different target');
+});
+
+test('D330: an unparseable URL on either side is not a grant', () => {
+  // Permission is never inferred from something that failed to parse — the same direction every
+  // other refusal in this file fails in.
+  assert.equal(mayProbeMutating('not a url', [target('http://a.test', true)]), false);
+  assert.equal(mayProbeMutating('http://a.test/x', [target('not a url', true)]), false);
+  assert.equal(mayProbeMutating('http://a.test/x', []), false, 'and an empty declaration list grants nothing');
 });

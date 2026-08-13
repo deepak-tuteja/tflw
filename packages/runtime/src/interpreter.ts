@@ -46,6 +46,8 @@ import { runA11yScan } from './a11y.js';
 import { filterBySeverity, SEVERITY_RANK, type Finding } from './finding.js';
 import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, type TlsObservation } from './securityRules.js';
 import { TlsProber } from './tlsProbe.js';
+import { extractResourceIds, judgeable, PROBE_OUTCOME_LABEL, runAuthzScan, type AuthzScanResult, type ProbeResult } from './authzRules.js';
+import { ANONYMOUS, AuthzProber, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
 import {
   BrowserPageState,
   captureFailureScreenshot,
@@ -191,6 +193,12 @@ export interface RunOptions {
    * 30-file suite still paid 30 handshakes. Omitted by single-`runProgram`-call callers, which then
    * get their own. */
   readonly tlsProber?: TlsProber;
+  /** M130b (D331/D332) — where every authorization finding and decline is accumulated across the
+   *  whole run, for the run summary's declines block and the repro emitter. Shared across every
+   *  `runProgram` call in a run, like `sessionCache` and `tlsProber` and for the same reason: the
+   *  numbers are the run's, not the file's, and the repro files are written once, after everything
+   *  has finished. Omitted by single-call callers, which then simply collect nothing. */
+  readonly authzSink?: AuthzSink;
   /** Precomputed, deterministic answer to "which globally-indexed test case owns each session's
    * step-splicing" (session name → that case's global test index, `testIndexOffset`-relative) —
    * the CLI computes this up front, across every file, in sorted-file/declaration order, so it
@@ -309,7 +317,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length + scenarios.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, browserManager: opts.browserManager, filePath, updateSnapshots };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
@@ -452,7 +460,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -1970,6 +1978,10 @@ interface TestCtx {
    * prober created per file would re-handshake per file while still calling itself a run-level
    * cache. A session's derived context inherits it through `sessionCtx`'s spread. */
   readonly tlsProber: TlsProber;
+  /** M130b (D331/D332) — where every authorization finding and every decline is accumulated for the
+   *  run summary and the repro emitter. Optional: a helper driving one assertion in isolation still
+   *  gets its answer, it just has nothing collecting the run-level view. */
+  readonly authzSink?: AuthzSink;
   readonly browserManager?: BrowserManager;
   /** M4b, D15 — see `RunOptions.filePath`/`updateSnapshots`. */
   readonly filePath: string;
@@ -2621,6 +2633,11 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
   // for out of the step result, because `result` holds the **redacted** copy and a rule that reads
   // a redacted `authorization` header would judge the mask instead of the request.
   let lastRequest: RequestTrace | null = null;
+  // M130b/D328 — the identity the *owning sessions* contributed to `lastRequest`, snapshotted as
+  // that request went out rather than read back at the assertion. `refreshSessions` mutates
+  // `ctx.sessionHeaders` in place on a 401, so an assertion-time read would see a token that did
+  // not exist when the request was built and report the refresh as a step naming its own credential.
+  let lastOwnerIdentity: OwnerIdentity = {};
   // Set only by an `ApiStep` opted into catching a connection failure (below); read by
   // `expect`/`check request connects`/`fails` via `evaluateExpect`. Reset to null on every
   // *other* `ApiStep` (including a non-opted-in one), so it can never leak across requests.
@@ -2679,6 +2696,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             }
             lastResponse = trace.response;
             lastRequest = trace.request;
+            lastOwnerIdentity = ownerIdentityFor(ctx, trace.request.url);
             // D287's first half. Live trace, not `redacted` — the report copy carries `cookieEvents: []`
             // at every evidence level, and that is the field every cookie rule reads.
             ctx.securitySink?.push(toObservation(trace.request, trace.response));
@@ -2703,6 +2721,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             const redactedMessage = tc.redactor.redact(message);
             lastResponse = null;
             lastRequest = null;
+            lastOwnerIdentity = {};
             lastConnectionError = redactedMessage;
             // Reported `ok: true` on the `api` line itself (like every other request, whatever
             // status code it got back) — this step's job is just to attempt the request; the
@@ -2734,7 +2753,13 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
                 : step.subject.type === 'PageSubject'
                   ? await execA11yExpect(step, ctx, src, stepStart, config)
                   : step.subject.type === 'ResponseSubject'
-                    ? await execSecurityExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc.tlsProber)
+                    ? // M130b/D304 — two matchers on one subject, dispatched by name. Deliberately
+                      // not folded: `security violations` must keep meaning exactly what it meant
+                      // before this milestone, and what changed is that `response` now answers to a
+                      // second question rather than that its one question grew.
+                      step.matcher.name === 'hasNoAuthzViolations'
+                      ? await execAuthzExpect(step, lastRequest, lastResponse, lastOwnerIdentity, ctx, src, stepStart, config, tc)
+                      : await execSecurityExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc.tlsProber)
                     : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
@@ -2769,6 +2794,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, src, stepStart, tc.pinnedAgents);
           lastResponse = waited.response;
           lastRequest = waited.request;
+          lastOwnerIdentity = waited.request ? ownerIdentityFor(ctx, waited.request.url) : {};
           // `wait until api` never opts into catching a connection failure (checker-enforced,
           // decision 18) — reaching here always means a real response came back (a genuine
           // connection failure instead throws out of `execApi`, uncaught, straight to this
@@ -3963,6 +3989,317 @@ function describeSecurityOutcome(step: ExpectStmt, floor: FindingSeverity | null
     return { ok: false, message: `expected response to have at least one ${kind}, but found none — ${counts}${note}` };
   }
   return { ok: false, message: `expected response to have no ${kind}s, but found ${findings.length} — ${counts}:\n${listing()}${note}` };
+}
+
+// ---------------------------------------------------------------------------
+// M130b — `expect|check response has no [<severity>] authorization violations`.
+// ---------------------------------------------------------------------------
+
+/**
+ * One authorization finding, as the run accumulates it (D331 part 2, D332).
+ *
+ * Kept beside the assertion's own message rather than parsed back out of it, because two consumers
+ * need the facts and not the prose: the run summary aggregates them, and the repro emitter writes a
+ * runnable `.tflw` from them. A reporter that had to read them out of a rendered sentence would
+ * break the first time the sentence was reworded — which is the shape `M125e` filed against a
+ * display label derived from an identity key.
+ */
+export interface AuthzFinding {
+  readonly rule: string;
+  readonly principal: string;
+  readonly method: string;
+  /** The observed request's URL, verbatim — the address a repro has to dial. */
+  readonly url: string;
+  readonly ids: readonly string[];
+  readonly owners: readonly string[];
+}
+
+/** Work an authorization assertion met and turned down (D331 part 2) — a mutating step with no
+ *  `probe mutating`, a session that would not establish, a probe that answered without answering.
+ *  Facts about this run, as opposed to the static census, which is a fact about the suite. */
+export interface AuthzDecline {
+  readonly principal: string;
+  readonly reason: string;
+}
+
+/** The run-level accumulator, threaded on `TestCtx` exactly as `tlsProber` is. Optional, so a test
+ *  helper that drives one assertion in isolation needs no collector to get an answer. */
+export interface AuthzSink {
+  finding(f: AuthzFinding): void;
+  decline(d: AuthzDecline): void;
+}
+
+/**
+ * The identity headers the *owning sessions* contributed to a request, read at the moment that
+ * request went out (D328's runtime half).
+ *
+ * **Snapshotted per request rather than read at the assertion**, and that is the whole point. A
+ * session can re-establish mid-test — a 401-triggered refresh, an `oauth2` TTL — and `refreshSessions`
+ * mutates `ctx.sessionHeaders` in place. Comparing the observed request against the *assertion-time*
+ * contribution would then read a token refresh that happened between the `api` step and its
+ * assertion as "this step named its own credential", refusing a correct file for a reason that has
+ * nothing to do with the rule.
+ */
+interface OwnerIdentity {
+  readonly authorization?: string;
+  readonly cookie?: string;
+}
+
+function ownerIdentityFor(ctx: EvalCtx, url: string): OwnerIdentity {
+  const auth = Object.entries(ctx.sessionHeaders).find(([k]) => k.toLowerCase() === 'authorization')?.[1];
+  let cookie: string | undefined;
+  try {
+    cookie = ctx.cookieJar.serialize(originOf(url)) || undefined;
+  } catch {
+    cookie = undefined;
+  }
+  return { ...(auth !== undefined ? { authorization: auth } : {}), ...(cookie !== undefined ? { cookie } : {}) };
+}
+
+/** Case-insensitive lookup over a header map that deliberately preserves the case its author typed
+ *  (`setHeader`) — the same assumption `M128`'s `sec/authenticated-response-cacheable` got wrong. */
+function headerValue(headers: Readonly<Record<string, string>>, name: string): string | undefined {
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === name);
+  return key === undefined ? undefined : headers[key];
+}
+
+/**
+ * `TF062`'s runtime half — the observed request carries an identity header no owning session
+ * supplied (D328).
+ *
+ * **A comparison, not a heuristic.** Both operands are known: what actually went out, and what the
+ * sessions contributed as of that request. So this catches the cases the checker structurally
+ * cannot — a credential written inside an `action` body, or applied by a `use`d file — without ever
+ * guessing. Returns the header's name, or null.
+ */
+function stepNamedOwnCredential(request: RequestTrace, owner: OwnerIdentity): string | null {
+  const auth = headerValue(request.headers, 'authorization');
+  if (auth !== undefined && auth !== owner.authorization) return 'Authorization';
+  const cookie = headerValue(request.headers, 'cookie');
+  if (cookie !== undefined && cookie !== owner.cookie) return 'Cookie';
+  return null;
+}
+
+/**
+ * D310/D327 — who gets probed.
+ *
+ * Declared order from `tflw.config` (a `Map` preserves insertion order, which is declaration
+ * order), minus every session the test named — the *union*, since `test … as admin, shopper` sends
+ * admin's `Authorization` and shopper's `Cookie` at once and both are owners — minus every session
+ * declared `privileged`, plus the built-in `anonymous`, last (D326).
+ */
+function probeSetFor(config: ResolvedConfig, owners: readonly string[]): { readonly names: readonly string[]; readonly privileged: readonly string[] } {
+  const ownerSet = new Set(owners);
+  const names: string[] = [];
+  const privileged: string[] = [];
+  for (const [name, decl] of config.sessions) {
+    if (ownerSet.has(name)) continue;
+    if (decl.privileged) {
+      privileged.push(name);
+      continue;
+    }
+    names.push(name);
+  }
+  return { names: [...names, ANONYMOUS], privileged };
+}
+
+/**
+ * The real probe sender (D323's seam, filled).
+ *
+ * **Two things it deliberately does not inherit, and both fail in the safe direction.** Client
+ * certificates: a probe carries none, so an mTLS-only target refuses every probe, every outcome is
+ * `not probed`, and D285 fails the assertion loudly rather than greening it — which is the correct
+ * answer, because this tier genuinely cannot judge that target yet. And `without redirects`: the
+ * probe follows, because the question is what the *other principal ultimately gets*, and a 302 to
+ * the resource is a leak whatever the owner's step chose to observe.
+ */
+function authzSenderFor(config: ResolvedConfig): ProbeSender {
+  return (req) =>
+    sendRequest({
+      method: req.method,
+      url: req.url,
+      headers: { ...req.headers },
+      ...(req.body !== undefined ? { body: req.body } : {}),
+      timeoutMs: req.timeoutMs,
+      followRedirects: true,
+      allowHosts: config.allowHosts,
+    });
+}
+
+/** Establishes one probe principal, lazily (D312). A session that will not establish becomes an
+ *  `unavailable` principal rather than a thrown error: one broken credential must not abort an
+ *  assertion that four other principals could still answer, and `not probed` is a state the counts
+ *  line already carries. */
+async function probePrincipalFor(name: string, config: ResolvedConfig, tc: TestCtx): Promise<ProbePrincipal> {
+  if (name === ANONYMOUS) return { name, headers: {} };
+  const decl = config.sessions.get(name);
+  if (!decl) return { name, headers: {}, unavailable: `no \`session ${name}\` is declared` };
+  try {
+    const outcome = await tc.sessionCache.ensure(name, decl, config, tc, false);
+    if (!outcome.ok) return { name, headers: {}, unavailable: `session "${name}" failed to establish: ${outcome.error ?? 'a step failed'}` };
+    return { name, headers: outcome.headers, cookieJar: outcome.cookieJar };
+  } catch (err) {
+    return { name, headers: {}, unavailable: `session "${name}" failed to establish: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+/**
+ * Runs the probes and the pack, and turns the result into a step outcome.
+ *
+ * **No retry, for `execSecurityExpect`'s reason and one more.** That one judges a response already
+ * received in full. This one *sends*, and a retry loop would send the whole probe set again — so a
+ * transient `429` would be answered by the one thing guaranteed to make it worse.
+ */
+async function execAuthzExpect(
+  step: ExpectStmt,
+  request: RequestTrace | null,
+  response: ResponseTrace | null,
+  ownerIdentity: OwnerIdentity,
+  ctx: EvalCtx,
+  src: string,
+  start: number,
+  config: ResolvedConfig,
+  tc: TestCtx,
+): Promise<StepResult> {
+  // `TF039`'s runtime half, as for the security matcher — `checkResponseScopes` already rejects
+  // this statically, so reaching here means the file was run without a check pass.
+  if (!response || !request) {
+    throw new RuntimeError('no response yet — an `api` step must run before `expect response has no … authorization violations`');
+  }
+  // `TF063`'s runtime backstop (D329). The checker stays silent inside an `action` body and a bare
+  // `before`/`after` hook because the executing test is a late-bound fact; here it is in hand.
+  if (ctx.sessionNames.length === 0) {
+    throw new RuntimeError(
+      '`authorization violations` needs an owner, and the running test declares none — the oracle re-issues this request under every *other* declared principal and compares, so with no `as <session>` there is nothing to compare against (SPEC §3.3, `TF063`)',
+    );
+  }
+  // `TF062`'s runtime half (D328), and it runs **before any probe is sent**: a request carrying a
+  // credential no owning session supplied must not be re-issued at all, because the finding either
+  // way would be about two identities the run cannot name.
+  const named = stepNamedOwnCredential(request, ownerIdentity);
+  if (named) {
+    throw new RuntimeError(
+      `the \`api\` step this asserts on carries a \`${named}\` header that none of its owning session${ctx.sessionNames.length === 1 ? '' : 's'} (${ctx.sessionNames.join(', ')}) supplied — move the credential into a \`session\` block and name it with \`as <session>\` (SPEC §3.3, \`TF062\`)`,
+    );
+  }
+
+  const floor = step.matcher.severityFloor ?? null;
+  const ownerIds = extractResourceIds(response.json);
+  const { names, privileged } = probeSetFor(config, ctx.sessionNames);
+  const principals: ProbePrincipal[] = [];
+  for (const name of names) principals.push(await probePrincipalFor(name, config, tc));
+
+  const policy: ProbePolicy = {
+    timeoutMs: config.timeouts.step,
+    allowHosts: config.allowHosts,
+    insecure: config.insecure,
+    probeMutating: mayProbeMutating(request.url, config.authorizedTargets),
+  };
+  const probes = await new AuthzProber(authzSenderFor(config)).probeAll(request, ownerIds, probeOrder(principals), policy);
+
+  const result = runAuthzScan({ owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes }, floor);
+  for (const probe of probes) {
+    if (probe.outcome.kind === 'not-probed' || probe.outcome.kind === 'inconclusive') {
+      tc.authzSink?.decline({ principal: probe.principal, reason: probe.outcome.reason });
+    }
+    if (probe.outcome.kind === 'leaked') {
+      for (const rule of result.applicable) {
+        tc.authzSink?.finding({ rule: rule.id, principal: probe.principal, method: request.method, url: request.url, ids: probe.outcome.ids, owners: ctx.sessionNames });
+      }
+    }
+  }
+
+  const outcome = describeAuthzOutcome(step, floor, result, probes, privileged);
+  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+}
+
+/** D316's probe line, in `scanCounts`' shape: every count beside its denominator, so nobody holds
+ *  two numbers from two places in their head to know what the assertion did. */
+function probeCounts(probes: readonly ProbeResult[]): string {
+  const by = new Map<string, number>();
+  for (const p of probes) by.set(p.outcome.kind, (by.get(p.outcome.kind) ?? 0) + 1);
+  const parts = [...by].map(([kind, n]) => `${n} ${PROBE_OUTCOME_LABEL[kind as ProbeResult['outcome']['kind']]}`);
+  return `${probes.length} principal${probes.length === 1 ? '' : 's'} probed — ${parts.join(', ')}`;
+}
+
+/**
+ * **`degradedNote`'s discipline, one matcher over (D324).** A state that means *could not find out*
+ * is announced on the **passing** line too, because a green `expect response has no authorization
+ * violations` whose entire probe set was refused before authorization was consulted is exactly the
+ * assertion a reader would otherwise believe had tested the boundary.
+ *
+ * `inconclusive` and `not probed` each get their own grouped line with the principal named, since
+ * the fix differs: an inconclusive cookie-borne principal wants a bearer session (D325), a
+ * not-probed mutating step wants `probe mutating` on the target.
+ */
+function probeNote(probes: readonly ProbeResult[], privileged: readonly string[]): string {
+  const lines: string[] = [];
+  for (const p of probes) {
+    if (p.outcome.kind === 'inconclusive' || p.outcome.kind === 'not-probed') {
+      lines.push(`\n  note: \`${p.principal}\` ${PROBE_OUTCOME_LABEL[p.outcome.kind]} — ${p.outcome.reason}`);
+    }
+  }
+  // Announced even though nothing went wrong: `privileged` removes a principal from the probe set,
+  // and a reader comparing two suites' green lines has no other way to see that one of them tested
+  // fewer identities than the other.
+  if (privileged.length > 0) {
+    lines.push(`\n  note: not probed as ${privileged.map((p) => `\`${p}\``).join(', ')} — declared \`privileged\` (SPEC §3.3)`);
+  }
+  return lines.join('');
+}
+
+/**
+ * **D285 — an assertion with no power to fail is a failure, not a pass**, and this matcher has two
+ * doors into it rather than Tier 1's one.
+ *
+ * The pack can find no applicable rule because the owner's `2xx` body is a shape the oracle refuses
+ * to guess at (D321), *or* because no principal produced a judgeable response (D324) — a probe set
+ * that was entirely rate-limited, refused for CSRF, or never sent. Both are "nothing was actually
+ * tested here", and `runAuthzScan` routes both through the same not-applicable path so this function
+ * needs one branch rather than two.
+ */
+function describeAuthzOutcome(
+  step: ExpectStmt,
+  floor: FindingSeverity | null,
+  result: AuthzScanResult,
+  probes: readonly ProbeResult[],
+  privileged: readonly string[],
+): MatchOutcome {
+  const kind = floor ? `${floor} authorization violation` : 'authorization violation';
+  const counts = `${result.considered} rule${result.considered === 1 ? '' : 's'} — ${result.applicable.length} applicable, ${result.notApplicable.length} not applicable, ${result.findings.length} violation${result.findings.length === 1 ? '' : 's'}`;
+  const probeLine = probeCounts(probes);
+  const note = probeNote(probes, privileged);
+  const findings = result.findings;
+
+  // **Two doors, one verdict.** The pack can find nothing applicable because the owner's `2xx` body
+  // is a shape the oracle refuses to guess at (D321), or because no principal produced a judgeable
+  // response (D324) — a probe set entirely rate-limited, refused for CSRF, or never sent.
+  // `runAuthzScan` routes both through the same not-applicable path, which is what lets this stay
+  // one condition; naming it is what stops a reader taking it for Tier 1's single door.
+  const nothingApplied = result.applicable.length === 0 && findings.length === 0;
+  if (nothingApplied) {
+    const why = result.notApplicable.map((n) => `  - ${n.rule.id} applies when: ${n.because}`);
+    return {
+      ok: false,
+      message:
+        `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}authorization rule applied (${counts}; ${probeLine}).\n` +
+        `${why.join('\n')}\n` +
+        `  Point it at a response whose body carries a root \`id\`, and at a probe set that can answer${floor ? ', or lower the severity floor' : ''} (SPEC §9.11, D285).${note}`,
+    };
+  }
+
+  const negated = step.matcher.negated;
+  const noneFound = findings.length === 0;
+  const ok = negated ? !noneFound : noneFound;
+  const listing = (): string => findings.map((v) => `  - [${v.severity}] ${v.id}: ${v.description} (${v.detail})`).join('\n');
+  if (ok) {
+    const state = negated ? `has ${findings.length} ${kind}${findings.length === 1 ? '' : 's'}` : `has no ${kind}s`;
+    return { ok: true, message: `response ${state} — ${counts}; ${probeLine}${findings.length > 0 ? `:\n${listing()}` : ''}${note}` };
+  }
+  if (negated) {
+    return { ok: false, message: `expected response to have at least one ${kind}, but found none — ${counts}; ${probeLine}${note}` };
+  }
+  return { ok: false, message: `expected response to have no ${kind}s, but found ${findings.length} — ${counts}; ${probeLine}:\n${listing()}${note}` };
 }
 
 /** Gap #15 (TFLW-GAPS.md): a plain (non-quantified) `body.<path>` assertion's own detail text can

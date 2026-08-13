@@ -1,0 +1,7 @@
+error[TF010]: `privileged` comes after `oauth2` on a `session` header
+ --> tflw.config:4:13
+  |
+4 | session svc privileged oauth2
+  |             ^^^^^^^^^^
+  |
+  = help: write `session svc oauth2 privileged` — the modifier is read last so that `oauth2` stays next to the indented block it introduces

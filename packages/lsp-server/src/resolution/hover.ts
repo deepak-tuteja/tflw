@@ -40,6 +40,7 @@ const MATCHER_SPEC_ID: Record<MatcherName, string> = {
   wasMade: 'was-made',
   hasNoA11yViolations: 'has-no-a11y-violations',
   hasNoSecurityViolations: 'has-no-security-violations',
+  hasNoAuthzViolations: 'has-no-authorization-violations',
   matchesSnapshot: 'matches-snapshot',
 };
 

@@ -156,6 +156,52 @@ performance arc closed 2026-08-02 and is included below.
   a rule blocked by a failed instrument is reported differently from one blocked by its
   precondition, because the first means the assertion did less than it was asked to (decision 300).
 
+### Added — pen-test arc, Tier 2 (`0.4` internal milestone, M130)
+
+- **`expect`/`check response has no [<severity>] authorization violations`** — OWASP API #1
+  (BOLA/IDOR). The request the last `api` step *actually made* is re-issued under every other
+  declared principal and the responses are compared. A **separate matcher** from `security
+  violations`, deliberately: folding them would make every already-shipped Tier 1 assertion start
+  sending cross-identity traffic the moment its author upgraded (decisions 303, 304).
+- **The unit of input is an observed request, not a route.** 79% of `api` paths in a real suite
+  carry a `{interpolation}`, so a static endpoint × session cross-product yields addresses nobody
+  can dial. The probe is rebuilt from the observed trace rather than re-run through the step, which
+  would re-evaluate `unique(…)`/`random(…)`/`{var}` and ask about a resource the owner never
+  touched (decisions 303, 323).
+- **The oracle is differential on resource identity, not on status codes.** An admin legitimately
+  gets a byte-identical `200` on another user's order, and a collection endpoint's correct answer
+  for a non-owner is a filtered `200` — both invisible to a status oracle. Extraction is narrow
+  (bare root `id` only; an envelope yields *no resource identity found*, a failure rather than a
+  pass) and containment is wide (a scalar-leaf walk at any depth, exact equality), because a leak
+  returned under a different key is still a leak (decisions 305, 321, 322).
+- **Five probe outcomes, and `clean` has to be earned.** `429`, any `5xx`, a non-JSON body and a
+  CSRF-shaped `403` are all *inconclusive*, so a suite that trips its own rate limiter can never
+  report the throttle as an authorization boundary. `404` sits with the refusals, because returning
+  `404` rather than `403` to avoid revealing a resource's existence is the more careful of two
+  correct implementations (decisions 324, 325).
+- **`session <name> [oauth2] privileged`** — a principal that is *meant* to reach other principals'
+  resources is left out of the probe set. A claim about authority, not a speed knob: marking every
+  session privileged is refused (decisions 307, 310).
+- **`probe mutating`**, an optional indented sub-clause under `authorized target` — permission for
+  a probe to re-issue a `POST`/`PUT`/`PATCH`/`DELETE` against *that host*. Without it a mutating
+  step reports `not probed` rather than silently sending writes somewhere nobody said it could. The
+  one-line declaration is unchanged (decisions 311, 330).
+- **`TF062`/`TF063`/`TF064`** — a step naming its own credential, an assertion with no principal to
+  judge with, and an assertion inside `wait until api` (which re-polls until its expects pass, so a
+  real finding would be re-probed on every poll and reported as a *timeout*). `TF033` covers the
+  same rule inside a workload. `TF062`/`TF063` are each a lexical refusal **plus** an exact runtime
+  guard, because calls bind late and an `action` body's owner is not statically knowable
+  (decisions 315, 328, 329).
+- **Every finding emits a runnable `.tflw` repro** under `report/authz-repro/`, with **per-rule
+  templates**: a collection leak's correct answer is a filtered `200`, so a single always-`403`
+  template would emit a regression that goes red the moment somebody fixes the bug. Names are
+  derived from rule + method + path + principal, so duplicates collide into one file instead of
+  racing (decisions 314, 332).
+- **The run states its own blind spot.** `authz coverage: N of M api steps in the suite sit in a
+  test that declares an owner` — a static census over every discovered file, printed beside the
+  `authorized target` reason, so "we probed everything we asserted on" cannot be read as "we probed
+  everything"; plus this run's own declines, aggregated (decision 331).
+
 ### Changed — grammar freeze (M66–M69)
 
 The shipped grammar is frozen additive-only from `1.0.0` on, so every incompatible change had to
