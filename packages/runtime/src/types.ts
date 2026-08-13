@@ -374,6 +374,29 @@ export interface RunReport {
    * is a claim its author made, and the run either honoured it or had no use for it. Optional and
    * omitted when empty, so every existing `RunReport` fixture keeps compiling. */
   readonly authorizedTargets?: readonly AuthorizedTarget[];
+  /**
+   * M130b (D331) — what an `authorization violations` assertion could **not** reach, in two numbers
+   * that answer two different questions, printed beside the `authorized target` reason above.
+   *
+   * `coverage` is a fact about the *suite*, computed by the checker over every discovered file
+   * before anything runs: how many `api` steps sit in a test that declares an owner. It is the
+   * sentence that stops *we probed everything we asserted on* being read as *we probed everything*,
+   * and it replaces D316's own blind-spot count, which as specified could only ever be zero — it
+   * named `TF062`/`TF063` sites, and those are errors, so no run containing one executes.
+   *
+   * `declines` is a fact about *this run*: work an assertion actually met and turned down — a
+   * mutating step with no `probe mutating`, a session that would not establish, a probe that
+   * answered without answering. Aggregated by reason across the whole run.
+   *
+   * The two are deliberately separate rather than one number. `M126`'s rule is that a denominator
+   * travels on the same line as its count, and these have different denominators: a static one over
+   * the suite, a dynamic one over the assertions that ran. Folding them would produce a percentage
+   * whose base changed depending on `--tags`.
+   */
+  readonly authzBlindSpot?: {
+    readonly coverage?: { readonly apiSteps: number; readonly withOwner: number };
+    readonly declines?: readonly { readonly principal: string; readonly reason: string; readonly count: number }[];
+  };
   /** Names declared secret — via `env(NAME)`/`require env`, or a `capture` whose subject a `redact`
    * pattern covers — whose value was too short for `MIN_REDACTABLE_LENGTH` to mask safely, so it
    * ships in the clear (review finding `A12-01`). Surfaced as a warning beside `insecure`'s, for

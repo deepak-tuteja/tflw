@@ -6,6 +6,9 @@ export { MIN_REDACTABLE_LENGTH, Redactor, redactEvent, redactReport } from './re
 export { RuntimeError } from './eval.js';
 export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSelection } from './resolve.js';
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
+// M130b (D331/D332) — the run-level collector and the two facts it collects. Exported for the CLI,
+// which owns the sink for a whole invocation, and for `@tflw/reporter`'s repro emitter.
+export type { AuthzSink, AuthzFinding, AuthzDecline } from './interpreter.js';
 export { TlsProber, type TlsProbePolicy } from './tlsProbe.js';
 export { runLoadShard, mergeLoadShardReports, spliceLoadReportIntoRunReport, type LoadOptions } from './interpreter.js';
 // M89b (D-M89-5) — the CLI's pre-run `scenario "…" — <description>` line formats *this* value

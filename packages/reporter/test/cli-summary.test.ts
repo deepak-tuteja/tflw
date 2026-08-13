@@ -171,3 +171,53 @@ test('an ordinary run says nothing about authorized targets', () => {
   assert.doesNotMatch(renderCliSummary(baseReport, false), /authorized target/);
   assert.doesNotMatch(renderCliSummary({ ...baseReport, authorizedTargets: [] }, false), /authorized target/);
 });
+
+// --- M130b/D331: the two blind-spot lines -------------------------------------------------------
+//
+// These exist so that a run's authorization *results* cannot be read as broader than they are.
+// D316's own count could only ever have been zero (it named `TF062`/`TF063` sites, which are errors,
+// so no run containing one executes), and what replaces it is two numbers with two different
+// denominators — which is why they are two lines and not one percentage.
+
+test('D331: the coverage line names the suite as its base, never this run', () => {
+  const out = renderCliSummary({ ...baseReport, authzBlindSpot: { coverage: { apiSteps: 1035, withOwner: 41 } } }, false);
+  assert.match(out, /authz coverage: 41 of 1035 api steps in the suite sit in a test that declares an owner/);
+  // The census is computed before `--tags`/`--only` narrow anything, so a reader must not take it
+  // for a statement about what just ran.
+  assert.match(out, /in the suite/);
+});
+
+test('D331: the percentage floors, because rounding up is the one direction a blind spot must not move', () => {
+  // 41/1035 is 3.96%. Rounded it reads 4%, which overstates coverage.
+  const out = renderCliSummary({ ...baseReport, authzBlindSpot: { coverage: { apiSteps: 1035, withOwner: 41 } } }, false);
+  assert.match(out, /\(3%\)/);
+});
+
+test('D331: declines are aggregated with their count and the principal named', () => {
+  const out = renderCliSummary(
+    { ...baseReport, authzBlindSpot: { declines: [{ principal: 'shopper', reason: 'a cookie-borne principal was refused on a DELETE', count: 5 }] } },
+    false,
+  );
+  assert.match(out, /authz declined 5×: `shopper` — a cookie-borne principal was refused on a DELETE/);
+});
+
+test('D331: an ordinary run says nothing about authz at all', () => {
+  // The field is omitted entirely for a suite with no `api` step and no decline, so the line is
+  // never ambient — the same rule `authorized target` follows directly above.
+  assert.doesNotMatch(renderCliSummary(baseReport, false), /authz /);
+});
+
+test('D330: `probe mutating` is shown on the target it was declared under', () => {
+  const out = renderCliSummary(
+    {
+      ...baseReport,
+      authorizedTargets: [
+        { target: 'https://a.test', reason: 'ours', probeMutating: true },
+        { target: 'https://b.test', reason: 'also ours', probeMutating: false },
+      ],
+    },
+    false,
+  );
+  assert.match(out, /a\.test — ours \(probe mutating\)/);
+  assert.doesNotMatch(out, /b\.test — also ours \(probe mutating\)/);
+});
