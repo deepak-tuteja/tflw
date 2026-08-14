@@ -9,6 +9,25 @@ export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCa
 // M130b (D331/D332) — the run-level collector and the two facts it collects. Exported for the CLI,
 // which owns the sink for a whole invocation, and for `@tflw/reporter`'s repro emitter.
 export type { AuthzSink, AuthzFinding, AuthzDecline } from './interpreter.js';
+// M134b (D385/D386/D387) — the report-facing finding, its stable identity, and the gate.
+export {
+  BASELINE_VERSION,
+  OPEN_GATE,
+  SCAN_KIND_LABEL,
+  WITHHELD_LABEL,
+  fingerprintOf,
+  judge,
+  parseBaseline,
+  renderBaseline,
+  staleBaselineEntries,
+  toScanFinding,
+  withheldNote,
+} from './scanFindings.js';
+export type { Baseline, BaselineEntry, GateVerdict, ScanCensus, ScanFinding, ScanGate, ScanKind, ScanSink, WithheldReason } from './scanFindings.js';
+// M134b (D369/D388) — the seeded layer. `MAX_SEEDED_PER_CLASS` is exported because the CLI validates
+// `--probe-seeded` against it before a run starts: a usage error belongs on the command line, not on
+// an assertion three minutes in (P#46).
+export { MAX_SEEDED_PER_CLASS, SEEDED_ID_PREFIX, seededIds, seededPayloads } from './inputSeeded.js';
 export { TlsProber, type TlsProbePolicy } from './tlsProbe.js';
 export { runLoadShard, mergeLoadShardReports, spliceLoadReportIntoRunReport, type LoadOptions } from './interpreter.js';
 // M89b (D-M89-5) — the CLI's pre-run `scenario "…" — <description>` line formats *this* value

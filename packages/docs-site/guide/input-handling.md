@@ -178,4 +178,6 @@ refused inside a workload (`TF033`) with a blunter hint than the authorization s
 - [Security hygiene scanning](/guide/security-scanning) — the response-inspection scan, and where
   `authorized target` comes from
 - [Config & environments](/guide/config) — `probe oversized` and `probe traversal`
+- [Findings, baselines & the gate](/guide/findings-and-baselines) — `--probe-seeded`, and what happens
+  to a finding after a rule raises it
 - [CI & reporting](/guide/ci-and-reporting) — `--allow-public-target` and the other CI gates

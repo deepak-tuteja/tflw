@@ -44,12 +44,14 @@ import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matc
 import { evalUiMatcherOnce } from './uiMatcher.js';
 import { runA11yScan } from './a11y.js';
 import { filterBySeverity, SEVERITY_RANK, type Finding } from './finding.js';
+import { judge, OPEN_GATE, toScanFinding, withheldNote, type GateVerdict, type ScanGate, type ScanKind, type ScanSink } from './scanFindings.js';
 import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, type TlsObservation } from './securityRules.js';
 import { TlsProber } from './tlsProbe.js';
 import { extractResourceIds, judgeable, PROBE_OUTCOME_LABEL, runAuthzScan, type AuthzScanResult, type ProbeResult } from './authzRules.js';
 import { ANONYMOUS, AuthzProber, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
-import { mutationSites, type MutationSite } from './inputCorpus.js';
+import { INPUT_CORPUS, mutationSites, templateEndpoint, type MutationSite } from './inputCorpus.js';
 import { grantedClasses, InputProber, planProbes, withheldClasses, type InputProbePolicy, type InputProbeSender } from './inputProbe.js';
+import { seededIds, seededPayloads } from './inputSeeded.js';
 import { MUTATION_OUTCOME_LABEL, runInputScan, type InputScanResult, type MutationOutcome, type MutationResult } from './inputRules.js';
 import {
   BrowserPageState,
@@ -202,6 +204,19 @@ export interface RunOptions {
    *  numbers are the run's, not the file's, and the repro files are written once, after everything
    *  has finished. Omitted by single-call callers, which then simply collect nothing. */
   readonly authzSink?: AuthzSink;
+  /** M134b (D385) — where **every** scan's findings are accumulated for `RunReport.findings`, across
+   *  all three tiers. Shared for `authzSink`'s reason and beside it rather than folded into it: that
+   *  one feeds D332's repro emitter, which needs a principal and owner ids that two of the three
+   *  scans do not have. Omitted by single-call callers, which then simply collect nothing. */
+  readonly scanSink?: ScanSink;
+  /** M134b (D386/D387) — `--fail-on` and `--baseline`, applied inside each scan assertion before its
+   *  pass/fail decision. Omitted means `OPEN_GATE`: every finding gates, which is the default and
+   *  the behaviour every run had before this milestone. */
+  readonly scanGate?: ScanGate;
+  /** M134b (D369/D388) — `--probe-seeded <n>`: extra generated payloads per **already-granted**
+   *  class. Omitted or `0` means the seeded layer is off and the run sends byte-for-byte the requests
+   *  it sent before this milestone. It cannot widen what `authorized target` permitted. */
+  readonly probeSeeded?: number;
   /** Precomputed, deterministic answer to "which globally-indexed test case owns each session's
    * step-splicing" (session name → that case's global test index, `testIndexOffset`-relative) —
    * the CLI computes this up front, across every file, in sorted-file/declaration order, so it
@@ -320,7 +335,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length + scenarios.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
@@ -463,7 +478,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -1985,6 +2000,13 @@ interface TestCtx {
    *  run summary and the repro emitter. Optional: a helper driving one assertion in isolation still
    *  gets its answer, it just has nothing collecting the run-level view. */
   readonly authzSink?: AuthzSink;
+  /** M134b (D385/D386) — the run-level finding collector and the gate, threaded exactly as
+   *  `authzSink` is. Both optional for its reason: a helper driving one assertion in isolation still
+   *  gets its answer, and an absent gate is the open one every run had before this milestone. */
+  readonly scanSink?: ScanSink;
+  readonly scanGate?: ScanGate;
+  /** M134b (D388) — `--probe-seeded`'s value; `undefined`/`0` is the layer off. */
+  readonly probeSeeded?: number;
   readonly browserManager?: BrowserManager;
   /** M4b, D15 — see `RunOptions.filePath`/`updateSnapshots`. */
   readonly filePath: string;
@@ -2763,8 +2785,8 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
                       step.matcher.name === 'hasNoAuthzViolations'
                       ? await execAuthzExpect(step, lastRequest, lastResponse, lastOwnerIdentity, ctx, src, stepStart, config, tc)
                       : step.matcher.name === 'hasNoInputHandlingViolations'
-                        ? await execInputHandlingExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config)
-                        : await execSecurityExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc.tlsProber)
+                        ? await execInputHandlingExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc)
+                        : await execSecurityExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc)
                     : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
@@ -3869,6 +3891,86 @@ async function probeTlsFor(finalUrl: string, floor: FindingSeverity | null, conf
  * cannot change a header that already arrived, so a retry loop would only turn a fast failure into
  * a slow one. Determinable, not grilled — D290 records it.
  */
+/**
+ * M134b (D385/D386) — lift a scan's generic findings into their report-facing form, hand every one
+ * to the run's collector, and decide which of them are still allowed to fail the assertion.
+ *
+ * **One function for all three scans, on purpose.** A per-tier copy is how `--fail-on` would come to
+ * mean a different thing depending on which matcher a file used, which is the accidental contract
+ * D383 gave this milestone its own number to avoid.
+ *
+ * Every finding reaches the sink, including the withheld ones. A finding withheld from a verdict is
+ * still a finding; dropping it here would make the report agree with the gate instead of describing
+ * the run, and a baseline you cannot see the contents of is not reviewable.
+ */
+/** Shared empty map for the two scans that send no payloads, so neither allocates one per assertion
+ * and neither can be handed a mutable default that a later call could have written into. */
+const EMPTY_SEEDED: ReadonlyMap<string, string> = new Map();
+
+function gateScan(
+  scan: ScanKind,
+  findings: readonly Finding[],
+  endpoint: string | null,
+  step: ExpectStmt,
+  tc: TestCtx,
+  /** M134b (D369) — payload id → the value this run generated for it. A finding whose payload is in
+   * this map was drawn from the seed rather than reviewed, so it is un-fingerprintable and cannot
+   * gate. Empty (the default) for the two scans that send no payloads and for every run that did not
+   * ask for the layer. Membership is the test, not the id's prefix: a *corpus* payload someone names
+   * `seeded/...` is still reviewed and still gates. */
+  seeded: ReadonlyMap<string, string> = EMPTY_SEEDED,
+): GateVerdict {
+  const lifted = findings.map((f) => {
+    const drawn = f.payload === undefined ? undefined : seeded.get(f.payload);
+    return toScanFinding(scan, f, endpoint, {
+      ...(drawn === undefined ? {} : { seeded: { seed: tc.runSeed, payload: drawn } }),
+      ...(tc.filePath !== undefined ? { file: tc.filePath } : {}),
+      line: step.span.start.line,
+    });
+  });
+  const verdict = judge(lifted, tc.scanGate ?? OPEN_GATE);
+  for (const f of verdict.all) tc.scanSink?.finding(f);
+  return verdict;
+}
+
+/**
+ * M134b (D389) — report what this assertion's pack applied and what it stood down, for
+ * `RunReport.scanCoverage`.
+ *
+ * Called on **every** scan assertion, passing or failing, which is `M128-01`'s whole point: a rule
+ * that stands down produces nothing, so the only run in which the information exists to be captured
+ * is the one where nobody is looking at a failure message.
+ *
+ * Generic over the three packs' result shapes by taking the two lists rather than the result, so a
+ * fourth tier joins by calling it rather than by widening a union.
+ */
+function reportCensus(
+  scan: ScanKind,
+  applied: readonly { readonly id: string }[],
+  notApplicable: readonly { readonly rule: { readonly id: string }; readonly because: string }[],
+  tc: TestCtx,
+): void {
+  tc.scanSink?.census({
+    scan,
+    applied: applied.map((r) => r.id),
+    notApplicable: notApplicable.map((n) => ({ rule: n.rule.id, because: n.because })),
+  });
+}
+
+/**
+ * Whether the plain form of a scan assertion passes, and the clause it appends when it withheld
+ * findings from its own verdict.
+ *
+ * **The gate is not applied to the negated form, and that is D386 rather than an omission.** `not
+ * has no … violations` asserts that something *is* wrong, so there findings cause success — and a
+ * gate that discounted them would turn a green assertion red. `--fail-on` and `--baseline` may only
+ * ever relax; the one place that rule could be violated by accident is exactly here.
+ */
+function gatedPass(verdict: GateVerdict, negated: boolean, noneFound: boolean): { readonly ok: boolean; readonly note: string } {
+  if (negated) return { ok: !noneFound, note: '' };
+  return { ok: verdict.gating.length === 0, note: withheldNote(verdict) };
+}
+
 async function execSecurityExpect(
   step: ExpectStmt,
   request: RequestTrace | null,
@@ -3877,7 +3979,7 @@ async function execSecurityExpect(
   src: string,
   start: number,
   config: ResolvedConfig,
-  tlsProber: TlsProber,
+  tc: TestCtx,
 ): Promise<StepResult> {
   if (step.matcher.name !== 'hasNoSecurityViolations') {
     throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`response\` — only \`has no [<severity>] security violations\` (SPEC §9.10)`);
@@ -3888,14 +3990,18 @@ async function execSecurityExpect(
     throw new RuntimeError('no response yet — an `api` step must run before `expect response has no … security violations`');
   }
   const floor = step.matcher.severityFloor ?? null;
-  const tls = await probeTlsFor(response.finalUrl, floor, config, tlsProber);
+  const tls = await probeTlsFor(response.finalUrl, floor, config, tc.tlsProber);
   const result = runSecurityScan(toObservation(request, response, tls), floor);
   // D287's second half. The session's own login response was scanned at establishment, unfiltered;
   // this assertion's floor is applied to those findings now, so one cached session can serve a
   // `has no security violations` in one test and a `has no critical security violations` in another
   // without either being told the other's answer.
   const sessionFindings = filterBySeverity(ctx.sessionFindings ?? [], floor);
-  const outcome = describeSecurityOutcome(step, floor, result, sessionFindings);
+  // The session's own findings are gated alongside this response's — they are findings about the
+  // same suite and a baseline that could not accept one would be a baseline with a hole in it.
+  const verdict = gateScan('security', [...sessionFindings, ...result.findings], templateEndpoint(request.method, response.finalUrl), step, tc);
+  reportCensus('security', result.applicable, result.notApplicable, tc);
+  const outcome = describeSecurityOutcome(step, floor, result, sessionFindings, verdict);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }
 
@@ -3950,7 +4056,13 @@ function scanCounts(result: ScanResult): string {
  * there, the author is told which preconditions went unmet, which is the sentence that explains
  * both what is wrong and what to write instead.
  */
-function describeSecurityOutcome(step: ExpectStmt, floor: FindingSeverity | null, result: ScanResult, sessionFindings: readonly Finding[]): MatchOutcome {
+function describeSecurityOutcome(
+  step: ExpectStmt,
+  floor: FindingSeverity | null,
+  result: ScanResult,
+  sessionFindings: readonly Finding[],
+  verdict: GateVerdict,
+): MatchOutcome {
   const kind = floor ? `${floor} security violation` : 'security violation';
   const counts = scanCounts(result);
   const findings = [...sessionFindings, ...result.findings];
@@ -3973,8 +4085,9 @@ function describeSecurityOutcome(step: ExpectStmt, floor: FindingSeverity | null
   }
   const negated = step.matcher.negated;
   const noneFound = findings.length === 0;
-  const ok = negated ? !noneFound : noneFound;
-  const note = degradedNote(result);
+  const gate = gatedPass(verdict, negated, noneFound);
+  const ok = gate.ok;
+  const note = `${degradedNote(result)}${gate.note}`;
   // No truncation, unlike the a11y listing directly above, and the difference is the pack size: a
   // real page can carry dozens of instances of one axe rule, while this pack is twelve rules and can
   // physically produce only a handful more findings than that. Cutting at five here would hide a
@@ -4217,7 +4330,9 @@ async function execAuthzExpect(
     }
   }
 
-  const outcome = describeAuthzOutcome(step, floor, result, probes, privileged);
+  const verdict = gateScan('authorization', result.findings, templateEndpoint(request.method, request.url), step, tc);
+  reportCensus('authorization', result.applicable, result.notApplicable, tc);
+  const outcome = describeAuthzOutcome(step, floor, result, probes, privileged, verdict);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }
 
@@ -4272,6 +4387,7 @@ function describeAuthzOutcome(
   result: AuthzScanResult,
   probes: readonly ProbeResult[],
   privileged: readonly string[],
+  verdict: GateVerdict,
 ): MatchOutcome {
   const kind = floor ? `${floor} authorization violation` : 'authorization violation';
   const counts = `${result.considered} rule${result.considered === 1 ? '' : 's'} — ${result.applicable.length} applicable, ${result.notApplicable.length} not applicable, ${result.findings.length} violation${result.findings.length === 1 ? '' : 's'}`;
@@ -4298,11 +4414,12 @@ function describeAuthzOutcome(
 
   const negated = step.matcher.negated;
   const noneFound = findings.length === 0;
-  const ok = negated ? !noneFound : noneFound;
+  const gate = gatedPass(verdict, negated, noneFound);
+  const ok = gate.ok;
   const listing = (): string => findings.map((v) => `  - [${v.severity}] ${v.id}: ${v.description} (${v.detail})`).join('\n');
   if (ok) {
     const state = negated ? `has ${findings.length} ${kind}${findings.length === 1 ? '' : 's'}` : `has no ${kind}s`;
-    return { ok: true, message: `response ${state} — ${counts}; ${probeLine}${findings.length > 0 ? `:\n${listing()}` : ''}${note}` };
+    return { ok: true, message: `response ${state} — ${counts}; ${probeLine}${findings.length > 0 ? `:\n${listing()}` : ''}${note}${gate.note}` };
   }
   if (negated) {
     return { ok: false, message: `expected response to have at least one ${kind}, but found none — ${counts}; ${probeLine}${note}` };
@@ -4351,6 +4468,7 @@ async function execInputHandlingExpect(
   src: string,
   start: number,
   config: ResolvedConfig,
+  tc: TestCtx,
 ): Promise<StepResult> {
   // `TF039`'s runtime half, as for the other two scan matchers — `checkResponseScopes` already
   // rejects this statically, so reaching here means the file was run without a check pass.
@@ -4360,7 +4478,12 @@ async function execInputHandlingExpect(
 
   const floor = step.matcher.severityFloor ?? null;
   const classes = grantedClasses(request.url, config.authorizedTargets);
-  const plan = planProbes(request, classes);
+  // D388 — the seeded layer is handed the classes the target **already** granted, so there is no
+  // argument `--probe-seeded` could carry that reaches a class the config withheld. The generated
+  // payloads join the corpus for planning and are judged by the same rules; only their standing
+  // afterwards differs, and that is decided at the report boundary from this map.
+  const drawn = seededPayloads(classes, tc.probeSeeded ?? 0, tc.runSeed);
+  const plan = planProbes(request, classes, [...INPUT_CORPUS, ...drawn]);
   const sites = mutationSites(request);
 
   const policy: InputProbePolicy = {
@@ -4376,7 +4499,9 @@ async function execInputHandlingExpect(
 
   const withheld = withheldClasses(classes);
   const result = runInputScan({ observed: { request, response }, probes, sites, disabledClasses: withheld }, floor);
-  const outcome = describeInputOutcome(step, floor, result, probes, sites, withheld);
+  const verdict = gateScan('input-handling', result.findings, templateEndpoint(request.method, request.url), step, tc, seededIds(drawn));
+  reportCensus('input-handling', result.applicable, result.notApplicable, tc);
+  const outcome = describeInputOutcome(step, floor, result, probes, sites, withheld, verdict);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }
 
@@ -4443,6 +4568,7 @@ function describeInputOutcome(
   probes: readonly MutationResult[],
   sites: readonly MutationSite[],
   withheld: readonly string[],
+  verdict: GateVerdict,
 ): MatchOutcome {
   const kind = floor ? `${floor} input-handling violation` : 'input-handling violation';
   const counts = `${result.considered} rule${result.considered === 1 ? '' : 's'} — ${result.applicable.length} applicable, ${result.notApplicable.length} not applicable, ${result.findings.length} violation${result.findings.length === 1 ? '' : 's'}`;
@@ -4476,11 +4602,12 @@ function describeInputOutcome(
 
   const negated = step.matcher.negated;
   const noneFound = findings.length === 0;
-  const ok = negated ? !noneFound : noneFound;
+  const gate = gatedPass(verdict, negated, noneFound);
+  const ok = gate.ok;
   const listing = (): string => findings.map((v) => `  - [${v.severity}] ${v.id}: ${v.description} (${v.detail})`).join('\n');
   if (ok) {
     const state = negated ? `has ${findings.length} ${kind}${findings.length === 1 ? '' : 's'}` : `has no ${kind}s`;
-    return { ok: true, message: `response ${state} — ${counts}; ${probeLine}${findings.length > 0 ? `:\n${listing()}` : ''}${note}` };
+    return { ok: true, message: `response ${state} — ${counts}; ${probeLine}${findings.length > 0 ? `:\n${listing()}` : ''}${note}${gate.note}` };
   }
   if (negated) {
     return { ok: false, message: `expected response to have at least one ${kind}, but found none — ${counts}; ${probeLine}${note}` };

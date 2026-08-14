@@ -2577,6 +2577,68 @@ test "search rejects what it cannot parse"
   asking. `TF033`'s hint differs — the multiplication here is one probe *per payload per mutable
   input*, an order of magnitude worse than per-principal.
 
+### 9.13 Findings, the gate and the baseline (M134b, D385–D389) ✅
+
+Everything §9.10, §9.11 and §9.12 find lands in one place, under one contract. This section is about
+what happens to a finding **after** a rule raises it, and it is deliberately the same answer for all
+three scans: a per-tier answer is how `--fail-on` would come to mean a different thing depending on
+which matcher a file happened to use.
+
+**Every finding reaches the report.** `results.json` grows a `findings` array and `report.html` grows
+a **Security findings** block: severity, rule, endpoint, where within the request, and a
+**fingerprint** — a stable 16-hex-character identity computed from the scan, the rule, the endpoint,
+the location within it and the invariant violated. Deliberately **not** from the finding's `detail`,
+which carries the concrete payload and a response excerpt: hashing those would move the fingerprint
+every time an error message was reworded and invalidate a baseline for a change that fixed nothing.
+
+**`--fail-on <severity>`** — findings below the given severity are reported and do not fail the
+build. **`--baseline <file>`** — findings whose fingerprint is listed are reported, badged
+*known/accepted*, and do not fail the build. Both are applied **inside** the assertion, before its
+pass/fail decision, and both obey one rule:
+
+> **The gate can only relax, never tighten, and a relaxation is never silent.**
+
+A test that wrote `expect response has no serious security violations` already declared its own
+floor; `--fail-on minor` cannot lower it, because a command-line flag that could turn a green suite
+red for a reason not visible in the source is a build failure nobody can locate. Where the two
+disagree the stricter one wins. A withheld finding still renders, badged with which relaxation
+withheld it, and the passing line says so — a report that agreed with the gate would describe the
+gate rather than the run.
+
+Neither flag applies to the **negated** form (`expect response not has no … violations`), where a
+finding is what makes the assertion succeed. Suppressing findings there would fail an assertion for having found
+something, which is the opposite of relaxing it.
+
+**`--baseline-write <file>`** writes this run's findings out as the accepted set, sorted and
+deduplicated. It ships with `--baseline` rather than after it: fingerprints are hashes, and a feature
+whose adoption step is hand-transcribing forty of them is not adoptable. Entries in a baseline that
+this run did not produce are **reported and never removed** — a `--tag` run legitimately produces a
+subset of the suite's findings, so pruning on absence would delete acceptances the next full run
+still needs.
+
+Every failure mode of a baseline file makes a build *greener*, so a malformed one is refused rather
+than degraded to "accepted nothing" — which looks exactly like a codebase that fixed its findings.
+Matching is on the **fingerprint alone**; the `rule` and `endpoint` beside it are for the human
+reading the file, so a rule renamed upstream cannot silently un-accept every entry that named it.
+
+**`--probe-seeded <n>`** (§9.12's scan only) adds `n` generated mutation payloads per
+**already-granted** class on top of the fixed corpus. It cannot widen what `authorized target`
+permitted — seeding is a capability of the run, a mutation class is a claim in the config, and a flag
+that reached `traversal` by asking for more payloads would undo §9.12's opt-ins by the back door.
+
+Its findings are **reported and never gate**. A generated payload cannot be fingerprinted stably: it
+appears under one seed and vanishes under the next, so it would either churn a baseline every run or
+fail a build on a coin flip — the precise failure mode `--seed` exists to prevent. Each renders with
+the payload that produced it and the seed that drew it, under the call to action **promote this
+payload into the corpus**, which makes the layer self-liquidating. The accepted consequence: a real
+weakness found only by the seeded layer does not fail CI until somebody promotes it. That is the
+correct trade — a finding you must read is strictly better than a gate you cannot trust.
+
+**Which rules ran.** Every report also carries a per-scan census: which rules **applied** and which
+**stood down, with the reason**. A rule that stands down produces no finding by definition, so
+without this the only run in which that information exists is one where nobody is reading a failure
+message. The census renders on passing runs too, which is exactly where it used to disappear.
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
@@ -2620,7 +2682,7 @@ nothing — the trigger is a manifest missing the key, not a missing manifest, w
 | Command | Purpose |
 |---|---|
 | `tflw init [--load]` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) + `package.json` (`{"private": true, "type": "module"}`) — decision 82; API-only, `--ui` is M3. Every file after `tflw.config` is written **only if absent**, never merged into or overwritten; `package.json` is there so the §11 `.ts` escape hatch doesn't make Node guess the module type on first use (M125b2, `FU-15`). The scaffolded config points `api` at `tflw://demo` (§3.1, M118/`FU-04`), so `tflw init` followed by `tflw run` is green in an empty directory — swapping that one line for your own service is the intended first edit. `--load` (M29/D30) additionally scaffolds a `load.tflw` holding a workload-bearing `test` in the open (`rps`) model, run by plain `tflw run` like any other file |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error] [--fail-on minor\|moderate\|serious\|critical] [--baseline FILE] [--baseline-write FILE] [--probe-seeded N]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording. `--fail-on`/`--baseline`/`--baseline-write`/`--probe-seeded` (M134b, §9.13) govern what the three security scans do with a finding after a rule raises it: the first two can only **relax** an assertion, never tighten it, and never silently — a withheld finding still renders, badged with which relaxation withheld it. `--baseline-write` produces the accepted set (fingerprints are hashes; hand-transcribing them is not an adoption path), and `--probe-seeded N` adds N generated mutation payloads per already-granted class whose findings are reported and never gate |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkSessionServices`, then `checkProgram` — the one composed per-file pass list, `checkServices`/`checkDataTables`/`checkSessions`/`checkActionDecls`/`checkUnknownVariables`/`checkRequestAssertions`/`checkWorkloadTests` — shared verbatim with the language server and the docs-site editor demo since M60, so all three report the same thing), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints JSON instead, for editor and CI integrations: an array with **one `{ "file": "<path>", "diagnostics": [ … ] }` entry per file checked**, in discovery order, paths relative to the cwd and POSIX-separated. Clean files are listed with an empty `diagnostics` array — a consumer that draws diagnostics needs to know a file was checked and found clean in order to clear the ones it drew last time (M70; before that this was a flat `Diagnostic[]` concatenated across files, and `Diagnostic` carries a span but no file, so it only worked when exactly one file was named). A config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout — which under this shape means "nothing was checked" rather than being ambiguous with "everything was clean". Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this — a reuse hint is a cross-file suggestion carrying a diff preview, not a diagnostic anchored to a span, so it does not belong in a per-file diagnostics array |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |

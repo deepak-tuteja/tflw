@@ -33,6 +33,7 @@ const GUIDE_SIDEBAR = [
       { text: '14. Security hygiene scanning', link: '/guide/security-scanning' },
       { text: '15. Authorization testing', link: '/guide/authorization-testing' },
       { text: '16. Input-handling testing', link: '/guide/input-handling' },
+      { text: '17. Findings, baselines & the gate', link: '/guide/findings-and-baselines' },
     ],
   },
 ];

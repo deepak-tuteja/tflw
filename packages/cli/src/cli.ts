@@ -32,6 +32,7 @@ import {
   type Program,
   type Diagnostic,
   type EvidenceLevel,
+  type FindingSeverity,
   type LogDestination,
   type LogLevel,
   type SuiteEntry,
@@ -44,6 +45,15 @@ import {
   type AuthzSink,
   type AuthzFinding,
   type AuthzDecline,
+  parseBaseline,
+  renderBaseline,
+  staleBaselineEntries,
+  MAX_SEEDED_PER_CLASS,
+  type ScanFinding,
+  type ScanGate,
+  type ScanKind,
+  type ScanRuleCensus,
+  type ScanSink,
   resolveImportedActions,
   resolveMissingFiles,
   checkConfigFiles,
@@ -868,6 +878,24 @@ interface RunArgs {
    * `LOG_LEVELS` — overrides `tflw.config`'s `log level` key (the minimum level a `log` step must
    * clear to be rendered) for this run only. */
   readonly logLevelRaw?: string | undefined;
+  /** `--fail-on <severity>` (M134b, D386) — scan findings below this severity are reported but do
+   *  not fail the assertion that produced them. **Relaxes only**: it withholds findings from a
+   *  verdict, it never narrows the rule pack and it never applies to a negated assertion, so it
+   *  cannot turn a green run red. Absent means the file's own claim stands. */
+  readonly failOnRaw?: string | undefined;
+  /** `--baseline <file>` (M134b, D387) — accepted fingerprints. Listed findings still render, marked
+   *  known/accepted, and do not fail the build. */
+  readonly baseline?: string | undefined;
+  /** `--baseline-write <file>` (M134b, D387) — write this run's findings out as the accepted set.
+   *  Ships with `--baseline` rather than after it: R8 fingerprints are hashes, and a feature whose
+   *  adoption step is hand-transcribing forty of them is not adoptable. */
+  readonly baselineWrite?: string | undefined;
+  /** `--probe-seeded <n>` (M134b, D369/D388) — `n` generated payloads per **already-granted**
+   *  mutation class, on top of the fixed corpus. Its findings are reported and never gate, because
+   *  R8 excludes the seed from a fingerprint and a finding that appears under one seed and vanishes
+   *  under the next would either churn a baseline or fail a build on a coin flip. It cannot widen
+   *  what `authorized target` permitted. */
+  readonly probeSeededRaw?: string | undefined;
 }
 
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
@@ -904,6 +932,10 @@ function parseRunArgs(argv: string[]): RunArgs {
   let updateSnapshots = false;
   let logOutputRaw: string | undefined;
   let logLevelRaw: string | undefined;
+  let failOnRaw: string | undefined;
+  let baseline: string | undefined;
+  let baselineWrite: string | undefined;
+  let probeSeededRaw: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--env') env = flagValue(argv, ++i, a);
@@ -946,6 +978,14 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--log-output=')) logOutputRaw = inlineFlagValue(a, '--log-output');
     else if (a === '--log-level') logLevelRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--log-level=')) logLevelRaw = inlineFlagValue(a, '--log-level');
+    else if (a === '--fail-on') failOnRaw = flagValue(argv, ++i, a);
+    else if (a.startsWith('--fail-on=')) failOnRaw = inlineFlagValue(a, '--fail-on');
+    else if (a === '--baseline') baseline = flagValue(argv, ++i, a);
+    else if (a.startsWith('--baseline=')) baseline = inlineFlagValue(a, '--baseline');
+    else if (a === '--baseline-write') baselineWrite = flagValue(argv, ++i, a);
+    else if (a.startsWith('--baseline-write=')) baselineWrite = inlineFlagValue(a, '--baseline-write');
+    else if (a === '--probe-seeded') probeSeededRaw = flagValue(argv, ++i, a);
+    else if (a.startsWith('--probe-seeded=')) probeSeededRaw = inlineFlagValue(a, '--probe-seeded');
     else if (a.startsWith('--')) unknownFlag('run', a);
     else files.push(a);
   }
@@ -989,6 +1029,10 @@ function parseRunArgs(argv: string[]): RunArgs {
     updateSnapshots,
     logOutputRaw,
     logLevelRaw,
+    failOnRaw,
+    baseline,
+    baselineWrite,
+    probeSeededRaw,
   };
 }
 
@@ -1624,6 +1668,37 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const authzDeclines: AuthzDecline[] = [];
   const authzSink: AuthzSink = { finding: (f) => authzFindings.push(f), decline: (d) => authzDeclines.push(d) };
 
+  // M134b (D386/D387) — the gate, resolved once for the invocation. Built before any file runs so a
+  // malformed `--baseline` is an error the run reports instead of a suppression that silently
+  // matched nothing: every failure mode of a baseline file makes the build *greener*, and the one
+  // thing this feature must never do is make a build greener than the evidence.
+  const failOn = args.failOnRaw === undefined ? null : parseFailOn(args.failOnRaw);
+  const baselineDoc = args.baseline === undefined ? null : parseBaseline(await readFile(resolve(cwd, args.baseline), 'utf8'), args.baseline);
+  const scanGate: ScanGate | undefined =
+    failOn === null && baselineDoc === null ? undefined : { failOn, accepted: new Map((baselineDoc?.accepted ?? []).map((e) => [e.fingerprint, e])) };
+  // Validated here for the same reason and at the same moment: a bad `--probe-seeded` is a usage
+  // error, and a usage error belongs on the command line rather than on an assertion three minutes
+  // into a suite (P#46).
+  const probeSeeded = args.probeSeededRaw === undefined ? undefined : parseProbeSeeded(args.probeSeededRaw);
+
+  // M134b (D385/D389) — the same shape one tier wider: every scan's findings and every scan's rule
+  // census, collected once for the whole invocation.
+  const scanFindings: ScanFinding[] = [];
+  const censusByScan = new Map<ScanKind, { applied: Set<string>; notApplicable: Map<string, Set<string>> }>();
+  const scanSink: ScanSink = {
+    finding: (f) => scanFindings.push(f),
+    census: (c) => {
+      const bucket = censusByScan.get(c.scan) ?? { applied: new Set<string>(), notApplicable: new Map<string, Set<string>>() };
+      for (const id of c.applied) bucket.applied.add(id);
+      for (const n of c.notApplicable) {
+        const reasons = bucket.notApplicable.get(n.rule) ?? new Set<string>();
+        reasons.add(n.because);
+        bucket.notApplicable.set(n.rule, reasons);
+      }
+      censusByScan.set(c.scan, bucket);
+    },
+  };
+
   interface FileRunResult {
     readonly report: RunReport;
   }
@@ -1675,6 +1750,9 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
               sessionCache,
               tlsProber,
               authzSink,
+              scanSink,
+              ...(scanGate ? { scanGate } : {}),
+              ...(probeSeeded ? { probeSeeded } : {}),
               browserManager,
               seed,
               now,
@@ -1717,6 +1795,9 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
             sessionCache,
             tlsProber,
             authzSink,
+            scanSink,
+            ...(scanGate ? { scanGate } : {}),
+            ...(probeSeeded ? { probeSeeded } : {}),
             browserManager,
             seed,
             now,
@@ -1812,10 +1893,25 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     { apiSteps: 0, withOwner: 0 },
   );
   const authzBlindSpot = buildAuthzBlindSpot(census, authzDeclines);
-  const merged = redactReport(mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo, authzBlindSpot), redactor);
+  const scanCoverage = buildScanCoverage(censusByScan);
+  const merged = redactReport(
+    mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo, authzBlindSpot, {
+      findings: scanFindings,
+      coverage: scanCoverage,
+    }),
+    redactor,
+  );
   // D332 — written after the run, from the collected findings, so `--workers N` and shards cannot
   // interleave partial files.
   await writeAuthzRepros(authzFindings, join(cwd, resolved.reportDir));
+  // M134b (D387) — written from the **redacted** merged report, not from the raw sink, so a
+  // fingerprint can never be accompanied in the file by a value the run took care to mask
+  // everywhere else. The document holds hashes and endpoints; that is all it needs.
+  if (args.baselineWrite !== undefined) {
+    const target = resolve(cwd, args.baselineWrite);
+    await writeFile(target, renderBaseline(merged.findings ?? []), 'utf8');
+    out.write(`${withTimestamps(`baseline written to ${relative(cwd, target)} — ${(merged.findings ?? []).filter((f) => f.fingerprint).length} accepted`, timestamps)}\n`);
+  }
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
@@ -2560,6 +2656,77 @@ async function runWithConcurrency<T, R>(
  * Returns `undefined` when there is nothing to say — a suite with no `api` step at all and no
  * decline — so an ordinary run's report and summary are byte-for-byte unchanged.
  */
+/**
+ * M134b (D389) — collapse the per-assertion censuses into `RunReport.scanCoverage`, which is
+ * `M128-01`'s fix.
+ *
+ * **A rule that applied anywhere is applied.** The row is about a report that cannot say which rules
+ * stood down; a rule that judged one response and had nothing to say about another did not stand
+ * down, and listing it under both headings would answer the question with a contradiction. So
+ * `applied` wins, and only rules that applied *nowhere* in the run are reported as not applicable —
+ * with every distinct reason they gave, deduplicated, because a forty-assertion suite must not print
+ * one sentence forty times to say one thing.
+ *
+ * Sorted, so two runs of the same suite produce a byte-identical block and a diff of two reports
+ * shows a real change rather than a hash-order shuffle.
+ */
+/**
+ * M134b (D386) — `--fail-on`'s value, validated against the one severity vocabulary.
+ *
+ * Rejects rather than defaults, and names the four values, because every wrong spelling here fails
+ * in the dangerous direction: a `--fail-on high` silently read as "no floor" produces a run that
+ * gates on everything when its author asked for less, and a `--fail-on` silently read as "gate on
+ * nothing" produces a green build nobody asked for. Neither is discoverable from the output.
+ */
+function parseFailOn(raw: string): FindingSeverity {
+  const value = raw.trim().toLowerCase();
+  if (!(FAIL_ON_VALUES as readonly string[]).includes(value)) {
+    throw new Error(`--fail-on was given \`${raw}\`, which is not a severity.\n  write one of: ${FAIL_ON_VALUES.join(', ')}`);
+  }
+  return value as FindingSeverity;
+}
+
+const FAIL_ON_VALUES = ['minor', 'moderate', 'serious', 'critical'] as const;
+
+/**
+ * M134b (D388) — `--probe-seeded`'s value.
+ *
+ * `Number(raw)` alone would accept `1e3`, ` 12 `, `0x10` and `Infinity`, and reject none of them in a
+ * way the operator would notice — a run that quietly drew a thousand payloads per class against a
+ * strictly sequential prober is a suite that looks hung. The pattern is checked before the parse, and
+ * the bound is `MAX_SEEDED_PER_CLASS`'s so there is one number rather than two that can disagree.
+ *
+ * Refused rather than clamped: a clamp makes the run quieter than the flag the operator typed, and
+ * the whole argument for this layer is that its output is read rather than trusted.
+ */
+function parseProbeSeeded(raw: string): number {
+  const value = raw.trim();
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`--probe-seeded was given \`${raw}\`, which is not a whole number of payloads per class.\n  write a number from 0 to ${MAX_SEEDED_PER_CLASS}`);
+  }
+  const n = Number(value);
+  if (n > MAX_SEEDED_PER_CLASS) {
+    throw new Error(
+      `--probe-seeded ${n} exceeds the ${MAX_SEEDED_PER_CLASS}-per-class bound.\n` +
+        '  probes are strictly sequential (one in flight), so this is wall-clock a single assertion pays —\n' +
+        '  narrow the run with `--tags` rather than widening the corpus',
+    );
+  }
+  return n;
+}
+
+function buildScanCoverage(byScan: ReadonlyMap<ScanKind, { applied: Set<string>; notApplicable: Map<string, Set<string>> }>): ScanRuleCensus[] {
+  const out: ScanRuleCensus[] = [];
+  for (const [scan, bucket] of [...byScan].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const notApplicable = [...bucket.notApplicable]
+      .filter(([rule]) => !bucket.applied.has(rule))
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([rule, reasons]) => ({ rule, because: [...reasons].sort() }));
+    out.push({ scan, applied: [...bucket.applied].sort(), notApplicable });
+  }
+  return out;
+}
+
 function buildAuthzBlindSpot(
   census: { apiSteps: number; withOwner: number },
   declines: readonly AuthzDecline[],
@@ -2598,6 +2765,10 @@ function mergeReports(
   evidenceLevel: EvidenceLevel,
   demo: boolean,
   authzBlindSpot?: RunReport['authzBlindSpot'],
+  /** M134b (D385/D389) — the run's scan findings and rule census, collected across every file by the
+   *  one shared `ScanSink` rather than merged out of per-file reports: like the authz declines
+   *  beside them, these are the *run's* numbers, and `--workers N` finishes files out of order. */
+  scan?: { readonly findings: readonly ScanFinding[]; readonly coverage: readonly ScanRuleCensus[] },
 ): RunReport {
   const tests: ReportEntry[] = reports.flatMap((r) => r.tests);
   const passed = tests.filter((t) => t.ok).length;
@@ -2634,6 +2805,10 @@ function mergeReports(
     // D331 — omitted entirely for a suite with no authorization assertion and no `api` step, so a
     // pre-M130b fixture stays valid and an ordinary run gains no line.
     ...(authzBlindSpot ? { authzBlindSpot } : {}),
+    // D385/D389 — omitted rather than `[]` for `authorizedTargets`' reason: a run with no security
+    // assertion gains no line, and every pre-M134b fixture stays valid without them.
+    ...(scan && scan.findings.length > 0 ? { findings: scan.findings } : {}),
+    ...(scan && scan.coverage.length > 0 ? { scanCoverage: scan.coverage } : {}),
     ...(unmaskableSecrets.length > 0 ? { unmaskableSecrets } : {}),
     ...(diagnoses.length > 0 ? { selfDiagnosis: mergeSelfDiagnosis(diagnoses), inconclusive: reports.some((r) => r.inconclusive) } : {}),
     ...(abortedReport ? { aborted: true, abortedMessage: abortedReport.abortedMessage } : {}),
@@ -3126,6 +3301,7 @@ function printUsage(): void {
       '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]',
       '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
       '            [--log-output console|html|both|none]',
+      '            [--fail-on minor|moderate|serious|critical] [--baseline <file>] [--baseline-write <file>] [--probe-seeded <n>]',
       '            [--log-level debug|info|warn|error]',
       '                                                      run .tflw tests (default: all under cwd), functional and workload-bearing (a `ramp to …`',
       '                                                      line, or another of the 5 workload shapes) alike, in file declaration order — a `parallel`/',
@@ -3147,6 +3323,13 @@ function printUsage(): void {
       '                                                      --allow-public-target <origin> affirms an originating scan may reach a host outside the private',
       '                                                      ranges (SPEC §3.10, TF065); repeatable, must match an `authorized target`; no tflw.config key by design',
       '                                                      --log-output <dest> where a bare `log "…"` goes: console|html|both|none',
+      '                                                      --fail-on <severity> security findings below this severity are reported but do not fail the',
+      '                                                      build (SPEC §9.12); it can only relax the matcher a test wrote, never tighten it',
+      '                                                      --baseline <file> accepted findings, matched by fingerprint; they still render, marked known/accepted',
+      '                                                      --baseline-write <file> writes this run\'s findings out as the accepted set (stale entries are',
+      '                                                      reported, never removed — a --tag run legitimately produces a subset)',
+      '                                                      --probe-seeded <n> n generated mutation payloads per already-granted class, on top of the fixed',
+      '                                                      corpus; reported and never gating, and it cannot widen what `authorized target` permitted',
       '                                                      --log-level <level> minimum level a `log` step must clear to be rendered: debug|info|warn|error',
       '                                                      --parallel <n> runs up to n *files* concurrently in this process (default: tflw.config\'s `workers`)',
       '                                                      --workers <n> forks n *processes* to generate one file\'s workload-bearing tests\' load;',

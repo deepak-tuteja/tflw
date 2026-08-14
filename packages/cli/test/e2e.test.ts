@@ -4515,3 +4515,99 @@ test('the built dist/cli.cjs runs an input-handling scan end to end against a re
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
+
+// M134b (D369/D386/D387/D388) — the gate, the baseline and the seeded layer, through the **built**
+// binary.
+//
+// This test exists because of what `M134a`'s own CI run cost. The Tier 3 engine shipped with four
+// unit suites and an in-process end-to-end file and nothing running the shipped bundle, and the
+// coverage instrument — not any test — was what noticed: `c8`'s `exclude-after-remap` maps
+// `dist/cli.cjs` back onto its sources, so every runtime function is counted twice and the bundle's
+// copy of an unexercised engine reads as uncovered while its unit tests pass. `--fail-on`,
+// `--baseline`, `--baseline-write` and `--probe-seeded` are four flags no unit test can reach: they
+// exist only on the command line.
+test('the built dist/cli.cjs applies --fail-on, writes a baseline, and reads it back', async () => {
+  const server: Server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const q = url.searchParams.get('sort') ?? '';
+    // Discloses a stack frame to anything it dislikes — one real, reviewed, fingerprintable finding,
+    // which is what makes the three flags below observable rather than vacuous (D291).
+    if (q !== 'asc') {
+      res.writeHead(500, { 'content-type': 'application/json' })
+        .end('{"message":"Error: bad sort\\n    at OrderService.list (/usr/src/app/order.service.js:12:5)"}');
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{"id":7,"status":"open"}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-gate-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      `defaults\n  authorized target "${baseUrl}" reason "self-hosted end-to-end fixture"\nenv local default\n  api "${baseUrl}"\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'gate.tflw'),
+      `test "input handling"\n  api GET /orders/7?sort=asc\n  expect status equals 200\n  expect response has no input handling violations\n`,
+      'utf8',
+    );
+
+    // 1. Ungated: the finding fails the build, which is the pre-M134b behaviour and the control for
+    //    everything below. Without this the two green runs that follow would prove nothing — a gate
+    //    that suppresses a finding and a scan that never found one look identical.
+    const red = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }).catch((e: { code?: number; stdout?: string }) => e);
+    assert.equal((red as { code?: number }).code, 1, 'an ungated reviewed finding must fail the build');
+
+    // 2. `--baseline-write` produces the accepted set. R8 fingerprints are 16 hex characters; a
+    //    feature whose adoption step is hand-transcribing them is not adoptable, which is why this
+    //    ships in the same milestone as `--baseline` rather than after it (D387).
+    await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline-write', 'accepted.json'], { cwd: dir }).catch(() => undefined);
+    const written = JSON.parse(await readFile(join(dir, 'accepted.json'), 'utf8')) as { version: number; accepted: { fingerprint: string }[] };
+    assert.equal(written.version, 1);
+    assert.ok(written.accepted.length > 0, 'the baseline must contain the finding the run just made');
+    assert.match(written.accepted[0]!.fingerprint, /^[0-9a-f]{16}$/);
+
+    // 3. Reading it back turns the build green — and the finding is still in the report, badged.
+    //    That second half is the one that matters: a baseline whose contents you cannot see is not
+    //    reviewable, and a report that agreed with the gate would describe the gate, not the run.
+    const { stdout: green } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline', 'accepted.json'], { cwd: dir });
+    assert.match(green, /1\/1 passed/);
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    assert.match(html, /Security findings/);
+    assert.match(html, /known\/accepted/);
+    assert.match(html, new RegExp(written.accepted[0]!.fingerprint));
+
+    // 4. `--fail-on critical` relaxes the same run a different way — the finding is `serious`, so it
+    //    is reported and withheld. The gate can only ever relax (D386).
+    const { stdout: relaxed } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--fail-on', 'critical'], { cwd: dir });
+    assert.match(relaxed, /1\/1 passed/);
+
+    // 5. `--probe-seeded` adds generated payloads that never gate. Asserted against the *census and
+    //    findings block* rather than the exit code, because a green run with the layer on and a green
+    //    run with it off are the same exit code — which is the whole point of D369 and also the way
+    //    this test could have been vacuous.
+    const { stdout: seeded } = await execFileAsync(
+      'node',
+      [cliEntry, 'run', '--no-color', '--baseline', 'accepted.json', '--probe-seeded', '4', '--seed', '24301'],
+      { cwd: dir },
+    );
+    assert.match(seeded, /1\/1 passed/);
+    const seededHtml = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    assert.match(seededHtml, /seed 24301/);
+    assert.match(seededHtml, /promote this payload/i);
+
+    // 6. The usage errors, which are the reason both flags are parsed before any test runs (P#46).
+    const badFailOn = await execFileAsync('node', [cliEntry, 'run', '--fail-on', 'high'], { cwd: dir }).catch((e: { stderr?: string }) => e);
+    assert.match((badFailOn as { stderr?: string }).stderr ?? '', /not a severity/);
+    const badSeeded = await execFileAsync('node', [cliEntry, 'run', '--probe-seeded', '9999'], { cwd: dir }).catch((e: { stderr?: string }) => e);
+    assert.match((badSeeded as { stderr?: string }).stderr ?? '', /exceeds the 64-per-class bound/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
