@@ -21,6 +21,7 @@ import { parseConfigSource, parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { resolveConfig } from '../src/resolve.js';
 import type { ResolvedConfig } from '../src/types.js';
+import type { ScanFinding, ScanSink } from '../src/scanFindings.js';
 
 let server: Server;
 let baseUrl: string;
@@ -76,6 +77,19 @@ before(async () => {
         return json(res, 201, { id: '1' });
       }
 
+      // M134b (D369) — a route **only the seeded layer can trip**. Every corpus injection payload is
+      // `tflw` plus exactly one metacharacter (5 chars) or one of two fixed strings; a generated
+      // quoting payload is `tflw` plus *two* tokens, so `starts with tflw and is 6+ chars` is a
+      // condition the reviewed corpus cannot meet and the drawn one reaches within a handful of
+      // draws. That is what lets one fixture separate "this finding gates" from "this finding is
+      // reported and does not", which is the entire contract of the seeded layer.
+      if (url.pathname === '/seed-only') {
+        if (q.startsWith('tflw') && q.length >= 6) {
+          return json(res, 500, { message: 'Error: bad input\n    at SeedService.find (/usr/src/app/seed.service.js:7:3)' });
+        }
+        return json(res, 200, { results: [] });
+      }
+
       if (url.pathname === '/health') return json(res, 200, { ok: true });
       json(res, 404, { error: 'no route' });
     });
@@ -101,16 +115,24 @@ function resolved(subClauses = ''): ResolvedConfig {
   return resolveConfig(config!, config!.envs[0]!);
 }
 
-async function run(source: string, cfg: ResolvedConfig = resolved()): Promise<{ detail: string; ok: boolean; error?: string }> {
+async function run(
+  source: string,
+  cfg: ResolvedConfig = resolved(),
+  /** M134b — the run-level knobs this file needs to observe: the seeded layer's count, a fixed seed
+   *  so a drawn payload is reproducible, and the sink that collects what every scan found. */
+  opts: { probeSeeded?: number; seed?: number } = {},
+): Promise<{ detail: string; ok: boolean; error?: string; findings: ScanFinding[] }> {
   seen = [];
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
-  const { report } = await runProgram(program, cfg, { source });
+  const findings: ScanFinding[] = [];
+  const scanSink: ScanSink = { finding: (f) => findings.push(f), census: () => {} };
+  const { report } = await runProgram(program, cfg, { source, scanSink, ...opts });
   const t = report.tests[0]!;
   const steps = t.kind === 'functional' ? t.steps : [];
   const asserts = steps.filter((s) => s.kind === 'expect' || s.kind === 'check');
   const last = asserts[asserts.length - 1];
-  return { detail: last?.detail ?? '', ok: last?.ok ?? false, ...(t.kind === 'functional' && t.error ? { error: t.error } : {}) };
+  return { detail: last?.detail ?? '', ok: last?.ok ?? false, ...(t.kind === 'functional' && t.error ? { error: t.error } : {}), findings };
 }
 
 const ASSERT = 'expect response has no input handling violations';
@@ -233,4 +255,65 @@ test('the `check` form soft-fails — the test still fails, but later steps run 
   const r = await run(src);
   assert.equal(r.ok, false);
   assert.ok(seen.some((s2) => s2.url === '/health'), 'the step after a soft check must still run');
+});
+
+// --- M134b: the gate and the seeded layer, end to end ---------------------------------------------
+//
+// These live here rather than beside the unit tests because what they pin is a **join**: the rule
+// pack attaches a payload id, the interpreter decides whether this run drew that payload, and
+// `judge` decides whether the result gates. Each half is unit-tested and each half can be correct
+// while the join is not — that is exactly what `M128` paid for and D335 wrote this file to prevent.
+
+test('without --probe-seeded, a route only a generated payload can trip stays green', async () => {
+  // The control. If this ever goes red the corpus has grown a payload that meets the fixture's
+  // condition, and the two tests below stop separating seeded findings from reviewed ones — they
+  // would still pass, while testing nothing.
+  const r = await run(`test "t"\n  api GET /seed-only?q=shoes\n  ${ASSERT}\n`);
+  assert.ok(r.ok, `expected clean without the seeded layer, got: ${r.detail}`);
+  assert.equal(r.findings.length, 0);
+});
+
+test('a seeded finding is reported and does NOT fail the assertion (D369)', async () => {
+  // The load-bearing test of the whole layer. The application really did disclose a stack frame, the
+  // scan really did notice, the finding really is in the report — and the build is still green,
+  // because R8 excludes the seed from a fingerprint and a finding that appears under one seed and
+  // vanishes under the next cannot be allowed to decide a build.
+  const r = await run(`test "t"\n  api GET /seed-only?q=shoes\n  ${ASSERT}\n`, resolved(), { probeSeeded: 8, seed: 0x5eed });
+  assert.ok(r.ok, `a seeded finding must not fail the build, got: ${r.detail}`);
+
+  const seeded = r.findings.filter((f) => f.seeded);
+  assert.ok(seeded.length > 0, 'the seeded layer found nothing — the fixture or the draw has drifted');
+  for (const f of seeded) {
+    assert.equal(f.withheld, 'seeded');
+    assert.equal(f.fingerprint, undefined, 'a seeded finding must not be fingerprintable, or it would be baselinable');
+    assert.equal(f.seeded!.seed, 0x5eed, 'the seed is printed so the finding can be reproduced');
+    // "Promote this payload into the corpus" is only actionable if the payload is *there*.
+    assert.ok(f.seeded!.payload.startsWith('tflw'), f.seeded!.payload);
+  }
+});
+
+test('the seeded payloads really reached the server, and the corpus ones still did too', async () => {
+  await run(`test "t"\n  api GET /seed-only?q=shoes\n  ${ASSERT}\n`, resolved(), { probeSeeded: 8, seed: 0x5eed });
+  const values = seen.map((s) => decodeURIComponent(s.url));
+  assert.ok(values.some((v) => /q=tflw../.test(v)), 'no generated two-token payload was sent');
+  assert.ok(values.some((v) => /q=tflw.(&|$)/.test(v)), 'the reviewed corpus stopped being sent when the layer was added');
+});
+
+test('--probe-seeded cannot reach a class the target withheld (D388)', async () => {
+  // The safety property, asserted where it would actually bite: the config grants nothing beyond the
+  // defaults, and no number of generated payloads may produce a traversal request.
+  await run(`test "t"\n  api GET /files/1\n  ${ASSERT}\n`, resolved(), { probeSeeded: 16, seed: 0x5eed });
+  const traversed = seen.filter((s) => /\.\.|%2e%2e/i.test(decodeURIComponent(s.url)));
+  assert.deepEqual(traversed, [], 'a traversal payload was sent to a target that never granted `probe traversal`');
+});
+
+test('a reviewed finding still gates while a seeded one does not, in the same run', async () => {
+  // The two halves must coexist without one contaminating the other: `/leaky` is tripped by the
+  // corpus, so the assertion fails — and it fails *for the reviewed finding*, with the seeded ones
+  // still present in the report and still marked as not gating.
+  const r = await run(`test "t"\n  api GET /leaky?q=shoes\n  ${ASSERT}\n`, resolved(), { probeSeeded: 4, seed: 0x5eed });
+  assert.equal(r.ok, false);
+  const gating = r.findings.filter((f) => !f.withheld);
+  assert.ok(gating.length > 0, 'the reviewed corpus must still be able to fail a build');
+  for (const f of gating) assert.notEqual(f.fingerprint, undefined, 'a gating finding must be baselinable, or the gate is unusable');
 });

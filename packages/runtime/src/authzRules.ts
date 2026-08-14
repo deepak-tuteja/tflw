@@ -382,6 +382,11 @@ function leakRule(args: {
             `${request.method} ${pathOf(request.url)} — \`${probe.principal}\` is not an owner ` +
             `(${o.ownerPrincipals.length ? `owners: ${o.ownerPrincipals.join(', ')}` : 'no owner declared'}) ` +
             `and received resource ${probe.outcome.ids.length === 1 ? 'id' : 'ids'} ${idList(probe.outcome.ids)}`,
+          // M134b (D376) — the **principal** is R8's location here, because this tier's probes move
+          // an identity rather than a payload: one endpoint readable by two principals who should
+          // not have it is two repairs. Deliberately *not* the resource ids, which are generated per
+          // fixture and are exactly the run-to-run churn R8 excludes.
+          where: { location: probe.principal },
         });
       }
       // One finding per violating principal, not one per assertion: the answer to *which principals

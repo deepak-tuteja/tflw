@@ -26,6 +26,8 @@ export { writeEventsNdjson } from './events-ndjson.js';
 // an evidence file can never be wrong, which is what makes it worth less than a file that goes red
 // until the bug is fixed and green afterwards.
 export { writeAuthzRepros, renderAuthzRepro, reproFileName, AUTHZ_REPRO_DIR } from './authz-repro.js';
+// M134b (D376/D389) — the security findings block, its tally, and `M128-01`'s rule census.
+export { renderFindings, renderScanCoverage, findingsSummaryLine, sortFindings } from './findings.js';
 export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
 /** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links

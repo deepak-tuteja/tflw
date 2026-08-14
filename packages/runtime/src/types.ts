@@ -8,6 +8,7 @@ import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDec
 export type { LogDestination, LogLevel } from '@tflw/lang';
 import type { BrowserEngine } from './browser.js';
 import type { SnapshotDiffAsset } from './snapshot.js';
+import type { ScanFinding, ScanKind } from './scanFindings.js';
 import type { HistogramBucket } from './histogram.js';
 import type { SerializedTimelineBucket, TimelinePoint } from './timeline.js';
 export type { TimelinePoint, SerializedTimelineBucket } from './timeline.js';
@@ -354,6 +355,20 @@ export interface WorkloadTestResult extends LoadScenarioReport {
  * was inside `LoadScenarioReport.ok`). */
 export type ReportEntry = TestResult | WorkloadTestResult;
 
+/**
+ * M134b (D389) — one scan's rule census for the run: what applied, and what stood down and why.
+ *
+ * Merged across every assertion of that scan in the run, because the question `M128-01` asks is
+ * about the *report*, not about one line of one file. A rule that applied anywhere is `applied`; a
+ * rule that never applied is `notApplicable` and carries the reasons it gave, deduplicated — a suite
+ * with forty assertions must not print the same sentence forty times to say one thing.
+ */
+export interface ScanRuleCensus {
+  readonly scan: ScanKind;
+  readonly applied: readonly string[];
+  readonly notApplicable: readonly { readonly rule: string; readonly because: readonly string[] }[];
+}
+
 export interface RunReport {
   /** **Did this run pass?** — not "did nothing that ran fail", which is `failed === 0` one line
    * down. A run that never reached a verdict is `ok: false` even with an empty `failed` count:
@@ -413,6 +428,35 @@ export interface RunReport {
    * the suite, a dynamic one over the assertions that ran. Folding them would produce a percentage
    * whose base changed depending on `--tags`.
    */
+  /**
+   * M134b (D376/D385) — every finding all three security scans produced this run, in the order they
+   * were raised, each carrying R8's stable `fingerprint`.
+   *
+   * **Findings the gate withheld are here too**, stamped with `withheld`. That is deliberate and it
+   * is the property the whole feature rests on: a baseline whose contents you cannot see is not
+   * reviewable, and a report that agreed with the gate would describe the gate rather than the run.
+   *
+   * Redacted with the same pass every other field gets — `detail` carries response excerpts. The one
+   * exception D376 states is the *payload*: in Tier 3 it is attacker-controlled input rather than
+   * leaked data, it is safe to print in full, and it must be, because it is the repro.
+   *
+   * Optional and omitted when empty, so a run with no security assertion adds nothing to the report
+   * and every existing `RunReport` fixture keeps compiling.
+   */
+  readonly findings?: readonly ScanFinding[];
+  /**
+   * M134b (D389) — which rules each scan applied and which stood down, with the reason.
+   *
+   * This is `M128-01`'s fix. That row is about a report which can name its not-applicable rules only
+   * inside D285's *no power to fail* message — a message that prints when **zero** rules applied, so
+   * for the two Tier 1 rules that apply unconditionally it can never print at all. The facts existed
+   * every run and were thrown away at this boundary; the row's own suggested fix is "the rule ids in
+   * the JSON report regardless of what the terminal prints", which is exactly this field.
+   *
+   * Keyed by scan, so Tier 3's four rules and Tier 1's twelve do not have to share a namespace to be
+   * counted. Optional for the reason every other addition here is.
+   */
+  readonly scanCoverage?: readonly ScanRuleCensus[];
   readonly authzBlindSpot?: {
     readonly coverage?: { readonly apiSteps: number; readonly withOwner: number };
     readonly declines?: readonly { readonly principal: string; readonly reason: string; readonly count: number }[];

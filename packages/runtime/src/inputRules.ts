@@ -29,7 +29,7 @@
 // that was never sent. Three states, not five, and the difference is a fact about what each tier is
 // asking rather than a simplification.
 
-import type { Finding, Severity } from './finding.js';
+import type { Finding, FindingSite, Severity } from './finding.js';
 import { SEVERITY_RANK } from './finding.js';
 import { INPUT_RULE_IDS, type InputRuleId, type MutationSite, type Payload } from './inputCorpus.js';
 import type { RequestTrace, ResponseTrace } from './types.js';
@@ -274,6 +274,10 @@ const errorDetailDisclosure: InputRule = {
         detail:
           `${o.observed.request.method} ${pathOf(o.observed.request.url)} — ${site(probe)} carrying \`${probe.payload.id}\` ` +
           `answered ${probe.outcome.kind === 'answered' ? probe.outcome.status : '?'} with ${hit.what}: ${excerpt(hit.evidence)}`,
+        // The detector is the invariant: one endpoint leaking a stack frame at one site and an SQL
+        // fragment at the same site are two repairs, so they must not share a baseline entry.
+        where: siteOf(probe, hit.what),
+        payload: probe.payload.id,
       });
     }
     return { applicable: true, findings };
@@ -318,6 +322,8 @@ const reflectedInputUnescaped: InputRule = {
         detail:
           `${o.observed.request.method} ${pathOf(o.observed.request.url)} — ${site(probe)} carrying \`${probe.payload.id}\` ` +
           `came back verbatim in a ${contentType(probe.response!).split(';')[0]} body, angle brackets intact`,
+        where: siteOf(probe),
+        payload: probe.payload.id,
       });
     }
     return { applicable: true, findings };
@@ -350,6 +356,8 @@ const pathTraversalRead: InputRule = {
         detail:
           `${o.observed.request.method} ${pathOf(o.observed.request.url)} — ${site(probe)} carrying \`${probe.payload.id}\` ` +
           `returned ${hit.what} the observed response did not contain: ${excerpt(hit.evidence)}`,
+        where: siteOf(probe, hit.what),
+        payload: probe.payload.id,
       });
     }
     return { applicable: true, findings };
@@ -379,6 +387,8 @@ const oversizedInputAccepted: InputRule = {
         detail:
           `${o.observed.request.method} ${pathOf(o.observed.request.url)} — ${site(probe)} accepted ` +
           `${probe.payload.description} with ${status}; no length bound refused it`,
+        where: siteOf(probe),
+        payload: probe.payload.id,
       });
     }
     return { applicable: true, findings };
@@ -387,6 +397,19 @@ const oversizedInputAccepted: InputRule = {
 
 function site(probe: MutationResult): string {
   return probe.site.location;
+}
+
+/**
+ * M134b (D376) — R8's rule-side fingerprint input for a Tier 3 finding.
+ *
+ * `location` is the **site, not the payload**: the same weakness reached by `tflw'` and by `tflw"`
+ * is one weakness, and keying on the payload would file it twice and put two entries in a baseline
+ * for one repair. That is R8's exclusion of the seed applied to the other attacker-controlled half.
+ *
+ * The endpoint half is added by the interpreter, which holds the request — see `FindingSite`.
+ */
+function siteOf(probe: MutationResult, invariant?: string): FindingSite {
+  return { location: probe.site.location, ...(invariant !== undefined ? { invariant } : {}) };
 }
 
 /** D373's pack. Four rules, and how many of them apply is a fact about the request and the opt-ins

@@ -255,6 +255,53 @@ performance arc closed 2026-08-02 and is included below.
   site`) and what it declined to send, because a green run that skipped two classes and a green run
   that ran them are otherwise indistinguishable (decisions 381, 291).
 
+### Added — pen-test arc, findings & the gate (`0.4` internal milestone, M134b)
+
+One contract for all three scans, not three — a per-tier answer is how `--fail-on` would come to mean
+a different thing depending on which matcher a file happened to use.
+
+- **Every finding reaches the report.** `results.json` grows a `findings` array and `report.html`
+  grows a **Security findings** block carrying, per finding, a stable 16-hex-character
+  **fingerprint** computed from the scan, the rule, the endpoint, the location within it and the
+  invariant violated — and deliberately *not* from the payload that triggered it or the response text
+  proving it, so rewording an error message does not invalidate an acceptance for a change that fixed
+  nothing (decisions 376, 385).
+- **`--fail-on <severity>`, `--baseline <file>` and `--baseline-write <file>`.** A scanner that goes
+  red on its first run against an existing codebase gets turned off; these are what make "adopt now,
+  fix on a schedule" possible. Both gates are applied *inside* the assertion, before its pass/fail
+  decision, and both obey one rule: **the gate can only relax, never tighten, and never silently.**
+  A test that wrote its own severity floor keeps it — the stricter of test and flag wins — because a
+  command-line flag that could turn a green suite red produces a failure nobody can locate from the
+  source. A withheld finding still renders, badged with which relaxation withheld it, and the passing
+  line names the count: a report that agreed with the gate would describe the gate rather than the
+  run (decisions 377, 386, 387).
+- **Neither gate applies to the negated form** (`not has no … violations`), where a finding is what
+  makes the assertion succeed — suppressing findings there would fail an assertion for having found
+  something, which is not a relaxation in any sense (decision 386).
+- **Baselines match on the fingerprint alone.** The `rule` and `endpoint` beside each entry are for
+  the human reading the file; matching on the name would let a rule renamed in a tflw release
+  silently un-accept every entry that mentioned it. A malformed baseline is refused rather than
+  degraded to "accepted nothing", because every failure mode of the file makes a build *greener* and
+  an empty acceptance set looks exactly like a codebase that fixed everything. Stale entries are
+  **reported and never removed** — a `--tag` run legitimately produces a subset of the suite's
+  findings, so pruning on absence would delete acceptances the next full run still needs
+  (decision 387).
+- **`--probe-seeded <n>`** adds `n` generated mutation payloads per **already-granted** class on top
+  of Tier 3's fixed corpus. It cannot widen what `authorized target` permitted — seeding is a
+  capability of the run and a mutation class is a claim in the config, so no number reaches
+  `traversal` on a target that never granted it. Its findings are **reported and never gate**: a
+  generated payload has no stable fingerprint, appearing under one seed and vanishing under the next,
+  so gating on it would either churn a baseline every run or fail a build on a coin flip. Each
+  renders with the payload and the seed that drew it under the call to action *promote this payload
+  into the corpus*, which makes the layer self-liquidating. Accepted consequence, stated rather than
+  hidden: a real weakness found only this way does not fail CI until somebody promotes it — a finding
+  you must read beats a gate you cannot trust (decisions 369, 388).
+- **Which rules ran, on passing runs too.** Every report carries a per-scan census of the rules that
+  applied and the rules that stood down *with the reason*. A rule that stands down produces no
+  finding, so before this the only run in which that information existed was one where something else
+  had already failed — and the run where it disappeared was the ordinary green one. Closes the
+  long-open row about a report that could not name its not-applicable rules (decision 389).
+
 ### Changed — grammar freeze (M66–M69)
 
 The shipped grammar is frozen additive-only from `1.0.0` on, so every incompatible change had to

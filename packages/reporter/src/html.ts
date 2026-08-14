@@ -19,6 +19,8 @@ import { assetHash } from './assets.js';
 import { esc } from './escape.js';
 import { fileOf, groupByFile } from './group-by-file.js';
 import { grantedProbeClauses } from './probe-clauses.js';
+// M134b (D376/D389) — the security findings block and the rule census that closes `M128-01`.
+import { renderFindings, renderScanCoverage } from './findings.js';
 import { describeWorkload } from './workload-format.js';
 import { CHART_STYLE, renderErrorRateChart, renderHistogramChart, renderLatencyOverTimeChart, renderThroughputChart } from './load-charts.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
@@ -63,6 +65,8 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
   ${report.demo ? '<div class="demo-badge">ℹ demo run — this targeted tflw\'s built-in demo service, not a service of yours. Point <code>api</code> at your own in <code>tflw.config</code>.</div>' : ''}
   ${(report.authorizedTargets ?? []).map((t) => `<div class="demo-badge">ℹ authorized target <code>${esc(t.target)}</code> — ${esc(t.reason)}${grantedProbeClauses(t).map((p) => ` <code>${p}</code>`).join('')}</div>`).join('\n  ')}
   ${renderAuthzBlindSpot(report.authzBlindSpot)}
+  ${renderFindings(report)}
+  ${renderScanCoverage(report.scanCoverage)}
   ${renderUnmaskableWarning(report.unmaskableSecrets)}
   ${report.browserEngine ? `<div class="engine-badge">browser <code>${esc(report.browserEngine)}</code></div>` : ''}
   ${report.aborted ? `<div class="insecure-warning">⚠ ${esc(report.abortedMessage ?? 'aborted before its planned duration elapsed')} — every workload number below reflects only what completed before Ctrl-C.</div>` : ''}

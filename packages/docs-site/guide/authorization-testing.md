@@ -372,3 +372,5 @@ Five more limits worth knowing:
 - [Sessions & auth](/guide/sessions) — `session` blocks and `as <session>`
 - [Config & environments](/guide/config) — `privileged` and `probe mutating`
 - [CI & reporting](/guide/ci-and-reporting) — `--allow-public-target` alongside the other CI gates
+- [Findings, baselines & the gate](/guide/findings-and-baselines) — fingerprints, `--baseline` and
+  `--fail-on`: what happens to a finding after a rule raises it

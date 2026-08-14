@@ -220,3 +220,5 @@ claims is a line somebody can read in the file that claims it.
   question this one deliberately does not ask
 - [Input-handling testing](/guide/input-handling) — the third matcher on `response`: what the app
   does with input it did not expect
+- [Findings, baselines & the gate](/guide/findings-and-baselines) — fingerprints, `--baseline` and
+  `--fail-on`: what happens to a finding after a rule raises it

@@ -19,7 +19,7 @@
 //
 // The counts this produces are all three, and `ScanResult` has no field that collapses them.
 
-import type { Finding, Severity } from './finding.js';
+import type { Finding, FindingSite, Severity } from './finding.js';
 import { SEVERITY_RANK } from './finding.js';
 
 /** What a rule is allowed to look at. One observed request/response pair, flattened — a rule never
@@ -208,8 +208,22 @@ function gated(
   };
 }
 
-function finding(rule: { id: string; severity: Severity; description: string }, detail: string): Finding {
-  return { id: rule.id, severity: rule.severity, description: rule.description, detail };
+/**
+ * M134b (D376) — `where` is optional and most Tier 1 rules correctly omit it.
+ *
+ * A hygiene rule judges the whole response, so *one endpoint, one weakness, one repair*: `HSTS` is
+ * missing or it is not, and adding a location would only invent distinctions a baseline then has to
+ * carry. The exceptions are the per-cookie rules, which genuinely fire once per `Set-Cookie` line —
+ * two insecure cookies on one endpoint are two repairs and must not collapse into one fingerprint.
+ */
+function finding(rule: { id: string; severity: Severity; description: string }, detail: string, where?: FindingSite): Finding {
+  return { id: rule.id, severity: rule.severity, description: rule.description, detail, ...(where ? { where } : {}) };
+}
+
+/** The cookie's own name as R8's location — stable across runs in a way its `detail` sentence, which
+ *  carries the reason and may be reworded, is not. */
+function cookieSite(name: string): FindingSite {
+  return { location: `cookie ${name}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +242,7 @@ const cookieNotHttpOnly = gated(
   (o) =>
     cookies(o)
       .filter((c) => !c.attrs.has('httponly'))
-      .map((c) => finding(cookieNotHttpOnly, `cookie \`${c.name}\` — any XSS on this origin can read it`)),
+      .map((c) => finding(cookieNotHttpOnly, `cookie \`${c.name}\` — any XSS on this origin can read it`, cookieSite(c.name))),
 );
 
 const cookieNotSecure = gated(
@@ -245,7 +259,7 @@ const cookieNotSecure = gated(
   (o) =>
     cookies(o)
       .filter((c) => !c.attrs.has('secure'))
-      .map((c) => finding(cookieNotSecure, `cookie \`${c.name}\` — a later plaintext request to this host would send it in the clear`)),
+      .map((c) => finding(cookieNotSecure, `cookie \`${c.name}\` — a later plaintext request to this host would send it in the clear`, cookieSite(c.name))),
 );
 
 const corsWildcardWithCredentials = gated(
@@ -315,7 +329,7 @@ const cookieSameSiteNone = gated(
       // defaults an unspecified cookie to `Lax`, so reporting absence would fire on the majority of
       // correctly-behaving cookies on the internet, which is the zero-false-positive bar failing on
       // the pack's own most common input. The rule is named for the value it looks for.
-      .map((c) => finding(cookieSameSiteNone, `cookie \`${c.name}\` is \`SameSite=None\` — it rides along on cross-site requests`)),
+      .map((c) => finding(cookieSameSiteNone, `cookie \`${c.name}\` is \`SameSite=None\` — it rides along on cross-site requests`, cookieSite(c.name))),
 );
 
 const nosniffMissing = always('sec/nosniff-missing', 'moderate', 'no X-Content-Type-Options: nosniff', (o) => {

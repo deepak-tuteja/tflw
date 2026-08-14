@@ -1,8 +1,9 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
-import { MIN_REDACTABLE_LENGTH } from '@tflw/runtime';
+import { MIN_REDACTABLE_LENGTH, WITHHELD_LABEL } from '@tflw/runtime';
 import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { grantedProbeClauses } from './probe-clauses.js';
+import { findingsSummaryLine, sortFindings } from './findings.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 import { describeWorkload } from './workload-format.js';
 import { noVerdictReason, runBadgeText, type NoVerdictReason } from './run-verdict.js';
@@ -70,10 +71,36 @@ export function renderCliSummary(report: RunReport, color = true): string {
   // not red: a suite with a small authorization footprint is not doing anything wrong, it is doing
   // something bounded, and the bound is the fact worth stating.
   lines.push(...authzBlindSpotLines(report, c));
+  // M134b (D386/D387) — the run's security findings, and what the gate did with them. Printed
+  // whenever any scan produced one, including on a green run: a finding the gate withheld still
+  // happened, and a summary that showed only what failed would make `--baseline` invisible in
+  // exactly the runs it is doing its work in.
+  lines.push(...scanFindingLines(report, c));
   if (report.selfDiagnosis) lines.push(generatorLine(report.selfDiagnosis, c));
   if (report.inconclusive) lines.push(`${c.red}${c.bold}⚠ inconclusive${c.reset}${c.dim} — tflw itself is the bottleneck; workload numbers above reflect tflw contending with itself, not the system under test${c.reset}${backOffRelation(report, c)}`);
   if (report.aborted) lines.push(`${c.red}${c.bold}⚠ aborted${c.reset}${c.dim} — ${report.abortedMessage ?? 'stopped before its planned duration elapsed'}${c.reset}`);
   return lines.join('\n');
+}
+
+/**
+ * M134b (D386/D387) — the findings tally, then one line per finding the gate withheld.
+ *
+ * **Gating findings are deliberately NOT listed here.** Each of them already failed its own
+ * assertion, and that failure printed above with the full detail; repeating it would double every
+ * security failure in the summary. What has no other voice is the withheld half — a finding that
+ * happened, was reported, and did not fail the build. That is precisely the thing an operator must
+ * be able to see, because it is the thing they turned off.
+ */
+function scanFindingLines(report: RunReport, c: typeof C): string[] {
+  const findings = report.findings ?? [];
+  if (!findings.length) return [];
+  const lines: string[] = [`${c.dim}\u2139 ${findingsSummaryLine(findings)}${c.reset}`];
+  for (const f of sortFindings(findings)) {
+    if (!f.withheld) continue;
+    const where = [f.endpoint, f.location].filter(Boolean).join(' \u00b7 ');
+    lines.push(`${c.dim}  \u00b7 [${f.severity}] ${f.rule} \u2014 ${where} (${WITHHELD_LABEL[f.withheld]}${f.fingerprint ? `, ${f.fingerprint}` : ''})${c.reset}`);
+  }
+  return lines;
 }
 
 /**
