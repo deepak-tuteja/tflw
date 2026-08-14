@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource } from '@tflw/lang';
+import { parseSource, parseConfigSource } from '@tflw/lang';
 import { findNodeAtOffset, spanContains } from '../src/index.js';
 
 test('findNodeAtOffset: descends to a Matcher for an offset inside its keyword', () => {
@@ -220,6 +220,49 @@ test('findNodeAtOffset (M33/M50): a PauseStmt node is reachable and is a leaf, d
   assert.deepEqual(
     findNodeAtOffset(program, source.indexOf('pause') + 1).map((n) => n.type),
     ['Program', 'TestDecl', 'PauseStmt'],
+  );
+});
+
+// -- M133: the pentest arc's config declaration must be descendable (D24b catch-up) -------------
+//
+// The walker accepts either dialect's root, and `DefaultsBlock`/`EnvBlock` already hand it every
+// entry — so `AuthorizedTargetDecl` was *reached* and could not be *entered*, which is the same
+// shape M4a found at the browser-step boundary and M33 found at `Program.scenarios`. Both operands
+// are asserted, because a `children()` case that returns only the first one looks identical from
+// the outside for every cursor position in the URL.
+
+test('findNodeAtOffset (M133): descends into an `authorized target`\'s URL and its reason string', () => {
+  const source =
+    'defaults\n' +
+    '  authorized target "http://localhost:4001" reason "contracted window, ticket SEC-441"\n';
+  const { config } = parseConfigSource(source);
+
+  assert.deepEqual(
+    findNodeAtOffset(config, source.indexOf('localhost') + 1).map((n) => n.type),
+    ['ConfigFile', 'DefaultsBlock', 'AuthorizedTargetDecl', 'StringLit'],
+  );
+  assert.deepEqual(
+    findNodeAtOffset(config, source.indexOf('contracted') + 1).map((n) => n.type),
+    ['ConfigFile', 'DefaultsBlock', 'AuthorizedTargetDecl', 'StringLit'],
+  );
+});
+
+test('findNodeAtOffset (M133): the `authorized target` keyword itself still resolves to the declaration', () => {
+  const source =
+    'defaults\n' +
+    '  authorized target "http://localhost:4001" reason "self-hosted dogfood target"\n' +
+    '    probe mutating\n';
+  const { config } = parseConfigSource(source);
+  // `probeMutating` is a boolean field, not a node — the sub-clause has no span of its own to
+  // descend into, so an offset on it lands on the declaration that owns it. That is the whole
+  // answer, not a gap: the flag is a property of this host, and this host is what it should select.
+  assert.deepEqual(
+    findNodeAtOffset(config, source.indexOf('authorized') + 1).map((n) => n.type),
+    ['ConfigFile', 'DefaultsBlock', 'AuthorizedTargetDecl'],
+  );
+  assert.deepEqual(
+    findNodeAtOffset(config, source.indexOf('mutating') + 1).map((n) => n.type),
+    ['ConfigFile', 'DefaultsBlock', 'AuthorizedTargetDecl'],
   );
 });
 

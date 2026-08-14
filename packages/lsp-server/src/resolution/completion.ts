@@ -74,6 +74,23 @@ const MATCHER_CANDIDATES: readonly { readonly label: string; readonly specId: st
   { label: 'has no moderate a11y violations', specId: 'has-no-a11y-violations' },
   { label: 'has no serious a11y violations', specId: 'has-no-a11y-violations' },
   { label: 'has no critical a11y violations', specId: 'has-no-a11y-violations' },
+  // M133 (D24b catch-up) — the pentest arc's two scans, spelled out at every severity exactly as
+  // a11y is above. All three share `FindingSeverity` and the same floor semantics (`ast.ts`'s
+  // `severityFloor`), so the shape is copied rather than invented; what differs is only which rules
+  // the floor selects, and that lives in each scanner. Enumerating the severities is what makes the
+  // floor *discoverable* — a bare `has no security violations` teaches nobody that
+  // `has no serious security violations` exists, and the arc's own guide is not what a user reads
+  // while typing.
+  { label: 'has no security violations', specId: 'has-no-security-violations' },
+  { label: 'has no minor security violations', specId: 'has-no-security-violations' },
+  { label: 'has no moderate security violations', specId: 'has-no-security-violations' },
+  { label: 'has no serious security violations', specId: 'has-no-security-violations' },
+  { label: 'has no critical security violations', specId: 'has-no-security-violations' },
+  { label: 'has no authorization violations', specId: 'has-no-authorization-violations' },
+  { label: 'has no minor authorization violations', specId: 'has-no-authorization-violations' },
+  { label: 'has no moderate authorization violations', specId: 'has-no-authorization-violations' },
+  { label: 'has no serious authorization violations', specId: 'has-no-authorization-violations' },
+  { label: 'has no critical authorization violations', specId: 'has-no-authorization-violations' },
   { label: 'matches snapshot', specId: 'matches-snapshot' },
   { label: 'not', specId: '' },
 ];
