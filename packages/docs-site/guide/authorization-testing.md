@@ -98,6 +98,55 @@ pass or fail:
 note: not probed as `admin` — declared `privileged`
 ```
 
+### You will not always know in advance which principals these are
+
+Read the paragraph above and the natural conclusion is that you write `privileged` from what you
+already know about your app's roles. That holds for a session literally called `admin`. It does not
+hold for the ones whose authority lives somewhere you did not think to look — and those are the ones
+that produce a critical finding you cannot fault.
+
+So the workflow is **run, read, decide** — not declare, then run:
+
+1. Run the assertion with nothing marked `privileged`.
+2. Read **which principal** leaked. Every violation names one, and a per-principal pattern in the
+   findings is itself the signal — two principals leaking the same ids is a question about those two
+   identities, not about the endpoint.
+3. For each, decide whether that principal is *meant* to have that access. If it is, mark it
+   `privileged` and re-run. If it is not, you have found a bug.
+
+Step 3 is a judgement about your app's role model, and it stays yours. Inferring privilege from the
+responses would put the status-code oracle back in the middle of this feature: an admin's legitimate
+`200` and a BOLA's `200` are the same `200`, and the whole design starts from refusing to tell them
+apart by guessing.
+
+### An `oauth2` session is privileged whenever its **grant** mints a privileged token
+
+This is the case that catches people, because nothing in the config looks wrong.
+
+A client-credentials session names a client id, a secret and a scope. **None of them say who the
+token comes back as.** If the authorization server signs it for a privileged user, that session is
+privileged — and that fact lives in the server's grant implementation, which the person writing the
+suite may not own or even be able to read:
+
+```tflw-config fragment
+session oauthLong oauth2 privileged
+  token url "http://localhost:4001/v1/oauth/token"
+  client id env(OAUTH_CLIENT_ID)
+  client secret env(OAUTH_CLIENT_SECRET)
+  scope "orders.read orders.write"
+```
+
+The worked example is this project's own dogfood app. Its two machine clients, `oauthLong` and
+`oauthShort`, read as ordinary service principals — a client id, a secret, an orders scope. Its
+token endpoint signs both *for the seeded admin user*, because a client-credentials grant there
+represents the admin service account. Run the assertion without `privileged` on them and you get two
+criticals in which **every piece of evidence is accurate**: a real order id, served to a real
+non-owner, with a repro that reproduces. The evidence is true and the conclusion is wrong, and no
+amount of re-reading the report will show you why. Only the grant does.
+
+The scope string is not the answer either. `orders.read orders.write` describes what the token may
+do, not whose orders it may do it to.
+
 **`privileged` is a claim about authority, not a speed knob.** Probes are sequential, so each
 assertion costs roughly one extra request per principal — and the cheapest way to make a slow
 assertion fast would be to declare away the thing it measures. If the cost is real, the lever is
@@ -198,6 +247,11 @@ It hangs off `authorized target` because it is a property of *that host*: stagin
 read as a stranger and not safe to write to. The one-line declaration is unchanged; `probe mutating`
 is an optional indented line beneath it.
 
+Turning it on widens what is *probed*, which is not the same as widening what can be *judged*. A
+`DELETE` is probed and cannot be concluded on — see [the destruction
+bound](#what-it-does-not-judge-stated-out-loud) below before you read a green mutating run as a
+clean one.
+
 ## Scanning anything but a private address needs the command line
 
 `authorized target` is the *declaration*, and it lives in `tflw.config` — a file somebody can merge
@@ -282,8 +336,21 @@ your suite that is:
 That number is about the whole discovered suite, not about the tests this run selected, and it
 exists so that "we probed everything we asserted on" cannot be read as "we probed everything".
 
-Three more limits worth knowing:
+Five more limits worth knowing:
 
+- **The bound is destruction, not mutation.** With `probe mutating` on, a `PUT` or `PATCH` that
+  succeeds for the owner and then succeeds for a non-owner leaks like any read, and is found. A
+  `DELETE` cannot be judged this way at all: the oracle is differential, so it replays the owner's
+  request first — and if that succeeds, the resource is gone and every later probe is *correctly*
+  `refused`; if it fails, no rule applies. There is no third arrangement. **A suite whose only
+  mutating endpoints are `DELETE`s will read `probed, 0 violations` as safe when nothing was
+  actually decided.** The five-outcome table above is what to read instead of the summary line.
+- **A suite can have a sensible session list and zero judgeable principals.** The owner is excluded
+  from its own probe set; anything `privileged` is excluded by declaration; a cookie-borne session
+  is `inconclusive` on a mutating verb for the CSRF reason above. Those three exclusions are each
+  correct and can compose until nobody is left able to answer — with nothing about the config
+  looking wrong. The assertion fails rather than greens (an empty probe set has no power to fail),
+  so what you get is a red that is really a request for one more bearer principal.
 - **A credential written onto the step is refused, not worked around.** If the `api` step carries
   its own `Authorization` or `Cookie` header, the comparison would be between two identities the run
   cannot name — so it is `TF062` at check time and a hard failure at run time. Put the credential in
