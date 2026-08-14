@@ -77,25 +77,22 @@ jobs:
       # `@tflw/lsp-server` was reporting 111/112/113 on an unchanged tree — `--test-force-exit`
       # dropping the tail of a file, with the plan line and the summary agreeing on the smaller
       # number, so nothing could go red. A test that never reports cannot fail.
+      #
+      # M134 (`M130-04`/`M113-03`): this step now also runs the root `scripts/` tools' own tests
+      # (M113) and headcounts them, so they are no longer a separate step below. `verify-ledger.mjs`
+      # checks a corpus that is gitignored on purpose, so the guard itself cannot run here — its
+      # input is simply absent, and a check that skips when its input is missing is green about
+      # nothing, which is the exact failure it was built to stop. So the *guard* runs locally before
+      # a milestone is called done (`npm run verify:ledger`, hard-failing on a missing ledger) and
+      # the suite folded in here verifies the guard: fixture ledgers carrying known defects,
+      # including reconstructions of `M98c-02`'s missing `🚫` and `M99`'s three rows left `open`
+      # after the code shipped.
       - run: xvfb-run -a npm test
 
       # A test naming a `TF0xx` code its harness cannot emit is a passing test of nothing — the
       # shape that survived two mutations in M98d. Static, so it runs in seconds and needs no
       # mutation pass. Before `npm test` would be wrong: a red suite is the more useful signal.
       - run: npm run verify:observability
-
-      # The root `scripts/` tools' own tests (M113). `verify-ledger.mjs` checks a corpus that is
-      # gitignored on purpose, so the guard itself cannot run here — its input is simply absent, and
-      # a check that skips when its input is missing is green about nothing, which is the exact
-      # failure it was built to stop. So the *guard* runs locally before a milestone is called done
-      # (`npm run verify:ledger`, hard-failing on a missing ledger) and *this* step verifies the
-      # guard: fixture ledgers carrying known defects, including reconstructions of `M98c-02`'s
-      # missing `🚫` and `M99`'s three rows left `open` after the code shipped. Seconds, no display,
-      # both Node versions — it is plain stdlib and the matrix is what would catch it if that stopped
-      # being true. Not folded into `npm test`: that script is a per-workspace headcount, and root
-      # scripts belong to no workspace — which does mean these tests sit outside the headcount
-      # `verify-test-counts.mjs` enforces on the other 1,897. Filed as `M113-03`, not papered over.
-      - run: npm run test:scripts
 
       # Every internal anchor on the docs site resolves to a real heading (M62/DT-07), and every
       # page renders the sidebar it belongs to (M125e/`FU-30`). Separate from `npm test` because

@@ -148,7 +148,7 @@ git clone <this repo> && cd testFlow
 npm install
 npm run build       # build all packages
 npm run typecheck   # type-check all packages
-npm test            # run all package test suites
+npm test            # every suite: all seven packages, plus the root `scripts/` tools' own tests
 ```
 
 `npm run build` (root, or `-w tflw`) always produces the same self-contained, esbuild-bundled
