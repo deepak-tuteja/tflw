@@ -52,7 +52,20 @@ export class TflwSyntaxError extends Error {
 /** Diagnostic codes used by the M0 lexer/parser. Kept in one place so they stay unique. Meanings:
  * see `DIAGNOSTICS` in `spec-data.ts` (decision 20.7, docs-site polish cluster 9) — the single
  * source of truth for what each code means, feeding SPEC.md §17, the docs-site Reference page,
- * and LSP hover. */
+ * and LSP hover.
+ *
+ * **Before you delete an entry here, read this — you are the condition it names.** No code has ever
+ * been retired (M132 measured it: 57 assigned, zero removals in this file's history). The day one
+ * is, `testFlow-tests` breaks: `scripts/verify-check-diagnostics.mjs` asserts against the *installed*
+ * bundle in both directions, so a dogfood fixture keyed to the removed code reports "is dogfooded
+ * but is not in the installed tflw's manifest" — a message that cannot tell *retired* from *the
+ * tflw-side PR has not merged yet*, because both are simply absent from `dist`.
+ *
+ * M132 (D353) deferred the structured fix — a `RETIRED` array here, guarded by
+ * `diagnosticsCoverage.test.ts` and inlined into `dist` by esbuild so it travels in the tarball —
+ * **on the condition that a code is actually retired**, because on day one that array is empty and
+ * says nothing the prose message does not. Retiring one meets the condition: build it, and delete
+ * the fixture in testFlow-tests in the companion PR. */
 export const Codes = {
   UNEXPECTED_CHAR: 'TF001',
   UNTERMINATED_STRING: 'TF002',
