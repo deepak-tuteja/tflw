@@ -18,6 +18,7 @@ import { LOG_LEVEL_ORDER, MIN_REDACTABLE_LENGTH } from '@tflw/runtime';
 import { assetHash } from './assets.js';
 import { esc } from './escape.js';
 import { fileOf, groupByFile } from './group-by-file.js';
+import { grantedProbeClauses } from './probe-clauses.js';
 import { describeWorkload } from './workload-format.js';
 import { CHART_STYLE, renderErrorRateChart, renderHistogramChart, renderLatencyOverTimeChart, renderThroughputChart } from './load-charts.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
@@ -60,7 +61,7 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
   </div>
   ${report.insecure ? '<div class="insecure-warning">⚠ insecure: true — TLS certificate verification was disabled for this run</div>' : ''}
   ${report.demo ? '<div class="demo-badge">ℹ demo run — this targeted tflw\'s built-in demo service, not a service of yours. Point <code>api</code> at your own in <code>tflw.config</code>.</div>' : ''}
-  ${(report.authorizedTargets ?? []).map((t) => `<div class="demo-badge">ℹ authorized target <code>${esc(t.target)}</code> — ${esc(t.reason)}${t.probeMutating ? ' <code>probe mutating</code>' : ''}</div>`).join('\n  ')}
+  ${(report.authorizedTargets ?? []).map((t) => `<div class="demo-badge">ℹ authorized target <code>${esc(t.target)}</code> — ${esc(t.reason)}${grantedProbeClauses(t).map((p) => ` <code>${p}</code>`).join('')}</div>`).join('\n  ')}
   ${renderAuthzBlindSpot(report.authzBlindSpot)}
   ${renderUnmaskableWarning(report.unmaskableSecrets)}
   ${report.browserEngine ? `<div class="engine-badge">browser <code>${esc(report.browserEngine)}</code></div>` : ''}

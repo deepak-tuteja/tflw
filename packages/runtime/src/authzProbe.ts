@@ -156,18 +156,24 @@ export type ProbeSender = (req: ProbeRequest) => Promise<ResponseTrace>;
  * A URL that will not parse is refused too. Permission is never inferred from something that failed
  * to parse — the rule `mayProbeMutating` states two functions up, and the direction that costs a
  * `not probed` line rather than an unauthorized packet.
+ *
+ * **`scan` names the caller's tier (M134a).** The code, the judgement and the repair are shared —
+ * which is exactly why the *sentence* must not be, since a Tier 3 refusal that read "an
+ * authorization scan originates requests your suite did not write" would name a tier the reader is
+ * not using and send them looking for a `session` they never declared. This is the same shape
+ * `SCAN_LABELS` fixed in the checker one milestone after `TF060` grew a second tenant.
  */
-export function publicTargetRefusal(url: string, allowPublicTargets: readonly string[]): string | null {
+export function publicTargetRefusal(url: string, allowPublicTargets: readonly string[], scan = 'an authorization scan'): string | null {
   const klass = classifyAddress(url);
   if (klass === 'exempt') return null;
   const origin = originOf(url);
   if (klass === 'invalid' || origin === undefined) {
-    return `\`TF065\`: the origin of "${url}" could not be read, so nothing can affirm it — an authorization scan may only originate requests against an address this run has named`;
+    return `\`TF065\`: the origin of "${url}" could not be read, so nothing can affirm it — ${scan} may only originate requests against an address this run has named`;
   }
   if (allowPublicTargets.some((t) => originOf(t) === origin)) return null;
   return (
     `\`TF065\`: ${origin} is outside the private address ranges and no \`--allow-public-target ${origin}\` was given — ` +
-    'an authorization scan originates requests your suite did not write, so D21 requires that affirmation on the command line, ' +
+    `${scan} originates requests your suite did not write, so D21 requires that affirmation on the command line, ` +
     'where a committed `tflw.config` cannot supply it (SPEC §3.10)'
   );
 }

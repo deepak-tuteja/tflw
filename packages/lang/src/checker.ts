@@ -1435,6 +1435,10 @@ const LIVE_HANDLE_MATCHERS: ReadonlyMap<MatcherName, string> = new Map([
   // only read the observed response, it re-issues the observed *request* under other principals. A
   // bound value carries neither half.
   ['hasNoAuthzViolations', 'has no authorization violations'],
+  // M134a/D366 — the same structural reason as its two siblings. This scan mutates the observed
+  // *request* one input at a time and re-sends it, so it needs the request as well as the response;
+  // a bound value carries neither.
+  ['hasNoInputHandlingViolations', 'has no input handling violations'],
   ['matchesSnapshot', 'matches snapshot'],
 ]);
 
@@ -3446,6 +3450,7 @@ function scannableOrigins(declared: EnvAuthorizedTargets): { readonly label: str
 const SCAN_LABELS: Partial<Record<MatcherName, string>> = {
   hasNoSecurityViolations: 'a security scan',
   hasNoAuthzViolations: 'an authorization scan',
+  hasNoInputHandlingViolations: 'an input-handling scan',
 };
 
 // ---------------------------------------------------------------------------
@@ -3467,6 +3472,11 @@ const SCAN_LABELS: Partial<Record<MatcherName, string>> = {
  */
 const ORIGINATING_SCAN_LABELS: Partial<Record<MatcherName, string>> = {
   hasNoAuthzViolations: 'an authorization scan',
+  // M134a/D372 — Tier 3 originates traffic by definition: it re-sends the observed request once per
+  // payload per mutable input, carrying values the suite never wrote. It belongs here for exactly
+  // the reason `security violations` does not — that one only inspects a response the suite already
+  // asked for, so there is no extra packet to authorize.
+  hasNoInputHandlingViolations: 'an input-handling scan',
 };
 
 /**
@@ -3644,15 +3654,19 @@ function checkAuthzInSteps(
     const step = steps[i]!;
     if (step.type === 'WaitUntilApiStmt') {
       for (const expect of step.expects) {
-        if (expect.matcher.name !== 'hasNoAuthzViolations') continue;
+        // M134a — widened from `hasNoAuthzViolations` to both originating scans (`TF064` widened,
+        // not duplicated: the repair is the same sentence for either, and what makes the construct
+        // wrong is a property of `wait until api` that does not know which scan is asking).
+        const label = REPEATED_REQUEST_SCAN_LABELS[expect.matcher.name];
+        if (label === undefined) continue;
         diags.push({
-          code: Codes.AUTHZ_ASSERTION_REPEATED_REQUEST,
+          code: Codes.SCAN_ASSERTION_REPEATED_REQUEST,
           severity: 'error',
-          message: '`authorization violations` can\'t be asserted inside `wait until api`',
+          message: `\`${label}\` can't be asserted inside \`wait until api\``,
           span: expect.span,
           // The sharp half is not the wasted traffic, it is what a real finding turns into: `wait
-          // until api` re-polls until its expects pass, so a genuine BOLA would be re-probed under
-          // every principal on every poll and then reported as a *wait timeout*.
+          // until api` re-polls until its expects pass, so a genuine finding would be re-probed on
+          // every poll and then reported as a *wait timeout*.
           hint: '`wait until api` re-issues its request until its expects pass, so a real violation would be re-probed on every poll and finally reported as a timeout rather than as a finding — assert it on a plain `api` step after the block',
         });
       }
@@ -3663,6 +3677,40 @@ function checkAuthzInSteps(
       continue;
     }
     if (step.type !== 'ExpectStmt') continue;
+
+    // M134a — Tier 3's own two rules, before the authorization-only pass below. It shares this
+    // walker rather than getting a second one because both scans are asking the same question of the
+    // same construct (*can this assertion do its job where it is written?*), and a second walker is
+    // how the two come to disagree about what a `within` block is.
+    if (step.matcher.name === 'hasNoInputHandlingViolations') {
+      if (frame.workload) {
+        diags.push({
+          code: Codes.LOAD_INVALID,
+          severity: 'error',
+          message: "`input handling violations` can't be asserted inside a workload-bearing `test`",
+          span: step.span,
+          // Worse than Tier 2's version of this, and by a wide margin: an authorization assertion
+          // sends one probe per principal, while this one sends one per payload per mutable input.
+          // Multiplying *that* by iterations × VUs points a mutation corpus at a target somebody
+          // authorized for a scan, not for a scan times the load factor.
+          hint: 'each assertion sends one probe per payload per mutable input, and a workload runs its body once per iteration per VU — so this multiplies hostile-input traffic by the load factor against a target you authorized for a scan, not for a scan times the VU count. Assert it in a functional test',
+        });
+      }
+      const request = nearestPrecedingApiStep(steps, i);
+      if (request && hasNoStaticallyMutableInput(request)) {
+        diags.push({
+          code: Codes.INPUT_ASSERTION_NO_MUTABLE_INPUT,
+          severity: 'error',
+          message: '`input handling violations` has nothing to mutate on this request',
+          span: step.span,
+          hint:
+            'the oracle re-sends this request once per payload per mutable input, and this one carries none — its path has no identifier segment, it has no query string, and its body is not a JSON object. ' +
+            'With nothing to mutate no rule can apply, so the assertion could not fail whatever the application did (SPEC §9.12, `TF067`, D285). Assert it on a step that takes an id, a query parameter or a JSON body',
+        });
+      }
+      continue;
+    }
+
     if (step.matcher.name !== 'hasNoAuthzViolations') continue;
 
     if (frame.workload) {
@@ -3712,6 +3760,54 @@ function checkAuthzInSteps(
       });
     }
   }
+}
+
+/** The scans `TF064` refuses inside `wait until api`, and what to call each in its message. A
+ *  lookup rather than an `||` chain, for `SCAN_LABELS`' reason: a third originating scan is a row,
+ *  and the message says which one was refused instead of naming the wrong tier. */
+const REPEATED_REQUEST_SCAN_LABELS: Partial<Record<MatcherName, string>> = {
+  hasNoAuthzViolations: 'authorization violations',
+  hasNoInputHandlingViolations: 'input handling violations',
+};
+
+/**
+ * `TF067`'s static half (M134a, D382) — whether this request **provably** carries nothing Tier 3
+ * could mutate.
+ *
+ * Mirrors `inputCorpus.ts`'s `mutationSites` exactly: an identifier path segment, a query parameter,
+ * or a JSON body leaf. Two statements of one rule is a drift risk, and the way it is kept honest is
+ * that the runtime holds the authoritative copy and re-decides the same question on the request that
+ * actually went out — so a disagreement costs a duplicated message, never a wrong verdict.
+ *
+ * **Every uncertainty answers `false`**, which is the direction that refuses no correct file:
+ *
+ *  - a `{var}` anywhere in the path — interpolation can produce an id segment or a whole query
+ *    string, and this pass cannot know which;
+ *  - `body from "…"` — the file's contents are not this pass's to read;
+ *  - `body "…"` raw text — it may well be JSON, and guessing from a content-type header would be a
+ *    guess about a header that may itself be interpolated.
+ *
+ * What is left is the case worth catching and the one a reader actually writes by mistake:
+ * `api GET /health` with an input-handling assertion under it.
+ */
+function hasNoStaticallyMutableInput(spec: ApiRequestSpec): boolean {
+  const raw = spec.path.raw;
+  if (raw.includes('{')) return false;
+
+  const [pathPart, queryPart] = raw.split('?', 2);
+  // A query string with at least one named parameter is a mutation site by itself.
+  if (queryPart !== undefined && queryPart.length > 0 && queryPart.split('&').some((p) => p.length > 0)) return false;
+  // `inputCorpus.isIdentifierSegment`'s rule, restated: a UUID, a run of digits, or a long hex
+  // string. A route word is not a site — mutating it exercises the router, not the handler.
+  const identifier = (pathPart ?? '')
+    .split('/')
+    .some((seg) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(seg) || /^\d+$/.test(seg) || /^[0-9a-fA-F]{24,}$/.test(seg));
+  if (identifier) return false;
+
+  if (spec.body === null) return true;
+  // Only the two shapes that provably cannot produce a JSON leaf. `InlineBody` has leaves by
+  // construction; the other two are the uncertainties named above.
+  return spec.body.type === 'FormBody' || spec.body.type === 'UploadBody';
 }
 
 /** The nearest preceding `api` step **in the same body** — the request this assertion will judge.

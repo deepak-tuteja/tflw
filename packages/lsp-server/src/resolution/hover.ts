@@ -41,6 +41,7 @@ const MATCHER_SPEC_ID: Record<MatcherName, string> = {
   hasNoA11yViolations: 'has-no-a11y-violations',
   hasNoSecurityViolations: 'has-no-security-violations',
   hasNoAuthzViolations: 'has-no-authorization-violations',
+  hasNoInputHandlingViolations: 'has-no-input-handling-violations',
   matchesSnapshot: 'matches-snapshot',
 };
 

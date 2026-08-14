@@ -105,7 +105,17 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
           // ORs across every matching row) rather than by folding them here. The accumulation rule
           // is deliberately untouched — every declaration still travels to the report with its own
           // reason, which is the half of D291 that makes the claim auditable.
-          authorizedTargets.push({ target: entry.target.value, reason: entry.reason.value, probeMutating: entry.probeMutating });
+          //
+          // M134a/D372 adds two more sub-clauses and changes nothing here either, which is the
+          // point of D311's prediction: the opt-ins ride along on the row and are ORed at their own
+          // lookup (`grantedClasses`), so a third and fourth clause cost this file one field each.
+          authorizedTargets.push({
+            target: entry.target.value,
+            reason: entry.reason.value,
+            probeMutating: entry.probeMutating,
+            probeOversized: entry.probeOversized,
+            probeTraversal: entry.probeTraversal,
+          });
           break;
         case 'EvidenceDecl':
           evidenceLevel = entry.level;

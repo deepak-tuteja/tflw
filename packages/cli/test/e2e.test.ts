@@ -4446,3 +4446,72 @@ test('--log-file into a genuinely unusable path fails before any test runs, whic
     }
   });
 });
+
+// M134a's coverage repair, and it closes a real gap rather than moving a number.
+//
+// The Tier 3 engine shipped with four unit-level suites and one in-process end-to-end file, and
+// **nothing that ran the matcher through the built `dist/cli.cjs`**. That is exactly the gap this
+// file exists for — "the built artifact is broken but the source isn't" — and the coverage gate is
+// what noticed: `c8` remaps the bundle back onto the source, so every function of `inputCorpus.ts`,
+// `inputProbe.ts` and `inputRules.ts` was recorded **twice**, hit by the unit tests and unhit by the
+// bundle, and the global `functions` figure fell from 94.49% to 93.79% against a floor of 94.
+//
+// The instructive part is that the number was right and the first reading of it was wrong. Seven
+// exported functions of `inputCorpus.ts` showed as uncovered while their own unit tests passed,
+// which looks like an instrumentation artifact and is not: it is a true statement that the shipped
+// binary's copy of them had never been executed by any test. A scan whose engine is only ever
+// exercised in-process is one bundler regression away from being a scan that silently finds nothing.
+test('the built dist/cli.cjs runs an input-handling scan end to end against a real server', async () => {
+  const server: Server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    // One id path segment and one query parameter, which is what makes this request offer mutation
+    // sites at all (`TF067`'s condition is a request that offers none).
+    if (/^\/orders\/\d+$/.test(url.pathname)) {
+      // Deliberately well-behaved: a JSON envelope with no stack frame, no SQL grammar and no
+      // absolute path. D373's bar is disclosure rather than status, so a correct application under
+      // the full corpus must come back **clean** — a green line here is the zero-false-positive bar
+      // asserted through the shipped binary, not merely in a unit test.
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"id":7,"status":"open"}');
+    } else {
+      res.writeHead(404, { 'content-type': 'application/json' }).end('{"message":"Not found"}');
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-input-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      `defaults\n  authorized target "${baseUrl}" reason "self-hosted end-to-end fixture"\nenv local default\n  api "${baseUrl}"\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'input.tflw'),
+      `test "input handling"\n  api GET /orders/7?sort=asc\n  expect status equals 200\n  expect response has no input handling violations\n`,
+      'utf8',
+    );
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+
+    assert.match(stdout, /1\/1 passed/);
+    // The assertion's own message, read from `report.html` rather than stdout: a passing step prints
+    // only its name unless `--verbose` is given, and the facts this test is about live in the step
+    // detail. The report is also the durable artifact, which is the half a CI reader actually keeps.
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    // The cost line, printed rather than asserted as a constant (D381) — its presence is what proves
+    // the probe matrix actually ran through the bundle rather than the assertion short-circuiting on
+    // a request with no mutable input, which would also have printed a pass.
+    assert.match(html, /requests sent/);
+    // `probe oversized`/`probe traversal` are absent from the config, so those two classes must be
+    // reported as withheld. This is the half `input-assert.test.ts` found invisible on a passing
+    // line: a green run that tested less has to say so, and here it has to say so through the CLI.
+    assert.match(html, /oversized/);
+    assert.match(html, /traversal/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});

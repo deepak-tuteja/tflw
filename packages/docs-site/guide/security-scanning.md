@@ -218,3 +218,5 @@ claims is a line somebody can read in the file that claims it.
   finding model with
 - [Authorization testing](/guide/authorization-testing) — the other matcher on `response`, and the
   question this one deliberately does not ask
+- [Input-handling testing](/guide/input-handling) — the third matcher on `response`: what the app
+  does with input it did not expect

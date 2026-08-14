@@ -48,6 +48,9 @@ import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, typ
 import { TlsProber } from './tlsProbe.js';
 import { extractResourceIds, judgeable, PROBE_OUTCOME_LABEL, runAuthzScan, type AuthzScanResult, type ProbeResult } from './authzRules.js';
 import { ANONYMOUS, AuthzProber, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
+import { mutationSites, type MutationSite } from './inputCorpus.js';
+import { grantedClasses, InputProber, planProbes, withheldClasses, type InputProbePolicy, type InputProbeSender } from './inputProbe.js';
+import { MUTATION_OUTCOME_LABEL, runInputScan, type InputScanResult, type MutationOutcome, type MutationResult } from './inputRules.js';
 import {
   BrowserPageState,
   captureFailureScreenshot,
@@ -2753,13 +2756,15 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
                 : step.subject.type === 'PageSubject'
                   ? await execA11yExpect(step, ctx, src, stepStart, config)
                   : step.subject.type === 'ResponseSubject'
-                    ? // M130b/D304 — two matchers on one subject, dispatched by name. Deliberately
-                      // not folded: `security violations` must keep meaning exactly what it meant
-                      // before this milestone, and what changed is that `response` now answers to a
-                      // second question rather than that its one question grew.
+                    ? // M130b/D304, M134a/D366 — three matchers on one subject now, dispatched by
+                      // name. Deliberately not folded: each tier must keep meaning exactly what it
+                      // meant before the next one landed, and what changes each time is that
+                      // `response` answers one more question rather than that its question grew.
                       step.matcher.name === 'hasNoAuthzViolations'
                       ? await execAuthzExpect(step, lastRequest, lastResponse, lastOwnerIdentity, ctx, src, stepStart, config, tc)
-                      : await execSecurityExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc.tlsProber)
+                      : step.matcher.name === 'hasNoInputHandlingViolations'
+                        ? await execInputHandlingExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config)
+                        : await execSecurityExpect(step, lastRequest, lastResponse, ctx, src, stepStart, config, tc.tlsProber)
                     : await execExpect(step, lastResponse, lastConnectionError, ctx, src, stepStart, config, tc.baseDir);
           break;
         }
@@ -4288,6 +4293,184 @@ function describeAuthzOutcome(
         `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}authorization rule applied (${counts}; ${probeLine}).\n` +
         `${why.join('\n')}\n` +
         `  Point it at a response whose body carries a root \`id\`, and at a probe set that can answer${floor ? ', or lower the severity floor' : ''} (SPEC §9.11, D285).${note}`,
+    };
+  }
+
+  const negated = step.matcher.negated;
+  const noneFound = findings.length === 0;
+  const ok = negated ? !noneFound : noneFound;
+  const listing = (): string => findings.map((v) => `  - [${v.severity}] ${v.id}: ${v.description} (${v.detail})`).join('\n');
+  if (ok) {
+    const state = negated ? `has ${findings.length} ${kind}${findings.length === 1 ? '' : 's'}` : `has no ${kind}s`;
+    return { ok: true, message: `response ${state} — ${counts}; ${probeLine}${findings.length > 0 ? `:\n${listing()}` : ''}${note}` };
+  }
+  if (negated) {
+    return { ok: false, message: `expected response to have at least one ${kind}, but found none — ${counts}; ${probeLine}${note}` };
+  }
+  return { ok: false, message: `expected response to have no ${kind}s, but found ${findings.length} — ${counts}; ${probeLine}:\n${listing()}${note}` };
+}
+
+/**
+ * The real mutation-probe sender (D374's seam, filled).
+ *
+ * `authzSenderFor`'s two deliberate non-inheritances, and both fail in the safe direction here too.
+ * Client certificates: a probe carries none, so an mTLS-only target refuses every probe, every
+ * outcome is `not probed`, and D285 fails the assertion loudly rather than greening it. And
+ * `without redirects`: the probe follows, because the question is what the application *ultimately*
+ * does with the payload, and a 302 into a handler that discloses is still a disclosure.
+ */
+function inputSenderFor(config: ResolvedConfig): InputProbeSender {
+  return (req) =>
+    sendRequest({
+      method: req.method,
+      url: req.url,
+      headers: { ...req.headers },
+      ...(req.body !== undefined ? { body: req.body } : {}),
+      timeoutMs: req.timeoutMs,
+      followRedirects: true,
+      allowHosts: config.allowHosts,
+    });
+}
+
+/**
+ * Runs the mutation matrix and the pack, and turns the result into a step outcome (M134a, D366).
+ *
+ * **No retry, for `execAuthzExpect`'s reason.** That one sends; so does this, and a great deal more
+ * of it — a retry loop would re-send the whole matrix, so a transient `429` would be answered by the
+ * one thing guaranteed to make it worse.
+ *
+ * **No owner, and no session machinery at all** — the clearest single difference from Tier 2. This
+ * tier changes no identity (D370), so there is nothing to establish, nothing to strip, no probe set
+ * to assemble and no `TF062`/`TF063` analogue to enforce. It reads one request and re-sends it.
+ */
+async function execInputHandlingExpect(
+  step: ExpectStmt,
+  request: RequestTrace | null,
+  response: ResponseTrace | null,
+  ctx: EvalCtx,
+  src: string,
+  start: number,
+  config: ResolvedConfig,
+): Promise<StepResult> {
+  // `TF039`'s runtime half, as for the other two scan matchers — `checkResponseScopes` already
+  // rejects this statically, so reaching here means the file was run without a check pass.
+  if (!response || !request) {
+    throw new RuntimeError('no response yet — an `api` step must run before `expect response has no input handling violations`');
+  }
+
+  const floor = step.matcher.severityFloor ?? null;
+  const classes = grantedClasses(request.url, config.authorizedTargets);
+  const plan = planProbes(request, classes);
+  const sites = mutationSites(request);
+
+  const policy: InputProbePolicy = {
+    timeoutMs: config.timeouts.step,
+    allowHosts: config.allowHosts,
+    insecure: config.insecure,
+    probeMutating: mayProbeMutating(request.url, config.authorizedTargets),
+    classes,
+    // M131a/D340 — from the command line, never from `config`'s own file contents.
+    allowPublicTargets: config.allowPublicTargets,
+  };
+  const probes = await new InputProber(inputSenderFor(config)).probeAll(request, plan, policy);
+
+  const withheld = withheldClasses(classes);
+  const result = runInputScan({ observed: { request, response }, probes, sites, disabledClasses: withheld }, floor);
+  const outcome = describeInputOutcome(step, floor, result, probes, sites, withheld);
+  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+}
+
+/**
+ * D381's cost line, in `probeCounts`' shape — **sites probed / requests sent / mean requests per
+ * site**, every count beside its denominator.
+ *
+ * Printed rather than asserted, which is the lesson `M132b` paid for: Tier 2's cost line updated
+ * itself when the probe set changed, because the grader prints what it measured instead of naming a
+ * constant somebody has to remember to edit. Tier 3 sends far more, so the number matters more.
+ */
+function mutationCounts(probes: readonly MutationResult[], sites: readonly MutationSite[]): string {
+  const sent = probes.filter((p) => p.outcome.kind !== 'not-probed').length;
+  const mean = sites.length ? (sent / sites.length).toFixed(1) : '0.0';
+  const by = new Map<string, number>();
+  for (const p of probes) by.set(p.outcome.kind, (by.get(p.outcome.kind) ?? 0) + 1);
+  const parts = [...by].map(([kind, n]) => `${n} ${MUTATION_OUTCOME_LABEL[kind as MutationOutcome['kind']]}`);
+  return `${sites.length} site${sites.length === 1 ? '' : 's'}, ${sent} request${sent === 1 ? '' : 's'} sent, ${mean} per site — ${parts.join(', ')}`;
+}
+
+/**
+ * **`degradedNote`'s discipline, one matcher further on.** A state that means *could not find out* is
+ * announced on the **passing** line too, because a green `expect response has no input handling
+ * violations` whose entire matrix was refused before it left the process is exactly the assertion a
+ * reader would otherwise believe had tested something.
+ *
+ * Grouped by reason rather than listed per probe, and that is not cosmetic: a matrix is dozens of
+ * entries wide, and `13 not probed — POST changes state, and no \`probe mutating\` covers this
+ * target` is the sentence a reader can act on, where thirteen copies of it is the sentence they
+ * scroll past.
+ */
+function mutationNote(probes: readonly MutationResult[], withheld: readonly string[]): string {
+  const reasons = new Map<string, number>();
+  for (const p of probes) {
+    if (p.outcome.kind === 'not-probed' || p.outcome.kind === 'inconclusive') {
+      reasons.set(p.outcome.reason, (reasons.get(p.outcome.reason) ?? 0) + 1);
+    }
+  }
+  const lines = [...reasons].map(([reason, n]) => `\n  note: ${n} probe${n === 1 ? '' : 's'} — ${reason}`);
+  // Announced even though nothing went wrong, exactly as `probeNote` announces a `privileged`
+  // exclusion: a class that was never sent is a class that could not have found anything, and a
+  // reader comparing two green runs has no other way to see that one of them tested less. This is
+  // the half of `M128-01` this milestone can afford to answer — not *which rules stood down* in
+  // general, but *which of mine did, and what would turn them on*.
+  if (withheld.length > 0) {
+    lines.push(`\n  note: not probed for ${withheld.join(' or ')} — add ${withheld.map((w) => `\`probe ${w}\``).join(' / ')} under that \`authorized target\` (SPEC §9.12)`);
+  }
+  return lines.join('');
+}
+
+/**
+ * **D285 — an assertion with no power to fail is a failure, not a pass**, and this matcher has the
+ * same two doors as Tier 2 with different names on them.
+ *
+ * The pack can find no applicable rule because the request offered **no mutable input** (`TF067`'s
+ * runtime twin — the checker catches the literal cases, this catches every case), or because nothing
+ * the matrix sent came back readable. `runInputScan` routes both through the same not-applicable
+ * path, so this needs one branch rather than two.
+ */
+function describeInputOutcome(
+  step: ExpectStmt,
+  floor: FindingSeverity | null,
+  result: InputScanResult,
+  probes: readonly MutationResult[],
+  sites: readonly MutationSite[],
+  withheld: readonly string[],
+): MatchOutcome {
+  const kind = floor ? `${floor} input-handling violation` : 'input-handling violation';
+  const counts = `${result.considered} rule${result.considered === 1 ? '' : 's'} — ${result.applicable.length} applicable, ${result.notApplicable.length} not applicable, ${result.findings.length} violation${result.findings.length === 1 ? '' : 's'}`;
+  const probeLine = mutationCounts(probes, sites);
+  const note = mutationNote(probes, withheld);
+  const findings = result.findings;
+
+  // Named differently from `describeAuthzOutcome`'s identical condition on purpose, and the reason
+  // is mechanical rather than stylistic: `scripts/mutate.mjs` anchors each mutation on a source
+  // snippet that must appear **exactly once** in its file. Two D285 doors spelled the same way
+  // leaves neither of them independently mutable — the m130b entry went ambiguous the moment this
+  // function was written, and a Tier 3 entry could not have been added at all. The harness caught
+  // it, which is the harness working; keeping the names distinct is what stops it recurring.
+  const noInputRuleApplied = result.applicable.length === 0 && findings.length === 0;
+  if (noInputRuleApplied) {
+    const why = result.notApplicable.map((n) => `  - ${n.rule.id} applies when: ${n.because}`);
+    // `TF067` is named only when it is actually the reason. A matrix that had sites and sent
+    // requests and still applied no rule is a different situation with a different repair, and
+    // citing a code for it would send the reader to a reference entry that does not describe them.
+    const repair = sites.length
+      ? 'Point it at a request whose inputs this corpus can reach, and at a target that grants the classes it needs'
+      : 'Assert it on a step whose request takes an id, a query parameter or a JSON body (`TF067`)';
+    return {
+      ok: false,
+      message:
+        `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}input-handling rule applied (${counts}; ${probeLine}).\n` +
+        `${why.join('\n')}\n` +
+        `  ${repair}${floor ? ', or lower the severity floor' : ''} (SPEC §9.12, D285).${note}`,
     };
   }
 

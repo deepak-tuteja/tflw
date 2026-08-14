@@ -77,7 +77,12 @@ const KEYWORDS = new Set([
 const OPERATORS = new Set([
   'equals', 'contains', 'matches', 'subset', 'file', 'has', 'is', 'not', 'count', 'value', 'greater', 'less', 'than',
   'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
-  'was', 'made', 'no', 'a11y', 'security', 'authorization', 'violations', 'minor', 'moderate', 'serious', 'critical', 'snapshot',
+  // M134a adds `input`/`handling` — the third scan's two words (`has no [<severity>] input handling
+  // violations`, D366). Caught up **in the milestone that ships the grammar**, which is the whole
+  // point: `M133` found this list and `tflw.tmLanguage.json` both missing `authorization` four
+  // milestones after `M130b` shipped it, because a wordlist is the one consumer nothing fails
+  // without.
+  'was', 'made', 'no', 'a11y', 'security', 'authorization', 'input', 'handling', 'violations', 'minor', 'moderate', 'serious', 'critical', 'snapshot',
 ]);
 
 /** Subject words (tflw.tmLanguage.json's `keywords-subject`), plus the M3a/M3e locator-noun and

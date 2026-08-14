@@ -156,8 +156,19 @@ test('TF063: the privileged door needs a resolved config, and stays shut without
 test('TF064: inside `wait until api`, because a real finding would be reported as a timeout', () => {
   const src = `test "t" as shopper\n  wait until api GET /orders/1\n    expect status equals 200\n    ${ASSERT}\n`;
   const d = firstDiag(src);
-  assert.equal(d?.code, Codes.AUTHZ_ASSERTION_REPEATED_REQUEST);
+  assert.equal(d?.code, Codes.SCAN_ASSERTION_REPEATED_REQUEST);
   assert.match(d!.hint ?? '', /reported as a timeout/);
+});
+
+test('TF064: the same code covers `input handling violations`, widened rather than duplicated (M134a)', () => {
+  // The repair is one sentence and it is identical for both scans, because what makes the construct
+  // wrong is a property of `wait until api` that does not know which scan is asking. Asserted here
+  // so a later milestone cannot quietly mint `TF068` for it and leave two rows in the generated
+  // codes reference with one repair between them.
+  const src = `test "t"\n  wait until api GET /orders/1\n    expect status equals 200\n    expect response has no input handling violations\n`;
+  const d = firstDiag(src);
+  assert.equal(d?.code, Codes.SCAN_ASSERTION_REPEATED_REQUEST);
+  assert.match(d!.message, /input handling violations/);
 });
 
 test('TF064: a `security violations` assertion in the same position is untouched', () => {

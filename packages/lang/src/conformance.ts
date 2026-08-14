@@ -660,10 +660,10 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'no-response-yet',
     file: 'interpreter.ts',
     excerpt: 'no response yet',
-    sites: 4,
+    sites: 5,
     decidable: 'static',
     checkerCode: 'TF039',
-    note: 'ordering within a step sequence is in the AST. M128b added the third site: `execSecurityExpect` needs an observed response for the same reason `status` does, and `readsResponse` lists `ResponseSubject` so `TF039` already decides it. M130b added the fourth, `execAuthzExpect`, for the identical reason and with no new rule — the two scan matchers share one subject and therefore one precondition',
+    note: 'ordering within a step sequence is in the AST. M128b added the third site: `execSecurityExpect` needs an observed response for the same reason `status` does, and `readsResponse` lists `ResponseSubject` so `TF039` already decides it. M130b added the fourth, `execAuthzExpect`, for the identical reason and with no new rule — the two scan matchers share one subject and therefore one precondition. M134a added the fifth, `execInputHandlingExpect`, and it is the first that needs the observed **request** as well as the response, since it mutates one input of it and re-sends — still `TF039`, because a subject that has no response has no request either',
   },
   {
     // M130b (D329). **Not a `'static'` row with a filed gap, and not a duplicate of `TF063`

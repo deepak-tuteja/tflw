@@ -1,7 +1,7 @@
-error[TF010]: expected `mutating`, found end of line
+error[TF010]: expected one of `probe mutating`, `probe oversized`, `probe traversal`, found end of line
  --> tflw.config:3:10
   |
 3 |     probe
   |          ^
   |
-  = help: the only sub-clause an `authorized target` takes is `probe mutating`
+  = help: an `authorized target` takes `probe mutating`, `probe oversized`, `probe traversal`, each on its own indented line

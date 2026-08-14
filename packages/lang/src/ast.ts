@@ -723,6 +723,7 @@ export type MatcherName =
   | 'hasNoA11yViolations'
   | 'hasNoSecurityViolations'
   | 'hasNoAuthzViolations'
+  | 'hasNoInputHandlingViolations'
   | 'matchesSnapshot';
 
 /** The severity scale every *scan* in this language shares, increasing. Originally axe-core's own
@@ -1467,6 +1468,19 @@ export interface AuthorizedTargetDecl extends Node {
    * to write to. The one-line `authorized target "<url>" reason "<text>"` form above is unchanged —
    * this is a line *beneath* it, never a reformatting of it. */
   readonly probeMutating: boolean;
+  /** `probe oversized` (M134a, D372) — permission for `has no input handling violations` to send a
+   * 64 KiB value at this host's inputs. Opt-in because D21 layer 4 names **resource exhaustion**
+   * explicitly, and a megabyte-shaped string against an unbounded field is that class by name.
+   *
+   * D311 predicted this exact landing — *"Tier 3's further per-class opt-ins land as sibling lines
+   * instead of needing a second grammar"* — so layer 4 is **discharged and stays discharged**:
+   * `probe mutating` was its first tenant, and these two are the second and third tenants of a
+   * working mechanism rather than a reopening of the layer. */
+  readonly probeOversized: boolean;
+  /** `probe traversal` (M134a, D372) — permission to send `../`-shaped payloads at this host's
+   * inputs. Detection-oriented (it attempts a read, never a write), but it is still an attempt at
+   * unauthorized access, which is the other thing D21 layer 4 names. */
+  readonly probeTraversal: boolean;
 }
 
 export type EvidenceLevel = 'full' | 'headers-only' | 'none';
