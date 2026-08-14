@@ -54,6 +54,36 @@ test('countsByWorkspace attributes each summary to the workspace npm announced',
   assert.deepEqual(countsByWorkspace(out), { '@tflw/lang': 925, '@tflw/reporter': 106 });
 });
 
+// M134 (`M130-04`/`M113-03`) — the root `scripts/` suite is now the second thing the root
+// `npm test` runs, and its counts are judged in the same parse as the workspaces'. That is only
+// sound because npm announces it under the ROOT package's name and a `test:`-prefixed script, so
+// these two tests pin the exact property `M113-03` doubted: a second run cannot be attributed to
+// the workspace above it. The falsifier for the first is dropping `(?::|$| )` from the header
+// pattern — then `test:scripts` announces nothing and its 86 tests land on `@tflw/docs-site`.
+test('countsByWorkspace attributes a `test:`-prefixed script to its own package, not the block above', () => {
+  const out = [
+    '> @tflw/docs-site@0.1.0 test',
+    '> node --test',
+    coloured('ℹ tests 32'),
+    '> tflw-monorepo@0.1.0 test:scripts',
+    '> node --test "scripts/*.test.mjs"',
+    coloured('ℹ tests 86'),
+  ].join('\n');
+  assert.deepEqual(countsByWorkspace(out), { '@tflw/docs-site': 32, 'tflw-monorepo': 86 });
+});
+
+test('countsByWorkspace keeps two captures apart when they are concatenated', () => {
+  // How `verify-test-counts.mjs` actually calls it since M134: `test:raw`'s output, a newline, then
+  // `test:scripts`'. The join is the seam, and a header that only matched at the very start of the
+  // string would lose everything after it.
+  const workspaces = ['> @tflw/lang@0.1.0 test', '# tests 1141'].join('\n');
+  const rootScripts = ['> tflw-monorepo@0.1.0 test:scripts', '# tests 86'].join('\n');
+  assert.deepEqual(countsByWorkspace(`${workspaces}\n${rootScripts}`), {
+    '@tflw/lang': 1141,
+    'tflw-monorepo': 86,
+  });
+});
+
 test('countsByWorkspace ignores a summary printed before any workspace header', () => {
   assert.deepEqual(countsByWorkspace('ℹ tests 12\n> @tflw/lang@0.1.0 test\nℹ tests 925'), { '@tflw/lang': 925 });
 });
