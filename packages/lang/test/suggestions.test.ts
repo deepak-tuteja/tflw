@@ -306,10 +306,14 @@ const ROUND_TRIP: Record<keyof typeof SUGGESTION_VOCABULARIES, Record<string, st
   // whichever subject was nearest would prove the suggestion completes a *statement* without
   // proving it completes a valid one. `security` and `authorization` share `response` because they
   // genuinely share it (D304) — a separate matcher on the same subject, not a folded one.
+  // M134a adds the first *two-word* member, and it is the one this guard most needs to have walked:
+  // the phrase is what the parser offers, so the property "typing the suggestion parses" is only
+  // meaningful if the example is the phrase rather than its first word.
   scanKind: {
     a11y: 'expect page has no a11y violations',
     security: 'expect response has no security violations',
     authorization: 'expect response has no authorization violations',
+    'input handling': 'expect response has no input handling violations',
   },
   // Statement keywords get the cheaper property rather than 30-odd worked examples: the pool is
   // derived from the parser's own dispatch list minus `RETIRED_STATEMENT_KEYWORDS`, so the failure

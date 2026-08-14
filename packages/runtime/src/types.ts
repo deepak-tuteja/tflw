@@ -36,6 +36,15 @@ export interface AuthorizedTarget {
    * says `probe mutating` mean the opt-in holds: the clause is a claim about permission, and
    * permission does not un-grant by repetition. */
   readonly probeMutating: boolean;
+  /** `probe oversized` (M134a, D372) — may an input-handling scan send a 64 KiB value at this
+   * host's inputs? Opt-in because D21 layer 4 names **resource exhaustion** by that name.
+   *
+   * Accumulates by OR, exactly as `probeMutating` does and for the same reason. */
+  readonly probeOversized: boolean;
+  /** `probe traversal` (M134a, D372) — may an input-handling scan send `../`-shaped payloads at
+   * this host's inputs? Detection-oriented (it attempts a read, never a write), but still an
+   * attempt at unauthorized access, which is the other class D21 layer 4 names. */
+  readonly probeTraversal: boolean;
 }
 
 export interface ResolvedTimeouts {

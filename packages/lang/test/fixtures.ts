@@ -507,10 +507,16 @@ exclude "tflw-acceptance", "fixtures/broken"
     // parsing exactly as it did — `tflw-acceptance/security/tflw.config` is on `main` written that
     // way — so the fixture carries a bare declaration beside a sub-claused one, and a `privileged`
     // oauth2 session beside a `privileged` block session.
+    // M134a/D372 adds the two Tier 3 siblings, and puts them on the **loopback** declaration rather
+    // than the staging one — deliberately, since that is the shape a reader should copy: a fixture
+    // you host is where a 64 KiB value and a `../` belong, and a contracted staging window is not.
+    // The staging declaration stays bare, which keeps the "one-line form still parses" case intact.
     name: 'authz-declarations',
     source: `defaults
   authorized target "http://localhost:4001" reason "self-hosted test fixture"
     probe mutating
+    probe oversized
+    probe traversal
 
 env staging
   api "https://staging.example.com"

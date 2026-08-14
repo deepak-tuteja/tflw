@@ -2,6 +2,7 @@
 
 import { MIN_REDACTABLE_LENGTH } from '@tflw/runtime';
 import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
+import { grantedProbeClauses } from './probe-clauses.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 import { describeWorkload } from './workload-format.js';
 import { noVerdictReason, runBadgeText, type NoVerdictReason } from './run-verdict.js';
@@ -57,7 +58,12 @@ export function renderCliSummary(report: RunReport, color = true): string {
   // here because a scan's *result* and the claim that authorized it belong in the same artifact,
   // and the CLI summary is the artifact most runs are actually read from.
   for (const t of report.authorizedTargets ?? []) {
-    lines.push(`${c.dim}ℹ authorized target ${t.target} — ${t.reason}${c.reset}${t.probeMutating ? `${c.dim} (probe mutating)${c.reset}` : ''}`);
+    // M134a — **every** granted sub-clause, not just `probe mutating`. The list is derived rather
+    // than spelled out here for the reason D291 put the reason in the artifact in the first place:
+    // a report that named two of three opt-ins would understate what this run was permitted to send,
+    // and the understatement would be invisible to exactly the reader the line exists for.
+    const probes = grantedProbeClauses(t);
+    lines.push(`${c.dim}ℹ authorized target ${t.target} — ${t.reason}${c.reset}${probes.length ? `${c.dim} (${probes.join(', ')})${c.reset}` : ''}`);
   }
   // D331 — printed here, beside the claim that authorized the scans, because this is the sentence
   // that keeps the scans' *results* from being read as broader than they are. Not a warning and

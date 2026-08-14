@@ -607,6 +607,18 @@ env staging
   exempting them here would exempt precisely the target this arc is tested against, shipping the
   requirement untested.
 - Accumulates across `defaults` + `env`, like `allow hosts` (§3.7) — not override semantics.
+- **Three optional indented sub-clauses, each granting only itself** (M130b/M134a, D330/D372). The
+  one-line declaration above is unchanged; these are lines *beneath* it, never a reformatting of it.
+
+  | sub-clause | grants | read by |
+  | --- | --- | --- |
+  | `probe mutating` | re-issuing a `POST`/`PUT`/`PATCH`/`DELETE` against this host | §9.11, §9.12 |
+  | `probe oversized` | sending §9.12's 64 KiB payload | §9.12 |
+  | `probe traversal` | sending §9.12's `../` payloads | §9.12 |
+
+  They hang off the target because each is a property of *that host*: staging may be safe to read as
+  a stranger and not safe to write to. Grants accumulate across declarations covering the same
+  origin, and are never inherited from a neighbouring one.
 - **Every scannable origin, not just the default `api` base** (M131a, D343). A step naming a service
   (`api @billing GET /invoices`) reaches a different host, so a security assertion in an env that
   declares services needs a declaration for each of their origins as well. Same affirmation, same
@@ -659,11 +671,18 @@ a feature, it would be the deletion of this control.
   permits two probes to be in flight simultaneously.
 
 Layers 1, 2, 4 and 5 of the D21 safety model — `allow hosts`, this declaration, the per-class
-destructive opt-in (`probe mutating`, §3.10) and the pace above — plus this flag as layer 3,
-complete that model. Earlier drafts of this section deferred layers 3 and 5 "to the milestone that
-first sends a probe (Tier 3)"; that address was wrong, because Tier 2's authorization probes send.
-The reasoning was right and is preserved above: nothing here ships a control with nothing to
-exercise it.
+destructive opt-in (`probe mutating`/`probe oversized`/`probe traversal`, §3.10) and the pace above
+— plus this flag as layer 3, complete that model. Earlier drafts of this section deferred layers 3
+and 5 "to the milestone that first sends a probe (Tier 3)"; that address was wrong, because Tier 2's
+authorization probes send. The reasoning was right and is preserved above: nothing here ships a
+control with nothing to exercise it.
+
+Layer 4 says **per class**, and M130b discharged it with one boolean because Tier 2 had exactly one
+class of destructive act. §9.12 is where the word "class" first has literal classes behind it, and
+the layer was re-opened rather than assumed discharged: `oversized` and `traversal` are separate
+grants, off by default, because one is exhaustion-shaped and the other's positive finding *is* the
+act of reading the file. Layer 5's own deferral remains un-triggered — §9.12's probes are strictly
+sequential too, so nothing has yet permitted two in flight.
 
 ## 4. Tests & structure ✅
 
@@ -1259,6 +1278,7 @@ them callable.
 | `has no [minor/moderate/serious/critical] a11y violations` | `page` | `expect page has no critical a11y violations` |
 | `has no [minor/moderate/serious/critical] security violations` | `response` | `expect response has no serious security violations` |
 | `has no [minor/moderate/serious/critical] authorization violations` | `response` | `expect response has no authorization violations` |
+| `has no [minor/moderate/serious/critical] input handling violations` | `response` | `expect response has no input handling violations` |
 | `matches snapshot "<name>" [mask <locator>]*` | `page`, UI locators | `expect page matches snapshot "checkout-page" mask css ".timestamp"` |
 <!-- GENERATED:matchers:end -->
 
@@ -2460,6 +2480,103 @@ test "orders are owner-scoped" as shopper               # `as` names the owner
     the repair is a principal with a different *credential*, since a probe outcome is a fact about
     the credential rather than about the person.
 
+### 9.12 Input-handling scan (M134a, D366–D383) ✅
+
+```
+authorized target "http://localhost:4001" reason "self-hosted test fixture"   # tflw.config, §3.10
+  probe mutating                                        # required to mutate a POST/PUT/PATCH/DELETE
+  probe oversized                                       # optional; the 64 KiB payload class
+  probe traversal                                       # optional; the `../` payload class
+
+test "search rejects what it cannot parse"
+  api GET /products?q=shoes
+  expect response has no input handling violations      # every severity
+  expect response has no serious input handling violations   # a floor, not an exact match
+  check  response has no input handling violations      # soft form, §6.4
+```
+
+- **`expect`/`check response has no [<severity>] input handling violations`** — takes the request the
+  last `api` step actually made and re-sends it once per (mutable input × payload), each time with
+  **exactly one** input replaced, and judges what comes back. `<severity>` uses §9.8's four-level
+  scale and §9.10's floor semantics, and the floor narrows which rules run at all.
+- **Two bare words, not `input-handling` (D366 as corrected).** The lexer's `isIdentCont` is
+  `/[A-Za-z0-9_]/` and `-` lexes as `minus`, so a hyphen cannot appear in a keyword; the language has
+  no hyphenated bare keyword anywhere, and every multi-word construct is space-separated. The
+  hyphenated spelling the plan proposed is a parse error, asserted as one so it cannot be
+  "fixed" back.
+- **It changes no identity, and that is the whole difference from §9.11 (D370/D375).** §9.11 strips
+  `Authorization`/`Cookie` and applies a different principal; this scan keeps the observed request's
+  headers verbatim and moves only the payload. So the observed request's own `X-CSRF-Token` travels
+  with every probe and the probe reaches the code it was sent to test — which is why §9.11's CSRF
+  ambiguity has no analogue here, and why this scan needs no owner: there is deliberately **no
+  `TF062`/`TF063` counterpart**, and an unowned test is fine.
+- **A fixed, enumerable corpus — no sampling, no seed (D367).** Every payload is applied to every
+  mutable input, in a fixed order. tflw is deterministic by identity (`--seed` exists, and R8's
+  fingerprints deliberately exclude a fuzz payload), and a seeded random fuzzer would need a
+  corpus-coverage story this tool has no machinery for. Fifteen payloads ship in four classes: 5
+  type-confusion, 5 injection, 1 oversized, 4 traversal.
+- **Three kinds of mutable input**, read off the observed request: an **identifier path segment**
+  (a UUID, an all-digit segment, or 24+ hex characters), a **query parameter**, and a **JSON body
+  leaf**. Type-confusion payloads apply to body leaves only — a path segment and a query value are
+  strings by construction, so there is no type there to confuse. Query and path payloads are
+  percent-encoded before they are sent; letting `../` through raw would have `new URL` normalise it
+  away before the request left the process.
+- **Every payload declares what it is for (D368).** A payload carries ≥1 invariant it can violate,
+  ≥1 site kind it targets, a value and a unique id, and `defineCorpus` throws at module load if any
+  of those is missing. A payload no rule can read is a probe that cannot produce a finding, which is
+  D291's vacuity rule applied to the corpus instead of to the control.
+- **The bar is disclosure, not status (D373).** A bare `5xx` is **not** a finding — plenty of correct
+  applications answer `500` to a type they never expected, and Tier 1's zero-false-positive bar is
+  not renegotiated here. A `5xx` that *leaks* is. Every rule additionally subtracts the control
+  response's own hits, so a finding means **this payload caused it** rather than that the string was
+  always there.
+
+  | rule | severity | applies when |
+  | --- | --- | --- |
+  | `sec/error-detail-disclosure` | serious | at least one mutation probe was answered |
+  | `sec/reflected-input-unescaped` | moderate | a payload carrying raw markup metacharacters was answered with an HTML or text body |
+  | `sec/path-traversal-read` | critical | `probe traversal` is granted and at least one traversal payload was answered |
+  | `sec/oversized-input-accepted` | minor | `probe oversized` is granted and the oversized payload was answered |
+
+- **Three outcomes, not §9.11's five.** `answered` (any status the host produced, `5xx` included) /
+  `inconclusive` (`429` only) / `not probed`. A `5xx` is a first-class answer here because the
+  application *did* process the payload — the thing this scan is asking about. A `429` is
+  inconclusive for §9.11's reason unchanged: the app never processed it, so scoring it as *handled
+  correctly* would let a suite that trips its own throttle report the throttle as clean.
+- **An assertion with nothing to mutate fails rather than passing (D382).** `api GET /health` has no
+  id segment, no query and no body, so no probe could have been sent and no rule could have fired —
+  `TF067` at check time, and the same verdict at run time for the interpolated cases the checker
+  deliberately stays silent about. The checker answers **`false` on every uncertainty**: a `{var}` in
+  the path may bind to an id, a `body from` file is not the checker's to read, and raw text may well
+  be JSON. It reports only what it can prove.
+- **Payload classes are opt-in per class (D372, D21 layer 4).** `type-confusion` and `injection` are
+  on by default — both are read-shaped and neither payload names a table, a file, a command or a
+  host; every injection string is detection-oriented (`tflw'`, `{{7*7}}`, `<tflw>`). `oversized` and
+  `traversal` are off until the covering `authorized target` says otherwise, because one is
+  exhaustion-shaped and the other's positive finding *is* the act of reading the file. This is where
+  layer 4's "per class" language first has literal classes to apply to; §9.11's single
+  `probe mutating` boolean discharged the layer for a tier that had one class.
+- **`probe mutating` is still required to mutate a write.** A mutated `POST` is a write, so the
+  §9.11 sub-clause governs it here too; without it the whole step is `not probed` and says so.
+- **Probes are strictly sequential — one in flight** (D381), so §9.11's bound is unchanged and layer
+  5's deferral condition ("the first change that permits two probes in flight") is **not** met:
+  `probe rate` does not come due. The cost is stated on every result line, pass or fail, every count
+  beside its denominator: `3 sites, 30 requests sent, 10.0 per site — 30 answered`.
+- **What a run declined to send is on the passing line too.** A green assertion that skipped
+  `traversal` and one that ran it are the same green without it, so every withheld class is named:
+  `note: not probed for oversized or traversal — add \`probe oversized\` / \`probe traversal\` under
+  that \`authorized target\` (SPEC §9.12)`. Not-probed and inconclusive probes are grouped **by
+  reason** rather than listed per probe — a matrix is dozens of entries wide, and thirteen copies of
+  one sentence is the sentence a reader scrolls past.
+- **Requires an `authorized target` covering the origin** (§3.10) exactly as §9.10 and §9.11 do —
+  `TF060` — and off a private address the run also wants `--allow-public-target` (§3.10.1,
+  `TF065`/`TF066`). The refusal names *this* scan rather than §9.11's.
+- **Not inside `wait until api` (`TF064`), and not inside a workload (`TF033`).** `TF064` is §9.11's
+  code widened rather than a new one: the repair is the same sentence for both scans, because what
+  makes the construct wrong is a property of `wait until api` that does not know which scan is
+  asking. `TF033`'s hint differs — the multiplication here is one probe *per payload per mutable
+  input*, an order of magnitude worse than per-principal.
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
@@ -2961,9 +3078,10 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF061` | Checker (M128b, D291): an `authorized target` that contains a wildcard, or that is not an absolute URL. **Why a wildcard is rejected here when `allow hosts` accepts one**: the two declarations look alike and mean opposite kinds of thing. `allow hosts` bounds where a suite may send ordinary traffic, and a bound expressed as a pattern is still a bound. This one is not a bound — it is an author affirming in writing that they are permitted to point a scanner at a named host, and nobody is authorized to scan `*.com`. A pattern records a claim whose scope its author could not have known when they wrote it. The non-absolute case is the same error one step earlier: `authorized target "staging.example.com"` reads like a declaration and authorizes nothing, because `TF060` compares origins and a bare hostname has none. | `defaults` then `authorized target "https://*.example.com" reason "staging"` in `tflw.config` → `cannot contain a wildcard`; `defaults` then `authorized target "staging.example.com" reason "staging"` in `tflw.config` → `must be an absolute URL with a scheme` |
 | `TF062` | Checker (M130b, D328): the `api` step an `authorization violations` assertion judges names its own `Authorization` or `Cookie` header. Not a style objection — the probe strips the observed identity headers and applies the probing principal's own, so a credential written onto the step belongs to *neither* the owner's `as <session>` nor any principal in the probe set, and the differential comparison is then between two identities the run cannot name. A finding from that is confidently wrong in either direction. **Closed in two halves, on purpose** (D328): here, for a step in the same body, which is the boundary `checker.ts` already draws for call resolution (`a frame whose registry is knowable: a test or hook body, never an action body`); and again at run time, where the engine compares the observed request's identity headers against what the owning sessions actually contributed — both values are known, so that half is a comparison, not a heuristic. An interpolated header *name* is skipped rather than guessed at, since this rule refuses a file. Out of reach either way, and named in the run's own blind-spot line: a credential in a query string, in a body, or in an app-specific header the language cannot recognise. | `test "t" as shopper` then `api GET /orders/1` then `header "Authorization" is "Bearer x"` then `expect response has no authorization violations` → `` names its own `Authorization` header `` |
 | `TF063` | Checker (M130b, D307/D329): an `authorization violations` assertion with no principal behind it. **Two doors, one rule and one repair — declare an identity.** (1) The assertion sits in a `test` that declares no `as <session>`, or in a `before file`/`after file` hook, which runs in its own scope isolated from every test (`ast.ts:57`) and can therefore never have an owner; a bare `before`/`after` hook runs once per test and shares its scope, so it is fine (there is no `before each` keyword — `each` belongs to `with each`). (2) `tflw.config` marks *every* declared `session` as `privileged`, so the probe set holds only the built-in `anonymous` — which tests authentication, not authorization. The oracle is differential: it re-issues the observed request under every declared principal but the owner's and compares what comes back, so with no owner, or no non-privileged principal, there is nothing to compare. Silent inside an `action` body, deliberately and symmetrically with `TF062`: calls bind late against the entry file's registry, so the executing test is a run-time fact, and the interpreter repeats the judgement with it in hand. That leaves a shared authorization check writable once and reusable, which is the language's only unit of reuse. | `test "t"` then `api GET /orders/1` then `expect response has no authorization violations` → `needs an owner`; `before file` then `api GET /orders/1` then `expect response has no authorization violations` → `needs an owner` |
-| `TF064` | Checker (M130b, D315): an `authorization violations` assertion inside `wait until api`. **The cost is not the wasted traffic, it is what a real finding turns into.** `wait until api` re-issues its request until its nested expects pass, so a genuine BOLA — the assertion failing — would be re-probed under every declared principal on every poll, and then reported as a *wait timeout* rather than as a critical finding: the loudest possible result the tier can produce, converted into the quietest. Its own code rather than `TF063`'s because the repair is different (move the assertion to a plain `api` step after the block, rather than declare an identity), which is the same rule that split `TF003` and kept `TF047` whole. The sibling case — inside a workload-bearing `test` — is `TF033`, beside `browser steps aren't supported inside a workload-bearing test`, because that is the same rule about the same construct with the same fix. | `test "t" as shopper` then `wait until api GET /orders/1` then `expect status equals 200` then `expect response has no authorization violations` → `` can't be asserted inside `wait until api` `` |
+| `TF064` | Checker (M130b, D315; widened M134a, D382): an `authorization violations` **or** `input handling violations` assertion inside `wait until api`. **The cost is not the wasted traffic, it is what a real finding turns into.** `wait until api` re-issues its request until its nested expects pass, so a genuine finding — the assertion failing — would be re-probed on every poll and then reported as a *wait timeout* rather than as a critical finding: the loudest possible result these tiers can produce, converted into the quietest. Its own code rather than `TF063`'s because the repair is different (move the assertion to a plain `api` step after the block, rather than declare an identity), which is the same rule that split `TF003` and kept `TF047` whole. **`M134a` widened it rather than minting `TF068`**, by that same rule read the other way: the repair is one sentence and it is identical for both scans, because what makes the construct wrong is a property of `wait until api` that does not know which scan is asking. Two rows in the generated codes reference with one repair between them is the drift `M92` spent a milestone on. The sibling case — inside a workload-bearing `test` — is `TF033`, beside `browser steps aren't supported inside a workload-bearing test`, because that is the same rule about the same construct with the same fix. | `test "t" as shopper` then `wait until api GET /orders/1` then `expect status equals 200` then `expect response has no authorization violations` → `` can't be asserted inside `wait until api` ``; `test "t"` then `wait until api GET /orders/1` then `expect status equals 200` then `expect response has no input handling violations` → `` can't be asserted inside `wait until api` `` |
 | `TF065` | Checker + runtime (M131a, D340–D344): a scan that **originates traffic** would reach an origin outside the private address ranges, and no `--allow-public-target <origin>` on the command line names it. This is D21 §3.2(3), the layer whose whole point is that **no `tflw.config` key can supply the affirmation** — a committed config must not be able to make CI scan the internet by itself, and `authorized target`, being config, cannot be the only gate. **It gates the packet, not the matcher** (D341): `authorization violations` re-issues the observed request under every other declared principal, so it sends; `security violations` only inspects a response the suite already asked for under `allow hosts`, so it needs no flag. Gating both uniformly reads simpler and predictably ends with the flag parked permanently in CI, and a control everybody leaves on is not a control. **Address class is judged from the URL as written — no DNS, ever** (D338): a control that resolves a name sends a packet to decide whether it may send a packet, the answer differs between a laptop, a VPN and CI, and a TTL-0 record can rebind between the check and the probe. The exemptions are loopback, RFC1918, IPv6 unique-local, link-local, CGNAT and `localhost`; **every other hostname is public**, including genuinely private ones like `api.internal.corp`, because nothing in that string says so — the control over-asks rather than under-asks. `0.0.0.0` and `::` are neither: they name no host, so they are refused rather than exempted or affirmable. **Two doors, and the runtime is the load-bearing one** (D342): the checker refuses what it can prove before any server or credential is involved, but `resolved.apiBaseUrl` is interpolation-resolved locally, so its verdict can differ between a laptop and CI; `authzProbe` judges the origin the packet is actually going to and reuses this same code, because it is the same repair. | `test "t" as shopper` then `api GET /orders/1` then `expect response has no authorization violations` → `` needs `--allow-public-target https://staging.example.com` `` |
 | `TF066` | Checker (M131a, D340/D344): an `--allow-public-target` that matches nothing this run would scan — a value that is not an absolute URL with an origin, one naming an origin no env base URL or service reaches, or one no `authorized target` declares. **Its own code rather than `TF065`'s because the repair is different**: `TF065` is answered by adding the flag, this one by correcting a flag that is already there, and one code for both would have made a generated codes-reference row false. **Why an unmatched affirmation is an error rather than a harmless no-op**: the flag names an origin so that the affirmation and the target have to agree, which is `TF061`'s argument reused — nobody can affirm the scope of a target they have not named. A bare boolean would survive any later edit of the config and silently authorize whatever new host somebody points the suite at, leaving config with sole say over *which* public host gets scanned, which is most of what D21 §3.2(3) was taking away from it. A stale flag that matches nothing is that failure caught one move earlier. The flag is **repeatable** — one origin each, no comma-separated form and no wildcard, for `TF061`'s reason — and carries no `reason` of its own: D291 already puts that in config, where it travels with the report artifact, and a second reason on the command line could only duplicate or contradict it, with no defined winner. | `test "t" as shopper` then `api GET /orders/1` then `expect response has no authorization violations` → `matches nothing this run would scan` |
+| `TF067` | Checker + runtime (M134a, D382): an `input handling violations` assertion on a step whose request carries nothing to mutate — no identifier path segment, no query parameter, and no JSON body. The oracle re-sends the observed request once per payload per mutable input; with no mutable input it sends nothing, no rule applies, and the assertion could not have failed whatever the application did. That is D285's no-power-to-fail shape, which this tier is required to make speakable rather than report as a green. **Two doors, and the runtime is the load-bearing one** — the same shape as `TF065`, and its second instance in this table. The checker decides it only where it provably can: a `{var}` anywhere in the path is skipped (interpolation can produce an id segment or a whole query string), `body from "…"` is skipped (the file is not the checker's to read), and `body "…"` raw text is skipped (it may well be JSON, and guessing from a content-type header would be a guess about a header that may itself be interpolated). What is left is the case people actually write — `api GET /health` with the assertion under it. The runtime holds the request that actually went out and re-decides the same question against it, **reusing this code rather than minting one**, because the repair is identical from either door: assert it on a step that takes an id, a query parameter or a JSON body. **Deliberately not a fourth `AUTHZ_*` code**: nothing here is about authorization, and unlike Tier 2 this scan needs no owner at all — it changes no identity, so `TF062` and `TF063` have no analogue. | `test "t"` then `api GET /health` then `expect response has no input handling violations` → `nothing to mutate` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

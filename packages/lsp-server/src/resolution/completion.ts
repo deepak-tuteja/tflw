@@ -91,6 +91,14 @@ const MATCHER_CANDIDATES: readonly { readonly label: string; readonly specId: st
   { label: 'has no moderate authorization violations', specId: 'has-no-authorization-violations' },
   { label: 'has no serious authorization violations', specId: 'has-no-authorization-violations' },
   { label: 'has no critical authorization violations', specId: 'has-no-authorization-violations' },
+  // M134a — the third scan, enumerated to the same depth for the same reason. `M133` found this
+  // list holding five a11y candidates and **zero** for either pentest scan, four milestones after
+  // the first one shipped; catching the third one up in its own milestone is the correction.
+  { label: 'has no input handling violations', specId: 'has-no-input-handling-violations' },
+  { label: 'has no minor input handling violations', specId: 'has-no-input-handling-violations' },
+  { label: 'has no moderate input handling violations', specId: 'has-no-input-handling-violations' },
+  { label: 'has no serious input handling violations', specId: 'has-no-input-handling-violations' },
+  { label: 'has no critical input handling violations', specId: 'has-no-input-handling-violations' },
   { label: 'matches snapshot', specId: 'matches-snapshot' },
   { label: 'not', specId: '' },
 ];

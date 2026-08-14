@@ -295,21 +295,39 @@ const NEGATION_PREFIXES = ['not', 'non', 'un', 'in', 'im', 'dis'] as const;
 const SEVERITY_FLOOR_WORDS = ['minor', 'moderate', 'serious', 'critical'] as const;
 /** Which scan `has no … violations` is asking for (M128b, D290; M130b, D304). Three words, one
  * construct — see `parseScanViolationsMatcher`. */
-const SCAN_KIND_WORDS = ['a11y', 'security', 'authorization'] as const;
-/** The scan word → `MatcherName` mapping, as a total record rather than a ternary chain. The chain
+/**
+ * Which scan `has no … violations` is asking for (M128b, D290; M130b, D304; M134a, D366).
+ *
+ * **Phrases, not words, as of `M134a` — and the hyphen D366 wrote is not spellable here.** The plan
+ * names the third scan `input-handling`, but `isIdentCont` is `/[A-Za-z0-9_]/` and `-` lexes as
+ * `minus`, so `input-handling` arrives as three tokens and could never match a keyword. Measured
+ * before choosing the alternative: this language has **zero** hyphenated bare keywords — every
+ * multi-word construct it has is space-separated (`allow hosts`, `authorized target`, `wait until
+ * api`, `switch to new tab`), and the one hyphenated string in the grammar (`headers-only`) is a
+ * quoted *value*, never a lexeme. So the scan is two bare words, which is the language's own
+ * convention rather than a compromise, and the documentation id keeps the hyphen because a spec id
+ * is a doc anchor and not something anybody types.
+ */
+const SCAN_KIND_PHRASES = ['a11y', 'security', 'authorization', 'input handling'] as const;
+/** The scan phrase → `MatcherName` mapping, as a total record rather than a ternary chain. The chain
  * was fine for two words and would have made a third one silently parse as the second — a `Record`
- * over the same `as const` tuple makes adding a word to `SCAN_KIND_WORDS` a type error until it is
- * given a matcher, which is where a completeness rule belongs. */
-const SCAN_MATCHER_NAMES: Readonly<Record<(typeof SCAN_KIND_WORDS)[number], MatcherName>> = {
+ * over the same `as const` tuple makes adding a phrase to `SCAN_KIND_PHRASES` a type error until it
+ * is given a matcher, which is where a completeness rule belongs. */
+const SCAN_MATCHER_NAMES: Readonly<Record<(typeof SCAN_KIND_PHRASES)[number], MatcherName>> = {
   a11y: 'hasNoA11yViolations',
   security: 'hasNoSecurityViolations',
   authorization: 'hasNoAuthzViolations',
+  'input handling': 'hasNoInputHandlingViolations',
 };
-/** As `MATCHER_VOCABULARY_HELP`, for the three-word `<scan> violations` construct (review finding
- * A3-15) — every one of its failure modes used to be a bare `expectKw`, naming one keyword of three
- * and never the severity vocabulary sitting in the constant directly above. */
+/** The first word of every scan phrase — the candidate pool a misspelling is suggested against, and
+ * the only thing the parser can match before it knows which phrase it is reading. */
+const SCAN_FIRST_WORDS: readonly string[] = [...new Set(SCAN_KIND_PHRASES.map((p) => p.split(' ')[0]!))];
+/** As `MATCHER_VOCABULARY_HELP`, for the `<scan> violations` construct (review finding A3-15) —
+ * every one of its failure modes used to be a bare `expectKw`, naming one keyword of three and never
+ * the severity vocabulary sitting in the constant directly above. Built from the constant so a fifth
+ * scan cannot leave this message naming three of four. */
 const SCAN_MATCHER_HELP =
-  `expected \`a11y violations\`, \`security violations\` or \`authorization violations\`, optionally ` +
+  `expected ${SCAN_KIND_PHRASES.map((p) => `\`${p} violations\``).join(', ')}, optionally ` +
   `with a severity floor in front (${SEVERITY_FLOOR_WORDS.join('/')}) — e.g. \`has no serious a11y violations\``;
 
 /**
@@ -348,6 +366,17 @@ function configKeyAllowedIn(key: string, block: ConfigBlockKind): boolean {
 function configKeyHome(key: string): string {
   return ENV_ONLY_KEYS.includes(key) ? 'an `env` block' : 'the `defaults` block';
 }
+/** The `probe …` sub-clauses an `authorized target` accepts (M130b, D330; M134a, D372), and the
+ * `AuthorizedTargetDecl` field each one sets. A total record over the same `as const` tuple, for
+ * `SCAN_MATCHER_NAMES`' reason: a fourth word is then a type error until somebody says what it
+ * grants, rather than a word the parser accepts and nothing reads. */
+const PROBE_SUB_CLAUSES = ['mutating', 'oversized', 'traversal'] as const;
+const PROBE_SUB_CLAUSE_FIELDS: Readonly<Record<(typeof PROBE_SUB_CLAUSES)[number], 'probeMutating' | 'probeOversized' | 'probeTraversal'>> = {
+  mutating: 'probeMutating',
+  oversized: 'probeOversized',
+  traversal: 'probeTraversal',
+};
+const PROBE_SUB_CLAUSE_HELP = `an \`authorized target\` takes ${PROBE_SUB_CLAUSES.map((w) => `\`probe ${w}\``).join(', ')}, each on its own indented line`;
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 /** `log [<level>] "…" [to <destination>]` (M27, PLAN_LOG.md) — bare-keyword enums, same shape as
  * `SEVERITY_FLOOR_WORDS`/`LOCATOR_KEYWORDS`. Also reused (against a quoted string, not a bare
@@ -422,7 +451,10 @@ export const SUGGESTION_VOCABULARIES = {
   logLevel: LOG_LEVELS,
   logDestination: LOG_DESTINATIONS,
   severityFloor: SEVERITY_FLOOR_WORDS,
-  scanKind: SCAN_KIND_WORDS,
+  // Phrases as of `M134a`, not words. What the parser *offers* is always a whole phrase — a bare
+  // `input` is not something a user can write, so a hint that offered it would send the reader to
+  // the next error rather than past it — and this guard's property is about what is offered.
+  scanKind: SCAN_KIND_PHRASES,
   statement: SUGGESTABLE_STATEMENT_KEYWORDS,
 } as const satisfies Record<string, readonly string[]>;
 
@@ -1663,19 +1695,24 @@ class Parser {
     const reason = this.expectString('why you are permitted to scan this target, e.g. `reason "self-hosted test fixture"`');
     if (!reason) return null;
     this.endLine();
-    const probeMutating = this.parseAuthorizedTargetSubClauses();
-    return { type: 'AuthorizedTargetDecl', target, reason, probeMutating, span: this.spanFrom(start) };
+    const probes = this.parseAuthorizedTargetSubClauses();
+    return { type: 'AuthorizedTargetDecl', target, reason, ...probes, span: this.spanFrom(start) };
   }
 
-  /** The optional indented block under an `authorized target` (M130b, D330). Absent block → `false`,
-   * which is the same answer as a block that declares something else, so the caller has one shape to
+  /** The optional indented block under an `authorized target` (M130b, D330; M134a, D372). An absent
+   * block is the same answer as a block that declares nothing, so the caller has one shape to
    * handle. Unknown sub-clauses are an error *here* rather than in the enclosing config loop: by the
    * time the loop sees an `indent` it has lost which declaration it belongs under, and the message
-   * would name a config key that is not what the author was writing. */
-  private parseAuthorizedTargetSubClauses(): boolean {
-    if (!this.check('indent')) return false;
+   * would name a config key that is not what the author was writing.
+   *
+   * **`M134a` adds two siblings and no grammar** — D311 predicted exactly this (*"Tier 3's further
+   * per-class opt-ins land as sibling lines instead of needing a second grammar"*), which is why
+   * D21 layer 4 is discharged and stays discharged: `probe mutating` was its first tenant and these
+   * are the second and third tenants of a working mechanism, not a reopening of the layer. */
+  private parseAuthorizedTargetSubClauses(): { probeMutating: boolean; probeOversized: boolean; probeTraversal: boolean } {
+    const probes = { probeMutating: false, probeOversized: false, probeTraversal: false };
+    if (!this.check('indent')) return probes;
     this.advance(); // indent
-    let probeMutating = false;
     while (!this.check('dedent') && !this.atEof()) {
       if (this.check('newline')) {
         this.advance();
@@ -1685,20 +1722,34 @@ class Parser {
       const tok = this.peek();
       if (this.isKw(tok, 'probe')) {
         this.advance();
-        if (this.expectKw('mutating', 'the only sub-clause an `authorized target` takes is `probe mutating`')) {
-          probeMutating = true;
+        const word = this.peek();
+        const known = PROBE_SUB_CLAUSES.find((w) => this.isKw(word, w));
+        if (known) {
+          this.advance();
+          probes[PROBE_SUB_CLAUSE_FIELDS[known]] = true;
           this.endLine();
-        } else this.synchronize();
+        } else {
+          // Names the whole vocabulary rather than one word of it — the A3-15 rule, applied to a
+          // list that just went from one member to three and will grow again.
+          const near = word.type === 'ident' ? suggest(word.value, [...PROBE_SUB_CLAUSES]) : undefined;
+          this.error(
+            Codes.UNEXPECTED_TOKEN,
+            `expected one of ${PROBE_SUB_CLAUSES.map((w) => `\`probe ${w}\``).join(', ')}, found ${describeToken(word)}`,
+            word.span,
+            near ? `did you mean \`probe ${near}\`?` : PROBE_SUB_CLAUSE_HELP,
+          );
+          this.synchronize();
+        }
       } else {
-        const hint = tok.type === 'ident' && suggest(tok.value, ['probe']) ? 'did you mean `probe mutating`?' : 'an `authorized target` takes one sub-clause: `probe mutating`';
-        this.error(Codes.UNEXPECTED_TOKEN, `expected \`probe mutating\` under \`authorized target\`, found ${describeToken(tok)}`, tok.span, hint);
+        const hint = tok.type === 'ident' && suggest(tok.value, ['probe']) ? 'did you mean `probe mutating`?' : PROBE_SUB_CLAUSE_HELP;
+        this.error(Codes.UNEXPECTED_TOKEN, `expected a \`probe …\` sub-clause under \`authorized target\`, found ${describeToken(tok)}`, tok.span, hint);
         this.synchronize();
       }
       // Same non-advance guard every recovery loop in this file carries.
       if (this.pos === before) this.advance();
     }
     if (this.check('dedent')) this.advance();
-    return probeMutating;
+    return probes;
   }
 
   private parseEvidenceDecl(): EvidenceDecl | null {
@@ -3089,19 +3140,27 @@ class Parser {
     // `violations` ``, with `SEVERITY_FLOOR_WORDS` and `suggest` both in scope and neither used.
     // The `log … to <dest>` branch below has always done this properly; nothing here is different.
     const kindTok = this.peek();
-    const kind = SCAN_KIND_WORDS.find((k) => this.isKw(kindTok, k));
+    // Longest phrase first, so a one-word phrase can never shadow a two-word one that starts with
+    // the same token. Nothing today shares a first word; ordering it correctly now is cheaper than
+    // discovering the shadow the day something does.
+    const kind = [...SCAN_KIND_PHRASES]
+      .sort((a, b) => b.split(' ').length - a.split(' ').length)
+      .find((phrase) => phrase.split(' ').every((word, i) => this.isKw(this.peek(i), word)));
     if (kind === undefined) {
-      // A severity is still legal in front of the scan word, so it belongs in the candidate pool —
+      // A severity is still legal in front of the scan phrase, so it belongs in the candidate pool —
       // but only until one has been read, after which it is no longer a thing the user may write.
-      const candidates = severityFloor === undefined ? [...SCAN_KIND_WORDS, ...SEVERITY_FLOOR_WORDS] : [...SCAN_KIND_WORDS];
-      const hint = kindTok.type === 'ident' ? suggest(kindTok.value, candidates) : undefined;
-      // Listed from the constant rather than spelled out, so a fourth scan word cannot leave this
-      // message naming two of three — the drift A3-15 was filed about, one scan later.
-      const expected = SCAN_KIND_WORDS.map((k) => `\`${k}\``).join(', ');
+      const candidates = severityFloor === undefined ? [...SCAN_FIRST_WORDS, ...SEVERITY_FLOOR_WORDS] : [...SCAN_FIRST_WORDS];
+      const near = kindTok.type === 'ident' ? suggest(kindTok.value, candidates) : undefined;
+      // Suggest the whole phrase, not the word that matched. `input` alone is not something a user
+      // can write, and a hint that offers it would send them to the next error rather than past it.
+      const hint = near === undefined ? undefined : (SCAN_KIND_PHRASES.find((p) => p.startsWith(`${near} `)) ?? near);
+      // Listed from the constant rather than spelled out, so a fifth scan phrase cannot leave this
+      // message naming three of four — the drift A3-15 was filed about, one scan later.
+      const expected = SCAN_KIND_PHRASES.map((k) => `\`${k}\``).join(', ');
       this.error(Codes.UNEXPECTED_TOKEN, `expected one of ${expected}, found ${describeToken(kindTok)}`, kindTok.span, hint ? `did you mean \`${hint}\`?` : SCAN_MATCHER_HELP);
       return null;
     }
-    this.advance();
+    for (let i = 0; i < kind.split(' ').length; i++) this.advance();
     const violationsTok = this.peek();
     if (!this.isKw(violationsTok, 'violations')) {
       const hint = violationsTok.type === 'ident' ? suggest(violationsTok.value, ['violations']) : undefined;

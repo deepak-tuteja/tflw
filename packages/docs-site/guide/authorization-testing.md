@@ -367,6 +367,8 @@ Five more limits worth knowing:
 
 - [Security hygiene scanning](/guide/security-scanning) — the sibling matcher, and where
   `authorized target` comes from
+- [Input-handling testing](/guide/input-handling) — the third scan: same request, different payload,
+  and the identity left alone
 - [Sessions & auth](/guide/sessions) — `session` blocks and `as <session>`
 - [Config & environments](/guide/config) — `privileged` and `probe mutating`
 - [CI & reporting](/guide/ci-and-reporting) — `--allow-public-target` alongside the other CI gates

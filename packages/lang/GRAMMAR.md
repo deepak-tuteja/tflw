@@ -293,6 +293,16 @@ SnapshotMask := 'mask' Locator                                    # dynamic regi
                                                                    # them would make every shipped `security
                                                                    # violations` assertion start sending
                                                                    # cross-identity traffic on upgrade
+             | 'has' 'no' Severity? 'input' 'handling' 'violations'
+                                                                  # `response` subject only (§9.12, M134a)
+                                                                   # — re-issues the observed request with one
+                                                                   # input replaced, keeping the identity that
+                                                                   # sent it. **Two bare words, not
+                                                                   # `input-handling`**: `isIdentCont` is
+                                                                   # `/[A-Za-z0-9_]/` and `-` lexes as `minus`,
+                                                                   # so a hyphen cannot appear in a keyword —
+                                                                   # every multi-word construct in this file
+                                                                   # is space-separated for the same reason
 StateWord   := 'visible' | 'hidden' | 'enabled' | 'disabled' | 'checked'
 Severity    := 'minor' | 'moderate' | 'serious' | 'critical'       # one scale for every scan: axe-core's
                                                                    # own impact scale (§9.8), reused by the
@@ -528,7 +538,21 @@ AuthorizedTargetOpt := 'probe' 'mutating'                         # (§3.10, M13
                                                                   #   authorization probe to re-issue a
                                                                   #   POST/PUT/PATCH/DELETE against *this*
                                                                   #   host. Optional and indented; the
-                                                                  #   declaration line above is unchanged
+                                                                  #   declaration line above is unchanged.
+                                                                  #   Read by §9.12's scan too: a mutated
+                                                                  #   payload on a POST is still a write
+                     | 'probe' 'oversized'                        # (§3.10, M134a, D372) — permission to send
+                                                                  #   §9.12's 64 KiB value. Off by default
+                                                                  #   because a body-size limit is a resource
+                                                                  #   question, and D21 layer 4 makes
+                                                                  #   exhaustion-shaped classes opt-in
+                     | 'probe' 'traversal'                        # (§3.10, M134a, D372) — permission to send
+                                                                  #   §9.12's `../` payloads. Off by default:
+                                                                  #   a positive finding means a file was
+                                                                  #   really read, so the probe that finds it
+                                                                  #   is the probe that does it.
+                                                                  #   Each sibling grants only itself; three
+                                                                  #   independent lines, never one word list
 EvidenceDecl    := 'evidence' STRING                              # "full" | "headers-only" | "none" (§13)
 RedactDecl      := 'redact' RedactPattern (',' RedactPattern)*    # accumulates across defaults+env (§3.4)
 RedactPattern   := 'body' ('.' IDENT | '.' '*')+

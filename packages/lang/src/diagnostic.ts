@@ -159,7 +159,15 @@ export const Codes = {
   // construct with the same fix.
   AUTHZ_STEP_NAMES_OWN_CREDENTIAL: 'TF062',
   AUTHZ_ASSERTION_NO_PRINCIPAL: 'TF063',
-  AUTHZ_ASSERTION_REPEATED_REQUEST: 'TF064',
+  // **Widened by `M134a`, not duplicated** — it now covers `input handling violations` inside `wait
+  // until api` as well. The `TF047` precedent named three lines up is the rule: a code is one
+  // repair, and the repair is identical for both scans — assert it on a plain `api` step after the
+  // block. What makes the construct wrong is a property of `wait until api` (it re-issues its
+  // request until its expects pass, so a real finding is re-probed on every poll and finally
+  // reported as a *timeout* rather than as a finding), and that property does not know which scan is
+  // asking. Minting `TF068` for it would have put two rows in the generated codes reference with one
+  // repair between them, which is the drift `M92` spent a milestone on.
+  SCAN_ASSERTION_REPEATED_REQUEST: 'TF064',
   // M131a (`PLAN_M131_SAFETY_COMPLETION.md`, D340/D344) — D21 §3.2(3)'s affirmation, the layer
   // whose entire point is that **no config key can supply it**. Both errors.
   //
@@ -175,6 +183,19 @@ export const Codes = {
   // CI, not because the two are asking different questions.
   PUBLIC_TARGET_NOT_AFFIRMED: 'TF065',
   PUBLIC_TARGET_AFFIRMATION_UNMATCHED: 'TF066',
+  // M134a (`PLAN_M134_PENTEST_TIER3.md`, D382) — an `input handling violations` assertion on a step
+  // whose request carries nothing to mutate. D285's no-power-to-fail shape, which D373 says must be
+  // speakable rather than reported as a green.
+  //
+  // **The second code in this table with a runtime twin that reuses it** rather than minting its
+  // own (`TF065`, `authzProbe`). Same reason: the repair a reader has to make is identical from
+  // either door — assert it on a step whose request has an identifier path segment, a query
+  // parameter or a JSON body — and the two doors exist because the checker can only decide it for a
+  // literal path with no `{var}` in it, while the runtime holds the request that actually went out.
+  //
+  // Deliberately **not** a fourth `AUTHZ_*` code: nothing about it is about authorization, and this
+  // tier needs no owner at all (it changes no identity, so `TF062`/`TF063` have no analogue here).
+  INPUT_ASSERTION_NO_MUTABLE_INPUT: 'TF067',
 } as const;
 
 // ---------------------------------------------------------------------------

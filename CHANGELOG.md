@@ -202,6 +202,59 @@ performance arc closed 2026-08-02 and is included below.
   `authorized target` reason, so "we probed everything we asserted on" cannot be read as "we probed
   everything"; plus this run's own declines, aggregated (decision 331).
 
+### Added — pen-test arc, Tier 3 (`0.4` internal milestone, M134)
+
+- **`expect`/`check response has no [<severity>] input handling violations`** — the request the last
+  `api` step actually made, re-sent once per (mutable input × payload) with **exactly one** input
+  replaced. Two bare words, not `input-handling`: the lexer's identifier rule is `[A-Za-z0-9_]` and
+  `-` is the minus operator, so a hyphen cannot appear in a tflw keyword, and the hyphenated spelling
+  the plan proposed is a parse error (decision 366, as corrected in build).
+- **It changes no identity, and that is the whole difference from Tier 2.** Tier 2 strips
+  `Authorization`/`Cookie` and applies a different principal; this scan moves only the payload, so
+  the observed request's own `X-CSRF-Token` travels with every probe and the probe reaches the code
+  it was sent to test. Consequently there is deliberately **no `TF062`/`TF063` analogue** — no owner
+  is required, and a step carrying its own credential is fine (decisions 370, 375).
+- **A fixed, enumerable corpus — no sampling, no seed.** 15 payloads in four classes, applied to
+  every mutable input in a fixed order, so a run's request count is a number you can put in a report
+  and it is the same number tomorrow. A seeded random fuzzer would need a corpus-coverage story tflw
+  has no machinery for, and would produce findings whose fingerprints moved with the seed
+  (decision 367).
+- **Three kinds of mutable input** read off the observed request: an identifier path segment (UUID,
+  all-digits, or 24+ hex), a query parameter, and a JSON body leaf. Type-confusion payloads apply to
+  body leaves only — a path segment and a query value are strings by construction, so there is no
+  type there to confuse. Path and query payloads are percent-encoded, or `../` would be normalised
+  away by the URL parser before the request left the process (decision 371).
+- **The bar is disclosure, not status.** A bare `5xx` is **not** a finding — plenty of correct
+  applications answer `500` to a type they never expected, and Tier 1's zero-false-positive bar is
+  not renegotiated. Four rules read for evidence instead: `sec/error-detail-disclosure` (serious),
+  `sec/reflected-input-unescaped` (moderate), `sec/path-traversal-read` (critical),
+  `sec/oversized-input-accepted` (minor). Each **subtracts the control response's own hits**, so a
+  finding means this payload caused it rather than that the string was always there (decision 373).
+- **Three outcomes, not Tier 2's five** — `answered` (any status the host produced, `5xx` included),
+  `inconclusive` (`429` only), `not probed`. A `5xx` is a first-class answer here because the app
+  demonstrably *did* process the payload, which is the thing being asked about.
+- **`probe oversized` and `probe traversal`**, two new indented sub-clauses under `authorized
+  target`, siblings of `probe mutating` and each granting only itself. Off by default because one
+  class is exhaustion-shaped and the other's positive finding *is* the act of reading the file. This
+  is where D21 safety layer 4's "per class" language first has literal classes to apply to; Tier 2's
+  single boolean discharged the layer for a tier that had one class, and the layer was re-opened
+  rather than assumed discharged (decision 372).
+- **`TF067`** — an assertion on a request with nothing to mutate (no id segment, no query, no JSON
+  body leaf) had no power to fail, and fails. A checker code with a runtime twin that reuses it, so
+  the interpolated cases the checker deliberately stays silent about are still caught. The checker
+  answers *false* on every uncertainty: a `{var}` in the path may bind to an id, a `body from` file
+  is not the checker's to read, and raw text may well be JSON (decision 382).
+- **`TF064` widened, not duplicated.** The `wait until api` refusal now covers both pentest scans
+  under one code, renamed `SCAN_ASSERTION_REPEATED_REQUEST`, because the repair is one identical
+  sentence for both — what makes the construct wrong is a property of `wait until api` that does not
+  know which scan is asking. `TF033` covers the workload case with a blunter hint: the multiplication
+  here is one probe *per payload per mutable input*.
+- **Probes stay strictly sequential, one in flight**, so safety layer 5's deferral condition ("the
+  first change that permits two probes in flight") is still not met and `probe rate` does not come
+  due. Every result line, pass or fail, states what it cost (`3 sites, 30 requests sent, 10.0 per
+  site`) and what it declined to send, because a green run that skipped two classes and a green run
+  that ran them are otherwise indistinguishable (decisions 381, 291).
+
 ### Changed — grammar freeze (M66–M69)
 
 The shipped grammar is frozen additive-only from `1.0.0` on, so every incompatible change had to
