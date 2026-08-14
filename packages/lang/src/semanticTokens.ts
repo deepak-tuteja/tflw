@@ -40,7 +40,17 @@ export interface SemanticToken {
  * here either). M50 (D93) removed `scenario` itself — every load-testing keyword now lives
  * inside an ordinary `test` body, so there's no separate leading keyword to list here for it.
  * Phase 2b (D105-D107) added `parallel`/`sequential` as an optional header modifier on `test`,
- * same slot as `retry N` — legal on any test, not just workload-bearing ones. */
+ * same slot as `retry N` — legal on any test, not just workload-bearing ones.
+ *
+ * M133 (D24b catch-up) adds the pentest arc's **config-dialect** vocabulary: `authorized`/`target`/
+ * `reason` and the indented `probe mutating` sub-clause (`M128b`/`M130b`, D291/D311), plus
+ * `privileged` — the `session` header modifier (D307/D310) that sits in the same slot as `oauth2`.
+ * This pass serves `tflw.config` buffers as well as `.tflw` ones (`server.ts` hands it whatever the
+ * store analyzed), which is why config keywords belong in this list at all. **The arc's words only:**
+ * the config dialect's other declaration-only keywords — `allow`/`hosts`/`insecure`/`evidence`/
+ * `web`/`cert`/`key`/`oauth2`/`destination` — are absent here and have been since before this arc,
+ * a wider gap filed as its own ledger row rather than fixed under a milestone that did not measure
+ * it. */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
@@ -52,6 +62,7 @@ const KEYWORDS = new Set([
   'ramp', 'over', 'threshold', 'cleanup', 'pause',
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
   'parallel', 'sequential', 'exclude',
+  'authorized', 'target', 'reason', 'probe', 'mutating', 'privileged',
 ]);
 
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words
@@ -59,11 +70,14 @@ const KEYWORDS = new Set([
  * [<severity>] a11y violations`, M4a catch-up), M4b's `snapshot` (`matches snapshot "<name>"`), and
  * M29's threshold comparator words `greater`/`less`/`than`/`is` — already present here from the
  * expect-matcher vocabulary, load thresholds just reuse the same words (M33 catch-up: nothing new
- * to add, confirmed by audit). */
+ * to add, confirmed by audit). M133 adds `authorization` (`has no [<severity>] authorization
+ * violations`, M130b/D304) — `security` (M128b) was already here, so the arc had shipped one of its
+ * two scans into this list and not the other; `violations` and all four severity words were already
+ * shared with a11y and needed nothing. */
 const OPERATORS = new Set([
   'equals', 'contains', 'matches', 'subset', 'file', 'has', 'is', 'not', 'count', 'value', 'greater', 'less', 'than',
   'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
-  'was', 'made', 'no', 'a11y', 'security', 'violations', 'minor', 'moderate', 'serious', 'critical', 'snapshot',
+  'was', 'made', 'no', 'a11y', 'security', 'authorization', 'violations', 'minor', 'moderate', 'serious', 'critical', 'snapshot',
 ]);
 
 /** Subject words (tflw.tmLanguage.json's `keywords-subject`), plus the M3a/M3e locator-noun and

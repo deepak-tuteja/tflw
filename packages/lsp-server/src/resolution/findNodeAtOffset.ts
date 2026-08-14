@@ -12,6 +12,7 @@ import type {
   ApiServiceDecl,
   ApiStep,
   ArrayLit,
+  AuthorizedTargetDecl,
   BinaryExpr,
   BodySubject,
   BodyTextSubject,
@@ -378,6 +379,15 @@ function children(node: Node): readonly Node[] {
       return [(node as KeyDecl).path];
     case 'AllowHostsDecl':
       return (node as AllowHostsDecl).hosts;
+    // M133 (D24b catch-up): `authorized target "<url>" reason "<text>"` (M128b/D291). Both operands
+    // are `StringLit`s, so this is the same one-line shape `AllowHostsDecl` above already has — and
+    // its absence is why an offset-walk stopped dead at the decl boundary, handing hover and
+    // go-to-definition the declaration when the cursor was inside the URL or the reason sentence.
+    // `probeMutating` is a boolean, not a node, so it has nothing to contribute here.
+    case 'AuthorizedTargetDecl': {
+      const n = node as AuthorizedTargetDecl;
+      return [n.target, n.reason];
+    }
     case 'ApiServiceDecl':
       return [(node as ApiServiceDecl).url];
     default:

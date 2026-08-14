@@ -129,6 +129,34 @@ test('getCompletions: matcher kind includes `has no [<severity>] a11y violations
   }
 });
 
+// M133 (D24b catch-up). Both scans are asserted with their `detail` non-empty, not just their
+// label: a candidate list that offers `has no authorization violations` and says nothing about it
+// is the exact failure `FU-24`/D251 named for the step list, and these two matchers are the ones in
+// the language a user is least likely to already know the semantics of.
+test('getCompletions: matcher kind includes `has no [<severity>] security violations` (M128b) with detail', () => {
+  const source = 'test "ok"\n  expect response h';
+  const ctx = getCompletionContext(source, source.length)!;
+  const candidates = getCompletions(ctx);
+  const labels = candidates.map((c) => c.label);
+  assert.ok(labels.includes('has no security violations'));
+  for (const sev of ['minor', 'moderate', 'serious', 'critical']) {
+    assert.ok(labels.includes(`has no ${sev} security violations`), `missing severity floor: ${sev}`);
+  }
+  assert.ok(candidates.find((c) => c.label === 'has no security violations')!.detail, 'spec-data supplies the detail line');
+});
+
+test('getCompletions: matcher kind includes `has no [<severity>] authorization violations` (M130b/D304) with detail', () => {
+  const source = 'test "ok"\n  expect response h';
+  const ctx = getCompletionContext(source, source.length)!;
+  const candidates = getCompletions(ctx);
+  const labels = candidates.map((c) => c.label);
+  assert.ok(labels.includes('has no authorization violations'));
+  for (const sev of ['minor', 'moderate', 'serious', 'critical']) {
+    assert.ok(labels.includes(`has no ${sev} authorization violations`), `missing severity floor: ${sev}`);
+  }
+  assert.ok(candidates.find((c) => c.label === 'has no authorization violations')!.detail, 'spec-data supplies the detail line');
+});
+
 test('getCompletions: matcher kind includes `matches file` (gap #17), `matches snapshot` (M4b), and `was made` (M3d)', () => {
   const fileSource = 'test "ok"\n  expect body bytes m';
   const fileCtx = getCompletionContext(fileSource, fileSource.length)!;

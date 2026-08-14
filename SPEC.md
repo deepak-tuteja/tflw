@@ -2221,7 +2221,7 @@ expect list "Cart items" matches snapshot "cart-badge"
   quantifiers (there's no array to quantify over); a configurable diff-pixel-ratio tolerance (see
   above — deliberately not exposed).
 
-### 9.10 Security hygiene scan (M128b, D283–D296) ✅
+### 9.10 Security hygiene scan (M128b/M128c, D283–D300) ✅
 
 ```
 authorized target "https://localhost:8443" reason "self-hosted test fixture"   # tflw.config, §3.10
@@ -2333,10 +2333,132 @@ check  response has no security violations              # soft form, §6.4
 - **Requires an `authorized target` declaration** naming every origin this env can scan — its `api`
   base and each declared service (§3.10). Writing this assertion without one is `TF060`, a checker
   error.
-- **Not in this milestone:** the two TLS rules (`sec/tls-version-old`, `sec/tls-weak-cipher`), which
-  need an out-of-band `tls.connect()` probe; SARIF output and a standalone scan report, which land
-  with `tflw scan`; and per-rule suppression by id, which §9.8 records as deliberately unsupported
-  for a11y and which would create an asymmetry here.
+- **Not built:** SARIF output and a standalone scan report, which land with `tflw scan`; and per-rule
+  suppression by id, which §9.8 records as deliberately unsupported for a11y and which would create
+  an asymmetry here.
+
+  This bullet used to also list the two TLS rules as not built. **They shipped in `M128c`** — they
+  are in the rule table above and D288 spends four paragraphs on the probe that drives them, so the
+  section documented them as shipped and denied it in its own last line. Corrected in `M133` rather
+  than left, on `M132b`'s precedent: an overclaim found in the file you are already editing gets
+  rewritten, not stepped over. Section header widened from `D283–D296` to `D283–D300` for the same
+  reason — D297 and D300 are both cited in the body above.
+
+### 9.11 Authorization scan (M130b, D304–D332) ✅
+
+```
+authorized target "http://localhost:4001" reason "self-hosted test fixture"   # tflw.config, §3.10
+  probe mutating                                        # optional; per host, not per run
+
+session admin privileged                                # meant to have access; never probed
+
+test "orders are owner-scoped" as shopper               # `as` names the owner
+  api GET /orders/{orderId}
+  expect response has no authorization violations       # every severity
+  expect response has no critical authorization violations   # a floor, not an exact match
+  check  response has no authorization violations       # soft form, §6.4
+```
+
+- **`expect`/`check response has no [<severity>] authorization violations`** — re-issues **the
+  request the last `api` step actually made**, unchanged, once per other declared principal, and
+  compares what comes back against what the owner got. `<severity>` uses §9.8's four-level scale
+  and §9.10's floor semantics. Both rules in the pack are `critical`, so today the floor either
+  selects the whole pack or none of it; the mechanism is uniform with §9.10 rather than special-cased.
+- **It judges an observed request, not a route (D308).** The subject of the scan is one concrete
+  request-response pair this run produced — method, path, query and headers as sent. Nothing is
+  synthesised, so there is no cross-product of routes × principals to bound, and an assertion can
+  only ever speak about traffic the suite really generated.
+- **The oracle is differential and needs two declarations.** An **owner** — the test's `as <session>`;
+  an assertion in a test with no owner is `TF063`, and so is one inside a `before file` hook, which
+  runs in a scope that can never have one. Every session a test names is an owner and none of them is
+  probed. **Somebody else** — the probe set is every other declared `session`, plus a built-in
+  `anonymous` probed last (`anonymous` is reserved; `session anonymous` is a config error).
+- **Leaks are judged on resource identity, not on status (D318).** A status oracle is wrong in both
+  interesting directions: an admin legitimately gets a byte-identical `200`, and a collection's
+  *correct* answer for a non-owner is a filtered `200`. So the owner's response is read for ids — an
+  object's root `id`, or each element's root `id` for an array, **and nothing else**: nothing nested,
+  no key aliases, no envelope unwrapping. The probe's body is then walked to any depth with exact
+  leaf equality. Reading is narrow and containment is wide on purpose. A response shaped
+  `{ "data": […], "nextCursor": … }` therefore reports *no resource identity found* and fails rather
+  than passing — a refusal to guess which key holds the payload, in the one place that must not
+  become a false-positive machine.
+
+  | rule | severity | applies when |
+  | --- | --- | --- |
+  | `sec/authz-object-leak` | critical | the owner's 2xx response is a JSON object carrying a root `id`, and at least one principal was judgeable |
+  | `sec/authz-collection-leak` | critical | the owner's 2xx response is a JSON array of objects carrying root `id`s, and at least one principal was judgeable |
+
+  Exactly one can apply to any given response, which is why the ordinary counts line reads
+  `2 rules — 1 applicable, 1 not applicable`.
+- **Five probe outcomes, and only two are a pass (D324).**
+
+  | outcome | when | counts as |
+  | --- | --- | --- |
+  | leaked | an owner id came back | **violation** |
+  | refused | `401`/`403`/`404` | boundary confirmed |
+  | served different content | `2xx` carrying no owner id | boundary confirmed |
+  | inconclusive | `429`, any `5xx`, a non-JSON body, the CSRF case below | **not clean** |
+  | not probed | a mutating method with no opt-in, or a session that would not establish | **not clean** |
+
+  `404` sits with the refusals deliberately: answering `404` rather than `403` so as not to reveal
+  that a resource exists is *correct*, and scoring it as suspicious would fire on the more careful of
+  two correct implementations. `429` and `5xx` are inconclusive rather than refusals because in both
+  the probe demonstrably did not get the resource **and** demonstrably never reached an authorization
+  check — scoring a rate limiter as a boundary would let a suite that trips its own throttle report
+  the throttle as a green result.
+- **A probe set that landed entirely in the bottom two rows is a failure**, the same rule §9.10
+  applies to a pack where nothing was applicable. And every "could not find out" is announced on the
+  **passing** line too, because a green assertion whose whole probe set was rate-limited is precisely
+  the one a reader would otherwise believe had tested something:
+  `3 principals probed — 2 refused, 1 served different content`.
+- **Probes are sequential — one request in flight**, in declared order with `anonymous` last (D325/
+  D326). So an assertion adds one request per probeable principal rather than a burst, and a run's
+  total is bounded by its assertion count. There is no `probe rate` knob because there is nothing to
+  slow down; the bound is held by a test rather than by the shape of a loop.
+- **`privileged` marks a principal that is *meant* to have access** (D307/D310) — left out of every
+  probe set, and said out loud on every result line: `note: not probed as \`admin\` — declared
+  \`privileged\``. It is **a claim about authority, not a speed knob**: marking every session
+  privileged empties the probe set of real identities and is refused outright (`TF063`). It is also a
+  fact about the *server's grant*, not about the declaration — an `oauth2` client-credentials session
+  is privileged whenever its grant mints a privileged token.
+- **Mutating methods need per-host permission (D311/D330).** `GET`, `HEAD` and `OPTIONS` are probed
+  by default; anything else — including a method tflw does not recognise — is `not probed` unless the
+  covering `authorized target` carries an indented `probe mutating`. It hangs off the target because
+  it is a property of *that host*: staging may be safe to read as a stranger and not safe to write to.
+- **Cookie principals are probed anyway, and the ambiguity is reported.** A cookie-borne identity may
+  be refused by a CSRF guard *before* authorization is consulted, and a differential oracle would
+  score that as clean — so the outcome is `inconclusive` with the reason named. Probing rather than
+  pre-flight-skipping is deliberate: the app most worth catching is the one with cookie auth and no
+  CSRF defence at all, which answers `200`, leaks, and is caught.
+- **Every violation writes a runnable repro** under `report/authz-repro/` (D332), named from rule,
+  method, path and principal. A collection leak gets a different template than an object leak
+  (`expect all body.id not equals "…"` rather than `expect status equals 403`), because a filtered
+  `200` is the correct answer there and a repro asserting `403` would go red the moment somebody
+  fixed the bug. A repro names the method, path, principal and leaked id, and never a response body:
+  an id is an identifier, a body is contents.
+- **Every run reports its own coverage** — how many `api` steps in the discovered suite sit in a test
+  that declares an owner — so that "we probed everything we asserted on" cannot be read as "we probed
+  everything". The figure is about the whole discovered suite, not about the tests this run selected.
+- **Requires an `authorized target` covering the origin** (§3.10) exactly as §9.10 does — `TF060` —
+  and, off a private address, the run also wants `--allow-public-target` (§3.10.1, `TF065`/`TF066`).
+- **What it does not judge, stated out loud.**
+  - **A credential written onto the step is refused, not worked around** — an `api` step carrying its
+    own `Authorization` or `Cookie` header would make the comparison one between two identities the
+    run cannot name, so it is `TF062` at check time and a hard failure at run time.
+  - **Not inside `wait until api` (`TF064`), and not inside a workload (`TF033`)** — the first would
+    re-probe on every poll and report a real finding as a *timeout*; the second would multiply
+    cross-identity traffic by the load factor.
+  - **No client certificates on the probe** — against an mTLS-only target every outcome is
+    `not probed` and the assertion fails loudly rather than greening.
+  - **The bound is destruction, not mutation.** A replay oracle re-issues the observed request; it
+    can judge an idempotent write, but it cannot judge a `DELETE`, because confirming the boundary
+    and destroying the resource are the same act.
+  - **A suite can have a sensible session list and zero judgeable principals.** Each exclusion above
+    is individually correct and they compose: a cookie-borne principal is `inconclusive` on a
+    mutating verb, `anonymous` is `refused`, a `privileged` admin is excluded — leaving nobody able
+    to answer. The assertion then fails as having had no power to fail, which is the honest report;
+    the repair is a principal with a different *credential*, since a probe outcome is a fact about
+    the credential rather than about the person.
 
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 

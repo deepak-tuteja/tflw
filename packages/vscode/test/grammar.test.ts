@@ -156,6 +156,41 @@ test('tokenizes `page` + `has no [<severity>] a11y violations` (M3e, M4a catch-u
   assert.ok(hasScope(findToken(lines, 'violations'), 'keyword.operator.word.tflw'));
 });
 
+// M133 (D24b catch-up), verified against the real TextMate tokenizer like every other case here.
+test('tokenizes `has no [<severity>] security violations` (M128b) and `… authorization violations` (M130b, M133 catch-up)', () => {
+  const secLines = tokenizeLines(['  expect response has no serious security violations']);
+  assert.ok(hasScope(findToken(secLines, 'response'), 'support.type.tflw'), '`response` is the scan subject');
+  assert.ok(hasScope(findToken(secLines, 'serious'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(secLines, 'security'), 'keyword.operator.word.tflw'));
+
+  const authzLines = tokenizeLines(['  expect response has no critical authorization violations']);
+  assert.ok(hasScope(findToken(authzLines, 'authorization'), 'keyword.operator.word.tflw'), 'the arc shipped `security` here and not `authorization`');
+  assert.ok(hasScope(findToken(authzLines, 'violations'), 'keyword.operator.word.tflw'));
+});
+
+test('tokenizes the pentest arc config declarations: `authorized target … reason …`, `probe mutating`, `session … privileged` (M133 catch-up)', () => {
+  const lines = tokenizeLines([
+    'defaults',
+    '  authorized target "http://localhost:4001" reason "authorized probe target"',
+    '    probe mutating',
+    'session admin privileged',
+  ]);
+
+  assert.ok(hasScope(findToken(lines, 'authorized'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'target'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'reason'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'probe'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'mutating'), 'keyword.control.tflw'));
+  assert.ok(hasScope(findToken(lines, 'privileged'), 'keyword.control.tflw'));
+  // The reason sentence stays a string even when it is made entirely of the words just added to
+  // the wordlist — `\b`-anchored keyword patterns must not reach inside a quoted literal. Written
+  // as `some(...)` rather than `findToken`, which throws on a miss and so cannot express absence.
+  assert.ok(
+    lines[1]!.some((t) => t.text === 'authorized probe target' && hasScope(t, 'string.quoted.double.tflw')),
+    'the reason sentence is one string token, not three keywords',
+  );
+});
+
 test('tokenizes `request to "…" was made` (M3d, M4a catch-up)', () => {
   const lines = tokenizeLines(['  expect request to "/orders" was made']);
 

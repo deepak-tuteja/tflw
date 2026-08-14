@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, collectSymbols, collectSemanticTokens, type SemanticToken, type SemanticTokenType } from '../src/index.js';
+import { parseSource, parseConfigSource, collectSymbols, collectConfigSymbols, collectSemanticTokens, type SemanticToken, type SemanticTokenType } from '../src/index.js';
 
 /** Ground truth for a span, computed independently of the lexer/parser by a plain string scan. */
 function posOf(source: string, needle: string, occurrence = 1): { offset: number } {
@@ -19,6 +19,16 @@ function posOf(source: string, needle: string, occurrence = 1): { offset: number
 function tokensOf(source: string): readonly SemanticToken[] {
   const { program } = parseSource(source);
   const symbols = collectSymbols(program, source);
+  return collectSemanticTokens(source, symbols);
+}
+
+/** The `tflw.config` dialect (M133). `server.ts` hands `collectSemanticTokens` whatever the store
+ * analyzed, which is a `ConfigFile` for a config buffer — so config vocabulary is colored by this
+ * same function, and the only difference on the test side is which parser/symbol collector feeds
+ * it. */
+function configTokensOf(source: string): readonly SemanticToken[] {
+  const { config } = parseConfigSource(source);
+  const symbols = collectConfigSymbols(config, source);
   return collectSemanticTokens(source, symbols);
 }
 
@@ -134,6 +144,51 @@ test('collectSemanticTokens: `has no <severity> a11y violations` (M3e) words cla
   assertTypeAt(tokens, source, 'critical', 'operator');
   assertTypeAt(tokens, source, 'a11y', 'operator');
   assertTypeAt(tokens, source, 'violations', 'operator');
+});
+
+// M133 (D24b catch-up). The two pentest scans are asserted separately rather than folded into the
+// a11y test above, because they were not equally covered: `security` was already in `OPERATORS`
+// (M128b) and `authorization` was not, so one of these two lines passed on `main` and the other did
+// not. A single combined assertion would have hidden which.
+test('collectSemanticTokens: `has no <severity> security violations` (M128b) words classify as `operator`', () => {
+  const source = `test "ok"\n  expect response has no serious security violations\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'serious', 'operator');
+  assertTypeAt(tokens, source, 'security', 'operator');
+  assertTypeAt(tokens, source, 'violations', 'operator');
+});
+
+test('collectSemanticTokens: `has no <severity> authorization violations` (M130b/D304) words classify as `operator`', () => {
+  const source = `test "ok"\n  expect response has no critical authorization violations\n`;
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'critical', 'operator');
+  assertTypeAt(tokens, source, 'authorization', 'operator');
+  assertTypeAt(tokens, source, 'violations', 'operator');
+});
+
+// M133: the arc's config-dialect vocabulary. `privileged` is asserted on a `session` header rather
+// than in isolation because that is the only place it is legal, and the header is also where the
+// session *name* lives — so this doubles as proof the new keyword does not steal the name's span
+// from the AST-derived pass, which runs first and claims it.
+test('collectSemanticTokens: `authorized target`/`reason`/`probe mutating`/`privileged` (M128b/M130b) classify as `keyword` in tflw.config', () => {
+  const source =
+    'defaults\n' +
+    '  authorized target "http://localhost:4001" reason "self-hosted test fixture"\n' +
+    '    probe mutating\n' +
+    '\n' +
+    'session admin privileged\n' +
+    '  header "Authorization" is "Bearer t"\n';
+  const tokens = configTokensOf(source);
+  assertTypeAt(tokens, source, 'authorized', 'keyword');
+  assertTypeAt(tokens, source, 'target', 'keyword');
+  assertTypeAt(tokens, source, 'reason', 'keyword');
+  assertTypeAt(tokens, source, 'probe', 'keyword');
+  assertTypeAt(tokens, source, 'mutating', 'keyword');
+  assertTypeAt(tokens, source, 'privileged', 'keyword');
+  // `session admin privileged` must not become three keywords in a row. Session names get no
+  // semantic token at all by design (`symbolKindToTokenType` returns null for `session` — grammar
+  // coloring already covers them), so the correct assertion is *absence*, not a different type.
+  assert.equal(findToken(tokens, source, 'admin'), undefined, 'the session name is not a keyword');
 });
 
 test('collectSemanticTokens: `was made` (M3d) classifies as `operator`', () => {
