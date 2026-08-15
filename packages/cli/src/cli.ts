@@ -104,6 +104,7 @@ import {
   writeAuthzRepros,
   writeJunitXml,
   writeResultsJson,
+  writeSarif,
   writeLastRun,
   readLastRun,
   describeRunFilter,
@@ -1916,6 +1917,12 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
   await writeResultsJson(merged, reportDir);
+  // M135b (D403/D404) — `findings.sarif`, from the same redacted report and **only when the run
+  // actually scanned**. There is no flag: a fourth artifact behaving unlike the other three, gated
+  // on something nobody passes, is a feature nobody has. The condition is the artifact-level form of
+  // this arc's three-state rule — an empty `results` array makes `upload-sarif` resolve every
+  // existing alert, so a functional-only run must produce no file rather than an empty one.
+  await writeSarif(merged, reportDir, { version: await getVersion(), authzFindings });
   // D250 — the record now carries how this run was narrowed, so the *next* `--failed` can say what
   // it is replaying. Still unconditional and still always overwritten: not writing on a filtered
   // run was rejected for introducing a second silence (run `--tag smoke`, then `--failed`, and

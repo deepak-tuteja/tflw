@@ -33,6 +33,10 @@ export { renderFindings, renderScanCoverage, findingsSummaryLine, sortFindings }
 // `testFlow-tests` asserts the emitted document against them rather than against a copy.
 export { REMEDIATION_KB, remediationFor, type KbEntry, type KbRef } from './kb.js';
 export { SARIF_SEVERITY, sarifSeverityOf, type SarifLevel, type SarifSeverity } from './sarif-severity.js';
+// M135b (D403/D404) — R8's document, re-attached to `run` because the mode it was written for will
+// never exist. `writeSarif` writes nothing at all when the run did not scan, which is D404: an empty
+// `results` array tells GitHub every existing alert is fixed.
+export { buildSarifLog, writeSarif, runScanned, sarifUri, SARIF_FILE, SARIF_SCHEMA_URL, type SarifOptions } from './sarif.js';
 export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
 /** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links

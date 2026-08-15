@@ -2639,6 +2639,41 @@ correct trade — a finding you must read is strictly better than a gate you can
 without this the only run in which that information exists is one where nobody is reading a failure
 message. The census renders on passing runs too, which is exactly where it used to disappear.
 
+### 9.14 Remediation and `findings.sarif` (M135, D402–D417) ✅
+
+**Every rule has a remediation entry**, and shipping one without it is a build error rather than a
+gap somebody notices later. An entry states what the weakness is, why it is worth repairing, the
+repair in framework-neutral terms and again concretely, a CWE id and the references the fix is
+traceable to. It carries **no severity**: that is stated in the rule, and a second authored copy is
+how the rule that fails a build and the rule shown in a dashboard come to disagree with nothing to
+say which is right. Entries render in `report.html` as a **possible fixes** disclosure per finding.
+
+**`report/findings.sarif`** is written — SARIF 2.1.0 — **when the run evaluated at least one
+security, authorization or input-handling assertion, and not otherwise.** It is the only report
+artifact that is conditional, because an empty SARIF document is not neutral: `upload-sarif` reads an
+empty results array as *everything previously reported is fixed* and resolves the matching alerts, so
+a run that did not look must produce no file rather than an empty one. Absence is a signal a workflow
+can test; emptiness is a signal that reads as good news.
+
+A result anchors to **the `.tflw` assertion's file and line**, repo-relative with a `uriBaseId`, and
+carries the endpoint as a SARIF **logical location** — the endpoint is the finding's real subject,
+but its source is usually not in the repository being scanned and may not be in any repository. The
+four severities map onto SARIF's three levels (`critical`/`serious` → `error`, `moderate` →
+`warning`, `minor` → `note`), each with the numeric a code-scanning UI ranks on, and the CWE rides in
+`rule.properties.tags` in the form those UIs filter by.
+
+The gate's two relaxations are **not** the same thing in the document. A baselined finding is
+uploaded **suppressed** — a decision a human recorded outside the tool — while one below `--fail-on`
+is an ordinary result at its own level: unranked is not accepted, and a team that later lowers the
+floor should not watch a pile of alerts un-dismiss themselves with no corresponding change in the
+application. Seeded findings (`--probe-seeded`) are absent entirely; they carry no stable identity,
+and a tracking system keyed on identity would mint a permanent new alert on every reseed.
+
+`rules[]` declares the rules that **applied**; the ones that stood down are listed under
+`runs[].properties["tflw/notApplicable"]` with their reasons. Declaring the whole catalog every run
+would flatten *applied and silent* into *never applicable*, which is the one distinction the census
+exists to make.
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test

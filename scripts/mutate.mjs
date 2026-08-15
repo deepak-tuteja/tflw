@@ -1597,6 +1597,43 @@ const REGISTRY = [
     find: '      const fix = entry ? renderFix(entry) : \'\';',
     replace: '      const fix = entry ? renderFix(entry) : \'\';\n      if (!entry) return \'\';',
   },
+  // --- M135b -----------------------------------------------------------------------------------
+  {
+    id: 'sarif-written-when-nothing-scanned',
+    milestone: 'm135b',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: 'D404 removed: a run that never scanned writes a SARIF document with an empty `results` array. `upload-sarif` reads that as *everything previously reported is fixed* and resolves the matching alerts, so a repository whose functional and security suites are separate CI jobs has the functional job silently close the security job\'s entire backlog — green run, empty dashboard, no error anywhere. This is the arc\'s three-state rule at the artifact layer, and the only mutation here whose damage lands outside tflw',
+    find: '  return (report.scanCoverage?.length ?? 0) > 0 || (report.findings?.length ?? 0) > 0;',
+    replace: '  return true;',
+  },
+  {
+    id: 'sarif-includes-seeded-findings',
+    milestone: 'm135b',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: 'D411 reversed: generated payloads reach the SARIF document. They carry no fingerprint by construction (D369) and GitHub dedupes on fingerprints, so each one becomes a permanent alert and the next seed mints another — and the obvious cure for the churn is to invent the identity D369 deliberately withheld, which would also make them baselinable and gating. The build is green either way and the damage appears only in someone\'s alert list, weeks later',
+    find: '  const findings = sortFindings((report.findings ?? []).filter((f) => !f.seeded));',
+    replace: '  const findings = sortFindings(report.findings ?? []);',
+  },
+  {
+    id: 'sarif-suppresses-below-floor',
+    milestone: 'm135b',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: 'D410 collapsed: a finding held back by `--fail-on` is uploaded as a *suppressed* alert alongside a baselined one. It makes the document agree exactly with the build verdict, which is why it is tempting, and it overloads "a human accepted this" onto "a flag ranked this out" — two states with opposite lifetimes. A team that later lowers the floor then watches a pile of alerts un-dismiss themselves with no corresponding change in the application',
+    find: "    ...(f.withheld === 'baseline' ? { suppressions:",
+    replace: "    ...(f.withheld ? { suppressions:",
+  },
+  {
+    id: 'sarif-declares-every-rule',
+    milestone: 'm135b',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: 'D412 flattened: `rules[]` declares the whole catalog every run instead of the rules that applied. This is what most SARIF producers do and it makes document diffs clean, which is exactly the argument that loses — a rule that applied and found nothing and a rule that stood down become one indistinguishable empty state, and the machine-readable artifact stops being able to answer *did you even check for this*. `M128-01` is filed about that question',
+    find: '  const known = SCAN_RULE_IDS.filter((id) => applied.has(id));',
+    replace: '  const known = [...SCAN_RULE_IDS];',
+  },
 ];
 
 /**

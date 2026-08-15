@@ -127,8 +127,14 @@ extension; the full load-testing arc — the five workload shapes (`ramp`/`hold`
 and a `parallel`/`sequential` test-header modifier, all rendering into the same one report; and a
 reuse pass (`tflw refactor apply`).
 
-**Next:** security/pen-test testing (`tflw scan`) — zero code today, and dogfooded against the real
-app before anything publishes. `tflw migrate` also ships but has nothing to do yet: no checker rule
+Security testing is **built and dogfooded, inside `tflw run` rather than as a mode of its own**:
+response-hygiene, authorization (BOLA/IDOR) and input-handling assertions — `expect response has no
+security violations`, `… no authorization violations`, `… no input handling violations` — with a
+`--fail-on` severity gate, a `--baseline` file for staged adoption, per-finding remediation in
+`report.html`, and a `findings.sarif` for GitHub code scanning.
+
+**Next:** an active crawl/probe tier, and a final acceptance pass against the dogfood app's planted
+vulnerability ledger, before anything publishes. `tflw migrate` also ships but has nothing to do yet: no checker rule
 emits a deprecation, because the grammar has been additive-only since the first release, so it
 always reports `no deprecated syntax found`. See [SPEC.md](SPEC.md)'s per-section status badges for
 the full shipped-vs-planned breakdown, and [CHANGELOG.md](CHANGELOG.md) for what's built and pending
