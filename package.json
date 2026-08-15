@@ -35,6 +35,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/sarif": "^2.1.7",
+    "ajv": "^8.20.0",
     "c8": "^12.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

@@ -177,6 +177,50 @@ could learn it stood down is one where something else failed. This renders on **
 that is the point. A green run that tested less than you think and a green run that tested everything
 should not look identical.
 
+## Possible fixes, in the report
+
+Every finding in `report.html` carries a collapsed **possible fixes** disclosure: what the weakness
+is, why it is worth repairing, the repair in framework-neutral terms and again concretely in NestJS,
+and the CWE and OWASP references the fix is traceable to. There is nothing to enable — an alert that
+names a weakness and says nothing about repairing it is a task handed to someone with the research
+still to do.
+
+## `findings.sarif` — GitHub code scanning {#sarif}
+
+A run that evaluated at least one security, authorization or input-handling assertion also writes
+**`report/findings.sarif`** — SARIF 2.1.0, which GitHub's code-scanning UI ingests directly:
+
+```yaml
+- run: npx tflw run
+- uses: github/codeql-action/upload-sarif@v3
+  # The file exists only when the run actually scanned, so guard on it rather than on `always()`.
+  if: hashFiles('report/findings.sarif') != ''
+  with:
+    sarif_file: report/findings.sarif
+```
+
+Each alert anchors to **the `.tflw` line that made the assertion** — the endpoint is usually not
+source code in the repository being scanned, so it travels as a SARIF *logical location* where a
+consumer can group by it. The rule's remediation is the same knowledge base `report.html` renders,
+so the alert arrives with its fix, its CWE tag and its references.
+
+Three things about the file are deliberate and worth knowing before you wire it up:
+
+- **A run that did not scan writes no file at all** — not an empty one. `upload-sarif` reads an empty
+  results array as *everything previously reported is fixed* and resolves the matching alerts, so a
+  functional-only job emitting an empty document would silently close your security backlog. That is
+  why the workflow above guards on `hashFiles` rather than on `always()`.
+- **A baselined finding is uploaded as a dismissed alert**; one below `--fail-on` is uploaded as an
+  ordinary one. Accepted and unranked are different states — nobody reviewed the second — and a team
+  that later lowers the floor should not watch a pile of alerts un-dismiss themselves.
+- **Rules that stood down are not in the rule catalog.** They are listed under
+  `runs[].properties["tflw/notApplicable"]` with their reasons, so *applied and silent* stays
+  distinguishable from *never applicable* in the machine-readable artifact too.
+
+Findings drawn by `--probe-seeded` (above) are **not** in the document: they carry no
+fingerprint by construction, and a tracking system keyed on identity would mint a fresh permanent
+alert on every reseed.
+
 ## Related
 
 - [Security hygiene scanning](/guide/security-scanning) — the response-inspection scan

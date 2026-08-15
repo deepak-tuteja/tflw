@@ -8,6 +8,11 @@ Every run writes `report/report.html` (step timeline, full request/response deta
 report as JSON — read a run's outcome from a file instead of scraping stdout) — they all fall out of
 the same event stream `tflw run` already emits, nothing to wire up.
 
+A run that evaluated a security, authorization or input-handling assertion writes a fourth file,
+[`report/findings.sarif`](/guide/findings-and-baselines#sarif), for GitHub code scanning. It is the
+one artifact that is **not** written unconditionally, and that is deliberate: an empty SARIF document
+tells GitHub every previously reported alert is fixed.
+
 `report.html` is a single file unless the run captured a screenshot or trace large enough to be
 written out beside it, in which case the report is `report.html` **plus** `report/assets/` — its
 footer tells you which, along with what the file actually contains. Read that footer before you
