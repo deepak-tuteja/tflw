@@ -146,8 +146,15 @@ export interface AuthzRuleOutcome {
   readonly because?: string;
 }
 
+/** `M135a` (D409) — this pack's ids as a closed tuple, for the same reason `SECURITY_RULE_IDS` is
+ *  one: the remediation KB is keyed on the union, so a third authorization rule cannot be declared
+ *  without an entry to go with it. */
+export const AUTHZ_RULE_IDS = ['sec/authz-object-leak', 'sec/authz-collection-leak'] as const;
+
+export type AuthzRuleId = (typeof AUTHZ_RULE_IDS)[number];
+
 export interface AuthzRule {
-  readonly id: string;
+  readonly id: AuthzRuleId;
   readonly severity: Severity;
   readonly description: string;
   readonly appliesWhen: string;
@@ -321,7 +328,7 @@ function idList(ids: readonly string[]): string {
  * drift into disagreeing about what a leak is.
  */
 function leakRule(args: {
-  readonly id: string;
+  readonly id: AuthzRuleId;
   readonly shape: Exclude<OwnerShape, 'unreadable'>;
   readonly description: string;
   readonly appliesWhen: string;

@@ -1578,6 +1578,25 @@ const REGISTRY = [
     find: '  if (byReason.size === 0) return \'\';',
     replace: '  return \'\';\n  if (byReason.size === 0) return \'\';',
   },
+  // --- M135a -----------------------------------------------------------------------------------
+  {
+    id: 'kb-prose-rendered-unescaped',
+    milestone: 'm135a',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/findings.ts',
+    what: 'the remediation entry\'s prose reaches `report.html` without being escaped first. The KB is authored text and every entry currently in it is inert, so the build is green and the page looks right — which is exactly why this is worth a mutation rather than a comment: the file it renders into is the one carrying *reflected input* findings, and the class of defect it documents is the class its own renderer would then have. Escaping before the backtick spans are formed is also the order that matters, since escaping afterwards would let an entry close the `<code>` element it opened',
+    find: '  return esc(text).replace(/`([^`]+)`/g, \'<code>$1</code>\');',
+    replace: '  return text.replace(/`([^`]+)`/g, \'<code>$1</code>\');',
+  },
+  {
+    id: 'unknown-rule-drops-the-finding',
+    milestone: 'm135a',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/findings.ts',
+    what: 'a finding whose rule the KB does not know is rendered as nothing at all rather than as a row without fixes. The path is a `results.json` written by a newer build and opened by an older reporter, and the failure is this arc\'s standing one in miniature — a report that silently omits what it could not explain reads exactly like a run that found less',
+    find: '      const fix = entry ? renderFix(entry) : \'\';',
+    replace: '      const fix = entry ? renderFix(entry) : \'\';\n      if (!entry) return \'\';',
+  },
 ];
 
 /**

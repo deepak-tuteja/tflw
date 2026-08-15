@@ -15,6 +15,10 @@ import type { RunReport, ScanFinding, ScanRuleCensus, WithheldReason } from '@tf
 import { SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
 
 import { esc } from './escape.js';
+// M135a (D402) — R7's remediation KB. The reason it pays for itself twice: `report.html` gains
+// "possible fixes" whether or not anyone ever parses the SARIF file `M135b` writes from the same
+// entries.
+import { remediationFor, type KbEntry } from './kb.js';
 
 /** Severity order for display — worst first, so the row a reader acts on is the row they see. */
 const SEVERITY_ORDER: Readonly<Record<string, number>> = { critical: 0, serious: 1, moderate: 2, minor: 3 };
@@ -47,6 +51,40 @@ export function findingsSummaryLine(findings: readonly ScanFinding[]): string {
   return `${findings.length} finding${findings.length === 1 ? '' : 's'} — ${parts.join(', ')}`;
 }
 
+/**
+ * KB prose is authored with markdown-style backtick code spans, because its other consumer is
+ * SARIF's `help.markdown` (D408). Here they become `<code>`, after escaping — the escape runs first,
+ * so anything inside a span is already inert and the span itself cannot be forged by the content.
+ */
+function codeSpans(text: string): string {
+  return esc(text).replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+/**
+ * The remediation block for one finding: what, why, the repair, and the citations.
+ *
+ * Collapsed by default. A reader triaging a run wants the list of findings first and the essay
+ * second, and the row itself already carries the endpoint, the site and the detector's evidence —
+ * this is the part they open once they have decided which row to act on.
+ *
+ * **The references are links, and that does not break the report's self-containment.** Nothing here
+ * is fetched: the document still opens over `file://` with no network access of any kind, and a link
+ * is only followed if a human clicks it.
+ */
+function renderFix(entry: KbEntry): string {
+  const refs = entry.refs.map((r) => `<a href="${esc(r.url)}" rel="noreferrer">${esc(r.label)}</a>`).join(' · ');
+  return (
+    `<details class="finding-fix"><summary>possible fixes</summary>` +
+    `<p class="fix-title">${esc(entry.title)}</p>` +
+    `<p class="fix-what">${codeSpans(entry.what)}</p>` +
+    `<p class="fix-why">${codeSpans(entry.why)}</p>` +
+    `<p class="fix-do"><strong>Fix</strong> — ${codeSpans(entry.fixGeneric)}</p>` +
+    `<p class="fix-do"><strong>In NestJS</strong> — ${codeSpans(entry.fixNest)}</p>` +
+    `<p class="fix-refs">CWE-${entry.cwe} · ${refs}</p>` +
+    `</details>`
+  );
+}
+
 export function renderFindings(report: RunReport): string {
   const findings = report.findings ?? [];
   if (!findings.length) return '';
@@ -59,11 +97,16 @@ export function renderFindings(report: RunReport): string {
       const fp = f.fingerprint ? `<code class="finding-fp">${esc(f.fingerprint)}</code>` : '<span class="finding-fp">— not baselinable</span>';
       const seeded = f.seeded ? `<div class="finding-seeded">seeded (seed ${f.seeded.seed}) — <strong>promote this payload into the corpus</strong>: <code>${esc(f.seeded.payload)}</code></div>` : '';
       const where = [f.endpoint, f.location, f.invariant].filter(Boolean).map((p) => esc(String(p))).join(' · ');
+      // M135a (D409) — every rule this build ships has an entry, enforced by the compiler. The
+      // fallback arm is for a `results.json` written by a newer build and rendered by an older
+      // reporter: it degrades to a row without fixes rather than throwing on someone's report.
+      const entry = remediationFor(f.rule);
+      const fix = entry ? renderFix(entry) : '';
       return (
         `<tr class="finding ${f.withheld ? 'finding-off' : 'finding-on'}">` +
         `<td class="sev sev-${esc(f.severity)}">${esc(f.severity)}</td>` +
         `<td><code>${esc(f.rule)}</code> ${badge}<div class="finding-where">${where}</div>` +
-        `<div class="finding-detail">${esc(f.detail)}</div>${seeded}</td>` +
+        `<div class="finding-detail">${esc(f.detail)}</div>${seeded}${fix}</td>` +
         `<td>${fp}</td></tr>`
       );
     })

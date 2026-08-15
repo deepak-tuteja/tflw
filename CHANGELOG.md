@@ -302,6 +302,26 @@ a different thing depending on which matcher a file happened to use.
   had already failed — and the run where it disappeared was the ordinary green one. Closes the
   long-open row about a report that could not name its not-applicable rules (decision 389).
 
+### Added — pen-test arc, remediation (`0.4` internal milestone, M135a)
+
+- **Every finding now carries how to fix it.** All eighteen rules across the three scans have an
+  authored knowledge-base entry — what the weakness is, why it is worth repairing, the repair in
+  framework-neutral terms and again concretely in NestJS, a CWE id and the OWASP document the fix is
+  traceable to — rendered as a collapsed *possible fixes* disclosure inside each row of the report's
+  findings block. An alert that names a weakness and says nothing about repairing it is a task
+  handed to somebody with the research still to do (decision 402).
+- **A rule cannot ship without one.** Each pack exports its ids as a closed tuple and the KB is
+  typed over their union, so a nineteenth rule fails the build until an entry exists for it. The
+  failure this prevents is quiet — remediation missing because nobody wrote it looks exactly like
+  remediation omitted because the fix was thought obvious, and it surfaces to whoever is triaging
+  (decision 409).
+- **Severity stays in the rule modules**, against the original report design putting it in the KB. It
+  is already stated twice per input-handling rule; a third home is how the rule that fails a build
+  and the rule shown in a dashboard come to disagree with nothing to say which is right
+  (decision 408).
+- Groundwork, not yet user-visible: the SARIF severity mapping that `M135b`'s exporter will publish —
+  four tflw levels onto SARIF's three, each with the numeric GitHub actually ranks on (decision 406).
+
 ### Changed — grammar freeze (M66–M69)
 
 The shipped grammar is frozen additive-only from `1.0.0` on, so every incompatible change had to
