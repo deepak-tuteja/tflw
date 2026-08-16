@@ -1809,6 +1809,37 @@ const REGISTRY = [
     find: "const { ARTIFACT_CONTRACT } = await import('@tflw/reporter');\nwriteFileSync(\n  new URL('../dist/artifact-contract.json', import.meta.url),\n  `${JSON.stringify(ARTIFACT_CONTRACT, null, 2)}\\n`,\n  'utf8',\n);",
     replace: '',
   },
+
+  // `D451` — the three controls the two folded-in `M134` rows are closed by. Each is the exact edit
+  // its row was worried about, so a registry entry is what stops the guard from quietly becoming
+  // decorative later.
+  {
+    id: 'enabled-payloads-classes-default',
+    milestone: 'm137a',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/inputCorpus.ts',
+    what: "`M134b-01`'s residue, applied. `enabledPayloads` gains a default for its class list, which reads as a harmless convenience and is invisible to every other test in the package because they all pass it explicitly. The consequence is that a caller who omits the argument silently receives payloads from classes the target's config never granted — D372 undone by omission rather than by decision. The row left this as a sentence asking somebody to watch for it; this is the watch",
+    find: 'export function enabledPayloads(classes: readonly MutationClass[], corpus',
+    replace: 'export function enabledPayloads(classes: readonly MutationClass[] = [], corpus',
+  },
+  {
+    id: 'coverage-comment-denies-the-gate',
+    milestone: 'm137a',
+    pkg: ROOT_SUITE,
+    file: '.github/workflows/ci.yml',
+    what: "`M134a-01` re-created: `ci.yml`'s Coverage step stops saying it gates. Nothing breaks, every test passes, and the next person to read a red Coverage step is told by the file describing the job that the job cannot fail — which is measured, not hypothetical, since that is exactly how `M134a`'s run was first misdiagnosed as a `c8` flake. The mutation is on a comment on purpose: this repository has now paid for stale prose three times, and prose is only defended by something that reads it",
+    find: 'THIS STEP GATES',
+    replace: 'THIS STEP IS INFORMATIONAL',
+  },
+  {
+    id: 'shard-count-of-stale',
+    milestone: 'm137a',
+    pkg: ROOT_SUITE,
+    file: '.github/workflows/ci.yml',
+    what: "`D449`'s own near-miss, frozen as a control. The reassembly job's `--of=` falls behind the `shard:` matrix — which is what actually happened during this milestone's re-shard, and it cost a full CI round trip: twelve shards each green about themselves, and a failure three jobs away from the two integers that disagreed. `verify-shards.mjs` still catches it at runtime and is still the only thing that can see a shard that never reported; this kills it in a second instead",
+    find: 'verify-shards.mjs shards --of=12',
+    replace: 'verify-shards.mjs shards --of=6',
+  },
 ];
 
 /**

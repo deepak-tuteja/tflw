@@ -138,3 +138,38 @@ test('a missing artifact directory fails the check rather than passing it', () =
   assert.match(r.stderr, /cannot read/);
   assert.match(r.stderr, /not a reason to pass/);
 });
+
+// M137a (`D449`) — the three copies of the shard count in `ci.yml`, held to each other statically.
+//
+// This file's own header names the hazard: *"the workflow's matrix and the `/n` in the command are
+// two numbers with nothing holding them together"*. `D449`'s re-shard proved the count is written
+// three times, not two — `shard:`, `--shard=i/n`, and `mutation-controls`' `--of=n` — by widening
+// the first two to 12 and leaving the third at 6. All twelve shards passed and the reassembly job
+// failed, which is `verify-shards.mjs` doing exactly its job.
+//
+// So why add this. That catch cost a full CI round trip: twelve sweeps, ~14 minutes of the longest
+// shard, and a red run whose failure is three jobs away from the line that caused it. Nothing about
+// the mismatch needs a mutation sweep to detect — it is two integers in one file. The runtime check
+// stays, because it is the only thing that can see a shard that *never reported*; this one just
+// moves the cheapest half of its work to the front, where a re-shard is being typed.
+test('ci.yml writes the same shard count in all three places (D449)', () => {
+  const ci = readFileSync(path.join(HERE, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
+
+  const matrix = ci.match(/^\s*shard: \[([^\]]+)\]/m);
+  assert.ok(matrix, 'ci.yml no longer has a `shard:` matrix — if the sweep was restructured, retarget this test rather than deleting it');
+  const matrixCount = matrix[1].split(',').length;
+
+  const perShard = [...ci.matchAll(/--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/g)].map((m) => Number(m[1]));
+  assert.ok(perShard.length > 0, 'ci.yml no longer passes --shard=i/n to mutate.mjs');
+
+  const of = [...ci.matchAll(/verify-shards\.mjs \S+ --of=(\d+)/g)].map((m) => Number(m[1]));
+  assert.ok(of.length > 0, 'ci.yml no longer passes --of=n to verify-shards.mjs');
+
+  for (const n of [...perShard, ...of]) {
+    assert.equal(
+      n,
+      matrixCount,
+      `ci.yml's shard count disagrees with itself: the matrix lists ${matrixCount} shards, and another copy says ${n}. Every shard will pass and the registry will be under-applied, or the reassembly job will fail after a full sweep. All three copies move together.`,
+    );
+  }
+});

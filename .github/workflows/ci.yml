@@ -101,10 +101,30 @@ jobs:
       # docs.yml runs on pushes to main, after review.
       - run: npm run test:links -w @tflw/docs-site
 
-      # Coverage baseline (decision: M21) — informational only, no threshold gate yet (a
-      # green-field target picked before a real baseline exists is unfair debt). Runs once (not
-      # once per Node version in the matrix) since it's the same source regardless of runtime.
-      # Also needs xvfb-run: `c8 npm test` re-runs the same headed watch tests underneath.
+      # Coverage — THIS STEP GATES. It has since `M86` added `"check-coverage": true` to
+      # `.c8rc.json`, and until `M137a` this comment still carried `M21`'s sentence saying it did
+      # not ("informational only, no threshold gate yet"). Two commits, one of which made the
+      # other's sentence false, and nothing noticed for fifty milestones (`M134a-01`).
+      #
+      # THE MEASURED COST OF THAT, which is why the row was a row and not a chore: `M134a`'s run
+      # went red on exactly this step with `# fail 0` in all eight suites, and the first reading of
+      # the failure was that a test had flaked under `c8` — because the file describing the job said
+      # the job could not fail. A stale orienting comment does not merely fail to help; it sends the
+      # reader to look for a defect that is not there.
+      #
+      # A red Coverage step with every test green means the floor was crossed. The floor lives in
+      # `.c8rc.json` and its derivation — measured 94.66 / 88.56 / 94.6 on 2026-08-05, pinned one
+      # point low on purpose — is documented at length in `scripts/coverage.mjs`. **Do not lower it
+      # to make a red run green.** Write the test the uncovered line is asking for.
+      #
+      # The four numbers are deliberately NOT repeated here. `M134a-01` prescribed copying them into
+      # this comment; doing so would have created a fourth place they live and a fourth place they
+      # can go stale, which is the exact defect this comment is being rewritten to repair. Two homes
+      # (the machine-readable floor, and the prose explaining it) are what
+      # `scripts/verify-coverage-comment.test.mjs` holds to each other.
+      #
+      # Runs once (not once per Node version in the matrix) since it's the same source regardless of
+      # runtime. Also needs xvfb-run: `c8 npm test` re-runs the same headed watch tests underneath.
       - name: Coverage
         if: matrix.node-version == 22
         run: xvfb-run -a npm run coverage
@@ -275,9 +295,16 @@ jobs:
   # M127 — the job that says the shards added up, and the only one entitled to.
   #
   # Each shard above is green about itself and cannot be green about the others. The number of
-  # shards is written twice — in `shard:` and in `--shard=i/12` — and nothing in YAML holds those
-  # together: delete `4` from the matrix and eleven jobs run, all eleven pass, and a twelfth of the
-  # registry is never applied. Every one of those jobs is telling the truth.
+  # shards is written THREE times — in `shard:`, in `--shard=i/12`, and in this job's `--of=` below —
+  # and nothing in YAML holds those together: delete `4` from the matrix and eleven jobs run, all
+  # eleven pass, and a twelfth of the registry is never applied. Every one of those jobs is telling
+  # the truth.
+  #
+  # `M137a` (`D449`): this comment said *twice* until the re-shard, and the copy it did not count is
+  # the one that was missed — `shard:` and `--shard=` were widened to 12 and `--of=` was left at 6.
+  # All twelve shards passed and this job failed, which is the design working: the check that exists
+  # because nothing holds the copies together caught the copy the comment describing it forgot.
+  # Counting the copies is now the comment's whole job, so it is worth keeping accurate.
   #
   # So this reassembles the registry from what the shards wrote down. It keeps the old job's name on
   # purpose: `mutation controls` is the check that has always meant "every mutation ran and none
@@ -312,4 +339,4 @@ jobs:
 
       # And then coverage, which is the half no individual shard can attest to.
       - name: Every mutation was run by some shard
-        run: node scripts/verify-shards.mjs shards --of=6
+        run: node scripts/verify-shards.mjs shards --of=12
