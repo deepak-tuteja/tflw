@@ -104,11 +104,39 @@ export interface RuleOutcome {
   readonly because?: string;
 }
 
+/**
+ * `M135a` (D409) — the pack's ids as a closed tuple, in the pack's own severity-descending order.
+ *
+ * The tuple exists so that the remediation KB can be typed `Record<SecurityRuleId, KbEntry>`: a
+ * thirteenth hygiene rule cannot be declared without adding its id here, and adding it here cannot
+ * compile until the KB has an entry for it. That chain is the whole point — an alert with no
+ * remediation looks identical to a weakness whose fix was thought obvious, and it surfaces to
+ * whoever is triaging at the worst possible moment. Making the invalid state unrepresentable is the
+ * same instinct as `inputCorpus.ts`'s construction-time vacuity check (D374), one layer out.
+ *
+ * `sec/`-prefixed so a finding's origin is legible next to an axe-core rule id in the same report —
+ * axe's ids are bare (`color-contrast`), and once two scanners share `Finding` the unprefixed form
+ * stops being self-describing.
+ */
+export const SECURITY_RULE_IDS = [
+  'sec/cookie-not-httponly',
+  'sec/cookie-not-secure',
+  'sec/cors-wildcard-with-credentials',
+  'sec/hsts-missing',
+  'sec/csp-missing',
+  'sec/tls-version-old',
+  'sec/tls-weak-cipher',
+  'sec/x-frame-options',
+  'sec/cookie-samesite-none',
+  'sec/nosniff-missing',
+  'sec/authenticated-response-cacheable',
+  'sec/server-version-disclosure',
+] as const;
+
+export type SecurityRuleId = (typeof SECURITY_RULE_IDS)[number];
+
 export interface SecurityRule {
-  /** `sec/`-prefixed so a finding's origin is legible next to an axe-core rule id in the same
-   * report — axe's ids are bare (`color-contrast`), and once two scanners share `Finding` the
-   * unprefixed form stops being self-describing. */
-  readonly id: string;
+  readonly id: SecurityRuleId;
   readonly severity: Severity;
   readonly description: string;
   /** The precondition, in the words D284 states it in — printed in the not-applicable listing, so a
@@ -187,12 +215,12 @@ function cookies(o: Observation): ParsedCookie[] {
 }
 
 /** A rule with no precondition — applicable against every response there is. */
-function always(id: string, severity: Severity, description: string, check: (o: Observation) => Finding[]): SecurityRule {
+function always(id: SecurityRuleId, severity: Severity, description: string, check: (o: Observation) => Finding[]): SecurityRule {
   return { id, severity, description, appliesWhen: 'always', evaluate: (o) => ({ applicable: true, findings: check(o) }) };
 }
 
 function gated(
-  id: string,
+  id: SecurityRuleId,
   severity: Severity,
   description: string,
   appliesWhen: string,
@@ -216,7 +244,7 @@ function gated(
  * carry. The exceptions are the per-cookie rules, which genuinely fire once per `Set-Cookie` line —
  * two insecure cookies on one endpoint are two repairs and must not collapse into one fingerprint.
  */
-function finding(rule: { id: string; severity: Severity; description: string }, detail: string, where?: FindingSite): Finding {
+function finding(rule: { id: SecurityRuleId; severity: Severity; description: string }, detail: string, where?: FindingSite): Finding {
   return { id: rule.id, severity: rule.severity, description: rule.description, detail, ...(where ? { where } : {}) };
 }
 
@@ -388,7 +416,7 @@ const TLS_PROBED = 'the scheme is https and the TLS probe succeeded';
  * declined to trust. Reporting the second in the first's words would send a reader looking for a
  * scheme problem on a response whose scheme was fine.
  */
-function tlsRule(id: string, severity: Severity, description: string, check: (tls: Extract<TlsObservation, { ok: true }>) => Finding[]): SecurityRule {
+function tlsRule(id: SecurityRuleId, severity: Severity, description: string, check: (tls: Extract<TlsObservation, { ok: true }>) => Finding[]): SecurityRule {
   const rule: SecurityRule = {
     id,
     severity,

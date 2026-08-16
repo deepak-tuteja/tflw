@@ -28,6 +28,11 @@ export { writeEventsNdjson } from './events-ndjson.js';
 export { writeAuthzRepros, renderAuthzRepro, reproFileName, AUTHZ_REPRO_DIR } from './authz-repro.js';
 // M134b (D376/D389) — the security findings block, its tally, and `M128-01`'s rule census.
 export { renderFindings, renderScanCoverage, findingsSummaryLine, sortFindings } from './findings.js';
+// M135a (D402/D406/D408) — R7's remediation KB and D406's severity table. Exported because they are
+// the inputs `M135b`'s SARIF exporter maps onto `rule.help` and `rule.properties`, and because
+// `testFlow-tests` asserts the emitted document against them rather than against a copy.
+export { REMEDIATION_KB, remediationFor, type KbEntry, type KbRef } from './kb.js';
+export { SARIF_SEVERITY, sarifSeverityOf, type SarifLevel, type SarifSeverity } from './sarif-severity.js';
 export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
 /** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links

@@ -549,6 +549,17 @@ table.headers{width:100%;border-collapse:collapse;font-size:12px}
 table.headers td{padding:3px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--mut);overflow-wrap:anywhere}
 table.headers td:first-child{width:180px;color:var(--fg)}
 pre.body{margin:0;padding:8px 10px;overflow-x:auto;white-space:pre;font-size:12px}
+/* M135a (D402) — the remediation block inside a finding row. Deliberately the same collapsed-detail
+   shape as .evidence above, because it is the same interaction: the row is the fact, the disclosure
+   is the reading a triager opens once they have chosen a row to act on. */
+details.finding-fix{margin:6px 0 2px}
+details.finding-fix>summary{color:var(--mut);cursor:pointer;font-size:11px;letter-spacing:.03em;text-transform:uppercase;list-style:revert}
+details.finding-fix>summary:hover{color:var(--fg)}
+details.finding-fix p{margin:6px 0;overflow-wrap:anywhere}
+.fix-title{font-weight:700}
+.fix-what,.fix-why{color:var(--mut)}
+.fix-refs{font-size:12px;color:var(--mut)}
+.fix-refs a{color:var(--info)}
 footer{padding:16px 24px;color:var(--mut);border-top:1px solid var(--line)}
 @media print{.sidebar{display:none}.test{display:block!important}main{max-width:none}}
 `;

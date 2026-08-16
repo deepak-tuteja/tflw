@@ -24,6 +24,17 @@ export {
   withheldNote,
 } from './scanFindings.js';
 export type { Baseline, BaselineEntry, GateVerdict, ScanCensus, ScanFinding, ScanGate, ScanKind, ScanSink, WithheldReason } from './scanFindings.js';
+// M135a (D409) — the three packs' rule ids, exported as closed tuples and as the union they form.
+// `@tflw/reporter` keys the remediation KB on `ScanRuleId`, which is what makes a rule shipping
+// without an entry a `tsc` failure rather than an alert that quietly carries no fix.
+export { SECURITY_RULE_IDS, type SecurityRuleId } from './securityRules.js';
+export { AUTHZ_RULE_IDS, type AuthzRuleId } from './authzRules.js';
+export { INPUT_RULE_IDS, type InputRuleId } from './inputCorpus.js';
+export { SCAN_RULE_IDS, type ScanRuleId } from './scanRuleIds.js';
+// The finding severity vocabulary itself — four levels, `@tflw/lang`'s `FindingSeverity` under the
+// runtime's name for it. Exported here so `@tflw/reporter` can key a table on it (D406) without
+// taking a dependency on the language package to name four strings.
+export type { Severity } from './finding.js';
 // M134b (D369/D388) — the seeded layer. `MAX_SEEDED_PER_CLASS` is exported because the CLI validates
 // `--probe-seeded` against it before a run starts: a usage error belongs on the command line, not on
 // an assertion three minutes in (P#46).

@@ -17,6 +17,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { RunReport, ScanFinding, ScanRuleCensus } from '@tflw/runtime';
 import { findingsSummaryLine, renderFindings, renderScanCoverage, sortFindings } from '../src/findings.js';
+import { REMEDIATION_KB } from '../src/kb.js';
 
 function f(over: Partial<ScanFinding> = {}): ScanFinding {
   return {
@@ -185,4 +186,52 @@ test('every reason a rule gave is listed, not just the first', () => {
   ]);
   assert.match(html, /no mutable input was observed/);
   assert.match(html, /the response was not JSON/);
+});
+
+// ---------------------------------------------------------------------------
+// M135a (D402/D408) — the remediation block inside a finding row
+// ---------------------------------------------------------------------------
+
+test('a finding renders its rule\'s remediation, collapsed', () => {
+  const html = renderFindings(report([f()]));
+  assert.match(html, /<details class="finding-fix"><summary>possible fixes<\/summary>/);
+  assert.match(html, /A hostile input made the application disclose its own internals/);
+  // The generic fix and the concrete one are both present, and the concrete one is labelled as
+  // NestJS rather than presented as the fix — a reader on another framework has to be able to tell
+  // which half is advice about their system.
+  assert.match(html, /<strong>Fix<\/strong>/);
+  assert.match(html, /<strong>In NestJS<\/strong>/);
+  assert.match(html, /CWE-209/);
+  assert.match(html, /cwe\.mitre\.org\/data\/definitions\/209\.html/);
+});
+
+test('a withheld finding still gets its fixes', () => {
+  // Same argument as the fingerprint's: a relaxation nobody can see is indistinguishable from a
+  // scan that found nothing, and a baselined finding is precisely one somebody may come back to.
+  const html = renderFindings(report([f({ withheld: 'baseline' })]));
+  assert.match(html, /finding-fix/);
+});
+
+test('a rule the KB does not know renders the row without fixes rather than throwing', () => {
+  const html = renderFindings(report([f({ rule: 'sec/from-a-newer-build' })]));
+  assert.doesNotMatch(html, /finding-fix/);
+  assert.match(html, /sec\/from-a-newer-build/);
+});
+
+test('KB prose is escaped before its code spans are formed', () => {
+  // The entries are authored with markdown backticks because their other consumer is SARIF's
+  // `help.markdown`. Here they become `<code>` — **after** escaping, so nothing in an entry can open
+  // a tag, and a `<` in prose stays a `<`.
+  //
+  // **The rule is chosen, not arbitrary.** `sec/csp-missing`'s prose contains a literal
+  // `` `<script>` `` — it is the one entry that talks about markup — and it is therefore the only
+  // one on which dropping `esc` changes the output at all. Written against any other rule this test
+  // passes with the escape removed, which is precisely what the `kb-prose-rendered-unescaped`
+  // mutation demonstrated: a control that cannot see the defect it names.
+  const entry = REMEDIATION_KB['sec/csp-missing'];
+  assert.match(`${entry.what} ${entry.why} ${entry.fixGeneric} ${entry.fixNest}`, /</, 'this test is vacuous unless the entry it reads still contains markup');
+
+  const html = renderFindings(report([f({ rule: 'sec/csp-missing' })]));
+  assert.match(html, /<code>&lt;script&gt;<\/code>/);
+  assert.doesNotMatch(html, /<script>/, 'an unescaped entry would put a live tag in the one report that renders attacker-shaped findings');
 });
