@@ -197,6 +197,46 @@ test('a finding with no usable file degrades to a logical location rather than a
 });
 
 // ---------------------------------------------------------------------------
+// D405 — the URI is relative to the *repository root*, not to the run's directory
+//
+// The regression `M135c`'s first acceptance run found. `ScanFinding.file` is `relative(cwd, file)`,
+// so a corpus run from its own directory recorded `positives.tflw` for a file the repository holds
+// at `tflw-acceptance/security/positives.tflw`. `%SRCROOT%/positives.tflw` matches nothing, the
+// alert never anchors, and — this is why it needed a test rather than a reading — the upload that
+// would have shown it *succeeds*.
+// ---------------------------------------------------------------------------
+
+test('a run from a subdirectory emits a URI relative to the repository root', () => {
+  const uri = sarifUri('positives.tflw', '/repo', '/repo/tflw-acceptance/security');
+  assert.equal(uri, 'tflw-acceptance/security/positives.tflw');
+
+  const log = buildSarifLog(report(), { sourceRoot: '/repo', fileBase: '/repo/tflw-acceptance/security' })!;
+  validate(log);
+  const artifact = resultFor(log, 'sec/cookie-not-httponly').locations![0]!.physicalLocation!.artifactLocation!;
+  assert.equal(artifact.uri, 'tflw-acceptance/security/tests/api/auth.tflw');
+  assert.equal(artifact.uriBaseId, '%SRCROOT%', 'the re-based URI still declares what it is relative to');
+});
+
+test('a run at the repository root is unchanged by the re-basing', () => {
+  assert.equal(sarifUri('tests/api/auth.tflw', '/repo', '/repo'), 'tests/api/auth.tflw');
+});
+
+test('a path that lands outside the repository is refused rather than emitted with `..`', () => {
+  // Absolute is no longer refused on sight — an absolute path *inside* the root is perfectly
+  // anchorable, and refusing it would drop an annotation for no reason. What is refused is a path
+  // that leaves the root, however it is spelled, because a URI relative to `%SRCROOT%` cannot.
+  assert.equal(sarifUri('/elsewhere/x.tflw', '/repo', '/repo'), undefined);
+  assert.equal(sarifUri('../outside/x.tflw', '/repo', '/repo'), undefined);
+  assert.equal(sarifUri('/repo/tests/api/auth.tflw', '/repo', '/repo'), 'tests/api/auth.tflw');
+  assert.equal(sarifUri('.', '/repo', '/repo'), undefined, 'the root itself is not a file');
+});
+
+test('with no repository, the path passes through rather than being re-based against a guess', () => {
+  assert.equal(sarifUri('positives.tflw'), 'positives.tflw');
+  assert.equal(sarifUri('/abs/tests/x.tflw'), undefined);
+});
+
+// ---------------------------------------------------------------------------
 // D406 / D407 — severity and taxonomy
 // ---------------------------------------------------------------------------
 

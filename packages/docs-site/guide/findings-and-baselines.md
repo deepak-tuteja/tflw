@@ -216,6 +216,10 @@ Three things about the file are deliberate and worth knowing before you wire it 
 - **Rules that stood down are not in the rule catalog.** They are listed under
   `runs[].properties["tflw/notApplicable"]` with their reasons, so *applied and silent* stays
   distinguishable from *never applicable* in the machine-readable artifact too.
+- **Paths are relative to the repository root, not to where you ran tflw.** GitHub anchors an alert
+  by matching the path against the checked-out tree, so a corpus run from its own directory has to
+  be recorded as `corpora/security/probe.tflw` and not `probe.tflw`. tflw finds the root by walking
+  up for `.git`; outside a repository it emits the path as-is, which is all it can honestly say.
 
 Findings drawn by `--probe-seeded` (above) are **not** in the document: they carry no
 fingerprint by construction, and a tracking system keyed on identity would mint a fresh permanent

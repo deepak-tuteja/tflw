@@ -1634,6 +1634,15 @@ const REGISTRY = [
     find: '  const known = SCAN_RULE_IDS.filter((id) => applied.has(id));',
     replace: '  const known = [...SCAN_RULE_IDS];',
   },
+  {
+    id: 'sarif-uri-relative-to-cwd',
+    milestone: 'm135b',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: "D405 undone: `artifactLocation.uri` goes back to the path as the run recorded it, which is relative to the directory tflw was invoked from rather than to the repository root. This is not a hypothetical — it is what shipped, and what `M135c`'s first acceptance run found: a corpus run from its own folder emitted `positives.tflw` for a file the repository holds three directories down. GitHub anchors an alert by matching that path against the checked-out tree, so every alert lands on nothing; and the upload that would have shown it *succeeds*, which is why this needed a test rather than a reading",
+    find: "    const rebased = relative(sourceRoot, resolve(fileBase ?? process.cwd(), normalized)).replace(/\\\\/g, '/');",
+    replace: '    const rebased = normalized;',
+  },
 ];
 
 /**

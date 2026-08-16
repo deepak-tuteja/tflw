@@ -20,7 +20,10 @@
 //     relative to somewhere other than the repository root, matches nothing in the tree and the
 //     alert never anchors — it renders as an unattached list, which is most of what SARIF was
 //     wanted for. D415 deliberately declined the upload that would have caught this, so the acceptance
-//     assertion in `M135c` checks the URI's *form*.
+//     assertion in `M135c` checks the URI's *form* — and on its first run it found this exporter
+//     emitting `positives.tflw` for a file the repository holds at
+//     `tflw-acceptance/security/positives.tflw`, because `ScanFinding.file` is relative to the
+//     directory tflw ran in. `SarifOptions.sourceRoot` is the repair; `sarifUri` carries the detail.
 //
 // **One correction to the plan's own sketch, made by the schema.** D405 wrote the logical location
 // as `physicalLocation.logicalLocations[0]`. In SARIF 2.1.0 `logicalLocations` is a property of
@@ -29,7 +32,7 @@
 // rather than after.
 
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Location, Log, ReportingDescriptor, Result } from 'sarif';
 import type { AuthzFinding, RunReport, ScanFinding, Severity } from '@tflw/runtime';
 import { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, templateEndpoint } from '@tflw/runtime';
@@ -55,6 +58,23 @@ export interface SarifOptions {
   /** The run's authorization findings, from D331's sink — the input D413's repro links are joined
    *  from. Absent on a run with no authorization scan, which is most runs. */
   readonly authzFindings?: readonly AuthzFinding[];
+  /**
+   * The repository root `%SRCROOT%` names — absolute, and the base every `artifactLocation.uri` is
+   * made relative to (D405).
+   *
+   * **Absent is not the same as "the current directory".** With no root the exporter emits
+   * `ScanFinding.file` as it stands, which is relative to the process that produced it; that is
+   * correct only when the run happened at the repository root, and silently unanchored otherwise.
+   * The caller that knows where the root is passes it; a caller that genuinely does not know keeps
+   * the old shape rather than inventing one.
+   */
+  readonly sourceRoot?: string;
+  /**
+   * The directory `ScanFinding.file` paths are relative to — the run's working directory. Only
+   * consulted when `sourceRoot` is set, and defaults to `process.cwd()` because that is what the
+   * CLI relativized against when it recorded them.
+   */
+  readonly fileBase?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,28 +82,46 @@ export interface SarifOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * A `.tflw` path as a SARIF URI reference, or `undefined` if it cannot be one honestly.
+ * A `.tflw` path as a SARIF URI reference **relative to the repository root**, or `undefined` if it
+ * cannot be one honestly.
  *
- * Three refusals, each because the alternative anchors to nothing while looking correct:
- * an **absolute** path (a URI relative to `%SRCROOT%` cannot start at a filesystem root), a path
- * that **escapes upward** (`../x` resolves outside the repository), and the runtime's `'inline'`
- * placeholder, which is what an in-memory test has instead of a file. A finding that fails this
- * still ships — with `logicalLocations` and no `physicalLocation`, which is legal SARIF and degrades
- * to "no annotation" rather than to a rejected document.
+ * `ScanFinding.file` is written by the CLI as `relative(cwd, file)`, so it is relative to *wherever
+ * tflw was invoked*. That is the repository root only by coincidence — a corpus with its own
+ * `tflw.config` is normally run from its own directory, and `positives.tflw` under `%SRCROOT%`
+ * then names a file the repository does not have. D405 called this out in advance ("an absolute
+ * path, or one relative to the process CWD rather than the repo root, matches nothing and the alert
+ * never anchors") and the first run of `M135c`'s acceptance found the exporter doing exactly it, on
+ * the one path nothing downstream reports: **an unanchored alert uploads successfully.**
+ *
+ * So with a `sourceRoot` the path is re-based — resolved against the run's directory, then made
+ * relative to the root. Without one the value passes through as it stands, which is the old
+ * behaviour and correct whenever the run *did* happen at the root.
+ *
+ * Three refusals, each because the alternative anchors to nothing while looking correct: a path that
+ * lands **outside** the root (`../x`, or an absolute path elsewhere on the disk — a URI relative to
+ * `%SRCROOT%` cannot leave it), the root **itself**, and the runtime's `'inline'` placeholder, which
+ * is what an in-memory test has instead of a file. A finding that fails this still ships — with
+ * `logicalLocations` and no `physicalLocation`, which is legal SARIF and degrades to "no annotation"
+ * rather than to a rejected document.
  *
  * Separators are normalized to `/` because a URI reference is not a filesystem path, and a Windows
  * path with backslashes is not a valid one.
  */
-export function sarifUri(file: string | undefined): string | undefined {
+export function sarifUri(file: string | undefined, sourceRoot?: string, fileBase?: string): string | undefined {
   if (!file || file === 'inline') return undefined;
   const normalized = file.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (sourceRoot) {
+    const rebased = relative(sourceRoot, resolve(fileBase ?? process.cwd(), normalized)).replace(/\\/g, '/');
+    if (rebased === '' || rebased === '..' || rebased.startsWith('../') || isAbsolute(rebased)) return undefined;
+    return rebased;
+  }
   if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) return undefined;
   if (normalized === '..' || normalized.startsWith('../')) return undefined;
   return normalized;
 }
 
-function locationsFor(f: ScanFinding): Location[] {
-  const uri = sarifUri(f.file);
+function locationsFor(f: ScanFinding, opts: SarifOptions): Location[] {
+  const uri = sarifUri(f.file, opts.sourceRoot, opts.fileBase);
   const logical = f.endpoint
     ? // `kind: "resource"` is SARIF's own vocabulary for a thing that is addressed rather than
       // compiled. The endpoint is the finding's real subject — the `.tflw` file is only where the
@@ -201,7 +239,7 @@ function reproIndex(authzFindings: readonly AuthzFinding[]): Map<string, string>
 // Results
 // ---------------------------------------------------------------------------
 
-function resultObject(f: ScanFinding, ruleIndex: number, repros: ReadonlyMap<string, string>): Result {
+function resultObject(f: ScanFinding, ruleIndex: number, repros: ReadonlyMap<string, string>, opts: SarifOptions): Result {
   const { level } = sarifSeverityOf(f.severity);
   const repro = f.location !== undefined ? repros.get(`${f.rule} | ${f.endpoint} | ${f.location}`) : undefined;
   return {
@@ -209,7 +247,7 @@ function resultObject(f: ScanFinding, ruleIndex: number, repros: ReadonlyMap<str
     ...(ruleIndex >= 0 ? { ruleIndex } : {}),
     level,
     message: { text: f.detail },
-    locations: locationsFor(f),
+    locations: locationsFor(f, opts),
     // R8's identity, unchanged: the fingerprint is computed once by the runtime and carried, never
     // re-derived here. A reporter that re-hashed would be a second definition of the thing a
     // baseline file is keyed on.
@@ -290,7 +328,7 @@ export function buildSarifLog(report: RunReport, opts: SarifOptions = {}): Log |
             rules: ruleObjects,
           },
         },
-        results: findings.map((f) => resultObject(f, rules.indexOf(f.rule), repros)),
+        results: findings.map((f) => resultObject(f, rules.indexOf(f.rule), repros, opts)),
         // `executionSuccessful` is about the *tool*, not the findings: a run that crashed produces a
         // partial document, and a consumer that cannot tell it apart from a clean sweep is being
         // told a scan finished when it did not.

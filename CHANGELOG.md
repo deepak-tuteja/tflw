@@ -328,7 +328,9 @@ a different thing depending on which matcher a file happened to use.
   anchors to the `.tflw` line that made the assertion, carries the endpoint as a logical location
   (the endpoint is the finding's subject, but its source is usually not in the repository being
   scanned), and arrives with the remediation, the CWE tag and the references from the knowledge base
-  above (decisions 403, 405, 407).
+  above (decisions 403, 405, 407). Paths are relative to the **repository root** — found by walking
+  up for `.git` — rather than to the directory tflw was invoked from, because GitHub anchors an alert
+  by matching the path against the checked-out tree and an unanchored alert uploads without an error.
 - **Written only when the run actually scanned** — not written empty. An empty SARIF document is not
   neutral: `upload-sarif` reads an empty results array as *everything previously reported is fixed*
   and resolves the matching alerts, so a functional-only CI job emitting one would silently close the
