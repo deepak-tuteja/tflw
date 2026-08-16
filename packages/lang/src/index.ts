@@ -18,11 +18,19 @@ export {
   parse as parseTokens,
   parseConfig as parseConfigTokens,
   parseForCompletion,
+  parseConfigForCompletion,
   parseStringParts,
   // `M125e`/D277 — exported so `spec-data.ts`'s `STEP_KEYWORDS` can be asserted against the list
   // the parser actually dispatches on, rather than against prose.
   STATEMENT_KEYWORDS,
   RETIRED_STATEMENT_KEYWORDS,
+  // `M137a`/D444 — the same arrangement for the config dialect: `CONFIG_KEYWORDS` is asserted
+  // against these, and completion filters through `configKeyAllowedIn` rather than restating which
+  // keys belong in which block.
+  CONFIG_KEYS,
+  PROBE_SUB_CLAUSES,
+  configKeyAllowedIn,
+  type ConfigBlockKind,
   type ParseResult,
   type ConfigResult,
   type CompletionKind,
@@ -84,7 +92,7 @@ export { ABSOLUTE_URL_START, isAbsoluteUrl, absoluteUrlHost } from './absoluteUr
 // keeping a second copy of what counts as decodable.
 export { isDecodable, isDecodableHex, isDecodableBase64, isDecodablePercentEncoding, regexCompiles, regexCompileError } from './literalValidity.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
-export { getCompletionContext } from './completion.js';
+export { getCompletionContext, getConfigCompletionContext } from './completion.js';
 export { collectSemanticTokens, type SemanticToken, type SemanticTokenType, type Dialect } from './semanticTokens.js';
 export { detectReuse, renderCallSiteReplacement, importInsertionOffset, type SuiteEntry, type ReuseHint, type ReuseOccurrence } from './reuse.js';
 export { collectMigrations, applyMigrations, type MigrationEdit } from './migrate.js';

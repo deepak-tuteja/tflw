@@ -265,6 +265,75 @@ export function listConfigDirectives(): string {
   return `${quoted.slice(0, -1).join(', ')}, or ${quoted[quoted.length - 1]}`;
 }
 
+/** Which position in `tflw.config` a word may be typed at (`M137a`, D444). Three, and they are the
+ * three the parser instruments for completion:
+ *
+ *  - `directive` — column 0, the top level of the file. Exactly `CONFIG_DIRECTIVES`.
+ *  - `key` — an entry inside a `defaults` or `env` block. Exactly `parser.ts`'s `CONFIG_KEYS`.
+ *  - `probe` — a sub-clause line under `authorized target`. Exactly `PROBE_SUB_CLAUSES`.
+ *
+ * **Placement is deliberately not recorded here.** Six of the fifteen keys are legal in only one of
+ * the two blocks, and that rule already exists twice — `parser.ts`'s `DEFAULTS_ONLY_KEYS`/
+ * `ENV_ONLY_KEYS` and the checker's `TF025`, held together by `teaching.test.ts`'s round-trip.
+ * A third statement of it, in a file neither of those consults, is the drift this milestone exists
+ * to stop. Completion filters through the parser's own `configKeyAllowedIn` instead. */
+export type ConfigKeywordSlot = 'directive' | 'key' | 'probe';
+
+export interface ConfigKeywordEntry {
+  /** The word exactly as it is typed. Completion labels a `probe` row as `probe <id>` at the start
+   * of a sub-clause line and as a bare `<id>` after the word `probe`, which are the two positions a
+   * person actually types it from. */
+  readonly id: string;
+  readonly slot: ConfigKeywordSlot;
+  /** One line, rendered inline beside the label by a completion widget. `FU-24`/D251's bar: a
+   * candidate list that names a word and says nothing about it is the defect `M125e` closed for the
+   * step list, and shipping the config dialect's first-ever candidate list without it would open
+   * that defect again one dialect over. */
+  readonly summary: string;
+}
+
+/**
+ * Every word `tflw.config` completion offers, with the line it says about itself (`M137a`, D444).
+ *
+ * The config dialect had **no completion at all** until this milestone: `CompletionKind` had no
+ * config variant, `runCompletion()` only ever entered the test-dialect parser, and `server.ts`'s
+ * `onCompletion` returned `[]` for any buffer that was not `kind: 'test'`. Three layers, each of
+ * which alone was enough — which is why `probe mutating` had been in the language since `M130b` and
+ * had never been completable.
+ *
+ * Held to the parser's own arrays by `configCompletionDetail.test.ts`, the `stepKeywords.test.ts`
+ * shape (D277). A fourth hand-maintained wordlist is precisely what `B5-09` is, and this milestone
+ * is fixing the third instance of it; adding one uncontrolled would be an unusually direct way to
+ * lose the argument.
+ */
+export const CONFIG_KEYWORDS: readonly ConfigKeywordEntry[] = [
+  { id: 'defaults', slot: 'directive', summary: 'settings shared by every environment; at most one per config' },
+  { id: 'env', slot: 'directive', summary: 'one named environment and its own base URLs, selected by `--env` or the `default` marker' },
+  { id: 'session', slot: 'directive', summary: 'a reusable identity — steps that authenticate, or an `oauth2` block — attached to a test with `as <name>`' },
+  { id: 'require', slot: 'directive', summary: 'environment variables that must be set before a run starts, so a missing secret fails at check time rather than mid-suite' },
+  { id: 'exclude', slot: 'directive', summary: 'glob patterns that discovery skips when a run names a folder rather than a file' },
+
+  { id: 'header', slot: 'key', summary: 'a request header sent on every `api` step' },
+  { id: 'timeout', slot: 'key', summary: 'the default per-step budget; `timeout api`/`timeout browser` set the two independently' },
+  { id: 'workers', slot: 'key', summary: 'how many test files run concurrently' },
+  { id: 'report', slot: 'key', summary: 'which report artifacts a run writes, and where' },
+  { id: 'web', slot: 'key', summary: 'the base URL a browser `open "/path"` resolves against' },
+  { id: 'api', slot: 'key', summary: 'the base URL an `api <METHOD> /path` step resolves against; named forms declare additional services' },
+  { id: 'insecure', slot: 'key', summary: 'accept a TLS certificate that does not verify — for a self-signed local target, never for a shared one' },
+  { id: 'cert', slot: 'key', summary: 'a client certificate presented on every request (mTLS)' },
+  { id: 'key', slot: 'key', summary: 'the private key belonging to `cert`' },
+  { id: 'allow', slot: 'key', summary: '`allow hosts "…"` — the hosts a run may talk to at all; anything else is refused before a request is made' },
+  { id: 'authorized', slot: 'key', summary: '`authorized target "<url>" reason "<text>"` — written permission for the security scans to probe that target (D21)' },
+  { id: 'evidence', slot: 'key', summary: 'how much of each request and response the report keeps: `full`, `headers-only` or `none`' },
+  { id: 'redact', slot: 'key', summary: 'body paths, headers and query parameters whose values never reach a report or a log' },
+  { id: 'viewport', slot: 'key', summary: 'the browser window size every browser test starts at' },
+  { id: 'log', slot: 'key', summary: '`log level`/`log destination` — how much the run says, and where it says it' },
+
+  { id: 'mutating', slot: 'probe', summary: 'permit probes that change server state — the authorization scans cannot judge a write without it' },
+  { id: 'oversized', slot: 'probe', summary: 'permit oversized-input payloads, which can be expensive for the target to reject' },
+  { id: 'traversal', slot: 'probe', summary: 'permit path-traversal payloads, which some proxies answer before the application ever sees them' },
+] as const;
+
 /**
  * One worked example of a diagnostic, as **source rather than prose** (M110b, review row
  * `M110-01`).

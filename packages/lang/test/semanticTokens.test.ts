@@ -191,6 +191,31 @@ test('collectSemanticTokens: `authorized target`/`reason`/`probe mutating`/`priv
   assert.equal(findToken(tokens, source, 'admin'), undefined, 'the session name is not a keyword');
 });
 
+// M137a (`D384`'s residue) — the test that would have caught the drift this milestone is fixing.
+// `M134a` added `input`/`handling` here and `oversized`/`traversal` only to `tflw.tmLanguage.json`,
+// then recorded the catch-up as done. Nothing in the repo could contradict it, because none of
+// `M134a`'s four words had a test in either file. `B5-09`, fourth arc running.
+test('collectSemanticTokens: `input handling` (D366) is `operator`, and `probe oversized`/`traversal` (D372) are `keyword`', () => {
+  const matcherSource = 'test "ok"\n  expect response has no moderate input handling violations\n';
+  const matcherTokens = tokensOf(matcherSource);
+  assertTypeAt(matcherTokens, matcherSource, 'input', 'operator');
+  assertTypeAt(matcherTokens, matcherSource, 'handling', 'operator');
+
+  const probeSource =
+    'defaults\n' +
+    '  authorized target "http://localhost:4001" reason "self-hosted test fixture"\n' +
+    '    probe oversized\n' +
+    '    probe traversal\n';
+  // Zero diagnostics, for the reason the M136b tests state: the lexer-driven pass never consults
+  // the parse, so a source the parser rejects would still colour and this would pass while
+  // describing a config nobody can write.
+  const { diagnostics } = parseConfigSource(probeSource);
+  assert.deepEqual(diagnostics.map((d) => d.code), [], 'the probe sub-clause source parses clean');
+  const probeTokens = configTokensOf(probeSource);
+  assertTypeAt(probeTokens, probeSource, 'oversized', 'keyword');
+  assertTypeAt(probeTokens, probeSource, 'traversal', 'keyword');
+});
+
 // -- M136b (D427/D427a): the config dialect's own vocabulary --------------------------------
 //
 // `M133-01` said nine words were missing from this list. Measuring every word `parser.ts` puts in

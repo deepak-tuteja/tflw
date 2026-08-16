@@ -155,6 +155,26 @@ await reportWarnings('dist/mtls-worker.cjs', workerBuild);
 const notices = collectNotices({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs } });
 writeFileSync(new URL('../THIRD-PARTY-NOTICES.md', import.meta.url), renderNotices(pkg.name, notices), 'utf8');
 
+// M137a (`M136c-01`) — the cross-repo artifact contract, shipped as data rather than as code.
+//
+// `testFlow-tests` reads `findings.sarif`, and until now nothing joined the names tflw writes to the
+// names that repo reads. `M136a` renamed one and the break surfaced as eleven failed SARIF entries
+// in an acceptance phase — the slowest way it could have been found, with D351's cross-repo gate
+// green throughout, because that gate is about diagnostic codes.
+//
+// A JSON file in `dist/` rather than a value the consumer imports: `files: ["dist"]` ships it with
+// no packaging change, `dist/cli.cjs` is a CLI entry with nothing useful to import, and a consumer
+// that has to spawn a process to learn a key name will not run its gate. Read from the built
+// `@tflw/reporter` — the same module `sarif.ts` builds the document from — so the file and the
+// emitter cannot state different things. `packages/reporter/test/sarif.test.ts` closes the other
+// direction, that the contract does not promise a key the emitter stopped writing.
+const { ARTIFACT_CONTRACT } = await import('@tflw/reporter');
+writeFileSync(
+  new URL('../dist/artifact-contract.json', import.meta.url),
+  `${JSON.stringify(ARTIFACT_CONTRACT, null, 2)}\n`,
+  'utf8',
+);
+
 // The metafile itself, for `test/pack.test.ts` to re-derive the same package set from — deliberately
 // *outside* `dist/`, so `files: ["dist"]` cannot ship a build byproduct, and gitignored. Writing it
 // is what keeps the guard from needing its own copy of the build config, which would be the drift

@@ -1034,28 +1034,32 @@ const REGISTRY = [
     milestone: 'm125e',
     pkg: '@tflw/lang',
     file: 'packages/lang/src/completion.ts',
-    what: "D278's column-0 arm, which the parser makes redundant rather than the tests failing to cover",
-    find: '  if (line.length === 0 || /\\S/.test(line)) return null;',
-    replace: '  if (/\\S/.test(line)) return null;',
+    what: "D278's column-0 arm, which the condition around it makes redundant rather than the tests failing to cover",
+    find: '  if (line.length === 0 || !/\\s$/.test(line)) return null;',
+    replace: '  if (!/\\s$/.test(line)) return null;',
     // Filed as a live mutant and it survived the first unscoped sweep, so the claim it was written
     // with is on record and wrong: "answering on an unindented blank line offers the step list at
     // declaration position". It does not, and cannot.
     //
-    // `getCompletionContext` is `parseForCompletion(…) ?? resolveOnBlankLine(…)`, so dropping this
-    // arm changes an answer only where the parser declines AND the `_` probe makes it answer. At
-    // column 0 the probe character is a token at indent 0, which dedents out of every block; the
-    // seven places that set `completionResult` (session, step, subject, matcher, unique, random,
-    // transform) are all inside a test or action body, and declaration position is instrumented
-    // nowhere. So the probe reaches no production and both sides return null.
+    // **`M137a`/D444 rewrote why, and the old reason is now false in both halves.** It read:
+    // `getCompletionContext` is `parseForCompletion(…) ?? resolveOnBlankLine(…)`, so dropping the
+    // arm matters only where the parser declines and the `_` probe then answers — and declaration
+    // position is instrumented nowhere, so the probe reaches no production. Both clauses have since
+    // changed. The order is reversed (the probe is tried *first*, D444's own bug), and the config
+    // dialect instruments its top level, so declaration position now sets a completion context.
+    // The 10,152-cursor measurement that backed the old note measured a program that no longer
+    // exists, and is superseded rather than merely restated.
     //
-    // Measured, not reasoned: 10,152 column-0 cursor positions — every line start in the 178 `.tflw`
-    // files across this repo and testFlow-tests, plus 29 hand-built cases aimed at the constructs
-    // where a column-0 line might still be "inside" something (unclosed JSON body, table block,
-    // session, env, empty document). Zero divergence.
+    // Equivalent for a stronger and much simpler reason now: the arm is **syntactically subsumed**
+    // by the disjunct beside it. `resolveAtUntypedCursor` fires on a line ending in whitespace, and
+    // the empty string does not end in whitespace — `/\s$/.test('')` is `false` — so a column-0
+    // cursor returns `null` through the second arm whether or not the first exists. There is no
+    // input that separates them and no future instrumentation that could create one, which is a
+    // different and better guarantee than the reachability argument it replaces.
     //
-    // The arm stays. It is defence-in-depth that states D278's boundary at the boundary, and it
-    // becomes load-bearing the moment anything sets a completion context at declaration position —
-    // which `blankLineCompletion.test.ts`'s last test now watches for.
+    // The arm stays, precisely because that guarantee is subtle. It states D278's boundary at the
+    // boundary in the form the decision is written in, instead of leaving a reader to derive it
+    // from how a regex treats an empty string.
     equivalent: true,
   },
   {
@@ -1734,6 +1738,76 @@ const REGISTRY = [
     what: "D427a site 4, the one the plan did not know about and the worst of them: the `tflw-config` activation event is removed, so a user whose only open document is a `tflw.config` gets no extension at all. Not a degraded feature — nothing runs. This mutation is the reason that guard is written as a property over every contributed language rather than as an assertion about this one id",
     find: '    "onLanguage:tflw",\n    "onLanguage:tflw-config"',
     replace: '    "onLanguage:tflw"',
+  },
+
+  // -- M137a (D444): the config dialect's first completion ------------------------------------
+  //
+  // Four mutations for four separate ways this feature can look built and not be. Three of them are
+  // bugs the build actually made and the tests then caught, which is the reason they are worth
+  // pinning: each was reasoned about correctly and still landed wrong.
+  {
+    id: 'config-completion-outer-guard-wins',
+    milestone: 'm137a',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/parser.ts',
+    what: "the first-answer-wins rule is dropped, so a completion context set deep in the grammar is overwritten by one set in an enclosing production as recovery unwinds. This is not hypothetical — it is what the build did before the rule existed: every `probe …` sub-clause completion came back as the list of `defaults` keys, because `parseConfigEntries`' loop re-entered `parseConfigEntry` on the same token one frame up. The test dialect cannot see it, which is why it went un-noticed for eleven milestones",
+    find: '    if (this.completionResult) return false;\n',
+    replace: '',
+  },
+  {
+    id: 'config-completion-ignores-the-block',
+    milestone: 'm137a',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/resolution/completion.ts',
+    what: "config-key completion stops filtering by which block the cursor is in, so `defaults` is offered `web`/`api` and `env` is offered `workers`/`report`/`viewport`. `A2-07b` in its loudest form: the tool names a key, the author writes it, and the checker rejects it with `TF025`. That row was filed against the much quieter did-you-mean hint",
+    find: '  return configSlot(\'key\').filter((c) => configKeyAllowedIn(c.label, block));',
+    replace: '  return configSlot(\'key\');',
+  },
+  {
+    id: 'probe-completion-offers-a-bare-word-at-line-start',
+    milestone: 'm137a',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/resolution/completion.ts',
+    what: "the `probe` phrase loses its keyword, so the start of a sub-clause line offers `mutating` where the grammar needs `probe mutating`. Accepting a candidate then writes a line the parser rejects — the failure `SUGGESTION_VOCABULARIES.scanKind` records for the hint side (`M134a`: a bare `input` is not something a user can write)",
+    find: "      return configSlot('probe').map((c) => ({ ...c, label: `probe ${c.label}` })).filter((c) => byPrefix(c.label));",
+    replace: "      return configSlot('probe').filter((c) => byPrefix(c.label));",
+  },
+  {
+    id: 'untyped-cursor-probe-runs-last',
+    milestone: 'm137a',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/completion.ts',
+    what: "the untyped-cursor probe goes back to being the fallback rather than the first question. Harmless before D444 and wrong after it: with the config top level instrumented, the cursor on an indented line under `defaults` is answered from the last *token*, which is still `defaults` — so the top-level guard replies about a line the user left two keystrokes ago, and every config key in every block loses its completion",
+    find: '  return resolveAtUntypedCursor(truncated, parseFor) ?? parseFor(lex(truncated).tokens);',
+    replace: '  return parseFor(lex(truncated).tokens) ?? resolveAtUntypedCursor(truncated, parseFor);',
+  },
+
+  // -- M137a (`M136c-01`): the cross-repo artifact contract ------------------------------------
+  //
+  // Note what is deliberately **not** mutated here. Renaming a *value* in `artifact-contract.ts`
+  // cannot be killed by any test in this repository, and that is the design rather than a gap: the
+  // emitter builds the document from those constants, so a rename moves both together and the
+  // document stays self-consistent. Nothing here knows what another repository expects. The gate for
+  // that direction is `testFlow-tests`' `verify-artifact-contract.mjs`, which was verified against a
+  // replay of `M136a`'s actual rename. What this side can be held to is the two below: that the
+  // contract describes what is really emitted, and that it reaches the consumer at all.
+  {
+    id: 'sarif-contract-promises-a-key-nothing-emits',
+    milestone: 'm137a',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: "a result property named in the cross-repo contract stops being emitted, so the contract goes on promising `tflw/invariant` to a consumer that will never find it. The consumer is then told a field exists, finds it missing at run time, and cannot tell a bug from a version skew — `M136c-01`'s confusion with the gate installed and pointing the wrong way. Found while writing the contract test that this mutation now guards: no fixture finding carried an `invariant`, so the property had shipped since `M135b` with nothing asserting it reached the document",
+    find: '      ...(f.invariant !== undefined ? { [SARIF.resultProperties.invariant]: f.invariant } : {}),\n',
+    replace: '',
+  },
+  {
+    id: 'contract-never-reaches-the-consumer',
+    milestone: 'm137a',
+    pkg: 'tflw',
+    file: 'packages/cli/scripts/bundle.mjs',
+    what: "the artifact contract stops being written into `dist/`, so it never ships. The consumer's gate then finds no contract file — which it treats as a hard failure rather than a skip, on purpose, but only if someone runs it. Every test in *this* repository still passes without the file, because nothing here reads it: it exists solely for the other repository, which is exactly the shape of thing that gets dropped in a refactor and missed",
+    find: "const { ARTIFACT_CONTRACT } = await import('@tflw/reporter');\nwriteFileSync(\n  new URL('../dist/artifact-contract.json', import.meta.url),\n  `${JSON.stringify(ARTIFACT_CONTRACT, null, 2)}\\n`,\n  'utf8',\n);",
+    replace: '',
   },
 ];
 

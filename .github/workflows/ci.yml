@@ -187,8 +187,36 @@ jobs:
   # Narrowing a mutation to a subset of its package's suite was scoped for this milestone and
   # **rejected on measurement** — see PLAN_M136_ARC_DEBT.md D425a. The lever that remains is the
   # `shard:` list.
+  #
+  # ---------------------------------------------------------------------------
+  # M137a (D449) — the widen M136a said was due, pulled by the condition it named rather than by a
+  # judgement call. `M137` adds mutations (a new construct, a new rule, a new session feature), and
+  # the trigger above is "the slowest shard passes ~20m".
+  #
+  # MEASURED on run 31961921600 (PR #72), 2026-08-16, at `shard: 6`:
+  #
+  #   6/6 **26m07s** · 5/6 22m42s · 2/6 19m50s · 3/6 18m33s
+  #
+  # Headroom **1.15×** against the 30-minute limit — worse than the 1.33× `M134` recorded and the
+  # 1.21× before it, and now *two* shards past the 20m trigger rather than one.
+  #
+  # 12, from `mutate.mjs`'s own cost model rather than from doubling. Modelled max shard, and the
+  # total across all shards (the extra baselines are what the total buys):
+  #
+  #   n=6 1190s / 6359s · n=8 850s / 6419s · n=10 805s / 6479s · n=11 850s / 6700s
+  #   n=12 **644s** / 6700s · n=14 644s / 6760s · n=16 483s / 7012s
+  #
+  # Three things decide it. The model reads 1.32× light against reality (1190s modelled, 26m07s
+  # measured at n=6), so n=12 predicts a **~14m** longest shard: **2.1×** headroom, and ~6 minutes
+  # below the 20m trigger rather than the ~1m n=8 would leave. **n=14 has the identical max**, so
+  # everything past 12 buys nothing until 16 — the plateau M127 predicted, where the longest shard
+  # is bound by one package's suite rather than by the split. And n=11 is *worse* than n=10 (850s vs
+  # 805s), which is the packer, not noise: read the model, do not interpolate it.
+  #
+  # Total CPU goes 6359s → 6700s. That 5m41s is the six extra baselines, paid once, and it is the
+  # whole price of halving the critical path.
   mutations:
-    name: mutation controls (shard ${{ matrix.shard }}/6)
+    name: mutation controls (shard ${{ matrix.shard }}/12)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -197,7 +225,7 @@ jobs:
       # turn a precise "these mutations survived" into "the sweep did not cover the registry".
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v4
 
@@ -226,11 +254,11 @@ jobs:
       # stayed invisible — a merged registry entry left one mutation not merely surviving but
       # *absent*, and every scoped run was green about a mutation that no longer existed.
       #
-      # A shard is not a scope. `--shard=i/6` is a slice of the *whole* registry — the union of the
-      # six is the registry, and `mutation controls` below is what proves that rather than assumes
+      # A shard is not a scope. `--shard=i/12` is a slice of the *whole* registry — the union of the
+      # twelve is the registry, and `mutation controls` below is what proves that rather than assumes
       # it. `mutate.mjs` refuses `--shard` combined with a scope for exactly this reason.
       - name: Mutation controls
-        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/6 --manifest=shard-${{ matrix.shard }}.json
+        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/12 --manifest=shard-${{ matrix.shard }}.json
 
       # `always()` because a shard that found a survivor still has to say what it ran. Otherwise a
       # red shard and a shard that never started are the same missing file, and the job below cannot
@@ -247,9 +275,9 @@ jobs:
   # M127 — the job that says the shards added up, and the only one entitled to.
   #
   # Each shard above is green about itself and cannot be green about the others. The number of
-  # shards is written twice — in `shard:` and in `--shard=i/6` — and nothing in YAML holds those
-  # together: delete `4` from the matrix and five jobs run, all five pass, and thirty mutations are
-  # never applied. Every one of those jobs is telling the truth.
+  # shards is written twice — in `shard:` and in `--shard=i/12` — and nothing in YAML holds those
+  # together: delete `4` from the matrix and eleven jobs run, all eleven pass, and a twelfth of the
+  # registry is never applied. Every one of those jobs is telling the truth.
   #
   # So this reassembles the registry from what the shards wrote down. It keeps the old job's name on
   # purpose: `mutation controls` is the check that has always meant "every mutation ran and none

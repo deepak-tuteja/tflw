@@ -62,7 +62,14 @@ export interface SemanticToken {
  * are also `.tflw` step vocabulary, and `authorized`/`target`/`reason`/`privileged` were added here
  * as shared and moving them now would be a colouring change to test files under a milestone that is
  * about config files. Being in both is harmless — a word in the shared set is a keyword in both
- * dialects, which is exactly what these are. */
+ * dialects, which is exactly what these are.
+ *
+ * `M137a` (`D384`'s residue) adds `oversized`/`traversal`, `probe`'s two other sub-clauses
+ * (`parser.ts`'s `PROBE_SUB_CLAUSES`, D372). `M134a` shipped them and caught up
+ * `tflw.tmLanguage.json` alone, whose own comment then claimed the catch-up complete — true of that
+ * file and of no other. That is `B5-09` for the fourth arc running, and the three guard tests added
+ * alongside this line are the first thing in the repo that would have failed on the gap; the
+ * standing fix, one guard holding all three wordlists to the parser's own arrays, is `M136b-01`. */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
@@ -74,7 +81,7 @@ const KEYWORDS = new Set([
   'ramp', 'over', 'threshold', 'cleanup', 'pause',
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
   'parallel', 'sequential', 'exclude',
-  'authorized', 'target', 'reason', 'probe', 'mutating', 'privileged',
+  'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'privileged',
 ]);
 
 /** Keywords the **config dialect alone** uses (`M136b`, D427/D427a) — added to `KEYWORDS` only when
