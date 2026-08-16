@@ -23,7 +23,26 @@ code --extensionDevelopmentPath="$PWD/packages/vscode"
 That opens a second VS Code window ("Extension Development Host") with this working copy of the
 extension loaded and any installed release of it disabled. Open a real tflw project in it — one with
 a `tflw.config` and at least one `.tflw` file — not a scratch folder, so `import` resolution and
-`session` lookup have something to resolve against.
+`session` lookup have something to resolve against. `testFlow-tests` is the obvious one; **this repo
+is not**, because it has no root `tflw.config`, and `activate()` returns before starting the server
+when `resolveWorkspaceRoot()` finds none.
+
+**Build the CLI too, not just the extension.** The client spawns `<root>/node_modules/.bin/tflw lsp`
+— i.e. the tflw *installed into the project you open*, not this working copy. In `testFlow-tests`
+that is a packed tarball, so run `npm run refresh-tflw` there after any change to the server half,
+or the manual pass silently checks a new editor against an old server.
+
+**No theme or font setup is needed, and that is a property of the design rather than luck.** The
+extension contributes no `themes` and no `colors`; every scope its grammars emit is standard
+TextMate vocabulary with a `.tflw` suffix (`keyword.control.tflw`, `support.type.tflw`, …), and
+theme rules match by dot-segment prefix, so a stock theme already has a rule for each. Measured
+against the shipped defaults (Dark+, Light+, Dark Modern, 2026 Dark): **15 of the 16 grammar scopes
+and all 8 `semanticTokenScopes` fallback targets are coloured by every one of them.** The sixteenth
+is `punctuation.separator.pipe.tflw`, and those themes carry no generic `punctuation` rule at all —
+separators render at the editor foreground in every language, so that is the norm, not a gap. Worth
+knowing while reading check 7: **none of the eight semantic token types has a direct
+`semanticTokenColors` rule in any default theme**, so the `semanticTokenScopes` map is not a
+nicety — it is the only path by which a semantic token gets a colour there.
 
 ## The checklist
 
