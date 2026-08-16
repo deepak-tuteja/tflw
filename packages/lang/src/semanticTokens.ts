@@ -25,6 +25,14 @@ import type { SymbolKind, SymbolTable } from './symbols.js';
 
 export type SemanticTokenType = 'keyword' | 'operator' | 'type' | 'function' | 'number' | 'variable' | 'parameter' | 'property';
 
+/** Which of tflw's two grammars a buffer is written in (`M136b`, D427/D427a). `parseSource` and
+ * `parseConfigSource` have always been separate entry points; this is the same distinction reaching
+ * the colouring pass, which until now had one flat wordlist serving both and therefore could serve
+ * neither correctly. Deliberately a *required* parameter on `collectSemanticTokens` rather than one
+ * defaulting to `'test'`: there is exactly one call site today, and a default is how a future second
+ * caller silently gets the wrong dialect's vocabulary with nothing going red. */
+export type Dialect = 'test' | 'config';
+
 export interface SemanticToken {
   readonly span: Span;
   readonly type: SemanticTokenType;
@@ -46,11 +54,15 @@ export interface SemanticToken {
  * `reason` and the indented `probe mutating` sub-clause (`M128b`/`M130b`, D291/D311), plus
  * `privileged` — the `session` header modifier (D307/D310) that sits in the same slot as `oauth2`.
  * This pass serves `tflw.config` buffers as well as `.tflw` ones (`server.ts` hands it whatever the
- * store analyzed), which is why config keywords belong in this list at all. **The arc's words only:**
- * the config dialect's other declaration-only keywords — `allow`/`hosts`/`insecure`/`evidence`/
- * `web`/`cert`/`key`/`oauth2`/`destination` — are absent here and have been since before this arc,
- * a wider gap filed as its own ledger row rather than fixed under a milestone that did not measure
- * it. */
+ * store analyzed), which is why config keywords belong in this list at all.
+ *
+ * `M136b` (D427) makes that last sentence structural instead of incidental. This set is now the
+ * **shared** vocabulary only; the config dialect's own words live in `CONFIG_KEYWORDS` below and are
+ * consulted only for a config buffer. `M133`'s six stay here rather than moving: `probe`/`mutating`
+ * are also `.tflw` step vocabulary, and `authorized`/`target`/`reason`/`privileged` were added here
+ * as shared and moving them now would be a colouring change to test files under a milestone that is
+ * about config files. Being in both is harmless — a word in the shared set is a keyword in both
+ * dialects, which is exactly what these are. */
 const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
@@ -63,6 +75,33 @@ const KEYWORDS = new Set([
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
   'parallel', 'sequential', 'exclude',
   'authorized', 'target', 'reason', 'probe', 'mutating', 'privileged',
+]);
+
+/** Keywords the **config dialect alone** uses (`M136b`, D427/D427a) — added to `KEYWORDS` only when
+ * colouring a `tflw.config` buffer. This is the half of `M133-01` that could not be fixed by adding
+ * words to one flat list: `key`, `web` and `destination` are ordinary identifiers in a `.tflw` file,
+ * and painting them as keywords everywhere would be a worse defect than leaving them uncoloured in
+ * the one dialect that means them.
+ *
+ * **Eighteen words, not the row's nine.** `M133-01` enumerated `allow`/`hosts`/`insecure`/
+ * `evidence`/`web`/`cert`/`key`/`oauth2`/`destination` and prescribed its own fix as *"measure which
+ * of the nine the parser actually treats as keywords"*. Asking that question of every word
+ * `parser.ts` puts in keyword position — rather than of the nine — turned up nine more in the same
+ * dialect: the `oauth2` session block's `token`/`client`/`id`/`secret`/`scope` (P#20/31/42),
+ * `redact` and `viewport` (both sitting in `CONFIG_KEYS` beside the five the row did list), and
+ * `log`'s `level`/`destination` sub-clauses plus `redact`'s `header`/`query` roots. Every entry here
+ * is reachable from `parser.ts:1211-1828`, between the `-- config dialect --` marker at `:1129` and
+ * `-- tests --` at `:1989`.
+ *
+ * **The test dialect has four gaps of its own** — `honoring`, `up`, `method`, `schema` — which are
+ * deliberately *not* fixed here (`M136b-01`). They belong in the shared set, so adding them changes
+ * colouring in every existing `.tflw` file, and `up`/`method` are plausible ordinary identifiers;
+ * that is a different risk from this one and wants its own measurement rather than a ride on a
+ * milestone whose charter is the config dialect. */
+const CONFIG_KEYWORDS = new Set([
+  'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'redact', 'viewport',
+  'oauth2', 'token', 'client', 'id', 'secret', 'scope',
+  'destination', 'level', 'query',
 ]);
 
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words
@@ -132,7 +171,7 @@ function symbolKindToTokenType(kind: SymbolKind): SemanticTokenType | null {
   }
 }
 
-export function collectSemanticTokens(source: string, symbols: SymbolTable): readonly SemanticToken[] {
+export function collectSemanticTokens(source: string, symbols: SymbolTable, dialect: Dialect): readonly SemanticToken[] {
   const tokens: SemanticToken[] = [];
   const claimed = new Set<number>();
   const defKindByOffset = new Map<number, SymbolKind>();
@@ -172,7 +211,7 @@ export function collectSemanticTokens(source: string, symbols: SymbolTable): rea
       tokens.push({ span: tok.span, type: 'property' });
       continue;
     }
-    if (KEYWORDS.has(tok.value)) tokens.push({ span: tok.span, type: 'keyword' });
+    if (KEYWORDS.has(tok.value) || (dialect === 'config' && CONFIG_KEYWORDS.has(tok.value))) tokens.push({ span: tok.span, type: 'keyword' });
     else if (OPERATORS.has(tok.value)) tokens.push({ span: tok.span, type: 'operator' });
     else if (TYPES.has(tok.value)) tokens.push({ span: tok.span, type: 'type' });
     else if (FUNCTIONS.has(tok.value)) tokens.push({ span: tok.span, type: 'function' });

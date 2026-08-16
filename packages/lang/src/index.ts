@@ -85,7 +85,7 @@ export { ABSOLUTE_URL_START, isAbsoluteUrl, absoluteUrlHost } from './absoluteUr
 export { isDecodable, isDecodableHex, isDecodableBase64, isDecodablePercentEncoding, regexCompiles, regexCompileError } from './literalValidity.js';
 export { collectSymbols, collectConfigSymbols, findIdentifierSpans, type SymbolKind, type SymbolDef, type SymbolRef, type SymbolTable } from './symbols.js';
 export { getCompletionContext } from './completion.js';
-export { collectSemanticTokens, type SemanticToken, type SemanticTokenType } from './semanticTokens.js';
+export { collectSemanticTokens, type SemanticToken, type SemanticTokenType, type Dialect } from './semanticTokens.js';
 export { detectReuse, renderCallSiteReplacement, importInsertionOffset, type SuiteEntry, type ReuseHint, type ReuseOccurrence } from './reuse.js';
 export { collectMigrations, applyMigrations, type MigrationEdit } from './migrate.js';
 

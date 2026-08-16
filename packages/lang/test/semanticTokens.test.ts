@@ -19,17 +19,17 @@ function posOf(source: string, needle: string, occurrence = 1): { offset: number
 function tokensOf(source: string): readonly SemanticToken[] {
   const { program } = parseSource(source);
   const symbols = collectSymbols(program, source);
-  return collectSemanticTokens(source, symbols);
+  return collectSemanticTokens(source, symbols, 'test');
 }
 
 /** The `tflw.config` dialect (M133). `server.ts` hands `collectSemanticTokens` whatever the store
  * analyzed, which is a `ConfigFile` for a config buffer — so config vocabulary is colored by this
  * same function, and the only difference on the test side is which parser/symbol collector feeds
- * it. */
+ * it, plus the `'config'` dialect the function now takes explicitly (`M136b`, D427). */
 function configTokensOf(source: string): readonly SemanticToken[] {
   const { config } = parseConfigSource(source);
   const symbols = collectConfigSymbols(config, source);
-  return collectSemanticTokens(source, symbols);
+  return collectSemanticTokens(source, symbols, 'config');
 }
 
 function findToken(tokens: readonly SemanticToken[], source: string, needle: string, occurrence = 1): SemanticToken | undefined {
@@ -189,6 +189,95 @@ test('collectSemanticTokens: `authorized target`/`reason`/`probe mutating`/`priv
   // semantic token at all by design (`symbolKindToTokenType` returns null for `session` — grammar
   // coloring already covers them), so the correct assertion is *absence*, not a different type.
   assert.equal(findToken(tokens, source, 'admin'), undefined, 'the session name is not a keyword');
+});
+
+// -- M136b (D427/D427a): the config dialect's own vocabulary --------------------------------
+//
+// `M133-01` said nine words were missing from this list. Measuring every word `parser.ts` puts in
+// keyword position, rather than the nine the row enumerated, found eighteen in the config dialect
+// (and four more in the test dialect, filed as `M136b-01`). These three tests are the two
+// directions of the split plus the realistic case.
+
+/** The eighteen, in declaration order: the `CONFIG_KEYS` top-level directives (`parser.ts:352`),
+ * the `oauth2` session block, then the `log`/`redact` sub-clause words. */
+const CONFIG_ONLY_WORDS = [
+  'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'redact', 'viewport',
+  'oauth2', 'token', 'client', 'id', 'secret', 'scope',
+  'destination', 'level', 'query',
+] as const;
+
+test('collectSemanticTokens (M136b, D427a): all eighteen config-only keywords classify as `keyword` in a real tflw.config', () => {
+  // Parses with zero diagnostics — asserted below, because a source the parser rejects would still
+  // colour (the lexer-driven pass never consults the parse) and the test would pass while claiming
+  // to describe a config anybody could write.
+  const source =
+    'defaults\n' +
+    '  insecure true\n' +
+    '  cert "./client.pem"\n' +
+    '  key "./client-key.pem"\n' +
+    '  allow hosts "api.example.com"\n' +
+    '  evidence "headers-only"\n' +
+    '  redact header "Authorization"\n' +
+    '  redact query "token"\n' +
+    '  viewport 1280 720\n' +
+    '  log level "debug"\n' +
+    '  log destination "both"\n' +
+    '\n' +
+    'env local\n' +
+    '  api "https://api.example.com"\n' +
+    '  web "https://app.example.com"\n' +
+    '\n' +
+    'session svc oauth2\n' +
+    '  token url "https://auth.example.com/token"\n' +
+    '  client id "abc"\n' +
+    '  client secret "shh"\n' +
+    '  scope "read:orders"\n';
+
+  const { config, diagnostics } = parseConfigSource(source);
+  assert.deepEqual(diagnostics.map((d) => d.message), [], 'the fixture config must parse cleanly');
+
+  const tokens = collectSemanticTokens(source, collectConfigSymbols(config, source), 'config');
+  // Occurrence-indexed, not `indexOf`: `token` first appears inside `redact query "token"` and
+  // `client` inside `"./client.pem"`, so the naive lookup finds a string, not the keyword.
+  assertTypeAt(tokens, source, 'insecure', 'keyword');
+  assertTypeAt(tokens, source, 'cert', 'keyword');
+  assertTypeAt(tokens, source, 'key', 'keyword'); // the directive precedes the "./client-key.pem" that also contains it
+  assertTypeAt(tokens, source, 'allow', 'keyword');
+  assertTypeAt(tokens, source, 'hosts', 'keyword');
+  assertTypeAt(tokens, source, 'evidence', 'keyword');
+  assertTypeAt(tokens, source, 'redact', 'keyword');
+  assertTypeAt(tokens, source, 'viewport', 'keyword');
+  assertTypeAt(tokens, source, 'level', 'keyword');
+  assertTypeAt(tokens, source, 'destination', 'keyword');
+  assertTypeAt(tokens, source, 'oauth2', 'keyword');
+  assertTypeAt(tokens, source, 'scope', 'keyword');
+});
+
+test('collectSemanticTokens (M136b, D427): the config vocabulary is a keyword in `config` and nothing at all in `test`', () => {
+  // Both directions on the same one-word source, so the *only* variable is the dialect argument.
+  // This is the assertion the split exists for: `key`, `web` and `destination` are ordinary
+  // identifiers in a .tflw file, and a fix that coloured them everywhere would be worse than the
+  // uncoloured config this milestone set out to repair.
+  const noSymbols = { defs: [], refs: [] };
+  for (const word of CONFIG_ONLY_WORDS) {
+    const inConfig = collectSemanticTokens(word, noSymbols, 'config');
+    assert.equal(inConfig.length, 1, `"${word}" should produce exactly one token in a config buffer`);
+    assert.equal(inConfig[0]!.type, 'keyword', `"${word}" in a config buffer`);
+
+    const inTest = collectSemanticTokens(word, noSymbols, 'test');
+    assert.deepEqual(inTest, [], `"${word}" must not be coloured in a .tflw buffer — it is an ordinary identifier there`);
+  }
+});
+
+test('collectSemanticTokens (M136b, D427): config words used as variables in a .tflw file stay variables', () => {
+  // The realistic form of the negative above. `let key = …` is a perfectly ordinary line, and the
+  // symbol pass claims these spans before the wordlist pass runs — so the assertion is that they
+  // come back `variable`, not that they come back untyped.
+  const source = 'test "t"\n  let key = "k"\n  let web = "w"\n  let destination = "d"\n  api GET "/x"\n';
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'key', 'variable');
+  assertTypeAt(tokens, source, 'web', 'variable');
+  assertTypeAt(tokens, source, 'destination', 'variable');
 });
 
 test('collectSemanticTokens: `was made` (M3d) classifies as `operator`', () => {

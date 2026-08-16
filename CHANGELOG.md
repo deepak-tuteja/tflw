@@ -349,6 +349,20 @@ a different thing depending on which matcher a file happened to use.
   failure mode is silence: an invalid document uploads successfully and produces no alerts, with no
   error to read (decision 414).
 
+### Added — editor support for `tflw.config` as its own dialect (M136b)
+
+- **`tflw.config` files now have their own VS Code language id** (`tflw-config`) and their own
+  TextMate grammar (`source.tflw.config`). The config dialect's declaration-only vocabulary is
+  highlighted for the first time: `allow`, `hosts`, `insecure`, `cert`, `key`, `evidence`, `web`,
+  `redact`, `viewport`, `oauth2`, `token`, `client`, `id`, `secret`, `scope`, `destination`,
+  `level` and `query` — **eighteen words**, in both the grammar and the language server's semantic
+  tokens.
+- The split is what made this possible rather than an implementation detail: `key`, `web` and
+  `destination` are ordinary identifiers in a `.tflw` test file, and a single shared wordlist could
+  never colour them in one dialect without colouring them in the other. The config grammar is a
+  delta that includes the shared one, so the two dialects cannot drift apart.
+- No change to `.tflw` files, by construction and by test.
+
 ### Fixed — roadmap truth (M135b)
 
 - The README described security testing as unbuilt and named a `tflw scan` mode that will never

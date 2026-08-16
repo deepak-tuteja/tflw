@@ -349,8 +349,14 @@ export function startServer(options: StartServerOptions = {}): void {
     const analysis = await store.analyze(params.textDocument.uri, envSetting);
     if (!analysis) return null;
 
+    // The dialect comes from the store's own `classify` (D427a) — the same filename check that
+    // already decided whether this buffer was parsed by `parseConfigSource` or `parseSource`, so the
+    // colouring pass and the parse can never disagree about what they are looking at. Not taken from
+    // the client's language id, which is a second opinion the server does not need and would have to
+    // be kept in sync with `packages/vscode`'s manifest to stay right.
+    const kind = store.get(params.textDocument.uri)?.kind ?? 'test';
     const builder = new SemanticTokensBuilder();
-    for (const t of collectSemanticTokens(doc.getText(), analysis.symbols)) {
+    for (const t of collectSemanticTokens(doc.getText(), analysis.symbols, kind)) {
       builder.push(t.span.start.line - 1, t.span.start.column - 1, t.span.end.offset - t.span.start.offset, SEMANTIC_TOKEN_TYPE_INDEX.get(t.type)!, 0);
     }
     return builder.build();

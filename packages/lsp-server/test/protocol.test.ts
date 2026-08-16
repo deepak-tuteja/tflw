@@ -396,3 +396,56 @@ test('B5-07: prepareRename returns null where nothing is renameable', async () =
   assert.equal(result, null);
   client.dispose();
 });
+
+// ---------------------------------------------------------------------------------------------
+// M136b — D427/D428: the config dialect got its own VS Code language id (`tflw-config`).
+//
+// The failure mode of a language-id split is silence, not an error: the client attaches to nothing
+// and every feature disappears at once while every test that exercises the *server* stays green.
+// These two are written over the wire, with the new id on the `didOpen`, because that is the only
+// place the split is observable from this package — and they assert what the split can break
+// (diagnostics arriving at all) before what the row asked for (colour).
+//
+// The reassuring half, and the measurement that made this milestone low-risk: the server never
+// reads `languageId`. `documentStore.ts`'s `classify` branches on the **filename**, so the dialect
+// the parser and the colouring pass see cannot disagree with each other, and cannot be desynced by
+// a client that sends the wrong id. These tests pin that property rather than assume it.
+
+/** `openDocument` with the config dialect's language id and a `tflw.config` file name. */
+function openConfigDocument(client: MessageConnection, uri: string, text: string): void {
+  client.sendNotification('textDocument/didOpen', { textDocument: { uri, languageId: 'tflw-config', version: 1, text } });
+}
+
+const CONFIG_URI = pathToFileURL(join('/tmp/tflw-lsp-protocol-test', 'tflw.config')).href;
+
+test('M136b/D428: a `tflw.config` buffer opened under the new language id still receives diagnostics', { timeout: 15_000 }, async () => {
+  const { client } = await connectServer();
+  // `test` is banned in the declaration-only dialect (TF021) — a diagnostic only the config parser
+  // produces, so its arrival proves the buffer was analyzed *as a config* and not merely analyzed.
+  const text = 'test "not allowed here"\n';
+
+  const published = nextDiagnostics(client, 'the tflw.config buffer');
+  openConfigDocument(client, CONFIG_URI, text);
+  const params = await published;
+
+  assert.equal(params.uri, CONFIG_URI);
+  assert.equal(params.diagnostics.length, 1);
+  assert.equal(params.diagnostics[0]!.code, 'TF021');
+  client.dispose();
+});
+
+test('M136b/D427: semanticTokens/full colors config-only vocabulary in a `tflw.config` buffer', async () => {
+  const { client } = await connectServer();
+  const text = 'defaults\n  allow hosts "api.example.com"\n  evidence "headers-only"\n';
+  openConfigDocument(client, CONFIG_URI, text);
+
+  const result = (await client.sendRequest('textDocument/semanticTokens/full', { textDocument: { uri: CONFIG_URI } })) as { data: number[] } | null;
+
+  assert.ok(result);
+  assert.equal(result!.data.length % 5, 0);
+  // `defaults` alone would satisfy a non-empty check — it is in the shared wordlist and was colored
+  // before this milestone. Four tokens is the claim: `defaults`, plus `allow`/`hosts`/`evidence`,
+  // none of which the server could color until it was told which dialect it was looking at.
+  assert.equal(result!.data.length / 5, 4, 'expected `defaults` plus the three config-only keywords');
+  client.dispose();
+});

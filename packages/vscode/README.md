@@ -17,7 +17,10 @@ test "a customer can check out"
 ## What it does
 
 - **Syntax highlighting** for `.tflw` files and `tflw.config`, including semantic token scopes so
-  captures, env references and matchers stay distinguishable from ordinary strings.
+  captures, env references and matchers stay distinguishable from ordinary strings. The two are
+  separate dialects and are highlighted as such — `tflw.config`'s declaration-only vocabulary
+  (`allow hosts`, `cert`/`key`, `evidence`, `redact`, `oauth2` and the rest) is coloured there and
+  left alone in test files, where the same words are ordinary identifiers.
 - **Inline diagnostics** from a real Language Server — the same checker the CLI runs, so an editor
   squiggle and a `tflw check` failure are never two different opinions. Every diagnostic carries its
   `TF0xx` code and the same teaching hint the terminal prints.
