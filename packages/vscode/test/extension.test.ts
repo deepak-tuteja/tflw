@@ -6,6 +6,10 @@
 // gap `lib.ts`'s split-out-the-pure-logic strategy deliberately left uncovered until now: the
 // glue in activate() itself (command/provider registration, the conditional LanguageClient start)
 // had zero test coverage.
+//
+// What the mock buys is also what it costs: these tests prove we hand VS Code the right wiring,
+// never that VS Code does anything with it. Nothing here (or in CI) starts a real Extension Host.
+// The checks that need a human are written down in test/MANUAL.md.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
