@@ -1806,7 +1806,7 @@ const REGISTRY = [
     pkg: 'tflw',
     file: 'packages/cli/scripts/bundle.mjs',
     what: "the artifact contract stops being written into `dist/`, so it never ships. The consumer's gate then finds no contract file — which it treats as a hard failure rather than a skip, on purpose, but only if someone runs it. Every test in *this* repository still passes without the file, because nothing here reads it: it exists solely for the other repository, which is exactly the shape of thing that gets dropped in a refactor and missed",
-    find: "const { ARTIFACT_CONTRACT } = await import('@tflw/reporter');\nwriteFileSync(\n  new URL('../dist/artifact-contract.json', import.meta.url),\n  `${JSON.stringify(ARTIFACT_CONTRACT, null, 2)}\\n`,\n  'utf8',\n);",
+    find: "const { ARTIFACT_CONTRACT } = await import(\n  new URL('../../reporter/dist/artifact-contract.js', import.meta.url).href\n);\nwriteFileSync(\n  new URL('../dist/artifact-contract.json', import.meta.url),\n  `${JSON.stringify(ARTIFACT_CONTRACT, null, 2)}\\n`,\n  'utf8',\n);",
     replace: '',
   },
 

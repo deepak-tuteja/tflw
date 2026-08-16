@@ -168,7 +168,31 @@ writeFileSync(new URL('../THIRD-PARTY-NOTICES.md', import.meta.url), renderNotic
 // `@tflw/reporter` — the same module `sarif.ts` builds the document from — so the file and the
 // emitter cannot state different things. `packages/reporter/test/sarif.test.ts` closes the other
 // direction, that the contract does not promise a key the emitter stopped writing.
-const { ARTIFACT_CONTRACT } = await import('@tflw/reporter');
+//
+// D453 — the *leaf module*, by path, not `@tflw/reporter`'s barrel. The barrel spelling is the
+// obvious one and it cost 2.81 points of function coverage, red against the floor this same
+// milestone was writing into `ci.yml`. The chain: the barrel value-imports `@tflw/runtime`, whose
+// own barrel re-exports `browser.ts`, so every `bundle.mjs` process — five of them during one
+// `npm run coverage`, and all of them instrumented, since c8 exports `NODE_V8_COVERAGE` to the
+// whole tree — began compiling 45 of `browser.ts`'s functions and calling none of them.
+//
+// Those 45 do not merge with the ones the runtime's own tests report. The tests measure
+// `src/browser.ts` directly; a bundle process measures `dist/browser.js` and c8 maps it back
+// through the emitted map (`.c8rc.json`'s `exclude-after-remap`, M86 — which is why a `dist/` file
+// is counted at all). tsc's emit moves function boundaries, so the remapped declarations land at
+// locations istanbul has not seen and become *additional* functions: `browser.ts` went 76 found /
+// 70 hit to 143 / 90, and the global figure 95.19% to 92.38%. Measured, not reasoned — dropping
+// only these five processes from the recorded coverage returns both numbers exactly.
+//
+// So this is a measurement defect and not missing tests, and the remedy is to stop the build script
+// loading a module graph it has no use for. `artifact-contract.js` imports nothing at all, which is
+// what makes the narrow import possible; keep it that way. Note the reach is longer than it looks —
+// any future value-import here of a package that transitively reaches `@tflw/runtime` does the same
+// thing again, silently, and shows up as a coverage number nobody can explain. Nothing needs a new
+// guard: the floor is the guard, and it is what caught this.
+const { ARTIFACT_CONTRACT } = await import(
+  new URL('../../reporter/dist/artifact-contract.js', import.meta.url).href
+);
 writeFileSync(
   new URL('../dist/artifact-contract.json', import.meta.url),
   `${JSON.stringify(ARTIFACT_CONTRACT, null, 2)}\n`,
