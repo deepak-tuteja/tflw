@@ -155,6 +155,50 @@ await reportWarnings('dist/mtls-worker.cjs', workerBuild);
 const notices = collectNotices({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs } });
 writeFileSync(new URL('../THIRD-PARTY-NOTICES.md', import.meta.url), renderNotices(pkg.name, notices), 'utf8');
 
+// M137a (`M136c-01`) — the cross-repo artifact contract, shipped as data rather than as code.
+//
+// `testFlow-tests` reads `findings.sarif`, and until now nothing joined the names tflw writes to the
+// names that repo reads. `M136a` renamed one and the break surfaced as eleven failed SARIF entries
+// in an acceptance phase — the slowest way it could have been found, with D351's cross-repo gate
+// green throughout, because that gate is about diagnostic codes.
+//
+// A JSON file in `dist/` rather than a value the consumer imports: `files: ["dist"]` ships it with
+// no packaging change, `dist/cli.cjs` is a CLI entry with nothing useful to import, and a consumer
+// that has to spawn a process to learn a key name will not run its gate. Read from the built
+// `@tflw/reporter` — the same module `sarif.ts` builds the document from — so the file and the
+// emitter cannot state different things. `packages/reporter/test/sarif.test.ts` closes the other
+// direction, that the contract does not promise a key the emitter stopped writing.
+//
+// D453 — the *leaf module*, by path, not `@tflw/reporter`'s barrel. The barrel spelling is the
+// obvious one and it cost 2.81 points of function coverage, red against the floor this same
+// milestone was writing into `ci.yml`. The chain: the barrel value-imports `@tflw/runtime`, whose
+// own barrel re-exports `browser.ts`, so every `bundle.mjs` process — five of them during one
+// `npm run coverage`, and all of them instrumented, since c8 exports `NODE_V8_COVERAGE` to the
+// whole tree — began compiling 45 of `browser.ts`'s functions and calling none of them.
+//
+// Those 45 do not merge with the ones the runtime's own tests report. The tests measure
+// `src/browser.ts` directly; a bundle process measures `dist/browser.js` and c8 maps it back
+// through the emitted map (`.c8rc.json`'s `exclude-after-remap`, M86 — which is why a `dist/` file
+// is counted at all). tsc's emit moves function boundaries, so the remapped declarations land at
+// locations istanbul has not seen and become *additional* functions: `browser.ts` went 76 found /
+// 70 hit to 143 / 90, and the global figure 95.19% to 92.38%. Measured, not reasoned — dropping
+// only these five processes from the recorded coverage returns both numbers exactly.
+//
+// So this is a measurement defect and not missing tests, and the remedy is to stop the build script
+// loading a module graph it has no use for. `artifact-contract.js` imports nothing at all, which is
+// what makes the narrow import possible; keep it that way. Note the reach is longer than it looks —
+// any future value-import here of a package that transitively reaches `@tflw/runtime` does the same
+// thing again, silently, and shows up as a coverage number nobody can explain. Nothing needs a new
+// guard: the floor is the guard, and it is what caught this.
+const { ARTIFACT_CONTRACT } = await import(
+  new URL('../../reporter/dist/artifact-contract.js', import.meta.url).href
+);
+writeFileSync(
+  new URL('../dist/artifact-contract.json', import.meta.url),
+  `${JSON.stringify(ARTIFACT_CONTRACT, null, 2)}\n`,
+  'utf8',
+);
+
 // The metafile itself, for `test/pack.test.ts` to re-derive the same package set from — deliberately
 // *outside* `dist/`, so `files: ["dist"]` cannot ship a build byproduct, and gitignored. Writing it
 // is what keeps the guard from needing its own copy of the build config, which would be the drift

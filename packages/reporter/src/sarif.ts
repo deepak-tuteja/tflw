@@ -37,10 +37,17 @@ import type { Location, Log, ReportingDescriptor, Result } from 'sarif';
 import type { AuthzFinding, RunReport, ScanFinding, ScanKind, Severity } from '@tflw/runtime';
 import { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, templateEndpoint } from '@tflw/runtime';
 
+import { ARTIFACT_CONTRACT } from './artifact-contract.js';
 import { AUTHZ_REPRO_DIR, reproFileName } from './authz-repro.js';
 import { sortFindings } from './findings.js';
 import { remediationFor, type KbEntry } from './kb.js';
 import { sarifSeverityOf } from './sarif-severity.js';
+
+/** Every key below that another repository reads (`M137a`, `M136c-01`). Aliased once rather than
+ * spelled `ARTIFACT_CONTRACT.sarif` at each of the eleven emit sites, which would make the emitter
+ * harder to read to no benefit — the property that matters is that the string literals are gone
+ * from here, not how far the reference travels. */
+const SARIF = ARTIFACT_CONTRACT.sarif;
 
 /** The file name, in the report directory beside `report.html` and `results.json`. */
 export const SARIF_FILE = 'findings.sarif';
@@ -207,7 +214,9 @@ function ruleObject(rule: string, severity: Severity): ReportingDescriptor {
     // sits beside native alerts instead of in a bucket of its own. A full `taxonomies[]` block was
     // rejected: it is spec-pure, largely ignored by the consumer that matters, and its `guid`
     // fields are a validation cost paid for a reach nothing currently has.
-    properties: { tags, 'security-severity': securitySeverity },
+    // `M137a`/`M136c-01`: the key comes from the cross-repo contract, so renaming it is an edit to
+    // `artifact-contract.ts` and therefore an edit a consumer's gate can see.
+    properties: { tags, [SARIF.ruleProperties.securitySeverity]: securitySeverity },
   };
 }
 
@@ -287,7 +296,7 @@ function resultObject(f: ScanFinding, ruleIndex: number, repros: ReadonlyMap<str
     // R8's identity, unchanged: the fingerprint is computed once by the runtime and carried, never
     // re-derived here. A reporter that re-hashed would be a second definition of the thing a
     // baseline file is keyed on.
-    ...(f.fingerprint ? { partialFingerprints: { tflwFindingV1: f.fingerprint } } : {}),
+    ...(f.fingerprint ? { partialFingerprints: { [SARIF.partialFingerprint]: f.fingerprint } } : {}),
     // D410 — `baseline` suppresses; `--fail-on` does not. An external suppression is an exact
     // semantic match for a decision a human recorded outside the tool, and GitHub renders it as a
     // dismissed alert. A finding below a severity floor is *unranked*, not accepted: nobody looked
@@ -296,12 +305,12 @@ function resultObject(f: ScanFinding, ruleIndex: number, repros: ReadonlyMap<str
     // change in the application.
     ...(f.withheld === 'baseline' ? { suppressions: [{ kind: 'external', justification: 'accepted in the run\'s baseline file' }] } : {}),
     properties: {
-      'tflw/scan': f.scan,
-      'tflw/endpoint': f.endpoint,
-      ...(f.location !== undefined ? { 'tflw/site': f.location } : {}),
-      ...(f.invariant !== undefined ? { 'tflw/invariant': f.invariant } : {}),
-      ...(f.withheld ? { 'tflw/withheld': f.withheld } : {}),
-      ...(repro ? { 'tflw/repro': repro } : {}),
+      [SARIF.resultProperties.scan]: f.scan,
+      [SARIF.resultProperties.endpoint]: f.endpoint,
+      ...(f.location !== undefined ? { [SARIF.resultProperties.site]: f.location } : {}),
+      ...(f.invariant !== undefined ? { [SARIF.resultProperties.invariant]: f.invariant } : {}),
+      ...(f.withheld ? { [SARIF.resultProperties.withheld]: f.withheld } : {}),
+      ...(repro ? { [SARIF.resultProperties.repro]: repro } : {}),
     },
   };
 }
@@ -391,7 +400,7 @@ export function buildSarifLog(report: RunReport, opts: SarifOptions = {}): Log |
         // told a scan finished when it did not.
         invocations: [{ executionSuccessful: report.ok !== false }],
         properties: {
-          'tflw/notApplicable': notApplicable,
+          [SARIF.runProperties.notApplicable]: notApplicable,
         },
       },
     ],

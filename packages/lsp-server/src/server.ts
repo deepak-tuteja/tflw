@@ -37,7 +37,7 @@ import { getHover } from './resolution/hover.js';
 import { getCompletions, variablesInScopeAt } from './resolution/completion.js';
 import { findRenameTargets } from './resolution/rename.js';
 import { getSignatureHelp } from './resolution/signatureHelp.js';
-import { getCompletionContext, collectSemanticTokens, lex } from '@tflw/lang';
+import { getCompletionContext, getConfigCompletionContext, collectSemanticTokens, lex } from '@tflw/lang';
 
 // Mirrors `syntaxes/tflw.tmLanguage.json`'s intent but sourced from `@tflw/lang`'s
 // `collectSemanticTokens` (PLAN.md decision 105) — lets VS Code color these using its own
@@ -232,9 +232,16 @@ export function startServer(options: StartServerOptions = {}): void {
   connection.onCompletion(async (params): Promise<CompletionItem[]> => {
     const doc = documents.get(params.textDocument.uri);
     const info = store.get(params.textDocument.uri);
-    if (!doc || !info || info.kind !== 'test') return [];
+    if (!doc || !info) return [];
     const offset = doc.offsetAt(params.position);
-    const ctx = getCompletionContext(doc.getText(), offset);
+    // `M137a`/D444. This guard used to read `info.kind !== 'test'`, and that single clause was the
+    // outermost of the three layers that made the config dialect uncompletable: the buffer was
+    // refused here before either of the other two could be wrong. The dialect the store already
+    // knows now picks the parser, which is the same arrangement `onHover`/`onDefinition` use.
+    const ctx =
+      info.kind === 'test'
+        ? getCompletionContext(doc.getText(), offset)
+        : getConfigCompletionContext(doc.getText(), offset);
     if (!ctx) return [];
 
     let knownSessions: readonly string[] | undefined;

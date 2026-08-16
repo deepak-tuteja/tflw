@@ -91,11 +91,27 @@ test('nothing completes at declaration position — the fact that makes the colu
   }
 });
 
-test('a line with content is never routed through the blank-line branch', () => {
-  // `  expect ` has content before the cursor, so `parseForCompletion` answers and the new branch
-  // is never consulted. It answers `step`/`expect` — the trailing space is not enough to move the
-  // cursor into subject position, which needs a character (`expect s` → `subject`/`s`, asserted in
-  // completion.test.ts). Pinned as the *pre-existing* shape, not as a thing this milestone chose:
-  // the assertion that matters here is that adding the branch did not disturb it.
-  assert.deepEqual(ctxAt('test "ok"\n  expect '), { kind: 'step', prefix: 'expect' });
+// `M137a`/D444 changes this one deliberately, and the old expectation is kept above it because the
+// change is the point.
+//
+// The line above used to read `{ kind: 'step', prefix: 'expect' }`, pinned by `M125e` as "the
+// *pre-existing* shape, not a thing this milestone chose". It was a defect, and a visible one: the
+// candidates offered at a cursor after `expect ` were the step keywords filtered to `expect`, so
+// accepting one wrote `expect expect`. `atCompletionPoint()` cannot see a trailing space — the lexer
+// closes the last physical line with a synthetic `newline` either way — so a completed token and a
+// half-typed one are the same observation to it.
+//
+// D444 forced the issue rather than inviting it: `probe ` under an `authorized target` is a cursor
+// of exactly this shape, and the config dialect had no prior behaviour to preserve. Widening
+// `resolveAtUntypedCursor` from "a whitespace-only line" to "a line ending in whitespace" answers
+// both — the probe character walks the parser past the completed token to where the cursor is.
+test('a cursor after a completed token resolves to the next position, not to the token behind it', () => {
+  assert.deepEqual(ctxAt('test "ok"\n  expect '), { kind: 'subject', prefix: '' });
+});
+
+test('and that is the same answer typing one real character gives — the D278 derivation, unchanged', () => {
+  // The rule this milestone did not touch: the probe unblocks the lexer, it never invents a parse.
+  // If these disagreed, the synthetic character would be changing the answer rather than revealing
+  // it, and the widening would be a guess.
+  assert.equal(ctxAt('test "ok"\n  expect ')?.kind, ctxAt('test "ok"\n  expect s')?.kind);
 });

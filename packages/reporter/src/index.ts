@@ -37,6 +37,10 @@ export { SARIF_SEVERITY, sarifSeverityOf, type SarifLevel, type SarifSeverity } 
 // never exist. `writeSarif` writes nothing at all when the run did not scan, which is D404: an empty
 // `results` array tells GitHub every existing alert is fixed.
 export { buildSarifLog, writeSarif, runScanned, sarifUri, SARIF_FILE, SARIF_SCHEMA_URL, type SarifOptions } from './sarif.js';
+// `M137a`/`M136c-01` — exported so `packages/cli/scripts/bundle.mjs` can write it into the shipped
+// package as `dist/artifact-contract.json`, which is what `testFlow-tests` reads across the repo
+// boundary. Nothing inside this monorepo needs it from here; the emitter imports it directly.
+export { ARTIFACT_CONTRACT, type ArtifactContract } from './artifact-contract.js';
 export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
 /** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links

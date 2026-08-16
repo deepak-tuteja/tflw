@@ -6,7 +6,19 @@
 // come from the caller (Phase 3's I/O layer resolves `tflw.config`; `packages/lang` has no
 // notion of "the project" to fetch them itself).
 
-import { GENERATORS, MATCHERS, STEP_KEYWORDS, type CompletionContext, type Program, type Span, type SymbolTable } from '@tflw/lang';
+import {
+  CONFIG_KEYWORDS,
+  GENERATORS,
+  MATCHERS,
+  STEP_KEYWORDS,
+  configKeyAllowedIn,
+  type CompletionContext,
+  type ConfigBlockKind,
+  type ConfigKeywordSlot,
+  type Program,
+  type Span,
+  type SymbolTable,
+} from '@tflw/lang';
 
 export interface CompletionCandidate {
   readonly label: string;
@@ -213,5 +225,36 @@ export function getCompletions(ctx: CompletionContext, sources: CompletionSource
       return TRANSFORM_CANDIDATES.filter((c) => byPrefix(c.label)).map((c) => ({ label: c.label, detail: generatorDetail(c.specId) }));
     case 'session':
       return (sources.knownSessions ?? []).filter(byPrefix).map((label) => ({ label }));
+
+    // -- the config dialect (`M137a`, D444) ---------------------------------------------------
+    //
+    // Every one of these is a fixed vocabulary read straight off `CONFIG_KEYWORDS`, which
+    // `configCompletionDetail.test.ts` holds to the parser's own arrays. Nothing here restates a
+    // wordlist, which is the point: this is the milestone repairing `B5-09`'s third instance.
+    case 'config-directive':
+      return configSlot('directive').filter((c) => byPrefix(c.label));
+    case 'defaults-key':
+      return configKeys('defaults').filter((c) => byPrefix(c.label));
+    case 'env-key':
+      return configKeys('env').filter((c) => byPrefix(c.label));
+    // Whole phrases, because this is the start of the sub-clause line and `probe` is the only word
+    // that can begin one — the same reason `matcher` offers `has no critical security violations`
+    // rather than `has`. `SUGGESTION_VOCABULARIES.scanKind` states the rule for the hint side.
+    case 'probe':
+      return configSlot('probe').map((c) => ({ ...c, label: `probe ${c.label}` })).filter((c) => byPrefix(c.label));
+    case 'probe-class':
+      return configSlot('probe').filter((c) => byPrefix(c.label));
   }
+}
+
+function configSlot(slot: ConfigKeywordSlot): CompletionCandidate[] {
+  return CONFIG_KEYWORDS.filter((e) => e.slot === slot).map((e) => ({ label: e.id, detail: e.summary }));
+}
+
+/** The keys legal in this block, and only those. `A2-07b` is why the filter is here rather than
+ * left to the checker: offering a key and then rejecting it is a tool that tells you what to write
+ * and refuses it, and that row was filed against the did-you-mean hint — a much quieter surface
+ * than a candidate list. */
+function configKeys(block: ConfigBlockKind): CompletionCandidate[] {
+  return configSlot('key').filter((c) => configKeyAllowedIn(c.label, block));
 }

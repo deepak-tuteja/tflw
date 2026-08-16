@@ -205,6 +205,29 @@ test('tokenizes the pentest arc config declarations: `authorized target … reas
   );
 });
 
+// M137a (`D384`'s residue). `M134a` shipped `input handling` and the two further `probe`
+// sub-clauses and caught this file up, but wrote no test for any of them — so when the same
+// milestone left `semanticTokens.ts` behind, nothing could tell. The test that would have caught it
+// is this one's sibling in `packages/lang/test/semanticTokens.test.ts`; both are written now, and
+// the pair is what makes the drift detectable rather than either alone.
+test('tokenizes `has no [<severity>] input handling violations` and `probe oversized`/`probe traversal` (M134a, M137a guard)', () => {
+  const matcherLines = tokenizeLines(['  expect response has no moderate input handling violations']);
+  // Two words, not one: the lexer has no hyphen in an identifier, so `input-handling` would have
+  // lexed as three tokens (D366). Both halves have to carry the matcher scope independently.
+  assert.ok(hasScope(findToken(matcherLines, 'input'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(matcherLines, 'handling'), 'keyword.operator.word.tflw'));
+  assert.ok(hasScope(findToken(matcherLines, 'moderate'), 'keyword.operator.word.tflw'));
+
+  const probeLines = tokenizeLines([
+    'defaults',
+    '  authorized target "http://localhost:4001" reason "self-hosted test fixture"',
+    '    probe oversized',
+    '    probe traversal',
+  ]);
+  assert.ok(hasScope(findToken(probeLines, 'oversized'), 'keyword.control.tflw'), 'D372 sibling of `probe mutating`');
+  assert.ok(hasScope(findToken(probeLines, 'traversal'), 'keyword.control.tflw'), 'D372 sibling of `probe mutating`');
+});
+
 test('tokenizes `request to "…" was made` (M3d, M4a catch-up)', () => {
   const lines = tokenizeLines(['  expect request to "/orders" was made']);
 

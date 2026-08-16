@@ -157,6 +157,22 @@ test('getCompletions: matcher kind includes `has no [<severity>] authorization v
   assert.ok(candidates.find((c) => c.label === 'has no authorization violations')!.detail, 'spec-data supplies the detail line');
 });
 
+// M137a (`D384`'s residue) — the arc's third scan, which `M134a` shipped without the guard its two
+// predecessors have. Same `detail` assertion for the same reason: this is now the matcher in the
+// language whose semantics a reader is least likely to already hold, and the two-word scan name is
+// the one place a wordlist could half-catch-up and still look right.
+test('getCompletions: matcher kind includes `has no [<severity>] input handling violations` (M134a/D366) with detail', () => {
+  const source = 'test "ok"\n  expect response h';
+  const ctx = getCompletionContext(source, source.length)!;
+  const candidates = getCompletions(ctx);
+  const labels = candidates.map((c) => c.label);
+  assert.ok(labels.includes('has no input handling violations'));
+  for (const sev of ['minor', 'moderate', 'serious', 'critical']) {
+    assert.ok(labels.includes(`has no ${sev} input handling violations`), `missing severity floor: ${sev}`);
+  }
+  assert.ok(candidates.find((c) => c.label === 'has no input handling violations')!.detail, 'spec-data supplies the detail line');
+});
+
 test('getCompletions: matcher kind includes `matches file` (gap #17), `matches snapshot` (M4b), and `was made` (M3d)', () => {
   const fileSource = 'test "ok"\n  expect body bytes m';
   const fileCtx = getCompletionContext(fileSource, fileSource.length)!;

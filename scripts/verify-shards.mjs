@@ -4,9 +4,12 @@
 // WHY THIS EXISTS AT ALL, given that `partition()` already refuses to lose an entry. Because that
 // guard runs *inside one process*, and the thing most likely to go wrong lives outside every
 // process: the workflow's matrix is a list of numbers in YAML and the `/n` in the command is
-// another, and nothing makes them agree. Delete `4` from `shard: [1, 2, 3, 4, 5, 6]` and five jobs
-// run `--shard=i/6`, all five go green, the workflow goes green, and thirty mutations were never
-// applied. Every one of those five jobs is telling the truth about itself.
+// another, and nothing makes them agree. Delete `4` from `shard: [1, 2, … 12]` and eleven jobs run
+// `--shard=i/12`, all eleven go green, the workflow goes green, and a twelfth of the registry was
+// never applied. Every one of those eleven jobs is telling the truth about itself. (The count has
+// been 6 and is 12 since `M137a`/D449 — which is the point: this file never learns it, and must not.
+// It reassembles what the shards say they ran, so a widen needs no edit here and a *wrong* widen is
+// still caught.)
 //
 // So each shard writes down the ids it actually ran and this reassembles the registry from those
 // files in a job of its own. It is the only place in CI that can say "the sweep covered the

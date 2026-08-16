@@ -54,7 +54,7 @@ before(async () => {
   tarballPath = join(scratchDir, tgz);
 });
 
-test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
+test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/artifact-contract.json + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
   const { stdout } = await execFileAsync('tar', ['-tzf', tarballPath]);
   const files = stdout
     .trim()
@@ -65,7 +65,13 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + packa
   // esbuild output (bundle.mjs) specifically so `undici` (needed for its client-cert `Agent`) is
   // never imported by `dist/cli.cjs` itself (M35b: importing it, even unused, cripples this
   // process's own global `fetch()` by ~20x).
-  assert.deepEqual(files, ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
+  // `dist/artifact-contract.json` (M137a, `M136c-01`) — the names `findings.sarif` uses, as data.
+  // It ships because the consumer is *another repository*: `testFlow-tests` reads it out of the
+  // installed package to check that the shape its graders expect is the shape this version writes.
+  // A published byte for a consumer nobody else has, and cheap: it is under a kilobyte, it is
+  // generated from the emitter's own constants rather than authored, and the alternative — a
+  // consumer spawning the CLI to learn a key name — is a gate people stop running.
+  assert.deepEqual(files, ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/artifact-contract.json', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
 
   // The other half of the same property, and the half a file list cannot express (M86). Excluding
   // `.map` files from the tarball is not by itself correct: a bundle built with source maps carries

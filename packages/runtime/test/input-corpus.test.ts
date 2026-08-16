@@ -217,6 +217,34 @@ test('only the enabled classes contribute payloads', () => {
   assert.deepEqual([...new Set(on.map((p) => p.class))], ['injection']);
 });
 
+// M137a (`M134b-01`) — the row's residue, made mechanical instead of left as a note to remember.
+//
+// `M134b`'s sweep proved D388's safety property is carried by three gates, not by `seededPayloads`'
+// signature as its comment then claimed: the narrowing at generation, `planProbes`' filter through
+// `enabledPayloads`, and `InputProber.#probeOne`'s re-check before sending. The mutation written to
+// falsify it survived as EQUIVALENT CODE — the property held, the explanation did not.
+//
+// The row stayed open at S4 for one reason, quoted: *"two of the three gates are downstream of a
+// filter, and a filter is what a later refactor deletes as redundant once the caller 'already'
+// restricts — the thing worth watching is whether `enabledPayloads`' class argument ever becomes
+// optional."* That is a watch with nobody rostered on it. Giving `classes` a default is a one-token
+// edit, it reads as a harmless convenience, every existing test still passes (they all pass classes
+// explicitly), and the result is that a caller who forgets the argument silently gets the full
+// corpus — including classes the target's config never granted, which is D372 undone by omission.
+//
+// `Function.prototype.length` counts parameters before the first defaulted one, so this is exactly
+// that edit and nothing else: `corpus` already has a default and is not counted, and renaming or
+// reordering does not move the number. `input-class-optin-ignored` (m134a) covers the gate that
+// actually carries the property; this covers the gate whose removal would make that one load-bearing
+// alone.
+test('enabledPayloads requires its class list — a default here would hand callers the full corpus (D388, M134b-01)', () => {
+  assert.equal(
+    enabledPayloads.length,
+    1,
+    'enabledPayloads must take `classes` as a required parameter. A default (almost certainly ALL_CLASSES) means a caller that omits it gets every payload, including classes the config withheld — and no existing test would go red, because they all pass it explicitly.',
+  );
+});
+
 test('a path site takes only payloads with a text form', () => {
   const site = mutationSites(req())[0]!;
   const forPath = payloadsForSite(site, enabledPayloads(ALL_CLASSES));

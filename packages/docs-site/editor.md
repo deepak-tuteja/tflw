@@ -75,6 +75,10 @@ the full message and hint without leaving the line:
 Context-aware completion for keywords, matcher/generator words, and in-scope variable, parameter,
 and action names — narrowed to what's actually valid at the cursor:
 
+In `tflw.config` too, which has its own vocabulary: the top-level directives, the config keys legal
+in the block you're in (a `defaults` block is never offered an `env`-only key, or the other way
+round), and the `probe …` sub-clauses under an `authorized target`.
+
 <ClientOnly>
   <AutocompleteDemo />
 </ClientOnly>

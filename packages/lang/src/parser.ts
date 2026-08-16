@@ -169,8 +169,28 @@ export interface ConfigResult {
  * for `subject`/`matcher`/`unique`/`random`/`transform`, and the fixed statement-keyword set for
  * `step`). Autocomplete has no case for a value position (`parseAtom`'s broad dispatch, decision
  * 17.6) — too large a candidate set, low payoff; `unique`/`random`/`transform` are each instrumented
- * only for the sub-keyword right after their entry word (`email`/`number`/…, `encode`/`decode`). */
-export type CompletionKind = 'step' | 'subject' | 'matcher' | 'session' | 'unique' | 'random' | 'transform';
+ * only for the sub-keyword right after their entry word (`email`/`number`/…, `encode`/`decode`).
+ *
+ * **The last five are the config dialect's, added by `M137a` (D444).** They are separate kinds
+ * rather than one kind carrying a block/position field because `CompletionContext` is a two-field
+ * record every consumer switches on exhaustively, and a field that only some kinds read is how a
+ * consumer silently handles a case it never considered. `defaults-key` and `env-key` differ because
+ * six of the fifteen config keys are legal in only one of the two blocks (`configKeyAllowedIn`);
+ * `probe` and `probe-class` differ because the two are typed from different positions and a person
+ * at the second one must not be offered a label beginning with the word they just typed. */
+export type CompletionKind =
+  | 'step'
+  | 'subject'
+  | 'matcher'
+  | 'session'
+  | 'unique'
+  | 'random'
+  | 'transform'
+  | 'config-directive'
+  | 'defaults-key'
+  | 'env-key'
+  | 'probe'
+  | 'probe-class';
 
 export interface CompletionContext {
   readonly kind: CompletionKind;
@@ -349,7 +369,9 @@ function negatedStateWord(word: string): string | undefined {
   return undefined;
 }
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
-const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'redact', 'viewport', 'log'] as const;
+/** Exported since `M137a` (D444) so config completion offers *this* list rather than a fourth copy
+ * of it. `B5-09` is what a fourth copy becomes, and this milestone is repairing the third instance. */
+export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'redact', 'viewport', 'log'] as const;
 /** Which block a config key belongs in — the parser's view of the rule the checker enforces as
  * `TF025` (checker.ts `DEFAULTS_ONLY`/`ENV_ONLY`, keyed there on AST node type rather than on the
  * word). The parser needs it only to keep a *suggestion* from naming a key the checker will then
@@ -358,8 +380,12 @@ const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'in
  * claims about placement is not what the checker then does. */
 const DEFAULTS_ONLY_KEYS: readonly string[] = ['workers', 'report', 'viewport'];
 const ENV_ONLY_KEYS: readonly string[] = ['web', 'api'];
-type ConfigBlockKind = 'defaults' | 'env';
-function configKeyAllowedIn(key: string, block: ConfigBlockKind): boolean {
+export type ConfigBlockKind = 'defaults' | 'env';
+/** Exported alongside `CONFIG_KEYS` (`M137a`, D444) so completion filters by the same predicate the
+ * did-you-mean hint uses. `A2-07b` is the row that made this rule load-bearing: a tool that offers
+ * a key and then refuses it is worse than one that offers nothing, and a candidate list is the
+ * loudest possible place to make that mistake. */
+export function configKeyAllowedIn(key: string, block: ConfigBlockKind): boolean {
   return block === 'defaults' ? !ENV_ONLY_KEYS.includes(key) : !DEFAULTS_ONLY_KEYS.includes(key);
 }
 /** Where a key that is barred from the current block does belong, phrased to drop into a hint. */
@@ -370,7 +396,7 @@ function configKeyHome(key: string): string {
  * `AuthorizedTargetDecl` field each one sets. A total record over the same `as const` tuple, for
  * `SCAN_MATCHER_NAMES`' reason: a fourth word is then a type error until somebody says what it
  * grants, rather than a word the parser accepts and nothing reads. */
-const PROBE_SUB_CLAUSES = ['mutating', 'oversized', 'traversal'] as const;
+export const PROBE_SUB_CLAUSES = ['mutating', 'oversized', 'traversal'] as const;
 const PROBE_SUB_CLAUSE_FIELDS: Readonly<Record<(typeof PROBE_SUB_CLAUSES)[number], 'probeMutating' | 'probeOversized' | 'probeTraversal'>> = {
   mutating: 'probeMutating',
   oversized: 'probeOversized',
@@ -483,6 +509,18 @@ class Parser {
     return this.completionResult;
   }
 
+  /** The same trick against the other dialect (`M137a`, D444). A `tflw.config` buffer has never had
+   * completion, and the reason it could not simply share `runCompletion()` is one line: that method
+   * calls `this.parse()`, so a config file was parsed as a test file, produced `TF021`-shaped
+   * nonsense, and reached none of the guards below. Two entry points, mirroring `parse()`/
+   * `parseConfig()` and `parseSource()`/`parseConfigSource()` — the split this codebase has always
+   * made, and the one `M136b` had to reach for again when a grammar needed a language to bind to. */
+  runConfigCompletion(): CompletionContext | null {
+    this.completionMode = true;
+    this.parseConfig();
+    return this.completionResult;
+  }
+
   /** True when the parser has nothing left to consume (`eof`) or is sitting on the last
    * identifier of the truncated source — i.e. the user has either just typed a delimiter
    * (space/newline) or is mid-word on the token the cursor sits in. The lexer always closes out
@@ -491,6 +529,15 @@ class Parser {
    * last real token" isn't literally followed by `eof`; skip over that synthetic closing tail to
    * find out. `completionPrefix()` below extracts what's typed so far. */
   private atCompletionPoint(): boolean {
+    // First answer wins (`M137a`, D444). A guard that fires does not stop the parse — it returns
+    // `null`/breaks and its caller recovers — so the cursor's token can be offered to a *second*
+    // guard further out, which then overwrites the more specific answer with a less specific one.
+    // Nothing exercised that before: the test dialect's guards sit at productions whose enclosing
+    // loops run out of input immediately afterwards. The config dialect's do not — a `probe` line
+    // under `authorized target` is inside `parseConfigEntries`' loop, so the sub-clause answer was
+    // being replaced by the config-key answer one frame up, and every `probe …` completion came
+    // back as the list of `defaults` keys. Innermost is the production the cursor is actually in.
+    if (this.completionResult) return false;
     if (this.atEof()) return true;
     if (!this.check('ident')) return false;
     for (let k = 1; ; k++) {
@@ -1145,6 +1192,16 @@ class Parser {
     while (!this.atEof()) {
       const before = this.pos;
       const tok = this.peek();
+      // `M137a`/D444. Declaration position, which the *test* dialect deliberately does not answer
+      // at (D278: a blank line at the left margin is not one of the instrumented productions, and
+      // answering there would be inventing a result). The asymmetry is intended: here the left
+      // margin *is* an instrumented production — this loop — so the answer is derived exactly as
+      // every other kind's is. A wholly empty line still gets nothing, because `completion.ts`'s
+      // blank-line probe only fires on a line of pure indentation.
+      if (this.completionMode && this.atCompletionPoint()) {
+        this.completionResult = { kind: 'config-directive', prefix: this.completionPrefix() };
+        break;
+      }
       if (this.isKw(tok, 'defaults')) {
         const d = this.parseDefaultsBlock();
         if (d) {
@@ -1412,6 +1469,14 @@ class Parser {
   }
 
   private parseConfigEntry(block: ConfigBlockKind): ConfigEntry[] | null {
+    // `M137a`/D444 — the block decides the candidate list, so it decides the kind (see
+    // `CompletionKind`). Guarded here rather than in `parseConfigEntries`' loop for the reason every
+    // other guard sits at a production entry point: this is the function whose job is "read one
+    // config key", and the loop above it has already committed to there being one.
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: block === 'defaults' ? 'defaults-key' : 'env-key', prefix: this.completionPrefix() };
+      return null;
+    }
     const tok = this.peek();
     if (tok.type !== 'ident') {
       this.error(Codes.CONFIG_UNKNOWN_KEY, `expected a config key, found ${describeToken(tok)}`, tok.span);
@@ -1720,8 +1785,23 @@ class Parser {
       }
       const before = this.pos;
       const tok = this.peek();
+      // `M137a`/D444, the case that decision is named for: `probe mutating` shipped in `M130b` and
+      // was never completable, in either of the two positions a person types it from. This is the
+      // first — the start of a sub-clause line, where the whole phrase is what has to land in the
+      // buffer.
+      if (this.completionMode && this.atCompletionPoint()) {
+        this.completionResult = { kind: 'probe', prefix: this.completionPrefix() };
+        break;
+      }
       if (this.isKw(tok, 'probe')) {
         this.advance();
+        // The second position: `probe ` is already typed, so the candidate is the bare class word.
+        // Offering the phrase here would complete to `probe probe mutating`, which is why these are
+        // two kinds and not one.
+        if (this.completionMode && this.atCompletionPoint()) {
+          this.completionResult = { kind: 'probe-class', prefix: this.completionPrefix() };
+          break;
+        }
         const word = this.peek();
         const known = PROBE_SUB_CLAUSES.find((w) => this.isKw(word, w));
         if (known) {
@@ -4489,4 +4569,9 @@ export function parseConfig(tokens: readonly Token[]): ConfigResult {
 /** Entry point for `completion.ts` — see `Parser#runCompletion`. */
 export function parseForCompletion(tokens: readonly Token[]): CompletionContext | null {
   return new Parser(tokens).runCompletion();
+}
+
+/** The `tflw.config` half (`M137a`, D444) — see `Parser#runConfigCompletion`. */
+export function parseConfigForCompletion(tokens: readonly Token[]): CompletionContext | null {
+  return new Parser(tokens).runConfigCompletion();
 }

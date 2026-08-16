@@ -24,6 +24,7 @@ import AjvModule from 'ajv';
 import type { Log, Result } from 'sarif';
 import type { AuthzFinding, RunReport, ScanFinding } from '@tflw/runtime';
 import { buildSarifLog, runScanned, sarifUri, writeSarif, SARIF_FILE } from '../src/sarif.js';
+import { ARTIFACT_CONTRACT } from '../src/artifact-contract.js';
 
 // `ajv` is CJS with both a `module.exports` and a `.default`; which one an ESM default import lands
 // on depends on the interop, and getting it wrong fails as `Ajv is not a constructor` rather than as
@@ -82,7 +83,11 @@ function report(over: Partial<RunReport> = {}): RunReport {
     findings: [
       f(),
       f({ scan: 'authorization', rule: 'sec/authz-object-leak', endpoint: 'GET /v1/orders/{id}', location: 'peer', detail: 'peer read the owner\'s order', fingerprint: 'b'.repeat(16), file: 'tests/api/authz.tflw', line: 30 }),
-      f({ scan: 'input-handling', rule: 'sec/oversized-input-accepted', severity: 'minor', endpoint: 'POST /v1/vuln/notes', location: 'body `title`', detail: 'accepted 64 KiB with 201', fingerprint: 'c'.repeat(16), withheld: 'fail-on' }),
+      // `invariant` added by `M137a`: the contract test found that no fixture finding carried one,
+      // so `tflw/invariant` had shipped since `M135b` with nothing asserting it reaches the
+      // document at all. An input-handling finding is where one belongs — the invariant is what the
+      // payload was sent to violate (`inputCorpus.ts`).
+      f({ scan: 'input-handling', rule: 'sec/oversized-input-accepted', severity: 'minor', endpoint: 'POST /v1/vuln/notes', location: 'body `title`', detail: 'accepted 64 KiB with 201', fingerprint: 'c'.repeat(16), withheld: 'fail-on', invariant: 'sec/oversized-input-accepted' }),
       f({ rule: 'sec/csp-missing', severity: 'serious', endpoint: 'GET /v1/docs', location: undefined, detail: 'nothing constrains where this document may load script from', fingerprint: 'd'.repeat(16), withheld: 'baseline' }),
       f({ scan: 'input-handling', rule: 'sec/error-detail-disclosure', severity: 'serious', endpoint: 'POST /v1/vuln/notes', detail: 'answered 500 with an ORM exception name', fingerprint: undefined, seeded: { seed: 7, payload: "tflw'\"" } }),
     ],
@@ -408,4 +413,63 @@ test('the run says whether the tool itself finished', () => {
   // tell that apart from a clean sweep has been told a scan completed when it did not.
   assert.equal(buildSarifLog(report({ ok: false }))!.runs[0]!.invocations![0]!.executionSuccessful, false);
   assert.equal(buildSarifLog(report({ ok: true }))!.runs[0]!.invocations![0]!.executionSuccessful, true);
+});
+
+// ---------------------------------------------------------------------------
+// M137a (`M136c-01`) — the cross-repo contract describes the document it claims to
+// ---------------------------------------------------------------------------
+//
+// `sarif.ts` builds the document *from* `ARTIFACT_CONTRACT`, so a rename cannot make the emitter
+// disagree with the contract. This closes the other direction, which that arrangement leaves open:
+// a contract that keeps promising a key the emitter stopped writing. A consumer reading such a
+// contract is told a field exists, finds it missing at run time, and has no way to tell a bug from
+// a version skew — which is `M136c-01`'s failure with the gate installed and pointing the wrong way.
+//
+// Every assertion walks a **real emitted document** rather than the constants. Comparing the
+// contract to itself is the shape of check that passes forever.
+
+test('every SARIF name the cross-repo contract promises is present in a real emitted document', () => {
+  const log = buildSarifLog(report(), { version: '0.1.0', authzFindings: [AUTHZ_FINDING] })!;
+  const run = log.runs[0]!;
+  const c = ARTIFACT_CONTRACT.sarif;
+
+  assert.ok(Object.hasOwn(run.properties!, c.runProperties.notApplicable), 'the run property carrying did-not-look');
+
+  // The five fields of a `tflw/notApplicable` entry, across both halves of D421's discriminated
+  // shape — `count` rides on the subject half only, so it needs the entry that has one.
+  const notAsked = run.properties![c.runProperties.notApplicable] as Record<string, unknown>[];
+  const rule = notAsked.find((n) => n[c.notApplicableFields.kind] === 'rule');
+  const subject = notAsked.find((n) => n[c.notApplicableFields.kind] === 'subject');
+  assert.ok(rule && subject, 'the fixture exercises both halves');
+  for (const field of [c.notApplicableFields.kind, c.notApplicableFields.scan, c.notApplicableFields.id, c.notApplicableFields.because]) {
+    assert.ok(Object.hasOwn(rule!, field), `notApplicable entries carry \`${field}\``);
+  }
+  assert.ok(Object.hasOwn(subject!, c.notApplicableFields.count), `the subject half carries \`${c.notApplicableFields.count}\``);
+
+  // The six result properties. Four are conditional on the finding, so this asserts over the union
+  // of the fixture's results rather than over any one of them — a per-result assertion would be
+  // asserting which finding the fixture happens to lead with.
+  const emitted = new Set(resultsOf(log).flatMap((r) => Object.keys(r.properties ?? {})));
+  for (const key of Object.values(c.resultProperties)) {
+    assert.ok(emitted.has(key), `some result carries \`${key}\` — the fixture is built to exercise all six`);
+  }
+
+  const descriptors = run.tool.driver.rules ?? [];
+  assert.ok(descriptors.length > 0);
+  for (const d of descriptors) {
+    assert.ok(Object.hasOwn(d.properties ?? {}, c.ruleProperties.securitySeverity), `${d.id} carries \`${c.ruleProperties.securitySeverity}\``);
+  }
+
+  const fingerprinted = resultsOf(log).filter((r) => r.partialFingerprints);
+  assert.ok(fingerprinted.length > 0, 'the fixture has fingerprinted findings');
+  for (const r of fingerprinted) {
+    assert.ok(Object.hasOwn(r.partialFingerprints!, c.partialFingerprint), `${r.ruleId}'s fingerprint is under \`${c.partialFingerprint}\``);
+  }
+});
+
+test('the contract states a version, and a consumer is entitled to refuse an unknown one', () => {
+  // Not decoration. The gate on the other side reads this file to learn key names; handed a shape
+  // it does not understand it must stop rather than guess, because "the shape changed and nothing
+  // said so" is the exact failure it exists to catch.
+  assert.equal(ARTIFACT_CONTRACT.version, 1);
 });
