@@ -322,6 +322,39 @@ a different thing depending on which matcher a file happened to use.
 - Groundwork, not yet user-visible: the SARIF severity mapping that `M135b`'s exporter will publish —
   four tflw levels onto SARIF's three, each with the numeric GitHub actually ranks on (decision 406).
 
+### Added — pen-test arc, `findings.sarif` (`0.4` internal milestone, M135b)
+
+- **`report/findings.sarif`** — SARIF 2.1.0, ingested directly by GitHub code scanning. Each alert
+  anchors to the `.tflw` line that made the assertion, carries the endpoint as a logical location
+  (the endpoint is the finding's subject, but its source is usually not in the repository being
+  scanned), and arrives with the remediation, the CWE tag and the references from the knowledge base
+  above (decisions 403, 405, 407). Paths are relative to the **repository root** — found by walking
+  up for `.git` — rather than to the directory tflw was invoked from, because GitHub anchors an alert
+  by matching the path against the checked-out tree and an unanchored alert uploads without an error.
+- **Written only when the run actually scanned** — not written empty. An empty SARIF document is not
+  neutral: `upload-sarif` reads an empty results array as *everything previously reported is fixed*
+  and resolves the matching alerts, so a functional-only CI job emitting one would silently close the
+  security job's whole backlog. Absence is a signal a workflow can test; emptiness is a signal that
+  reads as good news (decision 404).
+- **A baselined finding uploads suppressed; one below `--fail-on` uploads as an ordinary alert.**
+  Accepted and unranked are different states, and a team that later lowers the floor should not watch
+  a pile of alerts un-dismiss themselves with no change in the application (decision 410).
+- **`rules[]` declares what applied**; rules that stood down are listed with their reasons under
+  `runs[].properties["tflw/notApplicable"]`, so the three-state coverage model survives into the
+  machine-readable artifact instead of collapsing into one empty state (decision 412). Seeded
+  payloads are absent entirely — they have no stable identity, and a tracking system keyed on
+  identity would mint a new permanent alert on every reseed (decision 411).
+- Authorization alerts link the runnable `.tflw` repro the run already wrote (decision 413).
+- The document is validated against the real SARIF schema in the test suite, because this format's
+  failure mode is silence: an invalid document uploads successfully and produces no alerts, with no
+  error to read (decision 414).
+
+### Fixed — roadmap truth (M135b)
+
+- The README described security testing as unbuilt and named a `tflw scan` mode that will never
+  exist — the three scans ship inside `tflw run`, and the roadmap line said otherwise for two
+  milestones after they landed.
+
 ### Changed — grammar freeze (M66–M69)
 
 The shipped grammar is frozen additive-only from `1.0.0` on, so every incompatible change had to

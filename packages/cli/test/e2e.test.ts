@@ -4509,6 +4509,59 @@ test('the built dist/cli.cjs runs an input-handling scan end to end against a re
     // line: a green run that tested less has to say so, and here it has to say so through the CLI.
     assert.match(html, /oversized/);
     assert.match(html, /traversal/);
+
+    // M135b (D403/D404) — the SARIF file, asserted **here** rather than only in the reporter's unit
+    // tests, because the write is wired in `cli.ts` and nothing else executes that line. This is
+    // `M134a-02`'s lesson applied before it could be filed again: an artifact produced only in
+    // process is one wiring regression away from never being written at all, and its absence is
+    // indistinguishable from D404 correctly declining to write it.
+    const sarif = JSON.parse(await readFile(join(dir, 'report', 'findings.sarif'), 'utf8')) as {
+      version: string;
+      runs: { tool: { driver: { name: string; rules: { id: string }[] } }; results: unknown[]; properties: Record<string, unknown> }[];
+    };
+    assert.equal(sarif.version, '2.1.0');
+    assert.equal(sarif.runs[0]!.tool.driver.name, 'tflw');
+    // The scan was clean, so the document has zero results and still declares the rules that ran —
+    // which is the state D404 exists to keep distinguishable from *no scan happened*.
+    assert.deepEqual(sarif.runs[0]!.results, []);
+    assert.ok(sarif.runs[0]!.tool.driver.rules.length > 0, 'a clean scan still names what it checked');
+    assert.ok(sarif.runs[0]!.properties['tflw/notApplicable'], 'and what it did not');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+// M135b (D404) — the other half of the write condition, and the one whose failure is silent.
+//
+// `upload-sarif` reads an empty `results` array as *everything previously reported is fixed* and
+// resolves the matching alerts. A repository whose functional suite and security suite are separate
+// CI jobs would therefore have the functional job close the security job's whole backlog — no error,
+// no warning, a green run and an empty dashboard. So a run that did not scan must write **no file**,
+// and that is a fact about the CLI's wiring, not about the builder: `buildSarifLog` returning
+// `undefined` is worth nothing if `cli.ts` writes an empty document anyway.
+test('the built dist/cli.cjs writes no findings.sarif for a run that never scanned', async () => {
+  const server: Server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-nosarif-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    await writeFile(join(dir, 'plain.tflw'), `test "no scan here"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(stdout, /1\/1 passed/);
+
+    // The other three artifacts are unconditional, so their presence is what proves the run wrote a
+    // report at all — without that control, "no SARIF" could just mean "no report directory".
+    const written = await readdir(join(dir, 'report'));
+    assert.ok(written.includes('report.html') && written.includes('results.json') && written.includes('junit.xml'));
+    assert.ok(!written.includes('findings.sarif'), 'an empty SARIF document is not neutral — it resolves every existing alert');
   } finally {
     await rm(dir, { recursive: true, force: true });
     server.closeAllConnections();

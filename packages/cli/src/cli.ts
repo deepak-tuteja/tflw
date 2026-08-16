@@ -9,7 +9,7 @@
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
 import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises';
-import { watch as fsWatch, readFileSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
+import { watch as fsWatch, existsSync, readFileSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
 import { createRequire } from 'node:module';
@@ -104,6 +104,7 @@ import {
   writeAuthzRepros,
   writeJunitXml,
   writeResultsJson,
+  writeSarif,
   writeLastRun,
   readLastRun,
   describeRunFilter,
@@ -1294,6 +1295,29 @@ interface RunCommandWatchOptions {
 }
 
 /**
+ * The repository root at or above `from`, or `undefined` if there is none.
+ *
+ * `M135b`, for D405's `%SRCROOT%`. SARIF anchors an alert by matching `artifactLocation.uri` against
+ * the repository tree, so the URI has to be relative to the root — and the only path tflw records is
+ * relative to wherever it was invoked, which is a different directory the moment a corpus with its
+ * own `tflw.config` is run from its own folder.
+ *
+ * `.git` is tested with `existsSync` rather than as a directory on purpose: a worktree and a
+ * submodule both have it as a *file*, and a check for a directory would walk straight past the root
+ * of either and keep climbing. Returning `undefined` outside a repository is the honest answer —
+ * `%SRCROOT%` has no meaning there, and the exporter's fallback is to emit what it already had.
+ */
+function sourceRootOf(from: string): string | undefined {
+  let dir = resolve(from);
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
  * `M111` (`B6-05`) — the wrapper exists so the log file is closed on **every** exit path, not just
  * the one that reaches the end of a run. `runCommandCore` returns early from a dozen places (a
  * parse error, a missing secret, a bad flag), and each of those is precisely the case a user keeps
@@ -1916,6 +1940,21 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
   await writeResultsJson(merged, reportDir);
+  // M135b (D403/D404) — `findings.sarif`, from the same redacted report and **only when the run
+  // actually scanned**. There is no flag: a fourth artifact behaving unlike the other three, gated
+  // on something nobody passes, is a feature nobody has. The condition is the artifact-level form of
+  // this arc's three-state rule — an empty `results` array makes `upload-sarif` resolve every
+  // existing alert, so a functional-only run must produce no file rather than an empty one.
+  // D405's repo-relative URI. `ScanFinding.file` is `relative(cwd, file)` — relative to the
+  // *invocation*, which is the repository root only when someone happened to run from there — so the
+  // exporter needs the root itself to re-base against. Undefined when there is no repository, which
+  // leaves the old pass-through shape rather than guessing a root.
+  const sourceRoot = sourceRootOf(cwd);
+  await writeSarif(merged, reportDir, {
+    version: await getVersion(),
+    authzFindings,
+    ...(sourceRoot ? { sourceRoot, fileBase: cwd } : {}),
+  });
   // D250 — the record now carries how this run was narrowed, so the *next* `--failed` can say what
   // it is replaying. Still unconditional and still always overwritten: not writing on a filtered
   // run was rejected for introducing a second silence (run `--tag smoke`, then `--failed`, and

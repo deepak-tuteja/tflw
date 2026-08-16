@@ -30,7 +30,11 @@ export type { Baseline, BaselineEntry, GateVerdict, ScanCensus, ScanFinding, Sca
 export { SECURITY_RULE_IDS, type SecurityRuleId } from './securityRules.js';
 export { AUTHZ_RULE_IDS, type AuthzRuleId } from './authzRules.js';
 export { INPUT_RULE_IDS, type InputRuleId } from './inputCorpus.js';
-export { SCAN_RULE_IDS, type ScanRuleId } from './scanRuleIds.js';
+export { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, type ScanRuleId } from './scanRuleIds.js';
+// M135b (D413) — the reporter joins an authorization finding to its repro file on
+// `(rule, endpoint, principal)`, and `endpoint` is this function's output on both sides. Exported so
+// the join is the *same computation* rather than two spellings of it.
+export { templateEndpoint } from './inputCorpus.js';
 // The finding severity vocabulary itself — four levels, `@tflw/lang`'s `FindingSeverity` under the
 // runtime's name for it. Exported here so `@tflw/reporter` can key a table on it (D406) without
 // taking a dependency on the language package to name four strings.
