@@ -14,7 +14,7 @@
 // same sidebar/tab mechanism a functional test already used.
 
 import type { AttemptResult, BackOffDiagnosis, LoadMetrics, LoadScenarioReport, LoadThresholdResult, LogLevel, ReportEntry, RequestTrace, ResponseTrace, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
-import { LOG_LEVEL_ORDER, MIN_REDACTABLE_LENGTH } from '@tflw/runtime';
+import { LOG_LEVEL_ORDER, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL } from '@tflw/runtime';
 import { assetHash } from './assets.js';
 import { esc } from './escape.js';
 import { fileOf, groupByFile } from './group-by-file.js';
@@ -64,7 +64,7 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
   ${report.insecure ? '<div class="insecure-warning">⚠ insecure: true — TLS certificate verification was disabled for this run</div>' : ''}
   ${report.demo ? '<div class="demo-badge">ℹ demo run — this targeted tflw\'s built-in demo service, not a service of yours. Point <code>api</code> at your own in <code>tflw.config</code>.</div>' : ''}
   ${(report.authorizedTargets ?? []).map((t) => `<div class="demo-badge">ℹ authorized target <code>${esc(t.target)}</code> — ${esc(t.reason)}${grantedProbeClauses(t).map((p) => ` <code>${p}</code>`).join('')}</div>`).join('\n  ')}
-  ${renderAuthzBlindSpot(report.authzBlindSpot)}
+  ${renderScanBlindSpot(report.scanBlindSpot)}
   ${renderFindings(report)}
   ${renderScanCoverage(report.scanCoverage)}
   ${renderUnmaskableWarning(report.unmaskableSecrets)}
@@ -157,7 +157,7 @@ function joinWithAnd(parts: readonly string[]): string {
  * reason — a blind-spot figure that rounds toward coverage is wrong in the one direction that
  * matters.
  */
-function renderAuthzBlindSpot(blind: RunReport['authzBlindSpot']): string {
+function renderScanBlindSpot(blind: RunReport['scanBlindSpot']): string {
   if (!blind) return '';
   const rows: string[] = [];
   const cov = blind.coverage;
@@ -167,8 +167,10 @@ function renderAuthzBlindSpot(blind: RunReport['authzBlindSpot']): string {
       `<div class="demo-badge">ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (${pct}%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>`,
     );
   }
+  // D418a — named by scan, because Tier 2's un-probed principal and Tier 3's un-granted payload
+  // class arrive in the same list and want different repairs.
   for (const d of blind.declines ?? []) {
-    rows.push(`<div class="demo-badge">ℹ authz declined ${d.count}×: <code>${esc(d.principal)}</code> — ${esc(d.reason)}</div>`);
+    rows.push(`<div class="demo-badge">ℹ ${esc(SCAN_KIND_LABEL[d.scan])} declined ${d.count}×: <code>${esc(d.subject)}</code> — ${esc(d.reason)}</div>`);
   }
   return rows.join('\n  ');
 }
@@ -558,8 +560,53 @@ details.finding-fix>summary:hover{color:var(--fg)}
 details.finding-fix p{margin:6px 0;overflow-wrap:anywhere}
 .fix-title{font-weight:700}
 .fix-what,.fix-why{color:var(--mut)}
+/* M136a — 'fix-do' shipped in M135a unstyled, and D429's guard is what found it. The two actionable
+   lines are the ones a triager acts on, so they read at full contrast against the muted what/why. */
+.fix-do{color:var(--fg)}
+.fix-do strong{color:var(--info)}
 .fix-refs{font-size:12px;color:var(--mut)}
 .fix-refs a{color:var(--info)}
+/* M136a (D429, 'M135a-01') — the security findings block and the rule census.
+   'findings.ts' has emitted this full set of class names since M134b and the stylesheet matched
+   none of them, so the one section of this report a reader scans by severity was the one rendering
+   as an unstyled browser table.
+
+   Two constraints shape it. **The palette is the one already here** (--fail/--warn/--mut/--info,
+   the same four every other section uses) rather than a new severity ramp: the report has one
+   visual language, and a security block that invents a second is a worse outcome than the unstyled
+   table it replaces. And **nothing here may be hoisted above line ~525's '.detail{'** —
+   testFlow-tests' verify-report-no-overflow.mjs matches the FIRST '.detail{' in this stylesheet and
+   asserts it sets overflow-wrap, so a new rule ending in '.detail' placed earlier would silently
+   retarget that guard (D249's comment says so in place). '.finding-detail' is a different selector
+   and this block sits below both, so neither hazard is live; it is written down because the next
+   edit here is the one that would trip it. */
+section.findings table,section.scan-coverage table{border-collapse:collapse;width:100%;font-size:13px}
+section.findings thead th{text-align:left;color:var(--mut);font-weight:400;padding:4px 10px 4px 0;border-bottom:1px solid var(--line)}
+section.findings tbody td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.findings-summary{color:var(--mut);margin:0 0 10px}
+/* Severity is the axis a reader scans, so it is the only place colour is spent. 'critical' and
+   'serious' share --fail because both fail a build at any sane --fail-on and a reader triaging is
+   choosing between them by rule, not by hue; weight separates them. */
+td.sev{font-weight:700;white-space:nowrap;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+td.sev-critical{color:var(--fail)}
+td.sev-serious{color:var(--fail);font-weight:600}
+td.sev-moderate{color:var(--warn)}
+td.sev-minor{color:var(--mut)}
+/* A withheld finding must read AS withheld without disappearing — it is still a finding, and D386's
+   rule is that a run which judged less never renders identically to one that judged more. Dimmed,
+   never hidden, and the reason is spelled out in '.finding-withheld' beside it. */
+tr.finding-off{opacity:.62}
+tr.finding-off td.sev{font-weight:400}
+.finding-withheld{color:var(--warn);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.finding-where{color:var(--mut);font-size:12px;margin-top:3px;overflow-wrap:anywhere}
+.finding-detail{margin-top:5px;overflow-wrap:anywhere}
+.finding-fp{color:var(--mut);font-size:12px;white-space:nowrap}
+.finding-seeded{margin-top:6px;color:var(--warn);font-size:12px;overflow-wrap:anywhere}
+.scan-census{margin:0 0 14px}
+.scan-census h3{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+.scan-census p{margin:2px 0}
+.scan-census ul{margin:2px 0 0;padding-left:20px;color:var(--mut);font-size:12px}
+.scan-census li{overflow-wrap:anywhere}
 footer{padding:16px 24px;color:var(--mut);border-top:1px solid var(--line)}
 @media print{.sidebar{display:none}.test{display:block!important}main{max-width:none}}
 `;

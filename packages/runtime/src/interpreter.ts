@@ -3958,6 +3958,21 @@ function reportCensus(
 }
 
 /**
+ * `M136a` (D418a) — report the subjects this assertion could not put its question to.
+ *
+ * Called beside `reportCensus` on **every** scan assertion for the same reason it is: a subject that
+ * went unasked produces no finding by definition, so the only run in which the fact exists to be
+ * captured is the one nobody is reading a failure message for.
+ *
+ * Generic over the two probing tiers' result shapes by taking `(subject, reason)` pairs rather than
+ * the probe list, so a fourth tier joins by mapping its own outcomes rather than by widening a
+ * union — the same shape `reportCensus` takes, and for the same reason.
+ */
+function reportDeclines(scan: ScanKind, declined: readonly { readonly subject: string; readonly reason: string }[], tc: TestCtx): void {
+  for (const d of declined) tc.scanSink?.decline({ scan, subject: d.subject, reason: d.reason });
+}
+
+/**
  * Whether the plain form of a scan assertion passes, and the clause it appends when it withheld
  * findings from its own verdict.
  *
@@ -4132,19 +4147,16 @@ export interface AuthzFinding {
   readonly owners: readonly string[];
 }
 
-/** Work an authorization assertion met and turned down (D331 part 2) — a mutating step with no
- *  `probe mutating`, a session that would not establish, a probe that answered without answering.
- *  Facts about this run, as opposed to the static census, which is a fact about the suite. */
-export interface AuthzDecline {
-  readonly principal: string;
-  readonly reason: string;
-}
-
 /** The run-level accumulator, threaded on `TestCtx` exactly as `tlsProber` is. Optional, so a test
- *  helper that drives one assertion in isolation needs no collector to get an answer. */
+ *  helper that drives one assertion in isolation needs no collector to get an answer.
+ *
+ *  **`decline` used to live here and moved to `ScanSink` in `M136a` (D418a).** D331 part 2 put the
+ *  turned-down work beside the findings because at the time only Tier 2 had any; Tier 3 then grew
+ *  the identical fact about payload classes, and a second copy of a channel is how one report comes
+ *  to describe the same blind spot in two vocabularies. This sink kept the job it is named for:
+ *  facts a repro emitter needs, which are facts about a *principal*. */
 export interface AuthzSink {
   finding(f: AuthzFinding): void;
-  decline(d: AuthzDecline): void;
 }
 
 /**
@@ -4319,10 +4331,16 @@ async function execAuthzExpect(
   const probes = await new AuthzProber(authzSenderFor(config)).probeAll(request, ownerIds, probeOrder(principals), policy);
 
   const result = runAuthzScan({ owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes }, floor);
+  // D418a — the blind spot moved from `AuthzSink` to `ScanSink` when Tier 3 grew the same fact.
+  // `AuthzSink` writes runnable repros and needs a principal; two of the three scans have none.
+  reportDeclines(
+    'authorization',
+    probes
+      .filter((p) => p.outcome.kind === 'not-probed' || p.outcome.kind === 'inconclusive')
+      .map((p) => ({ subject: p.principal, reason: (p.outcome as { readonly reason: string }).reason })),
+    tc,
+  );
   for (const probe of probes) {
-    if (probe.outcome.kind === 'not-probed' || probe.outcome.kind === 'inconclusive') {
-      tc.authzSink?.decline({ principal: probe.principal, reason: probe.outcome.reason });
-    }
     if (probe.outcome.kind === 'leaked') {
       for (const rule of result.applicable) {
         tc.authzSink?.finding({ rule: rule.id, principal: probe.principal, method: request.method, url: request.url, ids: probe.outcome.ids, owners: ctx.sessionNames });
@@ -4501,6 +4519,25 @@ async function execInputHandlingExpect(
   const result = runInputScan({ observed: { request, response }, probes, sites, disabledClasses: withheld }, floor);
   const verdict = gateScan('input-handling', result.findings, templateEndpoint(request.method, request.url), step, tc, seededIds(drawn));
   reportCensus('input-handling', result.applicable, result.notApplicable, tc);
+  // D418a — Tier 3's blind spot reached `mutationNote` and stopped there, so a run whose entire
+  // matrix was refused before it left the process produced a `results.json` indistinguishable from
+  // one that probed everything.
+  //
+  // **The subject is the endpoint, not the payload class**, and the reason is a measurement rather
+  // than a preference. `planProbes` filters the corpus to the granted classes *before* any probe is
+  // planned, so a withheld class never becomes a `MutationResult` at all — it is already reported,
+  // as a not-applicable rule with a reason, through `reportCensus` above. What is left un-asked here
+  // is refused for facts about the **request**: it changes state and no `probe mutating` covers the
+  // target, the origin is public and unaffirmed, the allowlist declined it, the transport failed, the
+  // host answered 429. Keying those on the class would emit one identical row per class for one
+  // fact, which is the noise `mutationNote`'s own comment refuses when it groups by reason.
+  reportDeclines(
+    'input-handling',
+    probes
+      .filter((p) => p.outcome.kind === 'not-probed' || p.outcome.kind === 'inconclusive')
+      .map((p) => ({ subject: templateEndpoint(request.method, request.url), reason: (p.outcome as { readonly reason: string }).reason })),
+    tc,
+  );
   const outcome = describeInputOutcome(step, floor, result, probes, sites, withheld, verdict);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }

@@ -169,6 +169,24 @@ jobs:
   # package's suite at 10m and names the package that hung (M112), so this number does not have to
   # catch a hang, only survive ordinary growth. The lever when it comes due is the `shard:` list
   # below — a one-line edit, which is the actual point of this milestone.
+  #
+  # RE-MEASURED at M136a (`M131-06`), and the sentence above is out of date twice over. On run
+  # 31750718534 (M131a) the two slowest shards came in at **24m50s and 21m45s** against this job's
+  # `timeout-minutes: 30` — headroom **1.21×**, not 1.8×. `M134` then measured **1.33×**. The 1.8×
+  # figure was arithmetic against a limit of 45 that this file has never carried: `git log -L` on the
+  # line below shows exactly two states, 90 then 30.
+  #
+  # **The trigger is a fraction of the limit, never the limit itself.** `M131-06` first wrote "act
+  # when a shard exceeds ~30m", which names the timeout — taken literally it says to act only once a
+  # shard has already died, which is PR #48's failure exactly: the sweep took 51m24s, PASSED, and the
+  # job was killed by a `timeout-minutes` in a later step. A green control reported as a red job is
+  # the most expensive confusion this repo has paid for. **Re-shard when the slowest shard passes
+  # ~20m (1.5×)** — which run 31750718534 already did, so the `shard:` list below is due for a widen
+  # on the next milestone that adds mutations, not on the one after.
+  #
+  # Narrowing a mutation to a subset of its package's suite was scoped for this milestone and
+  # **rejected on measurement** — see PLAN_M136_ARC_DEBT.md D425a. The lever that remains is the
+  # `shard:` list.
   mutations:
     name: mutation controls (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest

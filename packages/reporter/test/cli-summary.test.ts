@@ -180,7 +180,7 @@ test('an ordinary run says nothing about authorized targets', () => {
 // denominators — which is why they are two lines and not one percentage.
 
 test('D331: the coverage line names the suite as its base, never this run', () => {
-  const out = renderCliSummary({ ...baseReport, authzBlindSpot: { coverage: { apiSteps: 1035, withOwner: 41 } } }, false);
+  const out = renderCliSummary({ ...baseReport, scanBlindSpot: { coverage: { apiSteps: 1035, withOwner: 41 } } }, false);
   assert.match(out, /authz coverage: 41 of 1035 api steps in the suite sit in a test that declares an owner/);
   // The census is computed before `--tags`/`--only` narrow anything, so a reader must not take it
   // for a statement about what just ran.
@@ -189,16 +189,16 @@ test('D331: the coverage line names the suite as its base, never this run', () =
 
 test('D331: the percentage floors, because rounding up is the one direction a blind spot must not move', () => {
   // 41/1035 is 3.96%. Rounded it reads 4%, which overstates coverage.
-  const out = renderCliSummary({ ...baseReport, authzBlindSpot: { coverage: { apiSteps: 1035, withOwner: 41 } } }, false);
+  const out = renderCliSummary({ ...baseReport, scanBlindSpot: { coverage: { apiSteps: 1035, withOwner: 41 } } }, false);
   assert.match(out, /\(3%\)/);
 });
 
 test('D331: declines are aggregated with their count and the principal named', () => {
   const out = renderCliSummary(
-    { ...baseReport, authzBlindSpot: { declines: [{ principal: 'shopper', reason: 'a cookie-borne principal was refused on a DELETE', count: 5 }] } },
+    { ...baseReport, scanBlindSpot: { declines: [{ scan: 'authorization' as const, subject: 'shopper', reason: 'a cookie-borne principal was refused on a DELETE', count: 5 }] } },
     false,
   );
-  assert.match(out, /authz declined 5×: `shopper` — a cookie-borne principal was refused on a DELETE/);
+  assert.match(out, /authorization declined 5×: `shopper` — a cookie-borne principal was refused on a DELETE/);
 });
 
 test('D331: an ordinary run says nothing about authz at all', () => {

@@ -21,7 +21,7 @@ import { parseConfigSource, parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { resolveConfig } from '../src/resolve.js';
 import type { ResolvedConfig } from '../src/types.js';
-import type { ScanFinding, ScanSink } from '../src/scanFindings.js';
+import type { ScanDecline, ScanFinding, ScanSink } from '../src/scanFindings.js';
 
 let server: Server;
 let baseUrl: string;
@@ -121,18 +121,20 @@ async function run(
   /** M134b — the run-level knobs this file needs to observe: the seeded layer's count, a fixed seed
    *  so a drawn payload is reproducible, and the sink that collects what every scan found. */
   opts: { probeSeeded?: number; seed?: number } = {},
-): Promise<{ detail: string; ok: boolean; error?: string; findings: ScanFinding[] }> {
+): Promise<{ detail: string; ok: boolean; error?: string; findings: ScanFinding[]; declines: ScanDecline[] }> {
   seen = [];
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
   const findings: ScanFinding[] = [];
-  const scanSink: ScanSink = { finding: (f) => findings.push(f), census: () => {} };
+  // D418a — the channel Tier 3 gained: subjects the matrix never put a question to.
+  const declines: ScanDecline[] = [];
+  const scanSink: ScanSink = { finding: (f) => findings.push(f), census: () => {}, decline: (d) => declines.push(d) };
   const { report } = await runProgram(program, cfg, { source, scanSink, ...opts });
   const t = report.tests[0]!;
   const steps = t.kind === 'functional' ? t.steps : [];
   const asserts = steps.filter((s) => s.kind === 'expect' || s.kind === 'check');
   const last = asserts[asserts.length - 1];
-  return { detail: last?.detail ?? '', ok: last?.ok ?? false, ...(t.kind === 'functional' && t.error ? { error: t.error } : {}), findings };
+  return { detail: last?.detail ?? '', ok: last?.ok ?? false, ...(t.kind === 'functional' && t.error ? { error: t.error } : {}), findings, declines };
 }
 
 const ASSERT = 'expect response has no input handling violations';
@@ -316,4 +318,43 @@ test('a reviewed finding still gates while a seeded one does not, in the same ru
   const gating = r.findings.filter((f) => !f.withheld);
   assert.ok(gating.length > 0, 'the reviewed corpus must still be able to fail a build');
   for (const f of gating) assert.notEqual(f.fingerprint, undefined, 'a gating finding must be baselinable, or the gate is unusable');
+});
+
+// --- D418a: the blind spot leaves the console ------------------------------------------------------
+
+test('D418a: a matrix refused before it leaves the process is reported, not only printed', async () => {
+  // The hole this closes. `mutationNote` has always printed this on the passing line; nothing ever
+  // carried it into the report, so a run whose whole matrix was refused wrote a `results.json`
+  // indistinguishable from one that probed everything.
+  const r = await run(`test "t"\n  api POST /notes body { text: "hi" }\n  ${ASSERT}\n`);
+  assert.ok(r.declines.length > 0, 'a matrix that sent nothing reported nothing');
+  for (const d of r.declines) {
+    assert.equal(d.scan, 'input-handling');
+    assert.equal(d.subject, 'POST /notes', 'the subject is the endpoint the probes were refused for');
+    assert.match(d.reason, /probe mutating/);
+  }
+});
+
+test('D418a: granting the permission removes the decline — the channel tracks the run, not the config', async () => {
+  // The control that stops the assertion above passing on a constant. If the endpoint were declined
+  // whatever the config said, that test would still be green and would be measuring nothing.
+  const r = await run(`test "t"\n  api POST /notes body { text: "hi" }\n  ${ASSERT}\n`, resolved('    probe mutating\n'));
+  assert.deepEqual(r.declines, [], `the write was permitted, so nothing about it went unasked: ${JSON.stringify(r.declines)}`);
+});
+
+test('D418a: a probe that was sent and came back clean is not a decline', async () => {
+  // `not-asked` is not `silent`. A probe that answered must never appear here, or the fourth state
+  // collapses into the second and the report stops drawing the distinction D284's model exists for.
+  const r = await run(`test "t"\n  api GET /orders/7?sort=asc\n  ${ASSERT}\n`);
+  assert.deepEqual(r.declines, [], `a safe GET probes freely, so nothing went unasked: ${JSON.stringify(r.declines)}`);
+});
+
+test('D418a: a withheld class is a not-applicable RULE, not an un-asked subject — the two channels stay apart', async () => {
+  // Measured while building this: `planProbes` filters the corpus to the granted classes *before*
+  // planning, so a withheld class never becomes a probe outcome at all. It is already reported, by
+  // `reportCensus`, as a rule that stood down with its reason. Reporting it here as well would be
+  // the same fact in two vocabularies — the duplication D418a exists to avoid.
+  const r = await run(`test "t"\n  api GET /files/1\n  ${ASSERT}\n`);
+  assert.deepEqual(r.declines, [], 'a withheld class must not reach the un-asked channel');
+  assert.match(r.detail, /probe traversal/, 'and it must still be reported somewhere');
 });

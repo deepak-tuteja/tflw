@@ -8,7 +8,7 @@ export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSele
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
 // M130b (D331/D332) — the run-level collector and the two facts it collects. Exported for the CLI,
 // which owns the sink for a whole invocation, and for `@tflw/reporter`'s repro emitter.
-export type { AuthzSink, AuthzFinding, AuthzDecline } from './interpreter.js';
+export type { AuthzSink, AuthzFinding } from './interpreter.js';
 // M134b (D385/D386/D387) — the report-facing finding, its stable identity, and the gate.
 export {
   BASELINE_VERSION,
@@ -23,7 +23,7 @@ export {
   toScanFinding,
   withheldNote,
 } from './scanFindings.js';
-export type { Baseline, BaselineEntry, GateVerdict, ScanCensus, ScanFinding, ScanGate, ScanKind, ScanSink, WithheldReason } from './scanFindings.js';
+export type { Baseline, BaselineEntry, GateVerdict, ScanCensus, ScanDecline, ScanFinding, ScanGate, ScanKind, ScanSink, WithheldReason } from './scanFindings.js';
 // M135a (D409) — the three packs' rule ids, exported as closed tuples and as the union they form.
 // `@tflw/reporter` keys the remediation KB on `ScanRuleId`, which is what makes a rule shipping
 // without an entry a `tsc` failure rather than an alert that quietly carries no fix.

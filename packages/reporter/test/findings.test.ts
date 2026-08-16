@@ -15,9 +15,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import type { RunReport, ScanFinding, ScanRuleCensus } from '@tflw/runtime';
 import { findingsSummaryLine, renderFindings, renderScanCoverage, sortFindings } from '../src/findings.js';
 import { REMEDIATION_KB } from '../src/kb.js';
+import { renderReportHtml } from '../src/html.js';
 
 function f(over: Partial<ScanFinding> = {}): ScanFinding {
   return {
@@ -34,6 +36,27 @@ function f(over: Partial<ScanFinding> = {}): ScanFinding {
 
 function report(findings: readonly ScanFinding[]): RunReport {
   return { findings } as unknown as RunReport;
+}
+
+/** A whole `RunReport` rather than the cast partial above, because `renderReportHtml` reads the
+ *  header fields too. Carries one gating finding and one withheld one, so both row states exist in
+ *  the document the D429 guards below read. */
+function reportWithFindings(): RunReport {
+  return {
+    ok: true,
+    env: 'local',
+    startedAt: '2026-08-16T00:00:00.000Z',
+    durationMs: 100,
+    total: 1,
+    passed: 1,
+    failed: 0,
+    seed: 42,
+    now: '2026-08-16T00:00:00.000Z',
+    insecure: false,
+    tests: [{ kind: 'functional', name: 'scan', ok: true, durationMs: 12, steps: [] }],
+    findings: [f({ severity: 'critical', fingerprint: 'c'.repeat(16) }), f({ severity: 'minor', withheld: 'baseline', fingerprint: 'd'.repeat(16) })],
+    scanCoverage: census,
+  } as unknown as RunReport;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,4 +257,57 @@ test('KB prose is escaped before its code spans are formed', () => {
   const html = renderFindings(report([f({ rule: 'sec/csp-missing' })]));
   assert.match(html, /<code>&lt;script&gt;<\/code>/);
   assert.doesNotMatch(html, /<script>/, 'an unescaped entry would put a live tag in the one report that renders attacker-shaped findings');
+});
+
+// --- M136a (D429, `M135a-01`) — the classes are emitted AND styled ---------------------------------
+//
+// The row this closes: `findings.ts` emitted eleven class names and `html.ts`'s stylesheet matched
+// none of them, so the one section a reader scans by severity rendered as a default browser table.
+// It survived M134b and M135a because nothing connects the two files — one emits strings, the other
+// holds a string, and neither knows the other exists.
+//
+// So the guard is the connection: every class this module emits must have a rule somewhere in the
+// rendered stylesheet. It is a string check rather than a layout assertion, exactly as
+// `overflow.test.ts` is and for the same stated reason — no layout engine is involved anywhere in
+// this package, and "the selector is present" is the cheap proxy that would have caught the row.
+
+test('D429: every class the findings block emits is styled', () => {
+  const emitted = [...readFileSync(new URL('../src/findings.ts', import.meta.url), 'utf8').matchAll(/class="([^"$]*)"/g)]
+    .flatMap((m) => m[1]!.split(/\s+/))
+    .filter((c) => c.length > 0);
+  // The two interpolated ones, which the literal scan above cannot see: `sev-${severity}` and the
+  // `finding-on`/`finding-off` pair. Listed explicitly rather than parsed out of a template, because
+  // a regex that tried would be a second thing to get wrong.
+  const interpolated = ['sev-critical', 'sev-serious', 'sev-moderate', 'sev-minor', 'finding-on', 'finding-off'];
+  const html = renderReportHtml(reportWithFindings());
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+
+  // 'finding-on' is the only exemption, and it is one on purpose: it is the *default* row state, so
+  // the styling that applies to it is the table's own. Adding a rule to satisfy this test would be
+  // styling for the test. An exemption list of one, named with its reason, is the honest form — and
+  // it still fails the moment a twelfth class is emitted without a rule.
+  const NEEDS_NO_RULE = new Set(['finding-on']);
+  const unstyled = [...new Set([...emitted, ...interpolated])].filter((c) => !NEEDS_NO_RULE.has(c) && !style.includes(`.${c}`));
+  assert.deepEqual(unstyled, [], `emitted with no stylesheet rule: ${unstyled.join(', ')}`);
+});
+
+test('D429: severity carries colour, which is the axis the row is actually about', () => {
+  const style = renderReportHtml(reportWithFindings());
+  // Not merely "a rule exists" — a `.sev-critical` that set only a margin would pass the test above
+  // while leaving the report exactly as unreadable as the row describes.
+  for (const [cls, token] of [['sev-critical', '--fail'], ['sev-moderate', '--warn'], ['sev-minor', '--mut']] as const) {
+    const rule = new RegExp(`\\.${cls}\\{[^}]*var\\(${token}\\)`);
+    assert.match(style, rule, `${cls} must take its colour from the report's existing palette`);
+  }
+});
+
+test('D429: a withheld row is dimmed, never hidden', () => {
+  // D386's rule at the stylesheet layer: a finding withheld from the verdict is still a finding, so
+  // `display:none` here would make a green run that judged less render identically to one that
+  // judged more — which is the defect the whole withheld-reason mechanism exists to prevent.
+  const style = renderReportHtml(reportWithFindings());
+  const rule = /\.finding-off\{([^}]*)\}/.exec(style);
+  assert.ok(rule, 'a withheld row needs a rule of its own or it reads as an ordinary one');
+  assert.doesNotMatch(rule[1]!, /display\s*:\s*none|visibility\s*:\s*hidden/);
+  assert.match(rule[1]!, /opacity/);
 });

@@ -1,6 +1,6 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
-import { MIN_REDACTABLE_LENGTH, WITHHELD_LABEL } from '@tflw/runtime';
+import { MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
 import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { grantedProbeClauses } from './probe-clauses.js';
 import { findingsSummaryLine, sortFindings } from './findings.js';
@@ -70,7 +70,7 @@ export function renderCliSummary(report: RunReport, color = true): string {
   // that keeps the scans' *results* from being read as broader than they are. Not a warning and
   // not red: a suite with a small authorization footprint is not doing anything wrong, it is doing
   // something bounded, and the bound is the fact worth stating.
-  lines.push(...authzBlindSpotLines(report, c));
+  lines.push(...scanBlindSpotLines(report, c));
   // M134b (D386/D387) — the run's security findings, and what the gate did with them. Printed
   // whenever any scan produced one, including on a green run: a finding the gate withheld still
   // happened, and a summary that showed only what failed would make `--baseline` invisible in
@@ -114,8 +114,8 @@ function scanFindingLines(report: RunReport, c: typeof C): string[] {
  * The percentage is floored, not rounded — `41 of 1035` reads `3%`, not `4%`. A blind-spot figure
  * that rounds *up* toward coverage is the one direction this line must never fail in.
  */
-function authzBlindSpotLines(report: RunReport, c: typeof C): string[] {
-  const blind = report.authzBlindSpot;
+function scanBlindSpotLines(report: RunReport, c: typeof C): string[] {
+  const blind = report.scanBlindSpot;
   if (!blind) return [];
   const lines: string[] = [];
   const cov = blind.coverage;
@@ -125,8 +125,11 @@ function authzBlindSpotLines(report: RunReport, c: typeof C): string[] {
       `${c.dim}ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (${pct}%) — the rest are unjudgeable by \`authorization violations\`, which needs \`as <session>\` (SPEC §3.3)${c.reset}`,
     );
   }
+  // D418a — the scan is named because two tiers now report here, and `shopper` refused for CSRF
+  // and `traversal` never granted are different repairs. `SCAN_KIND_LABEL` rather than the raw key,
+  // so the terminal, the HTML and SARIF cannot drift into three spellings of one tier.
   for (const d of blind.declines ?? []) {
-    lines.push(`${c.dim}ℹ authz declined ${d.count}×: \`${d.principal}\` — ${d.reason}${c.reset}`);
+    lines.push(`${c.dim}ℹ ${SCAN_KIND_LABEL[d.scan]} declined ${d.count}×: \`${d.subject}\` — ${d.reason}${c.reset}`);
   }
   return lines;
 }
