@@ -67,14 +67,42 @@ passes on a half-broken extension.
 6. The bottom-right language indicator reads **tflw config**, not `tflw` and not `Plain Text`.
 7. The config-only vocabulary is coloured: `allow hosts`, `cert`, `key`, `evidence`, `redact`,
    `viewport`, `destination`, `level`, `query`, and the whole `oauth2` block (`token`, `client`,
-   `id`, `secret`, `scope`). If the grammar half works but these lose their colour the moment the
-   server finishes analysing, the `semanticTokenScopes` map for `tflw-config` is missing — the
-   editor is discarding correctly-classified tokens.
+   `id`, `secret`, `scope`).
+
+   **Colour alone cannot check this half, and an earlier draft of this line said it could.** The
+   claim was that a missing `semanticTokenScopes` map shows up as these words "losing their colour
+   once the server finishes analysing". They do not: the semantic token is discarded and the
+   *grammar's* colour stays exactly as it was, so the file looks untouched. Worse, the two layers
+   are painted from the same palette by construction — no default theme has a
+   `semanticTokenColors` rule for any of the eight types, so a semantic token can only reach a
+   colour through this map, and the map's targets (`keyword.control.tflw`, `support.type.tflw`, …)
+   are the scopes the grammar already uses. An applied semantic token and a discarded one are
+   pixel-identical in every shipped theme. Following the old wording, a human sees no colour loss
+   and records a pass on a check that never ran.
+
+   Use the editor's own instrument instead: **`Cmd/Ctrl+Shift+P` → "Developer: Inspect Editor
+   Tokens and Scopes"**, then click a config-delta word — `oauth2` or `scope` are the good ones,
+   being in the delta *and* in the server's vocabulary. Read three rows:
+   - **`language`** must be `tflw-config` (this is also check 6, told to you by the editor rather
+     than by the status bar);
+   - **`semantic token type`** must be present — `keyword` for these — which is the server having
+     classified the token *and* the editor having accepted it;
+   - the **foreground** under it must resolve through **`keyword.control.tflw`**. That string is
+     the proof: it is what *our* map sends `keyword` to, whereas VS Code's built-in fallback for a
+     standard type would land on plain `keyword`. Seeing our scope name means the `tflw-config`
+     entry is live.
+
+   The `textmate scopes` row at the bottom should independently read `keyword.control.tflw` +
+   `source.tflw.config`, which is the delta grammar. Both layers agreeing on one word is the
+   strongest single observation available here.
 8. **Diagnostics, completion and hover still arrive** — the split moved the document selector, and a
    selector that lost this id would leave the file syntax-highlighted and otherwise dead. Write
    `test "x"` into the config: `TF021` should squiggle.
 9. Those same words are still *not* coloured as keywords in a `.tflw` file (`let key = ...`,
-   `let web = ...`). The point of the split is that the vocabulary does not leak.
+   `let web = ...`). The point of the split is that the vocabulary does not leak. Inspect `key`
+   the same way: `language` `tflw`, `semantic token type` **`variable`**, and `textmate scopes`
+   reading `source.tflw` *alone* — no keyword scope at all. Both layers have to agree here too;
+   a leak in either one is a leak.
 
 **Unsaved buffers.** A new untitled tab set to the `tflw` language gets highlighting, diagnostics,
 hover, completion, signature help and in-file rename, and does **not** get anything needing a path
