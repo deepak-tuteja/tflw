@@ -5,6 +5,7 @@
 
 export const registeredCommands = new Map<string, (...args: unknown[]) => unknown>();
 export let registeredCodeLensProvider: unknown;
+export let registeredCodeLensSelector: unknown;
 export const shownWarnings: string[] = [];
 export const terminals: MockTerminal[] = [];
 let textDocumentsState: Array<{ languageId: string; fileName: string }> = [];
@@ -30,6 +31,7 @@ export function __setConfiguration(config: Record<string, unknown>): void {
 export function __reset(): void {
   registeredCommands.clear();
   registeredCodeLensProvider = undefined;
+  registeredCodeLensSelector = undefined;
   shownWarnings.length = 0;
   terminals.length = 0;
   textDocumentsState = [];
@@ -85,8 +87,12 @@ export const workspace = {
 };
 
 export const languages = {
-  registerCodeLensProvider(_selector: unknown, provider: unknown) {
+  registerCodeLensProvider(selector: unknown, provider: unknown) {
     registeredCodeLensProvider = provider;
+    // Captured since `M136b` (D427a): with two language ids in play, *which* one a provider is
+    // registered for is a decision worth pinning rather than a detail. The CodeLens provider stays
+    // test-dialect-only on purpose, and a test can only say so if the selector is visible here.
+    registeredCodeLensSelector = selector;
     return { dispose() {} };
   },
 };

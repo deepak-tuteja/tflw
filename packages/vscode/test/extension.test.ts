@@ -6,6 +6,10 @@
 // gap `lib.ts`'s split-out-the-pure-logic strategy deliberately left uncovered until now: the
 // glue in activate() itself (command/provider registration, the conditional LanguageClient start)
 // had zero test coverage.
+//
+// What the mock buys is also what it costs: these tests prove we hand VS Code the right wiring,
+// never that VS Code does anything with it. Nothing here (or in CI) starts a real Extension Host.
+// The checks that need a human are written down in test/MANUAL.md.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -69,8 +73,37 @@ test('activate constructs and starts a LanguageClient scoped to the resolved pro
   // server at all. Adding `scheme: 'file'` would compile, read as a tidy-up, and silently take
   // language support away from every new scratch file — the exact state `B5-06` describes, just
   // reached deliberately. The server handles pathless documents; this stays as it is.
-  assert.deepEqual((client.clientOptions as { documentSelector: unknown }).documentSelector, [{ language: 'tflw' }]);
+  // **Both dialects since `M136b`** (D427): `tflw.config` has its own language id now, and a
+  // selector naming only `tflw` would leave every config buffer with no diagnostics, no completion
+  // and no hover — the silent breakage D428 is written against.
+  assert.deepEqual((client.clientOptions as { documentSelector: unknown }).documentSelector, [{ language: 'tflw' }, { language: 'tflw-config' }]);
   assert.equal(client.started, true);
+});
+
+// -- M136b (D427a): the extension-side half of the language-id split -------------------------
+
+test('activate resolves a project root from a `tflw.config` buffer as the only open document (M136b, D427a)', () => {
+  // Before the split this document carried the `tflw` id and satisfied `resolveWorkspaceRoot`'s
+  // check. Opening just the config file — the file you open to add a service or fix a session — is
+  // ordinary, and with no workspace folder set there is no fallback beneath it: matching one id
+  // means no root, so no client, so no language support, with nothing reporting a failure.
+  const root = makeTflwProject();
+  vscodeMock.__setTextDocuments([{ languageId: 'tflw-config', fileName: join(root, 'tflw.config') }]);
+
+  activate(makeContext() as never);
+
+  assert.equal(lcMock.constructedClients.length, 1, 'a config-only window must still start a language client');
+  assert.equal((lcMock.constructedClients[0]!.serverOptions as { options: { cwd: string } }).options.cwd, root);
+});
+
+test('the CodeLens provider stays registered for the test dialect only (M136b, D427a)', () => {
+  // Deliberate, not an oversight. `TflwCodeLensProvider` emits a lens only where
+  // `parseTestDeclarationLine` matches, and `TF021` bans `test` from the config dialect — so a
+  // config buffer has produced zero lenses since the provider was written. Pinned because three of
+  // the six sites that name a language id widened and this one did not, and a later reader finding
+  // that asymmetry should find a decision rather than infer a missed edit.
+  activate(makeContext() as never);
+  assert.deepEqual(vscodeMock.registeredCodeLensSelector, { language: 'tflw' });
 });
 
 test('activate falls back to a workspace folder when no tflw document is open', () => {

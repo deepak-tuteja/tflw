@@ -9,7 +9,8 @@
   "main": "./dist/extension.cjs",
   "icon": "icon.png",
   "activationEvents": [
-    "onLanguage:tflw"
+    "onLanguage:tflw",
+    "onLanguage:tflw-config"
   ],
   "files": [
     "dist",
@@ -57,6 +58,14 @@
         "extensions": [
           ".tflw"
         ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "tflw-config",
+        "aliases": [
+          "tflw config",
+          "testFlow config"
+        ],
         "filenames": [
           "tflw.config"
         ],
@@ -68,6 +77,11 @@
         "language": "tflw",
         "scopeName": "source.tflw",
         "path": "./syntaxes/tflw.tmLanguage.json"
+      },
+      {
+        "language": "tflw-config",
+        "scopeName": "source.tflw.config",
+        "path": "./syntaxes/tflw-config.tmLanguage.json"
       }
     ],
     "snippets": [
@@ -99,6 +113,19 @@
     "semanticTokenScopes": [
       {
         "language": "tflw",
+        "scopes": {
+          "keyword": ["keyword.control.tflw"],
+          "operator": ["keyword.operator.word.tflw"],
+          "type": ["support.type.tflw"],
+          "function": ["support.function.generator.tflw"],
+          "number": ["constant.numeric.tflw"],
+          "variable": ["variable.tflw"],
+          "parameter": ["variable.parameter.tflw"],
+          "property": ["variable.other.property.tflw"]
+        }
+      },
+      {
+        "language": "tflw-config",
         "scopes": {
           "keyword": ["keyword.control.tflw"],
           "operator": ["keyword.operator.word.tflw"],

@@ -19,7 +19,9 @@ const { Registry, parseRawGrammar, INITIAL } = require('vscode-textmate') as typ
 const { loadWASM, OnigScanner, OnigString } = require('vscode-oniguruma') as typeof import('vscode-oniguruma');
 
 const here = dirname(fileURLToPath(import.meta.url));
-const grammarPath = join(here, '..', 'syntaxes', 'tflw.tmLanguage.json');
+/** Read from the manifest rather than hard-coded, so a grammar contributed without a test here is a
+ * load failure in `before` instead of a file nobody tokenizes (`M136b`, D427a). */
+const grammars = (JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')) as { contributes: { grammars: { scopeName: string; path: string }[] } }).contributes.grammars;
 
 async function createOnigLib(): Promise<IOnigLib> {
   const wasmPath = join(dirname(require.resolve('vscode-oniguruma/package.json')), 'release', 'onig.wasm');
@@ -31,18 +33,30 @@ async function createOnigLib(): Promise<IOnigLib> {
 }
 
 let grammar: IGrammar;
+let configGrammar: IGrammar;
 
 before(async () => {
+  // Resolves *every* grammar the manifest contributes, not just `source.tflw` (`M136b`, D427a).
+  // `tflw-config.tmLanguage.json` is deliberately a delta that `include`s `source.tflw` rather than
+  // a fork of it, so the registry has to be able to follow that include — a loader hard-coded to one
+  // scope would fail to resolve it and the config grammar would silently tokenize nothing but its
+  // own eighteen words.
+  const byScope = new Map(grammars.map((g) => [g.scopeName, join(here, '..', g.path)]));
   const registry = new Registry({
     onigLib: createOnigLib(),
     loadGrammar: async (scopeName) => {
-      if (scopeName !== 'source.tflw') return null;
-      return parseRawGrammar(readFileSync(grammarPath, 'utf8'), grammarPath);
+      const path = byScope.get(scopeName);
+      if (!path) return null;
+      return parseRawGrammar(readFileSync(path, 'utf8'), path);
     },
   });
   const loaded = await registry.loadGrammar('source.tflw');
   if (!loaded) throw new Error('failed to load source.tflw grammar');
   grammar = loaded;
+
+  const loadedConfig = await registry.loadGrammar('source.tflw.config');
+  if (!loadedConfig) throw new Error('failed to load source.tflw.config grammar');
+  configGrammar = loadedConfig;
 });
 
 interface Token {
@@ -50,10 +64,10 @@ interface Token {
   readonly scopes: readonly string[];
 }
 
-function tokenizeLines(lines: readonly string[]): Token[][] {
+function tokenizeLines(lines: readonly string[], g: IGrammar = grammar): Token[][] {
   let ruleStack = INITIAL;
   return lines.map((line) => {
-    const result = grammar.tokenizeLine(line, ruleStack);
+    const result = g.tokenizeLine(line, ruleStack);
     ruleStack = result.ruleStack;
     return result.tokens.map((t) => ({ text: line.slice(t.startIndex, t.endIndex), scopes: t.scopes }));
   });
@@ -276,4 +290,54 @@ test('tokenizes tflw.config keywords (env/defaults/require/session) and env(NAME
   const envCallLine = lines[6]!;
   const envCallToken = envCallLine.find((t) => t.text === 'env' && hasScope(t, 'support.function.env.tflw'));
   assert.ok(envCallToken, '`env(...)` should be highlighted as a function call, distinct from the `env <name>` block keyword');
+});
+
+// -- M136b (D427/D427a): the config dialect's own grammar ------------------------------------
+
+/** The eighteen words reachable only from `parser.ts`'s config-dialect region. `M133-01` listed
+ * nine of them; measuring every word the parser puts in keyword position found the rest. */
+const CONFIG_ONLY_WORDS = [
+  'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'redact', 'viewport',
+  'oauth2', 'token', 'client', 'id', 'secret', 'scope',
+  'destination', 'level', 'query',
+] as const;
+
+test('the config grammar colors every config-only keyword (M136b, D427a)', () => {
+  // One word per line, so nothing depends on a surrounding rule claiming the span first — this is a
+  // wordlist assertion and it should fail for a missing word, not for a context that swallowed it.
+  const lines = tokenizeLines(CONFIG_ONLY_WORDS.map((w) => `  ${w}`), configGrammar);
+  for (const [i, word] of CONFIG_ONLY_WORDS.entries()) {
+    const token = lines[i]!.find((t) => t.text.trim() === word);
+    assert.ok(token, `no token produced for \`${word}\``);
+    assert.ok(hasScope(token!, 'keyword.control.tflw'), `\`${word}\` should be a keyword in a tflw.config buffer`);
+  }
+});
+
+test('the config grammar still colors everything it inherits from source.tflw (M136b, D427a)', () => {
+  // The config grammar is a delta that `include`s `source.tflw`. If that include ever stops
+  // resolving — a renamed scope, a typo, a registry that cannot find the base — the eighteen words
+  // above would still pass and *everything else in the file* would render as plain text. This is the
+  // test that notices.
+  const lines = tokenizeLines(['# a comment', 'env local default', '  api "http://localhost:3001"', '', 'session admin', '  header "Authorization" is env(ADMIN_TOKEN)'], configGrammar);
+
+  assert.ok(lines[0]!.some((t) => hasScope(t, 'comment.line.number-sign.tflw')), 'comments come from the included grammar');
+  assert.ok(hasScope(findToken(lines, 'env'), 'keyword.control.tflw'), '`env` is a shared statement keyword');
+  assert.ok(hasScope(findToken(lines, 'session'), 'keyword.control.tflw'), '`session` is a shared statement keyword');
+  assert.ok(lines[2]!.some((t) => t.text === 'http://localhost:3001' && hasScope(t, 'string.quoted.double.tflw')), 'strings come from the included grammar');
+  assert.ok(
+    lines[5]!.some((t) => t.text === 'env' && hasScope(t, 'support.function.env.tflw')),
+    '`env(...)` must still be distinguished from the `env <name>` block keyword through the include',
+  );
+});
+
+test('the config-only words are NOT keywords in the .tflw grammar (M136b, D427)', () => {
+  // The whole reason `tflw.config` needed its own language id. `key`, `web` and `destination` are
+  // ordinary identifiers in a test file; a fix that added them to the shared wordlist would color
+  // them in every .tflw file that exists, which is a worse defect than the one being repaired.
+  const lines = tokenizeLines(CONFIG_ONLY_WORDS.map((w) => `  ${w}`));
+  for (const [i, word] of CONFIG_ONLY_WORDS.entries()) {
+    const token = lines[i]!.find((t) => t.text.trim() === word);
+    if (!token) continue; // no token at all is also "not a keyword"
+    assert.equal(hasScope(token, 'keyword.control.tflw'), false, `\`${word}\` must not be a keyword in a .tflw buffer`);
+  }
 });

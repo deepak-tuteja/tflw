@@ -56,6 +56,61 @@ test('the extension ships a README — the Marketplace renders it as the entire 
   }
 });
 
+// -- M136b (D427a): the manifest half of the language-id split ------------------------------
+//
+// The `tflw.config` dialect got its own language id so it could get its own grammar. Six sites in
+// this package and `extension.ts` name a language id; the two `D427` did not know about are both
+// here, and both fail *silently* — the extension simply does nothing and reports nothing. These are
+// written as properties over `contributes`, not as `includes('tflw-config')` assertions, so they
+// also hold for the next language id somebody adds without reading this comment.
+
+interface Contributes {
+  languages: { id: string }[];
+  grammars: { language: string; scopeName: string; path: string }[];
+  semanticTokenScopes: { language: string }[];
+}
+
+async function contributes(): Promise<{ activationEvents: string[]; contributes: Contributes }> {
+  return JSON.parse(await readFile(join(pkgRoot, 'package.json'), 'utf8')) as { activationEvents: string[]; contributes: Contributes };
+}
+
+test('every contributed language has an `onLanguage:` activation event (M136b, D427a)', async () => {
+  // The failure this exists for: `tflw.config` used to carry the `tflw` id, so `onLanguage:tflw`
+  // activated the extension for it. The moment the id split, a user whose only open document is a
+  // `tflw.config` — an entirely ordinary thing, it is the file you open to add a service — would
+  // have got no extension at all: no diagnostics, no completion, no hover, and no error to say why.
+  const { activationEvents, contributes: c } = await contributes();
+  for (const { id } of c.languages) {
+    assert.ok(
+      activationEvents.includes(`onLanguage:${id}`),
+      `language \`${id}\` is contributed but nothing activates the extension for it — a buffer in that language would get no extension at all, silently`,
+    );
+  }
+});
+
+test('every contributed language has a grammar and a semantic-token scope map (M136b, D427a)', async () => {
+  // A language id with no grammar renders as plain text; one with no `semanticTokenScopes` entry
+  // drops every semantic token the server sends, which would make this whole milestone a no-op in
+  // exactly the buffer it is for. Neither produces an error anywhere.
+  const { contributes: c } = await contributes();
+  for (const { id } of c.languages) {
+    assert.ok(c.grammars.some((g) => g.language === id), `language \`${id}\` has no grammar — its buffers render unhighlighted`);
+    assert.ok(
+      c.semanticTokenScopes.some((s) => s.language === id),
+      `language \`${id}\` has no semanticTokenScopes entry — the LSP's semantic tokens would arrive and be discarded`,
+    );
+  }
+});
+
+test('every contributed grammar file exists and declares the scopeName the manifest claims (M136b, D427a)', async () => {
+  const { contributes: c } = await contributes();
+  for (const g of c.grammars) {
+    const raw = await readFile(join(pkgRoot, g.path), 'utf8');
+    const parsed = JSON.parse(raw) as { scopeName: string };
+    assert.equal(parsed.scopeName, g.scopeName, `${g.path} declares scopeName \`${parsed.scopeName}\`, but the manifest binds it as \`${g.scopeName}\``);
+  }
+});
+
 test('the .vsix attributes every third-party package its bundle inlined (M92a, review `B6-16`)', async () => {
   const meta = JSON.parse(await readFile(join(pkgRoot, '.bundle-meta.json'), 'utf8')) as { inputs: Record<string, unknown> };
   const expected = (collectNotices(meta) as { name: string }[]).map((n) => n.name);

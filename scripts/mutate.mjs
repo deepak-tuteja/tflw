@@ -147,6 +147,11 @@ const SUITE_SECONDS = {
   '@tflw/reporter': 3,
   '@tflw/lsp-server': 7,
   '@tflw/docs-site': 5,
+  // M136b — first mutations aimed at the extension package. Measured locally rather than on a
+  // runner (the table above is 2-core GitHub numbers): the suite is ~1s of tests behind a
+  // `vscode-oniguruma` WASM load, so 3 is the honest shard-balancing figure and it is small enough
+  // that being wrong about it costs nothing.
+  'tflw-vscode': 3,
   tflw: 161,
   [ROOT_SUITE]: 31,
 };
@@ -1679,6 +1684,56 @@ const REGISTRY = [
     what: "D421's namespacing dropped: a subject id is emitted bare, so a principal called `sec/authz-object-leak` — or, far more plausibly, any future subject that happens to share a name with a rule — collides with the rule half in the one property a consumer groups by. `kind` still distinguishes them, which is exactly what makes this survivable-looking: the document is well-formed, and only a consumer that keys on `id` (the reason the property exists) is wrong",
     find: '      id: `${SUBJECT_NAMESPACE[d.scan]}:${d.subject}`,',
     replace: '      id: d.subject,',
+  },
+
+  // --- M136b ------------------------------------------------------------------------------------
+  //
+  // The config-dialect language-id split. Every entry here is a *silent* failure in the real editor
+  // — nothing throws, nothing logs, a feature simply stops existing — which is why the milestone is
+  // worth mutating at all. The last two are the first mutations ever aimed at `tflw-vscode`, the
+  // package where this milestone's only irreversible-feeling change lives.
+  {
+    id: 'dialect-ignored-by-token-pass',
+    milestone: 'm136b',
+    file: 'packages/lang/src/semanticTokens.ts',
+    what: "D427 half-undone in the direction that looks harmless: the config vocabulary is consulted for *both* dialects, which is exactly the one-flat-list fix `M133-01` proposed and D427 rejected. Every config word colours correctly and `key`, `web` and `destination` become keywords in every .tflw file in the world — a regression with no error attached to it, visible only as ordinary identifiers turning a keyword colour",
+    find: "    if (KEYWORDS.has(tok.value) || (dialect === 'config' && CONFIG_KEYWORDS.has(tok.value))) tokens.push({ span: tok.span, type: 'keyword' });",
+    replace: "    if (KEYWORDS.has(tok.value) || CONFIG_KEYWORDS.has(tok.value)) tokens.push({ span: tok.span, type: 'keyword' });",
+  },
+  {
+    id: 'config-words-never-consulted',
+    milestone: 'm136b',
+    file: 'packages/lang/src/semanticTokens.ts',
+    what: 'the other direction: the dialect argument is accepted and then never used, so the eighteen words stay uncoloured and the milestone is a no-op that typechecks. The state `M133-01` describes, reachable by deleting one clause',
+    find: "    if (KEYWORDS.has(tok.value) || (dialect === 'config' && CONFIG_KEYWORDS.has(tok.value))) tokens.push({ span: tok.span, type: 'keyword' });",
+    replace: '    if (KEYWORDS.has(tok.value)) tokens.push({ span: tok.span, type: \'keyword\' });',
+  },
+  {
+    id: 'semantic-tokens-assume-test-dialect',
+    milestone: 'm136b',
+    pkg: '@tflw/lsp-server',
+    file: LSP_SERVER,
+    what: "the wiring rather than the wordlist: the server stops asking the store which dialect the buffer is and assumes the test one. `collectSemanticTokens` keeps its parameter, the call still typechecks, and config buffers go back to being coloured by the wrong vocabulary — the failure a required parameter was chosen to prevent, reintroduced at the one call site that has to get it right",
+    find: "    const kind = store.get(params.textDocument.uri)?.kind ?? 'test';",
+    replace: "    const kind = 'test';",
+  },
+  {
+    id: 'lsp-selector-drops-config-dialect',
+    milestone: 'm136b',
+    pkg: 'tflw-vscode',
+    file: 'packages/vscode/src/extension.ts',
+    what: 'D427a site 2: the `documentSelector` names only the test dialect again. In a real editor this is total and silent for `tflw.config` — no diagnostics, no completion, no hover, no error anywhere — while every server-side test stays green, which is the precise failure mode D428 exists to catch',
+    find: "    documentSelector: [{ language: 'tflw' }, { language: 'tflw-config' }],",
+    replace: "    documentSelector: [{ language: 'tflw' }],",
+  },
+  {
+    id: 'config-language-never-activates',
+    milestone: 'm136b',
+    pkg: 'tflw-vscode',
+    file: 'packages/vscode/package.json',
+    what: "D427a site 4, the one the plan did not know about and the worst of them: the `tflw-config` activation event is removed, so a user whose only open document is a `tflw.config` gets no extension at all. Not a degraded feature — nothing runs. This mutation is the reason that guard is written as a property over every contributed language rather than as an assertion about this one id",
+    find: '    "onLanguage:tflw",\n    "onLanguage:tflw-config"',
+    replace: '    "onLanguage:tflw"',
   },
 ];
 
