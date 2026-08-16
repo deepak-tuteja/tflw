@@ -34,7 +34,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Location, Log, ReportingDescriptor, Result } from 'sarif';
-import type { AuthzFinding, RunReport, ScanFinding, Severity } from '@tflw/runtime';
+import type { AuthzFinding, RunReport, ScanFinding, ScanKind, Severity } from '@tflw/runtime';
 import { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, templateEndpoint } from '@tflw/runtime';
 
 import { AUTHZ_REPRO_DIR, reproFileName } from './authz-repro.js';
@@ -51,6 +51,42 @@ export const SARIF_SCHEMA_URL = 'https://json.schemastore.org/sarif-2.1.0.json';
 
 /** The homepage a consumer follows from the tool block. */
 const TFLW_INFORMATION_URI = 'https://deepak-tuteja.github.io/tflw/';
+
+/**
+ * `M136a` (D421) — one entry in `run.properties['tflw/notApplicable']`.
+ *
+ * D412 created the property to carry *did-not-look* into the machine-readable artifact, so that a
+ * scan which never ran could not read as a scan that found nothing. It carried only the rule-keyed
+ * half. This is the shape both halves share, with `kind` as the discriminator so a consumer grouping
+ * by `id` is never comparing a rule against a principal.
+ *
+ * `because` is an array for the rule half because a rule can stand down for different reasons in
+ * different assertions of one run and D389 deduplicates them; the subject half always has one reason
+ * per aggregated row and carries `count` instead, which is the number the row is actually about.
+ */
+interface NotAsked {
+  readonly kind: 'rule' | 'subject';
+  readonly scan: ScanKind;
+  readonly id: string;
+  readonly because: readonly string[];
+  readonly count?: number;
+}
+
+/**
+ * What kind of thing each scan's un-asked subjects are, used to namespace `NotAsked.id`.
+ *
+ * Total over `ScanKind` rather than a lookup with a fallback, so a fourth tier cannot be added
+ * without deciding what its subjects are called — the same discipline `CLASS_OPT_IN` uses to stop a
+ * fifth payload class arriving without a decision about its opt-in word.
+ *
+ * `security` has no inhabitant (Tier 1 judges one observed response and sends nothing), so its entry
+ * is the honest generic rather than a guess at a noun it will never print.
+ */
+const SUBJECT_NAMESPACE: Readonly<Record<ScanKind, string>> = {
+  security: 'subject',
+  authorization: 'principal',
+  'input-handling': 'endpoint',
+};
 
 export interface SarifOptions {
   /** tflw's own version, if the caller knows it. Omitted rather than guessed. */
@@ -311,9 +347,30 @@ export function buildSarifLog(report: RunReport, opts: SarifOptions = {}): Log |
   const ruleObjects = rules.map((r) => ruleObject(r, severityOfRule(r, findings)));
   const repros = reproIndex(opts.authzFindings ?? []);
 
-  const notApplicable = (report.scanCoverage ?? []).flatMap((c) =>
-    c.notApplicable.map((n) => ({ scan: c.scan, rule: n.rule, because: n.because })),
-  );
+  // D412's bucket, and D421's second half joining it.
+  //
+  // **One property, two kinds, and the `kind` discriminator is what keeps that honest.** A rule that
+  // stood down and a subject that was never asked are both *did-not-look*, which is why they belong
+  // in the property D412 created to carry did-not-look into the machine-readable artifact rather than
+  // in a second one a consumer would have to know to read. They are not the same fact, which is why
+  // neither is emitted without saying which it is: `kind: 'rule'` declined to judge an observation it
+  // was given, `kind: 'subject'` never got an observation at all.
+  //
+  // `id` is namespaced by kind rather than left bare. A rule id and a principal name live in
+  // different namespaces and can collide with no warning — and the whole value of this property is
+  // that a consumer can group by it.
+  const notApplicable: NotAsked[] = [
+    ...(report.scanCoverage ?? []).flatMap((c) =>
+      c.notApplicable.map((n) => ({ kind: 'rule' as const, scan: c.scan, id: n.rule, because: n.because })),
+    ),
+    ...(report.scanBlindSpot?.declines ?? []).map((d) => ({
+      kind: 'subject' as const,
+      scan: d.scan,
+      id: `${SUBJECT_NAMESPACE[d.scan]}:${d.subject}`,
+      because: [d.reason],
+      count: d.count,
+    })),
+  ];
 
   return {
     $schema: SARIF_SCHEMA_URL,

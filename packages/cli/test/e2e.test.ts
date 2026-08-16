@@ -4533,6 +4533,124 @@ test('the built dist/cli.cjs runs an input-handling scan end to end against a re
   }
 });
 
+// `M134a-02`, the other two thirds. The row measured that the shipped binary's copy of the
+// authorization engine had never been executed by any test in this repo, and that Tier 1's read
+// 19/19 for a reason that is not reassuring: its scan also runs at session establishment (D287), so
+// any CLI test that merely *declares* a session warms the bundled copy without asserting anything.
+//
+// Three tests rather than one parametrised case, because a failure has to name its own engine. A
+// bundler or export regression does not break all three tiers together — it breaks the one whose
+// module stopped being reachable — and a shared case that failed would say only "a scan broke".
+test('the built dist/cli.cjs runs an authorization scan end to end against a real server', async () => {
+  const OWNER_OF: Record<string, string> = { a1: 'shopper' };
+  const TOKENS: Record<string, string> = { 'tok-shopper': 'shopper', 'tok-peer': 'peer' };
+  const server: Server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const auth = req.headers['authorization'];
+    const who = typeof auth === 'string' && auth.startsWith('Bearer ') ? (TOKENS[auth.slice(7)] ?? null) : null;
+    const json = (status: number, body: unknown): void => {
+      res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+    };
+    const login = /^\/login\/(\w+)$/.exec(url.pathname);
+    if (login) return json(200, { token: `tok-${login[1]!}` });
+    const order = /^\/orders\/(\w+)$/.exec(url.pathname);
+    if (order) {
+      const id = order[1]!;
+      if (who === null) return json(401, { error: 'unauthenticated' });
+      // Correct: the owner sees their order, a stranger gets a 404 that discloses nothing. So the
+      // pack applies, a principal answers, and the assertion comes back **clean** — the same
+      // zero-false-positive bar the input-handling case above asserts, one tier over.
+      if (who !== OWNER_OF[id]) return json(404, { error: 'not found' });
+      return json(200, { id, total: 41 });
+    }
+    json(404, { message: 'Not found' });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-authz-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      `defaults\n  authorized target "${baseUrl}" reason "self-hosted end-to-end fixture"\n` +
+        `\nenv local default\n  api "${baseUrl}"\n` +
+        `\nsession shopper\n  api POST /login/shopper\n  capture body.token as token\n  header "Authorization" is "Bearer {token}"\n` +
+        `\nsession peer\n  api POST /login/peer\n  capture body.token as token\n  header "Authorization" is "Bearer {token}"\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'authz.tflw'),
+      `test "orders are owner-scoped" as shopper\n  api GET /orders/a1\n  expect status equals 200\n  expect response has no authorization violations\n`,
+      'utf8',
+    );
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(stdout, /1\/1 passed/);
+
+    // Read from `report.html` rather than stdout, for the reason the input case gives: a passing
+    // step prints only its name without `--verbose`, and the facts are in the step detail.
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    // D316's probe line. Its presence is what proves the probe engine actually ran through the
+    // bundle rather than the assertion short-circuiting — a suite with an empty probe set would
+    // have failed through D285's door instead, so a *pass* with a probe count is the whole claim.
+    assert.match(html, /principals probed/);
+    // The rule pack reached the bundle too, not merely the prober.
+    assert.match(html, /sec\/authz-object-leak/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
+// Tier 1 through the bundle, **asserted rather than incidentally warmed**. This is the case
+// `M134a-02` explains is missing even though `securityRules.ts` reads 19/19: coverage counted the
+// scan D287 runs at session establishment, which nothing asserts on. A rule that stopped firing
+// would keep that number and break nothing here until a real suite trusted it.
+test('the built dist/cli.cjs runs a hygiene scan end to end and fails on a real weakness', async () => {
+  const server: Server = createServer((_req, res) => {
+    // One planted weakness and nothing else: a session cookie without `HttpOnly`, which is
+    // `sec/cookie-not-httponly` exactly. Asserted as a **failure** rather than a pass, because a
+    // clean Tier 1 run is indistinguishable from a Tier 1 scan that never ran — which is the
+    // failure mode this test exists to catch.
+    res
+      .writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'sid=abc123; Path=/' })
+      .end('{"ok":true}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-hygiene-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      `defaults\n  authorized target "${baseUrl}" reason "self-hosted end-to-end fixture"\nenv local default\n  api "${baseUrl}"\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'hygiene.tflw'),
+      `test "response hygiene"\n  api GET /session\n  expect status equals 200\n  expect response has no security violations\n`,
+      'utf8',
+    );
+
+    // A failing run exits non-zero, so the rejection *is* the assertion — `execFileAsync` throws and
+    // the error carries the output.
+    const err = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }).then(
+      () => null,
+      (e: { code?: number; stdout?: string }) => e,
+    );
+    assert.ok(err, 'a planted weakness must fail the run through the shipped binary');
+    assert.equal(err.code, 1, 'a failed assertion is exit 1, not a crash');
+    assert.match(err.stdout ?? '', /sec\/cookie-not-httponly/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
 // M135b (D404) — the other half of the write condition, and the one whose failure is silent.
 //
 // `upload-sarif` reads an empty `results` array as *everything previously reported is fixed* and

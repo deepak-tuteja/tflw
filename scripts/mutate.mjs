@@ -1643,6 +1643,43 @@ const REGISTRY = [
     find: "    const rebased = relative(sourceRoot, resolve(fileBase ?? process.cwd(), normalized)).replace(/\\\\/g, '/');",
     replace: '    const rebased = normalized;',
   },
+  // --- M136a -----------------------------------------------------------------------------------
+  {
+    id: 'input-tier-blind-spot-not-reported',
+    milestone: 'm136a',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'D418a undone for Tier 3: the input-handling scan goes back to announcing its un-asked subjects on the console and nowhere else. This is the state the milestone found, and its whole point is that it is invisible — a run whose entire mutation matrix was refused before it left the process writes a `results.json` byte-identical to one that probed everything, so every downstream reader (CI, SARIF, a person opening the report a week later) is told a scan happened that did not. The suite is green either way, and the console line that survives is the one nobody keeps',
+    find: "  reportDeclines(\n    'input-handling',",
+    replace: "  if (false as boolean) reportDeclines(\n    'input-handling',",
+  },
+  {
+    id: 'blind-spot-swallows-inconclusive',
+    milestone: 'm136a',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "D418a narrowed to half its subjects: only `not-probed` is reported, so a probe that was SENT and answered without answering — Tier 2's CSRF-refused cookie principal (D325), a 429 — vanishes from the report. This is the more dangerous half, because `not-probed` is usually a config the reader chose and `inconclusive` is the app surprising them; and `M130-01` is exactly the row filed about a refusal being read as an answer, so the mutation reopens it in the reporting layer after D325 closed it in the engine",
+    find: "      .filter((p) => p.outcome.kind === 'not-probed' || p.outcome.kind === 'inconclusive')\n      .map((p) => ({ subject: p.principal,",
+    replace: "      .filter((p) => p.outcome.kind === 'not-probed')\n      .map((p) => ({ subject: p.principal,",
+  },
+  {
+    id: 'sarif-drops-the-subject-half',
+    milestone: 'm136a',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: "D421 removed: `tflw/notApplicable` carries the rules that stood down and not the subjects nobody asked. The document stays valid, uploads cleanly and reads as a complete account of what the scan did not do — which is the failure D412 built the property to prevent, arriving through the half that was added second. A consumer cannot tell a principal that was never probed from one that was probed and cleared",
+    find: '    ...(report.scanBlindSpot?.declines ?? []).map((d) => ({',
+    replace: '    ...[].map((d) => ({',
+  },
+  {
+    id: 'sarif-subject-id-not-namespaced',
+    milestone: 'm136a',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/sarif.ts',
+    what: "D421's namespacing dropped: a subject id is emitted bare, so a principal called `sec/authz-object-leak` — or, far more plausibly, any future subject that happens to share a name with a rule — collides with the rule half in the one property a consumer groups by. `kind` still distinguishes them, which is exactly what makes this survivable-looking: the document is well-formed, and only a consumer that keys on `id` (the reason the property exists) is wrong",
+    find: '      id: `${SUBJECT_NAMESPACE[d.scan]}:${d.subject}`,',
+    replace: '      id: d.subject,',
+  },
 ];
 
 /**

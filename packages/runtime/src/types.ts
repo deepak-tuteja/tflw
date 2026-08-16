@@ -457,9 +457,32 @@ export interface RunReport {
    * counted. Optional for the reason every other addition here is.
    */
   readonly scanCoverage?: readonly ScanRuleCensus[];
-  readonly authzBlindSpot?: {
+  /**
+   * `M136a` (D418a) — what the scans could not put a question to, as opposed to `scanCoverage`
+   * above, which is what their rules declined to judge.
+   *
+   * **Renamed from `authzBlindSpot`, and the rename is the decision.** The field shipped in `M130b`
+   * carrying Tier 2's turned-down principals, and Tier 3 has had the identical fact about payload
+   * classes ever since `M134a` — announced on the console by `mutationNote` and then dropped on the
+   * floor, so a run whose whole matrix was refused before it left the process wrote a `results.json`
+   * indistinguishable from one that probed everything. A field named for one tier that carries two
+   * is `M134a-01`'s defect expressed in a type, so it is named for what it holds.
+   *
+   * `coverage` stays authorization-only and is not generalised: it counts `api` steps in a test that
+   * declares an owner, which is a fact about the *suite* rather than about this run, and no other
+   * tier has an equivalent — Tier 3 asserts on any request with mutable input and needs no `as`.
+   *
+   * `declines` is keyed by `scan` + `subject`. A subject is a **principal** for Tier 2, because its
+   * refusals are per-identity, and an **endpoint** for Tier 3, because its are per-request — a write
+   * with no `probe mutating`, an unaffirmed public origin, a 429. Not a payload class: `planProbes`
+   * filters the corpus to the granted classes before planning, so a withheld class produces no probe
+   * outcome at all and is already reported as a not-applicable *rule* by `scanCoverage`. Tier 1 has
+   * no inhabitant by construction — it judges one observed response and sends nothing, so there is
+   * no question it can fail to ask.
+   */
+  readonly scanBlindSpot?: {
     readonly coverage?: { readonly apiSteps: number; readonly withOwner: number };
-    readonly declines?: readonly { readonly principal: string; readonly reason: string; readonly count: number }[];
+    readonly declines?: readonly { readonly scan: ScanKind; readonly subject: string; readonly reason: string; readonly count: number }[];
   };
   /** Names declared secret — via `env(NAME)`/`require env`, or a `capture` whose subject a `redact`
    * pattern covers — whose value was too short for `MIN_REDACTABLE_LENGTH` to mask safely, so it

@@ -91,12 +91,25 @@ function report(over: Partial<RunReport> = {}): RunReport {
       { scan: 'authorization', applied: ['sec/authz-object-leak'], notApplicable: [{ rule: 'sec/authz-collection-leak', because: ["the owner's response is an object, not an array"] }] },
       { scan: 'input-handling', applied: ['sec/oversized-input-accepted', 'sec/error-detail-disclosure'], notApplicable: [] },
     ],
+    // D418a/D421 — the subject half of did-not-look: a principal Tier 2 could not put a question to,
+    // and an endpoint Tier 3 was refused for.
+    scanBlindSpot: {
+      declines: [
+        { scan: 'authorization', subject: 'shopper', reason: 'a cookie-borne principal was refused on a DELETE (403); this may be CSRF rather than authorization', count: 5 },
+        { scan: 'input-handling', subject: 'POST /v1/vuln/notes', reason: 'POST changes state, and no `probe mutating` covers this target', count: 13 },
+      ],
+    },
     ...over,
   } as unknown as RunReport;
 }
 
 function resultsOf(log: Log): Result[] {
   return log.runs[0]!.results ?? [];
+}
+
+/** D421's property, typed once so every assertion below reads the same shape. */
+function notAskedOf(run: Log['runs'][number]): { kind: string; scan: string; id: string; because: string[]; count?: number }[] {
+  return run.properties!['tflw/notApplicable'] as { kind: string; scan: string; id: string; because: string[]; count?: number }[];
 }
 
 /** Results are ordered by `sortFindings` — gating before withheld, then worst severity, then
@@ -295,9 +308,50 @@ test('rules[] declares what applied; what stood down goes to run.properties with
   assert.ok(declared.includes('sec/csp-missing'), 'applied and found something');
   assert.ok(!declared.includes('sec/tls-version-old'), 'stood down — declaring it would read as a check that never fires');
 
-  const na = run.properties!['tflw/notApplicable'] as { rule: string; because: string[] }[];
-  const tls = na.find((n) => n.rule === 'sec/tls-version-old')!;
+  const na = notAskedOf(run);
+  const tls = na.find((n) => n.id === 'sec/tls-version-old')!;
+  assert.equal(tls.kind, 'rule');
   assert.match(tls.because[0]!, /connection refused/, 'the reason travels, or the reader learns only that something did not happen');
+});
+
+// ---------------------------------------------------------------------------
+// D418a/D421 — the fourth state reaches the artifact CI actually reads
+// ---------------------------------------------------------------------------
+
+test('D421: a subject nobody asked lands in the same property as a rule that stood down', () => {
+  const na = notAskedOf(buildSarifLog(report())!.runs[0]!);
+  const shopper = na.find((n) => n.id === 'principal:shopper');
+  assert.ok(shopper, `no un-asked principal in the property; got ${JSON.stringify(na.map((n) => n.id))}`);
+  assert.equal(shopper.kind, 'subject');
+  assert.equal(shopper.scan, 'authorization');
+  assert.equal(shopper.count, 5, 'the count is the number the row is about — five assertions, one fact');
+  assert.match(shopper.because[0]!, /CSRF/);
+});
+
+test('D421: the id is namespaced by kind, so a consumer grouping by it never compares a rule to a principal', () => {
+  const na = notAskedOf(buildSarifLog(report())!.runs[0]!);
+  for (const n of na) {
+    if (n.kind === 'rule') assert.ok(n.id.startsWith('sec/'), `a rule id must stay bare: ${n.id}`);
+    else assert.match(n.id, /^(principal|endpoint|subject):/, `a subject id must be namespaced: ${n.id}`);
+  }
+  const endpoint = na.find((n) => n.id === 'endpoint:POST /v1/vuln/notes')!;
+  assert.equal(endpoint.scan, 'input-handling');
+  assert.match(endpoint.because[0]!, /probe mutating/);
+});
+
+test('D421: kind is present on EVERY entry, so the two halves are separable without a heuristic', () => {
+  // The property carried one kind of thing before this milestone. An entry that arrives without a
+  // `kind` is indistinguishable from a rule to any consumer that predates the change, which is how a
+  // principal would come to be read as a rule that stood down.
+  const na = notAskedOf(buildSarifLog(report())!.runs[0]!);
+  assert.ok(na.length >= 4, `expected both halves, got ${na.length}`);
+  for (const n of na) assert.ok(n.kind === 'rule' || n.kind === 'subject', `entry without a kind: ${JSON.stringify(n)}`);
+});
+
+test('D421: a run with no blind spot emits only the rule half — the property does not grow an empty axis', () => {
+  const na = notAskedOf(buildSarifLog(report({ scanBlindSpot: undefined }))!.runs[0]!);
+  assert.ok(na.length > 0, 'the rule half is unaffected');
+  assert.deepEqual(na.filter((n) => n.kind === 'subject'), []);
 });
 
 test('rules[] is ordered by the pack order, so two runs of one suite diff only on real change', () => {

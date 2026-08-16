@@ -112,6 +112,21 @@ export interface ScanSink {
    * information disappears.
    */
   census(c: ScanCensus): void;
+  /**
+   * `M136a` (D418a) — a subject this assertion could not put its question to.
+   *
+   * **The third channel, and it is not the second one wearing a different hat.** `census` is
+   * *rule*-keyed and answers "which rules stood down": a rule declined, having looked at the
+   * observation it was given. This is *subject*-keyed and answers "who was never asked": the rule
+   * would have judged happily, and no answer ever arrived for it to judge. Tier 2's cookie-borne
+   * principal refused at the CSRF layer (D325) and Tier 3's write refused for want of `probe
+   * mutating` are the same fact about two different kinds of subject.
+   *
+   * It lives here rather than on `AuthzSink` — where the authorization half of it started — because
+   * `AuthzSink` writes runnable repros and two of the three scans have no principal to write one
+   * for. This sink writes the report, and the report is what the blind spot belongs in.
+   */
+  decline(d: ScanDecline): void;
 }
 
 /** One assertion's worth of D389's census, before the run merges them. */
@@ -119,6 +134,25 @@ export interface ScanCensus {
   readonly scan: ScanKind;
   readonly applied: readonly string[];
   readonly notApplicable: readonly { readonly rule: string; readonly because: string }[];
+}
+
+/**
+ * `M136a` (D418a) — one subject a scan could not put its question to, before the run aggregates it.
+ *
+ * `subject` is deliberately a plain string rather than a union, because the three tiers do not have
+ * a common notion of subject and inventing one would be a type widened by every tier that joined: a
+ * **principal** for Tier 2 (`shopper`), whose refusals are per-identity, and an **endpoint** for
+ * Tier 3 (`POST /notes`), whose are per-request. The reader always has `scan` beside it, and SARIF
+ * namespaces it there (D421) rather than every producer carrying a prefix it might spell
+ * differently.
+ *
+ * Tier 1 has no inhabitant and is not expected to grow one: it judges one observed response and
+ * sends nothing, so there is no question it could fail to ask.
+ */
+export interface ScanDecline {
+  readonly scan: ScanKind;
+  readonly subject: string;
+  readonly reason: string;
 }
 
 /**

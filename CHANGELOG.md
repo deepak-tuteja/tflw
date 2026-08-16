@@ -355,6 +355,34 @@ a different thing depending on which matcher a file happened to use.
   exist — the three scans ship inside `tflw run`, and the roadmap line said otherwise for two
   milestones after they landed.
 
+### Added — pen-test arc, the un-asked subject (`0.4` internal milestone, M136a)
+
+- **A scan now reports what it could not put a question to, not only what its rules declined.** The
+  two are different facts and were reported as one: a rule that stood down looked at an observation
+  and declined it; an un-asked subject means no observation ever arrived. Tier 2 has carried this
+  since `M130b` for principals; Tier 3 announced it on the console and carried it nowhere, so a run
+  whose entire mutation matrix was refused before it left the process wrote a `results.json`
+  indistinguishable from one that probed everything.
+- Both halves now reach `findings.sarif`, in the `run.properties["tflw/notApplicable"]` bucket the
+  three-state model already used, with a `kind` discriminator (`"rule"` / `"subject"`) and
+  namespaced ids (`principal:shopper`, `endpoint:POST /notes`) so a consumer grouping by `id` never
+  compares a principal against a rule.
+- The built `dist/cli.cjs` now runs **all three** scans in its own end-to-end suite. Only Tier 3 did;
+  Tier 1 read as covered because its scan also runs at session establishment, where nothing asserts
+  on it.
+- `report.html`'s security findings block and rule census are styled. They had shipped with a full
+  set of class names and no matching stylesheet rule, so the one section a reader scans by severity
+  rendered as an unstyled browser table.
+
+### Changed — `results.json` (M136a)
+
+- **`authzBlindSpot` → `scanBlindSpot`, and `declines[].principal` → `declines[].subject` with a new
+  `scan` field.** Breaking for anything reading that field. Taken now rather than after Tier 4
+  doubles the number of producers: the field is named for one tier and carries two, and a name that
+  lies about its contents is how a report comes to describe the same state in two vocabularies.
+  `coverage` is unchanged and stays authorization-only — it counts `api` steps in a test declaring an
+  owner, which is a fact about the suite that no other tier has an equivalent of.
+
 ### Changed — grammar freeze (M66–M69)
 
 The shipped grammar is frozen additive-only from `1.0.0` on, so every incompatible change had to

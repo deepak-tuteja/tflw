@@ -44,7 +44,7 @@ import {
   runProgram,
   type AuthzSink,
   type AuthzFinding,
-  type AuthzDecline,
+  type ScanDecline,
   parseBaseline,
   renderBaseline,
   staleBaselineEntries,
@@ -1689,8 +1689,10 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // file's, and the repro files are written once, after everything has finished, so `--workers N`
   // and shards cannot interleave partial ones.
   const authzFindings: AuthzFinding[] = [];
-  const authzDeclines: AuthzDecline[] = [];
-  const authzSink: AuthzSink = { finding: (f) => authzFindings.push(f), decline: (d) => authzDeclines.push(d) };
+  const authzSink: AuthzSink = { finding: (f) => authzFindings.push(f) };
+  // D418a — the declines moved to the shared `ScanSink` below, because Tier 3 has the same fact
+  // about payload classes that Tier 2 has about principals.
+  const scanDeclines: ScanDecline[] = [];
 
   // M134b (D386/D387) — the gate, resolved once for the invocation. Built before any file runs so a
   // malformed `--baseline` is an error the run reports instead of a suppression that silently
@@ -1721,6 +1723,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
       }
       censusByScan.set(c.scan, bucket);
     },
+    decline: (d) => scanDeclines.push(d),
   };
 
   interface FileRunResult {
@@ -1916,10 +1919,10 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     },
     { apiSteps: 0, withOwner: 0 },
   );
-  const authzBlindSpot = buildAuthzBlindSpot(census, authzDeclines);
+  const scanBlindSpot = buildScanBlindSpot(census, scanDeclines);
   const scanCoverage = buildScanCoverage(censusByScan);
   const merged = redactReport(
-    mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo, authzBlindSpot, {
+    mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo, scanBlindSpot, {
       findings: scanFindings,
       coverage: scanCoverage,
     }),
@@ -2766,21 +2769,26 @@ function buildScanCoverage(byScan: ReadonlyMap<ScanKind, { applied: Set<string>;
   return out;
 }
 
-function buildAuthzBlindSpot(
+function buildScanBlindSpot(
   census: { apiSteps: number; withOwner: number },
-  declines: readonly AuthzDecline[],
-): RunReport['authzBlindSpot'] | undefined {
-  // Aggregated by principal + reason, because the useful unit is *what could not be judged and for
-  // whom*: five assertions all declining `shopper` for the same CSRF-shaped 403 is one fact with a
-  // count, not five lines.
-  const counts = new Map<string, { principal: string; reason: string; count: number }>();
+  declines: readonly ScanDecline[],
+): RunReport['scanBlindSpot'] | undefined {
+  // Aggregated by scan + subject + reason, because the useful unit is *what could not be judged and
+  // for whom*: five assertions all declining `shopper` for the same CSRF-shaped 403 is one fact with
+  // a count, not five lines — and Tier 3, whose matrix is dozens wide, would otherwise contribute
+  // one row per payload it never sent.
+  //
+  // D418a — `scan` joins the **key**, not merely the value. Two tiers can name the same subject
+  // (`anonymous` is a principal today, and nothing stops a payload class being called that), and a
+  // key that collapsed them would report one count for two unrelated facts.
+  const counts = new Map<string, { scan: ScanKind; subject: string; reason: string; count: number }>();
   for (const d of declines) {
-    const key = `${d.principal}\u0000${d.reason}`;
+    const key = `${d.scan}\u0000${d.subject}\u0000${d.reason}`;
     const row = counts.get(key);
     if (row) row.count++;
-    else counts.set(key, { principal: d.principal, reason: d.reason, count: 1 });
+    else counts.set(key, { scan: d.scan, subject: d.subject, reason: d.reason, count: 1 });
   }
-  const aggregated = [...counts.values()].sort((a, b) => b.count - a.count || a.principal.localeCompare(b.principal));
+  const aggregated = [...counts.values()].sort((a, b) => b.count - a.count || a.scan.localeCompare(b.scan) || a.subject.localeCompare(b.subject));
   if (census.apiSteps === 0 && aggregated.length === 0) return undefined;
   return {
     ...(census.apiSteps > 0 ? { coverage: census } : {}),
@@ -2803,7 +2811,7 @@ function mergeReports(
   browserEngine: BrowserEngine,
   evidenceLevel: EvidenceLevel,
   demo: boolean,
-  authzBlindSpot?: RunReport['authzBlindSpot'],
+  scanBlindSpot?: RunReport['scanBlindSpot'],
   /** M134b (D385/D389) — the run's scan findings and rule census, collected across every file by the
    *  one shared `ScanSink` rather than merged out of per-file reports: like the authz declines
    *  beside them, these are the *run's* numbers, and `--workers N` finishes files out of order. */
@@ -2842,8 +2850,9 @@ function mergeReports(
     // case (a suite that scans something), and every pre-M128b fixture stays valid without it.
     ...(authorizedTargets.length > 0 ? { authorizedTargets } : {}),
     // D331 — omitted entirely for a suite with no authorization assertion and no `api` step, so a
-    // pre-M130b fixture stays valid and an ordinary run gains no line.
-    ...(authzBlindSpot ? { authzBlindSpot } : {}),
+    // pre-M130b fixture stays valid and an ordinary run gains no line. D418a renamed the field when
+    // Tier 3 joined it; the omission rule is unchanged.
+    ...(scanBlindSpot ? { scanBlindSpot } : {}),
     // D385/D389 — omitted rather than `[]` for `authorizedTargets`' reason: a run with no security
     // assertion gains no line, and every pre-M134b fixture stays valid without them.
     ...(scan && scan.findings.length > 0 ? { findings: scan.findings } : {}),

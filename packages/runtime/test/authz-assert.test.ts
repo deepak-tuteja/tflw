@@ -18,7 +18,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { parseConfigSource, parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { resolveConfig } from '../src/resolve.js';
-import type { AuthzFinding, AuthzDecline } from '../src/interpreter.js';
+import type { AuthzFinding } from '../src/interpreter.js';
+import type { ScanDecline, ScanSink } from '../src/scanFindings.js';
 import type { ResolvedConfig } from '../src/types.js';
 
 // --- the fixture ---------------------------------------------------------------------------------
@@ -179,17 +180,21 @@ interface RunResult {
   readonly ok: boolean;
   readonly error: string | undefined;
   readonly findings: AuthzFinding[];
-  readonly declines: AuthzDecline[];
+  readonly declines: ScanDecline[];
 }
 
 async function run(source: string, cfg: ResolvedConfig = resolved()): Promise<RunResult> {
   const findings: AuthzFinding[] = [];
-  const declines: AuthzDecline[] = [];
+  // D418a — declines moved from `AuthzSink` to the shared `ScanSink`, so this harness collects them
+  // from the channel the report actually reads.
+  const declines: ScanDecline[] = [];
+  const scanSink: ScanSink = { finding: () => {}, census: () => {}, decline: (d) => declines.push(d) };
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
   const { report } = await runProgram(program, cfg, {
     source,
-    authzSink: { finding: (f) => findings.push(f), decline: (d) => declines.push(d) },
+    authzSink: { finding: (f) => findings.push(f) },
+    scanSink,
   });
   const t = report.tests[0]!;
   const steps = t.kind === 'functional' ? t.steps : [];
