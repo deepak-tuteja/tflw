@@ -22,6 +22,7 @@ import { runProgram } from '../src/interpreter.js';
 import { resolveConfig } from '../src/resolve.js';
 import type { ResolvedConfig } from '../src/types.js';
 import type { ScanDecline, ScanFinding, ScanSink } from '../src/scanFindings.js';
+import type { ReproSubject } from '../src/interpreter.js';
 
 let server: Server;
 let baseUrl: string;
@@ -121,7 +122,7 @@ async function run(
   /** M134b — the run-level knobs this file needs to observe: the seeded layer's count, a fixed seed
    *  so a drawn payload is reproducible, and the sink that collects what every scan found. */
   opts: { probeSeeded?: number; seed?: number } = {},
-): Promise<{ detail: string; ok: boolean; error?: string; findings: ScanFinding[]; declines: ScanDecline[] }> {
+): Promise<{ detail: string; ok: boolean; error?: string; findings: ScanFinding[]; declines: ScanDecline[]; repros: ReproSubject[] }> {
   seen = [];
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
@@ -129,12 +130,14 @@ async function run(
   // D418a — the channel Tier 3 gained: subjects the matrix never put a question to.
   const declines: ScanDecline[] = [];
   const scanSink: ScanSink = { finding: (f) => findings.push(f), census: () => {}, decline: (d) => declines.push(d) };
-  const { report } = await runProgram(program, cfg, { source, scanSink, ...opts });
+  // M137d — the repro sink, so this file can observe the *emitter's* input as well as the report's.
+  const repros: ReproSubject[] = [];
+  const { report } = await runProgram(program, cfg, { source, scanSink, reproSink: { finding: (f) => repros.push(f) }, ...opts });
   const t = report.tests[0]!;
   const steps = t.kind === 'functional' ? t.steps : [];
   const asserts = steps.filter((s) => s.kind === 'expect' || s.kind === 'check');
   const last = asserts[asserts.length - 1];
-  return { detail: last?.detail ?? '', ok: last?.ok ?? false, ...(t.kind === 'functional' && t.error ? { error: t.error } : {}), findings, declines };
+  return { detail: last?.detail ?? '', ok: last?.ok ?? false, ...(t.kind === 'functional' && t.error ? { error: t.error } : {}), findings, declines, repros };
 }
 
 const ASSERT = 'expect response has no input handling violations';
@@ -357,4 +360,41 @@ test('D418a: a withheld class is a not-applicable RULE, not an un-asked subject 
   const r = await run(`test "t"\n  api GET /files/1\n  ${ASSERT}\n`);
   assert.deepEqual(r.declines, [], 'a withheld class must not reach the un-asked channel');
   assert.match(r.detail, /probe traversal/, 'and it must still be reported somewhere');
+});
+
+// --- M137d (D472/D475/D476): what reaches the repro emitter ---------------------------------------
+
+test('D475 — an input finding reaches the repro sink carrying the MUTATED request, not the observed one', async () => {
+  // The join this milestone rests on, asserted through the real interpreter rather than on a hand-built
+  // subject: the emitter is handed `applyMutation`'s output, so the repro dials the request that
+  // actually misbehaved. A repro built from `observed.request.url` would re-send `q=shoes`, which this
+  // very fixture answers 200 to — the repro would pass on a live finding and nothing would say so.
+  const { repros, findings } = await run(`test "t"\n  api GET /leaky?q=shoes\n  ${ASSERT}`);
+  assert.ok(findings.length > 0, 'the fixture must produce a finding for this to be about anything');
+
+  const input = repros.filter((r) => r.kind === 'input-handling');
+  assert.ok(input.length > 0, 'an input-handling finding must reach the repro sink');
+  for (const r of input) {
+    assert.equal(r.kind, 'input-handling');
+    if (r.kind !== 'input-handling') continue;
+    assert.match(r.url, /\/leaky\?q=/);
+    assert.doesNotMatch(r.url, /q=shoes(&|$)/, 'the observed value would exercise the request that behaved correctly');
+    // The label is what `DETECTOR_PATTERNS` is keyed on, so a finding arriving without one is a repro
+    // that cannot be written at all.
+    assert.equal(r.invariant, 'a stack frame');
+    assert.equal(r.payloadId.startsWith('injection/'), true);
+  }
+});
+
+test('D476 — a Tier 1 hygiene finding in the SAME run still emits no repro', async () => {
+  // The discrimination, in one run: this fixture answers plaintext JSON with no security headers, so
+  // Tier 1 has plenty to say about it — and says none of it to the repro sink. Asserting this beside a
+  // populated sink is what separates "hygiene is excluded" from "the sink was empty anyway".
+  const { repros } = await run(`test "t"\n  api GET /leaky?q=shoes\n  check response has no security violations\n  ${ASSERT}`);
+  assert.ok(repros.length > 0, 'the input scan must have filled the sink');
+  assert.deepEqual(
+    repros.filter((r) => r.kind !== 'input-handling'),
+    [],
+    'only the input scan may emit here — hygiene has no second request to construct',
+  );
 });

@@ -10,6 +10,7 @@ import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
+import type { ReproSubject } from '../src/interpreter.js';
 
 /** A JSON route with no security headers at all — the §0 prediction's shape. */
 const bare: Handler = (_req, res) => json(res, 200, { ok: true });
@@ -20,6 +21,19 @@ async function run(routes: Record<string, Handler>, source: string, tweak: (c: R
     const { program } = parseSource(source);
     const { report } = await runProgram(program, tweak(testConfig(server.baseUrl)), { source });
     return report;
+  } finally {
+    await server.close();
+  }
+}
+
+/** As `run`, but with the repro sink attached — for M137d's D476, below. */
+async function runCollectingRepros(routes: Record<string, Handler>, source: string): Promise<ReproSubject[]> {
+  const server = await startFixtureServer(routes);
+  const subjects: ReproSubject[] = [];
+  try {
+    const { program } = parseSource(source);
+    await runProgram(program, testConfig(server.baseUrl), { source, reproSink: { finding: (f) => subjects.push(f) } });
+    return subjects;
   } finally {
     await server.close();
   }
@@ -250,4 +264,29 @@ test('the plain form\'s pass has nothing to list, and lists nothing', async () =
   const step = assertionStep(report);
   assert.equal(step.ok, true);
   assert.doesNotMatch(step.detail!, /\n\s*- \[/);
+});
+
+// --- M137d (D476): Tier 1 hygiene emits no repro, and that is a decision -------------------------
+
+test('D476 — a hygiene finding emits NO repro, and the finding itself still fires', async () => {
+  // **The decision, not an omission.** Tier 2 and Tier 3 emit repros because their findings are about a
+  // *request*: send this one, as this principal, with this payload, and watch. A Tier 1 finding is about
+  // the response's own hygiene — a missing `Secure`, an absent `Cache-Control` — where there is no
+  // second request to construct. The re-run of a hygiene finding is the same request that already
+  // produced it, so a repro would restate the assertion that just failed, in a separate file, per
+  // endpoint, for all ten rules. What a reader needs there is the *repair*, and R7's remediation KB
+  // (`M135`) already carries it.
+  //
+  // Asserted rather than left to the type system, which cannot see it: nothing in `ReproSubject` would
+  // *stop* a future edit wiring hygiene in, and the symptom would be a report dir filling with
+  // near-identical files that nobody decided to add.
+  const source = T('  api GET /a\n  check response has no security violations');
+  const subjects = await runCollectingRepros({ '/a': bare }, source);
+  assert.deepEqual(subjects, [], 'Tier 1 hygiene must not reach the repro sink');
+
+  // The control that stops the above passing for the wrong reason: the scan really did fire on this
+  // response. Without it, a run that scanned nothing would satisfy the assertion perfectly.
+  const report = await run({ '/a': bare }, source);
+  const step = assertionStep(report);
+  assert.equal(step.ok, false, 'the bare route must still produce hygiene findings');
 });

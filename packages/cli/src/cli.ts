@@ -1972,7 +1972,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const sourceRoot = sourceRootOf(cwd);
   await writeSarif(merged, reportDir, {
     version: await getVersion(),
-    authzFindings: reproSubjects.filter((f) => f.kind === 'authorization'),
+    reproSubjects,
     ...(sourceRoot ? { sourceRoot, fileBase: cwd } : {}),
   });
   // D250 — the record now carries how this run was narrowed, so the *next* `--failed` can say what

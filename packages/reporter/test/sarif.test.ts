@@ -138,7 +138,7 @@ function resultFor(log: Log, rule: string): Result {
 // ---------------------------------------------------------------------------
 
 test('a realistic run produces a schema-valid SARIF 2.1.0 document', () => {
-  const log = buildSarifLog(report(), { version: '0.1.0', authzFindings: [AUTHZ_FINDING] });
+  const log = buildSarifLog(report(), { version: '0.1.0', reproSubjects: [AUTHZ_FINDING] });
   assert.ok(log);
   validate(log);
   assert.equal(log.version, '2.1.0');
@@ -386,16 +386,67 @@ test('every result names a rule the catalog declares', () => {
 // ---------------------------------------------------------------------------
 
 test('an authorization result links the repro the emitter already wrote', () => {
-  const results = resultsOf(buildSarifLog(report(), { authzFindings: [AUTHZ_FINDING] })!);
+  const results = resultsOf(buildSarifLog(report(), { reproSubjects: [AUTHZ_FINDING] })!);
   const authz = results.find((r) => r.ruleId === 'sec/authz-object-leak')!;
   assert.equal(authz.properties!['tflw/repro'], 'authz-repro/object-leak--get--v1-orders-4821--peer.tflw');
 });
 
 test('the other two scans carry no repro property, rather than a broken link', () => {
-  const results = resultsOf(buildSarifLog(report(), { authzFindings: [AUTHZ_FINDING] })!);
+  const results = resultsOf(buildSarifLog(report(), { reproSubjects: [AUTHZ_FINDING] })!);
   for (const r of results.filter((x) => x.ruleId !== 'sec/authz-object-leak')) {
     assert.equal(r.properties!['tflw/repro'], undefined);
   }
+});
+
+// M137d (D472/D473) — the input-handling half of the same join.
+
+/** An input subject matching the `sec/oversized-input-accepted` finding `report()` already carries. */
+const INPUT_SUBJECT = {
+  kind: 'input-handling',
+  rule: 'sec/oversized-input-accepted',
+  method: 'POST',
+  url: 'https://api.example.com/v1/vuln/notes',
+  location: 'body `title`',
+  payloadId: 'oversized/64kib-string',
+  invariant: 'sec/oversized-input-accepted',
+} as const;
+
+test('an input-handling result links its repro, in its OWN directory', () => {
+  const results = resultsOf(buildSarifLog(report(), { reproSubjects: [INPUT_SUBJECT] })!);
+  const input = results.find((r) => r.ruleId === 'sec/oversized-input-accepted')!;
+  // `input-repro/`, not `authz-repro/` — D473 keeps two directories rather than renaming a path
+  // published since M130b, so a link naming the wrong one is a 404 for whoever clicks it.
+  assert.match(String(input.properties!['tflw/repro']), /^input-repro\//);
+});
+
+test('two detectors at ONE site get two links, not one shared between them', () => {
+  // The reason the input join key carries the invariant and the authorization key must not. A stack
+  // frame and a SQL fragment at the same query parameter are two repairs — R8's fingerprint separates
+  // them on exactly that pair — so a key without it would make them collide, and the symptom would be
+  // two SARIF alerts pointing at one repro file, one of which is about a different leak.
+  const twoDetectors = report({
+    findings: [
+      f({ scan: 'input-handling', rule: 'sec/error-detail-disclosure', endpoint: 'GET /v1/search', location: 'query `q`', invariant: 'a stack frame', fingerprint: 'e'.repeat(16) }),
+      f({ scan: 'input-handling', rule: 'sec/error-detail-disclosure', endpoint: 'GET /v1/search', location: 'query `q`', invariant: 'a SQL error fragment', fingerprint: 'f'.repeat(16) }),
+    ],
+  } as unknown as Partial<RunReport>);
+  const subjects = [
+    { ...INPUT_SUBJECT, rule: 'sec/error-detail-disclosure', method: 'GET', url: 'https://api.example.com/v1/search', location: 'query `q`', invariant: 'a stack frame' },
+    { ...INPUT_SUBJECT, rule: 'sec/error-detail-disclosure', method: 'GET', url: 'https://api.example.com/v1/search', location: 'query `q`', invariant: 'a SQL error fragment' },
+  ] as const;
+  const results = resultsOf(buildSarifLog(twoDetectors, { reproSubjects: subjects })!);
+  const links = results.map((r) => r.properties!['tflw/repro']);
+  assert.equal(links.length, 2);
+  assert.notEqual(links[0], links[1], 'the two detectors must not share one repro link');
+  for (const l of links) assert.match(String(l), /^input-repro\/error-detail-disclosure--get--/);
+});
+
+test('a subject the emitter would decline to write gets NO link', () => {
+  // A link to a file that does not exist is worse than no link, and only `renderRepro` knows which
+  // those are — a rule with no template, or a detector label the pattern map has never heard of.
+  const unwritable = { ...INPUT_SUBJECT, rule: 'sec/some-future-input-rule' } as const;
+  const results = resultsOf(buildSarifLog(report(), { reproSubjects: [unwritable] })!);
+  for (const r of results) assert.equal(r.properties!['tflw/repro'], undefined);
 });
 
 test('a repro link is joined on the endpoint, so a different endpoint does not borrow one', () => {
@@ -403,7 +454,7 @@ test('a repro link is joined on the endpoint, so a different endpoint does not b
   // function. A looser match would attach one finding's repro to another's alert, which is worse
   // than no link: the file it points at goes green while the alert stays red.
   const other: AuthzFinding = { ...AUTHZ_FINDING, url: 'https://api.example.com/v1/invoices/4821' };
-  const results = resultsOf(buildSarifLog(report(), { authzFindings: [other] })!);
+  const results = resultsOf(buildSarifLog(report(), { reproSubjects: [other] })!);
   assert.equal(results.find((r) => r.ruleId === 'sec/authz-object-leak')!.properties!['tflw/repro'], undefined);
 });
 
@@ -413,7 +464,7 @@ test('a repro link is joined on the endpoint, so a different endpoint does not b
 
 test('two builds of one report are byte-identical', () => {
   const r = report();
-  assert.equal(JSON.stringify(buildSarifLog(r, { authzFindings: [AUTHZ_FINDING] })), JSON.stringify(buildSarifLog(r, { authzFindings: [AUTHZ_FINDING] })));
+  assert.equal(JSON.stringify(buildSarifLog(r, { reproSubjects: [AUTHZ_FINDING] })), JSON.stringify(buildSarifLog(r, { reproSubjects: [AUTHZ_FINDING] })));
 });
 
 test('the run says whether the tool itself finished', () => {
@@ -437,7 +488,7 @@ test('the run says whether the tool itself finished', () => {
 // contract to itself is the shape of check that passes forever.
 
 test('every SARIF name the cross-repo contract promises is present in a real emitted document', () => {
-  const log = buildSarifLog(report(), { version: '0.1.0', authzFindings: [AUTHZ_FINDING] })!;
+  const log = buildSarifLog(report(), { version: '0.1.0', reproSubjects: [AUTHZ_FINDING] })!;
   const run = log.runs[0]!;
   const c = ARTIFACT_CONTRACT.sarif;
 
