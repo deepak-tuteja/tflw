@@ -156,6 +156,12 @@ export type StepKind =
    *  than `capture`'s: it binds no variable a later step can read, and the report line a reader wants
    *  is *which header this credential will now attach*, not *what value was stored*. */
   | 'csrf'
+  /** `M137c` (D435) — one `seed` line's disclosure: what it found, what will be sent, and what was
+   *  held back. Its own kind rather than `log`'s for the reason `csrf` above is not `capture`'s: a
+   *  `log` step is something the author asked to be printed, and this is tflw stating the size of
+   *  what it is about to do before it does any of it. It is also the one step in a crawl that exists
+   *  when nothing has been sent yet, so a run interrupted immediately still says what was planned. */
+  | 'seed'
   | 'open'
   | 'click'
   | 'fill'
@@ -352,12 +358,66 @@ export interface WorkloadTestResult extends LoadScenarioReport {
   readonly concurrency?: 'parallel' | 'sequential';
 }
 
+/**
+ * `M137c` (`D435`/`D462`) — one `crawl` declaration's outcome.
+ *
+ * Shares `TestResult`'s spine (`name`/`ok`/`durationMs`/`steps`/`file`/`error`) because a crawl's
+ * timeline genuinely is a timeline: the sessions it established, one `seed` line per seed, then an
+ * `api` step and its assertions per route it reached. What it does not share is the *reason* a reader
+ * opens it. A functional test's question is *did my assertion hold*; a crawl's first question is
+ * **how much of the surface did this actually touch**, and no arrangement of `steps` answers that —
+ * 84 green rows look identical whether the other 200 routes were excluded, unsynthesizable, or never
+ * discovered. `surface` is that answer, as data rather than as prose in a step's `detail`.
+ */
+export interface CrawlResult {
+  readonly kind: 'crawl';
+  readonly name: string;
+  readonly ok: boolean;
+  readonly durationMs: number;
+  readonly steps: readonly StepResult[];
+  readonly file?: string;
+  readonly error?: string;
+  readonly surface: CrawlSurfaceReport;
+}
+
+/**
+ * `D435`'s disclosure, in numbers that add up (`M137c`).
+ *
+ * **`discovered === withheld + sent`, and `reached <= sent`.** The identity is the point: a crawl that
+ * dropped what it could not build would report a smaller `discovered` and read as *better* coverage,
+ * which is `M134a`'s lesson — the tell for a scan that judged less than it appears to is a green
+ * report, not a red one. Every route removed from `sent` is in `RunReport.scanBlindSpot.declines` with
+ * the reason that removed it, so the arithmetic and the explanation are in the same artifact.
+ *
+ * `reached` is `D436`'s gate expressed as a count. A synthesized request that did not land on real
+ * code is not scored, so `sent - reached` is the number of responses this crawl declined to draw a
+ * conclusion from — the honest denominator for anything anyone says about what the crawl proved.
+ */
+export interface CrawlSurfaceReport {
+  /** Every operation the seeds described, before any of them was accepted or refused. */
+  readonly discovered: number;
+  /** Enumerated and disclosed, but not sent: `exclude`d, unsynthesizable, or a write with no
+   *  `probe mutating` on its origin (`D465`). */
+  readonly withheld: number;
+  readonly sent: number;
+  /** Sent requests that landed on real code, and whose responses were therefore judged (`D436`). */
+  readonly reached: number;
+  /** Per seed, so a provenance claim has a denominator behind it — `D437`'s discriminator says which
+   *  seed found a *finding*; this says what each seed found at all. `source` is the document URL for
+   *  an `openapi` seed and absent for `traffic`, which has no address. */
+  readonly seeds: readonly { readonly seed: 'openapi' | 'traffic'; readonly source?: string; readonly discovered: number }[];
+}
+
 /** M56 (Phase 3, D116) — one `program.tests` entry's outcome, in file-declaration order alongside
  * every other entry regardless of kind (D101/D112) — `report.html`/`junit.xml` render whichever
- * layout `entry.kind` calls for; `RunReport.total/passed/failed` count both kinds identically
+ * layout `entry.kind` calls for; `RunReport.total/passed/failed` count every kind identically
  * (`entry.ok`, vacuously `true` for a workload test declaring zero `threshold`s, same as it always
- * was inside `LoadScenarioReport.ok`). */
-export type ReportEntry = TestResult | WorkloadTestResult;
+ * was inside `LoadScenarioReport.ok`).
+ *
+ * Three members since `M137c` (`D462`), and the `crawl` arm is why `exhaustiveEntry` below exists:
+ * the union sat at two for long enough that every consumer could dispatch on `kind` with a binary
+ * test and be right by accident. */
+export type ReportEntry = TestResult | WorkloadTestResult | CrawlResult;
 
 /**
  * Turns "I forgot this entry kind" from a silent wrong answer into a compile error (`M137c`, `D462`).

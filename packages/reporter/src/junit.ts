@@ -14,7 +14,7 @@
 // now: `1.0.0` is the first publish, so today there is nobody to break. Most JUnit parsers accept
 // either root; one that insists on a bare `<testsuite>` gets the wrapper it wanted anyway.
 
-import { exhaustiveEntry, type LoadThresholdResult, type ReportEntry, type RunReport, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
+import { exhaustiveEntry, type CrawlResult, type LoadThresholdResult, type ReportEntry, type RunReport, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { fileOf, groupByFile } from './group-by-file.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 import { noVerdictMessage, noVerdictReason, type NoVerdictReason } from './run-verdict.js';
@@ -97,6 +97,11 @@ function entryDurationMs(entry: ReportEntry): number {
   switch (entry.kind) {
     case 'functional':
       return entry.durationMs;
+    // M137c — unlike a workload's, a crawl's duration is an outcome: it is how long the surface took
+    // to walk, which is the number a CI dashboard watching for a scan that has started to time out
+    // wants.
+    case 'crawl':
+      return entry.durationMs;
     // A workload test has no single "this took Nms" figure — its declared span is planned, not an
     // outcome (`types.ts`'s `WorkloadTestResult`), so it contributes nothing to a suite's time.
     case 'workload':
@@ -110,6 +115,11 @@ function testCaseCount(entry: ReportEntry): number {
   switch (entry.kind) {
     case 'functional':
       return 1;
+    // One, not one per route. A crawl is one assertion about a surface, and a `<testcase>` per
+    // discovered route would put the size of somebody's API into their CI test count — where it would
+    // move every time they documented an endpoint.
+    case 'crawl':
+      return 1;
     case 'workload':
       return Math.max(1, entry.thresholds.length);
     default:
@@ -120,6 +130,8 @@ function testCaseCount(entry: ReportEntry): number {
 function testCaseFailureCount(entry: ReportEntry, noVerdict: NoVerdictReason | null): number {
   switch (entry.kind) {
     case 'functional':
+      return entry.ok ? 0 : 1;
+    case 'crawl':
       return entry.ok ? 0 : 1;
     case 'workload':
       if (noVerdict !== null) return 0; // R11, extended by `FU-07`: no verdict means skipped, not failed
@@ -133,6 +145,8 @@ function renderEntry(entry: ReportEntry, file: string, report: RunReport, noVerd
   switch (entry.kind) {
     case 'functional':
       return [renderTestCase(entry, file)];
+    case 'crawl':
+      return [renderCrawlTestCase(entry, file)];
     case 'workload':
       return renderWorkloadTestCases(entry, file, report, noVerdict);
     default:
@@ -159,6 +173,26 @@ function renderTestCase(test: TestResult, file: string): string {
   }
   const message = esc(test.error ?? 'test failed');
   return `    <testcase ${attrs}>\n      <failure message="${message}">${message}</failure>\n    </testcase>`;
+}
+
+/**
+ * `M137c` — one `<testcase>` for the crawl, carrying `D435`'s disclosure as `<system-out>`.
+ *
+ * The disclosure is on the **passing** case too, and that is the point of putting it here at all. A
+ * green crawl is exactly the artifact that needs its denominator: `PASS` over three routes and `PASS`
+ * over three hundred render identically in JUnit, and the number a reviewer needs — how much of the
+ * surface this actually reached — exists nowhere else in the file. `<system-out>` is the channel a
+ * flaky pass already uses to say something true about a testcase that succeeded.
+ */
+function renderCrawlTestCase(crawl: CrawlResult, file: string): string {
+  const time = (crawl.durationMs / 1000).toFixed(3);
+  const attrs = `name="${esc(crawl.name)}" classname="${esc(file)}" time="${time}"`;
+  const { discovered, withheld, sent, reached } = crawl.surface;
+  const disclosure = `crawl surface: ${discovered} discovered, ${withheld} withheld, ${sent} sent, ${reached} reached (see \`scanBlindSpot.declines\` in results.json for each withheld route's reason)`;
+  const out = `      <system-out>${esc(disclosure)}</system-out>`;
+  if (crawl.ok) return `    <testcase ${attrs}>\n${out}\n    </testcase>`;
+  const message = esc(crawl.error ?? 'crawl failed');
+  return `    <testcase ${attrs}>\n      <failure message="${message}">${message}</failure>\n${out}\n    </testcase>`;
 }
 
 /** M56 (Phase 3, D119) — one `<testcase>` per declared `threshold` (named `${test.name} — ${label}

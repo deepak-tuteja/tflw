@@ -2726,9 +2726,9 @@ exists to make.
 
 ### 9.15 Active crawl — the `crawl` declaration (M137c, D432/D443/D450) 🔧
 
-✅ The declaration, its seeds and its two structural rules (`TF068`, `TF070`) shipped in `M137c`.
-🔧 Route synthesis from an OpenAPI document, the captured-traffic seed's reachability channel and the
-crawl's own report entry are the rest of that milestone.
+✅ The declaration, its seeds, its two structural rules (`TF068`, `TF070`), route synthesis from an
+OpenAPI document, the captured-traffic seed, the reachability channel and the crawl's own report entry
+all shipped in `M137c`. 🔧 The browser/spider seed is `M137f`.
 
 Tiers 1–3 judge a response the suite asked for. A **crawl** is the other half: it *finds* the requests
 itself, from the surface the application documents and from what the run's own tests already touched,
@@ -2758,12 +2758,31 @@ what makes `crawl` cheap to learn and is enforced as `TF070`: a crawl body takes
 An `api` step there would be a request nobody sends under a principal nobody chose, and
 `expect status equals 200` names a response the construct does not have, because a crawl has many.
 
-**`as` takes the same comma list `test` does**, and every safety layer applies unchanged and is
-checked from inside a crawl body: `authorized target` must name the origin (§3.10, `TF060`),
-`--allow-public-target` must affirm a public one (`TF065`), `probe mutating` still gates a mutating
-probe, and `authorization violations` still needs an owner to differentiate against (`TF063`). A crawl
-is **strictly sequential** — one probe in flight — so `probe rate`'s deferral condition (D21 layer 5)
-stays untripped.
+**`as` takes the same comma list `test` does**, and it means the same thing: those principals are the
+**owner**, their credentials fold together in declared order, and Tier 2 differentiates against every
+*other* declared session. A crawl walks its surface once, not once per name.
+
+Every safety layer applies unchanged and is checked from inside a crawl body: `authorized target` must
+name the origin (§3.10, `TF060`), `--allow-public-target` must affirm a public one (`TF065`), and
+`authorization violations` still needs an owner to differentiate against (`TF063`). **`probe mutating`
+gates the crawl's own writes, not only its probes** — a synthesized `POST`/`PUT`/`PATCH`/`DELETE` is
+enumerated, disclosed and *not sent* unless the origin's `authorized target` declares the opt-in,
+because affirming a scan is not affirming writes. A crawl is **strictly sequential** — one request in
+flight — so `probe rate`'s deferral condition (D21 layer 5) stays untripped.
+
+**Everything discovered is accounted for, and every invented value is named.** Before it sends anything
+the crawl prints what it plans to: how many operations each seed found, how many are withheld and why,
+and how many will be sent — and `discovered = withheld + sent` always holds, so a surface it could not
+build never reads as a smaller API. A synthesized request whose response did **not** land on real code
+is not scored: a `400` from a validator, a `404` on a path parameter tflw invented, a `401` for the
+crawl's own principal. Each of those routes goes to `scanBlindSpot.declines` with the reason, because a
+validator's refusal is indistinguishable from a hardened endpoint and scoring it would claim a
+conclusion about code that never ran.
+
+A crawl runs **after every test in its file** and before the after-file hooks, wherever the declaration
+sits: `seed traffic` is the traffic this run produced, so ordering it by position would make what it
+discovers depend on where it was typed. `--tag`, `--only` and `--failed` select a crawl by name exactly
+as they select a test.
 
 **A crawl with no `seed` is `TF068`**, refused before the run starts: it discovers nothing, issues no
 request, and so every assertion in its body could not have failed whatever the application did. The

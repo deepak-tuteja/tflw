@@ -34,6 +34,7 @@ import type {
   Span,
   Step,
   Subject,
+  CrawlDecl,
   TestDecl,
   ThresholdDecl,
   WaitUntilApiStmt,
@@ -89,7 +90,11 @@ import { camelCaseName, interceptTypelessModuleWarning, loadHelperModule } from 
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
 import { headerMatchesRedactPattern, maskDetailValue, pathMatchesRedactPattern, redactFields, redactHeaderFields, redactUrlQuery } from './fieldRedact.js';
-import { evaluateSchemaMatch } from './contract.js';
+import { evaluateSchemaMatch, loadOpenApiDocumentForCrawl } from './contract.js';
+// M137c (D435/D436) — the crawl engine. Everything it touches in the world is injected from here, so
+// this file keeps sole ownership of how a request is built and a crawl can never disagree with an
+// `api` step about what a request is.
+import { runCrawl, type CrawlDeps, type CrawlRequest } from './crawl.js';
 import { evaluateFileMatch } from './binary-match.js';
 import { parseCsv } from './csv-parse.js';
 import { extractPdfText } from './pdf-text.js';
@@ -105,6 +110,7 @@ import type {
   AttemptResult,
   BackOffDiagnosis,
   CookieEvent,
+  CrawlResult,
   EventSink,
   LoadDurationStats,
   LoadIterationResult,
@@ -327,16 +333,27 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   // skips these (unchanged), so `cases`/`results` below stay purely functional, exactly as before.
   const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
   const hasWorkload = scenarios.length > 0;
+  // M137c (D432/D435). `crawls` is absent on every program written before this milestone (`ast.ts`
+  // keeps the field off the node rather than emitting `[]`), so `?? []` is the whole compatibility
+  // story. The traffic sink is created only when some crawl in this file asks for it — see
+  // `TestCtx.trafficSink`.
+  const crawls = program.crawls ?? [];
+  const traffic: RequestTrace[] = [];
+  const capturesTraffic = crawls.some((c) => c.seeds.some((seed) => seed.type === 'TrafficSeed'));
 
   // `cases` is functional-only (`expandTestCases` skips workload-bearing tests), while the final
   // report counts both — so a file holding one workload test and nothing else announced `total: 0`
   // and ended `total: 1`, and a progress consumer rendered "0 tests" then reported a result
   // (M77, review finding B3-07). It is a forecast, not a promise: a *failing* file hook adds one
   // further entry to the report, which is why SPEC §13 says `run:end.total` may exceed this.
-  emit({ type: 'run:start', total: cases.length + scenarios.length, env: config.envName });
+  // M137c — crawls are counted in the forecast for the reason `M88d` made a workload test emit its
+  // pair at all: an entry that reaches `report.total` without ever being announced makes a consumer
+  // tailing the stream see a run begin, then a finished report naming something it was never told
+  // about.
+  emit({ type: 'run:start', total: cases.length + scenarios.length + crawls.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
@@ -479,7 +496,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -527,6 +544,15 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
           if (r) results.push({ ...r, concurrency: test.concurrency });
         }
       }
+    }
+    // M137c (D468) — **after every test in the file, before the after-file hooks.** Not in
+    // file-declaration order, which is `D101`/`D112`'s rule for tests and deliberately not this one's:
+    // a crawl's `seed traffic` is the traffic the run itself produced, so running it in the position an
+    // author happened to type it in would make *what it discovers* depend on where the declaration
+    // sits. Before the after-file hooks because those are where a suite tears its fixtures down, and a
+    // crawl walking a surface whose data has just been deleted would report the teardown as findings.
+    for (const crawl of crawls) {
+      results.push(await runCrawlDecl(crawl, config, fileTc, traffic));
     }
     await runFileHooks(afterFile, 'after file', config, fileTc, registry, results, emit);
   }
@@ -2011,6 +2037,18 @@ interface TestCtx {
   readonly scanGate?: ScanGate;
   /** M134b (D388) — `--probe-seeded`'s value; `undefined`/`0` is the layer off. */
   readonly probeSeeded?: number;
+  /** M137c (D435) — `crawl … seed traffic`'s source: every `api` step's own request, in the order the
+   *  run made them, accumulated across the whole file.
+   *
+   *  **Present only when a crawl in this file actually declares the seed**, which is why it is optional
+   *  rather than always-on: keeping every request of every run would put a growing array behind a
+   *  feature most suites never use, and a `--workers N` run has one of these per file already. Absent
+   *  is the same thing empty means, so nothing has to distinguish them.
+   *
+   *  Deliberately fed from `ApiStep` only. `wait until api` re-issues one request until it passes, so
+   *  the interesting member of that sequence is ambiguous, and a session's establishment requests are
+   *  a credential's own traffic rather than the suite's. */
+  readonly trafficSink?: RequestTrace[];
   readonly browserManager?: BrowserManager;
   /** M4b, D15 — see `RunOptions.filePath`/`updateSnapshots`. */
   readonly filePath: string;
@@ -2584,6 +2622,224 @@ async function runTestAttemptBody(
   return { kind: 'functional', name, ok, durationMs: Math.round(performance.now() - testStart), steps, ...(error ? { error } : {}) };
 }
 
+// ---- crawl (M137c, D432/D435/D436) -----------------------------------------
+//
+// This function is the crawl's *identity* half — the sessions it runs as, the requests it composes,
+// the assertions it runs — and `crawl.ts` is its *policy* half. The split is `D323`'s prober seam,
+// kept for the same two reasons: the policy is then testable without a network, and the composition
+// of a request stays in the one file that already owns it, so a crawl cannot come to disagree with an
+// `api` step about what a request is.
+
+/**
+ * One `crawl` declaration, run.
+ *
+ * Its session establishment is `runTestAttemptBody`'s, deliberately line-for-line: `as peer, shopper`
+ * on a crawl means exactly what it means on a test — those principals are the **owner**, their
+ * headers and cookies fold together in declared order, and Tier 2 differentiates against everyone
+ * *else* declared. A crawl walks its surface **once**, not once per principal. Sending it per owner
+ * would multiply the traffic by the number of names in the `as` list and would make one keyword mean
+ * two different things in two places, which is the cost `D432` avoided by reusing the syntax at all.
+ */
+async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCtx, traffic: readonly RequestTrace[]): Promise<CrawlResult> {
+  const crawlStart = performance.now();
+  const name = crawl.name.value;
+  tc.emit({ type: 'test:start', name });
+  const steps: StepResult[] = [];
+  const noSurface = { discovered: 0, withheld: 0, sent: 0, reached: 0, seeds: [] };
+  const fail = (error: string): CrawlResult => ({ kind: 'crawl', name, ok: false, durationMs: Math.round(performance.now() - crawlStart), steps, error, surface: noSurface });
+
+  const sessionHeaders: Record<string, string> = {};
+  const sessionCsrfHeaders: Record<string, string> = {};
+  const cookieJar = new CookieJar();
+  const sessionFindings: Finding[] = [];
+  for (const sessionName of crawl.sessions) {
+    const decl = config.sessions.get(sessionName);
+    if (!decl) return fail(tc.redactor.redact(`unknown session "${sessionName}" — is it declared in tflw.config?`));
+    const outcome = await tc.sessionCache.ensure(sessionName, decl, config, tc, false);
+    steps.push(...outcome.steps);
+    if (!outcome.ok) return fail(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
+    Object.assign(sessionHeaders, outcome.headers);
+    Object.assign(sessionCsrfHeaders, outcome.csrfHeaders);
+    sessionFindings.push(...outcome.securityFindings);
+    cookieJar.mergeFrom(outcome.cookieJar.clone());
+  }
+
+  const ctx: EvalCtx = {
+    scope: new Map<string, unknown>(),
+    environ: tc.environ,
+    redactor: tc.redactor,
+    rng: tc.rng,
+    runSeed: tc.runSeed,
+    runClock: tc.runClock,
+    uniqueSeq: tc.uniqueSeq,
+    sessionHeaders,
+    sessionCsrfHeaders,
+    sessionNames: crawl.sessions,
+    sessionFindings,
+    cookieJar,
+  };
+
+  // Read once for the whole crawl, like `execApi` reads it once per request off the same cache.
+  // **Carried, unlike `authzSenderFor`'s probe**, and the asymmetry is the point: a probe deliberately
+  // holds no client certificate because it is a *different* identity and failing to connect is the
+  // safe answer for it. A crawl's request is the owner's own, so withholding the owner's certificate
+  // would make every route on an mTLS target unreachable and report the surface as unjudgeable.
+  const mtls = await loadMtlsCreds(config, tc.configDir);
+
+  const emitStep = (spec: { kind: 'seed' | 'api'; source: string; ok: boolean; detail: string; start: number; evidence?: { request: RequestTrace; response: ResponseTrace; endpoint: string } }): StepResult => {
+    // Redaction happens here rather than in `crawl.ts` so that the policy half never holds a decision
+    // about secrets: it is handed the live exchange (the prober needs the real credential) and the
+    // report copy is made at this boundary, exactly as `execApi` returns `trace` and `redacted` side
+    // by side. The span is the crawl's own header — a synthesized request has no source line, and a
+    // reader clicking the step should land on the declaration that caused it.
+    const result = mkStep(
+      spec.kind,
+      spec.source,
+      crawl.span,
+      spec.ok,
+      spec.start,
+      tc.redactor.redact(spec.detail),
+      spec.evidence ? redactRequest(spec.evidence.request, tc.redactor, config) : undefined,
+      spec.evidence ? redactResponse(spec.evidence.response, tc.redactor, config) : undefined,
+      spec.evidence?.endpoint,
+    );
+    // Streamed as it happens, not collected and flushed at the end. A crawl is the longest-running
+    // thing in a run by construction, so it is the one entry where a reader watching the console needs
+    // to see progress rather than a finished list (`M88d`'s reasoning, on the surface that most needs
+    // it).
+    tc.emit({ type: 'step:end', test: name, step: result });
+    return result;
+  };
+
+  const deps: CrawlDeps = {
+    loadDocument: (source) => loadOpenApiDocumentForCrawl(source, config),
+    capturedTraffic: () => traffic,
+    send: async (request: CrawlRequest) => {
+      // `resolveBaseUrl(null, …)`/`isAbsoluteUrl` — `api GET /path`'s own rule, so a traffic-seeded
+      // request keeps the origin it was captured from instead of being silently retargeted at the
+      // default service. Every gate an authored step passes is applied here and in this order,
+      // because `checkHostAllowed` refusing *before* any I/O is the property, not the check itself.
+      const url = isAbsoluteUrl(request.path) ? guardDemoUrl(request.path) : resolveBaseUrl(null, config) + ensureLeadingSlash(request.path);
+      // **`requireAllowHostsForAbsolute` is deliberately absent, and that is `D469`.** `D246` made
+      // writing an absolute URL opt a suite into declaring where it may reach, because *an author
+      // typing one* is the one form that can send a request somewhere the config never mentions. A
+      // crawl's absolute URL is never typed: it is a URL from `seed traffic`, i.e. a request this same
+      // run already sent and which already passed that gate when it was authored. Applying an
+      // authoring rule to a derived URL would refuse to re-issue a request the suite just made
+      // successfully — and the affirmation a crawl actually needs is `authorized target`, which
+      // `TF060` requires for the origin either way.
+      //
+      // `checkHostAllowed` stays, and it is the one that matters: a declared `allow hosts` is a
+      // transport rule, and it refuses before any I/O rather than after.
+      checkHostAllowed(url, config);
+      const headers: Record<string, string> = {};
+      for (const h of config.headers) {
+        if (h.service === null) setHeader(headers, h.name, stringify(evalValue(h.value, ctx)));
+      }
+      for (const [k, v] of Object.entries(ctx.sessionHeaders)) setHeader(headers, k, v);
+      // M137b (D433) — a `csrf from` token on mutating requests only, the same condition `execApi`
+      // applies, reusing the same `isSafeMethod` so a crawl-composed write and an authored one cannot
+      // disagree about whether a token belonged on it.
+      if (!isSafeMethod(request.method)) {
+        for (const [k, v] of Object.entries(ctx.sessionCsrfHeaders ?? {})) setHeader(headers, k, v);
+      }
+      const jarCookie = ctx.cookieJar.serialize(originOf(url));
+      if (jarCookie) setHeader(headers, 'Cookie', jarCookie);
+      if (request.contentType !== undefined) setHeader(headers, 'content-type', request.contentType);
+      const trace: RequestTrace = { method: request.method, url, headers, ...(request.body !== undefined ? { body: request.body } : {}) };
+      const response = await sendRequest({
+        method: request.method,
+        url,
+        headers,
+        ...(request.body !== undefined ? { body: request.body } : {}),
+        timeoutMs: config.timeouts.step,
+        followRedirects: true,
+        allowHosts: config.allowHosts,
+        ...(mtls ? { mtls } : {}),
+      });
+      // Per hop, as `execApi` does (`B4-15`): a login-shaped redirect sets its cookie on the 302, and
+      // a crawl that walked past that would send every subsequent request unauthenticated while its
+      // 401s looked like findings.
+      ctx.cookieJar.applyCookieEvents(response.cookieEvents);
+      return { request: trace, response };
+    },
+    judge: async (request, response) => {
+      const out: StepResult[] = [];
+      const ownerIdentity = ownerIdentityFor(ctx, request.url);
+      for (const step of crawl.body) {
+        // `TF070` has already refused anything else at check time; this is the runtime's own reading of
+        // the same rule, for the file run without a check pass — the same relationship `TF039`'s
+        // runtime half has to `checkResponseScopes`.
+        if (step.type !== 'ExpectStmt') continue;
+        const src = (tc.lines[step.span.start.line - 1] ?? '').trim();
+        const stepStart = performance.now();
+        try {
+          const result =
+            step.matcher.name === 'hasNoAuthzViolations'
+              ? await execAuthzExpect(step, request, response, ownerIdentity, ctx, src, stepStart, config, tc)
+              : step.matcher.name === 'hasNoInputHandlingViolations'
+                ? await execInputHandlingExpect(step, request, response, ctx, src, stepStart, config, tc)
+                : await execSecurityExpect(step, request, response, ctx, src, stepStart, config, tc);
+          out.push(result);
+          tc.emit({ type: 'step:end', test: name, step: result });
+        } catch (err) {
+          // One route's assertion throwing must not end the crawl. A `RuntimeError` here is a
+          // per-exchange refusal — `TF062`'s runtime half on a request carrying an unowned credential,
+          // `TF063`'s on a crawl with no `as` — and it is a failure of *this* assertion, reported as
+          // one, while the remaining routes are still worth walking.
+          const result = mkStep(step.soft ? 'check' : 'expect', src, step.span, false, stepStart, tc.redactor.redact(err instanceof Error ? err.message : String(err)));
+          out.push(result);
+          tc.emit({ type: 'step:end', test: name, step: result });
+        }
+      }
+      return out;
+    },
+    // `D436`'s reachability channel, into the field `M136a` renamed for holding more than one tier's
+    // facts. One decline **per scan family in the body**, because the denominators differ per scan and
+    // a route this crawl could not judge is a gap in each of the questions it was asked to answer.
+    // `ScanKind` deliberately gains no fourth member for this: a crawl is not a scan, it is a source of
+    // requests for the three that exist (`D450`).
+    decline: (subject, reason) => reportDeclines2(crawlScans(crawl), subject, reason, tc),
+    step: (kind, source, ok, detail, evidence) => emitStep({ kind, source, ok, detail, start: performance.now(), evidence }),
+  };
+
+  const outcome = await runCrawl(crawl, config, deps);
+  steps.push(...outcome.steps);
+  const result: CrawlResult = {
+    kind: 'crawl',
+    name,
+    ok: outcome.ok,
+    durationMs: Math.round(performance.now() - crawlStart),
+    steps,
+    ...(outcome.error ? { error: outcome.error } : {}),
+    surface: outcome.surface,
+  };
+  tc.emit({ type: 'test:end', result });
+  return result;
+}
+
+/** The scans a crawl's body actually asks about — `TF070` guarantees the body holds only these three
+ *  matchers, so this is a complete reading of it rather than a best effort. A crawl body that somehow
+ *  reached the runtime with no assertion at all declines under `security`, so a route it could not
+ *  reach is still recorded somewhere rather than nowhere. */
+function crawlScans(crawl: CrawlDecl): readonly ScanKind[] {
+  const scans = new Set<ScanKind>();
+  for (const step of crawl.body) {
+    if (step.type !== 'ExpectStmt') continue;
+    if (step.matcher.name === 'hasNoAuthzViolations') scans.add('authorization');
+    else if (step.matcher.name === 'hasNoInputHandlingViolations') scans.add('input-handling');
+    else if (step.matcher.name === 'hasNoSecurityViolations') scans.add('security');
+  }
+  return scans.size > 0 ? [...scans] : ['security'];
+}
+
+/** `reportDeclines` with the arguments the other way round — one subject, many scans, rather than one
+ *  scan and many subjects. Its own function rather than a loop at the call site so that both shapes go
+ *  through `tc.scanSink?.decline` and neither can grow a second way of recording the same fact. */
+function reportDeclines2(scans: readonly ScanKind[], subject: string, reason: string, tc: TestCtx): void {
+  for (const scan of scans) reportDeclines(scan, [{ subject, reason }], tc);
+}
+
 interface StepsExec {
   readonly steps: StepResult[];
   readonly ok: boolean;
@@ -2761,6 +3017,10 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // D287's first half. Live trace, not `redacted` — the report copy carries `cookieEvents: []`
             // at every evidence level, and that is the field every cookie rule reads.
             ctx.securitySink?.push(toObservation(trace.request, trace.response));
+            // M137c (D435) — `seed traffic`'s capture point. The live trace, like the line above and
+            // for the same reason: the crawl re-issues this request, so it needs the request that was
+            // actually sent rather than the report's copy of it.
+            tc.trafficSink?.push(trace.request);
             lastConnectionError = null;
             // Report visibility for retries is a standing principle here (P#5/P#16, the same one
             // `test … retry N`'s `flaky` badge already follows) — a `retry honoring` step that

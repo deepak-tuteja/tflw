@@ -13,7 +13,7 @@
 // `load-charts.ts`'s chart functions (unchanged, already pure/per-block) — one entry, one panel,
 // same sidebar/tab mechanism a functional test already used.
 
-import type { AttemptResult, BackOffDiagnosis, LoadMetrics, LoadScenarioReport, LoadThresholdResult, LogLevel, ReportEntry, RequestTrace, ResponseTrace, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
+import type { AttemptResult, BackOffDiagnosis, CrawlResult, LoadMetrics, LoadScenarioReport, LoadThresholdResult, LogLevel, ReportEntry, RequestTrace, ResponseTrace, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { exhaustiveEntry, LOG_LEVEL_ORDER, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL } from '@tflw/runtime';
 import { assetHash } from './assets.js';
 import { stepBearing } from './entry-kind.js';
@@ -231,11 +231,42 @@ function renderTest(slot: TestSlot, active: boolean, assetHrefs: ReadonlyMap<str
   switch (slot.test.kind) {
     case 'functional':
       return renderFunctionalTest(slot, slot.test, active, assetHrefs, logLevelThreshold);
+    case 'crawl':
+      return renderCrawlTest(slot, slot.test, active, assetHrefs, logLevelThreshold);
     case 'workload':
       return renderWorkloadTest(slot, active, selfDiagnosis);
     default:
       return exhaustiveEntry(slot.test);
   }
+}
+
+/**
+ * `M137c` (`D435`) — a crawl's panel: the surface it walked, then the timeline.
+ *
+ * A functional test's panel with a table bolted on top, deliberately, because that is what a crawl is
+ * — `D462`'s warning was about a *silent* mis-render, not about the layouts being unrelated. The table
+ * comes **first**: a reader who opens this panel is asking how much of the API this touched before
+ * they are asking which assertion failed, and the steps below cannot answer it. `metrics-block`/`stats`
+ * are the workload panel's own classes, reused rather than reinvented so the panel is styled by
+ * construction — `M135a-01` is an open row about exactly the opposite habit, a section whose classes
+ * no stylesheet rule ever matched.
+ */
+function renderCrawlTest(slot: TestSlot, crawl: CrawlResult, active: boolean, assetHrefs: ReadonlyMap<string, string>, logLevelThreshold: LogLevel): string {
+  const { discovered, withheld, sent, reached } = crawl.surface;
+  const seeds = crawl.surface.seeds.map((s) => `${s.seed}${s.source ? ` "${s.source}"` : ''} → ${s.discovered}`).join(' · ');
+  return `<section class="test ${crawl.ok ? 'ok' : 'fail'}${active ? ' active' : ''}" id="${slot.id}" data-file="${esc(slot.file)}">
+  <h2><span class="dot ${crawl.ok ? 'ok' : 'fail'}"></span>${esc(crawl.name)} <span class="tms">crawl · ${crawl.durationMs} ms</span></h2>
+  ${crawl.error ? `<p class="error">${esc(crawl.error)}</p>` : ''}
+  <div class="metrics-block">
+    <table class="stats">
+      <tr><th>discovered</th><td>${discovered}</td><th>withheld</th><td>${withheld}</td><th>sent</th><td>${sent}</td><th>reached</th><td>${reached}</td></tr>
+    </table>
+    <p class="workload">seeds: ${esc(seeds)}</p>
+  </div>
+  <ol class="steps">
+${crawl.steps.map((s) => renderStep(s, assetHrefs, logLevelThreshold)).join('\n')}
+  </ol>
+</section>`;
 }
 
 /** D115 — same inline-badge pattern as the existing `flaky` badge, for any entry (functional or
