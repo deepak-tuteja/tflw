@@ -22,6 +22,7 @@ import type { CrawlDecl } from '@tflw/lang';
 import { isSafeMethod, mayProbeMutating } from './authzProbe.js';
 import type { OpenApiDocument } from './contract.js';
 import { enumerateOpenApiSurface, matchesRoutePattern, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
+import type { CrawlVia } from './scanFindings.js';
 import type { CrawlSurfaceReport, RequestTrace, ResolvedConfig, ResponseTrace, StepResult } from './types.js';
 
 /** One request the crawl decided to send, resolved to a real URL. */
@@ -46,8 +47,10 @@ export interface CrawlDeps {
    *  credential and the cookie jar — none of which this file knows about. */
   readonly send: (request: CrawlRequest) => Promise<{ readonly request: RequestTrace; readonly response: ResponseTrace }>;
   /** Runs the crawl's body against one exchange: one `StepResult` per body step, `ok: false` on any
-   *  assertion that failed. */
-  readonly judge: (request: RequestTrace, response: ResponseTrace) => Promise<readonly StepResult[]>;
+   *  assertion that failed. `via` is `D437`'s provenance — which seed reached this route — and it is a
+   *  parameter rather than something the judge could look up, because it is a fact about the *route*
+   *  and the judge only ever sees one exchange. */
+  readonly judge: (request: RequestTrace, response: ResponseTrace, via: CrawlVia) => Promise<readonly StepResult[]>;
   /** `RunReport.scanBlindSpot.declines` — what the crawl met and turned down, aggregated by reason. */
   readonly decline: (subject: string, reason: string) => void;
   /** A report line. `request`/`response` are attached to the `api` steps so `report.html` renders the
@@ -70,7 +73,7 @@ export interface CrawlOutcome {
 
 /** One seed's contribution, after resolution. */
 interface ResolvedSeed {
-  readonly seed: 'openapi' | 'traffic';
+  readonly seed: CrawlVia;
   readonly source?: string;
   readonly requests: readonly CrawlRequestPlan[];
   readonly skipped: readonly CrawlSurfaceSkip[];
@@ -99,7 +102,11 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
   // invents one nobody wrote, and `authorized target` answers *may I scan this origin*, never *may I
   // write to it*. Resolved per request rather than once, because the grant is per origin and a
   // traffic-seeded surface can span several.
-  const sendable: CrawlRequestPlan[] = [];
+  //
+  // Each survivor is paired with the seed that found it rather than carrying provenance on the plan
+  // itself: which seed reached a route is a fact about the *seed*, and a `CrawlRequestPlan` describes a
+  // request. `D437`'s discriminator rides from here to the assertion that judges the response.
+  const sendable: { readonly plan: CrawlRequestPlan; readonly via: CrawlVia }[] = [];
   let withheldMutating = 0;
   for (const seed of seeds) {
     for (const plan of seed.requests) {
@@ -111,7 +118,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
         );
         continue;
       }
-      sendable.push(plan);
+      sendable.push({ plan, via: seed.seed });
     }
   }
 
@@ -158,7 +165,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
   // Strictly sequential, and the `for … of await` shape is the assertion: `D435` keeps the crawl to
   // one request in flight, `authz-probe-pacing.test.ts:101`'s `maxInFlight() === 1` remains the
   // tripwire for the prober, and `probe rate` (D21 layer 5) stays deferred with its condition unmet.
-  for (const plan of sendable) {
+  for (const { plan, via } of sendable) {
     const source = `${plan.method} ${plan.path}`;
     let exchange: { request: RequestTrace; response: ResponseTrace };
     try {
@@ -186,7 +193,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
     }
     reached++;
     steps.push(deps.step('api', source, true, `${source} → ${exchange.response.status} (${exchange.response.durationMs}ms)${invented}`, { ...exchange, endpoint }));
-    const judged = await deps.judge(exchange.request, exchange.response);
+    const judged = await deps.judge(exchange.request, exchange.response, via);
     steps.push(...judged);
     if (judged.some((s) => !s.ok)) ok = false;
   }

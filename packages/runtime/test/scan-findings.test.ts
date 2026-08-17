@@ -105,6 +105,26 @@ test('a seeded finding carries its payload and seed and never carries a fingerpr
   assert.deepEqual(f.seeded, { seed: 7, payload: "tflw'" });
 });
 
+// `M137c` (D437/D461) — provenance is carried and is **not** identity. Unlike `seeded` above, `via`
+// does not suppress the fingerprint: a crawl-found weakness is as baselinable as a hand-found one, it
+// just also records how it was reached. Both halves are asserted here because each fails silently in a
+// different direction — a `via` that moved the hash would churn a baseline on every re-seed, and a
+// `via` that suppressed it would make every crawl finding un-acceptable.
+test('D437: `via` is carried, and it does not touch the fingerprint', () => {
+  const withVia = toScanFinding('security', finding(), ENDPOINT, { via: 'openapi' });
+  const otherVia = toScanFinding('security', finding(), ENDPOINT, { via: 'traffic' });
+  const without = toScanFinding('security', finding(), ENDPOINT);
+  assert.equal(withVia.via, 'openapi');
+  assert.equal(without.via, undefined, 'absent for a finding no crawl produced');
+  assert.equal(withVia.fingerprint, without.fingerprint);
+  assert.equal(withVia.fingerprint, otherVia.fingerprint, 'the same weakness found by two seeds is one weakness');
+  assert.ok(withVia.fingerprint, 'and it is a real fingerprint — `via` must not suppress it the way `seeded` does');
+  // The structural reason, stated as a test: `fingerprintOf` takes its three arguments explicitly, so a
+  // field added to `ScanFinding` cannot reach the hash however the object is later shaped. That is why
+  // `D437`'s exclusion needed no code — only this.
+  assert.equal(withVia.fingerprint, fingerprintOf('security', finding().id, { endpoint: ENDPOINT }));
+});
+
 // ---------------------------------------------------------------------------
 // D386 — the gate relaxes, and says so
 // ---------------------------------------------------------------------------

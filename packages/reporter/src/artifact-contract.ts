@@ -63,6 +63,11 @@ export const ARTIFACT_CONTRACT = {
       invariant: 'tflw/invariant',
       withheld: 'tflw/withheld',
       repro: 'tflw/repro',
+      /** `M137c` (D437) — which discovery source reached the route, present only on a finding a
+       *  `crawl` produced. Additive, so the contract version does not move: a consumer written
+       *  against version 1 reads every key it knew about and ignores this one, which is exactly the
+       *  compatibility this registry exists to make checkable. */
+      via: 'tflw/via',
     },
     /** Keys under `runs[].tool.driver.rules[].properties`. `security-severity` is GitHub's name,
      * not ours, but we are the ones who decide whether to write it — and `M135a` recorded that it

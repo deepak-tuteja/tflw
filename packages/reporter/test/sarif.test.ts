@@ -82,7 +82,11 @@ function report(over: Partial<RunReport> = {}): RunReport {
     ok: false,
     findings: [
       f(),
-      f({ scan: 'authorization', rule: 'sec/authz-object-leak', endpoint: 'GET /v1/orders/{id}', location: 'peer', detail: 'peer read the owner\'s order', fingerprint: 'b'.repeat(16), file: 'tests/api/authz.tflw', line: 30 }),
+      // `via` added by `M137c`, and it is on the authorization finding for a reason: this is the one
+      // whose repro the emitter also writes, so it is the result that exercises `tflw/via` and
+      // `tflw/repro` on one object — which is where a bug that dropped a property while another was
+      // present would hide.
+      f({ scan: 'authorization', rule: 'sec/authz-object-leak', endpoint: 'GET /v1/orders/{id}', location: 'peer', detail: 'peer read the owner\'s order', fingerprint: 'b'.repeat(16), file: 'tests/api/authz.tflw', line: 30, via: 'openapi' }),
       // `invariant` added by `M137a`: the contract test found that no fixture finding carried one,
       // so `tflw/invariant` had shipped since `M135b` with nothing asserting it reaches the
       // document at all. An input-handling finding is where one belongs — the invariant is what the
@@ -446,12 +450,12 @@ test('every SARIF name the cross-repo contract promises is present in a real emi
   }
   assert.ok(Object.hasOwn(subject!, c.notApplicableFields.count), `the subject half carries \`${c.notApplicableFields.count}\``);
 
-  // The six result properties. Four are conditional on the finding, so this asserts over the union
-  // of the fixture's results rather than over any one of them — a per-result assertion would be
-  // asserting which finding the fixture happens to lead with.
+  // The seven result properties (`tflw/via` since `M137c`). Five are conditional on the finding, so
+  // this asserts over the union of the fixture's results rather than over any one of them — a
+  // per-result assertion would be asserting which finding the fixture happens to lead with.
   const emitted = new Set(resultsOf(log).flatMap((r) => Object.keys(r.properties ?? {})));
   for (const key of Object.values(c.resultProperties)) {
-    assert.ok(emitted.has(key), `some result carries \`${key}\` — the fixture is built to exercise all six`);
+    assert.ok(emitted.has(key), `some result carries \`${key}\` — the fixture is built to exercise all seven`);
   }
 
   const descriptors = run.tool.driver.rules ?? [];

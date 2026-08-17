@@ -62,6 +62,11 @@ const OPENAPI = {
   },
 };
 
+/** A one-route document whose route sets a cookie without `HttpOnly` — `sec/cookie-not-httponly`, the
+ *  critical rule the main fixture deliberately satisfies. Its own document rather than a sixth path in
+ *  `OPENAPI`, so every test above keeps a clean surface and the provenance tests below get a finding. */
+const OPENAPI_LEAKY = { openapi: '3.0.0', paths: { '/leaky': { get: { responses: { '200': { description: 'ok' } } } } } };
+
 before(async () => {
   server = createServer((req, res) => {
     inFlight++;
@@ -82,6 +87,14 @@ before(async () => {
       const pathname = path.split('?')[0]!;
       if (pathname === '/openapi.json') return done(() => json(res, 200, OPENAPI));
       if (pathname === '/openapi-missing.json') return done(() => json(res, 404, { message: 'no such document' }));
+      if (pathname === '/openapi-leaky.json') return done(() => json(res, 200, OPENAPI_LEAKY));
+      // One real, critical weakness, reachable by BOTH seeds — which is what makes `D437`'s
+      // fingerprint claim testable: the same weakness found two ways must be one finding.
+      if (pathname === '/leaky') {
+        return done(() => {
+          res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'sid=leaky; Path=/' }).end('{"ok":1}');
+        });
+      }
       // A validator that refuses the value synthesis had to invent — `D436`'s central case, and the
       // one a crawl must never score: a `400` here is indistinguishable from a hardened endpoint.
       if (pathname === '/strict') {
@@ -373,4 +386,61 @@ test('a route the crawl could not judge is declined under EVERY scan the body as
   const { declines } = await run(source, resolved('', true));
   const strict = declines.filter((d) => d.subject === 'GET /strict');
   assert.deepEqual([...new Set(strict.map((d) => d.scan))].sort(), ['input-handling', 'security']);
+});
+
+// -- `D437`/`D461`/`D470`: where a finding came from -----------------------------------------------
+
+test('D437: a crawl`s finding carries the seed that reached it', async () => {
+  const source = `crawl "documented"\n  seed openapi "/openapi-leaky.json"\n${SECURITY}\n`;
+  const { findings, ok } = await run(source);
+  assert.equal(ok, false, 'the fixture route really is weak, so the assertion really fails');
+  assert.deepEqual(findings.map((f) => f.rule), ['sec/cookie-not-httponly']);
+  assert.equal(findings[0]!.via, 'openapi');
+});
+
+test('D470: the traffic seed says `traffic`, the word an author writes', async () => {
+  // `D437`'s prose spelled this `captured`. The field's whole job is to be correlated with a
+  // declaration, and the declaration says `seed traffic`.
+  const source = `test "touch it"\n  api GET /leaky\n  expect status equals 200\n\ncrawl "what the suite touched"\n  seed traffic\n${SECURITY}\n`;
+  const { findings } = await run(source);
+  assert.deepEqual(findings.map((f) => f.via), ['traffic']);
+});
+
+test('D437: an authored `api` step`s finding carries NO `via`, which is what makes the field mean something', async () => {
+  // The control. If `via` were stamped on every finding, its presence would say nothing about
+  // provenance and a reader could not tell a crawl's finding from a hand-written assertion's.
+  // Driven directly rather than through `run`, which requires a crawl entry — this source deliberately
+  // has none, and that is the point of the test.
+  const source = `test "a hand-written security assertion"\n  api GET /leaky\n${SECURITY}\n`;
+  const { program } = parseSource(source);
+  const findings: ScanFinding[] = [];
+  const scanSink: ScanSink = { finding: (f) => findings.push(f), census: () => {}, decline: () => {} };
+  await runProgram(program, resolved(), { source, scanSink });
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]!.via, undefined);
+});
+
+test('D437: the same weakness found by two seeds is ONE weakness — provenance is not identity', async () => {
+  // The property the whole discriminator rests on, and the reason it is excluded from
+  // `partialFingerprints`: two seeds finding one flaw must not become two baseline entries, and
+  // re-seeding a crawl must not invalidate a baseline. Asserted through the real pipeline rather than
+  // on `toScanFinding` alone, because that is where a future edit would break it.
+  const source = [
+    'test "touch it"',
+    '  api GET /leaky',
+    '  expect status equals 200',
+    '',
+    'crawl "documented"',
+    '  seed openapi "/openapi-leaky.json"',
+    SECURITY,
+    '',
+    'crawl "exercised"',
+    '  seed traffic',
+    SECURITY,
+    '',
+  ].join('\n');
+  const { findings } = await run(source);
+  assert.deepEqual(findings.map((f) => f.via), ['openapi', 'traffic'], 'two findings, two provenances');
+  assert.equal(findings[0]!.fingerprint, findings[1]!.fingerprint, 'and one identity between them');
+  assert.ok(findings[0]!.fingerprint, 'a fingerprint that is absent from both would satisfy the line above');
 });

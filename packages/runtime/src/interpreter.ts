@@ -46,7 +46,7 @@ import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matc
 import { evalUiMatcherOnce } from './uiMatcher.js';
 import { runA11yScan } from './a11y.js';
 import { filterBySeverity, SEVERITY_RANK, type Finding } from './finding.js';
-import { judge, OPEN_GATE, toScanFinding, withheldNote, type GateVerdict, type ScanGate, type ScanKind, type ScanSink } from './scanFindings.js';
+import { judge, OPEN_GATE, toScanFinding, withheldNote, type CrawlVia, type GateVerdict, type ScanGate, type ScanKind, type ScanSink } from './scanFindings.js';
 import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, type TlsObservation } from './securityRules.js';
 import { TlsProber } from './tlsProbe.js';
 import { extractResourceIds, judgeable, PROBE_OUTCOME_LABEL, runAuthzScan, type AuthzScanResult, type ProbeResult } from './authzRules.js';
@@ -2037,6 +2037,17 @@ interface TestCtx {
   readonly scanGate?: ScanGate;
   /** M134b (D388) — `--probe-seeded`'s value; `undefined`/`0` is the layer off. */
   readonly probeSeeded?: number;
+  /**
+   * M137c (D437/D461) — the discovery source of the request this assertion is judging, present only on
+   * the context a `crawl` derives per exchange and absent everywhere else.
+   *
+   * Threaded as a **derived context** rather than as a mutable holder, which is the reason it is on
+   * `TestCtx` at all: `{ ...tc, crawlVia }` per exchange means the value an assertion reads cannot be
+   * the one a later route set. A crawl walks its surface sequentially today, so a mutable field would
+   * be correct too — and would stop being correct the day anything about that changes, silently, by
+   * attributing a finding to the wrong seed.
+   */
+  readonly crawlVia?: CrawlVia;
   /** M137c (D435) — `crawl … seed traffic`'s source: every `api` step's own request, in the order the
    *  run made them, accumulated across the whole file.
    *
@@ -2763,9 +2774,11 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
       ctx.cookieJar.applyCookieEvents(response.cookieEvents);
       return { request: trace, response };
     },
-    judge: async (request, response) => {
+    judge: async (request, response, via) => {
       const out: StepResult[] = [];
       const ownerIdentity = ownerIdentityFor(ctx, request.url);
+      // D437's stamp, applied by derivation rather than mutation — see `TestCtx.crawlVia`.
+      const viaTc: TestCtx = { ...tc, crawlVia: via };
       for (const step of crawl.body) {
         // `TF070` has already refused anything else at check time; this is the runtime's own reading of
         // the same rule, for the file run without a check pass — the same relationship `TF039`'s
@@ -2776,10 +2789,10 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
         try {
           const result =
             step.matcher.name === 'hasNoAuthzViolations'
-              ? await execAuthzExpect(step, request, response, ownerIdentity, ctx, src, stepStart, config, tc)
+              ? await execAuthzExpect(step, request, response, ownerIdentity, ctx, src, stepStart, config, viaTc)
               : step.matcher.name === 'hasNoInputHandlingViolations'
-                ? await execInputHandlingExpect(step, request, response, ctx, src, stepStart, config, tc)
-                : await execSecurityExpect(step, request, response, ctx, src, stepStart, config, tc);
+                ? await execInputHandlingExpect(step, request, response, ctx, src, stepStart, config, viaTc)
+                : await execSecurityExpect(step, request, response, ctx, src, stepStart, config, viaTc);
           out.push(result);
           tc.emit({ type: 'step:end', test: name, step: result });
         } catch (err) {
@@ -4244,6 +4257,10 @@ function gateScan(
     return toScanFinding(scan, f, endpoint, {
       ...(drawn === undefined ? {} : { seeded: { seed: tc.runSeed, payload: drawn } }),
       ...(tc.filePath !== undefined ? { file: tc.filePath } : {}),
+      // M137c (D437) — provenance, stamped at the one boundary every finding of every tier already
+      // passes through, so a crawl needs no per-tier plumbing to attribute its own findings. Absent for
+      // an authored `api` step, which is what makes the field's presence mean *a crawl found this*.
+      ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}),
       line: step.span.start.line,
     });
   });
