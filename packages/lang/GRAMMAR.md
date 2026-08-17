@@ -138,7 +138,7 @@ CleanupDecl := 'cleanup' NEWLINE          # D26 — opts a workload-bearing test
   `after file` run once per file instead. There is no `before each`/`after each` — `each` is
   exclusively the `with each` keyword above.
 
-## Crawl — Tier 4's active crawl (§17, M137c)
+## Crawl — Tier 4's active crawl (SPEC §9.15, M137c)
 
 ```
 CrawlDecl   := TAG* 'crawl' STRING ('as' IDENT (',' IDENT)*)? NEWLINE CrawlBlock

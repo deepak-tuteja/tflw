@@ -2724,6 +2724,53 @@ and a tracking system keyed on identity would mint a permanent new alert on ever
 would flatten *applied and silent* into *never applicable*, which is the one distinction the census
 exists to make.
 
+### 9.15 Active crawl — the `crawl` declaration (M137c, D432/D443/D450) 🔧
+
+✅ The declaration, its seeds and its two structural rules (`TF068`, `TF070`) shipped in `M137c`.
+🔧 Route synthesis from an OpenAPI document, the captured-traffic seed's reachability channel and the
+crawl's own report entry are the rest of that milestone.
+
+Tiers 1–3 judge a response the suite asked for. A **crawl** is the other half: it *finds* the requests
+itself, from the surface the application documents and from what the run's own tests already touched,
+and applies the same three assertion families to every response it gets back.
+
+```
+crawl "the v1 API surface" as peer, shopperBearer
+  seed openapi "/openapi.json"        # the documented surface
+  seed traffic                        # every request this run's own tests made
+  exclude "/vuln/**"                  # drop routes from the discovered set
+
+  expect response has no critical security violations
+  expect response has no critical authorization violations
+```
+
+**A top-level declaration, sibling to `test`, run by plain `tflw run`.** Not a sixth workload kind: a
+workload kind is a *scheduling policy over an unchanged authored body*, and a crawl's body is not the
+thing that repeats — the surface is. And not a `tflw scan` subcommand either; that mode stays deleted
+(`D364`), and `tflw init --load` is the precedent for a distinct construct with no distinct entry
+point. `--tag` reaches a crawl because tags sit above the header exactly as they do above a `test`.
+
+**It adds a source of requests, not a kind of judgement.** The `expect` lines are the same three
+families §9.10–§9.12 define, applying per response the crawl issues exactly as they apply per response
+inside a `test`. Tier 4 introduces **no fourth matcher family and no new subject keyword** — which is
+what makes `crawl` cheap to learn and is enforced as `TF070`: a crawl body takes only `security`,
+`authorization` and `input handling` violations assertions, and anything else belongs in a `test`.
+An `api` step there would be a request nobody sends under a principal nobody chose, and
+`expect status equals 200` names a response the construct does not have, because a crawl has many.
+
+**`as` takes the same comma list `test` does**, and every safety layer applies unchanged and is
+checked from inside a crawl body: `authorized target` must name the origin (§3.10, `TF060`),
+`--allow-public-target` must affirm a public one (`TF065`), `probe mutating` still gates a mutating
+probe, and `authorization violations` still needs an owner to differentiate against (`TF063`). A crawl
+is **strictly sequential** — one probe in flight — so `probe rate`'s deferral condition (D21 layer 5)
+stays untripped.
+
+**A crawl with no `seed` is `TF068`**, refused before the run starts: it discovers nothing, issues no
+request, and so every assertion in its body could not have failed whatever the application did. The
+same code is reported at run time when the seeds resolve to nothing in fact — an OpenAPI document that
+does not answer, a run whose tests captured no traffic — because the repair is the same sentence from
+either door.
+
 ## 10. Sessions & isolation (P#20, P#31) 🔧
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
@@ -3229,6 +3276,8 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF065` | Checker + runtime (M131a, D340–D344): a scan that **originates traffic** would reach an origin outside the private address ranges, and no `--allow-public-target <origin>` on the command line names it. This is D21 §3.2(3), the layer whose whole point is that **no `tflw.config` key can supply the affirmation** — a committed config must not be able to make CI scan the internet by itself, and `authorized target`, being config, cannot be the only gate. **It gates the packet, not the matcher** (D341): `authorization violations` re-issues the observed request under every other declared principal, so it sends; `security violations` only inspects a response the suite already asked for under `allow hosts`, so it needs no flag. Gating both uniformly reads simpler and predictably ends with the flag parked permanently in CI, and a control everybody leaves on is not a control. **Address class is judged from the URL as written — no DNS, ever** (D338): a control that resolves a name sends a packet to decide whether it may send a packet, the answer differs between a laptop, a VPN and CI, and a TTL-0 record can rebind between the check and the probe. The exemptions are loopback, RFC1918, IPv6 unique-local, link-local, CGNAT and `localhost`; **every other hostname is public**, including genuinely private ones like `api.internal.corp`, because nothing in that string says so — the control over-asks rather than under-asks. `0.0.0.0` and `::` are neither: they name no host, so they are refused rather than exempted or affirmable. **Two doors, and the runtime is the load-bearing one** (D342): the checker refuses what it can prove before any server or credential is involved, but `resolved.apiBaseUrl` is interpolation-resolved locally, so its verdict can differ between a laptop and CI; `authzProbe` judges the origin the packet is actually going to and reuses this same code, because it is the same repair. | `test "t" as shopper` then `api GET /orders/1` then `expect response has no authorization violations` → `` needs `--allow-public-target https://staging.example.com` `` |
 | `TF066` | Checker (M131a, D340/D344): an `--allow-public-target` that matches nothing this run would scan — a value that is not an absolute URL with an origin, one naming an origin no env base URL or service reaches, or one no `authorized target` declares. **Its own code rather than `TF065`'s because the repair is different**: `TF065` is answered by adding the flag, this one by correcting a flag that is already there, and one code for both would have made a generated codes-reference row false. **Why an unmatched affirmation is an error rather than a harmless no-op**: the flag names an origin so that the affirmation and the target have to agree, which is `TF061`'s argument reused — nobody can affirm the scope of a target they have not named. A bare boolean would survive any later edit of the config and silently authorize whatever new host somebody points the suite at, leaving config with sole say over *which* public host gets scanned, which is most of what D21 §3.2(3) was taking away from it. A stale flag that matches nothing is that failure caught one move earlier. The flag is **repeatable** — one origin each, no comma-separated form and no wildcard, for `TF061`'s reason — and carries no `reason` of its own: D291 already puts that in config, where it travels with the report artifact, and a second reason on the command line could only duplicate or contradict it, with no defined winner. | `test "t" as shopper` then `api GET /orders/1` then `expect response has no authorization violations` → `matches nothing this run would scan` |
 | `TF067` | Checker + runtime (M134a, D382): an `input handling violations` assertion on a step whose request carries nothing to mutate — no identifier path segment, no query parameter, and no JSON body. The oracle re-sends the observed request once per payload per mutable input; with no mutable input it sends nothing, no rule applies, and the assertion could not have failed whatever the application did. That is D285's no-power-to-fail shape, which this tier is required to make speakable rather than report as a green. **Two doors, and the runtime is the load-bearing one** — the same shape as `TF065`, and its second instance in this table. The checker decides it only where it provably can: a `{var}` anywhere in the path is skipped (interpolation can produce an id segment or a whole query string), `body from "…"` is skipped (the file is not the checker's to read), and `body "…"` raw text is skipped (it may well be JSON, and guessing from a content-type header would be a guess about a header that may itself be interpolated). What is left is the case people actually write — `api GET /health` with the assertion under it. The runtime holds the request that actually went out and re-decides the same question against it, **reusing this code rather than minting one**, because the repair is identical from either door: assert it on a step that takes an id, a query parameter or a JSON body. **Deliberately not a fourth `AUTHZ_*` code**: nothing here is about authorization, and unlike Tier 2 this scan needs no owner at all — it changes no identity, so `TF062` and `TF063` have no analogue. | `test "t"` then `api GET /health` then `expect response has no input handling violations` → `nothing to mutate` |
+| `TF068` | Checker (M137c, D443): a `crawl` that declares no `seed`, so its surface is empty before the run starts. D285's no-power-to-fail shape on Tier 4's new construct — a crawl discovers its routes from its seeds, and with none it issues no request, so every assertion in its body could not have failed whatever the application did. Refused at **check time** for `TF067`'s stated reason: the cheapest place to say *this assertion has no power to fail* is before anything executes. Decided here only where it provably can be, which is the same line `TF067`'s static half draws — zero `seed` clauses is a fact about the file, while an OpenAPI document that answers 404, a run whose own tests captured no traffic, and an `exclude` list that happens to cover every discovered route are facts about the run. Those belong to the **runtime door**, which reuses this same code rather than minting one, because the repair is the same sentence from either: give the crawl something to crawl. The span is the `crawl` header rather than the first assertion, since the missing thing is a header clause and the body is correct. | `crawl "the v1 surface"` then `expect response has no critical security violations` → `has nothing to crawl` |
+| `TF070` | Checker (M137c, D443/D450): a step in a `crawl` body that is not one of the three `violations` assertions — `security`, `authorization` or `input handling`. **What the rule protects is the claim that made Tier 4 a declaration rather than a sixth workload kind**: a crawl is a *source of requests*, not a kind of judgement. It issues one request per discovered route per declared principal, and each `expect` in its body judges every one of those responses — so an `api` step there is a request nobody will send under a principal nobody chose, and `expect status equals 200` names a response the construct does not have, because a crawl has many. One repair covers all of it: put the step in a `test`. **Enforced by the checker, not the grammar** (`ast.ts`'s `CrawlDecl.body`), the same layering `D96`'s `retry` rule and `D19`'s browser-step rejection use: the parser admits any step so that a misplaced one gets this sentence instead of `expected an expect`. **`TF069` is skipped permanently** — `D456` withdrew it, and by the time this code was minted six comments across three packages already used that number as a pointer to the withdrawal, so it was spent even though it was never allocated (`D463`). Deliberately **not** `TF033`, which is what `D19`'s sibling rule reuses: `TF033` predates the one-code-one-repair rule this arc settled on and already carries several unrelated repairs, so it is the counter-example rather than the pattern. | `crawl "the v1 surface"` then `seed traffic` then `api GET /products` then `expect response has no critical security violations` → `` takes only `violations` assertions ``; `crawl "the v1 surface"` then `seed traffic` then `expect status equals 200` → `a crawl has many` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

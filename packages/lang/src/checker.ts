@@ -11,6 +11,7 @@ import type {
   CallExpr,
   ConfigEntry,
   ConfigFile,
+  CrawlDecl,
   DataTable,
   EnvBlock,
   ExpectStmt,
@@ -298,6 +299,20 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     // whole pass without a config would lose them in exactly the editor where a first authorization
     // assertion is most likely to be written wrong.
     ...checkAuthzAssertions(program, opts),
+    // M137c (D443/D464) — `crawl`'s own two rules. The construct's *other* rules are not here: they
+    // are wired into the passes that already own them (`checkSessions`, `forEachExpect`,
+    // `checkAuthzAssertions`), because a second walker is how two passes come to disagree about what
+    // a crawl body is — the argument `checkAuthzAssertions` makes one function up about `within`.
+    //
+    // **`checkResponseScopes` is deliberately absent, and it is the one omission worth stating.**
+    // `TF039` means *there is no response to assert about yet*, decided by whether a request-issuing
+    // step precedes the assertion. A crawl body has none by construction: the crawl issues the
+    // requests, and each `expect` judges every response it gets back. Wiring the pass would have put
+    // `TF039` on every correct crawl in existence — a checker refusing the only shape the feature
+    // has. Same for `checkBaseUrls`/`checkAbsoluteUrls`/`checkCapturableSubjects`/`checkDataTables`/
+    // `checkWorkloadTests`/`checkCalls`: each is a rule about a step kind `TF070` refuses outright,
+    // so wiring them would judge bodies that cannot be legal anyway.
+    ...checkCrawls(program),
     ...checkWorkloadTests(program),
     ...checkCalls(program, opts),
     ...checkActionCycles(program, opts),
@@ -548,19 +563,25 @@ function literalHostname(lit: StringLit): string | null {
  */
 export function checkSessions(program: Program, knownSessions: readonly string[]): Diagnostic[] {
   const diags: Diagnostic[] = [];
-  for (const test of program.tests) {
-    for (const session of test.sessions) {
+  const check = (sessions: readonly string[], span: Span): void => {
+    for (const session of sessions) {
       if (knownSessions.includes(session)) continue;
       const hint = suggest(session, knownSessions);
       diags.push({
         code: Codes.UNKNOWN_SESSION,
         severity: 'error',
         message: `unknown session "${session}"`,
-        span: test.span,
+        span,
         hint: hint ? `did you mean \`${hint}\`?` : knownSessions.length ? `known sessions: ${knownSessions.join(', ')}` : 'tflw.config declares no `session` blocks',
       });
     }
-  }
+  };
+  for (const test of program.tests) check(test.sessions, test.span);
+  // M137c (D464) — a crawl's `as` list is the same comma list, validated the same way, and it matters
+  // more here than on a `test`: a typo'd principal on a test makes one test fail, while a typo'd
+  // principal on a crawl silently removes an identity from the differential oracle across the entire
+  // discovered surface. That is `M130-01`'s failure shape — a green run over an unjudged surface.
+  for (const crawl of program.crawls ?? []) check(crawl.sessions, crawl.span);
   return diags;
 }
 
@@ -1518,6 +1539,15 @@ function forEachExpect(program: Program, visit: (expect: ExpectStmt, inWaitUntil
   for (const test of program.tests) forEachExpectInSteps(test.body, visit);
   for (const action of program.actions) forEachExpectInSteps(action.body, visit);
   for (const hook of program.hooks) forEachExpectInSteps(hook.body, visit);
+  // M137c (D464) — and this line is the one that carries the safety model onto the new construct.
+  // Four passes read this walk, and two of them are D21 layers: `checkAuthorizedTargets` (`TF060`)
+  // and `checkPublicTargets` (`TF065`/`TF066`). A crawl is the most traffic-originating thing in the
+  // language, so a crawl body invisible here would have been a construct that scans an origin no
+  // `authorized target` names and reaches a public host with no `--allow-public-target` — both gates
+  // silently absent for exactly the case they were built for, and both silently *passing*. The other
+  // two (`TF041`, `TF042`) are near-vacuous over a body restricted to three matchers and wired for
+  // the reason this helper exists at all: one traversal, so there is one place to forget.
+  for (const crawl of program.crawls ?? []) forEachExpectInSteps(crawl.body, visit);
 }
 
 /** The same traversal over one body — what a `session` needs (M97b, D142). */
@@ -3639,11 +3669,30 @@ export function checkAuthzAssertions(program: Program, opts: ProgramCheckOptions
     const frame: AuthzFrame = { kind: 'action', hasOwner: true, workload: false, label: `action \`${action.name}\``, ownerUnknowable: true };
     checkAuthzInSteps(action.body, frame, noProbeablePrincipal, declared, privileged, diags);
   }
+  // M137c (D464) — a crawl is a fourth frame, and `TF063`'s owner door is the reason it is wired
+  // rather than skipped: `expect response has no critical authorization violations` is `D450`'s own
+  // headline example, and a crawl with no `as` has no owner to differentiate against, so the
+  // assertion cannot fail whatever the application does. That is decidable from the header alone —
+  // there is no `ownerUnknowable` case here, because unlike an `action` body or a `before each` hook a
+  // crawl is never entered from a caller that could supply one.
+  //
+  // `workload: false` is a fact about the grammar, not a default: `crawl` has no workload clause and
+  // is never nested inside a `test`, so `TF033`'s multiply-hostile-traffic-by-the-load-factor rule has
+  // nothing to fire on. If a crawl ever gains a scheduling clause, this is the line that has to change.
+  for (const crawl of program.crawls ?? []) {
+    const frame: AuthzFrame = {
+      kind: 'crawl',
+      hasOwner: crawl.sessions.length > 0,
+      workload: false,
+      label: `crawl "${crawl.name.value}"`,
+    };
+    checkAuthzInSteps(crawl.body, frame, noProbeablePrincipal, declared, privileged, diags);
+  }
   return diags;
 }
 
 interface AuthzFrame {
-  readonly kind: 'test' | 'hook' | 'action';
+  readonly kind: 'test' | 'hook' | 'action' | 'crawl';
   readonly hasOwner: boolean;
   readonly workload: boolean;
   readonly label: string;
@@ -4006,3 +4055,98 @@ const UNCAPTURABLE_HINTS: Readonly<Record<Exclude<SubjectKind, 'value'>, string>
   request: '`request` reports whether the last api step connected — `expect`/`check request connects`/`fails` (SPEC §6.2.2)',
   'network-request': 'an observed network request is something to assert about, not a value to bind — use `expect`/`check` against it (SPEC §9.7)',
 };
+
+// ---------------------------------------------------------------------------
+// `TF068`/`TF070` — the `crawl` declaration's two structural rules (M137c, D443/D463/D464)
+// ---------------------------------------------------------------------------
+
+/**
+ * The three `violations` matchers a `crawl` body may assert, which is `D450`'s whole claim about the
+ * construct made checkable: Tier 4 adds a **source of requests**, not a kind of judgement, so the
+ * families it can use are exactly the ones the arc already ships.
+ *
+ * Shaped as a lookup over `MatcherName` rather than a `Set<string>` for the reason `SCAN_LABELS` is:
+ * a fourth `violations` family added to the language has to come here to be legal in a crawl, and a
+ * misspelling in this list is a type error rather than a rule that silently rejects everything.
+ */
+const CRAWL_BODY_MATCHERS: Partial<Record<MatcherName, true>> = {
+  hasNoSecurityViolations: true,
+  hasNoAuthzViolations: true,
+  hasNoInputHandlingViolations: true,
+};
+
+/**
+ * **`TF068`** — a `crawl` that declares no `seed`, so its surface is empty before the run starts.
+ *
+ * `D285`'s no-power-to-fail shape on the new construct, refused at check time for `TF067`'s stated
+ * reason: an assertion that could not have failed whatever the application did must be *speakable*
+ * rather than reported as a green, and the cheapest place to say it is before anything executes.
+ *
+ * Decided here **only where it provably can be**, which is the same line `TF067`'s static half draws.
+ * Zero `seed` clauses is a fact about the file. *An OpenAPI document that answers 404*, *a run whose
+ * tests captured no traffic*, and *an `exclude` list that happens to cover every discovered route*
+ * are facts about the run, and those belong to the runtime door — reusing this code, not minting
+ * one, because the repair a reader has to make is the same sentence from either door. That door
+ * lands with the crawler itself (`D436`); this one is what makes the code buildable at all, which is
+ * `D456`'s lesson from `M137b` stated as sequencing rather than as a withdrawal.
+ *
+ * **`TF070`** — a step in a crawl body that is not one of `CRAWL_BODY_MATCHERS`. The grammar admits
+ * any `Step` on purpose (`ast.ts`'s `CrawlDecl.body`), so that `api GET /products` inside a crawl
+ * gets this sentence instead of `expected an expect`.
+ */
+export function checkCrawls(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const crawl of program.crawls ?? []) {
+    if (crawl.seeds.length === 0) {
+      diags.push({
+        code: Codes.CRAWL_NO_SURFACE,
+        severity: 'error',
+        message: `crawl "${crawl.name.value}" has nothing to crawl — it declares no \`seed\``,
+        // The span is the header rather than the body: the missing thing is a header clause, and
+        // pointing at the first assertion would send the reader to the line that is correct.
+        span: crawl.span,
+        hint:
+          'a crawl discovers its surface from its seeds, and with none it issues no request — so every assertion in its body could not have failed whatever the application did (SPEC §9.15, `TF068`, D285). ' +
+          'Give it something to crawl: `seed openapi "/openapi.json"` for the documented surface, `seed traffic` for the requests this run\'s own tests made',
+      });
+    }
+    checkCrawlBodyInSteps(crawl, crawl.body, diags);
+  }
+  return byPosition(diags);
+}
+
+/**
+ * `TF070`, walked **flat, on purpose** — the one place in this file where not recursing is the
+ * decision rather than the omission.
+ *
+ * Every other body-walking pass here descends into `within`/`switch to new tab`/`download` because
+ * those blocks are legal containers whose children still need judging. Here the block *itself* is
+ * already refused: it is not an `ExpectStmt`, so it takes a `TF070` of its own. Descending would then
+ * report the block and every step inside it — several diagnostics for one mistake, which is the
+ * cascade `parseCrawl`'s duplicate-`as` recovery is also written to avoid. One misplaced construct,
+ * one line to fix, one diagnostic.
+ */
+function checkCrawlBodyInSteps(crawl: CrawlDecl, steps: readonly Step[], diags: Diagnostic[]): void {
+  for (const step of steps) {
+    if (step.type === 'ExpectStmt' && CRAWL_BODY_MATCHERS[step.matcher.name]) continue;
+    diags.push({
+      code: Codes.CRAWL_BODY_INVALID,
+      severity: 'error',
+      message: `a \`crawl\` body takes only \`violations\` assertions, and this is ${describeCrawlOffender(step)}`,
+      span: step.span,
+      hint: `\`crawl "${crawl.name.value}"\` is a source of requests, not a place to write them (SPEC §9.15, D450): it issues one request per discovered route, per declared principal, and each \`expect\` in its body judges every one of those responses. A step that sends its own request, binds a value, or asserts about \`response\` in the singular belongs in a \`test\`. The three families a crawl body accepts are \`security\`, \`authorization\` and \`input handling\` violations`,
+    });
+  }
+}
+
+/** Names the offender the way its author would recognise it. A step type is an AST word — `ApiStep`
+ *  in a message sends a reader looking for the word `ApiStep` in their file — so the two shapes
+ *  people actually write get their own sentence, and everything else falls back to the keyword the
+ *  message can be sure of. */
+function describeCrawlOffender(step: Step): string {
+  if (step.type === 'ExpectStmt') {
+    return `\`${step.soft ? 'check' : 'expect'}\` about one response — a crawl has many`;
+  }
+  if (step.type === 'ApiStep' || step.type === 'WaitUntilApiStmt') return 'a step that sends its own request';
+  return 'not one';
+}
