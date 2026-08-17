@@ -40,6 +40,10 @@ const schemaDocCache = new Map<string, Promise<LoadedSchemaDoc>>();
 export interface OpenApiDocument {
   readonly paths?: Readonly<Record<string, unknown>>;
   readonly components?: { readonly schemas?: Readonly<Record<string, unknown>> };
+  /** `M137c1` (`D480`). Read only by `documentServerBasePath`, and the reason it has to be read at all
+   *  is that a document's `paths` are relative to **this**, not to whatever base a suite configured.
+   *  Optional because the specification makes it so: absent or empty means a server of `/`. */
+  readonly servers?: readonly unknown[];
 }
 
 /** A fetched-and-compiled OpenAPI document, plus what it cost to get — carried so the assertion

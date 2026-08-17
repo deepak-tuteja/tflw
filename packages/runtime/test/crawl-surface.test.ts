@@ -18,7 +18,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enumerateOpenApiSurface, matchesRoutePattern } from '../src/crawlSurface.js';
+import { documentServerBasePath, enumerateOpenApiSurface, matchesRoutePattern } from '../src/crawlSurface.js';
 import type { OpenApiDocument } from '../src/contract.js';
 
 function doc(paths: Record<string, unknown>, components?: Record<string, unknown>): OpenApiDocument {
@@ -350,4 +350,69 @@ test('a document with no `paths` at all enumerates to nothing, and nothing is no
   // The runtime `TF068` door is what turns an empty surface into a diagnostic (`D443`), and it lives
   // at the crawl, not here — this function's answer to an empty document is an empty surface.
   assert.deepEqual(enumerateOpenApiSurface({} as OpenApiDocument), { requests: [], skipped: [] });
+});
+
+// -- `D480`: whose base do a document's paths hang from? -------------------------------------------
+//
+// The question this section exists for is the one `M137c` never asked. A document's `paths` are
+// relative to its **own** server, and until `M137c1` the crawl joined them onto whatever the suite had
+// configured as `api` — so an app behind a global prefix had every request dialled twice-prefixed,
+// answered `404`, judged nothing, and reported green. Measured on this project's own dogfood target:
+// 31 sent, 0 reached, exit 0.
+//
+// Every case below is a *base*, never a URL, because that is the whole of what this function decides.
+
+test('D480: absent, empty and `/` are one case — the specification says so', () => {
+  // OpenAPI 3.0: "If the servers property is not provided, or is an empty array, the default value
+  // would be a Server Object with a url value of /." Three spellings, one answer, and the answer is
+  // the empty prefix rather than `/` so a caller can concatenate a leading-slash path blindly.
+  assert.equal(documentServerBasePath({} as OpenApiDocument), '');
+  assert.equal(documentServerBasePath({ servers: [] } as unknown as OpenApiDocument), '');
+  assert.equal(documentServerBasePath({ servers: [{ url: '/' }] } as unknown as OpenApiDocument), '');
+});
+
+test('D480: a relative server url is the prefix, with a trailing slash normalised away', () => {
+  assert.equal(documentServerBasePath({ servers: [{ url: '/v1' }] } as unknown as OpenApiDocument), '/v1');
+  assert.equal(documentServerBasePath({ servers: [{ url: '/v1/' }] } as unknown as OpenApiDocument), '/v1');
+  assert.equal(documentServerBasePath({ servers: [{ url: '/api/v2' }] } as unknown as OpenApiDocument), '/api/v2');
+  // Missing leading slash: a document being sloppy about a relative url, not a document meaning
+  // something else. Read as the prefix it plainly is.
+  assert.equal(documentServerBasePath({ servers: [{ url: 'v1' }] } as unknown as OpenApiDocument), '/v1');
+});
+
+test('D480: an ABSOLUTE server url contributes its path and NOT its origin', () => {
+  // The safety-shaped half of this decision. A document naming production while the suite is pointed
+  // at staging is describing where the API sits *under a host*; the host is the operator's choice, and
+  // `authorized target` is the affirmation that governs it. Honouring the document's origin would walk
+  // a crawl onto a machine nobody named, on the strength of a field that survives a copy-paste.
+  assert.equal(documentServerBasePath({ servers: [{ url: 'https://api.example.com/v2' }] } as unknown as OpenApiDocument), '/v2');
+  assert.equal(documentServerBasePath({ servers: [{ url: 'https://api.example.com' }] } as unknown as OpenApiDocument), '');
+  assert.equal(documentServerBasePath({ servers: [{ url: 'https://api.example.com/' }] } as unknown as OpenApiDocument), '');
+});
+
+test('D480: the FIRST server wins, for the reason the first `oneOf` branch does', () => {
+  const document = { servers: [{ url: '/v1' }, { url: '/v2' }] } as unknown as OpenApiDocument;
+  assert.equal(documentServerBasePath(document), '/v1', 'the one the document`s author wrote first');
+});
+
+test('D480: server variables take their declared defaults', () => {
+  const document = {
+    servers: [{ url: '/{basePath}/v3', variables: { basePath: { default: 'api' } } }],
+  } as unknown as OpenApiDocument;
+  assert.equal(documentServerBasePath(document), '/api/v3');
+});
+
+test('D480: a variable with no default falls back to the root rather than emitting a literal brace', () => {
+  // A base containing `{region}` fails at the socket, where falling back fails in the report — and
+  // under `D481` a crawl that then reaches nothing goes red and says so. Loud beats cryptic.
+  const document = { servers: [{ url: '/{region}/v1' }] } as unknown as OpenApiDocument;
+  assert.equal(documentServerBasePath(document), '');
+});
+
+test('D480: a malformed servers entry is the root, never a crash', () => {
+  // A crawl seed is somebody else's document. Every shape below has been seen in a generated one.
+  assert.equal(documentServerBasePath({ servers: [null] } as unknown as OpenApiDocument), '');
+  assert.equal(documentServerBasePath({ servers: [{ url: 42 }] } as unknown as OpenApiDocument), '');
+  assert.equal(documentServerBasePath({ servers: 'https://x/v1' } as unknown as OpenApiDocument), '');
+  assert.equal(documentServerBasePath({ servers: [{ url: 'http://[not-a-url/v1' }] } as unknown as OpenApiDocument), '');
 });

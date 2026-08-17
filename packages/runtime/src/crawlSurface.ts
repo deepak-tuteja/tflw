@@ -70,6 +70,69 @@ const VERBS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', '
 const PATH_ITEM_KEYS = new Set(['summary', 'description', 'servers', 'parameters', '$ref']);
 
 /**
+ * `D480` — the path prefix a document's own `servers` entry declares, `''` for a document served at
+ * the root.
+ *
+ * **This exists because a document's `paths` are relative to its server, never to whatever base a
+ * suite happened to configure**, and until `M137c1` the crawl joined them onto `api` — so an app
+ * behind a global prefix (`setGlobalPrefix('v1')`, a Spring `context-path`, a Rails `scope`) had every
+ * synthesized request dialled at `/v1/v1/…`, answered `404`, judged nothing, and **passed**. Measured
+ * against this project's own dogfood target: 31 sent, 0 reached, exit 0.
+ *
+ * The specification is unambiguous and is the whole rule: a document with no `servers`, or an empty
+ * one, defaults to a server whose url is `/`. Absent, `[]` and `/` are therefore one case, not three.
+ *
+ * **An absolute `servers[0].url` contributes its path and nothing else.** A document that names
+ * `https://api.example.com/v2` while the suite is pointed at staging is describing where the API lives
+ * *under a host*, and the host is the operator's choice — honouring the document's origin would walk a
+ * crawl off the machine somebody authorized, on the strength of a field that survives a copy-paste.
+ *
+ * Multiple servers take the first, for the reason `synthesizeValue` already takes the first `oneOf`
+ * branch: it is the one the document's author wrote first. Server **variables** take their declared
+ * defaults; a template with no default left to substitute falls back to the root, because a base
+ * containing a literal `{region}` is a request nobody can interpret.
+ *
+ * Path-item-level and operation-level `servers` are **not** read (they stay in `PATH_ITEM_KEYS`, which
+ * is where they were already being skipped). Deferred on a condition, per `D336`: **the first document
+ * this arc meets that overrides its server per operation.**
+ */
+export function documentServerBasePath(document: OpenApiDocument): string {
+  const servers = document.servers;
+  const first = Array.isArray(servers) && servers.length > 0 ? asObject(servers[0]) : undefined;
+  const declared = typeof first?.url === 'string' ? first.url : '/';
+  const substituted = substituteServerVariables(declared, asObject(first?.variables));
+  if (substituted === undefined) return '';
+
+  let pathname: string;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(substituted)) {
+    try {
+      pathname = new URL(substituted).pathname;
+    } catch {
+      return '';
+    }
+  } else {
+    pathname = substituted.startsWith('/') ? substituted : `/${substituted}`;
+  }
+  // `/` and `''` are the same base, and a trailing slash would double the separator against a path
+  // that already carries a leading one. Normalised here so every caller can concatenate blindly.
+  const trimmed = pathname.replace(/\/+$/, '');
+  return trimmed === '/' ? '' : trimmed;
+}
+
+/** `{name}` → the variable's `default`. Returns `undefined` when a placeholder is left unresolved,
+ *  which the caller reads as *fall back to the root*: a base URL containing a literal brace is worse
+ *  than no base at all, because it fails at the socket rather than in the report. */
+function substituteServerVariables(url: string, variables: Record<string, unknown> | undefined): string | undefined {
+  if (!url.includes('{')) return url;
+  const out = url.replace(/\{([^}]*)\}/g, (match, name: string) => {
+    const declared = asObject(variables?.[name.trim()]);
+    const fallback = declared?.default;
+    return typeof fallback === 'string' || typeof fallback === 'number' ? String(fallback) : match;
+  });
+  return out.includes('{') ? undefined : out;
+}
+
+/**
  * `D436` — the whole documented surface, as requests and as accounted-for absences.
  *
  * Order is the document's own: a generated document lists paths in controller-registration order,

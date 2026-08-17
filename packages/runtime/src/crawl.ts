@@ -21,17 +21,26 @@ import type { HttpMethod } from '@tflw/lang';
 import type { CrawlDecl } from '@tflw/lang';
 import { isSafeMethod, mayProbeMutating } from './authzProbe.js';
 import type { OpenApiDocument } from './contract.js';
-import { enumerateOpenApiSurface, matchesRoutePattern, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
+import { documentServerBasePath, enumerateOpenApiSurface, matchesRoutePattern, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
 import type { CrawlVia } from './scanFindings.js';
 import type { CrawlSurfaceReport, RequestTrace, ResolvedConfig, ResponseTrace, StepResult } from './types.js';
 
 /** One request the crawl decided to send, resolved to a real URL. */
 export interface CrawlRequest {
   readonly method: string;
-  /** Absolute, or a path resolved against the default service's base URL by the sender — the same
-   *  rule `api GET /path` and `seed openapi "<source>"` already follow, so a traffic-seeded request
-   *  that came from another origin keeps its own address. */
+  /** Absolute, or a path resolved against `base` — falling back to the default service's base URL, the
+   *  same rule `api GET /path` follows, so a traffic-seeded request that came from another origin keeps
+   *  its own address. */
   readonly path: string;
+  /** `M137c1` (`D480`) — the base an **openapi**-seeded path resolves against: the configured origin
+   *  plus whatever prefix the *document's* own `servers` entry declares. Present only for that seed,
+   *  because it is the only one whose paths come out of a document with its own opinion about where
+   *  they hang. Absent for `seed traffic`, whose paths are already absolute URLs this run really sent.
+   *
+   *  It is a separate field rather than being folded into `path` so that a report line stays
+   *  `GET /v1/health` — the thing an author recognises — while the request goes where the document
+   *  says. */
+  readonly base?: string;
   readonly body?: string;
   readonly contentType?: string;
 }
@@ -77,6 +86,9 @@ interface ResolvedSeed {
   readonly source?: string;
   readonly requests: readonly CrawlRequestPlan[];
   readonly skipped: readonly CrawlSurfaceSkip[];
+  /** `D480` — the base this seed's paths resolve against. Set for `openapi` (origin + the document's
+   *  own declared prefix), absent for `traffic` (already absolute). */
+  readonly base?: string;
   /** Set when the seed itself did not resolve — a document that would not load, a `traffic` seed on a
    *  run whose tests sent nothing. Its own field rather than a thrown error, because one broken seed
    *  must not discard what a working one found (`probePrincipalFor`'s rule, applied to seeds). */
@@ -85,7 +97,7 @@ interface ResolvedSeed {
 
 export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: CrawlDeps): Promise<CrawlOutcome> {
   const steps: StepResult[] = [];
-  const seeds = await resolveSeeds(crawl, deps);
+  const seeds = await resolveSeeds(crawl, config, deps);
 
   const discovered = seeds.reduce((n, s) => n + s.requests.length + s.skipped.length, 0);
   const surfaceSeeds = seeds.map((s) => ({ seed: s.seed, ...(s.source ? { source: s.source } : {}), discovered: s.requests.length + s.skipped.length }));
@@ -106,11 +118,11 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
   // Each survivor is paired with the seed that found it rather than carrying provenance on the plan
   // itself: which seed reached a route is a fact about the *seed*, and a `CrawlRequestPlan` describes a
   // request. `D437`'s discriminator rides from here to the assertion that judges the response.
-  const sendable: { readonly plan: CrawlRequestPlan; readonly via: CrawlVia }[] = [];
+  const sendable: { readonly plan: CrawlRequestPlan; readonly via: CrawlVia; readonly base?: string }[] = [];
   let withheldMutating = 0;
   for (const seed of seeds) {
     for (const plan of seed.requests) {
-      if (plan.mutating && !mayProbeMutating(absoluteFor(plan.path, config), config.authorizedTargets)) {
+      if (plan.mutating && !mayProbeMutating(absoluteFor(plan.path, seed.base, config), config.authorizedTargets)) {
         withheldMutating++;
         deps.decline(
           `${plan.method} ${plan.template}`,
@@ -118,7 +130,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
         );
         continue;
       }
-      sendable.push({ plan, via: seed.seed });
+      sendable.push({ plan, via: seed.seed, ...(seed.base === undefined ? {} : { base: seed.base }) });
     }
   }
 
@@ -165,11 +177,11 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
   // Strictly sequential, and the `for … of await` shape is the assertion: `D435` keeps the crawl to
   // one request in flight, `authz-probe-pacing.test.ts:101`'s `maxInFlight() === 1` remains the
   // tripwire for the prober, and `probe rate` (D21 layer 5) stays deferred with its condition unmet.
-  for (const { plan, via } of sendable) {
+  for (const { plan, via, base } of sendable) {
     const source = `${plan.method} ${plan.path}`;
     let exchange: { request: RequestTrace; response: ResponseTrace };
     try {
-      exchange = await deps.send({ method: plan.method, path: plan.path, ...(plan.body !== undefined ? { body: JSON.stringify(plan.body), contentType: plan.contentType ?? 'application/json' } : {}) });
+      exchange = await deps.send({ method: plan.method, path: plan.path, ...(base === undefined ? {} : { base }), ...(plan.body !== undefined ? { body: JSON.stringify(plan.body), contentType: plan.contentType ?? 'application/json' } : {}) });
     } catch (err) {
       // A refusal (`allow hosts`, a blocked port) and a connection failure both land here, and both
       // are the same thing from the crawl's point of view: a question it could not ask. It is not a
@@ -182,7 +194,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
     }
     sent++;
     const invented = plan.invented.length > 0 ? ` (tflw invented ${plan.invented.join(', ')})` : '';
-    const landing = reachability(exchange.response.status);
+    const landing = reachability(exchange.response.status, plan.invented.length > 0);
     const endpoint = `${plan.method} ${plan.template}`;
     if (!landing.reached) {
       // `D436`'s gate. The response exists and is *not* judged, which is the whole point: scoring a
@@ -196,6 +208,33 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
     const judged = await deps.judge(exchange.request, exchange.response, via);
     steps.push(...judged);
     if (judged.some((s) => !s.ok)) ok = false;
+  }
+
+  // `TF068`'s **fourth** runtime cause (`D481`), and the one the other three could not have caught: the
+  // seeds resolved, the surface was real, requests went out — and not one of them landed on the
+  // application, so every assertion in this crawl's body passed having judged nothing. The engine had
+  // both numbers, printed them, and returned success; that is what this closes.
+  //
+  // One code rather than a new one, per `D456`: `spec-data.ts`'s probes execute through the checker, so
+  // a diagnostic with no check-time door has nothing `verify-check-diagnostics.mjs` can run — which is
+  // why `TF069` was withdrawn. `TF068` already carries one check-time door and three runtime causes,
+  // each with its own sentence. This is a fourth sentence, not a fourth code.
+  //
+  // Deliberately `sent > 0`, not `discovered > 0`: an all-withheld surface judged nothing too, but its
+  // withholding is already explicit and per route, and failing there would break the documented
+  // workflow of crawling a surface you have chosen not to authorize writes to. Deferred on a condition
+  // (`D481`): the first report of a crawl read as clean whose entire surface was withheld.
+  if (sent > 0 && reached === 0) {
+    return {
+      steps,
+      ok: false,
+      error:
+        `crawl "${crawl.name.value}" sent ${sent} request${sent === 1 ? '' : 's'} and none of them reached your application. ` +
+        'Every assertion in its body passed having judged no response, so the crawl fails rather than reporting green over a surface it never touched. ' +
+        "The blind-spot declines say why each one was turned away; if they are `404`s, check that your `api` base and the document's own `servers` agree " +
+        '(SPEC §9.15, `TF068`, D285)',
+      surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds },
+    };
   }
 
   return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds } };
@@ -214,7 +253,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
  * before the route ran, there is nothing to compare against, and reading that refusal as clean is
  * `M130-01` exactly — the false negative this arc has been closing all the way through.
  */
-export function reachability(status: number): { readonly reached: true } | { readonly reached: false; readonly reason: string } {
+export function reachability(status: number, invented = true): { readonly reached: true } | { readonly reached: false; readonly reason: string } {
   if (status >= 500) return { reached: true };
   if (status >= 200 && status < 400) return { reached: true };
   if (status === 401 || status === 403) {
@@ -224,14 +263,39 @@ export function reachability(status: number): { readonly reached: true } | { rea
     return { reached: false, reason: `the synthesized request was rejected as invalid (${status}), so nothing behind the validator ran — a validator's refusal is indistinguishable from a hardened endpoint` };
   }
   if (status === 404 || status === 405 || status === 410) {
-    return { reached: false, reason: `no route answered (${status}) — for a synthesized path this usually means the value tflw invented for a path parameter does not exist` };
+    // `M137c1` — the reason branches on whether anything was actually invented, and that is not a
+    // nicety. Before `D480` was found, all 31 of these on the dogfood target read *"the value tflw
+    // invented for a path parameter does not exist"* — including on `GET /v1/health`, which has no
+    // path parameter and where nothing was invented at all. A reason that names a cause the request
+    // cannot have sends the reader to synthesis and away from the actual defect, which was the base.
+    return {
+      reached: false,
+      reason: invented
+        ? `no route answered (${status}) — for a synthesized path this usually means the value tflw invented for a path parameter does not exist`
+        : `no route answered (${status}), and this request had nothing invented in it — so the path itself is not served here. Check that your \`api\` base and the document's own \`servers\` agree: a crawl resolves paths against the document, so a base carrying a prefix the document also carries dials it twice`,
+    };
   }
   if (status === 415) return { reached: false, reason: 'the route refused the content type the crawl synthesized (415)' };
   if (status === 429) return { reached: false, reason: 'the target rate-limited this request (429), so its response is about pacing rather than about the route' };
   return { reached: false, reason: `the request was refused before the route's code ran (${status})` };
 }
 
-async function resolveSeeds(crawl: CrawlDecl, deps: CrawlDeps): Promise<ResolvedSeed[]> {
+/** `D480` — the configured **origin**, plus the prefix the document itself declares. `undefined` when
+ *  no `api` base is configured or it will not parse, which leaves the sender on its existing fallback
+ *  rather than inventing an origin: a base guessed from nothing is how a scan reaches a host nobody
+ *  named. */
+function openApiBase(document: OpenApiDocument, config: ResolvedConfig): string | undefined {
+  if (!config.apiBaseUrl) return undefined;
+  let origin: string;
+  try {
+    origin = new URL(config.apiBaseUrl).origin;
+  } catch {
+    return undefined;
+  }
+  return origin + documentServerBasePath(document);
+}
+
+async function resolveSeeds(crawl: CrawlDecl, config: ResolvedConfig, deps: CrawlDeps): Promise<ResolvedSeed[]> {
   const out: ResolvedSeed[] = [];
   const excludes = crawl.excludes.map((e) => e.value);
   for (const seed of crawl.seeds) {
@@ -239,7 +303,11 @@ async function resolveSeeds(crawl: CrawlDecl, deps: CrawlDeps): Promise<Resolved
       try {
         const { url, document } = await deps.loadDocument(seed.source.value);
         const surface = enumerateOpenApiSurface(document, excludes);
-        out.push({ seed: 'openapi', source: url, requests: surface.requests, skipped: surface.skipped });
+        // `D480` — the document decides where its own paths hang, and the configured origin decides
+        // which deployment they hang on. The `api` base's *path* takes no part in this: it is the one
+        // ingredient that was being used before, and using it is what dialled `/v1/v1/…`.
+        const base = openApiBase(document, config);
+        out.push({ seed: 'openapi', source: url, requests: surface.requests, skipped: surface.skipped, ...(base === undefined ? {} : { base }) });
       } catch (err) {
         // A document that 404s, 500s, or comes back as HTML is the commonest way a crawl finds
         // nothing, and it must say *that* rather than "no routes" — `TF068`'s hint sends an author to
@@ -344,7 +412,8 @@ function normalizeTemplate(pathname: string): string {
  *  default service's base, which is the only base a crawl-synthesized path can mean. A base that is
  *  not configured yields the path itself, and `mayProbeMutating` refuses anything it cannot parse —
  *  permission is never inferred from something that failed to parse. */
-function absoluteFor(path: string, config: ResolvedConfig): string {
+function absoluteFor(path: string, base: string | undefined, config: ResolvedConfig): string {
   if (/^https?:\/\//i.test(path)) return path;
-  return config.apiBaseUrl ? config.apiBaseUrl + (path.startsWith('/') ? path : `/${path}`) : path;
+  const resolved = base ?? config.apiBaseUrl;
+  return resolved ? resolved + (path.startsWith('/') ? path : `/${path}`) : path;
 }

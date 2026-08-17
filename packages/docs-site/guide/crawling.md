@@ -61,6 +61,36 @@ Use both. Each one's blind spot is the other's strength.
 `http(s)://` source is fetched as written, anything else resolves against your default `api` base URL
 the way a plain `api GET /path` does.
 
+## Where a documented path actually gets sent
+
+The routes inside the document follow a different rule from the document's own address, and it is worth
+one paragraph because getting it wrong is silent.
+
+**A document's paths belong to the document's own server, not to your `api` base.** tflw reads
+`servers[0]` and resolves every path against it, keeping the **origin** your `api` names:
+
+| the document says | tflw sends to |
+| --- | --- |
+| no `servers`, or `[]`, or `/` — and `paths: {"/v1/health"}` | `<your origin>/v1/health` |
+| `servers: [{"url": "/v1"}]` and `paths: {"/health"}` | `<your origin>/v1/health` |
+| `servers: [{"url": "https://api.example.com/v2"}]` | `<your origin>/v2/…` — the path, never the host |
+
+Those first two rows are the same deployment written two ways, and they reach the same place. The
+third is deliberate: a document that names a host is describing where the API lives *under* one, and
+which deployment you are testing is your `api` base's decision, not a field that survives a copy-paste
+from production.
+
+The practical consequence, if your app sits behind a prefix like NestJS's `setGlobalPrefix('v1')` or a
+Spring `context-path`: **your `api` base's own path is not used twice.** A base of
+`https://host/v1` and a document describing `/v1/health` still send one `/v1`. Point `api` wherever
+your tests need it and the crawl will not double it.
+
+::: warning If the crawl reaches nothing, this is the first thing to check
+A crawl that sends requests and reaches none of them **fails** (`TF068`) rather than reporting a green
+run over responses it never judged. A wall of `404`s is nearly always an addressing disagreement —
+most often a document describing a prefix the host does not actually serve.
+:::
+
 ## Everything discovered is accounted for
 
 Before a crawl sends anything, it says what it is about to do:
@@ -164,6 +194,17 @@ on a run whose tests sent nothing, an `exclude` list that happens to cover every
 It is a failure rather than a green run with a note, for the reason every empty scan in tflw is: every
 assertion in that crawl's body would have passed whatever your application did. The `seed` line in the
 report says which seed came back empty and why.
+
+The same code covers the case where the surface was fine and **nothing landed**:
+
+```console
+✗ crawl "the v1 API surface" sent 31 requests and none of them reached your application
+    surface: 81 discovered · 50 withheld · 31 sent · 0 reached
+```
+
+Same argument, arrived at from the other end — requests went out, every one was turned away before your
+code saw it, and so the body judged nothing. The blind-spot declines say why each was turned away; if
+they are `404`s, check that your `api` base and the document's `servers` agree.
 
 ## Where it runs
 
