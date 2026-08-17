@@ -61,6 +61,11 @@ export interface EvalCtx {
    * at session-run time), auto-applied to this test's api steps — `{}` when anonymous (SPEC §3.3,
    * P#42). */
   readonly sessionHeaders: Readonly<Record<string, string>>;
+  /** M137b (D433) — the `csrfHeaders` half of the same opt-in, applied by `execApi` to **mutating**
+   * requests only. Optional rather than `{}`-always because every `EvalCtx` literal predating this
+   * milestone would otherwise have to name it to say "none", and `undefined`-means-none is the
+   * doctrine this interface already uses for `securitySink` and `sessionRefs`. */
+  readonly sessionCsrfHeaders?: Readonly<Record<string, string>>;
   /** Names of the `as <session>[, ...]` sessions this test opted into, `[]` outside a test (a
    * session's own run, a file hook) or for an anonymous test (SPEC §3.3, decision 3a, enterprise
    * arc). Lets an `ApiStep` that gets a 401 know which session(s) to invalidate + re-establish
@@ -99,6 +104,20 @@ export interface EvalCtx {
   /** Present only while executing a `session` block's own steps: a `HeaderStmt` writes into this
    * instead of the (nonexistent) response/report subject it would otherwise need (P#42). */
   readonly headerSink?: Record<string, string>;
+  /** M137b (D433) — the same sink shape one field up, for `csrf from … send as header "…"`, and
+   * deliberately **separate from `headerSink`** rather than another entry in it.
+   *
+   * `headerSink` becomes `SessionOutcome.headers`, which is `Object.assign`'d onto *every* request the
+   * credential makes. A CSRF token must go only on **mutating** ones: a browser does not send one on
+   * a `GET`, an app that receives one there may reject it, and — the reason that actually forces the
+   * split — `sec/csrf-not-enforced` (D434) derives a principal that is this credential *minus these
+   * headers*, which is only expressible if "these" is a set the engine can name. Folded into
+   * `headers` it would be indistinguishable from the `Authorization` header beside it, and withholding
+   * it would mean withholding the identity too, which measures nothing.
+   *
+   * A map rather than one slot so a second `csrf from` clause is additive instead of a silent
+   * overwrite — two token headers is a coherent thing to declare, and it needs no diagnostic to say so. */
+  readonly csrfSink?: Record<string, string>;
   /** Cookies accumulated from every response seen so far in this scope (a `session` block's own
    * run, or one test's own attempt — including any `before`/`after` hooks and action calls sharing
    * that same attempt) — automatically attached to subsequent requests as a `Cookie` header,

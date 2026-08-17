@@ -580,6 +580,15 @@ Oauth2Config    := 'token' 'url' Value NEWLINE
                     'client' 'id' Value NEWLINE
                     'client' 'secret' Value NEWLINE
                     ('scope' Value NEWLINE)?
+CsrfStmt        := 'csrf' 'from' Subject 'send' 'as' 'header' STRING NEWLINE
+                                                                  # session bodies only (§3.3, M137b,
+                                                                  #   D433) — capture the token this
+                                                                  #   credential was issued and attach
+                                                                  #   it to the *mutating* requests it
+                                                                  #   later makes. `send as` rather
+                                                                  #   than a bare `as`, which already
+                                                                  #   means "opt into a session" and
+                                                                  #   "name a capture"
 ```
 
 - `SessionDecl`'s plain-body form (`NEWLINE Block`) reuses the ordinary `Step` grammar (API steps,
@@ -588,6 +597,13 @@ Oauth2Config    := 'token' 'url' Value NEWLINE
 - `HeaderStmt` (a bare `header "…" is …` step, no `for <service>`) is also valid directly inside a
   `Block` — not just a config entry — for setting a header mid-test (e.g. right after `capture
   body.token as token`, SPEC's own worked example).
+- `CsrfStmt` is the opposite case, and the asymmetry is deliberate: it is valid **only** inside a
+  `SessionDecl`'s body, dispatched by the session-block parser and never offered by `Step`. Written in
+  a `.tflw` test body it is an unknown step, which is an existing diagnostic with an existing "did you
+  mean" rather than a new rule saying the same thing. It reads the establishment response through the
+  same `Subject` grammar `capture` uses, so `csrf from body.csrfToken` and
+  `csrf from response.headers["X-CSRF-Token"]` are both legal — and placing it before the session's
+  first `api` step is `TF039`, exactly as a premature `capture` is.
 
 ## Diagnostics (errors are a feature — P#6)
 

@@ -666,3 +666,95 @@ test('B3-18: when the re-establish itself fails, the 401 attempt is still not bi
 
   await server.close();
 });
+
+// -- M137b/D433: `csrf from … send as header "…"` -------------------------------------------------
+//
+// The verb-conditional half is the whole reason this token does not live in `SessionOutcome.headers`
+// (D433/D434), so it is asserted in both directions from one run rather than only the positive one:
+// a header that arrived on the `POST` proves the wiring, and the *same* header absent from the `GET`
+// proves the channel is doing the thing it was separated out to do.
+
+function configWithCsrfSession(baseUrl: string): ResolvedConfig {
+  const configSource = `env test default\n  api "${baseUrl}"\n\nsession shopper\n  api POST /shopper/login\n  csrf from body.csrfToken send as header "X-CSRF-Token"\n`;
+  const parsed = parseConfigSource(configSource);
+  assert.deepEqual(parsed.diagnostics, [], JSON.stringify(parsed.diagnostics));
+  const envBlock = selectEnv(parsed.config, {});
+  return resolveConfig(parsed.config, envBlock);
+}
+
+test('D433: the captured token rides mutating requests and stays off safe ones', async () => {
+  const seen: Record<string, string | null> = {};
+  const server = await startFixtureServer({
+    '/shopper/login': (_req, res) => json(res, 200, { csrfToken: 'csrf-abc' }),
+    '/orders': (req, res) => {
+      seen[req.method!] = (req.headers['x-csrf-token'] as string | undefined) ?? null;
+      return json(res, req.method === 'GET' ? 200 : 201, {});
+    },
+  });
+  const config = configWithCsrfSession(server.baseUrl);
+
+  const source = `test "mutates and reads" as shopper
+  api GET /orders
+  expect status equals 200
+  api POST /orders body { a: 1 }
+  expect status equals 201
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(seen['POST'], 'csrf-abc', 'a mutating request must carry the token the session captured');
+  assert.equal(seen['GET'], null, 'a safe request must not — a browser does not send one, and an app may reject it');
+
+  await server.close();
+});
+
+test('D433: an explicit per-step header still wins, so a deliberate wrong token stays writable', async () => {
+  // The precedence that keeps hand-written negative tests expressible on a session that declares the
+  // clause — `tests/api/identity/sessions.tflw` is exactly that shape, and D454 keeps it hand-written.
+  let sent: string | undefined;
+  const server = await startFixtureServer({
+    '/shopper/login': (_req, res) => json(res, 200, { csrfToken: 'csrf-abc' }),
+    '/orders': (req, res) => {
+      sent = req.headers['x-csrf-token'] as string | undefined;
+      return json(res, 201, {});
+    },
+  });
+  const config = configWithCsrfSession(server.baseUrl);
+
+  const source = `test "sends its own" as shopper
+  api POST /orders body { a: 1 }
+    header "X-CSRF-Token" is "deliberately-wrong"
+  expect status equals 201
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(sent, 'deliberately-wrong');
+
+  await server.close();
+});
+
+test('D456: a `csrf from` path the login response cannot produce fails the session loudly', async () => {
+  // This throw is where D443's `TF069` went. The property being asserted is that it is *loud*: the
+  // session fails, so the test fails, so no probe ever runs against an unjudged mutating surface.
+  // Binding `undefined` here would have sent the literal text "undefined" as the token, which an app
+  // rejects for the right reason by accident — a broken clause reading as a working CSRF defence.
+  const server = await startFixtureServer({
+    '/shopper/login': (_req, res) => json(res, 200, { token: 'no-csrf-field-here' }),
+    '/orders': (_req, res) => json(res, 201, {}),
+  });
+  const config = configWithCsrfSession(server.baseUrl);
+
+  const source = `test "never gets there" as shopper\n  api POST /orders body { a: 1 }\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, config, { source });
+
+  assert.equal(report.ok, false, 'a mis-typed capture path must not produce a green run');
+  const error = JSON.stringify(report.tests);
+  assert.match(error, /no CSRF token at/);
+  assert.equal(server.received.get('/orders'), undefined, 'the mutating request must never have been sent');
+
+  await server.close();
+});

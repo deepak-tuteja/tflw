@@ -333,6 +333,7 @@ export type Step =
   | GiveStmt
   | CallStmt
   | HeaderStmt
+  | CsrfStmt
   | OpenStmt
   | ClickStmt
   | FillStmt
@@ -380,6 +381,34 @@ export interface HeaderStmt extends Node {
   readonly type: 'HeaderStmt';
   readonly name: StringLit;
   readonly value: Value;
+}
+
+/**
+ * `csrf from <subject> send as header "<name>"` — capture a CSRF token out of this session's own
+ * establishment response and attach it to every **mutating** request the credential later makes
+ * (M137b, D433).
+ *
+ * **A session-body statement, not a scanner clause, because a CSRF token is a property of the
+ * credential.** One target has many principals with different tokens; one principal has one. The
+ * security corpus already says so in the other direction — `shopper` and `shopperBearer` are the
+ * same human declared twice, because a probe outcome is a fact about the credential rather than
+ * about the person.
+ *
+ * **In the `Step` union but reachable only from a session body**, which is deliberate: it is
+ * dispatched by `parseSessionBlock`, and `parseStep` never offers it, so `csrf from …` written in a
+ * `.tflw` test body is an unknown step with the existing code rather than a new checker rule with a
+ * new one. `HeaderStmt` above is genuinely dual-purpose (a session header *and* a request header);
+ * this is not, and the grammar is where that asymmetry is cheapest to express.
+ *
+ * `subject` is an ordinary `Subject`, the same one `capture` reads, so `body.csrfToken` and
+ * `response.headers["X-CSRF-Token"]` both work and neither needed new path machinery. `header` is a
+ * `StringLit` for `HeaderStmt`'s reason — it is a header name, and interpolation in it is resolved
+ * at execution the same way.
+ */
+export interface CsrfStmt extends Node {
+  readonly type: 'CsrfStmt';
+  readonly subject: Subject;
+  readonly header: StringLit;
 }
 
 // ---- API steps -------------------------------------------------------------

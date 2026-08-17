@@ -25,6 +25,7 @@ import type {
   BodyTextSubject,
   CallExpr,
   CaptureStmt,
+  CsrfStmt,
   CertDecl,
   ClickKind,
   ClickStmt,
@@ -1401,13 +1402,59 @@ class Parser {
         continue;
       }
       const before = this.pos;
-      const step = this.isKw(this.peek(), 'header') ? this.parseHeaderStmt() : this.parseStep();
+      const head = this.peek();
+      // `header` and `csrf` are both dispatched here rather than from `parseStep`, and for opposite
+      // reasons. `header "X" is "Y"` means something different in a session (a header this
+      // credential always sends) than in a test body (a header this one request sends), so it needs
+      // its own production in this position. `csrf from …` (M137b, D433) means nothing at all
+      // outside a session, so `parseStep` deliberately never learns it: written in a `.tflw` test
+      // body it is an unknown step, which is an existing code with an existing "did you mean" rather
+      // than a new checker pass and a new code to say the same thing.
+      const step = this.isKw(head, 'header') ? this.parseHeaderStmt() : this.isKw(head, 'csrf') ? this.parseCsrfStmt() : this.parseStep();
       if (step) steps.push(step);
       else this.synchronize();
       if (this.pos === before) this.advance(); // guarantee progress
     }
     if (this.check('dedent')) this.advance();
     return steps;
+  }
+
+  /**
+   * `csrf from <subject> send as header "<name>"` (M137b, D433) — session bodies only, dispatched
+   * from `parseSessionBlock`.
+   *
+   * **`send as`, not a bare `as`.** `as` already means two other things a reader meets nearby:
+   * opting a test into a credential (`test "…" as shopper`) and naming a capture (`capture body.id
+   * as orderId`). This statement does neither — it names a *destination* for a value on requests
+   * that have not been written yet — so the verb earns its word.
+   *
+   * The `ValueSubject` refusal is `parseCapture`'s, for `parseCapture`'s reason: this reads a value
+   * out of the establishment response, and `csrf from {token} …` would be a way of spelling "attach
+   * a value I already have", which is what `header "X-CSRF-Token" is "{token}"` says one line up.
+   */
+  private parseCsrfStmt(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `csrf`
+    if (!this.expectKw('from')) return null;
+    const subject = this.parseSubject();
+    if (!subject) return null;
+    if (subject.type === 'ValueSubject') {
+      this.error(
+        Codes.UNKNOWN_SUBJECT,
+        '`csrf from` reads a token out of this session\'s own establishment response, so its subject cannot be a `{variable}`',
+        subject.span,
+        'to send a token you already hold, write `header "X-CSRF-Token" is "{token}"` — `csrf from` is for a token the application issues during login (SPEC §3.3)',
+      );
+      return null;
+    }
+    if (!this.expectKw('send')) return null;
+    if (!this.expectKw('as')) return null;
+    if (!this.expectKw('header')) return null;
+    const header = this.expectString('a header name string, e.g. `send as header "X-CSRF-Token"`');
+    if (!header) return null;
+    this.endLine();
+    const stmt: CsrfStmt = { type: 'CsrfStmt', subject, header, span: this.spanFrom(start) };
+    return stmt;
   }
 
   private parseHeaderStmt(): Step | null {

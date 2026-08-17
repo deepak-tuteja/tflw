@@ -1286,6 +1286,16 @@ function checkResponseScopeInSteps(steps: readonly Step[], diags: Diagnostic[]):
         // which a `capture` before an `api` step is meaningful.
         if (!established) diags.push(noResponse(step.subject, step.span, 'capture'));
         break;
+      case 'CsrfStmt':
+        // M137b (D433/D456) — `csrf from body.csrfToken send as header "X-CSRF-Token"` reads the
+        // establishment response through the same `resolveSubject` path `capture` does, so it lands
+        // in the same case for the same reason. This is why D443's `TF069` was withdrawn: the code it
+        // proposed would have said "this session issues no request" with the repair *run an `api`
+        // step first*, which is this diagnostic's repair already — and this one is **positional**, so
+        // it also catches the clause written above the login step, which a whole-body check could not
+        // see. A second code here would have been D419's rejected shape: two rows, one repair.
+        if (!established) diags.push(noResponse(step.subject, step.span, 'csrf from'));
+        break;
       case 'WithinBlock':
       case 'SwitchToNewTabBlock':
       case 'DownloadBlock':
@@ -1299,7 +1309,7 @@ function checkResponseScopeInSteps(steps: readonly Step[], diags: Diagnostic[]):
   }
 }
 
-function noResponse(subject: Subject, span: Span, kind: 'expect' | 'check' | 'capture'): Diagnostic {
+function noResponse(subject: Subject, span: Span, kind: 'expect' | 'check' | 'capture' | 'csrf from'): Diagnostic {
   return {
     code: Codes.NO_RESPONSE_YET,
     severity: 'error',

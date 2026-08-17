@@ -196,6 +196,12 @@ export const Codes = {
   // Deliberately **not** a fourth `AUTHZ_*` code: nothing about it is about authorization, and this
   // tier needs no owner at all (it changes no identity, so `TF062`/`TF063` have no analogue here).
   INPUT_ASSERTION_NO_MUTABLE_INPUT: 'TF067',
+  // M137b (D456) deliberately mints **nothing** here. `csrf from <subject> send as header "<name>"`
+  // reads the establishment response exactly as `capture` does, so it joins `CaptureStmt` in
+  // `checkResponseScopeInSteps` and inherits `TF039` — same repair, run an `api` step first, and
+  // positionally precise in a way a new code would not have been. `TF068` stays next-free for the
+  // `crawl` construct. See `PLAN_M137_PENTEST_TIER4.md`'s D456 for why `D443`'s `TF069` was withdrawn
+  // rather than renumbered.
 } as const;
 
 // ---------------------------------------------------------------------------
