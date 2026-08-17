@@ -109,6 +109,11 @@ const CONFIG_KEYWORDS = new Set([
   'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'redact', 'viewport',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
   'destination', 'level', 'query',
+  // M137b (D433) — `csrf from <subject> send as header "<name>"`. Both words belong *here* rather
+  // than in the shared list above, by D427a's own test: they are reachable only from the config
+  // dialect's session-block production, and `send` in particular is a plausible ordinary identifier
+  // in a `.tflw` file, which is the exact risk that kept `up`/`method` out of the shared set.
+  'csrf', 'send',
 ]);
 
 /** Matcher/comparison words (tflw.tmLanguage.json's `keywords-matcher`), plus the M3d/M3e words

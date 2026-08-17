@@ -65,6 +65,10 @@ const OWASP_API1: KbRef = {
   label: 'OWASP API Security Top 10 — API1:2023 Broken Object Level Authorization',
   url: 'https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/',
 };
+const OWASP_CSRF: KbRef = {
+  label: 'OWASP — Cross-Site Request Forgery Prevention Cheat Sheet',
+  url: 'https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html',
+};
 
 function cweRef(id: number, name: string): KbRef {
   return { label: `CWE-${id}: ${name}`, url: `https://cwe.mitre.org/data/definitions/${id}.html` };
@@ -243,6 +247,16 @@ export const REMEDIATION_KB: Readonly<Record<ScanRuleId, KbEntry>> = {
     fixNest: "Take the principal from the request in the service, not the controller, and put it in the `where` clause of the list query. Where a query builder is used, add the scope before any user-supplied filters so a filter cannot widen it.",
     cwe: 863,
     refs: [OWASP_API1, OWASP_AUTHZ, cweRef(863, 'Incorrect Authorization')],
+  },
+
+  'sec/csrf-not-enforced': {
+    title: 'A mutating request succeeded without its CSRF token',
+    what: "A request the application accepted from an authenticated cookie session was repeated with the CSRF token that session had been issued removed, and the application performed it anyway — so the session cookie alone was sufficient to change state.",
+    why: "It means any page a logged-in user visits can make this request on their behalf. The browser attaches the cookie automatically to a form post or an image load from any origin, so an attacker needs no access to the victim's session, no XSS and no network position — only a link the victim clicks while logged in. The request looks entirely legitimate at the server, which is why the effect is usually discovered from its consequences rather than from logs.",
+    fixGeneric: "Require a value the attacking origin cannot read or guess on every state-changing request: a per-session synchronizer token echoed in a header or form field and compared server-side, or the double-submit cookie pattern. Reject when it is absent, not only when it is wrong — an omitted token must fail closed, which is exactly the case this finding reports. Set `SameSite=Lax` (or `Strict`) on the session cookie as defence in depth, but do not rely on it alone: it is a browser default rather than a server-side check, and it does not cover every request shape. `GET` must remain free of side effects, or no token scheme can protect it.",
+    fixNest: "Enable the CSRF middleware (`csurf` or a maintained equivalent) and mount it before the routes rather than inside individual handlers, so a new controller inherits it instead of opting in. If a guard performs the check, verify it is applied globally — a `@UseGuards` on some controllers and not others is the shape this finding usually has. Exempt only endpoints that are genuinely token-authenticated (a `Bearer` header cannot be attached cross-origin by a browser), and exempt them by an explicit allowlist rather than by skipping the middleware for a path prefix.",
+    cwe: 352,
+    refs: [OWASP_CSRF, cweRef(352, 'Cross-Site Request Forgery (CSRF)')],
   },
 
   // ---------------------------------------------------------------------------

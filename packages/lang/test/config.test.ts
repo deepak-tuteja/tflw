@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseConfigSource, renderDiagnostics } from '../src/index.js';
+import { parseConfigSource, parseSource, renderDiagnostics, checkSessionBody, Codes } from '../src/index.js';
 import { CONFIG_INVALID, CONFIG_VALID } from './fixtures.js';
 import { assertGolden, astJson } from './helpers.js';
 
@@ -133,4 +133,71 @@ test('D330: the one-line declaration is unchanged, and a sub-clause is never req
   const [target] = config!.defaults!.entries.filter((e) => e.type === 'AuthorizedTargetDecl');
   assert.equal(target!.reason.value, 'contracted window');
   assert.equal(target!.probeMutating, false);
+});
+
+// -- M137b/D433/D456: `csrf from … send as header "…"` ------------------------------------------
+//
+// Four claims, and the last two are the ones that would fail silently. The goldens above cannot
+// state any of them: nothing in the valid-fixture set declares the clause, and a golden proves a
+// tree was produced, not which positions produce it.
+
+test('D433: `csrf from … send as header` parses in a session body and lands on that session', () => {
+  const source =
+    'env local default\n  api "http://x"\n\n' +
+    'session shopper\n' +
+    '  api POST /login\n' +
+    '  csrf from body.csrfToken send as header "X-CSRF-Token"\n\n' +
+    'session peer\n' +
+    '  api POST /login\n';
+  const { config, diagnostics } = parseConfigSource(source);
+  assert.deepEqual(diagnostics.map((d) => `${d.code}: ${d.message}`), []);
+  assert.deepEqual(
+    config!.sessions.map((s) => [s.name, s.body.filter((st) => st.type === 'CsrfStmt').length]),
+    [['shopper', 1], ['peer', 0]],
+    'a clause leaking to the next declaration would attach a token to a credential nobody declared one for',
+  );
+  const clause = config!.sessions[0]!.body.find((st) => st.type === 'CsrfStmt')!;
+  assert.equal(clause.header.value, 'X-CSRF-Token');
+  assert.equal(clause.subject.type, 'BodySubject', 'the subject is `capture`\'s, so no new path machinery was added');
+});
+
+test('D433: `csrf from` is a session-only production — in a test body it is an unknown step', () => {
+  // The asymmetry with `header` is deliberate (GRAMMAR.md): `header` means something in both
+  // dialects, this means something in one. Keeping it out of `parseStep` is what makes the misplaced
+  // case an existing diagnostic with a did-you-mean instead of a new checker pass and a new code.
+  const { diagnostics } = parseSource('test "t"\n  csrf from body.csrfToken send as header "X-CSRF-Token"\n');
+  assert.ok(diagnostics.length > 0, 'a session-only clause must not be silently legal in a test body');
+  assert.ok(
+    diagnostics.some((d) => d.code === Codes.UNKNOWN_STATEMENT),
+    `expected an unknown-statement diagnostic, got: ${diagnostics.map((d) => `${d.code}: ${d.message}`).join('; ')}`,
+  );
+});
+
+test('D433: the subject cannot be a `{variable}` — that statement is a `header` step', () => {
+  const source = 'env local default\n  api "http://x"\n\nsession shopper\n  api POST /login\n  csrf from {token} send as header "X-CSRF-Token"\n';
+  const { diagnostics } = parseConfigSource(source);
+  assert.ok(diagnostics.some((d) => d.code === Codes.UNKNOWN_SUBJECT), `got: ${diagnostics.map((d) => d.code).join(', ')}`);
+  assert.ok(
+    diagnostics.some((d) => /header "X-CSRF-Token" is/.test(d.hint ?? '')),
+    'the hint has to name the statement that does what the author was reaching for',
+  );
+});
+
+test('D456: `csrf from` above the first `api` step is TF039, positionally — the withdrawn `TF069`', () => {
+  // This is the whole reason D443's `TF069` was withdrawn rather than renumbered. A code meaning
+  // "this session issues no request" would have passed this file: the request is right there, one
+  // line too late. `TF039` reads the position, so it catches the mistake somebody actually makes.
+  const source = 'env local default\n  api "http://x"\n\nsession shopper\n  csrf from body.csrfToken send as header "X-CSRF-Token"\n  api POST /login\n';
+  const { config, diagnostics } = parseConfigSource(source);
+  assert.deepEqual(diagnostics.map((d) => d.code), [], 'it parses — the defect is semantic');
+  const codes = checkSessionBody(config!.sessions, []).map((d) => d.code);
+  assert.deepEqual(codes, [Codes.NO_RESPONSE_YET], `expected TF039 alone, got: ${codes.join(', ')}`);
+});
+
+test('D456: a session with no request at all is the same TF039, so nothing needed a second code', () => {
+  const source = 'env local default\n  api "http://x"\n\nsession shopper\n  header "Authorization" is "Bearer t"\n  csrf from body.csrfToken send as header "X-CSRF-Token"\n';
+  const { config, diagnostics } = parseConfigSource(source);
+  assert.deepEqual(diagnostics.map((d) => d.code), []);
+  const codes = checkSessionBody(config!.sessions, []).map((d) => d.code);
+  assert.deepEqual(codes, [Codes.NO_RESPONSE_YET], `expected TF039 alone, got: ${codes.join(', ')}`);
 });

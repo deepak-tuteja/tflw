@@ -641,6 +641,21 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     note: 'whether the response carried the path',
   },
   {
+    // M137b (D433/D456) — `csrf from <subject> send as header "<name>"`, when the establishment
+    // response carries nothing at that subject. Its sibling row above is the precedent in full: same
+    // question, same answer, and this manifest is where D456's reasoning was independently confirmed.
+    // D443 wanted a diagnostic code for this throw; asking *this* row's question — can the checker
+    // decide it — gives the same answer the plan arrived at from the other direction. The checker
+    // decides the half that is static (`csrf from` with no request before it, which is `TF039` via
+    // `checkResponseScopeInSteps`) and this row keeps the half that needs the response.
+    id: 'csrf-token-found-nothing',
+    file: 'interpreter.ts',
+    excerpt: 'no CSRF token at',
+    decidable: 'needs-values',
+    note: 'whether the establishment response carried the token; the no-request-at-all half is TF039',
+    checkerCode: 'TF039',
+  },
+  {
     id: 'matches-file-body-bytes-only',
     file: 'interpreter.ts',
     excerpt: '\\`matches file\\` is only valid on a',

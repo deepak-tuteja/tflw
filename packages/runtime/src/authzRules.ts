@@ -131,6 +131,16 @@ export interface AuthzObservation {
    * once and passed rather than derived twice from the same body). */
   readonly ownerIds: readonly string[];
   readonly probes: readonly ProbeResult[];
+  /**
+   * M137b (D434/D457) — probes by principals the engine *derived* by emptying an owner's CSRF headers,
+   * kept out of `probes` above so the two leak rules cannot see them.
+   *
+   * They would otherwise be read as leaks, and correctly by their own logic: a derived principal is
+   * the owner, so a token-less write that succeeds returns the owner's own resource ids. One critical
+   * false positive on the happy path of the rule this field exists for. Absent when no owning session
+   * declares a `csrf from` clause, which is every assertion in a suite that has not adopted one.
+   */
+  readonly csrfProbes?: readonly ProbeResult[];
 }
 
 /** A rule's verdict. Structurally `securityRules.ts`'s `RuleOutcome`, restated rather than imported
@@ -149,7 +159,7 @@ export interface AuthzRuleOutcome {
 /** `M135a` (D409) — this pack's ids as a closed tuple, for the same reason `SECURITY_RULE_IDS` is
  *  one: the remediation KB is keyed on the union, so a third authorization rule cannot be declared
  *  without an entry to go with it. */
-export const AUTHZ_RULE_IDS = ['sec/authz-object-leak', 'sec/authz-collection-leak'] as const;
+export const AUTHZ_RULE_IDS = ['sec/authz-object-leak', 'sec/authz-collection-leak', 'sec/csrf-not-enforced'] as const;
 
 export type AuthzRuleId = (typeof AUTHZ_RULE_IDS)[number];
 
@@ -431,9 +441,79 @@ const authzCollectionLeak = leakRule({
   noun: 'a collection',
 });
 
-/** D320's pack. Two rules, and exactly one of them can apply to any given response — which is what
- * makes the ordinary counts line read `2 rules — 1 applicable, 1 not applicable`. */
-export const AUTHZ_RULES: readonly AuthzRule[] = [authzObjectLeak, authzCollectionLeak];
+/**
+ * `sec/csrf-not-enforced` (M137b, D434) — the same request, the same cookie session, token withheld.
+ * A `2xx` means the application has no CSRF defence at all.
+ *
+ * **It reads `o.csrfProbes`, never `o.probes`, and that is D457 rather than tidiness.** The withheld
+ * principal *is* the owner, so a successful token-less write returns the owner's own resource ids —
+ * which is precisely `sec/authz-object-leak`'s trigger. Sharing one probe list would have made this
+ * rule's happy path fire a critical BOLA finding against the owner's own resource. Separate fields
+ * make that unrepresentable instead of merely filtered, so no future authorization rule inherits an
+ * obligation nothing states.
+ *
+ * **It reads the status, not the probe taxonomy.** `classifyResponse` answers *did authorization
+ * hold*, and its vocabulary does not fit this question: a token-less `2xx` carrying owner ids
+ * classifies as `leaked`, which is true of authorization and beside the point here. The question is
+ * only whether the write was accepted, and `ProbeResult.response` carries the status to answer it.
+ *
+ * `inconclusive`/`not-probed` are neither a pass nor a fail — a probe that never ran cannot show a
+ * defence working — so they go through the not-applicable door, which is where D285 makes a
+ * no-power-to-fail assertion say so instead of greening.
+ */
+const csrfNotEnforced: AuthzRule = {
+  id: 'sec/csrf-not-enforced',
+  severity: 'critical',
+  description: 'A mutating request succeeded with its CSRF token withheld',
+  appliesWhen: 'an owning session declares a `csrf from` clause and the mutating probe with its token withheld reached the application',
+  evaluate(o) {
+    const probes = o.csrfProbes ?? [];
+    if (!probes.length) {
+      return {
+        applicable: false,
+        findings: [],
+        because: 'no owning session declares a `csrf from` clause, so there is no token to withhold',
+      };
+    }
+    // A probe that carries a response reached the application; one that does not was refused by a
+    // safety layer (`probe mutating`, D21) or failed in transport, and neither says anything about
+    // the app's CSRF defence.
+    const reached = probes.filter((p) => p.response !== undefined);
+    if (!reached.length) {
+      return {
+        applicable: false,
+        findings: [],
+        because: `no withheld-token probe reached the application (${summarise(probes)})`,
+      };
+    }
+
+    const findings: Finding[] = [];
+    for (const probe of reached) {
+      const status = probe.response!.status;
+      if (status < 200 || status >= 300) continue;
+      findings.push({
+        id: 'sec/csrf-not-enforced',
+        severity: 'critical',
+        description: 'A mutating request succeeded with its CSRF token withheld',
+        detail:
+          `${o.owner.request.method} ${pathOf(o.owner.request.url)} — \`${probe.principal}\` repeated this request ` +
+          `with the CSRF token its session captured removed, and the application answered ${status}. ` +
+          'The cookie alone was sufficient to change state, so any site the browser visits can make this request',
+        // The principal, for `sec/authz-object-leak`'s reason (D376/R8) — this tier's probes move an
+        // identity rather than a payload, and the derived name already says which credential and
+        // which withholding produced it.
+        where: { location: probe.principal },
+      });
+    }
+    return { applicable: true, findings };
+  },
+};
+
+/** D320's pack. The two leak rules are mutually exclusive on any given response — which is what makes
+ * the ordinary counts line read `2 rules — 1 applicable, 1 not applicable` — and M137b's third
+ * (D434) is orthogonal to both: it reads a different field and applies only where a `csrf from`
+ * clause was declared. */
+export const AUTHZ_RULES: readonly AuthzRule[] = [authzObjectLeak, authzCollectionLeak, csrfNotEnforced];
 
 export interface AuthzNotApplicable {
   readonly rule: AuthzRule;

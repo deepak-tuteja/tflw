@@ -489,3 +489,64 @@ test('D330: an unparseable URL on either side is not a grant', () => {
   assert.equal(mayProbeMutating('http://a.test/x', [target('not a url', true)]), false);
   assert.equal(mayProbeMutating('http://a.test/x', []), false, 'and an empty declaration list grants nothing');
 });
+
+// ---------------------------------------------------------------------------
+// M137b (D433/D434) — the CSRF token as identity, and the withheld-token principal.
+// ---------------------------------------------------------------------------
+
+const CSRF_POLICY: ProbePolicy = { ...POLICY, probeMutating: true, csrfHeaderNames: ['X-CSRF-Token'] };
+
+test('D433: the owner’s CSRF token is stripped like any other identity header', () => {
+  // The trap this fix exists for, and it fails in the *green* direction, which is why it gets its own
+  // test rather than a line in an existing one. A token is bound to the session issued it. Left in
+  // place, every probe re-sends the owner's token under another principal's cookie, the app rejects
+  // the mismatch, and the probe comes back refused — `M130-01`'s shape reintroduced by the milestone
+  // that fixes it, and invisible because a refusal reads as a held boundary.
+  const observed = req({ method: 'POST', headers: { Cookie: 'sid=owner', 'X-CSRF-Token': 'owner-token' } });
+  const p = buildProbeRequest(observed, principal('peer'), CSRF_POLICY);
+  assert.equal(p.headers['X-CSRF-Token'], undefined);
+});
+
+test('D433: stripping the token is case-insensitive too', () => {
+  const observed = req({ method: 'POST', headers: { 'x-csrf-token': 'owner-token' } });
+  const p = buildProbeRequest(observed, principal('peer'), CSRF_POLICY);
+  assert.deepEqual(Object.keys(p.headers).filter((k) => k.toLowerCase() === 'x-csrf-token'), []);
+});
+
+test('D433: a principal’s own token rides its mutating probe and not its safe one', () => {
+  const carrier = principal('shopper2', { csrfHeaders: { 'X-CSRF-Token': 'their-own' } });
+  const mutating = buildProbeRequest(req({ method: 'POST' }), carrier, CSRF_POLICY);
+  assert.equal(mutating.headers['X-CSRF-Token'], 'their-own');
+  const safe = buildProbeRequest(req({ method: 'GET' }), carrier, CSRF_POLICY);
+  assert.equal(safe.headers['X-CSRF-Token'], undefined, 'mirrors execApi, so a probe and its origin request agree');
+});
+
+test('D434: the withheld-token principal is the subtraction, expressed as an empty map', () => {
+  // No code performs the removal — the derived principal simply carries nothing, and the owner's own
+  // token was already stripped as identity above. That is why the derivation needed no branch here.
+  const withheld = principal('shopper (csrf token withheld)', { derivedFrom: 'shopper', csrfHeaders: {}, cookieJar: jarWith('https://api.test', 'sid=shopper; Path=/') });
+  const p = buildProbeRequest(req({ method: 'POST', headers: { Cookie: 'sid=owner', 'X-CSRF-Token': 'owner-token' } }), withheld, CSRF_POLICY);
+  assert.equal(p.headers['X-CSRF-Token'], undefined, 'no token at all');
+  assert.equal(p.headers['Cookie'], 'sid=shopper', 'but the identity is fully present — that is what makes it a CSRF test');
+});
+
+test('D433: a supplied token turns D325’s inconclusive back into a real refusal', () => {
+  // The half of `M130-01` this milestone actually closes. Same 403, same cookie principal; the only
+  // difference is that a token was sent, so the CSRF ambiguity is gone and the refusal is authorization.
+  const refusal = res({ status: 403, json: {} });
+  const ambiguous = classifyResponse(refusal, ['a1'], { method: 'POST', cookieBorne: true, suppliedCsrf: false });
+  assert.equal(ambiguous.kind, 'inconclusive');
+  const judged = classifyResponse(refusal, ['a1'], { method: 'POST', cookieBorne: true, suppliedCsrf: true });
+  assert.equal(judged.kind, 'refused', 'with a token in hand a 403 is an authorization answer, and calling it inconclusive would now be the false negative');
+});
+
+test('D457: a withheld-token probe is still gated by `probe mutating`, like every other write', async () => {
+  // A rule that could send an unopted write is the defect this arc's safety model exists to prevent,
+  // so the derived principal gets no exemption from D330.
+  const sender = recordingSender();
+  const prober = new AuthzProber(sender.send);
+  const withheld = principal('shopper (csrf token withheld)', { derivedFrom: 'shopper', csrfHeaders: {} });
+  const results = await prober.probeAll(req({ method: 'DELETE' }), ['a1'], [withheld], { ...CSRF_POLICY, probeMutating: false });
+  assert.equal(sender.sent.length, 0, 'nothing may leave the machine');
+  assert.equal(results[0]!.outcome.kind, 'not-probed');
+});

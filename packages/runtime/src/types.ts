@@ -152,6 +152,10 @@ export type StepKind =
   | 'call'
   | 'give'
   | 'header'
+  /** M137b (D433) — `csrf from … send as header "…"`, a session-body statement. Its own kind rather
+   *  than `capture`'s: it binds no variable a later step can read, and the report line a reader wants
+   *  is *which header this credential will now attach*, not *what value was stored*. */
+  | 'csrf'
   | 'open'
   | 'click'
   | 'fill'

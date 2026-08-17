@@ -15,6 +15,7 @@ import type {
   ApiRequestSpec,
   ApiStep,
   CaptureStmt,
+  CsrfStmt,
   EvidenceLevel,
   ExpectStmt,
   HookDecl,
@@ -48,7 +49,7 @@ import { judge, OPEN_GATE, toScanFinding, withheldNote, type GateVerdict, type S
 import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, type TlsObservation } from './securityRules.js';
 import { TlsProber } from './tlsProbe.js';
 import { extractResourceIds, judgeable, PROBE_OUTCOME_LABEL, runAuthzScan, type AuthzScanResult, type ProbeResult } from './authzRules.js';
-import { ANONYMOUS, AuthzProber, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
+import { ANONYMOUS, AuthzProber, isSafeMethod, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
 import { INPUT_CORPUS, mutationSites, templateEndpoint, type MutationSite } from './inputCorpus.js';
 import { grantedClasses, InputProber, planProbes, withheldClasses, type InputProbePolicy, type InputProbeSender } from './inputProbe.js';
 import { seededIds, seededPayloads } from './inputSeeded.js';
@@ -975,6 +976,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     // next iteration, and an `oauth2` session's proactive TTL re-check (`ensure()`'s own logic)
     // applies here too, which the old snapshot design never benefited from either.
     const sessionHeaders: Record<string, string> = {};
+    const sessionCsrfHeaders: Record<string, string> = {};
     const cookieJar = new CookieJar();
     const sessionFindings: Finding[] = [];
     const sessionRefs = new Map<string, SessionRef>();
@@ -984,6 +986,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       const outcome = await sessionCache.ensure(sessionName, decl, config, iterTc, false);
       if (!outcome.ok) throw new RuntimeError(`session "${sessionName}" failed to establish: ${outcome.error ?? 'a step failed'}`);
       Object.assign(sessionHeaders, outcome.headers);
+      Object.assign(sessionCsrfHeaders, outcome.csrfHeaders);
       sessionFindings.push(...outcome.securityFindings);
       cookieJar.mergeFrom(outcome.cookieJar.clone());
       const ref = sessionCache.currentRef(sessionName);
@@ -998,6 +1001,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       runClock,
       uniqueSeq,
       sessionHeaders,
+      sessionCsrfHeaders,
       sessionNames: scenario.sessions,
       sessionFindings,
       sessionRefs,
@@ -2022,6 +2026,20 @@ interface TestCtx {
 export interface SessionOutcome {
   /** Headers this session's `header` steps captured, already evaluated + stringified. */
   readonly headers: Readonly<Record<string, string>>;
+  /**
+   * M137b (D433) — headers this credential attaches to **mutating requests only**, captured out of
+   * its own establishment response by `csrf from … send as header "…"`. `{}` for a session that
+   * declares no clause, which is every session that existed before this milestone.
+   *
+   * **Its own field rather than more entries in `headers`**, which is the one structural decision in
+   * `M137b`. `headers` is `Object.assign`'d onto every outgoing request at five sites, and a CSRF
+   * token is verb-conditional — but the binding reason is `D434`: `sec/csrf-not-enforced` probes a
+   * derived principal defined as *this credential minus its CSRF headers*, and that subtraction is
+   * only expressible while the engine can still tell which headers those are. Merged into `headers`,
+   * the derivation could not distinguish the token from the `Authorization` header next to it, and
+   * withholding both measures authentication rather than CSRF.
+   */
+  readonly csrfHeaders: Readonly<Record<string, string>>;
   /** Cookies accumulated from every response this session's own steps saw (SPEC §3.3, P#33) — a
    * *clone* is handed to each test opting in via `as <session>`, never this live instance
    * (`runTestAttempt` clones it), so a test's own subsequent cookie updates can never leak back
@@ -2153,14 +2171,16 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
   const sessionTc = sessionCtx(decl.name, tc);
   if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, sessionTc);
   const headerSink: Record<string, string> = {};
+  const csrfSink: Record<string, string> = {};
   const scope = new Map<string, unknown>();
   const cookieJar = new CookieJar();
   const securitySink: Observation[] = [];
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, cookieJar, securitySink };
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, csrfSink, cookieJar, securitySink };
   const emptyRegistry: CallRegistry = { actions: new Map(), helpers: new Map() };
   const exec = await execSteps(decl.body, config, ctx, sessionTc, `session ${decl.name}`, emptyRegistry);
   return {
     headers: headerSink,
+    csrfHeaders: csrfSink,
     cookieJar,
     ok: exec.ok,
     ...(exec.error ? { error: exec.error } : {}),
@@ -2223,6 +2243,7 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
   const fail = (error: string, request?: RequestTrace, response?: ResponseTrace): SessionOutcome => ({
     securityFindings: [],
     headers: {},
+    csrfHeaders: {},
     cookieJar,
     ok: false,
     error,
@@ -2268,6 +2289,12 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
   const detail = `oauth2 token request → ${response.status} (${response.durationMs}ms)`;
   return {
     headers: { Authorization: `Bearer ${accessToken}` },
+    // M137b (D433) — always empty here, and structurally so rather than by omission: an `oauth2`
+    // session's body is a fixed sugar shape (`token url`/`client id`/`client secret`/`scope`), so
+    // there is no position in the grammar where a `csrf from` clause could be written. It would also
+    // have nothing to protect — this credential travels as a bearer header and sends no cookie, which
+    // is exactly the contrast `shopperBearer` is declared to demonstrate (D356).
+    csrfHeaders: {},
     cookieJar,
     ok: true,
     steps: [mkStep('api', src, oauth2.span, true, start, detail, redactedRequest, redactedResponse)],
@@ -2320,6 +2347,12 @@ async function refreshSessions(
       return { ok: false, steps };
     }
     Object.assign(ctx.sessionHeaders as Record<string, string>, outcome.headers);
+    // M137b (D433) — the refreshed CSRF token has to land with the refreshed identity, on the same
+    // in-place-mutation path and for a sharper reason than symmetry. A re-established session that
+    // kept its old token would send a *stale* token with a *fresh* cookie, and the app would answer
+    // `403` — indistinguishable at a glance from the CSRF defence working, on the retry that was
+    // supposed to fix the problem. Merged rather than replaced, so a same-named header updates.
+    if (ctx.sessionCsrfHeaders) Object.assign(ctx.sessionCsrfHeaders as Record<string, string>, outcome.csrfHeaders);
     ctx.cookieJar.mergeFrom(outcome.cookieJar.clone());
     steps.push(mkStep('header', src, span, true, start, `401 response → session "${name}" re-established, retrying`));
   }
@@ -2494,6 +2527,7 @@ async function runTestAttemptBody(
   // `Authorization` header vs. a cookie), so "independent, unrelated" holds for the common case;
   // the rule is defined regardless, for whenever it doesn't.
   const sessionHeaders: Record<string, string> = {};
+  const sessionCsrfHeaders: Record<string, string> = {};
   const cookieJar = new CookieJar();
   const sessionFindings: Finding[] = [];
   for (const sessionName of test.sessions) {
@@ -2509,6 +2543,7 @@ async function runTestAttemptBody(
       return { kind: 'functional', name, ok: false, durationMs: Math.round(performance.now() - testStart), steps, error };
     }
     Object.assign(sessionHeaders, outcome.headers);
+    Object.assign(sessionCsrfHeaders, outcome.csrfHeaders);
     sessionFindings.push(...outcome.securityFindings);
     // Clone, not the live shared instance (SPEC §3.3) — this test's own subsequent cookie updates
     // must never leak back into the session cache or a concurrently-running sibling test.
@@ -2517,6 +2552,7 @@ async function runTestAttemptBody(
   const evalCtx: EvalCtx = {
     ...nameCtx,
     sessionHeaders,
+    sessionCsrfHeaders,
     sessionNames: test.sessions,
     sessionFindings,
     cookieJar,
@@ -2847,6 +2883,10 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const value = stringify(evalValue(step.value, ctx));
           if (ctx.headerSink) ctx.headerSink[name] = value;
           result = mkStep('header', src, step.span, true, stepStart, tc.redactor.redact(`header "${name}" is ${JSON.stringify(value)}`));
+          break;
+        }
+        case 'CsrfStmt': {
+          result = execCsrf(step, lastResponse, ctx, src, stepStart, tc.redactor);
           break;
         }
         case 'OpenStmt': {
@@ -3188,6 +3228,12 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       runClock: callerCtx.runClock,
       uniqueSeq: callerCtx.uniqueSeq,
       sessionHeaders: callerCtx.sessionHeaders,
+      // M137b (D433) — inherited for `sessionHeaders`' reason, and it has to be spelled out because
+      // the compiler cannot ask for it: `sessionCsrfHeaders` is optional, so omitting it here would
+      // have typechecked and silently dropped the token for every mutating `api` step written inside
+      // an `action`. That failure would have surfaced as a `403` from the app — a CSRF defence
+      // apparently working — on precisely the requests a reuse-minded suite extracts into actions.
+      ...(callerCtx.sessionCsrfHeaders ? { sessionCsrfHeaders: callerCtx.sessionCsrfHeaders } : {}),
       sessionNames: callerCtx.sessionNames,
       ...(callerCtx.sessionFindings ? { sessionFindings: callerCtx.sessionFindings } : {}),
       // Shares the caller's live jar (by reference, not cloned) — an action's own api steps read
@@ -3299,6 +3345,19 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
     if (h.service === null || h.service === spec.service) setHeader(headers, h.name, stringify(evalValue(h.value, ctx)));
   }
   for (const [k, v] of Object.entries(ctx.sessionHeaders)) setHeader(headers, k, v);
+  // M137b (D433) — a `csrf from` clause's token, on **mutating requests only**, which is the whole
+  // reason it travels in its own channel instead of in `sessionHeaders` above. `isSafeMethod` is
+  // `authzProbe`'s, deliberately reused rather than respelled: it is an allowlist (`GET`/`HEAD`/
+  // `OPTIONS`) so an unrecognised method counts as mutating, and one definition of "changes state"
+  // for the prober and the sender means a probe can never disagree with the request it is derived
+  // from about whether a token should have been there.
+  //
+  // Applied before the per-step headers below for the cookie jar's reason: an explicit `header
+  // "X-CSRF-Token" is …` on the step still wins, which is what makes a hand-written negative test
+  // (send the wrong token deliberately) still expressible on a session that declares the clause.
+  if (!isSafeMethod(spec.method)) {
+    for (const [k, v] of Object.entries(ctx.sessionCsrfHeaders ?? {})) setHeader(headers, k, v);
+  }
   // Cookie jar (SPEC §3.3, P#33): applied before any per-step header, so an explicit `header
   // "Cookie" is …` on this step still wins (setHeader replaces, it never sits alongside).
   // …and scoped to this request's own origin since M88c2 (`B4-06`, D-M88-7): a cookie set by the
@@ -4267,10 +4326,44 @@ async function probePrincipalFor(name: string, config: ResolvedConfig, tc: TestC
   try {
     const outcome = await tc.sessionCache.ensure(name, decl, config, tc, false);
     if (!outcome.ok) return { name, headers: {}, unavailable: `session "${name}" failed to establish: ${outcome.error ?? 'a step failed'}` };
-    return { name, headers: outcome.headers, cookieJar: outcome.cookieJar };
+    return { name, headers: outcome.headers, csrfHeaders: outcome.csrfHeaders, cookieJar: outcome.cookieJar };
   } catch (err) {
     return { name, headers: {}, unavailable: `session "${name}" failed to establish: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+/**
+ * `sec/csrf-not-enforced`'s principals (M137b, D434/D457): each **owner** session that declared a
+ * `csrf from` clause, repeated with its CSRF headers emptied.
+ *
+ * **Derived from the owners, which is why it cannot come from `probeSetFor`.** That function exists to
+ * exclude the owners — for authorization, re-issuing the owner's own request under the owner's own
+ * identity demonstrates nothing. This rule asks the opposite question: *can the owner themselves make
+ * this request without the token the app issued them*, and only the owner's credential can ask it.
+ *
+ * A session with no clause contributes nothing, so a suite that has not adopted `csrf from` gets an
+ * empty list here and sends exactly the probes it sent before this milestone.
+ */
+async function csrfPrincipalsFor(owners: readonly string[], config: ResolvedConfig, tc: TestCtx): Promise<ProbePrincipal[]> {
+  const derived: ProbePrincipal[] = [];
+  for (const name of owners) {
+    const decl = config.sessions.get(name);
+    if (!decl) continue;
+    const base = await probePrincipalFor(name, config, tc);
+    if (base.unavailable !== undefined) continue;
+    if (Object.keys(base.csrfHeaders ?? {}).length === 0) continue;
+    derived.push({
+      // Named as derived (D434's stated consequence) so nobody reads this in a counts line and goes
+      // looking for a `session` block that was never written.
+      name: `${name} (csrf token withheld)`,
+      derivedFrom: name,
+      headers: base.headers,
+      // The subtraction, and the whole of it: same identity, same jar, no token.
+      csrfHeaders: {},
+      ...(base.cookieJar ? { cookieJar: base.cookieJar } : {}),
+    });
+  }
+  return derived;
 }
 
 /**
@@ -4318,6 +4411,9 @@ async function execAuthzExpect(
   const { names, privileged } = probeSetFor(config, ctx.sessionNames);
   const principals: ProbePrincipal[] = [];
   for (const name of names) principals.push(await probePrincipalFor(name, config, tc));
+  // M137b (D434/D457) — the withheld-token principals, derived from the *owners* and therefore
+  // assembled after `probeSetFor`, which exists to exclude them.
+  const csrfPrincipals = await csrfPrincipalsFor(ctx.sessionNames, config, tc);
 
   const policy: ProbePolicy = {
     timeoutMs: config.timeouts.step,
@@ -4327,15 +4423,37 @@ async function execAuthzExpect(
     // M131a/D340 — from the command line, never from `config`'s own file contents: `resolveConfig`
     // hard-codes `[]` and `cli.ts` overlays the flag's values onto the resolved object.
     allowPublicTargets: config.allowPublicTargets,
+    // M137b (D433) — every CSRF header name this assertion could involve, from the owner's live view
+    // and from each probe principal's establishment, so `withoutIdentityHeaders` strips the owner's
+    // token out of the observed request before any principal's own is applied. Read off the
+    // established outcomes rather than the declarations, so an interpolated header name is covered.
+    csrfHeaderNames: [
+      ...new Set([
+        ...Object.keys(ctx.sessionCsrfHeaders ?? {}),
+        ...principals.flatMap((p) => Object.keys(p.csrfHeaders ?? {})),
+      ]),
+    ],
   };
-  const probes = await new AuthzProber(authzSenderFor(config)).probeAll(request, ownerIds, probeOrder(principals), policy);
+  const prober = new AuthzProber(authzSenderFor(config));
+  const probes = await prober.probeAll(request, ownerIds, probeOrder(principals), policy);
+  // Sent through the same prober and the same `policy`, so `probe mutating` (D330) and every D21
+  // layer gate a withheld-token probe exactly as they gate any other. A rule that could send an
+  // unopted write is the one defect this arc's safety model exists to prevent.
+  const csrfProbes = csrfPrincipals.length ? await prober.probeAll(request, ownerIds, csrfPrincipals, policy) : [];
 
-  const result = runAuthzScan({ owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes }, floor);
+  const result = runAuthzScan(
+    { owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes, ...(csrfProbes.length ? { csrfProbes } : {}) },
+    floor,
+  );
   // D418a — the blind spot moved from `AuthzSink` to `ScanSink` when Tier 3 grew the same fact.
   // `AuthzSink` writes runnable repros and needs a principal; two of the three scans have none.
   reportDeclines(
     'authorization',
-    probes
+    // M137b (D434) — the derived principals declare their declines here too, and this is the field
+    // that decision names: a withheld-token probe refused by `probe mutating` is a mutating surface
+    // this run did not judge, which is exactly what the blind-spot channel is for. Leaving them out
+    // would have made an unopted target read as *CSRF is enforced* rather than as *not measured*.
+    [...probes, ...csrfProbes]
       .filter((p) => p.outcome.kind === 'not-probed' || p.outcome.kind === 'inconclusive')
       .map((p) => ({ subject: p.principal, reason: (p.outcome as { readonly reason: string }).reason })),
     tc,
@@ -4730,6 +4848,39 @@ function generatorTag(valueType: string): string {
   if (valueType.startsWith('Random')) return ' (random)';
   if (valueType.startsWith('Unique')) return ' (unique)';
   return '';
+}
+
+/**
+ * `csrf from <subject> send as header "<name>"` (M137b, D433) — reads the token out of the session's
+ * own establishment response and records which header will carry it on mutating requests.
+ *
+ * **This is where `D443`'s `TF069` went** (D456). A path that resolves to nothing throws here, and the
+ * throw is the whole safety property: it fails the session, so every test that says `as <name>` fails
+ * with it and no probe runs at all. `D443`'s fear was a mis-typed path degrading silently into a
+ * mutating surface reported as `inconclusive` — nothing reaches `inconclusive`, because nothing gets
+ * that far. `execCapture` below has failed the identical way since `A4-06`, and for the same reason:
+ * binding `undefined` here would send the literal text `"undefined"` as the token, which an app
+ * rejects for the *right* reason by accident, making a broken clause look like a working defence.
+ *
+ * The token is registered as a captured secret unconditionally, unlike `capture`'s `redact`-pattern
+ * check: a CSRF token is a credential by construction, so there is no configuration under which
+ * printing it into a report is wanted, and no pattern should have to be written to say so.
+ */
+function execCsrf(step: CsrfStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, redactor: Redactor): StepResult {
+  const header = String(evalValue(step.header, ctx)); // A4-OS-11/M102 — see `applyHeaders`
+  const { value, label } = resolveSubject(step.subject, response, ctx);
+  if (value === undefined) {
+    throw new RuntimeError(
+      `no CSRF token at ${label} — this session's establishment response carried no such value, so \`csrf from\` would attach the literal text "undefined" as \`${header}\` on every mutating request this credential makes (an app rejecting that reads as a working CSRF defence, which is the false negative this failure exists to prevent)`,
+    );
+  }
+  const token = stringify(value);
+  if (ctx.csrfSink) ctx.csrfSink[header] = token;
+  registerCapturedSecret(`csrf:${header}`, token, redactor);
+  // The header *name* is the useful half of this line and the token is never printed — see the note
+  // above. `capture`'s detail shows its value because a later step reads it back by name; nothing
+  // reads this one back, so there is nothing a reader gains from seeing it.
+  return mkStep('csrf', src, step.span, true, start, redactor.redact(`csrf token → ${header} (on mutating requests)`));
 }
 
 function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, redactor: Redactor, config: ResolvedConfig): StepResult {
@@ -5320,6 +5471,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'call';
     case 'HeaderStmt':
       return 'header';
+    case 'CsrfStmt':
+      return 'csrf';
     case 'OpenStmt':
       return 'open';
     case 'ClickStmt':

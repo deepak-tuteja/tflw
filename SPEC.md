@@ -302,6 +302,40 @@ session billing oauth2
   `body from "./creds.json"` in a session is always the `creds.json` sitting next to the
   `tflw.config` you wrote it in, whichever suite, file, or worker establishes the session.
 
+#### `csrf from … send as header "…"` (M137b) ✅
+
+```
+session shopper
+  api POST /auth/login body { user: env(SHOPPER_USER), pass: env(SHOPPER_PW) }
+  csrf from body.csrfToken send as header "X-CSRF-Token"
+```
+
+- Captures the CSRF token the application issued this credential, and attaches it to **every mutating
+  request that credential later makes** — `POST`/`PUT`/`PATCH`/`DELETE` and any method not on the
+  safe allowlist (`GET`/`HEAD`/`OPTIONS`). Probes and ordinary `api` steps alike.
+- **Not attached to safe methods**, because a browser does not send one there and an application may
+  reject it if it arrives. This is why the token travels in its own channel rather than joining the
+  headers a `header` step declares, which go on every request unconditionally.
+- **A property of the credential, not of the target.** One target has many principals with different
+  tokens; one principal has one. Same reasoning that has `shopper` and `shopperBearer` declared as two
+  sessions for one human — a probe outcome is a fact about the credential.
+- The subject is the one `capture` reads, so `body.csrfToken` and
+  `response.headers["X-CSRF-Token"]` both work. Placing the clause **before** the session's first
+  `api` step is `TF039`, exactly as a premature `capture` is — the establishment response has to
+  exist before anything can be read out of it.
+- If the path resolves to nothing the **session fails**, and every test that names it fails with it.
+  Deliberately loud: binding nothing would attach the literal text `"undefined"` as the token, which
+  an application rejects for the right reason by accident — a broken clause that reads as a working
+  CSRF defence.
+- The token is redacted in report evidence unconditionally, without needing a `redact` pattern (§3.4):
+  it is a credential by construction, so there is no configuration under which printing it is wanted.
+- Session-body only. It has no meaning in a `.tflw` test body and is not part of that dialect's
+  grammar; written there it is an unknown step.
+- Unlocks `sec/csrf-not-enforced` (§9.11): once the engine can supply the token it can also **withhold**
+  it, so whether a mutating request still succeeds becomes a finding rather than a blind spot.
+- Not available on an `oauth2` session: that body is a fixed shape with no position for the clause, and
+  a bearer credential sends no cookie for a CSRF token to protect.
+
 ### 3.4 Secrets (P#30)
 
 ```
@@ -2407,9 +2441,25 @@ test "orders are owner-scoped" as shopper               # `as` names the owner
   | --- | --- | --- |
   | `sec/authz-object-leak` | critical | the owner's 2xx response is a JSON object carrying a root `id`, and at least one principal was judgeable |
   | `sec/authz-collection-leak` | critical | the owner's 2xx response is a JSON array of objects carrying root `id`s, and at least one principal was judgeable |
+  | `sec/csrf-not-enforced` | critical | an owning session declares a `csrf from` clause (§3.3) and the mutating probe with its token withheld reached the application |
 
-  Exactly one can apply to any given response, which is why the ordinary counts line reads
-  `2 rules — 1 applicable, 1 not applicable`.
+  Exactly one of the two **leak** rules can apply to any given response, which is why the ordinary
+  counts line reads `3 rules — 1 applicable, 2 not applicable`.
+
+  `sec/csrf-not-enforced` (M137b) is orthogonal to both, and reads a different half of the same
+  evidence. Its principal is one the **engine derived**, not one anybody declared: an owning session's
+  own credential with its CSRF headers emptied, reported as `<owner> (csrf token withheld)` so a
+  reader does not go looking for a `session` block that was never written. A `2xx` means the session
+  cookie alone was sufficient to change state.
+
+  Its probes are kept in a separate channel from the authorization probes, which is load-bearing
+  rather than tidy: the derived principal **is** the owner, so a successful token-less write returns
+  the owner's own resource ids — `sec/authz-object-leak`'s exact trigger. Sharing one probe list would
+  make this rule's happy path fire a critical BOLA finding against the owner's own resource.
+
+  It is a mutating probe, so `probe mutating` and every other layer of §3.10's safety model gate it
+  like any other write; a withheld-token probe that never reached the application is reported as a
+  blind spot, never as a defence working.
 - **Five probe outcomes, and only two are a pass (D324).**
 
   | outcome | when | counts as |

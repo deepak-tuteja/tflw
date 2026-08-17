@@ -1840,6 +1840,68 @@ const REGISTRY = [
     find: 'verify-shards.mjs shards --of=12',
     replace: 'verify-shards.mjs shards --of=6',
   },
+
+  // -- M137b (D433/D434/D457): the CSRF clause and the derived principal ----------------------------
+  //
+  // Six mutations, and the selection is deliberate: every one of them leaves a suite GREEN while
+  // removing the thing being built. That is this milestone's whole failure profile — a CSRF defence
+  // that looks enforced because our own probe was broken is indistinguishable from one that is
+  // enforced, unless something asserts the difference.
+  {
+    id: 'csrf-attached-to-safe-methods',
+    milestone: 'm137b',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "the verb condition is dropped, so the token rides GET/HEAD/OPTIONS too. This is the reason `csrfHeaders` is a separate channel from `headers` (D433) — folded in, it would behave exactly like this mutant, and no existing test would have noticed, because sending a token where none is needed usually still succeeds",
+    find: '  if (!isSafeMethod(spec.method)) {\n    for (const [k, v] of Object.entries(ctx.sessionCsrfHeaders ?? {})) setHeader(headers, k, v);\n  }',
+    replace: '  for (const [k, v] of Object.entries(ctx.sessionCsrfHeaders ?? {})) setHeader(headers, k, v);',
+  },
+  {
+    id: 'csrf-token-miss-binds-undefined',
+    milestone: 'm137b',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "a `csrf from` path that resolves to nothing no longer fails the session. This is where D443's `TF069` went (D456), and the mutant is the exact false negative that decision is about: the literal text `\"undefined\"` goes out as the token, the app rejects it for the right reason by accident, and a broken clause reads as a working CSRF defence over the whole mutating surface",
+    find: '  if (value === undefined) {\n    throw new RuntimeError(\n      `no CSRF token at ${label}',
+    replace: '  if (false) {\n    throw new RuntimeError(\n      `no CSRF token at ${label}',
+  },
+  {
+    id: 'csrf-owner-token-not-identity',
+    milestone: 'm137b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/authzProbe.ts',
+    what: "the owner's CSRF token stops being stripped as identity, so every probe re-sends it under another principal's cookie. The app rejects the session/token mismatch, the probe comes back refused, and a refusal reads as a boundary holding — `M130-01`'s failure shape reintroduced by the milestone that fixes it, and green",
+    find: "    if (lower === 'authorization' || lower === 'cookie' || stripped.has(lower)) continue;",
+    replace: "    if (lower === 'authorization' || lower === 'cookie') continue;",
+  },
+  {
+    id: 'csrf-supplied-does-not-close-d325',
+    milestone: 'm137b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/authzProbe.ts',
+    what: "a cookie principal that DID supply a token still has its 4xx scored `inconclusive` as a possible CSRF artefact. That is the half of `M130-01` this milestone closes; with the mutation applied the arc's central blind spot survives its own fix, and every mutating authz probe stays unjudged",
+    find: '  if (ctx.cookieBorne && !ctx.suppliedCsrf && !isSafeMethod(ctx.method)',
+    replace: '  if (ctx.cookieBorne && !isSafeMethod(ctx.method)',
+  },
+  {
+    id: 'csrf-probe-shares-the-authz-list',
+    milestone: 'm137b',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "the derived withheld-token probes are merged into the authorization probe list, which is D457's rejected design. The derived principal IS the owner, so a successful token-less write returns the owner's own resource ids and `sec/authz-object-leak` fires: a critical BOLA finding against the owner's own resource, on the happy path of the rule this milestone adds",
+    find: '{ owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes, ...(csrfProbes.length ? { csrfProbes } : {}) }',
+    replace: '{ owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes: [...probes, ...csrfProbes] }',
+  },
+  {
+    id: 'csrf-unreached-probe-reads-as-clean',
+    milestone: 'm137b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/authzRules.ts',
+    what: "a withheld-token probe that never reached the application is treated as applicable rather than as a blind spot, so a target with no `probe mutating` opt-in reports *CSRF is enforced* instead of *not measured*. D285's shape, in the newest place it can appear",
+    find: '    const reached = probes.filter((p) => p.response !== undefined);\n    if (!reached.length) {',
+    replace: '    const reached = probes;\n    if (false) {',
+  },
+
 ];
 
 /**

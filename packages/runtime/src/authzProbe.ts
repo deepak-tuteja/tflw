@@ -105,6 +105,15 @@ export interface ProbePrincipal {
   readonly name: string;
   /** What this session's own `header` steps captured. Empty for `anonymous`. */
   readonly headers: Readonly<Record<string, string>>;
+  /** M137b (D433) — what its `csrf from` clause captured, applied to **mutating** probes only.
+   *  Absent for a session that declares no clause, and for `anonymous`. */
+  readonly csrfHeaders?: Readonly<Record<string, string>>;
+  /** M137b (D434/D457) — set on a principal the *engine* derived rather than one the author declared:
+   *  the name of the session it was derived from. `sec/csrf-not-enforced`'s subject is
+   *  `<owner> (csrf token withheld)`, which is the owner's own credential with `csrfHeaders` emptied,
+   *  and a reader who saw that name in a counts line would otherwise go looking for a `session` block
+   *  that does not exist. */
+  readonly derivedFrom?: string;
   /** This session's jar. Absent for `anonymous`, which applies no identity at all. */
   readonly cookieJar?: CookieJar;
   /** Set when the session would not establish (D312). The probe is then `not probed` with this
@@ -121,6 +130,10 @@ export interface ProbePolicy {
   readonly insecure: boolean;
   /** D330's per-`authorized target` opt-in, already resolved for this request's origin. */
   readonly probeMutating: boolean;
+  /** M137b (D433) — every CSRF header name in play for this assertion: the union of the owner's and
+   *  every probe principal's. Treated as identity by `withoutIdentityHeaders`, so the owner's token
+   *  never travels under another principal's cookie. `[]`/absent when no session declares a clause. */
+  readonly csrfHeaderNames?: readonly string[];
   /** `--allow-public-target` values this invocation carried (M131a, D340/D342) — D21 §3.2(3).
    *
    * **This is the load-bearing half of `TF065`, not a belt to the checker's braces.** The static
@@ -196,11 +209,25 @@ function headerValue(headers: Readonly<Record<string, string>>, name: string): s
   return undefined;
 }
 
-function withoutIdentityHeaders(headers: Readonly<Record<string, string>>): Record<string, string> {
+/**
+ * `csrfNames` (M137b, D433) — the CSRF header names in play for this assertion, which are stripped
+ * here **as identity**, alongside `Authorization` and `Cookie`.
+ *
+ * They have to be. The observed request was made by the owner, so it carries the *owner's* token; a
+ * token is bound to the session that was issued it. Left in place, every probe would re-send the
+ * owner's token under somebody else's cookie, the app would reject the mismatch, and the probe would
+ * come back refused — `M130-01`'s exact failure shape, reintroduced by the milestone that fixes it,
+ * and green because a refusal reads as clean.
+ *
+ * Empty for any assertion where no session declares a clause, which is every suite that has not
+ * adopted one — so those probes are byte-identical to what they were before this milestone.
+ */
+function withoutIdentityHeaders(headers: Readonly<Record<string, string>>, csrfNames: readonly string[]): Record<string, string> {
+  const stripped = new Set(csrfNames.map((n) => n.toLowerCase()));
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(headers)) {
     const lower = k.toLowerCase();
-    if (lower === 'authorization' || lower === 'cookie') continue;
+    if (lower === 'authorization' || lower === 'cookie' || stripped.has(lower)) continue;
     out[k] = v;
   }
   return out;
@@ -230,8 +257,15 @@ export function isCookieBorne(principal: ProbePrincipal, origin: string | undefi
  * what makes it a real anonymous request rather than a request with somebody's cookies missing.
  */
 export function buildProbeRequest(observed: RequestTrace, principal: ProbePrincipal, policy: ProbePolicy): ProbeRequest {
-  const headers = withoutIdentityHeaders(observed.headers);
+  const headers = withoutIdentityHeaders(observed.headers, policy.csrfHeaderNames ?? []);
   for (const [k, v] of Object.entries(principal.headers)) headers[k] = v;
+  // M137b (D433) — this principal's own CSRF token, on a mutating probe only, mirroring `execApi`'s
+  // rule so a probe and the request it derives from never disagree about whether a token belongs.
+  // The derived withheld-token principal (D434) is precisely this map being empty, which is why the
+  // subtraction needs no code of its own here: it is expressed by what the principal carries.
+  if (!isSafeMethod(observed.method)) {
+    for (const [k, v] of Object.entries(principal.csrfHeaders ?? {})) headers[k] = v;
+  }
 
   const origin = originOf(observed.url);
   if (principal.cookieJar && origin !== undefined) {
@@ -261,7 +295,7 @@ export function buildProbeRequest(observed: RequestTrace, principal: ProbePrinci
 export function classifyResponse(
   response: ResponseTrace,
   ownerIds: readonly string[],
-  ctx: { readonly method: string; readonly cookieBorne: boolean },
+  ctx: { readonly method: string; readonly cookieBorne: boolean; readonly suppliedCsrf?: boolean },
 ): ProbeOutcome {
   const status = response.status;
 
@@ -296,12 +330,23 @@ export function classifyResponse(
   // The probe is still SENT rather than skipped, which is the whole point: cookie auth with no CSRF
   // defence at all answers 2xx, leaks, and is caught above. A structural pre-flight skip would
   // decline to probe exactly the app most worth catching.
-  if (ctx.cookieBorne && !isSafeMethod(ctx.method) && status >= 400 && status < 500) {
+  //
+  // **M137b (D433) closes this for any principal that supplied a token.** `suppliedCsrf` means the
+  // probe carried this principal's own `csrf from` capture, so the ambiguity the branch exists to
+  // report is gone: a `4xx` after a valid token is an authorization refusal, and scoring it
+  // `inconclusive` would now be the false negative. The branch stays for the principal that declares
+  // no clause — the ambiguity is real there, and `M137b` deliberately keeps that path live and
+  // observable by declaring `shopperNoCsrf` in the corpus (D455), so the fix does not erase its own
+  // evidence. A withheld-token probe (D434) also lands here with `suppliedCsrf: false`, which is
+  // correct on its own terms and irrelevant in practice: `D457` routes it to `csrfProbes`, where the
+  // rule reads the status directly rather than this taxonomy.
+  if (ctx.cookieBorne && !ctx.suppliedCsrf && !isSafeMethod(ctx.method) && status >= 400 && status < 500) {
     return {
       kind: 'inconclusive',
       reason:
         `a cookie-borne principal was refused on a ${ctx.method.toUpperCase()} (${status}); this may be CSRF rather than authorization, ` +
-        'since a cookie session cannot supply the CSRF token a mutating request needs. Give it a bearer session to judge it',
+        'since a cookie session cannot supply the CSRF token a mutating request needs. Give it a bearer session to judge it, ' +
+        'or a `csrf from` clause so it can supply one',
     };
   }
 
@@ -421,6 +466,10 @@ export class AuthzProber {
       outcome: classifyResponse(response, ownerIds, {
         method: observed.method,
         cookieBorne: isCookieBorne(principal, ctx.origin),
+        // M137b (D433) — true only when this probe actually carried a token, which mirrors
+        // `buildProbeRequest`'s own condition (a token is attached to mutating probes only). Derived
+        // from the principal rather than from the built request so the two cannot drift.
+        suppliedCsrf: !isSafeMethod(observed.method) && Object.keys(principal.csrfHeaders ?? {}).length > 0,
       }),
       response,
     };
