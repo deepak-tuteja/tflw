@@ -118,6 +118,26 @@ function rerunLine(f: ReproSubject): string {
   return `# re-run: tflw run --env ${f.env} ${reproDirFor(f.kind)}/${reproFileName(f)}\n`;
 }
 
+/**
+ * `D437`'s provenance as a header line, or nothing when an author wrote the request.
+ *
+ * **The absent case is the common one and it stays silent deliberately.** A repro derived from a suite's
+ * own `api` step needs no note saying so — the reader is holding the file that says it. Emitting
+ * `# via: hand-written` on every repro would put a line on twelve files to make one file's line
+ * findable, and the one that matters is the one that says tflw invented the request.
+ *
+ * Both arms get it, and that is not symmetry for its own sake: `D465` gates the crawl's own writes
+ * behind `probe mutating`, so a crawl can issue mutating requests, and Tier 2 judges those. An
+ * authorization finding on a synthesized `POST` is exactly the case where a reader most needs to know
+ * the request was derived from a schema rather than observed.
+ */
+function viaLine(f: ReproSubject): string {
+  if (f.via === undefined) return '';
+  // The words are `openapi` and `traffic` — `D470`'s spelling, the same two a `.tflw` file writes after
+  // `seed`. A reader who wants to re-derive this request greps their own suite for that word.
+  return `# via: derived by a crawl from \`seed ${f.via}\` — tflw built this request, no test declared it\n`;
+}
+
 function slug(s: string): string {
   return s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'x';
 }
@@ -196,6 +216,7 @@ export function renderAuthzRepro(f: AuthzFinding): string {
   const header =
     `# emitted by tflw M130 — ${f.rule}\n` +
     `# ${f.method} ${path} served ${owners ? `\`${owners}\`'s` : 'the owner\'s'} resource to \`${f.principal}\`\n` +
+    viaLine(f) +
     rerunLine(f);
 
   if (f.rule.endsWith('collection-leak')) {
@@ -282,6 +303,7 @@ export function renderInputRepro(f: InputHandlingFinding): string | null {
     `# emitted by tflw M137d — ${f.rule}\n` +
     `# ${f.method} ${path} — ${f.location} carrying \`${f.payloadId}\`` +
     `${f.invariant ? ` returned ${f.invariant}` : ''}\n` +
+    viaLine(f) +
     rerunLine(f);
   // `body text` + an explicit content type rather than an inline `body { … }` object: the mutated body
   // is already a JSON *string* (`applyMutation` re-stringifies it), and re-parsing it into tflw's own

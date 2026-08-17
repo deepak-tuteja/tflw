@@ -208,6 +208,17 @@ same reason: a repro reaches whichever application the env points at, so running
 can pass without telling you. If a payload class's opt-in (`probe traversal`, `probe oversized`) is
 declared on one target and not another, the repro for it only reproduces under the target that granted it.
 
+**A repro from a [`crawl`](/guide/crawling) says so, on its own header line:**
+
+```text
+# via: derived by a crawl from `seed openapi` — tflw built this request, no test declared it
+```
+
+Read it as a caveat, because that is what it is. A crawl synthesizes values your schema does not pin
+down, so a finding on a derived request can be a consequence of a value tflw guessed rather than a
+weakness in the route — and the repro is the only artifact that tells you which. A repro from a request
+you wrote carries no such line; the silence is what makes the line worth noticing.
+
 Every literal in these files is a payload tflw sent or a pattern tflw looks for — never a byte your
 application produced. The finding's own message quotes an excerpt of the evidence; the repro
 deliberately does not, because its job is to provoke the leak again rather than to record it. A

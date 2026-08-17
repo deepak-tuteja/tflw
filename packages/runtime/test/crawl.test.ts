@@ -19,7 +19,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { parseConfigSource, parseSource } from '@tflw/lang';
-import { runProgram } from '../src/interpreter.js';
+import { runProgram, type ReproSubject } from '../src/interpreter.js';
 import { reachability } from '../src/crawl.js';
 import { resolveConfig } from '../src/resolve.js';
 import type { CrawlResult, ResolvedConfig } from '../src/types.js';
@@ -68,6 +68,30 @@ const OPENAPI = {
  *  `OPENAPI`, so every test above keeps a clean surface and the provenance tests below get a finding. */
 const OPENAPI_LEAKY = { openapi: '3.0.0', paths: { '/leaky': { get: { responses: { '200': { description: 'ok' } } } } } };
 
+/** A one-route document whose route takes a query parameter and echoes it back into an HTML body
+ *  unescaped — so the `injection` payload `<tflw>` comes back verbatim,
+ *  `sec/reflected-input-unescaped` fires, and the crawl produces a **Tier 3** finding. Needed
+ *  because Tier 1 hygiene emits no repro at all (`D476`), so the hygiene-based provenance tests
+ *  above cannot reach the repro emitter's `via` plumbing.
+ *
+ *  **Reflection rather than the oversized rule**, and the reason is a property of the transport, not
+ *  a preference. `oversized/64kib-string` lists `query` among its targets, but a 64 KiB value in a
+ *  query string is a 64 KiB *request line*, and Node's server caps that at `maxHeaderSize` (16 KB) —
+ *  so that probe never comes back `2xx` and `sec/oversized-input-accepted`, which fires only on a
+ *  success, cannot fire on a query site at all. That is why the one oversized test in
+ *  `input-assert.test.ts` mutates a POST **body** and grants `probe mutating` beside
+ *  `probe oversized`. Reflection needs neither opt-in: `injection` is on by default and a `GET`
+ *  passes the mutating gate untouched, so this fixture tests the provenance join rather than the
+ *  safety model a dozen other tests already cover. */
+const OPENAPI_ECHO = {
+  openapi: '3.0.0',
+  paths: {
+    '/echo': {
+      get: { parameters: [{ name: 'q', in: 'query', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'ok' } } },
+    },
+  },
+};
+
 before(async () => {
   server = createServer((req, res) => {
     inFlight++;
@@ -89,6 +113,16 @@ before(async () => {
       if (pathname === '/openapi.json') return done(() => json(res, 200, OPENAPI));
       if (pathname === '/openapi-missing.json') return done(() => json(res, 404, { message: 'no such document' }));
       if (pathname === '/openapi-leaky.json') return done(() => json(res, 200, OPENAPI_LEAKY));
+      if (pathname === '/openapi-echo.json') return done(() => json(res, 200, OPENAPI_ECHO));
+      // `/echo` interpolates `q` into an HTML body raw — the reflection rule's own precondition, since
+      // it reads only responses carrying markup (a JSON echo is deliberately not a finding). Answers
+      // `200` to anything, so the control response is clean and the finding is the payload's doing.
+      if (pathname === '/echo') {
+        const q = new URL(path, 'http://x').searchParams.get('q') ?? '';
+        return done(() => {
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><p>you searched for ${q}</p>`);
+        });
+      }
       // One real, critical weakness, reachable by BOTH seeds — which is what makes `D437`'s
       // fingerprint claim testable: the same weakness found two ways must be one finding.
       if (pathname === '/leaky') {
@@ -447,6 +481,38 @@ test('D437: an authored `api` step`s finding carries NO `via`, which is what mak
   await runProgram(program, resolved(), { source, scanSink });
   assert.equal(findings.length, 1);
   assert.equal(findings[0]!.via, undefined);
+});
+
+test('D437: a crawl-derived finding reaches the REPRO sink carrying its seed', async () => {
+  // The join the two tests above cannot see. They read `ScanFinding.via`, which travels to
+  // `results.json`/`findings.sarif`; the repro emitter is fed by a **different** sink, so `via` reaching
+  // one says nothing about it reaching the other. Left untested, the repro's provenance line would be a
+  // comment that lies — which is exactly what it was when this milestone's item list was checked
+  // against the code, and precisely the shape-not-effect failure `D478`/`D479` were.
+  //
+  // A **Tier 3** finding, deliberately: Tier 1 hygiene emits no repro at all (`D476`), so the
+  // `/leaky` fixture the tests above use cannot reach this code path however many findings it makes.
+  const source = `crawl "documented"\n  seed openapi "/openapi-echo.json"\n  expect response has no input handling violations\n`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
+  const repros: ReproSubject[] = [];
+  await runProgram(program, resolved(), { source, reproSink: { finding: (f) => repros.push(f) } });
+  assert.equal(repros.length, 1, `expected one input repro subject, got ${JSON.stringify(repros)}`);
+  const [only] = repros;
+  assert.equal(only!.kind, 'input-handling');
+  assert.equal(only!.rule, 'sec/reflected-input-unescaped');
+  assert.equal(only!.via, 'openapi', 'the repro subject must carry the seed that reached it');
+});
+
+test('D437: a hand-written test`s finding reaches the repro sink with NO `via` — the control', async () => {
+  // Same instrument, no crawl. Without this the assertion above would pass just as well against a
+  // `via: 'openapi'` hard-coded at the emit site.
+  const source = `test "t"\n  api GET /echo?q=shoes\n  expect response has no input handling violations\n`;
+  const { program } = parseSource(source);
+  const repros: ReproSubject[] = [];
+  await runProgram(program, resolved(), { source, reproSink: { finding: (f) => repros.push(f) } });
+  assert.equal(repros.length, 1, `expected one input repro subject, got ${JSON.stringify(repros)}`);
+  assert.equal(repros[0]!.via, undefined);
 });
 
 test('D437: the same weakness found by two seeds is ONE weakness — provenance is not identity', async () => {

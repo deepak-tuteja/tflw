@@ -4490,6 +4490,9 @@ export interface AuthzFinding {
   readonly env: string;
   readonly ids: readonly string[];
   readonly owners: readonly string[];
+  /** `D437`'s provenance, present only when a `crawl` derived this request. See
+   *  `InputHandlingFinding.via` for why a repro is the artifact that has to carry it. */
+  readonly via?: CrawlVia;
 }
 
 /**
@@ -4549,6 +4552,16 @@ export interface InputHandlingFinding {
   /** The detector label that matched (`a stack frame`), for the two disclosure templates. It is the
    *  key into `DETECTOR_PATTERNS`, which is why `D472` needed that map to exist. */
   readonly invariant?: string;
+  /** `D437`'s provenance — `openapi` or `traffic` — present only when a `crawl` derived this request,
+   *  absent for a request an author wrote.
+   *
+   *  **Why it goes in a repro at all**, when `results.json` and `findings.sarif` already carry it: for a
+   *  synthesized request the repro is the only artifact that says the request was tflw's invention and
+   *  not the suite's. A reader who finds a `.tflw` file naming an endpoint nobody wrote, with a body
+   *  nobody authored, has no other way to learn where it came from — and `D467`'s synthesis invents
+   *  values, so "tflw made this up from your schema" is exactly the caveat that decides whether the
+   *  finding is real or an artifact of a bad guess. */
+  readonly via?: CrawlVia;
 }
 
 /** The run-level accumulator, threaded on `TestCtx` exactly as `tlsProber` is. Optional, so a test
@@ -4814,7 +4827,7 @@ async function execAuthzExpect(
   for (const probe of probes) {
     if (probe.outcome.kind === 'leaked') {
       for (const rule of result.applicable) {
-        tc.reproSink?.finding({ kind: 'authorization', rule: rule.id, principal: probe.principal, method: request.method, url: request.url, path: reproPathFor(request.url, config), env: config.envName, ids: probe.outcome.ids, owners: ctx.sessionNames });
+        tc.reproSink?.finding({ kind: 'authorization', rule: rule.id, principal: probe.principal, method: request.method, url: request.url, path: reproPathFor(request.url, config), env: config.envName, ids: probe.outcome.ids, owners: ctx.sessionNames, ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}) });
       }
     }
   }
@@ -5044,6 +5057,9 @@ async function execInputHandlingExpect(
       payloadId: probe.payload.id,
       ...(probe.payload.text === undefined ? {} : { payloadText: probe.payload.text }),
       ...(f.where?.invariant === undefined ? {} : { invariant: f.where.invariant }),
+      // Read off the derived `TestCtx` the crawl's judge built (`{ ...tc, crawlVia }`), so an assertion
+      // cannot see a stale value from a previous exchange — same source `toScanFinding` reads.
+      ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}),
     });
   }
   const outcome = describeInputOutcome(step, floor, result, probes, sites, withheld, verdict);

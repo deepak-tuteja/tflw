@@ -365,3 +365,36 @@ test('renderRepro dispatches on the discriminant, not on a field-shape guess', (
   assert.match(renderRepro(objectLeak)!, /expect status equals 403/);
   assert.match(renderRepro(disclosure)!, /expect body text not matches/);
 });
+
+// `D437`'s provenance in the header — the item list's last line for this milestone, and the one thing
+// here that is about a *reader* rather than about a run. A synthesized request is one no test declared,
+// so the repro is the only artifact that can say tflw invented it; `D467`'s synthesis also invents
+// values, which makes "derived from your schema" the caveat that decides whether a reader treats the
+// finding as real or as a bad guess.
+test('a crawl-derived repro says so, in both kinds', () => {
+  const viaInput = renderRepro({ ...disclosure, via: 'openapi' as const })!;
+  assert.match(viaInput, /^# via: derived by a crawl from `seed openapi`/m);
+  // Both arms, and not for symmetry: `D465` lets a crawl issue mutating requests when `probe mutating`
+  // is declared, and Tier 2 judges those — so an authorization finding on a synthesized `POST` is
+  // precisely where the note is load-bearing.
+  const viaAuthz = renderRepro({ ...objectLeak, via: 'traffic' as const })!;
+  assert.match(viaAuthz, /^# via: derived by a crawl from `seed traffic`/m);
+});
+
+test('a hand-written request emits no `via` line at all', () => {
+  // The absent case is the common one, and staying silent is what makes the present case findable: a
+  // `# via: hand-written` on all twelve files would bury the one file that matters.
+  for (const f of [objectLeak, collectionLeak, disclosure, reflection, traversal, oversized]) {
+    assert.doesNotMatch(renderRepro(f)!, /# via:/, `${f.rule} emitted a via line with no provenance`);
+  }
+});
+
+test('the `via` line sits above the paste-able command, so the caveat is read before the command is run', () => {
+  // Ordering is the whole value. A provenance note *below* `# re-run:` is a note a reader meets after
+  // they have already run the file and formed a view of the finding.
+  const lines = renderRepro({ ...disclosure, via: 'openapi' as const })!.split('\n');
+  const via = lines.findIndex((l) => l.startsWith('# via:'));
+  const rerun = lines.findIndex((l) => l.startsWith('# re-run:'));
+  assert.ok(via !== -1 && rerun !== -1, 'both header lines must be present');
+  assert.ok(via < rerun, `via line at ${via} must precede the re-run line at ${rerun}`);
+});

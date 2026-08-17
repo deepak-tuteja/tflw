@@ -2096,6 +2096,33 @@ const REGISTRY = [
     find: "  return scan === 'input-handling' ? `${base} | ${invariant ?? ''}` : base;",
     replace: '  return base;',
   },
+  {
+    id: 'repro-hides-that-tflw-invented-the-request',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "a crawl-derived repro stops saying it was derived. The file then reads exactly like one an author wrote — an endpoint nobody declared, with a body nobody typed, and no note that D467's synthesis invented the values in it. For a synthesized request the repro is the ONLY artifact carrying that caveat, and the caveat is what decides whether a reader treats the finding as real or as a consequence of a bad guess",
+    find: "  if (f.via === undefined) return '';",
+    replace: "  return '';",
+  },
+  {
+    id: 'repro-claims-every-request-was-invented',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the provenance line goes on every repro, including the twelve derived from requests an author wrote. The failure is not the noise: a line present unconditionally carries no information, so the one file that really was synthesized becomes indistinguishable from the rest — the field stops meaning anything precisely when a reader needs it to",
+    find: "  if (f.via === undefined) return '';",
+    replace: "  if (f.via === undefined) return '# via: derived by a crawl from `seed openapi` — tflw built this request, no test declared it\\n';",
+  },
+  {
+    id: 'input-repro-drops-the-crawl-provenance-at-the-emit-site',
+    milestone: 'm137d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "the repro sink stops being told the seed, while `ScanFinding.via` keeps carrying it. This is the mutation the reporter-side pair cannot catch: two sinks are fed from two places, so `results.json` would still attribute the finding correctly and only the .tflw file — the artifact a maintainer actually opens — would lose the fact. It is the same class of gap as D478, where the emitter's own view of a request diverged from the run's",
+    find: '      ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}),\n    });',
+    replace: '    });',
+  },
 
 ];
 
