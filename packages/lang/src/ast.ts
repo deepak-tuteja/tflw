@@ -27,6 +27,22 @@ export interface Program extends Node {
    * keyword or AST node; `tflw run` walks this single array in order (D100). */
   readonly tests: readonly TestDecl[];
   /**
+   * `crawl` declarations (`M137c`, `D432`) — a separate array rather than a `TestDecl` variant.
+   *
+   * `D93` folded `scenario` into `TestDecl` because a workload-bearing test differed from a functional
+   * one only by a clause it already carried. A crawl is not that: it has no authored body to schedule,
+   * no `retry`/`with each`, and its output is findings and coverage. Keeping it beside `tests` rather
+   * than inside means no consumer of `Program.tests` has to learn a shape it cannot use — the same
+   * reason `hooks` and `actions` are their own arrays.
+   *
+   * **Optional, and omitted entirely when there is nothing to record** — `recoveredSpans` below
+   * records why, and the reason applies unchanged. Written as a required field first, it would put
+   * `"crawls": []` into the serialised AST of every program in the language and turn all 31 parser
+   * golden files red for files that declare no crawl. Absent-when-empty keeps those goldens asserting
+   * what they were written to assert, and the field appears only on the programs it describes.
+   */
+  readonly crawls?: readonly CrawlDecl[];
+  /**
    * Spans the parser already diagnosed and then had to leave a **recovery node** behind at (M99a,
    * D168b). Empty for every program that parses.
    *
@@ -127,6 +143,78 @@ export interface TestDecl extends Node {
    * to other file-level tests changes. */
   readonly concurrency: 'parallel' | 'sequential';
   readonly body: readonly Step[];
+}
+
+/**
+ * `crawl "the v1 API surface" as peer, shopperBearer` — Tier 4's active crawl (`M137c`, `D432`/`D450`).
+ *
+ * A **top-level declaration, sibling to `test`**, written in an ordinary `.tflw` file and executed by
+ * plain `tflw run`. It is deliberately *not* a sixth workload kind, and not a `tflw scan` mode:
+ *
+ * - `D364` killed the mode on evidence (`M50`–`M53` spent four milestones collapsing `tflw load` into
+ *   `tflw run`), and that evidence is about **entry points**, not constructs. `tflw init --load` still
+ *   scaffolds a distinct construct with no distinct entry point; this follows it.
+ * - A workload kind is a *scheduling policy over an unchanged authored body* — the whole dispatch
+ *   decides only when and how often to call `runIteration`. A crawl's defining behaviour is issuing
+ *   requests nobody wrote, which has nowhere to live in that chain without inverting the body's role.
+ *
+ * What it adds to the language is a **source of requests**, not a kind of judgement: the `expect …`
+ * lines in `body` are the same three matcher families the arc already ships, applying per response the
+ * crawl issues exactly as they apply per response inside a `test` (`D450`). Tier 4 adds no matcher
+ * vocabulary and no fourteenth subject keyword.
+ */
+export interface CrawlDecl extends Node {
+  readonly type: 'CrawlDecl';
+  readonly name: StringLit;
+  /** Tags sit on their own lines above the header, exactly as they do above `test`, so `--tag`
+   * reaches a crawl with no CLI change. */
+  readonly tags: readonly string[];
+  /** `as peer, shopperBearer` — the same comma list `test` takes, and the multi-principal case is the
+   * one Tier 2 taught us matters: a crawl as several principals needs no new syntax. Empty means the
+   * crawl sends no credential, which is legal and usually not what the author wanted. */
+  readonly sessions: readonly string[];
+  /** `seed openapi "/openapi.json"` / `seed traffic` — where the surface comes from. Order is
+   * preserved for reporting but has no semantic effect; a crawl with none is `TF068` (`D443`). */
+  readonly seeds: readonly CrawlSeed[];
+  /** `exclude "/vuln/**"` — same verb the config dialect already uses for *drop things from a
+   * discovered set* (SPEC §3.9), disambiguated by block rather than by a new word. */
+  readonly excludes: readonly StringLit[];
+  /** The `expect …` lines. Parsed as ordinary steps and **restricted by the checker**, not by the
+   * grammar — same layering as `D96`'s `retry`-vs-workload rule and `D19`'s browser-step rejection:
+   * a semantic rule about the fully-formed node, not a grammar ambiguity. */
+  readonly body: readonly Step[];
+}
+
+/** One `seed` line inside a `crawl` body (`D435`/`D436`). `spider` is deliberately absent: the browser
+ * half is `M137f`, which is cuttable by design (`D446`), so the type gains its member when the
+ * capability does rather than advertising one that resolves to nothing. */
+export type CrawlSeed = OpenApiSeed | TrafficSeed;
+
+/**
+ * `seed openapi "/openapi.json"` — the documented surface.
+ *
+ * The path follows the same convention `contract.ts` already established for
+ * `expect body matches schema … from "source"`: absolute `http(s)://` passes through, anything else
+ * resolves against the default service's base URL, the way a plain `api GET /path` step does.
+ */
+export interface OpenApiSeed extends Node {
+  readonly type: 'OpenApiSeed';
+  /**
+   * Named `source`, not `path`, and the name is load-bearing twice over.
+   *
+   * It is a **URL**, not a file: it is fetched over HTTP the same way
+   * `matches schema "Name" from "source"` fetches its document, and that matcher calls its own field
+   * `schemaSource` for the same reason. Calling it `path` would also make `fileReferenceDrift` — the
+   * guard that holds `FILE_BEARING_NODES` to `ast.ts` — demand a `TF043` file-existence check for it,
+   * which would report a missing file for a document that lives on a server.
+   */
+  readonly source: StringLit;
+}
+
+/** `seed traffic` — the requests this run's own tests made, which is the seed that reaches code the
+ * document does not describe. It takes no argument: the traffic is whatever the run captured. */
+export interface TrafficSeed extends Node {
+  readonly type: 'TrafficSeed';
 }
 
 export type DataTable = InlineDataTable | FileDataTable;
