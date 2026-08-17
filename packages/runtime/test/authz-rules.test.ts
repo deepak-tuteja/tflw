@@ -194,8 +194,15 @@ test('D320: an array owner engages collection-leak and stands object-leak down',
   assert.equal(stateOf(o, OBJECT_LEAK), 'not-applicable');
 });
 
-test('D320: the ordinary counts line is 2 rules — 1 applicable, 1 not applicable', () => {
-  // The denominator is rules, not rules x principals. Four probes, still two considered.
+test('D320: the ordinary counts line is 3 rules — 1 applicable, 2 not applicable', () => {
+  // The denominator is rules, not rules x principals. Four probes, still three considered.
+  //
+  // M137b (D434) made the third one, and its not-applicable is the honest reading rather than noise:
+  // this bundle declares no `csrf from` clause, so there is no token to withhold and the rule reports
+  // exactly that. A pack whose membership changed with the config would break `SCAN_RULE_IDS` and the
+  // severity table, both of which are projections of the pack (D406), so the rule is always
+  // considered and says why it did not apply — which is how the two leak rules already behave when
+  // the owner's body is the wrong shape.
   const o = bundle({
     probes: [
       probe('peer', { kind: 'refused', status: 403 }),
@@ -205,9 +212,9 @@ test('D320: the ordinary counts line is 2 rules — 1 applicable, 1 not applicab
     ],
   });
   const r = runAuthzScan(o);
-  assert.equal(r.considered, 2);
+  assert.equal(r.considered, 3);
   assert.equal(r.applicable.length, 1);
-  assert.equal(r.notApplicable.length, 1);
+  assert.equal(r.notApplicable.length, 2);
   assert.equal(r.findings.length, 0);
 });
 
@@ -217,7 +224,7 @@ test('D320/D285: an unreadable owner body engages NOTHING, so the assertion has 
   const o = bundle({ owner: { request: req(), response }, ownerIds: [] });
   const r = runAuthzScan(o);
   assert.equal(r.applicable.length, 0, 'no rule may apply to a body the oracle cannot read');
-  assert.equal(r.notApplicable.length, 2);
+  assert.equal(r.notApplicable.length, 3, 'M137b: the CSRF rule is the third, not applicable for its own reason');
   assert.match(becauseOf(o, OBJECT_LEAK), /no resource identity found/);
 });
 
@@ -382,7 +389,7 @@ test('the query string travels with the path, since it can select the resource',
 
 test('D296: a floor narrows the pack, and `considered` reports what it narrowed to', () => {
   const o = bundle();
-  assert.equal(runAuthzScan(o, 'critical').considered, 2, 'both rules are critical, so a critical floor keeps both');
+  assert.equal(runAuthzScan(o, 'critical').considered, 3, 'every rule in the pack is critical, so a critical floor keeps all three');
   // A floor above every rule in the pack leaves nothing considered — which is D285's own case, and
   // it must arrive as zero-applicable rather than as a green.
   const narrowed = runAuthzScan(o, 'critical', AUTHZ_RULES.filter((r) => r.severity === 'minor'));
@@ -394,10 +401,13 @@ test('D296: a floor narrows the pack, and `considered` reports what it narrowed 
 // The pack itself.
 // ---------------------------------------------------------------------------
 
-test('the pack is the two rules M130a planted, both critical, both `sec/`-prefixed', () => {
+test('the pack is M130a\'s two rules plus M137b\'s, all critical, all `sec/`-prefixed', () => {
   // Cross-repo: VULNS.md V6-V8 name these ids and this severity. A rename here without one there
   // makes the target's positive controls unreachable, and this is the cheaper place to notice.
-  assert.deepEqual(AUTHZ_RULES.map((r) => r.id), [OBJECT_LEAK, COLLECTION_LEAK]);
+  // M137b (D434) adds the third, and it is in this pack rather than a fourth one because
+  // `AuthzObservation` already carries everything it reads — but it reads a DIFFERENT field of it
+  // (`csrfProbes`, D457), which is what keeps it from firing on the two leak rules' evidence.
+  assert.deepEqual(AUTHZ_RULES.map((r) => r.id), [OBJECT_LEAK, COLLECTION_LEAK, 'sec/csrf-not-enforced']);
   for (const r of AUTHZ_RULES) {
     assert.equal(r.severity, 'critical', `${r.id} severity`);
     assert.ok(r.id.startsWith('sec/'), `${r.id} prefix`);
@@ -423,4 +433,64 @@ test('ownerShape agrees with extractResourceIds about what is readable', () => {
     const readable = ownerShape(res({ json })) !== 'unreadable';
     assert.equal(readable, extractResourceIds(json).length > 0, `disagreement on ${JSON.stringify(json) ?? 'undefined'}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// M137b (D434/D457) — `sec/csrf-not-enforced`.
+// ---------------------------------------------------------------------------
+
+const CSRF = 'sec/csrf-not-enforced';
+const WITHHELD = 'shopper (csrf token withheld)';
+
+/** A withheld-token probe that reached the app and got `status`. The rule reads the response, not the
+ *  outcome taxonomy (D457), so the taxonomy kind here is only what `classifyResponse` would have said. */
+function csrfProbe(status: number, outcome?: ProbeOutcome): ProbeResult {
+  return {
+    principal: WITHHELD,
+    outcome: outcome ?? (status < 300 ? { kind: 'served-different', status } : { kind: 'refused', status }),
+    response: res({ status, json: { id: 'a1' } }),
+  };
+}
+
+test('D434: a 2xx with the token withheld is a critical finding against the derived principal', () => {
+  const o = bundle({ csrfProbes: [csrfProbe(201)] });
+  assert.equal(stateOf(o, CSRF), 'fired');
+  const [finding] = runAuthzScan(o).findings.filter((f) => f.id === CSRF);
+  assert.equal(finding!.severity, 'critical');
+  assert.equal(finding!.where?.location, WITHHELD, 'R8/D376 — the principal is the location for this tier');
+  assert.match(finding!.detail, /answered 201/);
+  assert.match(finding!.detail, /any site the browser visits/, 'the detail has to say why a 2xx here matters');
+});
+
+test('D434: a 4xx with the token withheld is the defence working — applicable, no finding', () => {
+  const o = bundle({ csrfProbes: [csrfProbe(403)] });
+  assert.equal(stateOf(o, CSRF), 'silent', 'the rule applied and found nothing, which is what a working guard looks like');
+});
+
+test('D434: no `csrf from` clause means not applicable, never a green', () => {
+  // The default for every assertion in a suite that has not adopted the clause. D285's door: a rule
+  // that could not have fired must say so rather than contribute a clean result.
+  assert.equal(stateOf(bundle(), CSRF), 'not-applicable');
+  assert.match(becauseOf(bundle(), CSRF), /no owning session declares a `csrf from` clause/);
+});
+
+test('D434: a withheld probe that never reached the app is not applicable, not a pass', () => {
+  // `probe mutating` withheld, or a transport failure: no response, so nothing about the app's CSRF
+  // defence was observed. Scoring this clean is exactly the shape `M130-01` was filed about.
+  const o = bundle({ csrfProbes: [{ principal: WITHHELD, outcome: { kind: 'not-probed', reason: 'no `probe mutating` covers this target' } }] });
+  assert.equal(stateOf(o, CSRF), 'not-applicable');
+  assert.match(becauseOf(o, CSRF), /no withheld-token probe reached the application/);
+});
+
+test('D457: the derived probe is invisible to the two leak rules, so a 2xx is not read as a leak', () => {
+  // The false positive this field exists to prevent, asserted from the direction that would have
+  // produced it. The derived principal IS the owner, so a successful token-less write returns the
+  // owner's own ids — `sec/authz-object-leak`'s exact trigger. One shared list and this bundle would
+  // report a critical BOLA finding against the owner's own resource.
+  const o = bundle({
+    probes: [probe('peer', { kind: 'refused', status: 403 })],
+    csrfProbes: [{ principal: WITHHELD, outcome: { kind: 'leaked', ids: ['a1'] }, response: res({ status: 201 }) }],
+  });
+  const ids = runAuthzScan(o).findings.map((f) => f.id);
+  assert.deepEqual(ids, [CSRF], `only the CSRF rule may fire here, got: ${ids.join(', ')}`);
 });

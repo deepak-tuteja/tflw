@@ -4326,10 +4326,44 @@ async function probePrincipalFor(name: string, config: ResolvedConfig, tc: TestC
   try {
     const outcome = await tc.sessionCache.ensure(name, decl, config, tc, false);
     if (!outcome.ok) return { name, headers: {}, unavailable: `session "${name}" failed to establish: ${outcome.error ?? 'a step failed'}` };
-    return { name, headers: outcome.headers, cookieJar: outcome.cookieJar };
+    return { name, headers: outcome.headers, csrfHeaders: outcome.csrfHeaders, cookieJar: outcome.cookieJar };
   } catch (err) {
     return { name, headers: {}, unavailable: `session "${name}" failed to establish: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+/**
+ * `sec/csrf-not-enforced`'s principals (M137b, D434/D457): each **owner** session that declared a
+ * `csrf from` clause, repeated with its CSRF headers emptied.
+ *
+ * **Derived from the owners, which is why it cannot come from `probeSetFor`.** That function exists to
+ * exclude the owners — for authorization, re-issuing the owner's own request under the owner's own
+ * identity demonstrates nothing. This rule asks the opposite question: *can the owner themselves make
+ * this request without the token the app issued them*, and only the owner's credential can ask it.
+ *
+ * A session with no clause contributes nothing, so a suite that has not adopted `csrf from` gets an
+ * empty list here and sends exactly the probes it sent before this milestone.
+ */
+async function csrfPrincipalsFor(owners: readonly string[], config: ResolvedConfig, tc: TestCtx): Promise<ProbePrincipal[]> {
+  const derived: ProbePrincipal[] = [];
+  for (const name of owners) {
+    const decl = config.sessions.get(name);
+    if (!decl) continue;
+    const base = await probePrincipalFor(name, config, tc);
+    if (base.unavailable !== undefined) continue;
+    if (Object.keys(base.csrfHeaders ?? {}).length === 0) continue;
+    derived.push({
+      // Named as derived (D434's stated consequence) so nobody reads this in a counts line and goes
+      // looking for a `session` block that was never written.
+      name: `${name} (csrf token withheld)`,
+      derivedFrom: name,
+      headers: base.headers,
+      // The subtraction, and the whole of it: same identity, same jar, no token.
+      csrfHeaders: {},
+      ...(base.cookieJar ? { cookieJar: base.cookieJar } : {}),
+    });
+  }
+  return derived;
 }
 
 /**
@@ -4377,6 +4411,9 @@ async function execAuthzExpect(
   const { names, privileged } = probeSetFor(config, ctx.sessionNames);
   const principals: ProbePrincipal[] = [];
   for (const name of names) principals.push(await probePrincipalFor(name, config, tc));
+  // M137b (D434/D457) — the withheld-token principals, derived from the *owners* and therefore
+  // assembled after `probeSetFor`, which exists to exclude them.
+  const csrfPrincipals = await csrfPrincipalsFor(ctx.sessionNames, config, tc);
 
   const policy: ProbePolicy = {
     timeoutMs: config.timeouts.step,
@@ -4386,15 +4423,37 @@ async function execAuthzExpect(
     // M131a/D340 — from the command line, never from `config`'s own file contents: `resolveConfig`
     // hard-codes `[]` and `cli.ts` overlays the flag's values onto the resolved object.
     allowPublicTargets: config.allowPublicTargets,
+    // M137b (D433) — every CSRF header name this assertion could involve, from the owner's live view
+    // and from each probe principal's establishment, so `withoutIdentityHeaders` strips the owner's
+    // token out of the observed request before any principal's own is applied. Read off the
+    // established outcomes rather than the declarations, so an interpolated header name is covered.
+    csrfHeaderNames: [
+      ...new Set([
+        ...Object.keys(ctx.sessionCsrfHeaders ?? {}),
+        ...principals.flatMap((p) => Object.keys(p.csrfHeaders ?? {})),
+      ]),
+    ],
   };
-  const probes = await new AuthzProber(authzSenderFor(config)).probeAll(request, ownerIds, probeOrder(principals), policy);
+  const prober = new AuthzProber(authzSenderFor(config));
+  const probes = await prober.probeAll(request, ownerIds, probeOrder(principals), policy);
+  // Sent through the same prober and the same `policy`, so `probe mutating` (D330) and every D21
+  // layer gate a withheld-token probe exactly as they gate any other. A rule that could send an
+  // unopted write is the one defect this arc's safety model exists to prevent.
+  const csrfProbes = csrfPrincipals.length ? await prober.probeAll(request, ownerIds, csrfPrincipals, policy) : [];
 
-  const result = runAuthzScan({ owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes }, floor);
+  const result = runAuthzScan(
+    { owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes, ...(csrfProbes.length ? { csrfProbes } : {}) },
+    floor,
+  );
   // D418a — the blind spot moved from `AuthzSink` to `ScanSink` when Tier 3 grew the same fact.
   // `AuthzSink` writes runnable repros and needs a principal; two of the three scans have none.
   reportDeclines(
     'authorization',
-    probes
+    // M137b (D434) — the derived principals declare their declines here too, and this is the field
+    // that decision names: a withheld-token probe refused by `probe mutating` is a mutating surface
+    // this run did not judge, which is exactly what the blind-spot channel is for. Leaving them out
+    // would have made an unopted target read as *CSRF is enforced* rather than as *not measured*.
+    [...probes, ...csrfProbes]
       .filter((p) => p.outcome.kind === 'not-probed' || p.outcome.kind === 'inconclusive')
       .map((p) => ({ subject: p.principal, reason: (p.outcome as { readonly reason: string }).reason })),
     tc,

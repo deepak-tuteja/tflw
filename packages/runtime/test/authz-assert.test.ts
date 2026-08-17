@@ -221,7 +221,9 @@ test('the boundary holding is a pass, and the counts say what actually happened'
   mode = 'safe';
   const r = await run(asserting('api GET /orders/a1'));
   assert.match(r.detail, /response has no authorization violations/);
-  assert.match(r.detail, /2 rules — 1 applicable, 1 not applicable, 0 violations/);
+  // M137b (D434) made this three: the CSRF rule is always considered and reports not-applicable when
+  // no owning session declares a `csrf from` clause, which is the case here.
+  assert.match(r.detail, /3 rules — 1 applicable, 2 not applicable, 0 violations/);
   // `peer` and `anonymous` are refused; `audit` reads by cookie and a GET is not a mutating method,
   // so it is refused too rather than inconclusive. Three refusals, no inconclusive rows.
   assert.match(r.detail, /3 refused/);

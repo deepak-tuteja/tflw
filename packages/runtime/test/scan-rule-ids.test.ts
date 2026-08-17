@@ -35,7 +35,7 @@ test('the tuples are ordered as their packs are', () => {
 });
 
 test('SCAN_RULE_IDS is the three packs joined, with no duplicates', () => {
-  assert.equal(SCAN_RULE_IDS.length, 18, 'twelve hygiene, two authorization, four input-handling');
+  assert.equal(SCAN_RULE_IDS.length, 19, 'twelve hygiene, three authorization (M137b added `sec/csrf-not-enforced`), four input-handling');
   assert.equal(new Set(SCAN_RULE_IDS).size, SCAN_RULE_IDS.length, 'two packs sharing an id would give one KB entry two meanings');
   assert.deepEqual(
     [...SCAN_RULE_IDS],
