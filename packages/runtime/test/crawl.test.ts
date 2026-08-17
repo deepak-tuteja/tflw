@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { parseConfigSource, parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
+import { reachability } from '../src/crawl.js';
 import { resolveConfig } from '../src/resolve.js';
 import type { CrawlResult, ResolvedConfig } from '../src/types.js';
 import type { ScanDecline, ScanFinding, ScanSink } from '../src/scanFindings.js';
@@ -254,6 +255,34 @@ test('D436: a reached route IS judged, one assertion per response', async () => 
   // issues" made countable.
   assert.equal(asserts.length, 2, `expected one assertion per reached route: ${crawl.steps.map((s) => s.kind).join(', ')}`);
   assert.equal(crawl.surface.reached, 2);
+});
+
+test('D436: every row of the reachability table, including the two the fixture cannot produce', () => {
+  // The fixture answers `200`, `201` and `400`, so the behavioural tests above reach three of the
+  // seven rows `guide/crawling.md` publishes — and the row a reader most needs to be true is one of
+  // the four they miss. `401`/`403` is `M130-01` in its newest place: the crawl's own principal
+  // refused at the door leaves nothing for the differential oracle to compare against, and scoring
+  // that as clean is this tool class's commonest false negative. Asserted directly on the predicate,
+  // because building a route that refuses tflw's own declared session would take a second config.
+  for (const status of [200, 201, 204, 302, 399, 500, 503]) {
+    assert.equal(reachability(status).reached, true, `${status} reached real code`);
+  }
+  for (const [status, expected] of [
+    [401, /refused \(401\) before the route's code ran/],
+    [403, /`M130-01`/],
+    [400, /indistinguishable from a hardened endpoint/],
+    [422, /nothing behind the validator ran/],
+    [404, /the value tflw invented for a path parameter does not exist/],
+    [405, /no route answered \(405\)/],
+    [410, /no route answered \(410\)/],
+    [415, /refused the content type/],
+    [429, /about pacing rather than about the route/],
+    [418, /refused before the route's code ran \(418\)/],
+  ] as const) {
+    const landing = reachability(status);
+    assert.equal(landing.reached, false, `${status} did not reach real code`);
+    assert.match(landing.reached ? '' : landing.reason, expected, `${status}'s reason must say why`);
+  }
 });
 
 test('a synthesized path parameter is disclosed as invented, in the step a reader sees', async () => {

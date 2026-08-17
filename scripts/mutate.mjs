@@ -95,6 +95,8 @@ const INTERP = 'packages/runtime/src/interpreter.ts';
 const CHECKER = 'packages/lang/src/checker.ts';
 const SPEC_DATA = 'packages/lang/src/spec-data.ts';
 const LSP_SERVER = 'packages/lsp-server/src/server.ts';
+const CRAWL = 'packages/runtime/src/crawl.ts';
+const CRAWL_SURFACE = 'packages/runtime/src/crawlSurface.ts';
 
 // M123 (D226) — a mutation may name the root `test:scripts` suite instead of a workspace, because
 // this file and its helper modules are now mutation targets themselves. Those entries live in
@@ -1900,6 +1902,94 @@ const REGISTRY = [
     what: "a withheld-token probe that never reached the application is treated as applicable rather than as a blind spot, so a target with no `probe mutating` opt-in reports *CSRF is enforced* instead of *not measured*. D285's shape, in the newest place it can appear",
     find: '    const reached = probes.filter((p) => p.response !== undefined);\n    if (!reached.length) {',
     replace: '    const reached = probes;\n    if (false) {',
+  },
+
+  // -- M137c (D435/D436/D465/D466/D467): the crawl ------------------------------------------------
+  //
+  // Eight, and the selection follows this milestone's own thesis: a crawl's failure mode is not a wrong
+  // answer, it is a *confident* one. Every mutation below leaves the suite green while widening what the
+  // crawl claims to have covered — a bigger numerator, a smaller denominator, or a judgement about code
+  // that never ran. None of them can make a crawl report a finding that is not there; all of them make
+  // it report a clean surface it never reached.
+  {
+    id: 'crawl-discloses-after-it-has-sent',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: CRAWL,
+    what: "the disclosure moves to the end, so it describes work already done instead of bounding work about to happen. Both mutants send exactly the same requests, which is why this needs the timeline and not a count: a planned total that only exists once the walk is finished is a report, and a crawl interrupted on its first request would then have disclosed nothing at all",
+    edits: [
+      [
+        "  steps.push(deps.step('seed', `crawl \"${crawl.name.value}\"`, true, plannedDetail));",
+        "  const disclose = () => steps.push(deps.step('seed', `crawl \"${crawl.name.value}\"`, true, plannedDetail));",
+      ],
+      [
+        '  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds } };',
+        '  disclose();\n  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds } };',
+      ],
+    ],
+  },
+  {
+    id: 'crawl-scores-a-validators-refusal',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: CRAWL,
+    what: "a `400`/`422` counts as having reached real code, so the crawl judges the response a validator wrote about tflw's own invented value. `reached` rises, every assertion passes, and the run reports a conclusion about code behind a validator that never ran — D436's rejected alternative, which is the false-negative engine wearing a coverage badge",
+    find: '  if (status === 400 || status === 422) {',
+    replace: '  if (status === 400 || status === 422) return { reached: true };\n  if (false) {',
+  },
+  {
+    id: 'crawl-reads-its-own-refusal-as-clean',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: CRAWL,
+    what: "a `401`/`403` counts as reached, so the differential oracle scores an exchange in which the crawl's own principal never got past the door. There is nothing to compare against and it compares anyway — `M130-01` in the newest place it can appear, and the single commonest false negative in this class of tool. The mutation that made the table test worth writing: the fixture answers no 401, so before it, only `400` of the seven rows was asserted",
+    find: '  if (status === 401 || status === 403) {',
+    replace: '  if (status === 401 || status === 403) return { reached: true };\n  if (false) {',
+  },
+  {
+    id: 'crawl-write-not-gated-by-probe-mutating',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: CRAWL,
+    what: "D465 is dropped: every synthesized write on the surface is sent, whether or not the origin's `authorized target` declares `probe mutating`. This is the milestone's only mutation whose consequence is outside the report — a `DELETE` nobody wrote, against a target that affirmed a scan and never affirmed writes. Killed by the absence of packets, not by a label",
+    find: '      if (plan.mutating && !mayProbeMutating(absoluteFor(plan.path, config), config.authorizedTargets)) {',
+    replace: '      if (false) {',
+  },
+  {
+    id: 'crawl-empty-surface-reads-green',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: CRAWL,
+    what: "`TF068`'s runtime door is removed, so a crawl whose seeds resolved to nothing passes. It has to be a failure for the reason every empty scan in tflw is (D285): a document that 404s, a `traffic` seed on a suite that sent nothing, or an `exclude` that swallowed everything all produce a body whose every assertion would have held whatever the application did",
+    find: '  if (sendable.length === 0) {',
+    replace: '  if (false) {',
+  },
+  {
+    id: 'crawl-drops-what-it-could-not-build',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: CRAWL_SURFACE,
+    what: "an operation synthesis could not build a request for vanishes instead of being reported, so `discovered` counts only what tflw was capable of sending. The identity `discovered = withheld + sent` still holds — that is what makes this the dangerous one — and the surface reads as *smaller and fully covered* rather than as partly out of reach. A crawler that hides its own limits reports better coverage the worse it gets",
+    find: "      if ('reason' in plan) skipped.push({ method: verb, template, reason: plan.reason });\n      else requests.push(plan);",
+    replace: "      if (!('reason' in plan)) requests.push(plan);",
+  },
+  {
+    id: 'crawl-exclude-matched-against-the-invented-path',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: CRAWL_SURFACE,
+    what: "D466's `exclude` is matched after the path parameters are filled, so whether a route is excluded depends on the value synthesis happened to invent. `exclude \"/products/{id}\"` then stops matching the route it names, and an author who excluded a destructive route keeps a crawl pointed at it — an instruction silently not followed, in the one channel of this report that is somebody's decision rather than tflw's limitation",
+    find: '    const excludedBy = excludes.find((pattern) => matchesRoutePattern(template, pattern));',
+    replace: "    const excludedBy = excludes.find((pattern) => matchesRoutePattern(template.replace(/\\{[^}]+\\}/g, 'tflw'), pattern));",
+  },
+  {
+    id: 'crawl-via-reaches-the-fingerprint',
+    milestone: 'm137c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/scanFindings.ts',
+    what: "D437's provenance is folded into the fingerprint, so one weakness reached by both seeds becomes two baseline entries and adding a seed churns every existing baseline. This is the distinction between provenance and identity, and it is the reason `via` is set *after* the hash is taken and stays out of `partialFingerprints`: `via` says how tflw got there, and a fingerprint says what is wrong",
+    find: '    ...(seeded || !locus ? {} : { fingerprint: fingerprintOf(scan, f.id, locus) }),',
+    replace: '    ...(seeded || !locus ? {} : { fingerprint: fingerprintOf(scan, f.id, extra?.via ? { ...locus, endpoint: `${locus.endpoint} via ${extra.via}` } : locus) }),',
   },
 
 ];
