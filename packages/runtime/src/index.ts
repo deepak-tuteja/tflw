@@ -35,6 +35,10 @@ export { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, type ScanRuleId } from './scanRuleId
 // `(rule, endpoint, principal)`, and `endpoint` is this function's output on both sides. Exported so
 // the join is the *same computation* rather than two spellings of it.
 export { templateEndpoint } from './inputCorpus.js';
+// M137d (D472) — the other half of that join, for an *input-handling* finding. The reporter turns a
+// finding's detector label back into an assertable pattern; `inputRules.ts` owns both the label and
+// the rule it names, so this keeps the emitted assertion and the detector that fired one definition.
+export { DETECTOR_PATTERNS } from './inputRules.js';
 // The finding severity vocabulary itself — four levels, `@tflw/lang`'s `FindingSeverity` under the
 // runtime's name for it. Exported here so `@tflw/reporter` can key a table on it (D406) without
 // taking a dependency on the language package to name four strings.

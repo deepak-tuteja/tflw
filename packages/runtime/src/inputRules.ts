@@ -109,19 +109,53 @@ export interface InputRule {
 
 interface Detector {
   readonly what: string;
+  /**
+   * The same rule `test` applies, as a regular-expression source — what `D472`'s emitted repro
+   * asserts against.
+   *
+   * **A repro cannot re-use the matcher that found the finding** (`D471`): both detector rules
+   * subtract the control by label, and in a repro the mutated request *is* the observed request, so
+   * the disclosure appears in the control, is subtracted from itself, and the file passes against an
+   * unfixed application. So the repro has to name the leak directly, and this is the only place that
+   * knows how.
+   *
+   * Kept beside `test` rather than in a table of its own for the reason `lexer.ts`'s escape help line
+   * is derived from `ESCAPES`: a second list is a list that can disagree with the first. A detector
+   * added without a pattern is a compile error here, where a missing row in a parallel map would be a
+   * silently unassertable finding.
+   */
+  readonly pattern: string;
   readonly test: (body: string) => string | null;
+}
+
+/** Quote a literal needle so it means itself inside `pattern`'s alternation. Without this,
+ * `[fonts]` is a character class matching one of five letters and `ORA-0` is unaffected — the first
+ * would fire on almost any prose, which is the opposite of these detectors' zero-false-positive bar. */
+function quoteForRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function literal(what: string, needles: readonly string[]): Detector {
   return {
     what,
+    // **The whole family, not the needle that matched.** A finding records the detector's label and
+    // not which of its needles hit (`where.invariant` is `what`), so this is the most specific
+    // pattern recoverable from a finding — and it is the right generalisation anyway: after the
+    // repair none of the family should appear, so the assertion stays true rather than merely
+    // becoming true for the one payload that was tried.
+    pattern: needles.map(quoteForRegex).join('|'),
     test: (body) => needles.find((n) => body.includes(n)) ?? null,
   };
 }
 
 function pattern(what: string, re: RegExp): Detector {
+  // `source` and not `toString()`, because the emitted repro carries the pattern as a tflw string and
+  // not as a `/…/` literal. Flags are dropped by that, which `input-detectors.test.ts` pins: every
+  // detector here is flagless today, and a `/i` added later must teach the emitter to carry it rather
+  // than silently emit a case-sensitive assertion for a case-insensitive rule.
   return {
     what,
+    pattern: re.source,
     test: (body) => re.exec(body)?.[0] ?? null,
   };
 }
@@ -175,6 +209,33 @@ const FILESYSTEM_SIGNATURES: readonly Detector[] = [
   literal('a private key header', ['-----BEGIN RSA PRIVATE KEY-----', '-----BEGIN OPENSSH PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----']),
   literal('a Windows ini section', ['[fonts]', '[extensions]', '; for 16-bit app support']),
 ];
+
+/**
+ * Every detector's pattern, keyed by the label a finding carries — the join `D472`'s repro emitter
+ * needs.
+ *
+ * A finding's `where.invariant` holds `what` and nothing else, so the label is the *only* handle an
+ * emitter downstream of the scan has on the rule that fired. This turns that label back into
+ * something assertable.
+ *
+ * **Both detector families in one map, deliberately.** They belong to different rules
+ * (`error-detail-disclosure` and `path-traversal-read`), but the emitter looks a label up without
+ * knowing which rule produced it, and two maps would make it ask. Sharing one namespace is also what
+ * makes the label collision below worth refusing: two rules' detectors sharing a label would give one
+ * finding the other's pattern.
+ */
+export const DETECTOR_PATTERNS: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  for (const d of [...DISCLOSURE_DETECTORS, ...FILESYSTEM_SIGNATURES]) {
+    // Refused at construction rather than left to the test, because the data is static: a duplicate
+    // label cannot depend on input, so it is knowable at import and there is no reason for a build to
+    // get further. `Object.fromEntries` would have kept the last silently, and the loss is invisible —
+    // the emitter would assert the wrong leak's pattern and the repro would still be green.
+    if (d.what in out) throw new Error(`two input detectors share the label ${JSON.stringify(d.what)}; a finding's where.invariant could not tell them apart`);
+    out[d.what] = d.pattern;
+  }
+  return Object.freeze(out);
+})();
 
 function firstMatch(detectors: readonly Detector[], body: string): { what: string; evidence: string } | null {
   for (const d of detectors) {
