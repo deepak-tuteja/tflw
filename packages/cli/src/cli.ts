@@ -265,8 +265,10 @@ function unknownFlag(command: string, arg: string): never {
  * not a diagnostics fix. The message names the `.tflw` files inside it so the refusal is one
  * copy-paste from what the user meant.
  */
-async function checkFileArgs(cwd: string, typed: readonly string[], exclude: readonly string[]): Promise<number | undefined> {
-  const discovered = async (): Promise<string[]> => (await discoverTests(cwd, exclude)).map((f) => relative(cwd, f).split('\\').join('/'));
+async function checkFileArgs(cwd: string, typed: readonly string[], exclude: readonly string[], reportDir?: string): Promise<number | undefined> {
+  // `reportDir` passed for the same reason as in `discoverTests`: a repro tflw wrote is not something the
+  // user meant to type, so it must not appear in a `did you mean` list either.
+  const discovered = async (): Promise<string[]> => (await discoverTests(cwd, exclude, reportDir)).map((f) => relative(cwd, f).split('\\').join('/'));
   for (const arg of typed) {
     const full = resolve(cwd, arg);
     let stats;
@@ -1187,10 +1189,10 @@ async function loadAndValidate(
   //    every path below this line assumes a readable `.tflw`, and the `readFile` that finds out
   //    otherwise is 15 lines down with no handler above it.
   if (filesArg.length > 0) {
-    const bad = await checkFileArgs(cwd, filesArg, resolved.exclude);
+    const bad = await checkFileArgs(cwd, filesArg, resolved.exclude, resolved.reportDir);
     if (bad !== undefined) return bad;
   }
-  const files = filesArg.length > 0 ? filesArg.map((f) => resolve(cwd, f)) : await discoverTests(cwd, resolved.exclude);
+  const files = filesArg.length > 0 ? filesArg.map((f) => resolve(cwd, f)) : await discoverTests(cwd, resolved.exclude, resolved.reportDir);
   if (files.length === 0) {
     err('no `.tflw` test files given or found (looked for *.tflw under the current directory).');
     return EXIT_USAGE;
@@ -3165,8 +3167,22 @@ function ndjsonEmit(out: { write: (text: string) => void }, collected: RunEvent[
  * `.gitignore` line has for a pattern matching nothing (decision 4). Only affects this bare,
  * no-file-args walk — an explicit file arg inside an excluded path is resolved elsewhere and still
  * runs. */
-async function discoverTests(cwd: string, exclude: readonly string[] = []): Promise<string[]> {
+async function discoverTests(cwd: string, exclude: readonly string[] = [], reportDir?: string): Promise<string[]> {
   const found: string[] = [];
+  // M137d — tflw's OWN output directory is never a source of tests, and this is a correctness fix
+  // rather than tidiness. The repro emitter writes runnable `.tflw` files under `reportDir`
+  // (`authz-repro/`, `input-repro/`), so without this the *next* bare `tflw run` in the same project
+  // discovers them and runs them as part of the suite — and they are designed to FAIL until the bug is
+  // fixed, so a run that found one weakness reports two failures, one of which is tflw's own artifact.
+  //
+  // **Latent since `M130b`**, not new here: `report/` starts with no dot and is not `node_modules`, so
+  // authorization repros have always been discoverable this way. Nothing had triggered it because no
+  // test ran twice in one directory with a finding; Tier 3's e2e does exactly that, and it turned up as
+  // `FAIL 1/6 passed` where five of the six "tests" were emitted repros.
+  //
+  // Deliberately not folded into `exclude`: that list is the user's statement about their own tree, it
+  // is echoed back in diagnostics, and a path the user never wrote does not belong in it.
+  const skipReport = reportDir === undefined ? undefined : relative(cwd, resolve(cwd, reportDir)).split('\\').join('/');
   const walk = async (dir: string): Promise<void> => {
     let entries;
     try {
@@ -3185,6 +3201,9 @@ async function discoverTests(cwd: string, exclude: readonly string[] = []): Prom
       // nobody writes `exclude "a\\b"` — that mismatch was the same silent no-op on Windows.
       const rel = relative(cwd, full).split('\\').join('/');
       if (exclude.includes(rel)) continue;
+      // `''` would mean the report dir IS `cwd`, which cannot be skipped without discovering nothing —
+      // so a project configured that way keeps the old behaviour rather than silently finding no tests.
+      if (skipReport !== undefined && skipReport !== '' && rel === skipReport) continue;
       if (e.isDirectory()) await walk(full);
       else if (e.isFile() && e.name.endsWith('.tflw')) found.push(full);
     }

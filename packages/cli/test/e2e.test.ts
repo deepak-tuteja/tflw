@@ -4782,3 +4782,56 @@ test('the built dist/cli.cjs applies --fail-on, writes a baseline, and reads it 
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
+
+test('M137d — the repros tflw writes are not collected as tests by the next run', async () => {
+  // The defect this pins is **latent since M130b** and was found by Tier 3's own e2e failing. The repro
+  // emitter writes runnable `.tflw` files under `reportDir`, and `discoverTests` skipped only dotfiles,
+  // `node_modules` and the user's own `exclude` — so a second bare `tflw run` in the same project picked
+  // them up and ran them. They are built to FAIL until the bug is fixed, so a run that found one weakness
+  // reported several failures, most of them tflw's own artifacts. Worse than noisy: the suite's pass/fail
+  // stops being about the application.
+  const server: Server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if ((url.searchParams.get('sort') ?? '') !== 'asc') {
+      res.writeHead(500, { 'content-type': 'application/json' })
+        .end('{"message":"Error: bad sort\\n    at OrderService.list (/usr/src/app/order.service.js:12:5)"}');
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{"id":7,"status":"open"}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-repro-discovery-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      `defaults\n  authorized target "${baseUrl}" reason "self-hosted end-to-end fixture"\nenv local default\n  api "${baseUrl}"\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'one.tflw'),
+      `test "input handling"\n  api GET /orders/7?sort=asc\n  expect response has no input handling violations\n`,
+      'utf8',
+    );
+
+    // First run: finds the disclosure, fails, and writes the repros.
+    await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }).catch(() => undefined);
+    const repros = await readdir(join(dir, 'report', 'input-repro'));
+    assert.ok(repros.length > 0, 'the first run must actually have written repros, or this proves nothing');
+
+    // Second run: the same one test. The control is the COUNT — without the fix this run reported one
+    // case per repro file on top of the real one, all failing, and the emitted files are still sitting
+    // in the report dir while this assertion is made.
+    const second = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }).catch((e: { stdout?: string }) => e as { stdout?: string });
+    const out = second.stdout ?? '';
+    assert.match(out, /0\/1 passed|1\/1 passed/, `the suite must still be one test, got:\n${out}`);
+    for (const name of repros) {
+      assert.ok(!out.includes(name.replace(/\.tflw$/, '')), `the run collected its own repro ${name}`);
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
