@@ -38,7 +38,7 @@ import type { AuthzFinding, RunReport, ScanFinding, ScanKind, Severity } from '@
 import { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, templateEndpoint } from '@tflw/runtime';
 
 import { ARTIFACT_CONTRACT } from './artifact-contract.js';
-import { AUTHZ_REPRO_DIR, reproFileName } from './authz-repro.js';
+import { AUTHZ_REPRO_DIR, reproFileName } from './repro.js';
 import { sortFindings } from './findings.js';
 import { remediationFor, type KbEntry } from './kb.js';
 import { sarifSeverityOf } from './sarif-severity.js';

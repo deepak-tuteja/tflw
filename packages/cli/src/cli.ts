@@ -42,8 +42,8 @@ import {
 } from '@tflw/lang';
 import {
   runProgram,
-  type AuthzSink,
-  type AuthzFinding,
+  type ReproSink,
+  type ReproSubject,
   type ScanDecline,
   parseBaseline,
   renderBaseline,
@@ -101,7 +101,7 @@ import {
 import { spawn, fork, type ChildProcess } from 'node:child_process';
 import {
   writeReport,
-  writeAuthzRepros,
+  writeRepros,
   writeJunitXml,
   writeResultsJson,
   writeSarif,
@@ -1702,8 +1702,11 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // `tlsProber` and shared for their reason: the declines are the *run's* number, not any one
   // file's, and the repro files are written once, after everything has finished, so `--workers N`
   // and shards cannot interleave partial ones.
-  const authzFindings: AuthzFinding[] = [];
-  const authzSink: AuthzSink = { finding: (f) => authzFindings.push(f) };
+  // M137d (D474) — the sink carries a discriminated union now that Tier 3 emits repros too, so this
+  // holds every subject and the consumers narrow. `writeRepros` dispatches on `kind`; SARIF's
+  // `reproIndex` still wants the authorization arm alone, because its join key is the principal.
+  const reproSubjects: ReproSubject[] = [];
+  const reproSink: ReproSink = { finding: (f) => reproSubjects.push(f) };
   // D418a — the declines moved to the shared `ScanSink` below, because Tier 3 has the same fact
   // about payload classes that Tier 2 has about principals.
   const scanDeclines: ScanDecline[] = [];
@@ -1790,7 +1793,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
               redactor,
               sessionCache,
               tlsProber,
-              authzSink,
+              reproSink,
               scanSink,
               ...(scanGate ? { scanGate } : {}),
               ...(probeSeeded ? { probeSeeded } : {}),
@@ -1835,7 +1838,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
             redactor,
             sessionCache,
             tlsProber,
-            authzSink,
+            reproSink,
             scanSink,
             ...(scanGate ? { scanGate } : {}),
             ...(probeSeeded ? { probeSeeded } : {}),
@@ -1944,7 +1947,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   );
   // D332 — written after the run, from the collected findings, so `--workers N` and shards cannot
   // interleave partial files.
-  await writeAuthzRepros(authzFindings, join(cwd, resolved.reportDir));
+  await writeRepros(reproSubjects, join(cwd, resolved.reportDir));
   // M134b (D387) — written from the **redacted** merged report, not from the raw sink, so a
   // fingerprint can never be accompanied in the file by a value the run took care to mask
   // everywhere else. The document holds hashes and endpoints; that is all it needs.
@@ -1969,7 +1972,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const sourceRoot = sourceRootOf(cwd);
   await writeSarif(merged, reportDir, {
     version: await getVersion(),
-    authzFindings,
+    authzFindings: reproSubjects.filter((f) => f.kind === 'authorization'),
     ...(sourceRoot ? { sourceRoot, fileBase: cwd } : {}),
   });
   // D250 — the record now carries how this run was narrowed, so the *next* `--failed` can say what

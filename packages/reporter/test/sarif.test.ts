@@ -69,6 +69,10 @@ function f(over: Partial<ScanFinding> = {}): ScanFinding {
 // silently does not attach. Found by this test failing, which is what makes the join *exact* rather
 // than merely intended.
 const AUTHZ_FINDING: AuthzFinding = {
+  // M137d (D474) — the repro sink's payload is a discriminated union now that Tier 3 emits repros too.
+  // Note that `tsc` cannot catch a fixture missing this: `tsconfig.json` includes `src/**/*.ts` only, so
+  // test files are type-*stripped* by tsx and never checked. It surfaces as a runtime failure instead.
+  kind: 'authorization',
   rule: 'sec/authz-object-leak',
   principal: 'peer',
   method: 'GET',

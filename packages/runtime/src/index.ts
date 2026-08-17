@@ -6,9 +6,14 @@ export { MIN_REDACTABLE_LENGTH, Redactor, redactEvent, redactReport } from './re
 export { RuntimeError } from './eval.js';
 export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSelection } from './resolve.js';
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
-// M130b (D331/D332) — the run-level collector and the two facts it collects. Exported for the CLI,
-// which owns the sink for a whole invocation, and for `@tflw/reporter`'s repro emitter.
-export type { AuthzSink, AuthzFinding } from './interpreter.js';
+// M130b (D331/D332) — the run-level collector and the facts it collects. Exported for the CLI, which
+// owns the sink for a whole invocation, and for `@tflw/reporter`'s repro emitter.
+//
+// M137d (D474) widened the payload into a discriminated union and renamed the sink to match: it was
+// `AuthzSink` while authorization was the only scan emitting repros. `ReproSubject` is the union the
+// emitter switches on, and it is the *only* one of these the reporter should destructure blindly —
+// reaching for an arm directly is how a third scan's arm gets forgotten at one of two call sites.
+export type { ReproSink, ReproSubject, AuthzFinding, InputHandlingFinding } from './interpreter.js';
 // M134b (D385/D386/D387) — the report-facing finding, its stable identity, and the gate.
 export {
   BASELINE_VERSION,

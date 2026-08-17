@@ -25,7 +25,8 @@ export { writeEventsNdjson } from './events-ndjson.js';
 // M130b (D332) — the runnable `.tflw` per authorization finding. An emitter, not an evidence dump:
 // an evidence file can never be wrong, which is what makes it worth less than a file that goes red
 // until the bug is fixed and green afterwards.
-export { writeAuthzRepros, renderAuthzRepro, reproFileName, AUTHZ_REPRO_DIR } from './authz-repro.js';
+// M137d (D473/D474) — one sink, two directories, a template per originating scan.
+export { writeRepros, renderRepro, renderAuthzRepro, renderInputRepro, reproFileName, reproDirFor, AUTHZ_REPRO_DIR, INPUT_REPRO_DIR } from './repro.js';
 // M134b (D376/D389) — the security findings block, its tally, and `M128-01`'s rule census.
 export { renderFindings, renderScanCoverage, findingsSummaryLine, sortFindings } from './findings.js';
 // M135a (D402/D406/D408) — R7's remediation KB and D406's severity table. Exported because they are
