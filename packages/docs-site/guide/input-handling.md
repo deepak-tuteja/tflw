@@ -171,6 +171,65 @@ request with three sites and both optional classes on is 45 requests. That is wh
 refused inside a workload (`TF033`) with a blunter hint than the authorization scan's, and inside
 `wait until api` (`TF064`), which would re-send the whole matrix on every poll.
 
+## Every finding comes with a test you can run
+
+A violation writes a `.tflw` file under `report/input-repro/` — beside `report/authz-repro/`, not
+mixed into it — named from the rule, the method, the path, the mutation site and the detector that
+matched:
+
+```tflw
+# emitted by tflw M137d — sec/error-detail-disclosure
+# GET /products?q=tflw%27 — query `q` carrying `injection/sql-quote` returned a stack frame
+# re-run: tflw run --env secureLocal input-repro/error-detail-disclosure--get--products-q-tflw-27--query-q--a-stack-frame.tflw
+test "GET /products?q=tflw%27 must not disclose a stack frame for query `q`"
+  api GET /products?q=tflw%27
+  expect body text not matches "(?:\\n|\\\\n)\\s+at [\\w$.<>[\\] ]+ \\("
+```
+
+**Each rule asserts its own leak, and none of them re-runs this scan.** That is deliberate and it is
+the one thing worth understanding about these files. `expect response has no input handling
+violations` would be the obvious body for a repro, and it would **pass against an unfixed
+application**: every rule here is differential against the request you wrote, and subtracts whatever
+the un-mutated response already contained. In a repro the mutated request *is* the request you wrote,
+so the disclosure lands in the control and is subtracted from itself. So instead:
+
+| Rule | The repro asserts |
+|---|---|
+| `sec/error-detail-disclosure` | `expect body text not matches "<the detector's pattern>"` |
+| `sec/path-traversal-read` | `expect body text not matches "<the filesystem signature>"` — never the payload, since an app that merely echoes `../../etc/passwd` has read nothing |
+| `sec/reflected-input-unescaped` | `expect body text not contains "<the payload>"` — here the echo *is* the finding |
+| `sec/oversized-input-accepted` | `expect status is greater than 399` — any refusal, because `400` and `413` are both correct fixes |
+
+`body text` rather than `body` throughout, because a disclosure often arrives as an HTML error page
+and the bare-body subject expects JSON.
+
+**The path is relative to your `api` base URL, and the `re-run` line names the env.** Both matter for the
+same reason: a repro reaches whichever application the env points at, so running one under a different env
+can pass without telling you. If a payload class's opt-in (`probe traversal`, `probe oversized`) is
+declared on one target and not another, the repro for it only reproduces under the target that granted it.
+
+**A repro from a [`crawl`](/guide/crawling) says so, on its own header line:**
+
+```text
+# via: derived by a crawl from `seed openapi` — tflw built this request, no test declared it
+```
+
+Read it as a caveat, because that is what it is. A crawl synthesizes values your schema does not pin
+down, so a finding on a derived request can be a consequence of a value tflw guessed rather than a
+weakness in the route — and the repro is the only artifact that tells you which. A repro from a request
+you wrote carries no such line; the silence is what makes the line worth noticing.
+
+Every literal in these files is a payload tflw sent or a pattern tflw looks for — never a byte your
+application produced. The finding's own message quotes an excerpt of the evidence; the repro
+deliberately does not, because its job is to provoke the leak again rather than to record it. A
+body-site repro does carry a body, and that is the **request's**, redacted exactly as the run redacted
+it everywhere else.
+
+The hygiene scan emits no repro at all. Its findings are about a response's own headers, where there
+is no second request to build — the re-run would be the request that already produced the finding, so
+the file would restate the assertion you just read. What you want there is the fix, which
+[the findings guide](/guide/findings-and-baselines) carries.
+
 ## Related
 
 - [Authorization testing](/guide/authorization-testing) — the sibling scan, and where `probe

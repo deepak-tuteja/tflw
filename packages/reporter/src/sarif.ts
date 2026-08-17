@@ -34,11 +34,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Location, Log, ReportingDescriptor, Result } from 'sarif';
-import type { AuthzFinding, RunReport, ScanFinding, ScanKind, Severity } from '@tflw/runtime';
+import type { ReproSubject, RunReport, ScanFinding, ScanKind, Severity } from '@tflw/runtime';
 import { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, templateEndpoint } from '@tflw/runtime';
 
 import { ARTIFACT_CONTRACT } from './artifact-contract.js';
-import { AUTHZ_REPRO_DIR, reproFileName } from './authz-repro.js';
+import { renderRepro, reproDirFor, reproFileName } from './repro.js';
 import { sortFindings } from './findings.js';
 import { remediationFor, type KbEntry } from './kb.js';
 import { sarifSeverityOf } from './sarif-severity.js';
@@ -98,9 +98,13 @@ const SUBJECT_NAMESPACE: Readonly<Record<ScanKind, string>> = {
 export interface SarifOptions {
   /** tflw's own version, if the caller knows it. Omitted rather than guessed. */
   readonly version?: string;
-  /** The run's authorization findings, from D331's sink — the input D413's repro links are joined
-   *  from. Absent on a run with no authorization scan, which is most runs. */
-  readonly authzFindings?: readonly AuthzFinding[];
+  /** The run's repro subjects, from D331's sink — what the repro links are joined from. Absent on a
+   *  run whose scans emitted no repro, which is most runs.
+   *
+   *  **Was `authzFindings` until M137d (D474).** It now carries a discriminated union, because Tier 3
+   *  emits repros too; the old name would have been false about most of its contents on any run with an
+   *  input scan, which is the same argument `D473` makes for not putting both kinds in one directory. */
+  readonly reproSubjects?: readonly ReproSubject[];
   /**
    * The repository root `%SRCROOT%` names — absolute, and the base every `artifactLocation.uri` is
    * made relative to (D405).
@@ -258,24 +262,51 @@ function severityOfRule(rule: string, findings: readonly ScanFinding[]): Severit
 // ---------------------------------------------------------------------------
 
 /**
- * `(rule, endpoint, principal)` → the repro file `M130b`'s emitter already wrote.
+ * The one key both sides of the repro join compute, so neither can spell it differently.
  *
- * The join is exact rather than heuristic: an authorization `ScanFinding` carries the principal as
- * its `location` (`authzRules.ts`) and its endpoint is `templateEndpoint(method, url)` of the same
- * request the `AuthzFinding` records, so both sides compute the same two strings from the same
- * inputs.
- *
- * **There is no second directory.** The plan sketched `report/repros/`; the emitter has shipped
- * `report/authz-repro/` since `M130b` and a rename would move a published artifact for no gain, so
- * the property points at the files that exist. What is deferred (D413) is *generalizing* the emitter
- * to the other two scans — an input repro must re-send a payload, and a hygiene repro has nothing to
- * re-send beyond "make this request and read the header", which restates the assertion rather than
- * reproducing anything. Both mean editing the interpreter, and this is a reporter milestone.
+ * **The input arm needs the invariant and the authorization arm must not have it.** An authorization
+ * finding is identified by its principal, and one principal reaching one endpoint is one finding. An
+ * input finding is identified by its *site*, and one site can produce more than one — a stack frame and
+ * a SQL fragment at the same query parameter are two repairs, which is exactly what R8's fingerprint
+ * separates them on and what `reproFileName` puts in the file name. A key without the invariant would
+ * make those two findings collide, and the visible symptom would be **two SARIF alerts pointing at one
+ * repro file**, one of which is about a different leak.
  */
-function reproIndex(authzFindings: readonly AuthzFinding[]): Map<string, string> {
+function reproKey(scan: ScanKind, rule: string, endpoint: string, location: string, invariant?: string): string {
+  const base = `${rule} | ${endpoint} | ${location}`;
+  return scan === 'input-handling' ? `${base} | ${invariant ?? ''}` : base;
+}
+
+/**
+ * `(rule, endpoint, site)` → the repro file the emitter already wrote.
+ *
+ * The join is exact rather than heuristic: both sides compute their strings from the same inputs — an
+ * authorization `ScanFinding` carries the principal as its `location` (`authzRules.ts`), an input one
+ * carries the mutation site there and the detector's label as its `invariant`, and every endpoint on
+ * both sides is `templateEndpoint(method, url)` of the same request.
+ *
+ * **There are two directories, and neither is `report/repros/`.** The plan sketched that name; the
+ * emitter has shipped `report/authz-repro/` since `M130b` and a rename would move a published artifact
+ * for no gain, so `M137d` added `input-repro/` beside it (`D473`) and this points at whichever the
+ * subject's own kind names.
+ *
+ * **D413's deferral is discharged here, except for hygiene, which is now a decision (`D476`).** Tier 1
+ * has nothing to re-send beyond "make this request and read the header", which restates the assertion
+ * rather than reproducing anything — so it emits no repro and `resultObject` finds no link for it,
+ * rather than finding a broken one.
+ */
+function reproIndex(subjects: readonly ReproSubject[]): Map<string, string> {
   const index = new Map<string, string>();
-  for (const f of authzFindings) {
-    index.set(`${f.rule} | ${templateEndpoint(f.method, f.url)} | ${f.principal}`, `${AUTHZ_REPRO_DIR}/${reproFileName(f)}`);
+  for (const f of subjects) {
+    // Skipped rather than indexed when the emitter would decline to write the file: a link to a repro
+    // that does not exist is worse than no link, and `renderRepro` is the only thing that knows.
+    if (renderRepro(f) === null) continue;
+    const rel = `${reproDirFor(f.kind)}/${reproFileName(f)}`;
+    if (f.kind === 'authorization') {
+      index.set(reproKey('authorization', f.rule, templateEndpoint(f.method, f.url), f.principal), rel);
+    } else {
+      index.set(reproKey('input-handling', f.rule, templateEndpoint(f.method, f.url), f.location, f.invariant), rel);
+    }
   }
   return index;
 }
@@ -286,7 +317,7 @@ function reproIndex(authzFindings: readonly AuthzFinding[]): Map<string, string>
 
 function resultObject(f: ScanFinding, ruleIndex: number, repros: ReadonlyMap<string, string>, opts: SarifOptions): Result {
   const { level } = sarifSeverityOf(f.severity);
-  const repro = f.location !== undefined ? repros.get(`${f.rule} | ${f.endpoint} | ${f.location}`) : undefined;
+  const repro = f.location !== undefined ? repros.get(reproKey(f.scan, f.rule, f.endpoint, f.location, f.invariant)) : undefined;
   return {
     ruleId: f.rule,
     ...(ruleIndex >= 0 ? { ruleIndex } : {}),
@@ -360,7 +391,7 @@ export function buildSarifLog(report: RunReport, opts: SarifOptions = {}): Log |
   const findings = sortFindings((report.findings ?? []).filter((f) => !f.seeded));
   const rules = appliedRules(report);
   const ruleObjects = rules.map((r) => ruleObject(r, severityOfRule(r, findings)));
-  const repros = reproIndex(opts.authzFindings ?? []);
+  const repros = reproIndex(opts.reproSubjects ?? []);
 
   // D412's bucket, and D421's second half joining it.
   //

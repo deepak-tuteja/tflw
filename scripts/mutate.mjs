@@ -97,6 +97,8 @@ const SPEC_DATA = 'packages/lang/src/spec-data.ts';
 const LSP_SERVER = 'packages/lsp-server/src/server.ts';
 const CRAWL = 'packages/runtime/src/crawl.ts';
 const CRAWL_SURFACE = 'packages/runtime/src/crawlSurface.ts';
+const REPRO = 'packages/reporter/src/repro.ts';
+const SARIF = 'packages/reporter/src/sarif.ts';
 
 // M123 (D226) — a mutation may name the root `test:scripts` suite instead of a workspace, because
 // this file and its helper modules are now mutation targets themselves. Those entries live in
@@ -1990,6 +1992,136 @@ const REGISTRY = [
     what: "D437's provenance is folded into the fingerprint, so one weakness reached by both seeds becomes two baseline entries and adding a seed churns every existing baseline. This is the distinction between provenance and identity, and it is the reason `via` is set *after* the hash is taken and stays out of `partialFingerprints`: `via` says how tflw got there, and a fingerprint says what is wrong",
     find: '    ...(seeded || !locus ? {} : { fingerprint: fingerprintOf(scan, f.id, locus) }),',
     replace: '    ...(seeded || !locus ? {} : { fingerprint: fingerprintOf(scan, f.id, extra?.via ? { ...locus, endpoint: `${locus.endpoint} via ${extra.via}` } : locus) }),',
+  },
+
+  // -- M137d (D471/D472/D473/D475): the repro emitter, generalised ---------------------------------
+  //
+  // Ten, and they share one shape, which is the shape of this milestone's whole risk: **every one
+  // produces a repro that is GREEN against an unfixed application.** Not a crash, not a missing file, not
+  // a wrong count — a `.tflw` file that runs, passes, and thereby says the weakness is not there. That is
+  // the artifact a maintainer closes the ticket with, so a mutation surviving here is worse than a
+  // mutation surviving almost anywhere else in this registry: the tool's output would be actively
+  // misleading rather than merely incomplete.
+  //
+  // Two of the ten (`-single-backslash`, `-body-without-content-type`) instead produce a file that
+  // cannot run at all. They are in the same set because the failure is still silent *at emit time* — the
+  // report says the repro was written, and only whoever opens it finds out.
+  {
+    id: 'input-repro-reasserts-the-scan-matcher',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the disclosure template re-asserts tflw's own matcher instead of naming the leak — D471, and the whole reason this milestone has four templates rather than one. It reads as the obvious generalisation and it is the broken one: the rule is differential against the observed request and subtracts the control by label, so in a repro the mutated request IS the observed request, the disclosure appears in the control, and it is subtracted from itself. The file passes against a live vulnerability",
+    find: "        : { title: `must not disclose ${f.invariant} for ${f.location}`, assertion: `expect body text not matches \"${tflwString(pattern)}\"` };",
+    replace: "        : { title: `must not disclose ${f.invariant} for ${f.location}`, assertion: 'expect response has no input handling violations' };",
+  },
+  {
+    id: 'input-repro-asserts-the-payload-it-echoed',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the traversal template forbids the *payload* rather than the filesystem signature. This is the exact confusion `FILESYSTEM_SIGNATURES`' own comment exists to prevent — an application that reflects `../../etc/passwd` back in an error message has not read anything — so the repro fires forever on an app that merely echoes, and stops testing whether a file was read at all",
+    find: "        : { title: `must not read a file through ${f.location}`, assertion: `expect body text not matches \"${tflwString(pattern)}\"` };",
+    replace: "        : { title: `must not read a file through ${f.location}`, assertion: `expect body text not contains \"${tflwString(f.payloadText ?? '')}\"` };",
+  },
+  {
+    id: 'input-repro-dials-the-observed-request',
+    milestone: 'm137d',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "the repro is built from the observed request instead of `applyMutation`'s output — D475 inverted. The emitted file re-sends the request that behaved CORRECTLY, so it passes, and nothing anywhere says the payload was dropped. Green on a live finding, from one field",
+    find: '      url: mutated.url,',
+    replace: '      url: request.url,',
+  },
+  {
+    id: 'input-repro-emits-an-absolute-url',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the emitter falls back to the absolute URL instead of the runtime's base-relative path, so every repro names an absolute address. `D246` makes an absolute URL conditional on `allow hosts`, so the recipient's own config refuses the file tflw just told them to run — D469's lesson met from the authoring side instead of the sender's, and it fails as a *diagnostic* about their config rather than as anything about the finding",
+    find: '  return f.path || f.url;',
+    replace: '  return f.url;',
+  },
+  {
+    id: 'repro-path-re-applies-the-base-prefix',
+    milestone: 'm137d',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "`reproPathFor` stops stripping the base URL's own path prefix, which restores the D478 defect VERBATIM — the one that shipped in every authorization repro from M130b to M137d. An env whose `api` is `https://host/v1` gets `api POST /v1/vuln/notes`, tflw resolves it against the base a second time, the repro dials `/v1/v1/vuln/notes`, gets a 404, finds no leak and PASSES against the application it was generated from. Restored deliberately: this is the only mutation in the registry that reproduces a bug that really shipped, and it survived seven milestones because every fixture server in the suite has no path prefix, so the buggy and the correct answer were byte-identical everywhere a test could look",
+    find: '    if (prefix !== \'\' && (u.pathname === prefix || u.pathname.startsWith(`${prefix}/`))) {',
+    replace: '    if (false) {',
+  },
+  {
+    id: 'repro-omits-the-env-it-came-from',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the `re-run` line disappears, so a repro no longer says which env produced it. A repro is base-relative and nothing in the language lets a file pin its own env, so the reader runs it under whichever env is `default` — against a different application, or against a target that withholds the payload class's opt-in, where it reaches a route that cannot fire the rule and goes GREEN. Measured rather than imagined: the traversal repro did exactly this under `secureLocal` while this milestone was being verified, and the green was indistinguishable from a fix",
+    find: '  return `# re-run: tflw run --env ${f.env} ${reproDirFor(f.kind)}/${reproFileName(f)}\\n`;',
+    replace: "  return '';",
+  },
+  {
+    id: 'input-repro-single-backslash',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "`tflwString` stops doubling the backslash, so an emitted regex carries `\\s` as a single escape. `TF047` closed the escape set and made anything outside it an ERROR rather than a preserved backslash, so the repro does not merely match the wrong thing — it refuses to parse, in a file whose entire purpose is to be handed to somebody else",
+    find: "    .replace(/\\\\/g, '\\\\\\\\')",
+    replace: "    .replace(/\\\\/g, '\\\\')",
+  },
+  {
+    id: 'input-repro-oversized-names-a-status',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the oversized template asserts a specific `400` instead of any refusal. The rule fires only on a 2xx, so `>399` is the repair and naming one code picks a winner between `400` and `413` that the rule itself declines to pick — the repro then goes red against an application that fixed the bug the other way, which is D332's two-template lesson repeated on a new tier",
+    find: "      return { title: `must bound the length of ${f.location}`, assertion: 'expect status is greater than 399' };",
+    replace: "      return { title: `must bound the length of ${f.location}`, assertion: 'expect status equals 400' };",
+  },
+  {
+    id: 'input-repro-body-without-content-type',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "a body-site repro drops the `content-type` header line. `body text` deliberately sets no content type, so the request the repro sends is not the request the finding describes: an API that requires JSON answers `415`, the assertion about the leak never gets a chance to run, and the file reports something about tflw's own emission rather than about the application",
+    find: "      : `  api ${f.method} ${path} body text \"${tflwString(f.body)}\"\\n    header \"content-type\" is \"application/json\"\\n`;",
+    replace: "      : `  api ${f.method} ${path} body text \"${tflwString(f.body)}\"\\n`;",
+  },
+  {
+    id: 'repro-key-drops-the-invariant',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: SARIF,
+    what: "the SARIF join key stops distinguishing detectors at one site. One mutation site can produce several findings — a stack frame and a SQL fragment at the same query parameter are two repairs, which is what R8's fingerprint separates them on — so the two collapse onto one key and the document ships TWO alerts pointing at ONE repro file, one of which is about a different leak. No error, no warning: just a link that quietly describes the wrong thing",
+    find: "  return scan === 'input-handling' ? `${base} | ${invariant ?? ''}` : base;",
+    replace: '  return base;',
+  },
+  {
+    id: 'repro-hides-that-tflw-invented-the-request',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "a crawl-derived repro stops saying it was derived. The file then reads exactly like one an author wrote — an endpoint nobody declared, with a body nobody typed, and no note that D467's synthesis invented the values in it. For a synthesized request the repro is the ONLY artifact carrying that caveat, and the caveat is what decides whether a reader treats the finding as real or as a consequence of a bad guess",
+    find: "  if (f.via === undefined) return '';",
+    replace: "  return '';",
+  },
+  {
+    id: 'repro-claims-every-request-was-invented',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the provenance line goes on every repro, including the twelve derived from requests an author wrote. The failure is not the noise: a line present unconditionally carries no information, so the one file that really was synthesized becomes indistinguishable from the rest — the field stops meaning anything precisely when a reader needs it to",
+    find: "  if (f.via === undefined) return '';",
+    replace: "  if (f.via === undefined) return '# via: derived by a crawl from `seed openapi` — tflw built this request, no test declared it\\n';",
+  },
+  {
+    id: 'input-repro-drops-the-crawl-provenance-at-the-emit-site',
+    milestone: 'm137d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "the repro sink stops being told the seed, while `ScanFinding.via` keeps carrying it. This is the mutation the reporter-side pair cannot catch: two sinks are fed from two places, so `results.json` would still attribute the finding correctly and only the .tflw file — the artifact a maintainer actually opens — would lose the fact. It is the same class of gap as D478, where the emitter's own view of a request diverged from the run's",
+    find: '      ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}),\n    });',
+    replace: '    });',
   },
 
 ];

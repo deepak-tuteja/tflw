@@ -561,11 +561,18 @@ test('the tally names its denominator when the run is one shard of several', () 
 });
 
 test('more shards than mutations is refused, not run empty', () => {
-  // The failure this guard exists for exits 0 with a tally in it. `mutate.mjs --shard=200/200`
-  // would sweep nothing, print `0 of 122 mutation(s) run`, and pass.
+  // The failure this guard exists for exits 0 with a tally in it. A shard count above the registry's
+  // size would sweep nothing, print `0 of N mutation(s) run`, and pass.
+  //
+  // **The count is derived, not written down.** This test asked for `--shard=200/200` from `M127` until
+  // the registry reached exactly 200 mutations, at which point 200 shards of 1 became perfectly legal,
+  // the guard correctly said nothing, and this test failed — with a magic number as the only defect. A
+  // literal here is a slow fuse: it holds for dozens of milestones and then fires on whichever one
+  // happens to add the mutation that crosses it. `MUTATIONS.length + 1` cannot be reached by growth.
+  const overshard = MUTATIONS.length + 1;
   const { file, cleanup } = sandboxJournal();
   try {
-    const r = spawnSync(process.execPath, [SCRIPT, '--shard=200/200'], { cwd: ROOT, encoding: 'utf8', env: withJournal(file) });
+    const r = spawnSync(process.execPath, [SCRIPT, `--shard=${overshard}/${overshard}`], { cwd: ROOT, encoding: 'utf8', env: withJournal(file) });
     assert.equal(r.status, 2);
     assert.match(r.stderr, /would leave some shard with nothing to run/);
     assert.doesNotMatch(r.stdout, /mutation\(s\) run/);

@@ -51,7 +51,7 @@ import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, typ
 import { TlsProber } from './tlsProbe.js';
 import { extractResourceIds, judgeable, PROBE_OUTCOME_LABEL, runAuthzScan, type AuthzScanResult, type ProbeResult } from './authzRules.js';
 import { ANONYMOUS, AuthzProber, isSafeMethod, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
-import { INPUT_CORPUS, mutationSites, templateEndpoint, type MutationSite } from './inputCorpus.js';
+import { INPUT_CORPUS, applyMutation, mutationSites, templateEndpoint, type MutationSite } from './inputCorpus.js';
 import { grantedClasses, InputProber, planProbes, withheldClasses, type InputProbePolicy, type InputProbeSender } from './inputProbe.js';
 import { seededIds, seededPayloads } from './inputSeeded.js';
 import { MUTATION_OUTCOME_LABEL, runInputScan, type InputScanResult, type MutationOutcome, type MutationResult } from './inputRules.js';
@@ -210,9 +210,9 @@ export interface RunOptions {
    *  `runProgram` call in a run, like `sessionCache` and `tlsProber` and for the same reason: the
    *  numbers are the run's, not the file's, and the repro files are written once, after everything
    *  has finished. Omitted by single-call callers, which then simply collect nothing. */
-  readonly authzSink?: AuthzSink;
+  readonly reproSink?: ReproSink;
   /** M134b (D385) — where **every** scan's findings are accumulated for `RunReport.findings`, across
-   *  all three tiers. Shared for `authzSink`'s reason and beside it rather than folded into it: that
+   *  all three tiers. Shared for `reproSink`'s reason and beside it rather than folded into it: that
    *  one feeds D332's repro emitter, which needs a principal and owner ids that two of the three
    *  scans do not have. Omitted by single-call callers, which then simply collect nothing. */
   readonly scanSink?: ScanSink;
@@ -353,7 +353,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length + scenarios.length + crawls.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
   const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
@@ -496,7 +496,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.authzSink ? { authzSink: opts.authzSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -2029,9 +2029,9 @@ interface TestCtx {
   /** M130b (D331/D332) — where every authorization finding and every decline is accumulated for the
    *  run summary and the repro emitter. Optional: a helper driving one assertion in isolation still
    *  gets its answer, it just has nothing collecting the run-level view. */
-  readonly authzSink?: AuthzSink;
+  readonly reproSink?: ReproSink;
   /** M134b (D385/D386) — the run-level finding collector and the gate, threaded exactly as
-   *  `authzSink` is. Both optional for its reason: a helper driving one assertion in isolation still
+   *  `reproSink` is. Both optional for its reason: a helper driving one assertion in isolation still
    *  gets its answer, and an absent gate is the open one every run had before this milestone. */
   readonly scanSink?: ScanSink;
   readonly scanGate?: ScanGate;
@@ -4474,13 +4474,94 @@ function describeSecurityOutcome(
  * display label derived from an identity key.
  */
 export interface AuthzFinding {
+  /** M137d (D474) — the discriminant. See `ReproSubject`. */
+  readonly kind: 'authorization';
   readonly rule: string;
   readonly principal: string;
   readonly method: string;
-  /** The observed request's URL, verbatim — the address a repro has to dial. */
+  /** The observed request's URL, verbatim. Used for the SARIF join's `templateEndpoint`; the address a
+   *  repro dials is `path`, not this (`D478`). */
   readonly url: string;
+  /** The request path as a **tflw suite would write it** — relative to the env's `api` base URL, so a
+   *  repro re-issuing it lands on the same address. See `reproPathFor`. */
+  readonly path: string;
+  /** The env this finding was made under (`D479`). A repro is base-relative, so which env it runs under
+   *  decides which application it reaches — and under the wrong one it can PASS. */
+  readonly env: string;
   readonly ids: readonly string[];
   readonly owners: readonly string[];
+  /** `D437`'s provenance, present only when a `crawl` derived this request. See
+   *  `InputHandlingFinding.via` for why a repro is the artifact that has to carry it. */
+  readonly via?: CrawlVia;
+}
+
+/**
+ * M137d (D474) — everything a repro can be emitted *from*, discriminated by which scan found it.
+ *
+ * **One sink carrying a union, rather than a second sink beside the first.** `D418a` is the precedent
+ * and it points here: `decline` moved *out* of this sink in `M136a` because "a second copy of a channel
+ * is how one report comes to describe the same blind spot in two vocabularies". A separate
+ * `InputReproSink` would be that same mistake one milestone later, for repros.
+ *
+ * The arms deliberately share almost nothing beyond `rule`/`method`/`url`, because their templates
+ * need different facts and a common supertype would put fields on each arm that it can never fill.
+ * Authorization is a claim about a **principal**; input handling is a claim about a **site** and the
+ * payload sent there.
+ *
+ * **Tier 1 hygiene is absent on purpose** (`D476`) — see `renderRepro`.
+ */
+export type ReproSubject = AuthzFinding | InputHandlingFinding;
+
+/**
+ * M137d (D472) — the facts the four input-handling templates need.
+ *
+ * **`url` and `body` are the MUTATED request, not the observed one**, which is the opposite of
+ * `AuthzFinding` above and the single most important thing about this type. Tier 2 re-issues the
+ * author's own request as somebody else, so the observed URL *is* the address to dial; Tier 3 changes
+ * the request itself, so a repro dialling the observed URL would exercise the case that behaved
+ * correctly. `D475`: both are reconstructed by `applyMutation`, the same pure function that built the
+ * request the prober sent, rather than threaded back as a third copy.
+ */
+export interface InputHandlingFinding {
+  readonly kind: 'input-handling';
+  readonly rule: string;
+  readonly method: string;
+  /** The **mutated** request's URL — `applyMutation`'s output, not `observed.request.url`. */
+  readonly url: string;
+  /** That same mutated request, as a path a suite could write (`D478`). Emitting `url.pathname` instead
+   *  re-applies the base URL's own prefix and the repro 404s, passing against an unfixed app. */
+  readonly path: string;
+  /** The env this finding was made under (`D479`) — see `AuthzFinding.env`. Sharper here than for Tier 2:
+   *  a payload class needs an opt-in that is declared *per target*, so a traversal repro run under an env
+   *  that withholds `probe traversal` reaches a route that reads no files and goes green. Measured, not
+   *  imagined — it happened while verifying this milestone. */
+  readonly env: string;
+  /** The **mutated** request's body, when the mutation landed on a body leaf. Already redacted by the
+   *  run's own redactor (`D475`), because the redaction the run applied travels with the finding
+   *  rather than being re-derived at the emitter. */
+  readonly body?: string;
+  /** The principal the observed request was made as, so the repro reproduces the same identity.
+   *  Absent for an unauthenticated `api` step, where the repro declares no `as`. */
+  readonly principal?: string;
+  /** The mutation site's own words — `query \`q\``, `body.status`. Names the file and the header. */
+  readonly location: string;
+  /** Which corpus payload was sent (`injection/sql-quote`). tflw's own identifier, never app data. */
+  readonly payloadId: string;
+  /** The payload's literal text, for the reflection template's `not contains`. tflw's own bytes. */
+  readonly payloadText?: string;
+  /** The detector label that matched (`a stack frame`), for the two disclosure templates. It is the
+   *  key into `DETECTOR_PATTERNS`, which is why `D472` needed that map to exist. */
+  readonly invariant?: string;
+  /** `D437`'s provenance — `openapi` or `traffic` — present only when a `crawl` derived this request,
+   *  absent for a request an author wrote.
+   *
+   *  **Why it goes in a repro at all**, when `results.json` and `findings.sarif` already carry it: for a
+   *  synthesized request the repro is the only artifact that says the request was tflw's invention and
+   *  not the suite's. A reader who finds a `.tflw` file naming an endpoint nobody wrote, with a body
+   *  nobody authored, has no other way to learn where it came from — and `D467`'s synthesis invents
+   *  values, so "tflw made this up from your schema" is exactly the caveat that decides whether the
+   *  finding is real or an artifact of a bad guess. */
+  readonly via?: CrawlVia;
 }
 
 /** The run-level accumulator, threaded on `TestCtx` exactly as `tlsProber` is. Optional, so a test
@@ -4489,10 +4570,18 @@ export interface AuthzFinding {
  *  **`decline` used to live here and moved to `ScanSink` in `M136a` (D418a).** D331 part 2 put the
  *  turned-down work beside the findings because at the time only Tier 2 had any; Tier 3 then grew
  *  the identical fact about payload classes, and a second copy of a channel is how one report comes
- *  to describe the same blind spot in two vocabularies. This sink kept the job it is named for:
- *  facts a repro emitter needs, which are facts about a *principal*. */
-export interface AuthzSink {
-  finding(f: AuthzFinding): void;
+ *  to describe the same blind spot in two vocabularies. This sink kept the job it is named for.
+ *
+ *  **Named `ReproSink` until M137d (D474)**, when Tier 3 started emitting repros too. The old name
+ *  described what it happened to carry rather than what it is for, and `D473` rejected an
+ *  `authz-repro/` directory holding input-handling files on exactly that ground — a name that is false
+ *  about most of its own contents. What it is for is *facts a repro emitter needs*; which facts those
+ *  are depends on the scan, which is what `ReproSubject`'s discriminant carries.
+ *
+ *  Still **not** `ScanSink`. That one's own comment explains why folding them would put
+ *  emitter-shaped fields on findings that can never fill them, and `D474` leaves it untouched. */
+export interface ReproSink {
+  finding(f: ReproSubject): void;
 }
 
 /**
@@ -4722,8 +4811,8 @@ async function execAuthzExpect(
     { owner: { request, response }, ownerPrincipals: ctx.sessionNames, ownerIds, probes, ...(csrfProbes.length ? { csrfProbes } : {}) },
     floor,
   );
-  // D418a — the blind spot moved from `AuthzSink` to `ScanSink` when Tier 3 grew the same fact.
-  // `AuthzSink` writes runnable repros and needs a principal; two of the three scans have none.
+  // D418a — the blind spot moved from `ReproSink` to `ScanSink` when Tier 3 grew the same fact.
+  // `ReproSink` writes runnable repros and needs a principal; two of the three scans have none.
   reportDeclines(
     'authorization',
     // M137b (D434) — the derived principals declare their declines here too, and this is the field
@@ -4738,7 +4827,7 @@ async function execAuthzExpect(
   for (const probe of probes) {
     if (probe.outcome.kind === 'leaked') {
       for (const rule of result.applicable) {
-        tc.authzSink?.finding({ rule: rule.id, principal: probe.principal, method: request.method, url: request.url, ids: probe.outcome.ids, owners: ctx.sessionNames });
+        tc.reproSink?.finding({ kind: 'authorization', rule: rule.id, principal: probe.principal, method: request.method, url: request.url, path: reproPathFor(request.url, config), env: config.envName, ids: probe.outcome.ids, owners: ctx.sessionNames, ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}) });
       }
     }
   }
@@ -4933,6 +5022,46 @@ async function execInputHandlingExpect(
       .map((p) => ({ subject: templateEndpoint(request.method, request.url), reason: (p.outcome as { readonly reason: string }).reason })),
     tc,
   );
+  // M137d (D472/D475) — a runnable repro per finding, the Tier 3 half of D22's *a finding you re-run*.
+  //
+  // **The repro dials the MUTATED request**, which is the one difference from Tier 2 that matters: Tier 2
+  // re-issues the author's own request as somebody else, so the observed URL is the address; Tier 3
+  // changed the request, so a repro pointed at the observed URL would exercise the case that behaved
+  // correctly. `applyMutation` rebuilds it — the same pure function that built what the prober sent,
+  // rather than a third copy threaded back through `MutationResult` to sit beside the function that
+  // computes it.
+  //
+  // The probe is recovered by matching the finding's own `(payload, location)`, because that pair is
+  // exactly what `Finding.where` and `Finding.payload` were given to carry (D376) and is what R8's
+  // fingerprint separates two weaknesses on. A finding whose probe cannot be found emits nothing rather
+  // than a repro built from a guessed request.
+  for (const f of result.findings) {
+    const probe = probes.find((p) => p.payload.id === f.payload && p.site.location === f.where?.location);
+    if (!probe) continue;
+    const mutated = applyMutation(request, probe.site, probe.payload);
+    tc.reproSink?.finding({
+      kind: 'input-handling',
+      rule: f.id,
+      method: request.method,
+      url: mutated.url,
+      path: reproPathFor(mutated.url, config),
+      env: config.envName,
+      // The **request's** body, through the run's own redactor (D475) — not a response body, so R10's
+      // line is untouched, and redacted here for the reason `authz-repro.ts` states: the redaction the
+      // run already applied travels with the finding instead of being re-derived at the emitter.
+      ...(mutated.body === undefined ? {} : { body: ctx.redactor.redact(mutated.body) }),
+      // Every session the test declared, in the spelling `as` takes, so the repro is made as the same
+      // identity. A test with no `as` emits no clause rather than inventing one.
+      ...(ctx.sessionNames.length ? { principal: ctx.sessionNames.join(', ') } : {}),
+      location: probe.site.location,
+      payloadId: probe.payload.id,
+      ...(probe.payload.text === undefined ? {} : { payloadText: probe.payload.text }),
+      ...(f.where?.invariant === undefined ? {} : { invariant: f.where.invariant }),
+      // Read off the derived `TestCtx` the crawl's judge built (`{ ...tc, crawlVia }`), so an assertion
+      // cannot see a stale value from a previous exchange — same source `toScanFinding` reads.
+      ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}),
+    });
+  }
   const outcome = describeInputOutcome(step, floor, result, probes, sites, withheld, verdict);
   return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
 }
@@ -5583,6 +5712,42 @@ export function requireAllowHostsForAbsolute(url: string, target: string, config
   if (!isAbsoluteUrl(target)) return;
   if (config.allowHosts && config.allowHosts.length > 0) return;
   throw new AllowHostsError(absoluteUrlNeedsAllowHosts(url));
+}
+
+/**
+ * The path a repro must write in order to re-issue this request — the **inverse** of the one line that
+ * built the URL, `resolveBaseUrl(service, config) + ensureLeadingSlash(path)`.
+ *
+ * **This exists because a repro cannot carry `url.pathname`, and getting that wrong is silent.** An env
+ * whose `api` is `https://host/v1` turns `api POST /vuln/notes` into `https://host/v1/vuln/notes`; a
+ * repro emitting that URL's *pathname* says `api POST /v1/vuln/notes`, which tflw resolves against the
+ * base **again** — `/v1/v1/vuln/notes`, a 404, no leak in the body, and a repro that PASSES against the
+ * application it was generated from. Latent since `M130b` for every authorization repro in any project
+ * whose base URL has a path prefix, which `/v1` makes the common case; found in `M137d` by running one
+ * (`D478`).
+ *
+ * A request to another origin cannot be written relative at all, so it keeps its absolute URL — that run
+ * needed `allow hosts` to make the request in the first place, so the recipient's config has it.
+ */
+export function reproPathFor(url: string, config: ResolvedConfig): string {
+  let base: string;
+  try {
+    base = resolveBaseUrl(null, config);
+  } catch {
+    return url;
+  }
+  try {
+    const u = new URL(url);
+    const b = new URL(base);
+    if (u.origin !== b.origin) return url;
+    const prefix = b.pathname.replace(/\/+$/, '');
+    if (prefix !== '' && (u.pathname === prefix || u.pathname.startsWith(`${prefix}/`))) {
+      return (u.pathname.slice(prefix.length) || '/') + u.search;
+    }
+    return u.pathname + u.search;
+  } catch {
+    return url;
+  }
 }
 
 export function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {

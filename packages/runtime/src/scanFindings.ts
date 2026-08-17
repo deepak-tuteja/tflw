@@ -119,9 +119,9 @@ export const WITHHELD_LABEL: Readonly<Record<WithheldReason, string>> = {
 };
 
 /**
- * The run-level collector, threaded on `TestCtx` exactly as `tlsProber` and `authzSink` are.
+ * The run-level collector, threaded on `TestCtx` exactly as `tlsProber` and `reproSink` are.
  *
- * **Separate from `AuthzSink` on purpose, and the purpose is not tidiness.** That sink feeds D332's
+ * **Separate from `ReproSink` on purpose, and the purpose is not tidiness.** That sink feeds D332's
  * repro emitter, which re-issues a request *as another identity* and therefore needs a principal,
  * the owner ids and the concrete URL. Two of the three scans have no principal at all. Folding the
  * two would put emitter-shaped fields on findings that can never fill them, so each sink keeps one
@@ -149,8 +149,8 @@ export interface ScanSink {
    * principal refused at the CSRF layer (D325) and Tier 3's write refused for want of `probe
    * mutating` are the same fact about two different kinds of subject.
    *
-   * It lives here rather than on `AuthzSink` — where the authorization half of it started — because
-   * `AuthzSink` writes runnable repros and two of the three scans have no principal to write one
+   * It lives here rather than on `ReproSink` — where the authorization half of it started — because
+   * `ReproSink` writes runnable repros and two of the three scans have no principal to write one
    * for. This sink writes the report, and the report is what the blind spot belongs in.
    */
   decline(d: ScanDecline): void;

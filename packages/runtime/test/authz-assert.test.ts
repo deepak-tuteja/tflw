@@ -223,7 +223,7 @@ interface RunResult {
 
 async function run(source: string, cfg: ResolvedConfig = resolved()): Promise<RunResult> {
   const findings: AuthzFinding[] = [];
-  // D418a — declines moved from `AuthzSink` to the shared `ScanSink`, so this harness collects them
+  // D418a — declines moved from `ReproSink` to the shared `ScanSink`, so this harness collects them
   // from the channel the report actually reads.
   const declines: ScanDecline[] = [];
   const scanSink: ScanSink = { finding: () => {}, census: () => {}, decline: (d) => declines.push(d) };
@@ -231,7 +231,7 @@ async function run(source: string, cfg: ResolvedConfig = resolved()): Promise<Ru
   assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
   const { report } = await runProgram(program, cfg, {
     source,
-    authzSink: { finding: (f) => findings.push(f) },
+    reproSink: { finding: (f) => findings.push(f) },
     scanSink,
   });
   const t = report.tests[0]!;
@@ -424,7 +424,7 @@ test('D434: a mutating request that succeeds with the token withheld is a critic
   assert.match(r.detail, /\[critical\]/);
   assert.match(r.detail, /csrf token withheld/, 'the derived principal names itself as derived (D434)');
   // Asserted on the report detail rather than on `r.findings`, and the difference is worth stating:
-  // `AuthzSink` is fed from `leaked` probes because its job is writing runnable repros (D418a), and
+  // `ReproSink` is fed from `leaked` probes because its job is writing runnable repros (D418a), and
   // generalizing that emitter to every originating scan is D440's work in `M137c`/`M137d`. So a CSRF
   // finding reaches the verdict and the message — which is what fails the run — and does not yet
   // reach the repro channel. Named here so its absence reads as sequencing rather than an oversight.
