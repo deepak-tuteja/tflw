@@ -183,10 +183,23 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     note: 'network fetch of the contract document',
   },
   {
+    id: 'openapi-not-an-object',
+    file: 'contract.ts',
+    excerpt: 'is not a JSON object',
+    decidable: 'needs-io',
+    // `M137c`/`D460`. The loader's one remaining requirement, and it moved *up* to being about the
+    // document rather than about validation: a `text/plain` 200 from a misrouted path parses to
+    // nothing, and which of the two readers asked for it makes no difference to that.
+    note: 'needs the fetched document',
+  },
+  {
     id: 'openapi-no-schemas',
     file: 'contract.ts',
     excerpt: 'to validate against',
     decidable: 'needs-io',
+    // Still `needs-io` after `D460` moved it from the loader to `evaluateSchemaMatch`: the fact it
+    // reports is unchanged (this document has no `components.schemas`), only which reader insists on
+    // it. A `crawl` seeding off the same document needs `paths` and is unaffected.
     note: 'needs the fetched document',
   },
   {
