@@ -81,6 +81,12 @@ const KEYWORDS = new Set([
   'ramp', 'over', 'threshold', 'cleanup', 'pause',
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
   'parallel', 'sequential', 'exclude',
+  // M137c (D432/D450) — the crawl's four words. `exclude` is already above it, added by D127 for the
+  // config dialect and shared here because a crawl means the same verb over a different set (D466).
+  // All four are test-dialect and unambiguous in it: `crawl`/`seed` are leading keywords, `openapi`
+  // and `traffic` only ever follow `seed`. That is the test D427a applies — unlike `send` or `up`,
+  // none of them is a plausible ordinary identifier in a `.tflw` file.
+  'crawl', 'seed', 'openapi', 'traffic',
   'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'privileged',
 ]);
 

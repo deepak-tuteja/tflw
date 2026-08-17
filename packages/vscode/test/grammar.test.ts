@@ -228,6 +228,20 @@ test('tokenizes `has no [<severity>] input handling violations` and `probe overs
   assert.ok(hasScope(findToken(probeLines, 'traversal'), 'keyword.control.tflw'), 'D372 sibling of `probe mutating`');
 });
 
+// `M137c`'s half of the pair described above — the crawl's four words in the TextMate grammar, added
+// in the milestone that ships them rather than caught up two milestones later.
+test('tokenizes the `crawl` declaration`s four words (M137c, D432/D450)', () => {
+  const lines = tokenizeLines([
+    'crawl "the v1 surface" as peer',
+    '  seed openapi "/openapi.json"',
+    '  seed traffic',
+    '  exclude "/vuln/**"',
+  ]);
+  for (const word of ['crawl', 'seed', 'openapi', 'traffic', 'exclude']) {
+    assert.ok(hasScope(findToken(lines, word), 'keyword.control.tflw'), `\`${word}\` is a keyword in a .tflw file`);
+  }
+});
+
 test('tokenizes `request to "…" was made` (M3d, M4a catch-up)', () => {
   const lines = tokenizeLines(['  expect request to "/orders" was made']);
 

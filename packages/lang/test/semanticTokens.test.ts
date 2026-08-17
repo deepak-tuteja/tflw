@@ -195,6 +195,25 @@ test('collectSemanticTokens: `authorized target`/`reason`/`probe mutating`/`priv
 // `M134a` added `input`/`handling` here and `oversized`/`traversal` only to `tflw.tmLanguage.json`,
 // then recorded the catch-up as done. Nothing in the repo could contradict it, because none of
 // `M134a`'s four words had a test in either file. `B5-09`, fourth arc running.
+// `M137c` (D432/D450) — the crawl's four words, in the milestone that ships them, with the sibling in
+// `packages/vscode/test/grammar.test.ts`. The pair is what makes drift between the two wordlists
+// detectable; `M137a` had to add the pair for `M134a`'s words after the fact, which is `B5-09`'s
+// fourth arc and the reason these are written up front now.
+test('collectSemanticTokens: `crawl`/`seed`/`openapi`/`traffic` are `keyword` (M137c)', () => {
+  const source = 'crawl "the v1 surface" as peer\n  seed openapi "/openapi.json"\n  seed traffic\n  exclude "/vuln/**"\n  expect response has no critical security violations\n';
+  // Zero diagnostics first, for the reason the M136b tests state: this pass is lexer-driven and never
+  // consults the parse, so a source the parser rejects would still colour — and the test would pass
+  // while describing a crawl nobody can write.
+  const { diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics.map((d) => d.code), [], 'the crawl source parses clean');
+  const tokens = tokensOf(source);
+  assertTypeAt(tokens, source, 'crawl', 'keyword');
+  assertTypeAt(tokens, source, 'seed', 'keyword');
+  assertTypeAt(tokens, source, 'openapi', 'keyword');
+  assertTypeAt(tokens, source, 'traffic', 'keyword');
+  assertTypeAt(tokens, source, 'exclude', 'keyword');
+});
+
 test('collectSemanticTokens: `input handling` (D366) is `operator`, and `probe oversized`/`traversal` (D372) are `keyword`', () => {
   const matcherSource = 'test "ok"\n  expect response has no moderate input handling violations\n';
   const matcherTokens = tokensOf(matcherSource);
