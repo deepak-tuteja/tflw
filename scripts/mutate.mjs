@@ -1996,14 +1996,14 @@ const REGISTRY = [
 
   // -- M137d (D471/D472/D473/D475): the repro emitter, generalised ---------------------------------
   //
-  // Eight, and they share one shape, which is the shape of this milestone's whole risk: **every one
+  // Ten, and they share one shape, which is the shape of this milestone's whole risk: **every one
   // produces a repro that is GREEN against an unfixed application.** Not a crash, not a missing file, not
   // a wrong count — a `.tflw` file that runs, passes, and thereby says the weakness is not there. That is
   // the artifact a maintainer closes the ticket with, so a mutation surviving here is worse than a
   // mutation surviving almost anywhere else in this registry: the tool's output would be actively
   // misleading rather than merely incomplete.
   //
-  // Two of the eight (`-single-backslash`, `-body-without-content-type`) instead produce a file that
+  // Two of the ten (`-single-backslash`, `-body-without-content-type`) instead produce a file that
   // cannot run at all. They are in the same set because the failure is still silent *at emit time* — the
   // report says the repro was written, and only whoever opens it finds out.
   {
@@ -2038,9 +2038,27 @@ const REGISTRY = [
     milestone: 'm137d',
     pkg: '@tflw/reporter',
     file: REPRO,
-    what: "`pathOf` stops reducing the URL, so every repro names an absolute address. `D246` makes an absolute URL conditional on `allow hosts`, so the recipient's own config refuses the file tflw just told them to run — D469's lesson met from the authoring side instead of the sender's, and it fails as a *diagnostic* about their config rather than as anything about the finding",
-    find: '    return u.pathname + u.search;',
-    replace: '    return u.toString();',
+    what: "the emitter falls back to the absolute URL instead of the runtime's base-relative path, so every repro names an absolute address. `D246` makes an absolute URL conditional on `allow hosts`, so the recipient's own config refuses the file tflw just told them to run — D469's lesson met from the authoring side instead of the sender's, and it fails as a *diagnostic* about their config rather than as anything about the finding",
+    find: '  return f.path || f.url;',
+    replace: '  return f.url;',
+  },
+  {
+    id: 'repro-path-re-applies-the-base-prefix',
+    milestone: 'm137d',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "`reproPathFor` stops stripping the base URL's own path prefix, which restores the D478 defect VERBATIM — the one that shipped in every authorization repro from M130b to M137d. An env whose `api` is `https://host/v1` gets `api POST /v1/vuln/notes`, tflw resolves it against the base a second time, the repro dials `/v1/v1/vuln/notes`, gets a 404, finds no leak and PASSES against the application it was generated from. Restored deliberately: this is the only mutation in the registry that reproduces a bug that really shipped, and it survived seven milestones because every fixture server in the suite has no path prefix, so the buggy and the correct answer were byte-identical everywhere a test could look",
+    find: '    if (prefix !== \'\' && (u.pathname === prefix || u.pathname.startsWith(`${prefix}/`))) {',
+    replace: '    if (false) {',
+  },
+  {
+    id: 'repro-omits-the-env-it-came-from',
+    milestone: 'm137d',
+    pkg: '@tflw/reporter',
+    file: REPRO,
+    what: "the `re-run` line disappears, so a repro no longer says which env produced it. A repro is base-relative and nothing in the language lets a file pin its own env, so the reader runs it under whichever env is `default` — against a different application, or against a target that withholds the payload class's opt-in, where it reaches a route that cannot fire the rule and goes GREEN. Measured rather than imagined: the traversal repro did exactly this under `secureLocal` while this milestone was being verified, and the green was indistinguishable from a fix",
+    find: '  return `# re-run: tflw run --env ${f.env} ${reproDirFor(f.kind)}/${reproFileName(f)}\\n`;',
+    replace: "  return '';",
   },
   {
     id: 'input-repro-single-backslash',

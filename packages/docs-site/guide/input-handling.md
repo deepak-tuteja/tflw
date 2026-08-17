@@ -180,6 +180,7 @@ matched:
 ```tflw
 # emitted by tflw M137d — sec/error-detail-disclosure
 # GET /products?q=tflw%27 — query `q` carrying `injection/sql-quote` returned a stack frame
+# re-run: tflw run --env secureLocal input-repro/error-detail-disclosure--get--products-q-tflw-27--query-q--a-stack-frame.tflw
 test "GET /products?q=tflw%27 must not disclose a stack frame for query `q`"
   api GET /products?q=tflw%27
   expect body text not matches "(?:\\n|\\\\n)\\s+at [\\w$.<>[\\] ]+ \\("
@@ -201,6 +202,11 @@ so the disclosure lands in the control and is subtracted from itself. So instead
 
 `body text` rather than `body` throughout, because a disclosure often arrives as an HTML error page
 and the bare-body subject expects JSON.
+
+**The path is relative to your `api` base URL, and the `re-run` line names the env.** Both matter for the
+same reason: a repro reaches whichever application the env points at, so running one under a different env
+can pass without telling you. If a payload class's opt-in (`probe traversal`, `probe oversized`) is
+declared on one target and not another, the repro for it only reproduces under the target that granted it.
 
 Every literal in these files is a payload tflw sent or a pattern tflw looks for — never a byte your
 application produced. The finding's own message quotes an excerpt of the evidence; the repro

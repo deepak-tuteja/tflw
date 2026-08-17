@@ -23,11 +23,14 @@ const objectLeak: AuthzFinding = {
   principal: 'peer',
   method: 'GET',
   url: 'http://localhost:4001/orders/a1e3-9f',
+  // D478 — the path the RUNTIME computed, base-relative. The emitter no longer derives one from `url`.
+  path: '/orders/a1e3-9f',
+  env: 'local',
   ids: ['a1e3-9f'],
   owners: ['shopper'],
 };
 
-const collectionLeak: AuthzFinding = { ...objectLeak, rule: 'sec/authz-collection-leak', url: 'http://localhost:4001/orders' };
+const collectionLeak: AuthzFinding = { ...objectLeak, rule: 'sec/authz-collection-leak', url: 'http://localhost:4001/orders', path: '/orders' };
 
 test('an object leak emits `expect status equals 403`', () => {
   const src = renderAuthzRepro(objectLeak);
@@ -74,8 +77,11 @@ test('two principals leaking the same resource are two files, because that is th
   assert.notEqual(reproFileName(objectLeak), reproFileName(other));
 });
 
-test('an unparseable URL still yields a named file rather than a silent skip', () => {
-  const broken = { ...objectLeak, url: 'not a url' };
+test('an unparseable path still yields a named file rather than a silent skip', () => {
+  // Overriding `path` rather than `url` since D478: the runtime computes the address a repro dials, and
+  // `reproPathFor` hands back whatever it was given when it cannot make sense of it. Naming an
+  // unparseable address is still more useful than silently naming nothing.
+  const broken = { ...objectLeak, url: 'not a url', path: 'not a url' };
   assert.match(reproFileName(broken), /\.tflw$/);
   assert.match(renderAuthzRepro(broken), /api GET not a url/);
 });
@@ -125,6 +131,9 @@ const disclosure: InputHandlingFinding = {
   // Percent-encoded and ABSOLUTE, because that is literally what `applyMutation` returns — the
   // fixtures are its output, not a tidied version of it.
   url: 'http://localhost:4001/v1/products?q=tflw%27',
+  // Base-relative: the env's `api` is `.../v1`, so a suite writes `/products`, NOT `/v1/products` (D478).
+  path: '/products?q=tflw%27',
+  env: 'secureLocal',
   principal: 'shopper',
   location: 'query `q`',
   payloadId: 'injection/sql-quote',
@@ -137,6 +146,8 @@ const reflection: InputHandlingFinding = {
   rule: 'sec/reflected-input-unescaped',
   method: 'GET',
   url: 'http://localhost:4001/v1/search?q=%3Ctflw%3E',
+  path: '/search?q=%3Ctflw%3E',
+  env: 'secureLocal',
   location: 'query `q`',
   payloadId: 'injection/html-metacharacters',
   payloadText: '<tflw>',
@@ -147,6 +158,8 @@ const traversal: InputHandlingFinding = {
   rule: 'sec/path-traversal-read',
   method: 'GET',
   url: 'http://localhost:4001/v1/files/..%2F..%2Fetc%2Fpasswd',
+  path: '/files/..%2F..%2Fetc%2Fpasswd',
+  env: 'plaintext',
   location: 'path segment 3',
   payloadId: 'traversal/encoded',
   payloadText: '..%2f..%2f..%2f..%2fetc%2fpasswd',
@@ -158,6 +171,8 @@ const oversized: InputHandlingFinding = {
   rule: 'sec/oversized-input-accepted',
   method: 'POST',
   url: 'http://localhost:4001/v1/orders',
+  path: '/orders',
+  env: 'secureLocal',
   body: '{"note":"AAAA"}',
   location: 'body.note',
   payloadId: 'oversized/64kib-string',
@@ -213,7 +228,10 @@ test('the repro dials the MUTATED request, relative — never the observed URL a
   // URL `applyMutation` actually returns would make the file conditional on `allow hosts` (D246), so a
   // recipient's own config would refuse it — D469's trap from the authoring side.
   const src = renderInputRepro(disclosure)!;
-  assert.match(src, /api GET \/v1\/products\?q=tflw%27/);
+  // `/products`, NOT `/v1/products` — D478. Emitting the URL's pathname re-applies the base URL's own
+  // prefix, so the repro dials `/v1/v1/products`, 404s, finds no leak and PASSES on a live finding.
+  assert.match(src, /api GET \/products\?q=tflw%27/);
+  assert.doesNotMatch(src, /\/v1\/products/, "the base URL's prefix must not be emitted twice");
   assert.doesNotMatch(src, /http:\/\/localhost:4001/, 'an absolute URL would need `allow hosts`');
 });
 
@@ -247,6 +265,18 @@ test('a site name carrying a quote cannot break out of the test name', () => {
   // Exactly two unescaped quotes on the `test` line: the ones that delimit the name.
   const testLine = src.split('\n').find((l) => l.startsWith('test '))!;
   assert.equal(testLine.replace(/\\"/g, '').split('"').length - 1, 2);
+});
+
+test('D479 — every repro names the env it came from, in a command you can paste', () => {
+  // Found by running the emitted files: a repro is base-RELATIVE, so the env decides which application it
+  // reaches, and nothing in the language lets a file pin its own. The traversal repro passed under
+  // `secureLocal` — an env that withholds `probe traversal`, so the route reads no files — and that green
+  // is indistinguishable from a fix. Naming the env is the whole remedy, and it belongs in the file rather
+  // than in the report, because the file is what gets handed to somebody.
+  assert.match(renderInputRepro(traversal)!, /^# re-run: tflw run --env plaintext input-repro\/path-traversal-read--/m);
+  assert.match(renderInputRepro(disclosure)!, /--env secureLocal input-repro\//);
+  // Authorization gets it too: the gap is not specific to Tier 3, only sharper there.
+  assert.match(renderAuthzRepro(objectLeak), /^# re-run: tflw run --env local authz-repro\/object-leak--/m);
 });
 
 test('a repro is made as the same principal, and a scan with no session declares none', () => {
@@ -300,8 +330,8 @@ test('the two kinds land in separate directories, and each names itself', async 
     // weaknesses on exactly that pair: one endpoint leaking a stack frame and a SQL fragment at the
     // same site is two repairs, and a name omitting the detector would overwrite one with the other.
     assert.deepEqual(readdirSync(join(dir, INPUT_REPRO_DIR)).sort(), [
-      'error-detail-disclosure--get--v1-products-q-tflw-27--query-q--a-sql-error-fragment.tflw',
-      'reflected-input-unescaped--get--v1-search-q-3ctflw-3e--query-q.tflw',
+      'error-detail-disclosure--get--products-q-tflw-27--query-q--a-sql-error-fragment.tflw',
+      'reflected-input-unescaped--get--search-q-3ctflw-3e--query-q.tflw',
     ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -4479,8 +4479,15 @@ export interface AuthzFinding {
   readonly rule: string;
   readonly principal: string;
   readonly method: string;
-  /** The observed request's URL, verbatim — the address a repro has to dial. */
+  /** The observed request's URL, verbatim. Used for the SARIF join's `templateEndpoint`; the address a
+   *  repro dials is `path`, not this (`D478`). */
   readonly url: string;
+  /** The request path as a **tflw suite would write it** — relative to the env's `api` base URL, so a
+   *  repro re-issuing it lands on the same address. See `reproPathFor`. */
+  readonly path: string;
+  /** The env this finding was made under (`D479`). A repro is base-relative, so which env it runs under
+   *  decides which application it reaches — and under the wrong one it can PASS. */
+  readonly env: string;
   readonly ids: readonly string[];
   readonly owners: readonly string[];
 }
@@ -4518,6 +4525,14 @@ export interface InputHandlingFinding {
   readonly method: string;
   /** The **mutated** request's URL — `applyMutation`'s output, not `observed.request.url`. */
   readonly url: string;
+  /** That same mutated request, as a path a suite could write (`D478`). Emitting `url.pathname` instead
+   *  re-applies the base URL's own prefix and the repro 404s, passing against an unfixed app. */
+  readonly path: string;
+  /** The env this finding was made under (`D479`) — see `AuthzFinding.env`. Sharper here than for Tier 2:
+   *  a payload class needs an opt-in that is declared *per target*, so a traversal repro run under an env
+   *  that withholds `probe traversal` reaches a route that reads no files and goes green. Measured, not
+   *  imagined — it happened while verifying this milestone. */
+  readonly env: string;
   /** The **mutated** request's body, when the mutation landed on a body leaf. Already redacted by the
    *  run's own redactor (`D475`), because the redaction the run applied travels with the finding
    *  rather than being re-derived at the emitter. */
@@ -4799,7 +4814,7 @@ async function execAuthzExpect(
   for (const probe of probes) {
     if (probe.outcome.kind === 'leaked') {
       for (const rule of result.applicable) {
-        tc.reproSink?.finding({ kind: 'authorization', rule: rule.id, principal: probe.principal, method: request.method, url: request.url, ids: probe.outcome.ids, owners: ctx.sessionNames });
+        tc.reproSink?.finding({ kind: 'authorization', rule: rule.id, principal: probe.principal, method: request.method, url: request.url, path: reproPathFor(request.url, config), env: config.envName, ids: probe.outcome.ids, owners: ctx.sessionNames });
       }
     }
   }
@@ -5016,6 +5031,8 @@ async function execInputHandlingExpect(
       rule: f.id,
       method: request.method,
       url: mutated.url,
+      path: reproPathFor(mutated.url, config),
+      env: config.envName,
       // The **request's** body, through the run's own redactor (D475) — not a response body, so R10's
       // line is untouched, and redacted here for the reason `authz-repro.ts` states: the redaction the
       // run already applied travels with the finding instead of being re-derived at the emitter.
@@ -5679,6 +5696,42 @@ export function requireAllowHostsForAbsolute(url: string, target: string, config
   if (!isAbsoluteUrl(target)) return;
   if (config.allowHosts && config.allowHosts.length > 0) return;
   throw new AllowHostsError(absoluteUrlNeedsAllowHosts(url));
+}
+
+/**
+ * The path a repro must write in order to re-issue this request — the **inverse** of the one line that
+ * built the URL, `resolveBaseUrl(service, config) + ensureLeadingSlash(path)`.
+ *
+ * **This exists because a repro cannot carry `url.pathname`, and getting that wrong is silent.** An env
+ * whose `api` is `https://host/v1` turns `api POST /vuln/notes` into `https://host/v1/vuln/notes`; a
+ * repro emitting that URL's *pathname* says `api POST /v1/vuln/notes`, which tflw resolves against the
+ * base **again** — `/v1/v1/vuln/notes`, a 404, no leak in the body, and a repro that PASSES against the
+ * application it was generated from. Latent since `M130b` for every authorization repro in any project
+ * whose base URL has a path prefix, which `/v1` makes the common case; found in `M137d` by running one
+ * (`D478`).
+ *
+ * A request to another origin cannot be written relative at all, so it keeps its absolute URL — that run
+ * needed `allow hosts` to make the request in the first place, so the recipient's config has it.
+ */
+export function reproPathFor(url: string, config: ResolvedConfig): string {
+  let base: string;
+  try {
+    base = resolveBaseUrl(null, config);
+  } catch {
+    return url;
+  }
+  try {
+    const u = new URL(url);
+    const b = new URL(base);
+    if (u.origin !== b.origin) return url;
+    const prefix = b.pathname.replace(/\/+$/, '');
+    if (prefix !== '' && (u.pathname === prefix || u.pathname.startsWith(`${prefix}/`))) {
+      return (u.pathname.slice(prefix.length) || '/') + u.search;
+    }
+    return u.pathname + u.search;
+  } catch {
+    return url;
+  }
 }
 
 export function resolveBaseUrl(service: string | null, config: ResolvedConfig): string {

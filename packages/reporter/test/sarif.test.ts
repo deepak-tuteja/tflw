@@ -77,6 +77,8 @@ const AUTHZ_FINDING: AuthzFinding = {
   principal: 'peer',
   method: 'GET',
   url: 'https://api.example.com/v1/orders/4821',
+  path: '/orders/4821',
+  env: 'local',
   ids: ['4821'],
   owners: ['shopper'],
 };
@@ -388,7 +390,7 @@ test('every result names a rule the catalog declares', () => {
 test('an authorization result links the repro the emitter already wrote', () => {
   const results = resultsOf(buildSarifLog(report(), { reproSubjects: [AUTHZ_FINDING] })!);
   const authz = results.find((r) => r.ruleId === 'sec/authz-object-leak')!;
-  assert.equal(authz.properties!['tflw/repro'], 'authz-repro/object-leak--get--v1-orders-4821--peer.tflw');
+  assert.equal(authz.properties!['tflw/repro'], 'authz-repro/object-leak--get--orders-4821--peer.tflw');
 });
 
 test('the other two scans carry no repro property, rather than a broken link', () => {
@@ -406,6 +408,8 @@ const INPUT_SUBJECT = {
   rule: 'sec/oversized-input-accepted',
   method: 'POST',
   url: 'https://api.example.com/v1/vuln/notes',
+  path: '/vuln/notes',
+  env: 'secureLocal',
   location: 'body `title`',
   payloadId: 'oversized/64kib-string',
   invariant: 'sec/oversized-input-accepted',
@@ -431,8 +435,8 @@ test('two detectors at ONE site get two links, not one shared between them', () 
     ],
   } as unknown as Partial<RunReport>);
   const subjects = [
-    { ...INPUT_SUBJECT, rule: 'sec/error-detail-disclosure', method: 'GET', url: 'https://api.example.com/v1/search', location: 'query `q`', invariant: 'a stack frame' },
-    { ...INPUT_SUBJECT, rule: 'sec/error-detail-disclosure', method: 'GET', url: 'https://api.example.com/v1/search', location: 'query `q`', invariant: 'a SQL error fragment' },
+    { ...INPUT_SUBJECT, rule: 'sec/error-detail-disclosure', method: 'GET', url: 'https://api.example.com/v1/search', path: '/search', env: 'secureLocal', location: 'query `q`', invariant: 'a stack frame' },
+    { ...INPUT_SUBJECT, rule: 'sec/error-detail-disclosure', method: 'GET', url: 'https://api.example.com/v1/search', path: '/search', env: 'secureLocal', location: 'query `q`', invariant: 'a SQL error fragment' },
   ] as const;
   const results = resultsOf(buildSarifLog(twoDetectors, { reproSubjects: subjects })!);
   const links = results.map((r) => r.properties!['tflw/repro']);

@@ -82,20 +82,40 @@ export function reproDirFor(kind: ReproSubject['kind']): string {
   }
 }
 
-/** Path-and-query, or the whole URL if it will not parse — a repro that named an unparseable
- *  address is still more useful than one that silently named nothing.
+/**
+ * **The path is computed by the runtime, not here** (`D478`), and this function only exists to say so.
  *
- *  **Load-bearing for the input half in a way it was not for authorization**: `applyMutation` returns
- *  `url.toString()`, an absolute URL, and an absolute URL in a suite is what `D246` makes conditional on
- *  `allow hosts` (`TF057`/`TF058`). Emitting one would hand somebody a repro their own config refuses —
- *  `D469`'s trap, met from the authoring side instead of the sender's. */
-function pathOf(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.pathname + u.search;
-  } catch {
-    return url;
-  }
+ * It used to be `new URL(url).pathname + search`, which is wrong in a way nothing could see: an env whose
+ * `api` is `https://host/v1` makes `api POST /vuln/notes` into `https://host/v1/vuln/notes`, so emitting
+ * that pathname produces `api POST /v1/vuln/notes` — resolved against the base a *second* time, 404, no
+ * leak in the body, and a repro that PASSES against the application it came from. Latent since `M130b`
+ * for every authorization repro in any project with a base-URL path prefix.
+ *
+ * Only the interpreter knows the env's base URL, so `reproPathFor` inverts the one line that built the
+ * URL and both arms carry the answer as `path`. What is left here is the fallback for a subject that
+ * somehow carries none, and it deliberately prefers the whole URL over a *plausible* wrong path: an
+ * absolute address in a repro fails loudly on `allow hosts` (`TF057`/`TF058`), where a doubled prefix
+ * fails by passing.
+ */
+function pathFor(f: ReproSubject): string {
+  return f.path || f.url;
+}
+
+/**
+ * The exact command that re-runs this file (`D479`).
+ *
+ * **A repro is base-relative, so the env decides which application it reaches.** Nothing in the language
+ * lets a file pin its own env, and the default is whichever env is marked `default` — so a repro handed to
+ * somebody who runs it plainly can silently exercise a different target. It goes *green*, which is the one
+ * outcome this milestone treats as unacceptable.
+ *
+ * Sharper for input handling than for authorization: a payload class needs an opt-in declared per target,
+ * so a traversal repro run under an env that withholds `probe traversal` reaches a route that reads no
+ * files and passes. That is not hypothetical — it is what happened while verifying this milestone, and it
+ * looked exactly like a working fix.
+ */
+function rerunLine(f: ReproSubject): string {
+  return `# re-run: tflw run --env ${f.env} ${reproDirFor(f.kind)}/${reproFileName(f)}\n`;
 }
 
 function slug(s: string): string {
@@ -142,7 +162,7 @@ function tflwString(s: string): string {
  * the same split `D473` gives for the directories and the SARIF join key, kept in one place.
  */
 export function reproFileName(f: ReproSubject): string {
-  const path = slug(pathOf(f.url));
+  const path = slug(pathFor(f));
   if (f.kind === 'authorization') {
     return `${slug(f.rule.replace(/^sec\/authz-/, ''))}--${slug(f.method)}--${path}--${slug(f.principal)}.tflw`;
   }
@@ -170,12 +190,13 @@ export function reproFileName(f: ReproSubject): string {
  * what makes D319's agreement invariant a stronger instrument than it would otherwise be.
  */
 export function renderAuthzRepro(f: AuthzFinding): string {
-  const path = pathOf(f.url);
+  const path = pathFor(f);
   const owners = f.owners.join(', ');
   const id = f.ids[0] ?? '';
   const header =
     `# emitted by tflw M130 — ${f.rule}\n` +
-    `# ${f.method} ${path} served ${owners ? `\`${owners}\`'s` : 'the owner\'s'} resource to \`${f.principal}\`\n`;
+    `# ${f.method} ${path} served ${owners ? `\`${owners}\`'s` : 'the owner\'s'} resource to \`${f.principal}\`\n` +
+    rerunLine(f);
 
   if (f.rule.endsWith('collection-leak')) {
     // A filtered `200` is the correct answer here, so the assertion is about the *contents*, not the
@@ -255,12 +276,13 @@ function inputAssertion(f: InputHandlingFinding): { readonly title: string; read
 export function renderInputRepro(f: InputHandlingFinding): string | null {
   const template = inputAssertion(f);
   if (template === null) return null;
-  const path = pathOf(f.url);
+  const path = pathFor(f);
   const as = f.principal ? ` as ${f.principal}` : '';
   const header =
     `# emitted by tflw M137d — ${f.rule}\n` +
     `# ${f.method} ${path} — ${f.location} carrying \`${f.payloadId}\`` +
-    `${f.invariant ? ` returned ${f.invariant}` : ''}\n`;
+    `${f.invariant ? ` returned ${f.invariant}` : ''}\n` +
+    rerunLine(f);
   // `body text` + an explicit content type rather than an inline `body { … }` object: the mutated body
   // is already a JSON *string* (`applyMutation` re-stringifies it), and re-parsing it into tflw's own
   // object syntax would be a second encoder to get wrong. `body text` sets no content type of its own,
