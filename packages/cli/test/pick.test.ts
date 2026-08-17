@@ -166,7 +166,39 @@ test('Ctrl+C while the page is still navigating stops cleanly and leaks no brows
     async (url) => {
       const pick = startPick(url);
       await pick.waitForStdout(`opening ${url}`);
-      await navigating;
+      // Bounded, and racing the child's own exit — which it was not, and that was a defect in the
+      // instrument rather than in `pick`. Every other wait in this file has a deadline; a bare
+      // `await navigating` has none, so when the browser never asks for the page the test blocks
+      // forever at zero CPU instead of failing. Both reasons it might not ask are real: the launch
+      // can fail (`pick` then exits 2 and nothing will ever resolve this promise), or the box can
+      // be too contended to get a headed Chromium up inside the window. Unbounded, either one held
+      // fedora-box's whole-box lock until something outside killed it — 61 and 41 minutes, twice,
+      // before a per-gate `timeout` bounded it from the outside and told us nothing about why.
+      // The diagnosis belongs here, where the two causes are still distinguishable.
+      let navTimer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          navigating,
+          pick.exited.then((code) => {
+            throw new Error(
+              `\`tflw pick\` exited (${code}) before the browser ever requested the page.\nstdout:\n${pick.stdout()}\nstderr:\n${pick.stderr()}`,
+            );
+          }),
+          new Promise<never>((_, reject) => {
+            navTimer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `the browser never requested the page within 60s of \`opening ${url}\`.\nstdout:\n${pick.stdout()}\nstderr:\n${pick.stderr()}`,
+                  ),
+                ),
+              60_000,
+            );
+          }),
+        ]);
+      } finally {
+        if (navTimer !== undefined) clearTimeout(navTimer);
+      }
       const browserPids = pick.descendants();
       // Control for the leak check below. Without this the "nothing survived" assertion passes
       // trivially on an empty list — a passing test of nothing.
