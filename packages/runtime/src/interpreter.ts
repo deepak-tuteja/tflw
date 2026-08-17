@@ -4828,12 +4828,26 @@ async function execAuthzExpect(
       .map((p) => ({ subject: p.principal, reason: (p.outcome as { readonly reason: string }).reason })),
     tc,
   );
-  for (const probe of probes) {
-    if (probe.outcome.kind === 'leaked') {
-      for (const rule of result.applicable) {
-        tc.reproSink?.finding({ kind: 'authorization', rule: rule.id, principal: probe.principal, method: request.method, url: request.url, path: reproPathFor(request.url, config), env: config.envName, ids: probe.outcome.ids, owners: ctx.sessionNames, ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}) });
-      }
-    }
+  // **Driven by the findings, not by the raw probe outcomes (M137c2, D482).** It used to be
+  // `for each leaked probe, for each applicable rule` — a second opinion about what a leak is, living
+  // one function away from the rule that decides. D482 made the two disagree: on a public collection
+  // the rule stays applicable and finds nothing, and this loop went on writing a runnable `.tflw`
+  // repro for a finding no report contains. Found by a test asserting `findings` was empty, not by
+  // reading this line.
+  //
+  // Following `result.findings` cannot drift, because the emitter now has no notion of a leak at all:
+  // it takes the rule's verdict and looks up the ids that produced it. `where.location` is the
+  // principal, which is `D376`/R8's choice for this tier and the reason that lookup is possible.
+  //
+  // A finding whose principal is not in `probes` is skipped, which is `sec/csrf-not-enforced`: its
+  // principals live in `csrfProbes` (`D457` keeps the two lists apart on purpose), and they emitted no
+  // repro before this change either. Behaviour-neutral there, deliberately — whether a CSRF finding
+  // deserves a repro is `D440`'s question, not this decision's.
+  for (const finding of result.findings) {
+    const principal = finding.where?.location;
+    const probe = principal === undefined ? undefined : probes.find((p) => p.principal === principal);
+    if (probe === undefined || probe.outcome.kind !== 'leaked') continue;
+    tc.reproSink?.finding({ kind: 'authorization', rule: finding.id, principal: probe.principal, method: request.method, url: request.url, path: reproPathFor(request.url, config), env: config.envName, ids: probe.outcome.ids, owners: ctx.sessionNames, ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}) });
   }
 
   const verdict = gateScan('authorization', result.findings, templateEndpoint(request.method, request.url), step, tc);
@@ -4873,6 +4887,23 @@ function probeNote(probes: readonly ProbeResult[], privileged: readonly string[]
   // fewer identities than the other.
   if (privileged.length > 0) {
     lines.push(`\n  note: not probed as ${privileged.map((p) => `\`${p}\``).join(', ')} — declared \`privileged\` (SPEC §3.3)`);
+  }
+  // D482, and it is here for the same reason the line above is: this one changes a verdict, and
+  // without it the report contradicts itself. `anonymous` having `leaked` is what tells the two leak
+  // rules the resource is public and there is no boundary to violate, so the probe line reads
+  // `n leaked` beside `0 violations` — true, and unreadable unless the reason is on the same line.
+  //
+  // Read off the probe set rather than reported by the rule, which needs no new field on
+  // `AuthzScanResult` and cannot drift from the rule's own condition: it *is* the rule's condition.
+  // Nor can it over-announce — `anonymous` can only be `leaked` if it received root ids the owner
+  // also received, which means the owner's body carried them, which means one of the two leak rules
+  // was applicable and did suppress something.
+  const anonymous = probes.find((p) => p.principal === ANONYMOUS);
+  if (anonymous?.outcome.kind === 'leaked') {
+    lines.push(
+      `\n  note: \`${ANONYMOUS}\` received the same resources, so this is public data with no owner — ` +
+        'the leak rules found nothing to violate rather than finding a boundary intact (D482)',
+    );
   }
   return lines.join('');
 }

@@ -338,10 +338,15 @@ test('a leaked probe is a critical finding naming rule, principal, method, path 
 });
 
 test('one finding per violating principal — the answer is *which* principals, not *whether*', () => {
+  // **The second leaking principal used to be `anonymous`, and D482 (M137c2) is why it is not.** This
+  // test's claim is about the *cardinality* of findings — two crossings are two repairs — so which
+  // identities cross is incidental to it. But `anonymous` leaking is now the one arrangement that
+  // means the resource is public and nobody crossed anything, so using it here asserted the opposite
+  // of what the guard says. Two declared sessions make the same point and cannot collide with it.
   const o = bundle({
     probes: [
       probe('peer', { kind: 'leaked', ids: ['a1'] }),
-      probe('anonymous', { kind: 'leaked', ids: ['a1'] }),
+      probe('shopperBearer', { kind: 'leaked', ids: ['a1'] }),
       probe('oauthLong', { kind: 'refused', status: 403 }),
     ],
   });
@@ -349,7 +354,7 @@ test('one finding per violating principal — the answer is *which* principals, 
   assert.equal(r.findings.length, 2);
   assert.deepEqual(
     r.findings.map((f) => f.detail.match(/`([^`]+)` is not an owner/)![1]),
-    ['peer', 'anonymous'],
+    ['peer', 'shopperBearer'],
   );
 });
 
@@ -493,4 +498,102 @@ test('D457: the derived probe is invisible to the two leak rules, so a 2xx is no
   });
   const ids = runAuthzScan(o).findings.map((f) => f.id);
   assert.deepEqual(ids, [CSRF], `only the CSRF rule may fire here, got: ${ids.join(', ')}`);
+});
+
+// ── D482 — a public resource has no owner, so it has no boundary to cross (M137c2) ──────────────
+//
+// The false positive a crawler turned from rare into systematic. Tier 2 only judged routes a test
+// named, and nobody writes an authorization assertion on `GET /products`; the first crawl of a real
+// surface produced 20 critical findings across four public collections beside its one true positive.
+//
+// Asserted from both directions, because the guard is only correct if it is *narrow*: the plants this
+// arc depends on all have `anonymous` refused at the door, and a guard that suppressed them too would
+// trade a false positive for a false negative and look like an improvement while doing it.
+
+test('D482: a collection every principal including `anonymous` receives is public, so nothing is violated', () => {
+  const response = res({ json: [{ id: 'p1' }, { id: 'p2' }] });
+  const o = bundle({
+    owner: { request: req({ url: 'https://api.test/v1/products' }), response },
+    ownerIds: extractResourceIds(response.json),
+    probes: [
+      probe('peer', { kind: 'leaked', ids: ['p1', 'p2'] }),
+      probe('anonymous', { kind: 'leaked', ids: ['p1', 'p2'] }),
+    ],
+  });
+  // **Silent, not not-applicable**, and the distinction is the whole decision. Under D285 an
+  // assertion where nothing applied fails, and on a public array the other two rules are already
+  // not-applicable — so the not-applicable door would turn spurious findings into spurious failures
+  // and leave a crawl of any public API red.
+  assert.equal(stateOf(o, COLLECTION_LEAK), 'silent');
+  assert.equal(runAuthzScan(o).findings.length, 0, 'a public catalog is not a BOLA finding');
+  assert.ok(
+    runAuthzScan(o).applicable.some((r) => r.id === COLLECTION_LEAK),
+    'the rule ran — it reached a verdict rather than declining to look',
+  );
+});
+
+test('D482: the same guard applies to a single public object, not only to collections', () => {
+  // One shared `leakRule` body, so this is the object arm of the same predicate. Asserted separately
+  // because "we fixed the collection rule" is how the object rule keeps the defect.
+  const response = res({ json: { id: 'a1' } });
+  const o = bundle({
+    owner: { request: req(), response },
+    ownerIds: extractResourceIds(response.json),
+    probes: [
+      probe('peer', { kind: 'leaked', ids: ['a1'] }),
+      probe('anonymous', { kind: 'leaked', ids: ['a1'] }),
+    ],
+  });
+  assert.equal(stateOf(o, OBJECT_LEAK), 'silent');
+});
+
+test('D482: `anonymous` refused at the door leaves a real leak firing — the plants must survive', () => {
+  // `V6`/`V7`/`V15`'s exact shape: `AnyAuthGuard` answers `401` to a credential-less caller, so the
+  // route is guarded and not authorized, and the leak to an authenticated non-owner is the finding.
+  // This is the test that stops the guard from being a false-negative machine.
+  const response = res({ json: [{ id: 'o1' }] });
+  const o = bundle({
+    owner: { request: req({ url: 'https://api.test/v1/vuln/reports/orders' }), response },
+    ownerIds: extractResourceIds(response.json),
+    probes: [
+      probe('peer', { kind: 'leaked', ids: ['o1'] }),
+      probe('anonymous', { kind: 'refused', status: 401 }),
+    ],
+  });
+  assert.equal(stateOf(o, COLLECTION_LEAK), 'fired');
+  assert.deepEqual(
+    runAuthzScan(o).findings.map((f) => f.where?.location),
+    ['peer'],
+    'one finding, against the principal that actually crossed a boundary',
+  );
+});
+
+test('D482: `anonymous` served different content is not public, so the leak still fires', () => {
+  // The middle case, and the one a status-only reading would get wrong: `anonymous` got a `2xx`, so
+  // the route answers strangers — but it answered with *nothing of the owner's*, which is a route
+  // that scopes correctly for the public and leaks to a logged-in peer. Only `leaked` means public.
+  const response = res({ json: [{ id: 'o1' }] });
+  const o = bundle({
+    owner: { request: req(), response },
+    ownerIds: extractResourceIds(response.json),
+    probes: [
+      probe('peer', { kind: 'leaked', ids: ['o1'] }),
+      probe('anonymous', { kind: 'served-different', status: 200 }),
+    ],
+  });
+  assert.equal(stateOf(o, COLLECTION_LEAK), 'fired');
+});
+
+test('D482: with no `anonymous` in the probe set at all, nothing is suppressed', () => {
+  // `probes` is assembled by the interpreter and always ends with `anonymous` (D306/D326), but this
+  // file builds bundles by hand and every other test here omits it. So the guard must be inert on a
+  // set that does not contain the principal, or every existing leak assertion in this suite would
+  // depend on a probe nobody wrote down.
+  const response = res({ json: [{ id: 'o1' }] });
+  const o = bundle({
+    owner: { request: req(), response },
+    ownerIds: extractResourceIds(response.json),
+    probes: [probe('peer', { kind: 'leaked', ids: ['o1'] })],
+  });
+  assert.equal(stateOf(o, COLLECTION_LEAK), 'fired');
 });

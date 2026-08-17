@@ -215,6 +215,40 @@ the same rule the hygiene scan applies to a pack where nothing was applicable.
 Every "could not find out" is announced on the **passing** line too. A green assertion whose whole
 probe set was rate-limited is exactly the one a reader would otherwise believe had tested something.
 
+## Public data has no owner, so it has no boundary
+
+Some resources are meant for everybody: a product list, a public feed, a category tree. Every
+principal receives them, so every probe lands in `leaked` — and reading that as a violation would put
+a **critical** finding on every public endpoint an application has.
+
+So there is one more question, asked of the probe *set* rather than of any member of it: **did the
+built-in `anonymous` principal receive the same resources?** If a caller with no credentials at all
+can read them, there is no owner, and nothing any authenticated principal did was a crossing.
+
+```console
+✓ response has no authorization violations — 3 rules — 1 applicable, 2 not applicable, 0 violations;
+  3 principals probed — 3 leaked
+  note: `anonymous` received the same resources, so this is public data with no owner — the leak
+  rules found nothing to violate rather than finding a boundary intact
+```
+
+That note is not decoration. `3 leaked` beside `0 violations` is two true statements that contradict
+each other unless the reason is on the same line, and a reader comparing two green runs otherwise has
+no way to tell *a boundary that held* from *a boundary that never existed*.
+
+**The rule stays applicable**, which matters more than it looks. Routed through the not-applicable
+door instead, a public collection would trip the no-power-to-fail rule above — the other two
+authorization rules are already not-applicable on an array — and a crawl of any public API would come
+back red.
+
+::: tip It is narrower than "everybody got a 2xx"
+Only `anonymous` landing in **`leaked`** counts. A `2xx` that carried *none* of the owner's resources
+is `served different content`, which is a route scoping correctly for strangers and still capable of
+leaking to a logged-in peer — so the leak rules keep judging it. And a route that answers `401` to a
+credential-less caller is guarded, so a leak to an authenticated non-owner there is a real finding,
+which is exactly the shape most real BOLA is.
+:::
+
 ## Cookie sessions and CSRF
 
 If a principal's identity is carried by cookies alone, a mutating request may be refused by a CSRF

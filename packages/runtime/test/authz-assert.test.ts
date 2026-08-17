@@ -137,6 +137,15 @@ before(async () => {
       return json(res, 200, { id, deleted: true });
     }
 
+    // M137c2 (D482) — a **public** catalog: an array of objects with root ids, served to anybody
+    // including a caller with no credentials at all. Deliberately unlike `/orders`, whose first act is
+    // to `401` an unauthenticated caller: that one difference is the whole predicate, so the fixture
+    // has to carry a route on each side of it. Real applications are full of these — a product list, a
+    // public feed, a category tree — and pointing a crawler at one is what turned a rare false
+    // positive into 20 of them.
+    if (url.pathname === '/catalog') {
+      return json(res, 200, [{ id: 'p1' }, { id: 'p2' }]);
+    }
     if (url.pathname === '/enveloped') {
       return json(res, 200, { data: [{ id: 'a1' }], nextCursor: 'x' });
     }
@@ -470,4 +479,57 @@ test('D434: a withheld-token probe with no `probe mutating` is a blind spot, not
     r.declines.some((d) => d.subject.includes('csrf token withheld')),
     `the derived principal must declare its own decline, got: ${r.declines.map((d) => d.subject).join(', ')}`,
   );
+});
+
+// --- D482: a public resource has no owner (M137c2) -------------------------------------------------
+//
+// The unit half lives in `authz-rules.test.ts`. This half exists for the reason that file's header
+// gives: a pure test can agree with the code about a fact the rest of the system contradicts. What is
+// proved here is that the probe set the *interpreter* assembles contains `anonymous` in the state the
+// rule reads, and that the note reaches the step detail a reader actually sees.
+
+test('D482: a public collection is a pass, not a critical finding', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /catalog'));
+  assert.ok(r.ok, `a public catalog is not a BOLA finding, got: ${r.detail}`);
+  assert.doesNotMatch(r.detail, /sec\/authz-collection-leak:/, 'the rule must not fire here');
+  assert.deepEqual(r.findings, [], 'and nothing may reach the repro emitter either');
+});
+
+test('D482: the pass says why, because the probe line otherwise contradicts it', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /catalog'));
+  // Every principal receives the catalog, so the probe line reads `3 leaked` — beside `0 violations`.
+  // Both are true and the pair is unreadable without the reason on the same line, which is why this
+  // assertion is on the *text* rather than only on the verdict.
+  assert.match(r.detail, /3 leaked/);
+  assert.match(r.detail, /0 violations/);
+  assert.match(r.detail, /`anonymous` received the same resources, so this is public data with no owner/);
+  assert.match(r.detail, /found nothing to violate rather than finding a boundary intact/);
+});
+
+test('D482: the rule stays applicable, so D285 does not fail a crawl over a public API', async () => {
+  mode = 'safe';
+  const r = await run(asserting('api GET /catalog'));
+  // The decision the whole fix turns on. Routed through the not-applicable door this response would
+  // have **no** applicable rule — `authz-object-leak` reads an object, `csrf-not-enforced` needs a
+  // clause — and D285 would fail the assertion. That trades 20 spurious findings for 4 spurious
+  // failures, which is why the guard says "applicable, nothing violated" instead.
+  assert.match(r.detail, /3 rules — 1 applicable, 2 not applicable, 0 violations/);
+  assert.doesNotMatch(r.detail, /had no power to fail/);
+});
+
+test('D482: the guard is narrow — a guarded route still leaks, because `anonymous` is refused there', async () => {
+  // The negative control, and the one that matters most: the arc's whole plant set (`V6`, `V7`, `V15`)
+  // sits behind a guard that `401`s a credential-less caller. A guard keyed on anything looser than
+  // "`anonymous` received the owner's own ids" would suppress those too and look like a precision win
+  // while silently becoming a false-negative machine.
+  //
+  // `/orders` is that route: its first act is to `401` an unauthenticated caller, and in
+  // `collection-leak` mode it serves everybody's rows to anyone who is logged in.
+  mode = 'collection-leak';
+  const r = await run(asserting('api GET /orders'));
+  assert.equal(r.ok, false, 'a real leak must still fire');
+  assert.match(r.detail, /sec\/authz-collection-leak/);
+  assert.doesNotMatch(r.detail, /public data with no owner/, 'and it must not claim the data is public');
 });
