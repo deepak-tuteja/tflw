@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
+import { loadOpenApiDocumentForCrawl, normalizeOpenApiSchema } from '../src/contract.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 const OPENAPI_DOC = {
@@ -118,7 +119,10 @@ test('a malformed (non-JSON, no components.schemas) OpenAPI document fails clear
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.ok((report.tests[0]!.error ?? '').length > 0);
+  // Since `D460` this says which of the two things went wrong. The body did not parse at all, so
+  // there is no document to look for schemas in, and the error says *that* rather than reporting a
+  // missing `components.schemas` — which was true but was the second-order consequence.
+  assert.match(report.tests[0]!.error ?? '', /is not a JSON object/);
 
   await server.close();
 });
@@ -238,6 +242,120 @@ test "the assertion that rides on it"
   } finally {
     await server.close();
   }
+});
+
+// -- `D460`: the same loader, now serving a second reader with different needs ---------------------
+//
+// `M137c`'s crawl seeds itself from `paths`; this matcher validates against `components.schemas`.
+// Until this milestone the loader demanded the second and discarded the first, so the document below
+// — routes, no component schemas, entirely legal, and what a NestJS app with only primitive
+// responses actually publishes — was a **hard error**, thrown while *seeding*, about *validation*.
+// That is the wrong-cause failure `D443` allocated `TF068` to avoid, arriving from the wrong layer.
+
+const PATHS_ONLY_DOC = {
+  openapi: '3.0.0',
+  paths: {
+    '/products': { get: { responses: { '200': { description: 'ok' } } } },
+    '/health': { get: { responses: { '200': { description: 'ok' } } } },
+  },
+};
+
+test('D460: a document with `paths` and no `components.schemas` loads for a crawl', async () => {
+  const server = await startFixtureServer({
+    '/openapi.json': (_req, res) => json(res, 200, PATHS_ONLY_DOC),
+  });
+  try {
+    const loaded = await loadOpenApiDocumentForCrawl('/openapi.json', testConfig(server.baseUrl));
+    // The routes survive the trip — the whole point of widening the cached value.
+    assert.deepEqual(Object.keys(loaded.document.paths ?? {}), ['/products', '/health']);
+    assert.equal(loaded.url, `${server.baseUrl}/openapi.json`, 'a relative seed resolves against the default service, like `api GET /path`');
+    assert.equal(loaded.fetched, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test('D460: and the schema matcher still refuses that same document, in the same words', async () => {
+  // The requirement moved; it did not soften. This is the control that says so — an author who has
+  // seen this sentence before must see it again, from the reader that actually cannot proceed.
+  const server = await startFixtureServer({
+    '/openapi.json': (_req, res) => json(res, 200, PATHS_ONLY_DOC),
+    '/widgets/good': (_req, res) => json(res, 200, { id: 'w1' }),
+  });
+  const source = `test "a document with no component schemas"
+  api GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+`;
+  const { program } = parseSource(source);
+  try {
+    const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+    assert.equal(report.ok, false);
+    assert.match(report.tests[0]!.error ?? '', /has no `components\.schemas` to validate against/);
+    // And it now carries the provenance clause every other outcome of this matcher has — the reader
+    // learns which document was consulted, not just that one was unusable.
+    assert.match(report.tests[0]!.error ?? '', /fetched schema document/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('D460: the crawl seed shares the one cache, so a seed and an assertion cost one fetch between them', async () => {
+  // Not a performance test. A second, naive cache is the specific mistake `D460` names, and what it
+  // would re-earn is `A12-02`'s: a rejection cached for the life of the process. Sharing the existing
+  // one is how the crawl inherits the eviction rule instead of reimplementing it.
+  const server = await startFixtureServer({
+    '/openapi.json': (_req, res) => json(res, 200, { ...PATHS_ONLY_DOC, ...OPENAPI_DOC }),
+    '/widgets/good': (_req, res) => json(res, 200, { id: 'w1', name: 'Widget', address: { city: 'Springfield' } }),
+  });
+  const config = testConfig(server.baseUrl);
+  const source = `test "the assertion that rides on the seed's fetch"
+  api GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+`;
+  const { program } = parseSource(source);
+  try {
+    const seeded = await loadOpenApiDocumentForCrawl('/openapi.json', config);
+    assert.equal(seeded.fetched, true);
+    const { report } = await runProgram(program, config, { source });
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+    assert.equal(server.received.get('/openapi.json')!.length, 1, 'one document, one fetch, two readers');
+    assert.match(report.tests[0]!.steps.find((s) => s.kind === 'expect')!.detail!, /from cache/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('D460: a crawl seed is refused by `allow hosts` before any I/O, like every other document fetch', async () => {
+  // `checkHostAllowed` reached the crawl for free by being inside `loadSchemaDoc`, which is the
+  // argument for the reuse. Pinned anyway: this is `D342`'s permission door on the arc's most
+  // traffic-originating construct, and "we got it for free" is exactly the kind of property a
+  // refactor silently removes.
+  const server = await startFixtureServer({ '/openapi.json': (_req, res) => json(res, 200, PATHS_ONLY_DOC) });
+  const config = { ...testConfig(server.baseUrl), allowHosts: ['example.invalid'] };
+  try {
+    await assert.rejects(
+      () => loadOpenApiDocumentForCrawl('/openapi.json', config),
+      (err: Error) => {
+        assert.match(err.message, /allow hosts/i);
+        return true;
+      },
+    );
+    assert.equal(server.received.get('/openapi.json'), undefined, 'refused before any I/O, not after');
+  } finally {
+    await server.close();
+  }
+});
+
+test('D460: `normalizeOpenApiSchema` is the one folder of OpenAPI 3.0 `nullable`, now shared', () => {
+  // Exported so synthesis reads a NestJS schema the way the validator does. Two implementations
+  // would drift, and the drift is invisible: a synthesizer that missed `nullable` would send a value
+  // the validator on the other side of the same document would have accepted as `null`.
+  assert.deepEqual(normalizeOpenApiSchema({ type: 'string', nullable: true }), { type: ['string', 'null'] });
+  assert.deepEqual(
+    normalizeOpenApiSchema({ type: 'object', properties: { a: { type: 'number', nullable: true } } }),
+    { type: 'object', properties: { a: { type: ['number', 'null'] } } },
+  );
+  assert.deepEqual(normalizeOpenApiSchema({ type: 'string' }), { type: 'string' }, 'and it leaves an ordinary schema exactly as it found it');
 });
 
 test('a failing schema assertion still reports where the schema came from (A12-03)', async () => {

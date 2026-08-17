@@ -28,12 +28,35 @@ import { truncate, type MatchOutcome } from './matcher.js';
  * `loadSchemaDoc`), so the cache never turns a transient outage into a permanent one. */
 const schemaDocCache = new Map<string, Promise<LoadedSchemaDoc>>();
 
+/**
+ * The parsed document, in the two slices its two readers want (`M137c`, `D460`).
+ *
+ * Deliberately minimal and open rather than a full OpenAPI model: `expect body matches schema` wants
+ * `components.schemas` and nothing else, `crawl … seed openapi` wants `paths` and nothing else, and
+ * the operation-level shapes the crawl's enumerator reads are declared where it reads them
+ * (`crawlSurface.ts`) rather than here. A document is untrusted input off the network either way, so
+ * every field is optional and every reader narrows what it uses.
+ */
+export interface OpenApiDocument {
+  readonly paths?: Readonly<Record<string, unknown>>;
+  readonly components?: { readonly schemas?: Readonly<Record<string, unknown>> };
+}
+
 /** A fetched-and-compiled OpenAPI document, plus what it cost to get — carried so the assertion
- * that triggered the fetch can say so in its own detail line (review finding `A12-03`). */
+ * that triggered the fetch can say so in its own detail line (review finding `A12-03`).
+ *
+ * `document` is `D460`: the raw parsed document, kept rather than discarded. Until `M137c` this
+ * interface held only the compiled `ajv` instance, so `paths` was read on the way past and thrown
+ * away — which made a perfectly ordinary document (routes, no component schemas) a hard failure for
+ * anything that wanted the routes. It is the *unnormalized* document on purpose: `nullable` is folded
+ * per-schema at `addSchema` time below, and a reader that needs the same treatment for an inline
+ * schema calls `normalizeOpenApiSchema` on that schema itself. Normalizing the whole document once
+ * here would rewrite parts of it nobody validates against, to save a call nobody is making. */
 interface LoadedSchemaDoc {
   readonly ajv: Ajv;
   readonly durationMs: number;
   readonly schemaCount: number;
+  readonly document: OpenApiDocument;
 }
 
 /** Absolute (`http(s)://`) sources pass through; anything else is resolved against the default
@@ -47,8 +70,13 @@ function resolveSchemaSourceUrl(source: string, config: ResolvedConfig): string 
 
 /** Recursively strips OpenAPI 3.0's `nullable: true` (a keyword plain JSON-Schema/ajv doesn't
  * understand) and folds it into `type: [..., 'null']`, so a NestJS/Swagger-generated schema
- * validates a real `null` value the same way the OpenAPI spec itself says it should. */
-function normalizeOpenApiSchema(node: unknown): unknown {
+ * validates a real `null` value the same way the OpenAPI spec itself says it should.
+ *
+ * Exported since `M137c` (`D460`): the crawl's request synthesis reads the same NestJS-generated
+ * schemas to build a body, so it has to understand `nullable` identically. One function rather than
+ * two, because two would drift and the drift would be invisible — a synthesizer that thought a field
+ * was non-nullable would send a value the validator would have accepted as `null`. */
+export function normalizeOpenApiSchema(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(normalizeOpenApiSchema);
   if (node === null || typeof node !== 'object') return node;
   const obj = node as Record<string, unknown>;
@@ -80,16 +108,26 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<{ doc
       if (response.status < 200 || response.status >= 300) {
         throw new RuntimeError(`could not load OpenAPI document at "${url}": got ${response.status}`);
       }
-      const doc = response.json as { components?: { schemas?: Record<string, unknown> } } | undefined;
-      const schemas = doc?.components?.schemas;
-      if (!schemas) {
-        throw new RuntimeError(`OpenAPI document at "${url}" has no \`components.schemas\` to validate against`);
+      const parsed: unknown = response.json;
+      // What "usable document" means here, and it is the only thing this loader now insists on: a
+      // JSON object came back. `response.json` is `undefined` for a body that did not parse, which
+      // is what a `text/plain` 200 from a misrouted path looks like — and saying *that* is what the
+      // caller needs, rather than a sentence about validation (`D460`).
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new RuntimeError(`OpenAPI document at "${url}" is not a JSON object`);
       }
+      const document = parsed as OpenApiDocument;
+      // `?? {}` is `D460`'s move: **a document with `paths` and no `components.schemas` is legal**,
+      // and until `M137c` this line threw on one. It threw while *seeding*, about *validation* — an
+      // error naming a feature the caller was not using, for a document that was fine. The
+      // requirement did not disappear; it moved to `evaluateSchemaMatch`, the one reader that cannot
+      // work without it, where it can also say which schema was being looked for.
+      const schemas = document.components?.schemas ?? {};
       const ajv = new Ajv({ strict: false });
       for (const [name, schema] of Object.entries(schemas)) {
         ajv.addSchema(normalizeOpenApiSchema(schema) as object, `#/components/schemas/${name}`);
       }
-      return { ajv, durationMs: Math.round(performance.now() - start), schemaCount: Object.keys(schemas).length };
+      return { ajv, durationMs: Math.round(performance.now() - start), schemaCount: Object.keys(schemas).length, document };
     })();
     // Cache the *in-flight* promise (that's the point — concurrent assertions share one fetch),
     // but evict it the moment it rejects (M63, review finding A12-02). Caching a rejection made a
@@ -111,6 +149,34 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<{ doc
   return { doc: await cached, fetched };
 }
 
+/**
+ * `crawl "…" / seed openapi "/openapi.json"` — the documented surface, fetched (`M137c`, `D460`).
+ *
+ * A four-line function on purpose. Everything a crawl needs from a document fetch was already built
+ * here for `expect body matches schema`, and each piece is something the crawl inherits for the same
+ * reason the assertion had it:
+ *
+ * - **`checkHostAllowed`** inside `loadSchemaDoc` — `D342`'s permission door, already applied to a
+ *   document fetch. A crawl fetching its own document needs exactly this and nothing crawl-specific.
+ * - **The reject-evicting, URL-keyed, process-lifetime cache** — including the `A12-02` lesson about
+ *   what caching a rejection cost. A second cache alongside it would re-earn that from scratch.
+ * - **`resolveSchemaSourceUrl`** — so `seed openapi "/openapi.json"` resolves against the default
+ *   service's base URL, *the same convention a plain `api GET /path` step already uses*. That
+ *   convention was decided for the schema source and is not re-decided for the seed.
+ *
+ * Returns the provenance numbers as well as the document, because `D435` requires the crawl to
+ * disclose its planned volume before it sends anything, and "read 84 paths out of a document fetched
+ * from <url> in 12ms" is the first half of that sentence.
+ */
+export async function loadOpenApiDocumentForCrawl(
+  source: string,
+  config: ResolvedConfig,
+): Promise<{ readonly url: string; readonly document: OpenApiDocument; readonly durationMs: number; readonly fetched: boolean }> {
+  const url = resolveSchemaSourceUrl(source, config);
+  const { doc, fetched } = await loadSchemaDoc(url, config);
+  return { url, document: doc.document, durationMs: doc.durationMs, fetched };
+}
+
 /** Runs `expect body matches schema "schemaName" from "source"` (and its negated form).
  * Message shape mirrors `evalMatcher`'s own "expected ... but got ..." convention. */
 export async function evaluateSchemaMatch(
@@ -124,6 +190,12 @@ export async function evaluateSchemaMatch(
   const url = resolveSchemaSourceUrl(source, config);
   const { doc, fetched } = await loadSchemaDoc(url, config);
   const { ajv } = doc;
+  // `D460` — the requirement `loadSchemaDoc` used to enforce, now stated by the reader that actually
+  // has it. Same sentence it always was, so an author who has seen this error before sees it again,
+  // and now with the provenance clause every other outcome of this matcher carries.
+  if (doc.schemaCount === 0) {
+    throw new RuntimeError(`OpenAPI document at "${url}" has no \`components.schemas\` to validate against${provenance(url, doc, fetched)}`);
+  }
   const key = `#/components/schemas/${schemaName}`;
   const validate: ValidateFunction | undefined = ajv.getSchema(key);
   if (!validate) {
