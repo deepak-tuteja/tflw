@@ -360,6 +360,35 @@ export interface WorkloadTestResult extends LoadScenarioReport {
 export type ReportEntry = TestResult | WorkloadTestResult;
 
 /**
+ * Turns "I forgot this entry kind" from a silent wrong answer into a compile error (`M137c`, `D462`).
+ *
+ * `ReportEntry` has had exactly two members since `M56`, so every consumer that dispatches on `kind`
+ * has been able to write a *binary* test — `kind === 'workload' ? … : …` — and be right by accident.
+ * Measured before the third kind was added: **13 such sites across 8 files**, four of them in
+ * `junit.ts` alone. None of them would fail to compile against a third kind, and the wrong branch is
+ * the plausible-looking one: a new kind read as a functional test renders as a passing one-case test
+ * with `entry.ok` for a verdict. That is `M134a`'s lesson exactly — the tell for a report that judged
+ * less than it appears to is a **green** report, not a red one.
+ *
+ * So the dispatch sites that are genuinely *about which kind this is* end in
+ * `default: return exhaustiveEntry(entry)`, and adding a member to the union turns each of them into
+ * a type error at the moment the member is declared, before it can reach a reader.
+ *
+ * Deliberately **not** applied to every `kind ===` in the codebase. Some are true predicates about
+ * workload tests specifically — `cli-summary.ts`'s back-off warning, `interpreter.ts`'s load-report
+ * splice — and rewriting those as three-way dispatch would claim a decision where none exists. The
+ * rule is: exhaustive where the answer *differs per kind*, a plain predicate where the question is
+ * "is this a workload test".
+ *
+ * It throws as well as failing to type-check, because a `ReportEntry` can also arrive from JSON that
+ * TypeScript never saw — a `results.json` written by a newer tflw and read by an older one.
+ */
+export function exhaustiveEntry(entry: never): never {
+  const kind = (entry as { readonly kind?: unknown } | null)?.kind;
+  throw new Error(`unhandled report entry kind: ${typeof kind === 'string' ? kind : JSON.stringify(kind)}`);
+}
+
+/**
  * M134b (D389) — one scan's rule census for the run: what applied, and what stood down and why.
  *
  * Merged across every assertion of that scan in the run, because the question `M128-01` asks is

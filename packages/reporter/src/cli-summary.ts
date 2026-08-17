@@ -1,6 +1,6 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
-import { MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
+import { exhaustiveEntry, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
 import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { grantedProbeClauses } from './probe-clauses.js';
 import { findingsSummaryLine, sortFindings } from './findings.js';
@@ -21,10 +21,13 @@ export function renderCliSummary(report: RunReport, color = true): string {
   const lines: string[] = [];
   const noVerdict = noVerdictReason(report);
   for (const test of report.tests) {
+    // D462 — exhaustive: the console summary is the surface a person actually reads, so an entry kind
+    // this loop does not know about must be a compile error rather than a line that looks familiar.
     if (test.kind === 'workload') {
       lines.push(...workloadLines(test, c, noVerdict));
       continue;
     }
+    if (test.kind !== 'functional') return exhaustiveEntry(test);
     lines.push(testLine(test, c));
     for (const step of test.steps) {
       if (!step.ok) lines.push(`    ${c.red}✗ ${step.source}${c.reset}${step.detail ? `\n      ${c.red}${step.detail}${c.reset}` : ''}`);

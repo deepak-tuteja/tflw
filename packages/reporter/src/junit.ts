@@ -14,7 +14,7 @@
 // now: `1.0.0` is the first publish, so today there is nobody to break. Most JUnit parsers accept
 // either root; one that insists on a bare `<testsuite>` gets the wrapper it wanted anyway.
 
-import type { LoadThresholdResult, ReportEntry, RunReport, TestResult, WorkloadTestResult } from '@tflw/runtime';
+import { exhaustiveEntry, type LoadThresholdResult, type ReportEntry, type RunReport, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { fileOf, groupByFile } from './group-by-file.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 import { noVerdictMessage, noVerdictReason, type NoVerdictReason } from './run-verdict.js';
@@ -86,22 +86,58 @@ function renderProperties(report: RunReport): string[] {
   return lines;
 }
 
+// D462 — these four are the dispatch points where the answer *differs per entry kind*, so they are
+// exhaustive rather than binary. All four used to read `kind === 'workload' ? … : …`, which meant a
+// third kind would have been counted, timed, judged and rendered as a functional test: one testcase,
+// `entry.ok` for a verdict, and a JUnit consumer with no way to notice, since it sees only what this
+// file chose to emit. Four separate binary tests in one file is also why this file is named first in
+// `D462` — a reader fixing "the switch" would have found one of them.
+
 function entryDurationMs(entry: ReportEntry): number {
-  return entry.kind === 'workload' ? 0 : entry.durationMs;
+  switch (entry.kind) {
+    case 'functional':
+      return entry.durationMs;
+    // A workload test has no single "this took Nms" figure — its declared span is planned, not an
+    // outcome (`types.ts`'s `WorkloadTestResult`), so it contributes nothing to a suite's time.
+    case 'workload':
+      return 0;
+    default:
+      return exhaustiveEntry(entry);
+  }
 }
 
 function testCaseCount(entry: ReportEntry): number {
-  return entry.kind === 'workload' ? Math.max(1, entry.thresholds.length) : 1;
+  switch (entry.kind) {
+    case 'functional':
+      return 1;
+    case 'workload':
+      return Math.max(1, entry.thresholds.length);
+    default:
+      return exhaustiveEntry(entry);
+  }
 }
 
 function testCaseFailureCount(entry: ReportEntry, noVerdict: NoVerdictReason | null): number {
-  if (entry.kind !== 'workload') return entry.ok ? 0 : 1;
-  if (noVerdict !== null) return 0; // R11, extended by `FU-07`: no verdict means skipped, not failed
-  return entry.thresholds.filter((t) => !t.ok).length;
+  switch (entry.kind) {
+    case 'functional':
+      return entry.ok ? 0 : 1;
+    case 'workload':
+      if (noVerdict !== null) return 0; // R11, extended by `FU-07`: no verdict means skipped, not failed
+      return entry.thresholds.filter((t) => !t.ok).length;
+    default:
+      return exhaustiveEntry(entry);
+  }
 }
 
 function renderEntry(entry: ReportEntry, file: string, report: RunReport, noVerdict: NoVerdictReason | null): string[] {
-  return entry.kind === 'workload' ? renderWorkloadTestCases(entry, file, report, noVerdict) : [renderTestCase(entry, file)];
+  switch (entry.kind) {
+    case 'functional':
+      return [renderTestCase(entry, file)];
+    case 'workload':
+      return renderWorkloadTestCases(entry, file, report, noVerdict);
+    default:
+      return exhaustiveEntry(entry);
+  }
 }
 
 /** M65 (FS-09): `classname` is the source file verbatim — the same string as the enclosing

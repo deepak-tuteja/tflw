@@ -14,8 +14,9 @@
 // same sidebar/tab mechanism a functional test already used.
 
 import type { AttemptResult, BackOffDiagnosis, LoadMetrics, LoadScenarioReport, LoadThresholdResult, LogLevel, ReportEntry, RequestTrace, ResponseTrace, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
-import { LOG_LEVEL_ORDER, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL } from '@tflw/runtime';
+import { exhaustiveEntry, LOG_LEVEL_ORDER, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL } from '@tflw/runtime';
 import { assetHash } from './assets.js';
+import { stepBearing } from './entry-kind.js';
 import { esc } from './escape.js';
 import { fileOf, groupByFile } from './group-by-file.js';
 import { grantedProbeClauses } from './probe-clauses.js';
@@ -133,8 +134,9 @@ function renderFooter(report: RunReport, assetHrefs: ReadonlyMap<string, string>
 
 function anyStep(report: RunReport, pred: (s: StepResult) => boolean): boolean {
   return report.tests.some((t) => {
-    if (t.kind !== 'functional') return false;
-    return t.steps.some(pred) || (t.attempts ?? []).some((a) => a.steps.some(pred));
+    const stepped = stepBearing(t);
+    if (!stepped) return false;
+    return stepped.steps.some(pred) || (stepped.attempts ?? []).some((a) => a.steps.some(pred));
   });
 }
 
@@ -223,10 +225,17 @@ function renderTestLink(slot: TestSlot): string {
   return `        <li><button type="button" class="testlink ${status}" data-target="${slot.id}">${slot.test.ok ? '✓' : '✗'} ${esc(slot.test.name)}</button></li>`;
 }
 
+// D462 — exhaustive, because this is the point where an entry kind decides its whole layout. Read
+// binary, a third kind would render as a functional test: a step timeline with no steps in it.
 function renderTest(slot: TestSlot, active: boolean, assetHrefs: ReadonlyMap<string, string>, logLevelThreshold: LogLevel, selfDiagnosis?: SelfDiagnosis): string {
-  return slot.test.kind === 'workload'
-    ? renderWorkloadTest(slot, active, selfDiagnosis)
-    : renderFunctionalTest(slot, slot.test, active, assetHrefs, logLevelThreshold);
+  switch (slot.test.kind) {
+    case 'functional':
+      return renderFunctionalTest(slot, slot.test, active, assetHrefs, logLevelThreshold);
+    case 'workload':
+      return renderWorkloadTest(slot, active, selfDiagnosis);
+    default:
+      return exhaustiveEntry(slot.test);
+  }
 }
 
 /** D115 — same inline-badge pattern as the existing `flaky` badge, for any entry (functional or

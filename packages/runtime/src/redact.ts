@@ -4,7 +4,7 @@
 // header-blocklists) means a secret in a login body or a URL is caught wherever it flows, so
 // report.html and CLI output are ticket-attachable by construction.
 
-import type { AttemptResult, ReportEntry, RequestTrace, ResponseTrace, RunEvent, RunReport, StepResult, TestResult, WorkloadTestResult } from './types.js';
+import { exhaustiveEntry, type AttemptResult, type ReportEntry, type RequestTrace, type ResponseTrace, type RunEvent, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from './types.js';
 
 /** A secret shorter than this is too likely to collide with unrelated report content (a port
  * number, a small numeric ID) — substring-redacting it would silently corrupt those unrelated
@@ -135,8 +135,19 @@ function redactReportEntry(t: ReportEntry, redactor: Redactor): ReportEntry {
   // name could ever carry a secret. A test header is never interpolated, so that means an author
   // who typed the value into the name itself; the redactor is value-based (see this file's header),
   // so it is masked all the same once some step reveals the value via `env()`.
-  if (t.kind === 'workload') return redactWorkloadTestResult(t, redactor);
-  return redactTestResult(t, redactor);
+  //
+  // D462 — exhaustive, and this is the site where a missed kind is a *disclosure* rather than a
+  // cosmetic gap: the fallback arm is the functional redactor, which knows how to walk a step
+  // timeline and nothing else. A third kind carrying evidence of its own shape would be handed to it
+  // and pass through with whatever it does not recognise unredacted.
+  switch (t.kind) {
+    case 'workload':
+      return redactWorkloadTestResult(t, redactor);
+    case 'functional':
+      return redactTestResult(t, redactor);
+    default:
+      return exhaustiveEntry(t);
+  }
 }
 
 function redactWorkloadTestResult(t: WorkloadTestResult, redactor: Redactor): WorkloadTestResult {

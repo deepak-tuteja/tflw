@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { Redactor, redactEvent, redactReport } from '../src/redact.js';
-import type { RunEvent, RunReport } from '../src/types.js';
+import { exhaustiveEntry, type RunEvent, type RunReport } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 test('Redactor.redact masks a registered secret wherever it appears verbatim', () => {
@@ -361,4 +361,18 @@ test('a trace archive passes through `redactReport` byte-identical — redaction
   assert.equal(t.trace!.base64, traceBytes, 'the archive is returned exactly as captured');
   assert.equal(t.steps[0]!.screenshot!.base64, traceBytes);
   assert.ok(Buffer.from(t.trace!.base64, 'base64').toString().includes('sekret-value'), 'the secret really is still in there — that is the point');
+});
+
+// D462 — `exhaustiveEntry` is the guard that makes a third `ReportEntry` kind a compile error at
+// every dispatch site. The compile-time half cannot be asserted from a test (a test that failed to
+// compile would not run), so what is asserted here is the *runtime* half, which exists for the case
+// TypeScript never sees: a `results.json` written by a newer tflw and read by an older one. It has to
+// fail loudly there too, because the alternative is the same silent wrong answer in a different
+// process — the report renders, and the entry it could not understand is simply absent.
+test('exhaustiveEntry throws and names the kind it did not know (D462)', () => {
+  const alien = { kind: 'crawl', name: 'the v1 API surface' } as unknown as never;
+  assert.throws(() => exhaustiveEntry(alien), /unhandled report entry kind: crawl/);
+  // An entry with no `kind` at all reaches the same guard — JSON is JSON.
+  assert.throws(() => exhaustiveEntry({} as unknown as never), /unhandled report entry kind: undefined/);
+  assert.throws(() => exhaustiveEntry(null as unknown as never), /unhandled report entry kind: undefined/);
 });
