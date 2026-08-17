@@ -126,6 +126,8 @@ import type {
   SwitchToNewTabBlock,
   SwitchToTabStmt,
   TestDecl,
+  CrawlDecl,
+  CrawlSeed,
   TextBody,
   ThresholdDecl,
   ThresholdMetric,
@@ -554,6 +556,7 @@ class Parser {
 
   parse(): ParseResult {
     const tests: TestDecl[] = [];
+    const crawls: CrawlDecl[] = [];
     const imports: ImportDecl[] = [];
     const uses: UseDecl[] = [];
     const actions: ActionDecl[] = [];
@@ -572,10 +575,21 @@ class Parser {
       }
       const before = this.pos;
       const tok = this.peek();
-      if (this.check('tag') || this.isKw(tok, 'with') || this.isKw(tok, 'test')) {
-        const test = this.parseTest();
-        if (test) tests.push(test);
-        else this.recoverTopLevel();
+      if (this.check('tag') || this.isKw(tok, 'with') || this.isKw(tok, 'test') || this.isKw(tok, 'crawl')) {
+        // A tag line is shared prefix: `@vuln` can introduce either a `test` or a `crawl` (D450), and
+        // which one is only knowable past the tags. So the tag-led branch peeks rather than committing,
+        // and `tagsContinue()` — which decides whether a *newline* after a tag is a continuation —
+        // has to know about `crawl` too, or the loop stops at the newline and `expectKw('test')`
+        // reports "expected a test name" on the `crawl` line.
+        if (this.crawlAhead()) {
+          const crawl = this.parseCrawl();
+          if (crawl) crawls.push(crawl);
+          else this.recoverTopLevel();
+        } else {
+          const test = this.parseTest();
+          if (test) tests.push(test);
+          else this.recoverTopLevel();
+        }
       } else if (this.isKw(tok, 'import')) {
         const imp = this.parseImportDecl();
         if (imp) imports.push(imp);
@@ -617,8 +631,8 @@ class Parser {
         );
         this.recoverTopLevel();
       } else {
-        const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
-        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
+        const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `crawl`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
+        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`crawl\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
         // The offending token may itself be the `indent` opening an orphaned body, in which case
         // `synchronize()` would step *into* the block and report it line by line all over again.
         if (this.check('indent')) this.skipBlock();
@@ -637,6 +651,9 @@ class Parser {
       actions,
       hooks,
       tests,
+      // Spread rather than assigned, for the same reason `recoveredSpans` is below: a
+      // program that declares no crawl must serialise exactly as it always has.
+      ...(crawls.length > 0 ? { crawls } : {}),
       // Spread rather than assigned: see `Program.recoveredSpans` — a healthy program's AST must
       // stay byte-identical, and every parser golden file is the assertion that it does.
       ...(this.recoveredSpans.length > 0 ? { recoveredSpans: this.recoveredSpans } : {}),
@@ -2218,7 +2235,143 @@ class Parser {
 
   private tagsContinue(): boolean {
     const next = this.peek(1);
-    return next.type === 'tag' || this.isKw(next, 'with') || this.isKw(next, 'test');
+    return next.type === 'tag' || this.isKw(next, 'with') || this.isKw(next, 'test') || this.isKw(next, 'crawl');
+  }
+
+  /** Is the declaration after this tag run a `crawl` rather than a `test`? (D450)
+   *
+   * Pure lookahead — consumes nothing — because the tags themselves belong to whichever production
+   * wins, and a tag line is the one prefix the two share. `with` is not scanned past: a `with each`
+   * table only ever precedes a `test`, so meeting one answers the question by itself. */
+  private crawlAhead(): boolean {
+    for (let i = 0; ; i++) {
+      const tok = this.peek(i);
+      if (tok.type === 'tag' || tok.type === 'newline') continue;
+      return this.isKw(tok, 'crawl');
+    }
+  }
+
+  // -- crawl (M137c, D432/D450) -------------------------------------------------
+
+  /**
+   * `crawl "the v1 API surface" as peer, shopperBearer` + an indented body of `seed`/`exclude` lines
+   * and `expect …` assertions.
+   *
+   * Every element is taken from something the language already does — the tag lines, the quoted name
+   * `--only` matches, `as`'s comma list, the indentation-based body — so what is genuinely new here is
+   * two body directives and nothing else (`D450`).
+   */
+  private parseCrawl(): CrawlDecl | null {
+    const start = this.peek().span.start;
+    const tags: string[] = [];
+    while (this.check('tag') || (this.check('newline') && tags.length > 0 && this.tagsContinue())) {
+      if (this.check('tag')) tags.push(this.advance().value);
+      else this.advance();
+    }
+    if (!this.expectKw('crawl')) return null;
+    const name = this.expectString('a crawl name string, e.g. `crawl "the v1 API surface"`');
+    if (!name) return null;
+    const sessions: string[] = [];
+    let sawAs = false;
+    while (this.isKw(this.peek(), 'as')) {
+      const tok = this.peek();
+      const duplicate = sawAs;
+      // Same message and same keep-parsing recovery as `test`'s (`A2-06`): bailing out of the header
+      // would abandon the declaration and report its whole body as stray top-level lines.
+      if (duplicate) {
+        this.error(Codes.UNEXPECTED_TOKEN, 'this crawl already has an `as` clause', tok.span, 'list every session in one clause, comma-separated: `as peer, shopperBearer`');
+      }
+      sawAs = true;
+      this.advance();
+      if (this.completionMode && this.atCompletionPoint()) {
+        this.completionResult = { kind: 'session', prefix: this.completionPrefix() };
+        return null;
+      }
+      const first = this.expect('ident', 'a session name after `as`');
+      if (first && !duplicate) sessions.push(first.value);
+      while (this.check('comma')) {
+        this.advance();
+        if (this.completionMode && this.atCompletionPoint()) {
+          this.completionResult = { kind: 'session', prefix: this.completionPrefix() };
+          return null;
+        }
+        const s = this.expect('ident', 'a session name');
+        if (s && !duplicate) sessions.push(s.value);
+      }
+    }
+    this.endLine();
+    const { seeds, excludes, body } = this.parseCrawlBody();
+    return { type: 'CrawlDecl', name, tags, sessions, seeds, excludes, body, span: this.spanFrom(start) };
+  }
+
+  /** A crawl body: `seed …` / `exclude …` directives interleaved with ordinary steps, the same shape
+   * `parseTestBody` uses for `workload`/`threshold`/`cleanup`. The steps are **not** restricted here —
+   * a crawl body holding an `api GET /orders` line is a semantic error about a fully-formed node, so
+   * the checker owns it, the same layering `D96` and `D19` already use. */
+  private parseCrawlBody(): { seeds: CrawlSeed[]; excludes: StringLit[]; body: Step[] } {
+    const seeds: CrawlSeed[] = [];
+    const excludes: StringLit[] = [];
+    const body: Step[] = [];
+    if (!this.check('indent')) {
+      this.error(Codes.EMPTY_BLOCK, 'this `crawl` has no body', this.peek().span, 'indent at least one `seed` line and one `expect` under the `crawl` line');
+      return { seeds, excludes, body };
+    }
+    this.advance(); // indent
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const tok = this.peek();
+      if (this.isKw(tok, 'seed')) {
+        const seed = this.parseCrawlSeed();
+        if (seed) seeds.push(seed);
+        else this.recover(before);
+      } else if (this.isKw(tok, 'exclude')) {
+        this.advance();
+        const glob = this.expectString('a path glob to exclude, e.g. `exclude "/vuln/**"`');
+        if (glob) {
+          excludes.push(glob);
+          this.endLine();
+        } else this.recover(before);
+      } else {
+        const step = this.parseStep();
+        if (step) body.push(step);
+        else this.recover(before);
+      }
+      if (this.pos === before) this.advance(); // guarantee progress
+    }
+    if (this.check('dedent')) this.advance();
+    return { seeds, excludes, body };
+  }
+
+  /** `seed openapi "<path>"` | `seed traffic` (D435/D436). Two words, and the error names both rather
+   * than saying "unexpected": a seed the crawl does not understand is a surface it will not reach, and
+   * `TF068` would then report an empty surface without saying which line was ignored. */
+  private parseCrawlSeed(): CrawlSeed | null {
+    const start = this.peek().span.start;
+    this.advance(); // `seed`
+    const tok = this.peek();
+    if (this.isKw(tok, 'openapi')) {
+      this.advance();
+      const source = this.expectString('a URL or path for the OpenAPI document, e.g. `seed openapi "/openapi.json"`');
+      if (!source) return null;
+      this.endLine();
+      return { type: 'OpenApiSeed', source, span: this.spanFrom(start) };
+    }
+    if (this.isKw(tok, 'traffic')) {
+      this.advance();
+      this.endLine();
+      return { type: 'TrafficSeed', span: this.spanFrom(start) };
+    }
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      `expected \`openapi\` or \`traffic\` after \`seed\`, found ${describeToken(tok)}`,
+      tok.span,
+      'a crawl seeds from the documented surface (`seed openapi "/openapi.json"`) or from this run\'s own captured requests (`seed traffic`)',
+    );
+    return null;
   }
 
   // -- data tables (P#10, P#24) -------------------------------------------------

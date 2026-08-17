@@ -17,6 +17,7 @@
 
 import { createHash } from 'node:crypto';
 import type { RunReport, StepResult } from '@tflw/runtime';
+import { stepBearing } from './entry-kind.js';
 
 /** Screenshots (PNG) larger than this inline as a plain `data:` URI in `report.html`; at/above it
  * they're written to `assets/screenshots/<hash>.png` and linked by relative path instead. Traces
@@ -84,8 +85,9 @@ export function resolveReportAssets(report: RunReport, inlineBudgetBytes: number
   // M56 (Phase 3) — a workload entry has no steps/trace/attempts at all (D24a: a load iteration's
   // body runs silently) — nothing here to walk for it, same as a `TestResult` that never captured
   // a screenshot/trace to begin with.
-  for (const test of report.tests) {
-    if (test.kind !== 'functional') continue;
+  for (const entry of report.tests) {
+    const test = stepBearing(entry);
+    if (!test) continue;
     for (const step of test.steps) {
       if (step.screenshot) addScreenshot(step.screenshot.base64);
       addSnapshotStep(step);

@@ -96,6 +96,16 @@ export function renderFindings(report: RunReport): string {
       // feature whose adoption step is "run it again and diff the JSON".
       const fp = f.fingerprint ? `<code class="finding-fp">${esc(f.fingerprint)}</code>` : '<span class="finding-fp">— not baselinable</span>';
       const seeded = f.seeded ? `<div class="finding-seeded">seeded (seed ${f.seeded.seed}) — <strong>promote this payload into the corpus</strong>: <code>${esc(f.seeded.payload)}</code></div>` : '';
+      // `M137c` (D437). Rendered because the decision's own argument for the field was that *"nothing in
+      // a user's own report would say how a finding was reached"* — a discriminator that reached
+      // `results.json` and no rendered surface would leave that true. On the `where` line rather than in
+      // a badge of its own: how a route was reached is part of which route this is, and a reader
+      // scanning a crawl's findings wants to see at a glance which ones the documented surface produced
+      // and which came from traffic the suite already exercised.
+      // Plain text inside the already-styled `where` line, with no class of its own: `M135a-01` is an
+      // open row about a section whose classes no stylesheet rule matched, and a one-word annotation
+      // does not need a hook to be right.
+      const via = f.via ? ` · via ${esc(f.via)} seed` : '';
       const where = [f.endpoint, f.location, f.invariant].filter(Boolean).map((p) => esc(String(p))).join(' · ');
       // M135a (D409) — every rule this build ships has an entry, enforced by the compiler. The
       // fallback arm is for a `results.json` written by a newer build and rendered by an older
@@ -105,7 +115,7 @@ export function renderFindings(report: RunReport): string {
       return (
         `<tr class="finding ${f.withheld ? 'finding-off' : 'finding-on'}">` +
         `<td class="sev sev-${esc(f.severity)}">${esc(f.severity)}</td>` +
-        `<td><code>${esc(f.rule)}</code> ${badge}<div class="finding-where">${where}</div>` +
+        `<td><code>${esc(f.rule)}</code> ${badge}<div class="finding-where">${where}${via ? ` · ${via}` : ''}</div>` +
         `<div class="finding-detail">${esc(f.detail)}</div>${seeded}${fix}</td>` +
         `<td>${fp}</td></tr>`
       );

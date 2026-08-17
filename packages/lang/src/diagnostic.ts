@@ -202,6 +202,39 @@ export const Codes = {
   // positionally precise in a way a new code would not have been. `TF068` stays next-free for the
   // `crawl` construct. See `PLAN_M137_PENTEST_TIER4.md`'s D456 for why `D443`'s `TF069` was withdrawn
   // rather than renumbered.
+  //
+  // M137c (`D443`) — `crawl`'s two structural rules, and they are two codes because they are two
+  // repairs, the bar `D419` set and `TF065`/`TF066` established.
+  //
+  // `TF068`: the crawl has no surface. `D285`'s no-power-to-fail shape applied to the new construct —
+  // a crawl over nothing issues no request, so every assertion in its body could not have failed
+  // whatever the application did, and `TF067` established that this is a **check-time** refusal
+  // rather than a green run with a note. Decided here only where it provably can be, the same
+  // conservatism `TF067`'s static half follows: zero `seed` clauses is a fact about the file, while
+  // *an OpenAPI document that answers 404* and *a run that captured no traffic* are facts about the
+  // run, and those are the runtime door's to report against this same code.
+  CRAWL_NO_SURFACE: 'TF068',
+  // `TF070`: a step in a `crawl` body that is not one of the three `violations` assertions. `D450`
+  // gave the construct no matcher vocabulary of its own precisely because the crawl is a **source of
+  // requests**, not a kind of judgement — so an `api` step there is a request nobody will send under
+  // a principal nobody chose, and an `expect status equals 200` names a response the construct does
+  // not have (a crawl issues many). One repair for all of it: put it in a `test`.
+  //
+  // **`TF069` is skipped, and permanently.** `D456` withdrew it, and by the time this code was minted
+  // six comments across three packages already used the number as a *pointer to that decision* —
+  // `interpreter.ts`, `sessions.test.ts`, `config.test.ts`, `checker.ts`, `mutate.mjs` and
+  // `verify-test-counts.mjs` each say "this is where `TF069` went". §1.4's rule is next-**free**, not
+  // next-after-the-highest, and a number six comments already spend on one meaning is not free: a
+  // reader following any of them to a live `TF069` about crawl bodies would land on the wrong answer.
+  // A hole with a documented reason costs one question; a number meaning two things costs a wrong
+  // conclusion. See `PLAN_M137_PENTEST_TIER4.md`'s `D463`.
+  //
+  // Deliberately **not** `LOAD_INVALID`, which is what `D19`'s browser-step-inside-a-workload rule
+  // reuses and the nearest precedent for a container refusing a step. `TF033` predates the
+  // one-code-one-repair rule this arc settled on (`TF062`–`TF064` split three ways, `TF065`/`TF066`
+  // split two) and already carries several unrelated repairs — it is the counter-example, not the
+  // pattern to copy.
+  CRAWL_BODY_INVALID: 'TF070',
 } as const;
 
 // ---------------------------------------------------------------------------

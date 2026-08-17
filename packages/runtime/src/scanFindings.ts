@@ -70,6 +70,28 @@ export interface ScanFinding {
    *  the payload into the fixed corpus, which is the section's entire call to action. */
   readonly seeded?: { readonly seed: number; readonly payload: string };
   /**
+   * `M137c` (D437/D461/D470) — **which discovery source reached this route**, present exactly when a
+   * `crawl` issued the request and absent for every finding an authored `api` step produced.
+   *
+   * This is *provenance*, not identity, so it is **excluded from `partialFingerprints`** — and the
+   * exclusion needs no code, which is worth knowing: `fingerprintOf(scan, rule, locus)` takes explicit
+   * arguments, so a new field on this interface structurally cannot reach the hash, and SARIF carries
+   * the runtime's value verbatim rather than re-deriving one. Two consequences that both matter: the
+   * same weakness found by two seeds is one finding, and re-seeding a crawl does not invalidate a
+   * baseline. `R8` excludes the payload and the RNG seed for the same reason.
+   *
+   * **Not called `seed`, and `D461` is why**: `seeded` above already means D369's RNG seed, an
+   * unrelated fact, and `seed` vs `seeded` is the exact pair a hand-transcription conflates —
+   * `verify-security-acceptance.mjs` is hand-maintained on purpose (`D437`'s risk 5) and its author
+   * reads these names out of a JSON artifact.
+   *
+   * The values are the words a `.tflw` file uses (`D470`): `seed traffic` is what an author writes, so
+   * `traffic` is what the report says, rather than `D437`'s prose spelling of `captured`. A field whose
+   * whole job is to be correlated with a declaration should use the declaration's word. `spider` joins
+   * when `M137f` does.
+   */
+  readonly via?: CrawlVia;
+  /**
    * Why this finding did not fail the build, absent when it did.
    *
    * Rendered, never dropped. A finding withheld from a verdict is still a finding, and a green run
@@ -82,6 +104,11 @@ export interface ScanFinding {
   readonly file?: string;
   readonly line?: number;
 }
+
+/** The discovery sources a crawl can reach a route through (`M137c`, `D437`/`D470`). `spider` is
+ *  absent until `M137f` builds it: a union member that resolves to nothing advertises a capability the
+ *  tool does not have, which is the same rule `CrawlSeed` follows in `ast.ts`. */
+export type CrawlVia = 'openapi' | 'traffic';
 
 export type WithheldReason = 'baseline' | 'fail-on' | 'seeded';
 
@@ -188,7 +215,7 @@ export function toScanFinding(
   scan: ScanKind,
   f: Finding,
   endpoint: string | null,
-  extra?: { readonly seeded?: ScanFinding['seeded']; readonly file?: string; readonly line?: number },
+  extra?: { readonly seeded?: ScanFinding['seeded']; readonly file?: string; readonly line?: number; readonly via?: CrawlVia },
 ): ScanFinding {
   const seeded = extra?.seeded;
   const locus: FindingLocus | null = endpoint === null ? null : { endpoint, ...(f.where ?? {}) };
@@ -206,6 +233,10 @@ export function toScanFinding(
     ...(seeded ? { seeded } : {}),
     ...(extra?.file !== undefined ? { file: extra.file } : {}),
     ...(extra?.line !== undefined ? { line: extra.line } : {}),
+    // After the fingerprint, and that is not cosmetic: the line above computes the hash from `locus`
+    // alone, so provenance is added to the object the hash has already been taken of. There is no
+    // ordering in which `via` could reach it.
+    ...(extra?.via !== undefined ? { via: extra.via } : {}),
   };
 }
 

@@ -4,7 +4,7 @@
 // header-blocklists) means a secret in a login body or a URL is caught wherever it flows, so
 // report.html and CLI output are ticket-attachable by construction.
 
-import type { AttemptResult, ReportEntry, RequestTrace, ResponseTrace, RunEvent, RunReport, StepResult, TestResult, WorkloadTestResult } from './types.js';
+import { exhaustiveEntry, type AttemptResult, type CrawlResult, type ReportEntry, type RequestTrace, type ResponseTrace, type RunEvent, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from './types.js';
 
 /** A secret shorter than this is too likely to collide with unrelated report content (a port
  * number, a small numeric ID) — substring-redacting it would silently corrupt those unrelated
@@ -135,8 +135,42 @@ function redactReportEntry(t: ReportEntry, redactor: Redactor): ReportEntry {
   // name could ever carry a secret. A test header is never interpolated, so that means an author
   // who typed the value into the name itself; the redactor is value-based (see this file's header),
   // so it is masked all the same once some step reveals the value via `env()`.
-  if (t.kind === 'workload') return redactWorkloadTestResult(t, redactor);
-  return redactTestResult(t, redactor);
+  //
+  // D462 — exhaustive, and this is the site where a missed kind is a *disclosure* rather than a
+  // cosmetic gap: the fallback arm is the functional redactor, which knows how to walk a step
+  // timeline and nothing else. A third kind carrying evidence of its own shape would be handed to it
+  // and pass through with whatever it does not recognise unredacted.
+  switch (t.kind) {
+    case 'workload':
+      return redactWorkloadTestResult(t, redactor);
+    case 'functional':
+      return redactTestResult(t, redactor);
+    case 'crawl':
+      return redactCrawlResult(t, redactor);
+    default:
+      return exhaustiveEntry(t);
+  }
+}
+
+/** `M137c`. A crawl's evidence is a step timeline, so it redacts like a functional test's — and it is
+ *  the kind that most needs it: every request in it was composed by tflw while carrying a declared
+ *  session's real credential, so its `api` steps hold exactly the headers this pass exists for.
+ *
+ *  `surface`'s counts pass through untouched — a substring redactor applied to an integer is how a
+ *  report ends up saying `[redacted] discovered` — but its one string does not. A seed's `source` is a
+ *  resolved document URL, and a base URL assembled from `env(…)` can carry a token in it, so it goes
+ *  through the same pass every other URL in the report does. */
+function redactCrawlResult(t: CrawlResult, redactor: Redactor): CrawlResult {
+  return {
+    ...t,
+    name: redactor.redact(t.name),
+    ...(t.error !== undefined ? { error: redactor.redact(t.error) } : {}),
+    steps: t.steps.map((s) => redactStepResult(s, redactor)),
+    surface: {
+      ...t.surface,
+      seeds: t.surface.seeds.map((s) => (s.source === undefined ? s : { ...s, source: redactor.redact(s.source) })),
+    },
+  };
 }
 
 function redactWorkloadTestResult(t: WorkloadTestResult, redactor: Redactor): WorkloadTestResult {

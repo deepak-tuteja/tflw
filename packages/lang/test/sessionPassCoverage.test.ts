@@ -149,6 +149,12 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
       'M130b/D315/D328/D329. Same door as `checkAuthorizedTargets` directly above, and a second one behind it: SPEC §3.3 admits no `expect` into a session body at all, so the matcher this pass walks for cannot appear there — and even if it could, every rule the pass carries is about a frame a session is not. `TF063` asks which principal a body belongs to, and a session *is* a principal rather than something that runs as one; `TF062` asks whether the step named a credential its owning session did not supply, which in a session body is the ordinary case and not a defect, since establishing that credential is the body\'s entire job. So this is a genuine n/a, not a deferral: the two halves would have to mean different things there, which is exactly the shape D142 exists to make somebody say out loud',
   },
 
+  checkCrawls: {
+    verdict: 'n/a',
+    reason:
+      'M137c/D443/D464. Unreachable from a session in the strongest sense this list has: the pass takes no step list at all — it walks `program.crawls`, and its two rules are properties of the `CrawlDecl` node (`TF068` counts its `seed` clauses, `TF070` judges what its body contains). `crawl` is a top-level declaration in the `.tflw` dialect, and the config dialect declares none, so there is nothing a `session` body could hand this pass even in principle. Note the contrast with `checkAuthorizedTargets` three rows up, whose verdict rests on SPEC §3.3 *currently* admitting no `expect` into a session body and says so: that one changes if the session grammar widens, while this one cannot — a session body would have to be able to contain a whole top-level declaration',
+  },
+
   checkDataTables: {
     verdict: 'n/a',
     reason:

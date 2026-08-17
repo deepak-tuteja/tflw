@@ -1556,15 +1556,29 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const runnable = parsedFiles
     .map(({ file, source, program: fileProgram }) => {
       const relFile = relative(cwd, file);
+      // M137c — the same three filters over `crawls`, and they have to be the same three. A crawl is a
+      // named top-level declaration that sends traffic, so `--only "one test"` leaving every crawl in
+      // the file running would be a filter that quietly widens what a run does; `--failed` finds one
+      // by name in `last-run.json` exactly as it finds a test; and SPEC §9.15 already promises `--tag`
+      // reaches a crawl, because its tags sit above the header the way a test's do. `--skip-workload`
+      // is the one that does not apply: a crawl has no workload clause to skip.
+      const keep = <T extends { readonly tags: readonly string[]; readonly name: { readonly value: string } }>(d: T): boolean =>
+        (!args.tags || args.tags.some((tag) => d.tags.includes(tag))) &&
+        (!args.only || d.name.value === args.only) &&
+        (!failedSet || failedSet.has(`${relFile}::${d.name.value}`));
+      // Destructured out of the spread rather than overwritten in it: `crawls` is absent-when-empty
+      // (`ast.ts`), so a program whose every crawl was filtered away has to be shaped like one that
+      // never had any — and `...fileProgram` would otherwise put the unfiltered list back.
+      const { crawls: declaredCrawls, ...programRest } = fileProgram;
+      const crawls = (declaredCrawls ?? []).filter(keep);
       return {
         file,
         source,
         program: {
-          ...fileProgram,
+          ...programRest,
+          ...(crawls.length > 0 ? { crawls } : {}),
           tests: fileProgram.tests
-            .filter((t) => !args.tags || args.tags.some((tag) => t.tags.includes(tag)))
-            .filter((t) => !args.only || t.name.value === args.only)
-            .filter((t) => !failedSet || failedSet.has(`${relFile}::${t.name.value}`))
+            .filter(keep)
             // D110 (`--skip-workload`, renamed from the originally-proposed `--skip-load`): drops
             // every workload-bearing test regardless of which `parallel`/`sequential` batch it's
             // declared in — a file mixing functional and workload tests still runs its functional
@@ -1573,7 +1587,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
         },
       };
     })
-    .filter((f) => (!args.tags && !args.only && !failedSet) || f.program.tests.length > 0);
+    .filter((f) => (!args.tags && !args.only && !failedSet) || f.program.tests.length > 0 || (f.program.crawls ?? []).length > 0);
   if (args.tags && runnable.length === 0) {
     const tagList = args.tags.map((t) => `\`${t}\``).join(', ');
     err(`no test anywhere carries ${args.tags.length > 1 ? 'any of the tags' : 'the tag'} ${tagList}.`);

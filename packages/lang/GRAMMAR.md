@@ -92,7 +92,7 @@ TAG         '@' IDENT
 ## Program structure
 
 ```
-Program     := (NEWLINE | ImportDecl | UseDecl | ActionDecl | HookDecl | TestDecl)*
+Program     := (NEWLINE | ImportDecl | UseDecl | ActionDecl | HookDecl | TestDecl | CrawlDecl)*
 
 ImportDecl  := 'import' STRING NEWLINE                     # a sibling .tflw file's actions (§8)
 UseDecl     := 'use' STRING NEWLINE                         # a .ts/.js JS-escape-hatch module (§11)
@@ -137,6 +137,35 @@ CleanupDecl := 'cleanup' NEWLINE          # D26 — opts a workload-bearing test
 - `before`/`after` (no `file` keyword) run once per test, sharing its scope; `before file`/
   `after file` run once per file instead. There is no `before each`/`after each` — `each` is
   exclusively the `with each` keyword above.
+
+## Crawl — Tier 4's active crawl (SPEC §9.15, M137c)
+
+```
+CrawlDecl   := TAG* 'crawl' STRING ('as' IDENT (',' IDENT)*)? NEWLINE CrawlBlock
+CrawlBlock  := INDENT (CrawlSeed | CrawlExclude | Step)+ DEDENT
+CrawlSeed   := 'seed' 'openapi' STRING NEWLINE   # the documented surface; a URL, or a path
+                                                 # resolved against the default service's base URL
+                                                 # exactly as `matches schema … from` resolves its own
+             | 'seed' 'traffic' NEWLINE          # the requests this run's own tests made
+CrawlExclude := 'exclude' STRING NEWLINE         # a path glob dropped from the discovered set —
+                                                 # the same verb the config dialect uses (§3.9),
+                                                 # disambiguated by block rather than by a new word
+```
+
+- A **top-level declaration, sibling to `test`**, in an ordinary `.tflw` file, run by plain
+  `tflw run`. There is no `tflw scan` mode (D364/D432) — a distinct construct with no distinct entry
+  point, following `tflw init --load`'s precedent.
+- `TAG*` may sit on its own line(s) above `crawl`, exactly as above `test`, so `--tag` reaches a
+  crawl with no CLI change.
+- `as` takes the same comma list a `test` takes; several principals need no new syntax.
+- **A crawl adds no matcher vocabulary.** The `Step`s in its block are ordinary `expect …` lines, and
+  the three families the arc already ships — `security violations`, `authorization violations`,
+  `input handling violations` — apply *per response the crawl issues*, exactly as they apply per
+  response inside a `test` (D450). A crawl is a new **source of requests**, not a new judgement, so
+  it earns a keyword without earning a vocabulary.
+- The grammar admits any `Step` here; the checker is what restricts a crawl body to assertions —
+  same layering as D96's `retry`-vs-workload rule and D19's browser-step rejection.
+- A crawl whose surface resolves to nothing is `TF068`, refused at check time (D285/D443).
 
 ## Load testing — workload-bearing tests (§4.5)
 

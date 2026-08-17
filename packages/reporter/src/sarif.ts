@@ -311,6 +311,12 @@ function resultObject(f: ScanFinding, ruleIndex: number, repros: ReadonlyMap<str
       ...(f.invariant !== undefined ? { [SARIF.resultProperties.invariant]: f.invariant } : {}),
       ...(f.withheld ? { [SARIF.resultProperties.withheld]: f.withheld } : {}),
       ...(repro ? { [SARIF.resultProperties.repro]: repro } : {}),
+      // `M137c` (D437). Deliberately a *property* and never part of `partialFingerprints`: the
+      // fingerprint above is carried from the runtime verbatim, so the same weakness found by two
+      // seeds keeps one identity and a GitHub alert does not un-dismiss itself when a suite adds a
+      // seed. What the property buys is the sentence D437 wanted in the report — how this route was
+      // reached — on the surface a reviewer actually opens.
+      ...(f.via !== undefined ? { [SARIF.resultProperties.via]: f.via } : {}),
     },
   };
 }

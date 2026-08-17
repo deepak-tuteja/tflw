@@ -1,7 +1,7 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
-import { MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
-import type { LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
+import { exhaustiveEntry, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
+import type { CrawlResult, LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { grantedProbeClauses } from './probe-clauses.js';
 import { findingsSummaryLine, sortFindings } from './findings.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
@@ -21,10 +21,17 @@ export function renderCliSummary(report: RunReport, color = true): string {
   const lines: string[] = [];
   const noVerdict = noVerdictReason(report);
   for (const test of report.tests) {
+    // D462 — exhaustive: the console summary is the surface a person actually reads, so an entry kind
+    // this loop does not know about must be a compile error rather than a line that looks familiar.
     if (test.kind === 'workload') {
       lines.push(...workloadLines(test, c, noVerdict));
       continue;
     }
+    if (test.kind === 'crawl') {
+      lines.push(...crawlLines(test, c));
+      continue;
+    }
+    if (test.kind !== 'functional') return exhaustiveEntry(test);
     lines.push(testLine(test, c));
     for (const step of test.steps) {
       if (!step.ok) lines.push(`    ${c.red}✗ ${step.source}${c.reset}${step.detail ? `\n      ${c.red}${step.detail}${c.reset}` : ''}`);
@@ -158,6 +165,28 @@ function testLine(test: TestResult, c: typeof C): string {
   const mark = test.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
   const flaky = test.flaky ? ` ${c.dim}(flaky)${c.reset}` : '';
   return `  ${mark} ${test.name}${flaky}${attemptSuffix(test, c)} ${c.dim}(${test.durationMs} ms)${c.reset}`;
+}
+
+/**
+ * `M137c` (`D435`) — a crawl's console lines: the verdict, then the surface, then the failures.
+ *
+ * **The surface line prints on a pass**, which is the whole reason this is not `testLine`. Every other
+ * entry kind's console line answers *did it hold*, and for a crawl that answer is not the interesting
+ * one: `✓ the v1 API surface` is equally true of a crawl that reached fifty-three routes and one that
+ * reached two, and the console is where somebody notices. It reads as a subtraction on purpose —
+ * discovered, then what came off it — because the numbers that matter here are the ones between what
+ * the application documents and what tflw was able to judge.
+ */
+function crawlLines(crawl: CrawlResult, c: typeof C): string[] {
+  const mark = crawl.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
+  const { discovered, withheld, sent, reached } = crawl.surface;
+  const lines = [`  ${mark} ${crawl.name} ${c.dim}(crawl, ${crawl.durationMs} ms)${c.reset}`];
+  const seeds = crawl.surface.seeds.map((s) => `${s.seed}${s.source ? ` "${s.source}"` : ''} → ${s.discovered}`).join(', ');
+  lines.push(`    ${c.dim}surface: ${discovered} discovered (${seeds}) · ${withheld} withheld · ${sent} sent · ${reached} reached${c.reset}`);
+  for (const step of crawl.steps) {
+    if (!step.ok) lines.push(`    ${c.red}✗ ${step.source}${c.reset}${step.detail ? `\n      ${c.red}${step.detail}${c.reset}` : ''}`);
+  }
+  return lines;
 }
 
 /** `FU-25` — `(flaky)` only ever marks a *later-attempt pass*, so a test that exhausted its `retry`
