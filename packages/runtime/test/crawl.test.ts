@@ -46,27 +46,45 @@ let peakInFlight = 0;
 const OPENAPI = {
   openapi: '3.0.0',
   paths: {
-    '/products': { get: { responses: { '200': { description: 'ok' } } } },
-    '/products/{id}': {
+    '/v1/products': { get: { responses: { '200': { description: 'ok' } } } },
+    '/v1/products/{id}': {
       get: { parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { '200': { description: 'ok' } } },
     },
-    '/orders': {
+    '/v1/orders': {
       post: {
         requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['sku'], properties: { sku: { type: 'string' } } } } } },
         responses: { '201': { description: 'created' } },
       },
     },
-    '/vuln/notes': { get: { responses: { '200': { description: 'ok' } } } },
-    '/strict': {
+    '/v1/vuln/notes': { get: { responses: { '200': { description: 'ok' } } } },
+    '/v1/strict': {
       get: { parameters: [{ name: 'q', in: 'query', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'ok' } } },
     },
   },
 };
 
+/** `M137c1` (`D480`) — a document that declares its base **explicitly**, where the main fixture leaves
+ *  `servers` absent. Both spellings must land on the same URL, because "absent" and "`/`" are one case
+ *  in the specification rather than two. */
+const OPENAPI_WITH_SERVERS = {
+  openapi: '3.0.0',
+  servers: [{ url: '/v1' }],
+  paths: { '/products': { get: { responses: { '200': { description: 'ok' } } } } },
+};
+
+/** A document describing a prefix **the fixture does not serve**, so every route 404s and nothing is
+ *  reached — `D481`'s condition, arrived at the way a real one is: not by an empty surface, but by a
+ *  full surface that lands nowhere. */
+const OPENAPI_WRONG_BASE = {
+  openapi: '3.0.0',
+  servers: [{ url: '/not-served' }],
+  paths: { '/products': { get: { responses: { '200': { description: 'ok' } } } } },
+};
+
 /** A one-route document whose route sets a cookie without `HttpOnly` — `sec/cookie-not-httponly`, the
  *  critical rule the main fixture deliberately satisfies. Its own document rather than a sixth path in
  *  `OPENAPI`, so every test above keeps a clean surface and the provenance tests below get a finding. */
-const OPENAPI_LEAKY = { openapi: '3.0.0', paths: { '/leaky': { get: { responses: { '200': { description: 'ok' } } } } } };
+const OPENAPI_LEAKY = { openapi: '3.0.0', paths: { '/v1/leaky': { get: { responses: { '200': { description: 'ok' } } } } } };
 
 /** A one-route document whose route takes a query parameter and echoes it back into an HTML body
  *  unescaped — so the `injection` payload `<tflw>` comes back verbatim,
@@ -86,7 +104,7 @@ const OPENAPI_LEAKY = { openapi: '3.0.0', paths: { '/leaky': { get: { responses:
 const OPENAPI_ECHO = {
   openapi: '3.0.0',
   paths: {
-    '/echo': {
+    '/v1/echo': {
       get: { parameters: [{ name: 'q', in: 'query', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'ok' } } },
     },
   },
@@ -110,14 +128,41 @@ before(async () => {
         }, 15);
       };
       const pathname = path.split('?')[0]!;
-      if (pathname === '/openapi.json') return done(() => json(res, 200, OPENAPI));
-      if (pathname === '/openapi-missing.json') return done(() => json(res, 404, { message: 'no such document' }));
-      if (pathname === '/openapi-leaky.json') return done(() => json(res, 200, OPENAPI_LEAKY));
-      if (pathname === '/openapi-echo.json') return done(() => json(res, 200, OPENAPI_ECHO));
+      // The documents answer both prefixed and unprefixed, because the *seed source* is a separate
+      // question from `D480`'s and must not be tangled with it here. A real deployment serves the
+      // document outside the prefix (`SwaggerModule.setup` sits outside `setGlobalPrefix`), so a suite
+      // whose `api` carries one has to name the document absolutely — which is exactly what this
+      // repo's own acceptance corpus does. Answering both lets every existing test keep its short
+      // relative seed while the routes below still prove the prefix.
+      const docPath = pathname.startsWith('/v1/') ? pathname.slice('/v1'.length) : pathname;
+      if (docPath === '/openapi.json') return done(() => json(res, 200, OPENAPI));
+      if (docPath === '/openapi-missing.json') return done(() => json(res, 404, { message: 'no such document' }));
+      if (docPath === '/openapi-leaky.json') return done(() => json(res, 200, OPENAPI_LEAKY));
+      if (docPath === '/openapi-echo.json') return done(() => json(res, 200, OPENAPI_ECHO));
+      if (docPath === '/openapi-servers.json') return done(() => json(res, 200, OPENAPI_WITH_SERVERS));
+      if (docPath === '/openapi-wrong-base.json') return done(() => json(res, 200, OPENAPI_WRONG_BASE));
+
+      // `M137c1` (`D480`) — **the application lives under a global prefix, and unknown paths 404.**
+      // Both halves are load-bearing and neither was here before.
+      //
+      // Every server in this arc's tests was `http://127.0.0.1:<port>` serving from the root, which is
+      // the one shape where joining a document's path onto a base that already carries a prefix and
+      // joining it onto the origin produce **the same bytes**. `D478` wrote that sentence about the
+      // repro emitter one milestone ago; the crawl had the identical hole, and it took pointing a crawl
+      // at the dogfood target to find it — 31 sent, 0 reached, exit 0.
+      //
+      // The 404 is the other half. A fixture that answered `200` to anything would still have hidden
+      // it: `/v1/v1/products` would have come back clean and the buggy join would have *passed*. A
+      // fixture app must be able to say "I do not serve that", or it cannot testify about addressing at
+      // all. The document is served from the root, as a real one is (`SwaggerModule.setup` sits outside
+      // `setGlobalPrefix`) — so the seed URL is unprefixed while every route it describes is not.
+      if (!pathname.startsWith('/v1/')) return done(() => json(res, 404, { message: `no route for ${pathname}` }));
+      const route = pathname.slice('/v1'.length);
+
       // `/echo` interpolates `q` into an HTML body raw — the reflection rule's own precondition, since
       // it reads only responses carrying markup (a JSON echo is deliberately not a finding). Answers
       // `200` to anything, so the control response is clean and the finding is the payload's doing.
-      if (pathname === '/echo') {
+      if (route === '/echo') {
         const q = new URL(path, 'http://x').searchParams.get('q') ?? '';
         return done(() => {
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><p>you searched for ${q}</p>`);
@@ -125,19 +170,24 @@ before(async () => {
       }
       // One real, critical weakness, reachable by BOTH seeds — which is what makes `D437`'s
       // fingerprint claim testable: the same weakness found two ways must be one finding.
-      if (pathname === '/leaky') {
+      if (route === '/leaky') {
         return done(() => {
           res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'sid=leaky; Path=/' }).end('{"ok":1}');
         });
       }
       // A validator that refuses the value synthesis had to invent — `D436`'s central case, and the
       // one a crawl must never score: a `400` here is indistinguishable from a hardened endpoint.
-      if (pathname === '/strict') {
+      if (route === '/strict') {
         const q = new URL(path, 'http://x').searchParams.get('q');
         if (q !== 'the-real-one') return done(() => json(res, 400, { message: 'q is not a known query' }));
         return done(() => json(res, 200, { results: [] }));
       }
-      if (pathname === '/orders' && req.method === 'POST') return done(() => json(res, 201, { id: 9 }));
+      if (route === '/orders' && req.method === 'POST') return done(() => json(res, 201, { id: 9 }));
+      // The routes left over — and only those. `/products`, one `/products/<id>`, `/vuln/notes`. See
+      // the 404 above for why an open-ended fallback would have made this whole file blind.
+      if (!(route === '/products' || route === '/vuln/notes' || /^\/products\/[^/]+$/.test(route))) {
+        return done(() => json(res, 404, { message: `no route for ${pathname}` }));
+      }
       // The cookie is not decoration. `D296`/`D285`: the floor narrows the pack *before* applicability,
       // so `expect response has no critical security violations` against a plain JSON `GET` with no
       // cookie and no CORS header engages **nothing** and fails as an assertion with no power to fail.
@@ -172,7 +222,10 @@ function resolved(subClauses = '', session = false): ResolvedConfig {
   // resolved object. A hand-built `sessions` map is how a test comes to pass against a shape
   // `resolveConfig` would never produce — and this file's whole job is the joins.
   const sessionBlock = session ? `session peer\n  header "Authorization" is "Bearer peer-token"\n` : '';
-  const source = `defaults\n  authorized target "${baseUrl}" reason "self-hosted test fixture"\n${subClauses}\n${sessionBlock}env local default\n  api "${baseUrl}"\n`;
+  // `M137c1` (`D480`) — **the `api` base carries a path, and that is the point of this fixture.** With
+  // a bare origin here, joining a document's `/v1/products` onto the base and joining it onto the
+  // origin are the same string, and every crawl assertion in this file was blind to the difference.
+  const source = `defaults\n  authorized target "${baseUrl}" reason "self-hosted test fixture"\n${subClauses}\n${sessionBlock}env local default\n  api "${baseUrl}/v1"\n`;
   const { config, diagnostics } = parseConfigSource(source);
   assert.deepEqual(diagnostics.map((d) => `${d.code}: ${d.message}`), [], 'the fixture config must parse and check clean');
   return resolveConfig(config!, config!.envs[0]!);
@@ -198,7 +251,7 @@ async function run(source: string, cfg: ResolvedConfig = resolved()): Promise<Ru
 }
 
 const SECURITY = '  expect response has no critical security violations';
-const CRAWL = `crawl "the v1 surface"\n  seed openapi "/openapi.json"\n  exclude "/vuln/**"\n${SECURITY}\n`;
+const CRAWL = `crawl "the v1 surface"\n  seed openapi "/openapi.json"\n  exclude "/v1/vuln/**"\n${SECURITY}\n`;
 
 // -- the surface, and the arithmetic a reader is given ---------------------------------------------
 
@@ -251,8 +304,8 @@ test('D465: a synthesized write is withheld when the origin has no `probe mutati
   // The whole assertion is the absence of these packets. A refusal whose only evidence is its own
   // label could be sending anyway — `input-probe.test.ts`'s rule, and this is the same shape.
   assert.deepEqual(seen.filter((r) => r.method === 'POST'), [], 'no unaffirmed write may leave the process');
-  const withheldWrite = declines.find((d) => d.subject === 'POST /orders');
-  assert.ok(withheldWrite, `expected a decline for POST /orders, got ${declines.map((d) => d.subject).join(', ')}`);
+  const withheldWrite = declines.find((d) => d.subject === 'POST /v1/orders');
+  assert.ok(withheldWrite, `expected a decline for POST /v1/orders, got ${declines.map((d) => d.subject).join(', ')}`);
   assert.match(withheldWrite.reason, /does not declare `probe mutating`/);
   assert.match(withheldWrite.reason, /affirming a scan is not affirming writes/);
 });
@@ -260,7 +313,7 @@ test('D465: a synthesized write is withheld when the origin has no `probe mutati
 test('D465: and it IS sent once the config affirms it, which is the control', async () => {
   // Without this, the test above passes for a crawl that never sends anything at all.
   const { crawl } = await run(CRAWL, resolved('    probe mutating\n'));
-  assert.equal(seen.filter((r) => r.method === 'POST' && r.path === '/orders').length, 1);
+  assert.equal(seen.filter((r) => r.method === 'POST' && r.path === '/v1/orders').length, 1);
   assert.equal(seen.find((r) => r.method === 'POST')!.body, '{"sku":"tflw"}', 'and it carries the body synthesis built');
   assert.ok(crawl.surface.sent > 3);
 });
@@ -272,8 +325,8 @@ test('D436: a route that refused the synthesized request is NOT judged, and says
   // code that never ran, and a validator's refusal is indistinguishable from a hardened endpoint —
   // the false-negative engine `D436` rejected an alternative to avoid.
   const { crawl, declines } = await run(CRAWL);
-  const declined = declines.find((d) => d.subject === 'GET /strict');
-  assert.ok(declined, `expected /strict to be declined, got ${declines.map((d) => d.subject).join(', ')}`);
+  const declined = declines.find((d) => d.subject === 'GET /v1/strict');
+  assert.ok(declined, `expected /v1/strict to be declined, got ${declines.map((d) => d.subject).join(', ')}`);
   assert.match(declined.reason, /rejected as invalid \(400\)/);
   assert.match(declined.reason, /indistinguishable from a hardened endpoint/);
   const step = crawl.steps.find((s) => s.kind === 'api' && s.source.includes('/strict'))!;
@@ -357,10 +410,10 @@ test('TF068 at run time: an `exclude` that swallows the whole surface is the sam
 
 test('D466: an excluded subtree is never requested, and the decline names the pattern', async () => {
   const { declines } = await run(CRAWL);
-  assert.deepEqual(seen.filter((r) => r.path.startsWith('/vuln')), [], 'excluded means not sent, not sent-and-ignored');
+  assert.deepEqual(seen.filter((r) => r.path.startsWith('/v1/vuln')), [], 'excluded means not sent, not sent-and-ignored');
   const declined = declines.find((d) => d.subject.includes('/vuln/notes'));
   assert.ok(declined);
-  assert.match(declined.reason, /excluded by this crawl's `exclude "\/vuln\/\*\*"`/);
+  assert.match(declined.reason, /excluded by this crawl's `exclude "\/v1\/vuln\/\*\*"`/);
 });
 
 // -- `seed traffic` and `D468`'s ordering ---------------------------------------------------------
@@ -371,7 +424,7 @@ test('seed traffic re-issues what this run`s own tests sent', async () => {
   assert.equal(ok, true, crawl.error ?? '');
   assert.equal(crawl.surface.discovered, 1, 'one distinct route was touched');
   assert.equal(crawl.surface.reached, 1);
-  assert.equal(seen.filter((r) => r.path === '/products').length, 2, 'the test sent it, then the crawl re-issued it');
+  assert.equal(seen.filter((r) => r.path === '/v1/products').length, 2, 'the test sent it, then the crawl re-issued it');
   assert.deepEqual(crawl.surface.seeds.map((s) => s.seed), ['traffic']);
 });
 
@@ -441,13 +494,13 @@ test('a route the crawl could not judge is declined under EVERY scan the body as
   const source = [
     'crawl "two families" as peer',
     '  seed openapi "/openapi.json"',
-    '  exclude "/vuln/**"',
+    '  exclude "/v1/vuln/**"',
     '  expect response has no critical security violations',
     '  expect response has no critical input handling violations',
     '',
   ].join('\n');
   const { declines } = await run(source, resolved('', true));
-  const strict = declines.filter((d) => d.subject === 'GET /strict');
+  const strict = declines.filter((d) => d.subject === 'GET /v1/strict');
   assert.deepEqual([...new Set(strict.map((d) => d.scan))].sort(), ['input-handling', 'security']);
 });
 
@@ -538,4 +591,67 @@ test('D437: the same weakness found by two seeds is ONE weakness — provenance 
   assert.deepEqual(findings.map((f) => f.via), ['openapi', 'traffic'], 'two findings, two provenances');
   assert.equal(findings[0]!.fingerprint, findings[1]!.fingerprint, 'and one identity between them');
   assert.ok(findings[0]!.fingerprint, 'a fingerprint that is absent from both would satisfy the line above');
+});
+
+// -- `D480`/`D481`: which URL a synthesized path actually dials -------------------------------------
+//
+// This whole file now runs against a fixture whose app sits under `/v1` and whose `api` base carries
+// that prefix, so every assertion above is a witness to `D480` too — before `M137c1` they ran against
+// a root-served origin, the one shape where the right join and the wrong one are the same bytes. The
+// three below name the property directly, because a property only every *other* test depends on is one
+// nobody will recognise when it breaks.
+
+test('D480: the crawl dials the document`s own path, not the `api` base`s prefix twice', async () => {
+  const { crawl } = await run(CRAWL);
+  const app = seen.filter((r) => !r.path.includes('openapi'));
+  assert.ok(app.length > 0, 'the crawl must actually send something for this to mean anything');
+  assert.deepEqual(
+    app.filter((r) => r.path.startsWith('/v1/v1/')),
+    [],
+    'the defect this closes: base `…/v1` + document path `/v1/products` dialled `/v1/v1/products`',
+  );
+  assert.ok(app.some((r) => r.path === '/v1/products'), `expected /v1/products, saw ${app.map((r) => r.path).join(', ')}`);
+  assert.ok(crawl.surface.reached > 0, 'and something reached the application, which is what 0-reached hid');
+});
+
+test('D480: `servers: [{url: "/v1"}]` and an absent `servers` land on the same URL', async () => {
+  // The main document leaves `servers` absent and carries the prefix in its paths (what Nest, Django
+  // and Rails generate); this one declares the prefix and leaves it out of its paths (what a
+  // hand-written document does). Two spellings of one deployment must reach one place.
+  const { crawl } = await run(`crawl "declared base"\n  seed openapi "/openapi-servers.json"\n${SECURITY}\n`);
+  assert.ok(seen.some((r) => r.path === '/v1/products'), `expected /v1/products, saw ${seen.map((r) => r.path).join(', ')}`);
+  assert.equal(crawl.surface.reached, 1);
+});
+
+test('D481: a full surface that reaches NOTHING fails the crawl rather than passing over it', async () => {
+  // The failure `D480` was hiding behind, and the reason it stayed hidden for a milestone: the engine
+  // had `sent` and `reached` in front of it, printed them both, and returned success. `TF068`'s fourth
+  // runtime cause — not a fourth code, per `D456`.
+  const { crawl, ok } = await run(`crawl "wrong base"\n  seed openapi "/openapi-wrong-base.json"\n${SECURITY}\n`);
+  assert.equal(crawl.surface.sent, 1, 'the surface resolved and a request really went out');
+  assert.equal(crawl.surface.reached, 0);
+  assert.equal(ok, false, 'a crawl that judged nothing must not report green');
+  assert.match(crawl.error!, /none of them reached your application/);
+  assert.match(crawl.error!, /passed having judged no response/);
+  assert.match(crawl.error!, /TF068/);
+});
+
+test('D481: the 404 decline does not blame a path parameter a request never had', async () => {
+  // 17 of the 31 declines on the dogfood target read "the value tflw invented for a path parameter
+  // does not exist" against routes with no path parameter at all. A reason naming a cause the request
+  // cannot have is worse than no reason: it sends the reader to synthesis and away from the base.
+  const { declines } = await run(`crawl "wrong base"\n  seed openapi "/openapi-wrong-base.json"\n${SECURITY}\n`);
+  const gone = declines.find((d) => d.subject === 'GET /products')!;
+  assert.ok(gone, `expected a decline for GET /products, got ${declines.map((d) => d.subject).join(', ')}`);
+  assert.doesNotMatch(gone.reason, /invented for a path parameter/);
+  assert.match(gone.reason, /nothing invented in it/);
+  assert.match(gone.reason, /`api` base and the document's own `servers` agree/);
+});
+
+test('D481: a route WITH an invented id keeps the path-parameter reason', () => {
+  // The control for the branch above — the original sentence is still right when something really was
+  // invented, and `reachability` is pure so the two branches are testable without a server.
+  const invented = reachability(404, true);
+  assert.equal(invented.reached, false);
+  assert.match((invented as { reason: string }).reason, /invented for a path parameter/);
 });

@@ -2730,7 +2730,11 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
       // request keeps the origin it was captured from instead of being silently retargeted at the
       // default service. Every gate an authored step passes is applied here and in this order,
       // because `checkHostAllowed` refusing *before* any I/O is the property, not the check itself.
-      const url = isAbsoluteUrl(request.path) ? guardDemoUrl(request.path) : resolveBaseUrl(null, config) + ensureLeadingSlash(request.path);
+      // `request.base` is `D480`'s: an openapi-seeded path resolves against the *document's* base
+      // (the configured origin plus whatever prefix its `servers` declares), never against the `api`
+      // base's path — which is what dialled `/v1/v1/…` and made a crawl of 31 routes reach zero of
+      // them. `seed traffic` carries no base and takes the absolute branch, as it always did.
+      const url = isAbsoluteUrl(request.path) ? guardDemoUrl(request.path) : (request.base ?? resolveBaseUrl(null, config)) + ensureLeadingSlash(request.path);
       // **`requireAllowHostsForAbsolute` is deliberately absent, and that is `D469`.** `D246` made
       // writing an absolute URL opt a suite into declaring where it may reach, because *an author
       // typing one* is the one form that can send a request somewhere the config never mentions. A
