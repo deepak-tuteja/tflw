@@ -95,7 +95,7 @@ const KEYWORDS = new Set([
   // this list has no way to say "only after `max`". So the bounds render as plain identifiers on
   // purpose: an uncoloured keyword is a cosmetic gap, a wrongly-coloured identifier is `M133-01`.
   'crawl', 'seed', 'openapi', 'traffic', 'spider',
-  'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'privileged',
+  'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'ciphers', 'privileged',
 ]);
 
 /** Keywords the **config dialect alone** uses (`M136b`, D427/D427a) — added to `KEYWORDS` only when

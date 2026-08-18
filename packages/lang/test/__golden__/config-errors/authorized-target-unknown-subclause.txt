@@ -1,7 +1,7 @@
-error[TF010]: expected one of `probe mutating`, `probe oversized`, `probe traversal`, found `everything`
+error[TF010]: expected one of `probe mutating`, `probe oversized`, `probe traversal`, `probe ciphers`, found `everything`
  --> tflw.config:3:11
   |
 3 |     probe everything
   |           ^^^^^^^^^^
   |
-  = help: an `authorized target` takes `probe mutating`, `probe oversized`, `probe traversal`, each on its own indented line
+  = help: an `authorized target` takes `probe mutating`, `probe oversized`, `probe traversal`, `probe ciphers`, each on its own indented line

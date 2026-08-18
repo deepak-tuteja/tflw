@@ -641,14 +641,16 @@ env staging
   exempting them here would exempt precisely the target this arc is tested against, shipping the
   requirement untested.
 - Accumulates across `defaults` + `env`, like `allow hosts` (§3.7) — not override semantics.
-- **Three optional indented sub-clauses, each granting only itself** (M130b/M134a, D330/D372). The
-  one-line declaration above is unchanged; these are lines *beneath* it, never a reformatting of it.
+- **Four optional indented sub-clauses, each granting only itself** (M130b/M134a/M137g,
+  D330/D372/D485). The one-line declaration above is unchanged; these are lines *beneath* it, never a
+  reformatting of it.
 
   | sub-clause | grants | read by |
   | --- | --- | --- |
   | `probe mutating` | re-issuing a `POST`/`PUT`/`PATCH`/`DELETE` against this host | §9.11, §9.12 |
   | `probe oversized` | sending §9.12's 64 KiB payload | §9.12 |
   | `probe traversal` | sending §9.12's `../` payloads | §9.12 |
+  | `probe ciphers` | one TLS handshake per candidate suite, to read this host's *offer* | §9.14 |
 
   They hang off the target because each is a property of *that host*: staging may be safe to read as
   a stranger and not safe to write to. Grants accumulate across declarations covering the same
@@ -705,7 +707,8 @@ a feature, it would be the deletion of this control.
   permits two probes to be in flight simultaneously.
 
 Layers 1, 2, 4 and 5 of the D21 safety model — `allow hosts`, this declaration, the per-class
-destructive opt-in (`probe mutating`/`probe oversized`/`probe traversal`, §3.10) and the pace above
+destructive opt-in (`probe mutating`/`probe oversized`/`probe traversal`/`probe ciphers`, §3.10) and
+the pace above
 — plus this flag as layer 3, complete that model. Earlier drafts of this section deferred layers 3
 and 5 "to the milestone that first sends a probe (Tier 3)"; that address was wrong, because Tier 2's
 authorization probes send. The reasoning was right and is preserved above: nothing here ships a
@@ -715,8 +718,11 @@ Layer 4 says **per class**, and M130b discharged it with one boolean because Tie
 class of destructive act. §9.12 is where the word "class" first has literal classes behind it, and
 the layer was re-opened rather than assumed discharged: `oversized` and `traversal` are separate
 grants, off by default, because one is exhaustion-shaped and the other's positive finding *is* the
-act of reading the file. Layer 5's own deferral remains un-triggered — §9.12's probes are strictly
-sequential too, so nothing has yet permitted two in flight.
+act of reading the file. M137g's `probe ciphers` (D485) is the fourth tenant and the most literally
+exhaustion-shaped of them: it is the only construct in the language whose purpose is to open *many*
+connections to one host, which is why it is a grant rather than a default. Layer 5's own deferral
+remains un-triggered — §9.12's probes are strictly sequential, and so is the cipher enumeration
+(one handshake awaited at a time, guarded by a test), so nothing has yet permitted two in flight.
 
 ## 4. Tests & structure ✅
 
@@ -2348,19 +2354,49 @@ check  response has no security violations              # soft form, §6.4
   network hiccup is not a security verdict.
 
   What that buys, stated because both rules would otherwise over-claim: the facts describe *one
-  fresh connection, made with this run's own client parameters*. Not the asserted request (behind a
-  load balancer with unlike nodes the two can differ), and not the server's whole offer (a host that
-  supports RC4 alongside AES-GCM negotiates AES-GCM and is correctly silent — enumerating everything
-  a server would accept takes one handshake per suite, and belongs to `tflw scan`). The question
-  answered is **"what does this host give a current client?"**
+  fresh connection, made with this run's own client parameters* — not the asserted request, which
+  behind a load balancer with unlike nodes can differ. The question answered is **"what does this
+  host give a current client?"**
+- **`probe ciphers` widens `sec/tls-weak-cipher` from that question to "what does this host
+  *offer*?" (M137g, D485).** Without it the rule cannot see a server that still offers RC4 alongside
+  AES-GCM, because such a server negotiates AES-GCM and reads clean — the same false-negative shape
+  the arc exists to eliminate, in a rule shipping since M128c. Granted, tflw opens **one handshake
+  per candidate suite** and the rule reports every suite the host accepted.
+
+  Four things this is careful about, because a scan that opens many connections earns none of them
+  by default:
+
+  - **It is opt-in per host** (§3.10), because D21 layer 4 names resource exhaustion and this is the
+    one construct in the language whose purpose is many connections to one host.
+  - **Withheld is announced, not passed over.** Silence would recreate the false negative, so the
+    assertion carries `note: sec/tls-weak-cipher judged only the suite this host gave tflw's own
+    client …` — printed on passing lines too, on D300's precedent.
+  - **Absent is not empty.** An unprobed host is never rendered as a host with a clean offer.
+  - **The ceiling is printed.** Enumeration can only offer the suites tflw's own OpenSSL will put in
+    a ClientHello. On OpenSSL 3.x that is the `eNULL` and anonymous-DH families — RC4, 3DES, single
+    DES and EXPORT are absent rather than weak, and the split is not marginal: **10 of the 18
+    candidates** are unaskable there. Candidates that could not be offered are reported as
+    *unaskable* and kept apart from the ones the server actually declined, because a suite nobody
+    offered tells you nothing about the server. (D486; a scan that could not ask is not a scan that
+    found nothing.)
+
+  The enumerating connection is a special case in one respect, decided rather than drifted into
+  (D486): it does **not** verify the peer's certificate, because reaching a legacy suite requires
+  `@SECLEVEL=0`, which also lowers what counts as an acceptable certificate. It is admissible only
+  because that connection reads exactly one bit — did this peer accept this suite — transfers no
+  application data, sends no credential and reads no body, and feeds one field that no other rule may
+  read. `sec/tls-version-old` keeps reading the single verifying probe.
 
   The probe deliberately offers a **TLS 1.0 floor**, below Node's own `DEFAULT_MIN_VERSION` of
   TLS 1.2. Without that, a host speaking nothing but a deprecated protocol simply refuses the
   handshake and `sec/tls-version-old` reports "could not tell" in exactly the case it exists for.
   Offering an old floor cannot drag a healthy server down — the server still picks the best version
-  both sides speak. Cipher suites are *not* widened the same way, because reaching a legacy-cipher-
-  only peer requires OpenSSL's `@SECLEVEL=0`, which also lowers what counts as an acceptable
-  certificate; that is a verification cost paid for a cipher reach.
+  both sides speak. Cipher suites are *not* widened on **this** connection, because reaching a
+  legacy-cipher-only peer requires OpenSSL's `@SECLEVEL=0`, which also lowers what counts as an
+  acceptable certificate; that is a verification cost paid for a cipher reach, and the facts this
+  connection produces are read by a rule that judges the certificate's protocol. The enumeration
+  above pays that cost on a *separate* connection whose result is quarantined from every rule but
+  one — which is the only reason it is payable at all.
 - **The TLS rules are response-scoped only (D297).** Unlike the cookie rules, they are not carried
   through the session channel below. A login response's `Set-Cookie` is a fact only that response
   carries; a TLS version is a property of the *host*, which any assertion pointed at that host
@@ -2387,9 +2423,13 @@ check  response has no security violations              # soft form, §6.4
 - **Requires an `authorized target` declaration** naming every origin this env can scan — its `api`
   base and each declared service (§3.10). Writing this assertion without one is `TF060`, a checker
   error.
-- **Not built:** SARIF output and a standalone scan report, which land with `tflw scan`; and per-rule
-  suppression by id, which §9.8 records as deliberately unsupported for a11y and which would create
-  an asymmetry here.
+- **Not built:** per-rule suppression by id, which §9.8 records as deliberately unsupported for a11y
+  and which would create an asymmetry here.
+
+  This bullet used to also list SARIF output and a standalone scan report as pending, "which land
+  with `tflw scan`". Both halves of that are now wrong and are corrected here rather than stepped
+  over: **SARIF shipped in `M135a`/`M135b`** (§13.4), and there is no `tflw scan` to land anything —
+  `D432` killed the mode and closed `D365` by a different shape.
 
   This bullet used to also list the two TLS rules as not built. **They shipped in `M128c`** — they
   are in the rule table above and D288 spends four paragraphs on the probe that drives them, so the

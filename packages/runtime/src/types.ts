@@ -46,6 +46,14 @@ export interface AuthorizedTarget {
    * this host's inputs? Detection-oriented (it attempts a read, never a write), but still an
    * attempt at unauthorized access, which is the other class D21 layer 4 names. */
   readonly probeTraversal: boolean;
+  /** `probe ciphers` (M137g, D485/D486) — may the TLS probe open one handshake per candidate suite
+   * against this host, so `sec/tls-weak-cipher` judges the host's *offer* and not merely the suite
+   * tflw's own client negotiated?
+   *
+   * Accumulates by OR, exactly as the three above do. Withheld, the rule reports **`not probed`**
+   * for its offered half rather than passing quietly — silence would re-create the false negative
+   * the clause exists to close. */
+  readonly probeCiphers: boolean;
 }
 
 export interface ResolvedTimeouts {

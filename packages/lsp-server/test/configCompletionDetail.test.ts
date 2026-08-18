@@ -75,7 +75,10 @@ test('a sub-clause line under `authorized target` offers the whole `probe …` p
     '  authorized target "http://localhost:4001" reason "self-hosted test fixture"\n' +
     '    ';
   const candidates = completeAt(source);
-  assert.deepEqual(candidates.map((c) => c.label), ['probe mutating', 'probe oversized', 'probe traversal']);
+  // Derived from the parser's own tuple rather than hand-listed. `M137g` added a fourth clause and
+  // found both of this file's expectations frozen at three — a completion list that silently stops
+  // growing is the exact `M133` defect this suite was built to prevent, reappearing in its own tests.
+  assert.deepEqual(candidates.map((c) => c.label), PROBE_SUB_CLAUSES.map((w) => `probe ${w}`));
   assert.ok(candidates.every((c) => c.detail), 'each probe class says what permitting it means');
 });
 
@@ -84,7 +87,7 @@ test('after `probe ` the candidate is the bare class word, not a phrase that rep
     'defaults\n' +
     '  authorized target "http://localhost:4001" reason "self-hosted test fixture"\n' +
     '    probe ';
-  assert.deepEqual(completeAt(source).map((c) => c.label), ['mutating', 'oversized', 'traversal']);
+  assert.deepEqual(completeAt(source).map((c) => c.label), [...PROBE_SUB_CLAUSES]);
   // Mid-word, which is how it is actually typed.
   assert.deepEqual(completeAt(source + 'o').map((c) => c.label), ['oversized']);
 });

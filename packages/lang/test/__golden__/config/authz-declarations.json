@@ -27,7 +27,8 @@
         },
         "probeMutating": true,
         "probeOversized": true,
-        "probeTraversal": true
+        "probeTraversal": true,
+        "probeCiphers": true
       }
     ]
   },
@@ -75,7 +76,8 @@
           },
           "probeMutating": false,
           "probeOversized": false,
-          "probeTraversal": false
+          "probeTraversal": false,
+          "probeCiphers": false
         }
       ]
     }

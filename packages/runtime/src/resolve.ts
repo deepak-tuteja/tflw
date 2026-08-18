@@ -115,6 +115,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
             probeMutating: entry.probeMutating,
             probeOversized: entry.probeOversized,
             probeTraversal: entry.probeTraversal,
+            probeCiphers: entry.probeCiphers,
           });
           break;
         case 'EvidenceDecl':

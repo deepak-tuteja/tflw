@@ -22,6 +22,7 @@ const PROBE_CLAUSE_WORDS = {
   probeMutating: 'probe mutating',
   probeOversized: 'probe oversized',
   probeTraversal: 'probe traversal',
+  probeCiphers: 'probe ciphers',
 } satisfies Record<Exclude<keyof AuthorizedTarget, 'target' | 'reason'>, string>;
 
 /** The sub-clauses this declaration granted, in declaration order. Empty when it granted none —

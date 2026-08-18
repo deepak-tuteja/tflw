@@ -399,12 +399,19 @@ function configKeyHome(key: string): string {
  * `AuthorizedTargetDecl` field each one sets. A total record over the same `as const` tuple, for
  * `SCAN_MATCHER_NAMES`' reason: a fourth word is then a type error until somebody says what it
  * grants, rather than a word the parser accepts and nothing reads. */
-export const PROBE_SUB_CLAUSES = ['mutating', 'oversized', 'traversal'] as const;
-const PROBE_SUB_CLAUSE_FIELDS: Readonly<Record<(typeof PROBE_SUB_CLAUSES)[number], 'probeMutating' | 'probeOversized' | 'probeTraversal'>> = {
+export const PROBE_SUB_CLAUSES = ['mutating', 'oversized', 'traversal', 'ciphers'] as const;
+const PROBE_SUB_CLAUSE_FIELDS: Readonly<
+  Record<(typeof PROBE_SUB_CLAUSES)[number], 'probeMutating' | 'probeOversized' | 'probeTraversal' | 'probeCiphers'>
+> = {
   mutating: 'probeMutating',
   oversized: 'probeOversized',
   traversal: 'probeTraversal',
+  ciphers: 'probeCiphers',
 };
+/** The `AuthorizedTargetDecl` fields the sub-clauses set, as one name. Written once so the parser's
+ * default state, its return type and the decl cannot disagree — `M137g` found them disagreeing in
+ * three places at once when it added the fourth clause. */
+export type ProbeSubClauseField = (typeof PROBE_SUB_CLAUSE_FIELDS)[(typeof PROBE_SUB_CLAUSES)[number]];
 const PROBE_SUB_CLAUSE_HELP = `an \`authorized target\` takes ${PROBE_SUB_CLAUSES.map((w) => `\`probe ${w}\``).join(', ')}, each on its own indented line`;
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 /** `log [<level>] "…" [to <destination>]` (M27, PLAN_LOG.md) — bare-keyword enums, same shape as
@@ -1837,9 +1844,19 @@ class Parser {
    * **`M134a` adds two siblings and no grammar** — D311 predicted exactly this (*"Tier 3's further
    * per-class opt-ins land as sibling lines instead of needing a second grammar"*), which is why
    * D21 layer 4 is discharged and stays discharged: `probe mutating` was its first tenant and these
-   * are the second and third tenants of a working mechanism, not a reopening of the layer. */
-  private parseAuthorizedTargetSubClauses(): { probeMutating: boolean; probeOversized: boolean; probeTraversal: boolean } {
-    const probes = { probeMutating: false, probeOversized: false, probeTraversal: false };
+   * are the second and third tenants of a working mechanism, not a reopening of the layer.
+   *
+   * **`M137g` adds the fourth (`probe ciphers`, D485) and still no grammar** — the same prediction
+   * holding a third time. It also found that "no grammar" had quietly cost four hand-kept copies of
+   * the field list: the tuple, the field map, this method's return type and its default literal. The
+   * last two are now derived from the first two, so a fifth clause is one line. */
+  private parseAuthorizedTargetSubClauses(): Record<ProbeSubClauseField, boolean> {
+    // Derived from `PROBE_SUB_CLAUSE_FIELDS` rather than written out, so the default state cannot
+    // fall behind the vocabulary. It was a hand-kept literal until `M137g` added a fourth clause and
+    // tsc pointed at this line — the same "how many places is this number written?" question
+    // `M137a` had to ask of `--of=6`, arriving in a file that had already answered it correctly
+    // twice (the tuple above, and the reporter's word table).
+    const probes = Object.fromEntries(PROBE_SUB_CLAUSES.map((w) => [PROBE_SUB_CLAUSE_FIELDS[w], false])) as Record<ProbeSubClauseField, boolean>;
     if (!this.check('indent')) return probes;
     this.advance(); // indent
     while (!this.check('dedent') && !this.atEof()) {

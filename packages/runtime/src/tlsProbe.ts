@@ -15,8 +15,14 @@
 // that was actually asserted on negotiated, and not the full set of parameters the host would
 // accept from somebody else. For a service with one TLS configuration the first gap is nil; behind
 // a load balancer with heterogeneous nodes it is not, and only the undici dependency would close
-// it. The second gap is structural: enumerating a server's whole offer takes one handshake per
-// suite, which is a scanner's job (Tier 3's `tflw scan`), not an assertion's.
+// it.
+//
+// **The second gap is closed by `M137g`** (`D485`). The sentence that used to stand here — that
+// enumerating a server's whole offer "takes one handshake per suite, which is a scanner's job
+// (Tier 3's `tflw scan`), not an assertion's" — was overtaken twice: `D432` killed that mode, and
+// `D441` landed the capability here instead, behind `probe ciphers`. Corrected rather than stepped
+// over (`M132b`'s precedent), because a file's own header is the last place a reader expects to be
+// told about a capability the file has since grown. See `enumerateOffered`.
 //
 // ## One handshake per host, per run
 //
@@ -35,7 +41,7 @@
 import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import { isIP } from 'node:net';
 import { allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import type { TlsObservation } from './securityRules.js';
+import type { OfferedSuites, TlsObservation } from './securityRules.js';
 import type { AuthorizedTarget } from './types.js';
 
 /** Everything about the config that can change a probe's answer or its permission to run. Passed per
@@ -51,6 +57,10 @@ export interface TlsProbePolicy {
   readonly insecure: boolean;
   readonly allowHosts: readonly string[] | null;
   readonly authorizedTargets: readonly AuthorizedTarget[];
+  /** `probe ciphers` on the `authorized target` covering this origin (`M137g`, `D485`). Governs
+   * `enumerateOffered` only; the single `D288` handshake `probe` makes is unaffected and stays
+   * available to every security assertion without an opt-in, exactly as it has since `M128c`. */
+  readonly probeCiphers: boolean;
 }
 
 /**
@@ -128,8 +138,65 @@ export function connectionOptions(host: string, port: number, policy: TlsProbePo
   };
 }
 
+/**
+ * `M137g`/`D485` — the broken suites worth *asking* a host about, one handshake each.
+ *
+ * **Static, and it has to be**, which is a measurement rather than a preference. `tls.getCiphers()`
+ * reports 62 suites on this stack and **not one of them is broken** — it reflects the default list
+ * at OpenSSL's security level 2, while the suites below are reachable from the same binary once
+ * `@SECLEVEL=0` is named. So a candidate list derived from the stack would be empty and would report
+ * a clean offer for every host on earth: the vacuous-control shape this arc keeps filing findings
+ * about, arriving as a portability nicety.
+ *
+ * What is *not* assumed is which of these the local stack can speak. That is discovered per run —
+ * see `unaskable` on `OfferedSuites`. Ordered broken-family first so a truncated log still shows the
+ * interesting half.
+ */
+export const BROKEN_SUITE_CANDIDATES: readonly string[] = [
+  // No encryption at all. Measured against a live listener 2026-08-18: **8 of the 18 below are
+  // askable on OpenSSL 3.x** — these five, the three anonymous ones after them, and nothing else.
+  // The remaining ten are `unaskable` on every run here, which is why that list is a first-class
+  // part of the result rather than a footnote.
+  'NULL-MD5',
+  'NULL-SHA',
+  'NULL-SHA256',
+  'ECDHE-RSA-NULL-SHA',
+  'ECDHE-ECDSA-NULL-SHA',
+  // No authentication — an anonymous key exchange is a man in the middle's front door.
+  'AECDH-NULL-SHA',
+  'ADH-AES128-SHA',
+  'AECDH-AES128-SHA',
+  // Broken stream cipher (RFC 7465).
+  'RC4-MD5',
+  'RC4-SHA',
+  'ECDHE-RSA-RC4-SHA',
+  'ECDHE-ECDSA-RC4-SHA',
+  // 64-bit block ciphers — Sweet32 (RFC 7457 §2.9).
+  'DES-CBC3-SHA',
+  'ECDHE-RSA-DES-CBC3-SHA',
+  'EDH-RSA-DES-CBC3-SHA',
+  'DES-CBC-SHA',
+  // Deliberately weakened for 1990s export law, and still answered by some appliances.
+  'EXP-RC4-MD5',
+  'EXP-DES-CBC-SHA',
+];
+
 export class TlsProber {
   readonly #handshakes = new Map<string, Promise<TlsObservation>>();
+  /** `M137g` — memoized per `host:port` for `D288`'s reason, unchanged: an offer is a property of
+   * the host, and a suite with 400 assertions against it must not pay for the enumeration 400
+   * times. Holds the in-flight promise, so concurrent assertions share one enumeration. */
+  readonly #offers = new Map<string, Promise<OfferedSuites>>();
+  #inFlight = 0;
+  #peakInFlight = 0;
+
+  /** How many enumeration handshakes were ever open at once. `D435` keeps the crawl strictly
+   * sequential and leaves `probe rate` deferred; this is the first **non-HTTP** path where that
+   * could drift unnoticed, so the property is measured rather than asserted in a comment — the same
+   * treatment `authz-probe-pacing.test.ts` gives the HTTP path. */
+  get peakHandshakesInFlight(): number {
+    return this.#peakInFlight;
+  }
 
   /** How many handshakes this prober has actually opened. Exposed for the tests that assert the
    * cache is doing its job — a cache whose only evidence is that results match is a cache that could
@@ -179,6 +246,143 @@ export class TlsProber {
     this.#handshakes.set(key, started);
     return started;
   }
+
+  /**
+   * `M137g`/`D485` — what this host *offers*, one handshake per candidate suite.
+   *
+   * Returns `undefined` when the caller has no permission to ask: the same two policy gates `probe`
+   * applies, plus `probe ciphers` on the `authorized target` covering this origin. `undefined` is
+   * **not** an empty offer, and the rule must not render it as one — that is the whole difference
+   * between "asked and found nothing" and "never asked".
+   *
+   * Strictly sequential (`D435`). The handshakes are `await`ed one at a time rather than raced, and
+   * `peakHandshakesInFlight` is the guard that says so out loud.
+   */
+  async enumerateOffered(url: string, policy: TlsProbePolicy): Promise<OfferedSuites | undefined> {
+    if (!policy.probeCiphers) return undefined;
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return undefined;
+    }
+    if (parsed.protocol !== 'https:') return undefined;
+    if (!isHostAllowed(url, policy.allowHosts)) return undefined;
+    if (!authorizedFor(parsed, policy.authorizedTargets)) return undefined;
+
+    const key = cacheKey(parsed, policy);
+    const cached = this.#offers.get(key);
+    if (cached) return cached;
+    const port = parsed.port === '' ? 443 : Number(parsed.port);
+    const started = this.#enumerate(parsed.hostname, port, policy);
+    this.#offers.set(key, started);
+    return started;
+  }
+
+  async #enumerate(host: string, port: number, policy: TlsProbePolicy): Promise<OfferedSuites> {
+    const accepted: string[] = [];
+    const refused: string[] = [];
+    const unaskable: string[] = [];
+    // The tracker wraps the **socket**, not this loop. It counted iterations until `M137g`'s own
+    // mutation sweep walked through the guard untouched: racing two handshakes inside one iteration
+    // left the peak at 1, so the control that keeps `probe rate` deferred could not see the change
+    // that would revive it. A pacing guard measuring the wrong noun is worse than none, because it
+    // reads as evidence.
+    const track = {
+      open: (): void => {
+        this.#inFlight += 1;
+        this.#peakInFlight = Math.max(this.#peakInFlight, this.#inFlight);
+      },
+      close: (): void => {
+        this.#inFlight -= 1;
+      },
+    };
+    for (const suite of BROKEN_SUITE_CANDIDATES) {
+      const verdict = await suiteHandshake(host, port, suite, policy, track);
+      (verdict === 'accepted' ? accepted : verdict === 'refused' ? refused : unaskable).push(suite);
+    }
+    return { accepted, refused, unaskable };
+  }
+}
+
+/** One suite, one handshake, three possible answers (`D486`).
+ *
+ * **Certificate verification is off unconditionally, and that is the decision rather than an
+ * oversight.** `D298` refused to widen the probe's cipher list because reaching a legacy suite needs
+ * `@SECLEVEL=0`, which also lowers what counts as an acceptable certificate — *"a strict run would
+ * quietly start trusting keys and signatures it currently rejects."* That objection is fatal to a
+ * probe whose answer feeds a **trust** decision, and this one's does not: it reads a single bit —
+ * did the peer accept this suite — transfers no application data, sends no credential and reads no
+ * body. The result reaches exactly one field (`OfferedSuites`), which `sec/tls-version-old` is
+ * forbidden to read and a guard test asserts it never does.
+ *
+ * The `unaskable` verdict is the one that keeps this honest. `ERR_SSL_NO_CIPHERS_AVAILABLE` and
+ * `NO_CIPHER_MATCH` come from **our own** OpenSSL declining to build a ClientHello, before a byte
+ * reaches the network — so nothing whatever was learned about the server, and calling that a refusal
+ * would report a clean answer to a question nobody asked.
+ */
+type SuiteVerdict = 'accepted' | 'refused' | 'unaskable';
+
+/** Our own stack declining to build the ClientHello, in either of the two shapes it arrives in.
+ *
+ * One function rather than a condition at each call site, because `M137g`'s sweep showed the two
+ * paths drifting apart is invisible: the synchronous throw is the one this OpenSSL takes, so a
+ * mutation of the asynchronous branch alone survived every test. Same question, one answer. */
+function isUnaskable(code: string): boolean {
+  return code.includes('NO_CIPHERS_AVAILABLE') || code.includes('NO_CIPHER_MATCH');
+}
+
+interface HandshakeTracker {
+  open(): void;
+  close(): void;
+}
+
+function suiteHandshake(host: string, port: number, suite: string, policy: TlsProbePolicy, track: HandshakeTracker): Promise<SuiteVerdict> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (verdict: SuiteVerdict): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(overall);
+      socket?.destroy();
+      track.close();
+      resolve(verdict);
+    };
+
+    let socket: TLSSocket | undefined;
+    track.open();
+    try {
+      socket = connect({
+        host,
+        port,
+        // Never `policy.insecure`. See this function's header: the connection reads one bit and is
+        // forbidden to contribute a certificate fact to anything.
+        rejectUnauthorized: false,
+        ciphers: `${suite}:@SECLEVEL=0`,
+        // These are all TLS 1.2-and-below suites. TLS 1.3 negotiates its suites through a separate
+        // `ciphersuites` list, so leaving 1.3 reachable would let a healthy server answer the modern
+        // way and make every candidate look refused.
+        minVersion: 'TLSv1',
+        maxVersion: 'TLSv1.2',
+        ...(isIP(host) === 0 ? { servername: host } : {}),
+      });
+    } catch (err) {
+      // Thrown synchronously when OpenSSL cannot parse or satisfy the cipher string at all — which
+      // is the path this stack actually takes for RC4 and 3DES.
+      settled = true;
+      track.close();
+      resolve(isUnaskable((err as NodeJS.ErrnoException).code ?? '') ? 'unaskable' : 'refused');
+      return;
+    }
+
+    socket.on('secureConnect', () => finish('accepted'));
+    socket.setTimeout(policy.timeoutMs, () => finish('refused'));
+    const overall = setTimeout(() => finish('refused'), policy.timeoutMs);
+    overall.unref?.();
+    socket.on('error', (err: NodeJS.ErrnoException) => {
+      finish(isUnaskable(err.code ?? '') ? 'unaskable' : 'refused');
+    });
+  });
 }
 
 /**
