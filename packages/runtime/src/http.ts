@@ -8,7 +8,7 @@ import { RuntimeError } from './eval.js';
 import { blockedPort } from './blockedPorts.js';
 import { sendMtlsRequest } from './mtlsWorker.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
+import { MAX_REDIRECTS, RedirectLimitError, chainCookieForRedirect, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { CookieEvent, ResponseTrace } from './types.js';
 
 export interface SendRequestOptions {
@@ -92,7 +92,7 @@ async function fetchChain(opts: SendRequestOptions, signal: AbortSignal): Promis
       await res.arrayBuffer().catch(() => undefined);
       throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
     }
-    const hop = nextRedirectHop(current, res.status, location);
+    const hop = nextRedirectHop(current, res.status, location, chainCookieForRedirect(current.url, location, cookieEvents));
     if (!isHostAllowed(hop.url, opts.allowHosts)) {
       // Drained before throwing: this hop's own response is a 3xx we are choosing not to follow,
       // and leaving its body unread holds the socket open for the rest of the process.

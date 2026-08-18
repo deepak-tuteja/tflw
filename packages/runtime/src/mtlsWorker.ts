@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuntimeError } from './eval.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
+import { MAX_REDIRECTS, RedirectLimitError, chainCookieForRedirect, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { CookieEvent, ResponseTrace } from './types.js';
 import type { SendRequestOptions } from './http.js';
 
@@ -112,7 +112,7 @@ export async function runMtlsWorkerProcess(): Promise<void> {
             process.send?.({ type: 'error', id, message: redirectLimitMessage(msg.method, msg.url), timedOut: false, redirectLimit: true } satisfies MtlsWorkerToParentMessage);
             return;
           }
-          const hop = nextRedirectHop(current, res.status, location);
+          const hop = nextRedirectHop(current, res.status, location, chainCookieForRedirect(current.url, location, cookieEvents));
           await res.arrayBuffer().catch(() => undefined); // release the socket either way
           if (!isHostAllowed(hop.url, msg.allowHosts)) {
             process.send?.({ type: 'error', id, message: allowHostsRefusal(hop.url, msg.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` }), timedOut: false, refused: true } satisfies MtlsWorkerToParentMessage);

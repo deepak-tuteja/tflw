@@ -155,7 +155,7 @@ export function enumerateOpenApiSurface(document: OpenApiDocument, excludes: rea
     // the one entry in this channel that is somebody's instruction rather than tflw's limitation.
     const excludedBy = excludes.find((pattern) => matchesRoutePattern(template, pattern));
     if (excludedBy !== undefined) {
-      skipped.push({ method: '*', template, reason: `excluded by this crawl's \`exclude "${excludedBy}"\`` });
+      skipped.push({ method: '*', template, reason: excludedByReason(excludedBy) });
       continue;
     }
 
@@ -575,6 +575,20 @@ export function normalizeTemplate(pathname: string): string {
     .split('/')
     .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment) ? '{id}' : segment))
     .join('/');
+}
+
+/** The one wording for "this route was withheld by `exclude`", shared by all three sites that can
+ *  produce it (`crawlSurface`'s openapi enumeration, `crawl`'s traffic seed, `spiderSurface`'s walk).
+ *
+ *  **It is a function because it was three string literals and one of them drifted.** `spiderSurface`
+ *  wrote ``excluded by `exclude "…"` `` where the other two wrote ``excluded by this crawl's
+ *  `exclude "…"` ``, and nothing in the engine could tell — a decline reason is prose. What noticed
+ *  was `testFlow-tests`' acceptance grader, which partitions declines by matching that prose: the
+ *  spider's exclusions fell out of the crawl-shaped bucket into the exact-set bucket and failed there,
+ *  with a message about a blind spot nobody had declared. A reason string that two graders and a
+ *  reader all key on is an interface, so it has one definition. */
+export function excludedByReason(pattern: string): string {
+  return `excluded by this crawl's \`exclude "${pattern}"\``;
 }
 
 export function matchesRoutePattern(template: string, pattern: string): boolean {

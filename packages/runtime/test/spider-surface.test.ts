@@ -20,6 +20,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SPIDER_DEFAULTS, walkSpiderSurface, type SpiderPage } from '../src/spiderSurface.js';
+import { excludedByReason } from '../src/crawlSurface.js';
 
 const ORIGIN = 'http://admin.test';
 
@@ -226,4 +227,21 @@ test('a walked route travels as an ABSOLUTE url, so it is dialled at the origin 
   const login = surface.requests.find((r) => r.template === '/login');
   assert.ok(login, 'grouped and reported by path');
   assert.equal(login.path, `${ORIGIN}/login`, 'but sent to the origin it was walked on');
+});
+
+test('an excluded route is declined in the SAME words the other two seeds use', async () => {
+  // `M137f-01`'s tail. The three producers of this decline each held their own string literal, and
+  // the spider's drifted: it said ``excluded by `exclude "…"` `` where the openapi and traffic seeds
+  // said ``excluded by this crawl's `exclude "…"` ``. Nothing in the engine could notice — a decline
+  // reason is prose — and what did notice was `testFlow-tests`' acceptance grader, which partitions
+  // declines by matching that prose and reported the spider's exclusions as an undeclared blind spot.
+  //
+  // Asserted against `excludedByReason` rather than against a literal, so this test cannot itself
+  // become the fourth copy of the sentence it exists to keep singular.
+  const { fetchPage } = site({ '/': link('/hardened'), '/hardened': '' });
+  const surface = await walkSpiderSurface(`${ORIGIN}/`, ['/hardened'], SPIDER_DEFAULTS, fetchPage);
+
+  const skip = surface.skipped.find((s) => s.template === '/hardened');
+  assert.ok(skip, 'an excluded route is reported as withheld, never silently dropped');
+  assert.equal(skip.reason, excludedByReason('/hardened'));
 });

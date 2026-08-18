@@ -21,7 +21,7 @@ import type { HttpMethod } from '@tflw/lang';
 import type { CrawlDecl } from '@tflw/lang';
 import { isSafeMethod, mayProbeMutating } from './authzProbe.js';
 import type { OpenApiDocument } from './contract.js';
-import { documentServerBasePath, enumerateOpenApiSurface, matchesRoutePattern, normalizeTemplate, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
+import { documentServerBasePath, enumerateOpenApiSurface, excludedByReason, matchesRoutePattern, normalizeTemplate, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
 import { SPIDER_DEFAULTS, walkSpiderSurface, type SpiderPage } from './spiderSurface.js';
 import type { CrawlVia } from './scanFindings.js';
 import type { CrawlSurfaceReport, RequestTrace, ResolvedConfig, ResponseTrace, StepResult } from './types.js';
@@ -423,7 +423,7 @@ function trafficSurface(traffic: readonly RequestTrace[], excludes: readonly str
     seen.add(key);
     const excludedBy = excludes.find((pattern) => matchesRoutePattern(template, pattern));
     if (excludedBy !== undefined) {
-      skipped.push({ method: request.method, template, reason: `excluded by this crawl's \`exclude "${excludedBy}"\`` });
+      skipped.push({ method: request.method, template, reason: excludedByReason(excludedBy) });
       continue;
     }
     const method = HTTP_METHODS.find((m) => m === request.method.toUpperCase());

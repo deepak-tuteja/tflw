@@ -98,6 +98,7 @@ const LSP_SERVER = 'packages/lsp-server/src/server.ts';
 const CRAWL = 'packages/runtime/src/crawl.ts';
 const CRAWL_SURFACE = 'packages/runtime/src/crawlSurface.ts';
 const SPIDER = 'packages/runtime/src/spiderSurface.ts';
+const REDIRECT = 'packages/runtime/src/redirect.ts';
 const REPRO = 'packages/reporter/src/repro.ts';
 const SARIF = 'packages/reporter/src/sarif.ts';
 
@@ -2221,6 +2222,15 @@ const REGISTRY = [
     what: "a form field tflw filled in itself is no longer named in `invented`, so a finding resting on a made-up value reads as a finding about the application's own data. The request sent is byte-for-byte identical — this mutation changes nothing but the provenance, which is `D436`'s whole point about what a synthesized response is allowed to mean",
     find: '        fields.push([name, syntheticFor(type)]);\n        invented.push(`form field \\`${name}\\``);',
     replace: '        fields.push([name, syntheticFor(type)]);',
+  },
+  {
+    id: 'a-chain-forgets-the-cookie-it-was-just-given',
+    milestone: 'm137f',
+    pkg: '@tflw/runtime',
+    file: REDIRECT,
+    what: "the sending half of `M88c1` is reverted: an intermediate `Set-Cookie` is still *reported*, and the next hop still goes out without it. This is the only mutation in the registry whose unmutated form was the shipped behaviour for nine milestones, and it is here because of HOW it hid — a login through a `302` stays green, since an app that answers an unauthenticated page by redirecting to its login form lands the chain on a `200`. Nothing fails; the run is simply not logged in. It needs a fixture whose protected route REFUSES, which is exactly what the four fixtures already in `cookie-events.test.ts` could not do",
+    find: '  headers = withChainCookie(headers, chainCookie);',
+    replace: '  headers = withChainCookie(headers, undefined);',
   },
 
 ];

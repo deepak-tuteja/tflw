@@ -21,7 +21,7 @@
 
 import type { HttpMethod } from '@tflw/lang';
 import { isSafeMethod } from './authzProbe.js';
-import { matchesRoutePattern, normalizeTemplate, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
+import { excludedByReason, matchesRoutePattern, normalizeTemplate, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
 
 /**
  * `D435`'s "browser half — bound it", as numbers.
@@ -194,7 +194,7 @@ function addPlan(
   if (seen.has(key)) return;
   seen.add(key);
   if (excludes.some((pattern) => matchesRoutePattern(template, pattern))) {
-    skipped.push({ method: found.method, template, reason: `excluded by \`exclude "${excludes.find((p) => matchesRoutePattern(template, p))!}"\`` });
+    skipped.push({ method: found.method, template, reason: excludedByReason(excludes.find((p) => matchesRoutePattern(template, p))!) });
     return;
   }
   requests.push({

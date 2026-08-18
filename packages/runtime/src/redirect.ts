@@ -22,6 +22,7 @@
 
 import { RuntimeError } from './eval.js';
 import type { CookieEvent } from './types.js';
+import { CookieJar } from './cookieJar.js';
 
 /** `fetch`'s own cap (Fetch §4.4 "HTTP-redirect fetch", step 5: redirect count 20). */
 export const MAX_REDIRECTS = 20;
@@ -128,13 +129,107 @@ export function cookieEventFor(hopUrl: string, setCookie: readonly string[] | un
   return { origin, setCookie: [...setCookie] };
 }
 
-/** Where a 3xx sends this request next, and what it may still carry when it gets there. */
-export function nextRedirectHop(current: { readonly url: string; readonly method: string; readonly headers: Record<string, string> }, status: number, location: string): RedirectHop {
+/** Where a 3xx sends this request next, and what it may still carry when it gets there.
+ *
+ * **`chainCookie` is `M137f-01`, and it is required rather than optional on purpose.** `M88c1`
+ * found that a chain's intermediate `Set-Cookie` was discarded and fixed the *reporting* half —
+ * every hop's cookies now reach `cookieEvents`. Its own header comment states the other half in
+ * one sentence (*"because a request's headers are fixed once before the chain starts, the hop to
+ * the protected page also went out unauthenticated"*) and that half was never built: the caller's
+ * header map was carried forward verbatim, so `POST /login` → `302` + `Set-Cookie` →
+ * `GET /dashboard` sent the dashboard hop **anonymously**, exactly as before. A browser carries it;
+ * `curl -L -c -b` carries it; this loop did not.
+ *
+ * The consequence is a silent false green rather than an error, which is why four milestones of
+ * green sweeps walked past it. On an app that answers an unauthenticated page with a redirect to
+ * its login form — the commonest shape there is — the chain lands on the login page with a `200`,
+ * so `expect status equals 200` passes; and if that app touches its session on every request (a
+ * synchroniser-token middleware is enough), the login page's own fresh anonymous cookie is a
+ * *later* event than the authenticated one, so last-wins leaves the jar holding an anonymous
+ * credential. The session establishes, reports success, and is not logged in.
+ *
+ * Required, not `chainCookie?`, because an optional parameter is satisfied by forgetting it. Three
+ * clients hand-walk chains and all three have to do this identically; a default would let a fourth
+ * arrive silently anonymous, which is the failure this parameter exists to end.
+ *
+ * Applied **after** the cross-origin strip and scoped by the caller to the hop's own origin, so the
+ * jar's rule is unchanged: host A's cookie is not replayed to host B. */
+export function nextRedirectHop(
+  current: { readonly url: string; readonly method: string; readonly headers: Record<string, string> },
+  status: number,
+  location: string,
+  chainCookie: string | undefined,
+): RedirectHop {
   const from = new URL(current.url);
   const to = new URL(location, from);
   const dropBody = status === 303 || ((status === 301 || status === 302) && current.method === 'POST');
   let headers = current.headers;
   if (!isSameOrigin(from, to)) headers = stripHeaders(headers, CROSS_ORIGIN_STRIPPED_HEADERS);
   if (dropBody) headers = stripHeaders(headers, DOWNGRADE_STRIPPED_HEADERS);
+  headers = withChainCookie(headers, chainCookie);
   return { url: to.toString(), method: dropBody ? 'GET' : current.method, headers, dropBody };
+}
+
+/** What the chain itself has learned, as a `Cookie` header for the hop `location` names.
+ *
+ * Built from `cookieEvents` — the list every hand-walked client is already accumulating — through
+ * the run's own `CookieJar`, so a redirect chain and an authored step agree about `Max-Age`,
+ * expiry, domain matching and last-wins ordering instead of this module growing a second opinion
+ * about what a cookie is. That shared-decision rule is why `cookieEventFor` lives here, and this is
+ * the same rule applied to the sending half.
+ *
+ * Origin-scoped by construction: the jar is asked for the *hop's* origin, so a chain that crosses
+ * from A to B is handed B's cookies and never A's. `nextRedirectHop`'s cross-origin strip and this
+ * are therefore not redundant — the strip drops what the *caller* was sending, this decides what
+ * the chain may add.
+ *
+ * A fresh jar per hop rather than one threaded through the loop: a chain is capped at
+ * `MAX_REDIRECTS`, so the cost is bounded and trivial, and a caller cannot forget to update it. */
+export function chainCookieForRedirect(currentUrl: string, location: string, events: readonly CookieEvent[]): string | undefined {
+  if (events.length === 0) return undefined;
+  let origin: string;
+  try {
+    origin = new URL(location, currentUrl).origin;
+  } catch {
+    return undefined;
+  }
+  const jar = new CookieJar();
+  jar.applyCookieEvents(events);
+  return jar.serialize(origin);
+}
+
+/** The hop's `Cookie` header, given what the caller was already sending and what earlier hops in
+ * this same chain set for the hop's origin.
+ *
+ * **The chain wins on a name collision**, which is the only ordering that can be right: the
+ * caller's value is the jar as it stood *before* the request, and a `Set-Cookie` seen since is by
+ * definition newer. A login that rotates the session id is precisely this case — carrying the
+ * pre-login value forward would send the hop the credential the server just replaced.
+ *
+ * Any existing header spelling of `cookie` is consumed rather than left in place, since a second
+ * entry differing only in case would be sent as a second header line and the two would disagree. */
+export function withChainCookie(headers: Record<string, string>, chainCookie: string | undefined): Record<string, string> {
+  if (!chainCookie) return headers;
+  const pairs = new Map<string, string>();
+  const kept: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'cookie') addCookiePairs(pairs, value);
+    else kept[key] = value;
+  }
+  addCookiePairs(pairs, chainCookie);
+  if (pairs.size > 0) kept['Cookie'] = [...pairs].map(([name, value]) => `${name}=${value}`).join('; ');
+  return kept;
+}
+
+/** `name=value; name2=value2` into a map, last-wins, skipping anything without a name. Deliberately
+ * not a `Set-Cookie` parser: a `Cookie` request header carries bare pairs and no attributes, so
+ * splitting on `;` is the whole grammar (RFC 6265 §4.2.1). */
+function addCookiePairs(into: Map<string, string>, header: string): void {
+  for (const part of header.split(';')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    into.set(trimmed.slice(0, eq), trimmed.slice(eq + 1));
+  }
 }
