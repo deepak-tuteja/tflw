@@ -152,10 +152,12 @@ Source is public and issues are welcome — pull requests aren't accepted yet (P
 ```sh
 git clone <this repo> && cd testFlow
 npm install
-npm run build       # build all packages
-npm run typecheck   # type-check all packages
-npm test            # every suite: all seven packages, plus the root `scripts/` tools' own tests
 ```
+
+**The gates — what has to be green before a branch is pushed — live in
+[CONTRIBUTING.md](CONTRIBUTING.md), and only there.** This section used to list three of them; it
+was missing five, for the whole life of the ledger row that eventually produced that file. The list
+there is held to `.github/workflows/` by a test, so it cannot go stale the way this paragraph could.
 
 `npm run build` (root, or `-w tflw`) always produces the same self-contained, esbuild-bundled
 `packages/cli/dist/cli.cjs` that `npm publish` would ship — see PLAN.md decision 43 (the bundle) and
