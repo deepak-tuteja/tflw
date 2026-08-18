@@ -153,7 +153,10 @@ export function connectionOptions(host: string, port: number, policy: TlsProbePo
  * interesting half.
  */
 export const BROKEN_SUITE_CANDIDATES: readonly string[] = [
-  // No encryption at all. The only family this stack could still reach when D486 measured it.
+  // No encryption at all. Measured against a live listener 2026-08-18: **8 of the 18 below are
+  // askable on OpenSSL 3.x** — these five, the three anonymous ones after them, and nothing else.
+  // The remaining ten are `unaskable` on every run here, which is why that list is a first-class
+  // part of the result rather than a footnote.
   'NULL-MD5',
   'NULL-SHA',
   'NULL-SHA256',

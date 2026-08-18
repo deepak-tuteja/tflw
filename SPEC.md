@@ -2373,10 +2373,12 @@ check  response has no security violations              # soft form, §6.4
     client …` — printed on passing lines too, on D300's precedent.
   - **Absent is not empty.** An unprobed host is never rendered as a host with a clean offer.
   - **The ceiling is printed.** Enumeration can only offer the suites tflw's own OpenSSL will put in
-    a ClientHello, and on OpenSSL 3.x that is the `eNULL` family only — RC4, 3DES and EXPORT are
-    absent rather than weak. Candidates that could not be offered are reported as *unaskable* and
-    kept apart from the ones the server actually declined, because a suite nobody offered tells you
-    nothing about the server. (D486; a scan that could not ask is not a scan that found nothing.)
+    a ClientHello. On OpenSSL 3.x that is the `eNULL` and anonymous-DH families — RC4, 3DES, single
+    DES and EXPORT are absent rather than weak, and the split is not marginal: **10 of the 18
+    candidates** are unaskable there. Candidates that could not be offered are reported as
+    *unaskable* and kept apart from the ones the server actually declined, because a suite nobody
+    offered tells you nothing about the server. (D486; a scan that could not ask is not a scan that
+    found nothing.)
 
   The enumerating connection is a special case in one respect, decided rather than drifted into
   (D486): it does **not** verify the peer's certificate, because reaching a legacy suite requires
