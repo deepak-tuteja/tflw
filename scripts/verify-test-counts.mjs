@@ -108,7 +108,11 @@ const EXPECTED = {
   // leaving `--of=6` behind a matrix of 12, and the cost of finding it that way was a full CI round
   // trip whose failure is three jobs away from the line that caused it. The runtime check stays —
   // only it can see a shard that never reported — this moves the two-integers half to the front.)
-  [ROOT_PKG]: 92,
+  // +8 in `M138a` (`M136a-02`, verify-contributing.test.mjs — every `run:` step in every workflow
+  // classified gate/setup/ci-only, and `CONTRIBUTING.md` held to that table exactly, both ways.
+  // The bump belongs in the same commit as the tests for the reason this whole file exists, and
+  // that reason is now also written down in the document those tests guard.)
+  [ROOT_PKG]: 100,
 };
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
