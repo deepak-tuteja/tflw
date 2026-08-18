@@ -260,6 +260,7 @@ function renderCrawlTest(slot: TestSlot, crawl: CrawlResult, active: boolean, as
   <div class="metrics-block">
     <table class="stats">
       <tr><th>discovered</th><td>${discovered}</td><th>withheld</th><td>${withheld}</td><th>sent</th><td>${sent}</td><th>reached</th><td>${reached}</td></tr>
+      ${crawl.surface.walked === undefined ? '' : `<tr><th>walked</th><td>${crawl.surface.walked}</td><th>walk</th><td colspan="5">${crawl.surface.walkCapped ? 'TRUNCATED at its cap — every figure above is a floor, not a total' : 'complete — the walk ran out of links before it ran out of budget'}</td></tr>`}
     </table>
     <p class="workload">seeds: ${esc(seeds)}</p>
   </div>

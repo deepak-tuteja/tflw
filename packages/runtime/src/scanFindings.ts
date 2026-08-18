@@ -108,7 +108,7 @@ export interface ScanFinding {
 /** The discovery sources a crawl can reach a route through (`M137c`, `D437`/`D470`). `spider` is
  *  absent until `M137f` builds it: a union member that resolves to nothing advertises a capability the
  *  tool does not have, which is the same rule `CrawlSeed` follows in `ast.ts`. */
-export type CrawlVia = 'openapi' | 'traffic';
+export type CrawlVia = 'openapi' | 'traffic' | 'spider';
 
 export type WithheldReason = 'baseline' | 'fail-on' | 'seeded';
 

@@ -2365,13 +2365,96 @@ class Parser {
       this.endLine();
       return { type: 'TrafficSeed', span: this.spanFrom(start) };
     }
+    if (this.isKw(tok, 'spider')) {
+      this.advance();
+      const root = this.expectString('a URL or path to start the walk from, e.g. `seed spider "/admin"`');
+      if (!root) return null;
+      this.endLine();
+      const caps = this.parseSpiderCaps();
+      return {
+        type: 'SpiderSeed',
+        root,
+        ...(caps.maxPages ? { maxPages: caps.maxPages } : {}),
+        ...(caps.maxDepth ? { maxDepth: caps.maxDepth } : {}),
+        span: this.spanFrom(start),
+      };
+    }
     this.error(
       Codes.UNEXPECTED_TOKEN,
-      `expected \`openapi\` or \`traffic\` after \`seed\`, found ${describeToken(tok)}`,
+      `expected \`openapi\`, \`traffic\` or \`spider\` after \`seed\`, found ${describeToken(tok)}`,
       tok.span,
-      'a crawl seeds from the documented surface (`seed openapi "/openapi.json"`) or from this run\'s own captured requests (`seed traffic`)',
+      'a crawl seeds from the documented surface (`seed openapi "/openapi.json"`), from this run\'s own captured requests (`seed traffic`), or by walking a site\'s links and forms (`seed spider "/admin"`)',
     );
     return null;
+  }
+
+  /** The optional indented block under a `seed spider` line — `max pages 200` / `max depth 3`
+   * (`M137f`, `D435`/`D442`/`D483`).
+   *
+   * Sub-clauses indented beneath the declaration, which is `authorized target`'s idiom (SPEC §3.10)
+   * rather than a new one, per `D450`. Both are optional and the runtime defaults them, so an absent
+   * block and a block declaring neither are the same answer and the caller has one shape to handle —
+   * `parseAuthorizedTargetSubClauses`'s rule, for the same reason.
+   *
+   * The caps exist because the spider is the one place in this arc where volume is genuinely unknown
+   * before the work starts (`D435`). Everything else the crawl sends is enumerated from a finite
+   * document, and `D435` refuses to cap a quantity it already knows exactly. */
+  private parseSpiderCaps(): { maxPages?: NumberLit; maxDepth?: NumberLit } {
+    const caps: { maxPages?: NumberLit; maxDepth?: NumberLit } = {};
+    if (!this.check('indent')) return caps;
+    this.advance(); // indent
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const tok = this.peek();
+      if (!this.isKw(tok, 'max')) {
+        this.error(
+          Codes.UNEXPECTED_TOKEN,
+          `expected \`max pages\` or \`max depth\` under \`seed spider\`, found ${describeToken(tok)}`,
+          tok.span,
+          'a spider takes two optional bounds, each on its own indented line: `max pages 200` and `max depth 3`',
+        );
+        this.synchronize();
+        if (this.pos === before) this.advance();
+        continue;
+      }
+      this.advance(); // `max`
+      const word = this.peek();
+      const which = this.isKw(word, 'pages') ? 'maxPages' : this.isKw(word, 'depth') ? 'maxDepth' : undefined;
+      if (!which) {
+        const near = word.type === 'ident' ? suggest(word.value, ['pages', 'depth']) : undefined;
+        this.error(
+          Codes.UNEXPECTED_TOKEN,
+          `expected \`max pages\` or \`max depth\`, found ${describeToken(word)}`,
+          word.span,
+          near ? `did you mean \`max ${near}\`?` : 'a spider bounds how many pages it fetches (`max pages 200`) and how far it follows links (`max depth 3`)',
+        );
+        this.synchronize();
+        if (this.pos === before) this.advance();
+        continue;
+      }
+      this.advance(); // `pages` / `depth`
+      const numTok = this.peek();
+      if (numTok.type !== 'number') {
+        this.error(
+          Codes.UNEXPECTED_TOKEN,
+          `expected a whole number after \`max ${which === 'maxPages' ? 'pages' : 'depth'}\`, found ${describeToken(numTok)}`,
+          numTok.span,
+          'the bound is a count, e.g. `max pages 200`',
+        );
+        this.synchronize();
+        if (this.pos === before) this.advance();
+        continue;
+      }
+      this.advance();
+      caps[which] = { type: 'NumberLit', value: Number(numTok.value), raw: numTok.raw, span: numTok.span };
+      this.endLine();
+    }
+    if (this.check('dedent')) this.advance();
+    return caps;
   }
 
   // -- data tables (P#10, P#24) -------------------------------------------------

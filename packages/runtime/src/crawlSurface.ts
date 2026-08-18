@@ -559,6 +559,24 @@ function pointer(document: OpenApiDocument, ref: string): unknown {
  * A pattern is matched against the **template** (`/products/{id}`), never the filled-in path, so
  * whether a route is excluded cannot depend on the id synthesis happened to invent.
  */
+/**
+ * Numeric and uuid path segments → `{id}`, so a suite's forty calls to one route are one entry. The
+ * same normalization `R8`'s fingerprint already applies to an endpoint, and for the same reason: the
+ * id is not part of what is being identified.
+ *
+ * `M137f` moved it here from `crawl.ts`, where it served the traffic seed alone. The spider needs the
+ * identical rule — a link list containing `/admin/orders/1` … `/admin/orders/40` is one route to probe
+ * and forty would be a replay — and two copies of a grouping rule is how two seeds come to disagree
+ * about what counts as the same endpoint. It lives beside the enumerators rather than beside one of
+ * their callers because it is a fact about a surface, not about a crawl.
+ */
+export function normalizeTemplate(pathname: string): string {
+  return pathname
+    .split('/')
+    .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment) ? '{id}' : segment))
+    .join('/');
+}
+
 export function matchesRoutePattern(template: string, pattern: string): boolean {
   const source = pattern
     .split('**')

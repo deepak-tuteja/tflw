@@ -97,6 +97,7 @@ const SPEC_DATA = 'packages/lang/src/spec-data.ts';
 const LSP_SERVER = 'packages/lsp-server/src/server.ts';
 const CRAWL = 'packages/runtime/src/crawl.ts';
 const CRAWL_SURFACE = 'packages/runtime/src/crawlSurface.ts';
+const SPIDER = 'packages/runtime/src/spiderSurface.ts';
 const REPRO = 'packages/reporter/src/repro.ts';
 const SARIF = 'packages/reporter/src/sarif.ts';
 
@@ -1925,8 +1926,8 @@ const REGISTRY = [
         "  const disclose = () => steps.push(deps.step('seed', `crawl \"${crawl.name.value}\"`, true, plannedDetail));",
       ],
       [
-        '  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds } };',
-        '  disclose();\n  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds } };',
+        '  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds, ...walkFigures } };',
+        '  disclose();\n  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds, ...walkFigures } };',
       ],
     ],
   },
@@ -2185,6 +2186,41 @@ const REGISTRY = [
     what: "the repro sink stops being told the seed, while `ScanFinding.via` keeps carrying it. This is the mutation the reporter-side pair cannot catch: two sinks are fed from two places, so `results.json` would still attribute the finding correctly and only the .tflw file — the artifact a maintainer actually opens — would lose the fact. It is the same class of gap as D478, where the emitter's own view of a request diverged from the run's",
     find: '      ...(tc.crawlVia !== undefined ? { via: tc.crawlVia } : {}),\n    });',
     replace: '    });',
+  },
+
+  // -- M137f (D442/D483): the spider ----------------------------------------------------------------
+  //
+  // Three, and they follow the same thesis `M137c`'s block states: a crawl's failure mode is a
+  // *confident* answer, not a wrong one. Each of these leaves the walk green while making it claim more
+  // ground than it covered — a truncation that stops announcing itself, a site the spider cannot read
+  // reported as a site with nothing in it, and a value tflw invented passed off as the application's
+  // own. None makes the spider report a finding that is not there.
+  {
+    id: 'spider-truncation-stops-announcing-itself',
+    milestone: 'm137f',
+    pkg: '@tflw/runtime',
+    file: SPIDER,
+    what: "a walk stopped by its cap reports as a completed one. Both mutants fetch exactly the same pages and produce exactly the same surface, which is precisely why this needs the flag and not a count: `D435` requires that truncation is reported *as* truncation, and without it every figure downstream reads as a total when it is a floor. This is the coverage lie in its cheapest form — nothing is wrong except that nobody is told",
+    find: '    walked,\n    walkCapped,',
+    replace: '    walked,\n    walkCapped: false,',
+  },
+  {
+    id: 'spider-blind-spot-becomes-an-empty-site',
+    milestone: 'm137f',
+    pkg: '@tflw/runtime',
+    file: SPIDER,
+    what: "an origin the spider fetched but could not read — the client-rendered SPA of `D442` — stops being declared a blind spot, so *we cannot see this* renders identically to *there is nothing here*. The mutant's crawl is green and its surface is honest about what it found; the only thing lost is the sentence saying the tool was the limit, which is the one thing a reader cannot reconstruct from the numbers",
+    find: '    ...(walked > 0 && !sawAnyLink',
+    replace: '    ...(false && walked > 0 && !sawAnyLink',
+  },
+  {
+    id: 'spider-invents-a-value-and-does-not-say-so',
+    milestone: 'm137f',
+    pkg: '@tflw/runtime',
+    file: SPIDER,
+    what: "a form field tflw filled in itself is no longer named in `invented`, so a finding resting on a made-up value reads as a finding about the application's own data. The request sent is byte-for-byte identical — this mutation changes nothing but the provenance, which is `D436`'s whole point about what a synthesized response is allowed to mean",
+    find: '        fields.push([name, syntheticFor(type)]);\n        invented.push(`form field \\`${name}\\``);',
+    replace: '        fields.push([name, syntheticFor(type)]);',
   },
 
 ];

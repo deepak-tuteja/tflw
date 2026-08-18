@@ -405,7 +405,21 @@ export interface CrawlSurfaceReport {
   /** Per seed, so a provenance claim has a denominator behind it — `D437`'s discriminator says which
    *  seed found a *finding*; this says what each seed found at all. `source` is the document URL for
    *  an `openapi` seed and absent for `traffic`, which has no address. */
-  readonly seeds: readonly { readonly seed: 'openapi' | 'traffic'; readonly source?: string; readonly discovered: number }[];
+  readonly seeds: readonly { readonly seed: 'openapi' | 'traffic' | 'spider'; readonly source?: string; readonly discovered: number }[];
+  /**
+   * `M137f` (`D483`) — pages the spider fetched, and whether the walk stopped on a bound.
+   *
+   * **A second total, deliberately beside the identity above rather than inside it.** `discovered ===
+   * withheld + sent` counts *operations*, and a fetched page is not one; folding walk traffic in would
+   * either break that identity or force every walked page to be back-filled as a discovered operation
+   * it may not correspond to. Absent when no crawl in the run had a `spider` seed, so a report does
+   * not carry a zero for a phase that never existed.
+   *
+   * `walkCapped` is `D435`'s *"truncation is reported as truncation"* as a field. A partial walk that
+   * rendered identically to a complete one would be the coverage lie this arc keeps filing rows about.
+   */
+  readonly walked?: number;
+  readonly walkCapped?: boolean;
 }
 
 /** M56 (Phase 3, D116) — one `program.tests` entry's outcome, in file-declaration order alongside

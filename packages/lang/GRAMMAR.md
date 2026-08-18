@@ -147,6 +147,15 @@ CrawlSeed   := 'seed' 'openapi' STRING NEWLINE   # the documented surface; a URL
                                                  # resolved against the default service's base URL
                                                  # exactly as `matches schema … from` resolves its own
              | 'seed' 'traffic' NEWLINE          # the requests this run's own tests made
+             | 'seed' 'spider' STRING NEWLINE SpiderCaps?
+                                                 # M137f/D442 — walk a site's links and forms by
+                                                 # fetching and parsing; no browser engine, so every
+                                                 # gate on the request path applies unchanged
+SpiderCaps  := INDENT ('max' 'pages' NUMBER NEWLINE | 'max' 'depth' NUMBER NEWLINE)+ DEDENT
+                                                 # D435's "browser half — bound it". Optional and
+                                                 # runtime-defaulted; sub-clauses indented under the
+                                                 # declaration, which is `authorized target`'s idiom
+                                                 # (§3.10) rather than a new one — D450
 CrawlExclude := 'exclude' STRING NEWLINE         # a path glob dropped from the discovered set —
                                                  # the same verb the config dialect uses (§3.9),
                                                  # disambiguated by block rather than by a new word
