@@ -209,3 +209,21 @@ test('links are joined against the page final URL, so a redirect does not manufa
   assert.ok(surface.requests.some((r) => r.template === '/admin/orders'), 'joined against the final URL');
   assert.ok(!surface.requests.some((r) => r.template === '/orders'));
 });
+
+test('a walked route travels as an ABSOLUTE url, so it is dialled at the origin it was found on', async () => {
+  // Regression, and it was found by running the thing rather than by reading it. A relative
+  // `path` is resolved by the interpreter against the *default* `api` base — so against a corpus
+  // whose base is `localhost:4001/v1`, every route walked on `localhost:8091` was dialled at
+  // `localhost:4001/v1/login` and answered `404`. `D481` turned that into a red crawl rather than a
+  // green one, which is the only reason it was not a silent nothing.
+  //
+  // `template` must stay the path at the same time: it is the route's identity, what `exclude`
+  // matches and what a reader recognises. So this pins both halves of the same entry, because a fix
+  // that made `path` absolute by making `template` absolute too would break grouping instead.
+  const { fetchPage } = site({ '/': link('/login'), '/login': '' });
+  const surface = await walkSpiderSurface(`${ORIGIN}/`, [], SPIDER_DEFAULTS, fetchPage);
+
+  const login = surface.requests.find((r) => r.template === '/login');
+  assert.ok(login, 'grouped and reported by path');
+  assert.equal(login.path, `${ORIGIN}/login`, 'but sent to the origin it was walked on');
+});

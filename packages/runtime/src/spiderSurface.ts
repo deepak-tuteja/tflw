@@ -200,7 +200,17 @@ function addPlan(
   requests.push({
     method: found.method,
     template,
-    path: pathOf(found.url),
+    // **The absolute URL, not the path** — and this is `D480`'s defect one seed later, caught on the
+    // spider's first live run against the console. A relative `CrawlRequestPlan.path` is resolved by
+    // the interpreter against the *default* `api` base, so a route walked on `localhost:8091` was
+    // dialled at `localhost:4001/v1/login` and answered `404`. Every probe came back unreached, which
+    // `D481` correctly turned into a red crawl rather than a green one.
+    //
+    // The traffic seed already had the right shape for the same reason: a request it re-issues carries
+    // the origin it was captured from. A walked page is the same kind of fact — an address the
+    // application really served — so it travels absolute and needs no `base`. `template` stays the
+    // path, because that is the route's identity and what a reader recognises in the report.
+    path: found.url,
     mutating: !isSafeMethod(found.method),
     invented: found.invented ?? [],
     ...(found.body === undefined ? {} : { body: found.body, contentType: found.contentType ?? 'application/x-www-form-urlencoded' }),
@@ -327,16 +337,6 @@ function stripFragment(url: string): string {
     const parsed = new URL(url);
     parsed.hash = '';
     return parsed.toString();
-  } catch {
-    return url;
-  }
-}
-
-/** The path + query a request will be sent to. */
-function pathOf(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.pathname}${parsed.search}`;
   } catch {
     return url;
   }
