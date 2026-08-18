@@ -332,6 +332,7 @@ export const CONFIG_KEYWORDS: readonly ConfigKeywordEntry[] = [
   { id: 'mutating', slot: 'probe', summary: 'permit probes that change server state — the authorization scans cannot judge a write without it' },
   { id: 'oversized', slot: 'probe', summary: 'permit oversized-input payloads, which can be expensive for the target to reject' },
   { id: 'traversal', slot: 'probe', summary: 'permit path-traversal payloads, which some proxies answer before the application ever sees them' },
+  { id: 'ciphers', slot: 'probe', summary: 'permit one TLS handshake per candidate suite, so the scan judges what this host OFFERS and not only the suite it gave us' },
 ] as const;
 
 /**

@@ -77,6 +77,30 @@ export function isSafeMethod(method: string): boolean {
  * a match — permission is never inferred from something that failed to parse.
  */
 export function mayProbeMutating(requestUrl: string, targets: readonly AuthorizedTarget[]): boolean {
+  return grantedAtOrigin(requestUrl, targets, (t) => t.probeMutating);
+}
+
+/**
+ * `probe ciphers` (`M137g`, `D485`) — may the TLS probe enumerate this origin's offered suites?
+ *
+ * Lives beside `mayProbeMutating` rather than in `tlsProbe.ts` because it is **policy, not I/O**,
+ * and because putting it here is what let the origin match stay singular: this file already held
+ * one copy of it, `inputProbe.ts`'s `grantedClasses` holds a second, and a fourth clause writing a
+ * third would be the same drift `M137a` found in a shard count written three times in one file.
+ * The two callers now share `grantedAtOrigin`; `grantedClasses` is left alone because it accumulates
+ * a set rather than answering yes or no, and folding it in would trade a copy for a worse shape.
+ */
+export function mayProbeCiphers(requestUrl: string, targets: readonly AuthorizedTarget[]): boolean {
+  return grantedAtOrigin(requestUrl, targets, (t) => t.probeCiphers);
+}
+
+/** Does any `authorized target` for this exact origin grant the clause `pick` reads?
+ *
+ * **Origin, never host.** `https://api.example.com` and `http://api.example.com:8080` are different
+ * targets and an affirmation of one is not an affirmation of the other — the `D291` declaration is a
+ * claim about a specific place somebody checked. An unparseable URL on either side is a no: a
+ * permission that cannot be located is a permission that was not given. */
+function grantedAtOrigin(requestUrl: string, targets: readonly AuthorizedTarget[], pick: (t: AuthorizedTarget) => boolean): boolean {
   let origin: string;
   try {
     origin = new URL(requestUrl).origin;
@@ -84,7 +108,7 @@ export function mayProbeMutating(requestUrl: string, targets: readonly Authorize
     return false;
   }
   return targets.some((t) => {
-    if (!t.probeMutating) return false;
+    if (!pick(t)) return false;
     try {
       return new URL(t.target).origin === origin;
     } catch {

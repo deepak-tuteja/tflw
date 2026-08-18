@@ -511,12 +511,17 @@ exclude "tflw-acceptance", "fixtures/broken"
     // than the staging one — deliberately, since that is the shape a reader should copy: a fixture
     // you host is where a 64 KiB value and a `../` belong, and a contracted staging window is not.
     // The staging declaration stays bare, which keeps the "one-line form still parses" case intact.
+    // M137g/D485 adds `probe ciphers` on the same loopback declaration and for a sharper version of
+    // the same reason: it is the one clause whose cost is *connections* rather than payloads, and a
+    // contracted staging window is precisely where eighteen extra handshakes are somebody else's
+    // problem. Four clauses on one declaration also keeps the accumulate-by-OR path exercised.
     name: 'authz-declarations',
     source: `defaults
   authorized target "http://localhost:4001" reason "self-hosted test fixture"
     probe mutating
     probe oversized
     probe traversal
+    probe ciphers
 
 env staging
   api "https://staging.example.com"

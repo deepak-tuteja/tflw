@@ -50,7 +50,7 @@ import { judge, OPEN_GATE, toScanFinding, withheldNote, type CrawlVia, type Gate
 import { runSecurityScan, SECURITY_RULES, type Observation, type ScanResult, type TlsObservation } from './securityRules.js';
 import { TlsProber } from './tlsProbe.js';
 import { extractResourceIds, judgeable, PROBE_OUTCOME_LABEL, runAuthzScan, type AuthzScanResult, type ProbeResult } from './authzRules.js';
-import { ANONYMOUS, AuthzProber, isSafeMethod, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
+import { ANONYMOUS, AuthzProber, isSafeMethod, mayProbeCiphers, mayProbeMutating, probeOrder, type ProbePolicy, type ProbePrincipal, type ProbeSender } from './authzProbe.js';
 import { INPUT_CORPUS, applyMutation, mutationSites, templateEndpoint, type MutationSite } from './inputCorpus.js';
 import { grantedClasses, InputProber, planProbes, withheldClasses, type InputProbePolicy, type InputProbeSender } from './inputProbe.js';
 import { seededIds, seededPayloads } from './inputSeeded.js';
@@ -4228,12 +4228,21 @@ async function probeTlsFor(finalUrl: string, floor: FindingSeverity | null, conf
   // Derived from the pack rather than from a hardcoded `'serious'`, so re-grading either rule cannot
   // silently leave this reading the old severity.
   if (floor && !SECURITY_RULES.some((r) => r.id.startsWith('sec/tls-') && SEVERITY_RANK[r.severity] >= SEVERITY_RANK[floor])) return undefined;
-  return prober.probe(finalUrl, {
+  const policy = {
     timeoutMs: config.timeouts.step,
     insecure: config.insecure,
     allowHosts: config.allowHosts,
     authorizedTargets: config.authorizedTargets,
-  });
+    probeCiphers: mayProbeCiphers(finalUrl, config.authorizedTargets),
+  };
+  const observation = await prober.probe(finalUrl, policy);
+  // `M137g`/`D485` — the offered half, and only for a host whose `authorized target` said
+  // `probe ciphers`. Ordered after the verifying handshake on purpose: if the host cannot be
+  // reached, or this run declines its certificate, there is nothing an enumeration could add and
+  // opening eighteen more connections to say so would be `D291`'s vacuity with a bandwidth bill.
+  if (!observation.ok) return observation;
+  const offered = await prober.enumerateOffered(finalUrl, policy);
+  return offered === undefined ? observation : { ...observation, offered };
 }
 
 /**
@@ -4404,8 +4413,13 @@ function degradedNote(result: ScanResult): string {
     list.push(n.rule.id);
     byReason.set(n.because, list);
   }
-  if (byReason.size === 0) return '';
-  return [...byReason].map(([because, ids]) => `\n  note: ${ids.join(', ')} could not be evaluated — ${because}`).join('');
+  const lines = [...byReason].map(([because, ids]) => `\n  note: ${ids.join(', ')} could not be evaluated — ${because}`);
+  // `M137g` — and the notes from rules that DID evaluate with half their question unasked. Same
+  // channel deliberately: to the reader these are one class ("this assertion knows less than its
+  // green line implies"), and splitting them into two prefixes would ask that reader to learn a
+  // distinction that exists only inside the implementation.
+  lines.push(...result.notes.map((n) => `\n  note: ${n}`));
+  return lines.join('');
 }
 
 /** The three-count line D292 requires, in M126's shape — every count on the same line as its

@@ -67,13 +67,17 @@ export interface Observation {
  * - Not the observed request. The probe is a second connection, so behind a load balancer with
  *   heterogeneous nodes the two can genuinely differ. Only an `undici` runtime dependency would
  *   close that, and decision 43 declined it.
- * - Not the server's whole offer. A host that supports RC4 *and* AES-GCM negotiates AES-GCM with a
- *   current client and is silent here — correctly, since that is what its callers get. Enumerating
- *   everything a server would accept takes one handshake per suite (what `sslyze`/`testssl.sh` do)
- *   and belongs to Tier 3's `tflw scan`, not to a per-response assertion.
+ * - Not the server's whole offer, **unless `probe ciphers` was granted** (`M137g`, `D485`). A host
+ *   that supports RC4 *and* AES-GCM negotiates AES-GCM with a current client and is silent on the
+ *   negotiated reading — correctly, since that is what its callers get, and uselessly, if what you
+ *   wanted to know is whether RC4 is still there. Enumerating the offer takes one handshake per
+ *   suite (what `sslyze`/`testssl.sh` do); this used to say that belongs to `tflw scan`, and `D432`
+ *   killed that mode while `D441` brought the capability here instead. It now arrives on `offered`,
+ *   which only `sec/tls-weak-cipher` may read (`D486`).
  *
- * So the question both rules answer is **"what does this host give a current client?"** Each says so
- * in its own failure detail rather than leaving it to the docs.
+ * So the question these rules answer is **"what does this host give a current client?"** — and, for
+ * an origin whose `authorized target` says `probe ciphers`, also **"what else would it accept?"**
+ * Each says so in its own failure detail rather than leaving it to the docs.
  */
 export type TlsObservation =
   | {
@@ -85,14 +89,48 @@ export type TlsObservation =
       /** The IANA spelling, e.g. `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`. Node reports it for
        * TLS 1.2+ and omits it for older handshakes, so it is optional rather than assumed. */
       readonly cipherStandardName?: string;
+      /** `M137g`/`D485` — what the host *offers*, when an `authorized target` said `probe ciphers`.
+       *
+       * **Absent is not empty.** Undefined means nobody was permitted to ask; an `OfferedSuites`
+       * with an empty `accepted` means the offer was enumerated and came back clean. Rendering the
+       * first as the second re-creates the exact false negative this field exists to close.
+       *
+       * Read by `sec/tls-weak-cipher` and by nothing else — `D486` forbids the rest, because the
+       * connection that produced it deliberately did not verify the peer's certificate. */
+      readonly offered?: OfferedSuites;
     }
   | { readonly ok: false; readonly reason: string };
+
+/**
+ * What a host's offer looked like, and — separately — what this run was *able to ask* (`D486`).
+ *
+ * The three lists are kept apart because collapsing them is the failure this milestone exists to
+ * prevent. `M136a` named it: **a scan that could not ask is not a scan that found nothing.** A suite
+ * the local OpenSSL will not put in a ClientHello never reaches the network, and folding those into
+ * "refused" would report the server as having declined something nobody offered it.
+ */
+export interface OfferedSuites {
+  /** Suites the peer accepted. These are the findings. */
+  readonly accepted: readonly string[];
+  /** Suites offered and declined — a real answer, and the evidence the offer was actually tested. */
+  readonly refused: readonly string[];
+  /** Suites this stack could not offer, so nothing was learned about them. The printed ceiling. */
+  readonly unaskable: readonly string[];
+}
 
 /** A rule's verdict about one observation. `applicable: false` means the precondition was unmet;
  * `findings` is then always empty and carries no information either way. */
 export interface RuleOutcome {
   readonly applicable: boolean;
   readonly findings: readonly Finding[];
+  /** A rule that *did* evaluate saying part of its question went unasked (`M137g`, `D485`).
+   *
+   * Distinct from `because`, which explains a rule that stood down entirely. `sec/tls-weak-cipher`
+   * needs both: without `probe ciphers` it still judges the negotiated suite — so it is applicable
+   * and may well pass — while the offered half was never probed. Passing quietly there would be the
+   * false negative the clause exists to close, and reporting the whole rule as not-applicable would
+   * throw away the half that did run. Printed on passing lines too, on `D300`'s precedent. */
+  readonly note?: string;
   /** Replaces the rule's static `appliesWhen` in the not-applicable listing, for the case where
    * *which* half of the precondition failed is itself worth reading (M128c).
    *
@@ -416,7 +454,12 @@ const TLS_PROBED = 'the scheme is https and the TLS probe succeeded';
  * declined to trust. Reporting the second in the first's words would send a reader looking for a
  * scheme problem on a response whose scheme was fine.
  */
-function tlsRule(id: SecurityRuleId, severity: Severity, description: string, check: (tls: Extract<TlsObservation, { ok: true }>) => Finding[]): SecurityRule {
+function tlsRule(
+  id: SecurityRuleId,
+  severity: Severity,
+  description: string,
+  check: (tls: Extract<TlsObservation, { ok: true }>) => Finding[] | { readonly findings: Finding[]; readonly note?: string },
+): SecurityRule {
   const rule: SecurityRule = {
     id,
     severity,
@@ -425,7 +468,9 @@ function tlsRule(id: SecurityRuleId, severity: Severity, description: string, ch
     evaluate: (o) => {
       if (o.tls === undefined) return { applicable: false, findings: [] };
       if (!o.tls.ok) return { applicable: false, findings: [], because: `${TLS_PROBED} — it did not: ${o.tls.reason}` };
-      return { applicable: true, findings: check(o.tls) };
+      const result = check(o.tls);
+      if (Array.isArray(result)) return { applicable: true, findings: result };
+      return { applicable: true, findings: result.findings, ...(result.note !== undefined ? { note: result.note } : {}) };
     },
   };
   return rule;
@@ -470,33 +515,69 @@ function cipherTokens(name: string): string[] {
 /**
  * **What this rule can and cannot catch, measured rather than assumed (D299).**
  *
- * It fires when the host gives *this run's own client* a broken suite — which means it cannot see a
- * server that merely still offers one alongside something modern, because such a server negotiates
- * the modern one and its callers are fine. That is the right answer for a per-response assertion and
- * the wrong tool for an audit; the audit is cipher enumeration, and it is Tier 3's.
+ * It fires when the host gives *this run's own client* a broken suite — and, since `M137g`/`D485`,
+ * also when the host merely **offers** one alongside something modern, which the negotiated reading
+ * cannot see because such a server negotiates the modern suite and its callers are fine.
  *
- * The practical reach today is therefore small, and saying so is better than implying otherwise:
+ * The offered half needs `probe ciphers` on the origin's `authorized target`, and when it is
+ * withheld this rule says so rather than passing quietly. **`D299` said the audit "is Tier 3's".
+ * That sentence was true when it was written and is not now**: `D432` killed the `tflw scan` mode it
+ * pointed at, and `D441` brought the capability back here instead. Corrected rather than stepped
+ * over, on `M132b`'s precedent.
+ *
+ * The *negotiated* half's reach is small, and saying so is better than implying otherwise:
  * on OpenSSL 3.x, RC4 and 3DES are not in the default provider and `NULL` is excluded from Node's
  * `DEFAULT_CIPHERS` by `!eNULL`, so a handshake that lands on one of these needs a peer running an
  * older stack. It ships anyway because that peer exists — appliances and long-lived internal
  * services are exactly what a QA suite gets pointed at — and because a pack that silently declined
  * to ask the question would read as having asked it and found nothing.
  */
-const tlsWeakCipher = tlsRule('sec/tls-weak-cipher', 'serious', 'connection negotiated a broken cipher suite', (tls) => {
+const tlsWeakCipher = tlsRule('sec/tls-weak-cipher', 'serious', 'host offers a broken cipher suite', (tls) => {
   // Both spellings are searched because Node reports `standardName` only for TLS 1.2+, and it is
   // precisely the old handshakes — the ones most likely to land on a broken suite — where it is
   // absent and `cipherName` is the only name there is.
   const tokens = new Set([...cipherTokens(tls.cipherName), ...(tls.cipherStandardName ? cipherTokens(tls.cipherStandardName) : [])]);
-  const hits = [...BROKEN_CIPHER_TOKENS].filter((t) => tokens.has(t));
-  if (hits.length === 0) return [];
-  return [
-    finding(
-      tlsWeakCipher,
-      `a fresh connection to this host negotiated \`${tls.cipherName}\` (${hits.join(', ')}) — a suite with no usable security margin. That is what this host gives a current client, so unless it sits behind a load balancer with unlike nodes, it is what the asserted request got too`,
-    ),
-  ];
-});
+  const negotiatedHits = [...BROKEN_CIPHER_TOKENS].filter((t) => tokens.has(t));
 
+  const findings: Finding[] = [];
+  if (negotiatedHits.length > 0) {
+    findings.push(
+      finding(
+        tlsWeakCipher,
+        `a fresh connection to this host negotiated \`${tls.cipherName}\` (${negotiatedHits.join(', ')}) — a suite with no usable security margin. That is what this host gives a current client, so unless it sits behind a load balancer with unlike nodes, it is what the asserted request got too`,
+      ),
+    );
+  }
+
+  // `M137g`/`D485` — the offered half. Absent means nobody was permitted to ask, which is reported
+  // rather than passed over; an empty `accepted` means the offer was enumerated and is clean.
+  if (tls.offered === undefined) {
+    return {
+      findings,
+      note: `${tlsWeakCipher.id} judged only the suite this host gave tflw's own client — a host that still offers a broken suite alongside a modern one negotiates the modern one and reads clean here. Add \`probe ciphers\` under this origin's \`authorized target\` to enumerate what it offers (SPEC §9.14, D485)`,
+    };
+  }
+
+  const { accepted, unaskable } = tls.offered;
+  if (accepted.length > 0) {
+    findings.push(
+      finding(
+        tlsWeakCipher,
+        `this host ACCEPTS ${accepted.length} broken cipher suite${accepted.length === 1 ? '' : 's'} — ${accepted.join(', ')} — each confirmed by its own handshake. It negotiated \`${tls.cipherName}\` with tflw's ordinary client, so a modern caller is served correctly and a legacy one is not: the suite is still in this server's configuration and still reachable by anybody who asks for it`,
+      ),
+    );
+  }
+
+  // The ceiling, printed whenever it bit. `M136a`: a scan that could not ask is not a scan that
+  // found nothing — and here the reason is tflw's own OpenSSL, not the server's answer.
+  if (unaskable.length > 0) {
+    return {
+      findings,
+      note: `${tlsWeakCipher.id} could not offer ${unaskable.length} of its ${unaskable.length + accepted.length + tls.offered.refused.length} candidate suites (${unaskable.join(', ')}) — this stack's OpenSSL will not put them in a ClientHello, so nothing was learned about them either way. A host offering only those reads clean here (D486)`,
+    };
+  }
+  return findings;
+});
 /** D289's ten rules plus `M128c`'s two from the TLS probe. Order is severity-descending. */
 export const SECURITY_RULES: readonly SecurityRule[] = [
   cookieNotHttpOnly,
@@ -532,6 +613,11 @@ export interface ScanResult {
   /** How many rules were in play at all — `applicable.length + notApplicable.length`, and *not*
    * necessarily the whole pack, because a severity floor narrows it first (see `runSecurityScan`). */
   readonly considered: number;
+  /** Sentences from rules that *did* evaluate but whose question was only partly asked (`M137g`,
+   * `D485`). Rendered next to `D300`'s could-not-be-evaluated notes and on passing lines for the
+   * same reason: a green assertion that never enumerated a host's offer is exactly the one a reader
+   * would otherwise believe had. */
+  readonly notes: readonly string[];
 }
 
 /**
@@ -555,6 +641,7 @@ export function runSecurityScan(o: Observation, floor: Severity | null = null, p
   const findings: Finding[] = [];
   const applicable: SecurityRule[] = [];
   const notApplicable: NotApplicable[] = [];
+  const notes: string[] = [];
   for (const rule of inPlay) {
     const outcome = rule.evaluate(o);
     if (!outcome.applicable) {
@@ -563,6 +650,7 @@ export function runSecurityScan(o: Observation, floor: Severity | null = null, p
     }
     applicable.push(rule);
     findings.push(...outcome.findings);
+    if (outcome.note !== undefined) notes.push(outcome.note);
   }
-  return { findings, applicable, notApplicable, considered: inPlay.length };
+  return { findings, applicable, notApplicable, considered: inPlay.length, notes };
 }

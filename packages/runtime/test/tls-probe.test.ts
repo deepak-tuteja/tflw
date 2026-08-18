@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TlsProber, connectionOptions, type TlsProbePolicy } from '../src/tlsProbe.js';
+import { BROKEN_SUITE_CANDIDATES, TlsProber, connectionOptions, type TlsProbePolicy } from '../src/tlsProbe.js';
 
 let certDir: string;
 let key: Buffer;
@@ -253,8 +253,14 @@ test('the widened floor is what the probe actually sends, not a comment about it
   const options = connectionOptions('example.test', 443, policy());
   assert.equal(options.minVersion, 'TLSv1');
   assert.notEqual(options.minVersion, DEFAULT_MIN_VERSION);
-  // And the asymmetry D298 turns on: ciphers are left alone, because widening them drags
+  // And the asymmetry D298 turns on: ciphers are left alone HERE, because widening them drags
   // `@SECLEVEL=0` — a certificate-verification setting — along with them.
+  //
+  // `M137g`/`D486` widens them on a *different* connection, and this assertion is what keeps the two
+  // apart: the verifying probe whose protocol and cipher every assertion reads still offers Node's
+  // default list, and only `suiteHandshake` — which reads one bit, verifies nothing and feeds one
+  // field — names a suite. If this line ever goes green with a cipher string in it, D298's objection
+  // has arrived through the back door.
   assert.equal(options.ciphers, undefined);
 });
 
@@ -264,4 +270,142 @@ test('the options carry the run\'s verification stance and SNI, and omit SNI for
   assert.equal(connectionOptions('example.test', 443, policy()).servername, 'example.test');
   // Sending an IP literal as SNI is a protocol violation some servers reject outright.
   assert.equal(connectionOptions('127.0.0.1', 443, policy()).servername, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// M137g / D485 / D486 — the offered-suite enumeration.
+// ---------------------------------------------------------------------------
+
+/** A listener that offers a broken suite **alongside** a modern one and prefers the modern one.
+ *
+ * This is the exact host D441 says `sec/tls-weak-cipher` cannot see today: an ordinary client
+ * negotiates AES-GCM and goes away happy, while `NULL-SHA256` — no encryption whatsoever — is still
+ * in the configuration and still there for anybody who asks. Pinned to TLS 1.2 because TLS 1.3
+ * negotiates its suites through a separate list and would let the server answer the modern way to
+ * every candidate, making a broken offer look refused. */
+function offeringServer(): TlsServer {
+  return createTlsServer(
+    { key, cert, ciphers: 'ECDHE-RSA-AES128-GCM-SHA256:NULL-SHA256:@SECLEVEL=0', minVersion: 'TLSv1.2', maxVersion: 'TLSv1.2' },
+    (socket) => socket.end(),
+  );
+}
+
+function enumPolicy(url: string, over: Partial<TlsProbePolicy> = {}): TlsProbePolicy {
+  return authorizedFor(url, { probeCiphers: true, ...over });
+}
+
+test('a host that OFFERS a broken suite while negotiating a modern one is caught by enumeration and invisible without it (`D441`)', async () => {
+  const server = offeringServer();
+  const url = await listen(server);
+  try {
+    const prober = new TlsProber();
+
+    // The half that ships today, against this host: entirely clean, and correctly so.
+    const negotiated = await prober.probe(url, enumPolicy(url));
+    assert.equal(negotiated.ok, true);
+    assert.ok(negotiated.ok && negotiated.cipherName.includes('AES128-GCM'), `expected a modern suite, got ${negotiated.ok ? negotiated.cipherName : '—'}`);
+
+    // The half M137g adds: the same host, asked what it will accept.
+    const offered = await prober.enumerateOffered(url, enumPolicy(url));
+    assert.ok(offered, 'an affirmed host should have been enumerated');
+    assert.ok(offered.accepted.includes('NULL-SHA256'), `expected NULL-SHA256 to be accepted, got ${JSON.stringify(offered)}`);
+    // And it genuinely asked about the others rather than reporting one and stopping.
+    assert.ok(offered.refused.length + offered.unaskable.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test('without `probe ciphers` the answer is undefined — which is NOT an empty offer', async () => {
+  const server = offeringServer();
+  const url = await listen(server);
+  try {
+    const prober = new TlsProber();
+    const withheld = await prober.enumerateOffered(url, authorizedFor(url, { probeCiphers: false }));
+    assert.equal(withheld, undefined);
+    // The distinction the rule depends on: a host with a broken offer, unprobed, must not be
+    // representable as `{accepted: []}`. If this ever returns an object, the rule reports a clean
+    // offer for a host nobody asked.
+    assert.notDeepEqual(withheld, { accepted: [], refused: [], unaskable: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test('a modern-only listener comes back with an empty `accepted` and a NON-empty `refused` — the evidence it was actually asked', async () => {
+  const url = modernUrl;
+  const prober = new TlsProber();
+  const offered = await prober.enumerateOffered(url, enumPolicy(url));
+  assert.ok(offered);
+  assert.deepEqual(offered.accepted, []);
+  // `M136a`: a scan that could not ask is not a scan that found nothing. An all-`unaskable` result
+  // would be a clean bill of health nobody earned, so at least one candidate must have reached the
+  // server and been declined by it.
+  assert.ok(offered.refused.length > 0, `nothing was actually offered to the server: ${JSON.stringify(offered)}`);
+});
+
+test('the ceiling is reported, not hidden — suites this stack cannot offer land in `unaskable`', async () => {
+  const url = modernUrl;
+  const prober = new TlsProber();
+  const offered = await prober.enumerateOffered(url, enumPolicy(url));
+  assert.ok(offered);
+  // Measured under D486 on OpenSSL 3.2: RC4 and 3DES are not merely refused here, they are absent —
+  // our own OpenSSL will not put them in a ClientHello. That is a different fact from "the server
+  // said no", and the whole point of the third list is that it cannot be mistaken for one.
+  assert.ok(offered.unaskable.length > 0, 'expected some candidates to be unofferable by this stack');
+  assert.equal(offered.accepted.length + offered.refused.length + offered.unaskable.length, BROKEN_SUITE_CANDIDATES.length);
+  for (const suite of offered.unaskable) assert.ok(!offered.refused.includes(suite), `${suite} counted twice`);
+});
+
+test('enumeration is strictly sequential — `D435` holds on the non-HTTP path too', async () => {
+  const url = modernUrl;
+  const prober = new TlsProber();
+  await prober.enumerateOffered(url, enumPolicy(url));
+  // `authz-probe-pacing.test.ts:101` asserts the same property for the HTTP path. This is the first
+  // place tflw deliberately opens many connections, so the guard is measured rather than asserted in
+  // a comment — `probe rate` stays deferred only while this stays 1.
+  assert.equal(prober.peakHandshakesInFlight, 1);
+});
+
+test('the enumeration is memoized per host, like the single handshake it sits beside', async () => {
+  const url = modernUrl;
+  const prober = new TlsProber();
+  const first = await prober.enumerateOffered(url, enumPolicy(url));
+  const peakAfterFirst = prober.peakHandshakesInFlight;
+  const second = await prober.enumerateOffered(url, enumPolicy(url));
+  assert.equal(first, second, 'the second call re-enumerated instead of reusing the first answer');
+  assert.equal(prober.peakHandshakesInFlight, peakAfterFirst);
+});
+
+test('the two policy refusals apply to enumeration exactly as they apply to the probe', async () => {
+  const url = modernUrl;
+  const prober = new TlsProber();
+  // No `authorized target` covering this origin — D291's runtime half.
+  assert.equal(await prober.enumerateOffered(url, policy({ probeCiphers: true, authorizedTargets: [] })), undefined);
+  // Outside `allow hosts`.
+  assert.equal(await prober.enumerateOffered(url, enumPolicy(url, { allowHosts: ['example.test'] })), undefined);
+  // http:// has no handshake to enumerate.
+  assert.equal(await prober.enumerateOffered(url.replace('https:', 'http:'), enumPolicy(url)), undefined);
+});
+
+test('enumeration does not verify the certificate even when the RUN does — `D486`, and the reason it is admissible', async () => {
+  const server = offeringServer();
+  const url = await listen(server);
+  try {
+    const prober = new TlsProber();
+    // `insecure: false` — this run rejects the self-signed cert, and the verifying probe says so.
+    const verifying = enumPolicy(url, { insecure: false });
+    const negotiated = await prober.probe(url, verifying);
+    assert.equal(negotiated.ok, false, 'the D288 probe must still honour the run\'s verification stance');
+
+    // The enumeration reaches the host anyway, because it reads one bit and never asks whether the
+    // peer is who it claims. If this ever comes back with everything `refused`, the host is being
+    // reported as having a clean offer on the strength of a certificate complaint — a silent failure
+    // pointing at the wrong party.
+    const offered = await prober.enumerateOffered(url, verifying);
+    assert.ok(offered);
+    assert.ok(offered.accepted.includes('NULL-SHA256'), `certificate verification leaked into the enumeration: ${JSON.stringify(offered)}`);
+  } finally {
+    server.close();
+  }
 });

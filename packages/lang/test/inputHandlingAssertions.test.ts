@@ -14,6 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { PROBE_SUB_CLAUSES } from '../src/parser.js';
 import { parseSource, parseConfigSource, checkAuthzAssertions, Codes, type ProgramCheckOptions } from '../src/index.js';
 
 const ASSERT = 'expect response has no input handling violations';
@@ -84,17 +85,23 @@ test('`probe oversized` and `probe traversal` parse as siblings of `probe mutati
 test('each sibling is independent — declaring one grants only itself', () => {
   // Walked in both directions rather than once. A sub-clause table wired to the wrong field is the
   // defect this catches, and a single-direction test passes for half of them.
-  for (const [word, expected] of [
-    ['mutating', { m: true, o: false, t: false }],
-    ['oversized', { m: false, o: true, t: false }],
-    ['traversal', { m: false, o: false, t: true }],
-  ] as const) {
+  //
+  // **The word list is derived from `PROBE_SUB_CLAUSES`, and the expected field is not.** M137g
+  // found this test hand-listing three words and three fields, which meant a fourth clause would
+  // have been silently uncovered by the very test that exists to catch a mis-wired clause. Deriving
+  // the words fixes the coverage; deriving the *expectation* from the same table the parser reads
+  // would have made it a tautology, so the field name is recomputed here from the naming convention
+  // instead. A future clause that breaks that convention fails loudly, which is the right prompt.
+  for (const word of PROBE_SUB_CLAUSES) {
+    const granted = `probe${word[0]!.toUpperCase()}${word.slice(1)}` as const;
     const source = `defaults\n  authorized target "http://localhost:4001" reason "fixture"\n    probe ${word}\n`;
     const { config, diagnostics } = parseConfigSource(source);
     assert.deepEqual(diagnostics, [], `\`probe ${word}\` must parse`);
     const decl = config.defaults?.entries.find((e) => e.type === 'AuthorizedTargetDecl');
     assert.ok(decl && decl.type === 'AuthorizedTargetDecl');
-    assert.deepEqual({ m: decl.probeMutating, o: decl.probeOversized, t: decl.probeTraversal }, expected, `\`probe ${word}\` granted the wrong clause`);
+    const actual = Object.fromEntries(PROBE_SUB_CLAUSES.map((w) => [w, decl[`probe${w[0]!.toUpperCase()}${w.slice(1)}` as 'probeMutating']]));
+    const expected = Object.fromEntries(PROBE_SUB_CLAUSES.map((w) => [w, `probe${w[0]!.toUpperCase()}${w.slice(1)}` === granted]));
+    assert.deepEqual(actual, expected, `\`probe ${word}\` granted the wrong clause`);
   }
 });
 

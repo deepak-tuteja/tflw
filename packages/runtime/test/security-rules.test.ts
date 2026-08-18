@@ -466,3 +466,72 @@ test('a `serious` floor keeps both TLS rules; a `critical` floor drops them enti
   // denominator describes the work the assertion actually did.
   assert.ok(!critical.notApplicable.some((n) => n.rule.id.startsWith('sec/tls-')));
 });
+
+// --- M137g / D485 / D486: the offered half ----------------------------------
+//
+// These are pure, and deliberately so: `tls-probe.test.ts` proves the enumeration against real
+// listeners, and this proves what the rule *decides* about the three lists it gets back. The split
+// is the same one M128c drew, for the same reason — a rule that can only be tested through a socket
+// can only be tested on hosts that socket can reach.
+
+const OFFERING = { ...MODERN, offered: { accepted: ['NULL-SHA256'], refused: ['RC4-SHA'], unaskable: [] } };
+
+test('tls-weak-cipher: fires on a host that OFFERS a broken suite while negotiating a modern one', () => {
+  assert.equal(stateOf(tlsObs(OFFERING), 'sec/tls-weak-cipher'), 'fired');
+  const [f] = runSecurityScan(tlsObs(OFFERING)).findings.filter((x) => x.id === 'sec/tls-weak-cipher');
+  assert.ok(f);
+  assert.match(f.detail, /ACCEPTS 1 broken cipher suite/);
+  assert.match(f.detail, /NULL-SHA256/);
+  // The negotiated suite is named too. Without it the reader cannot tell this from the case where
+  // tflw's own connection got the broken suite, and those imply different urgencies.
+  assert.match(f.detail, /TLS_AES_256_GCM_SHA384/);
+});
+
+test('tls-weak-cipher: an enumerated host with a clean offer fires nothing and adds no note', () => {
+  const clean = { ...MODERN, offered: { accepted: [], refused: ['NULL-SHA256', 'RC4-SHA'], unaskable: [] } };
+  assert.equal(stateOf(tlsObs(clean), 'sec/tls-weak-cipher'), 'silent');
+  assert.deepEqual(runSecurityScan(tlsObs(clean)).notes, []);
+});
+
+test('tls-weak-cipher: WITHOUT `probe ciphers` the rule still judges the negotiated suite, and says what it did not ask', () => {
+  const result = runSecurityScan(tlsObs(MODERN));
+  // Applicable, not stood down: the half that could run, ran.
+  assert.ok(result.applicable.some((r) => r.id === 'sec/tls-weak-cipher'));
+  assert.equal(result.findings.filter((f) => f.id === 'sec/tls-weak-cipher').length, 0);
+  // And the silence is qualified rather than left to read as a clean bill of health — D441's whole
+  // complaint about this rule as it shipped.
+  assert.equal(result.notes.length, 1);
+  assert.match(result.notes[0]!, /probe ciphers/);
+  assert.match(result.notes[0]!, /reads clean here/);
+});
+
+test('tls-weak-cipher: the ceiling is a note, so "found nothing" cannot be read as "asked everything" (`M136a`)', () => {
+  const capped = { ...MODERN, offered: { accepted: [], refused: ['NULL-SHA256'], unaskable: ['RC4-SHA', 'DES-CBC3-SHA'] } };
+  const result = runSecurityScan(tlsObs(capped));
+  assert.equal(result.findings.filter((f) => f.id === 'sec/tls-weak-cipher').length, 0);
+  assert.equal(result.notes.length, 1);
+  assert.match(result.notes[0]!, /could not offer 2 of its 3 candidate suites/);
+  assert.match(result.notes[0]!, /RC4-SHA, DES-CBC3-SHA/);
+});
+
+test('D486: `offered` reaches sec/tls-weak-cipher and NOTHING else', () => {
+  // The connection that produced `offered` deliberately did not verify the peer's certificate, so
+  // any other rule reading it would be the silent trust-downgrade D298 refused — arriving through
+  // the back door. Proven by making the offered set wildly different and checking that every other
+  // rule's verdict is byte-identical.
+  const without = runSecurityScan(tlsObs(MODERN));
+  const with_ = runSecurityScan(tlsObs({ ...MODERN, offered: { accepted: ['NULL-MD5', 'RC4-SHA'], refused: [], unaskable: [] } }));
+  const others = (r: ReturnType<typeof runSecurityScan>): string[] =>
+    r.findings.filter((f) => f.id !== 'sec/tls-weak-cipher').map((f) => `${f.id}:${f.detail}`).sort();
+  assert.deepEqual(others(with_), others(without));
+  // `sec/tls-version-old` is the one that would be tempting to widen, since it reads the same probe.
+  assert.equal(
+    without.notApplicable.some((n) => n.rule.id === 'sec/tls-version-old'),
+    with_.notApplicable.some((n) => n.rule.id === 'sec/tls-version-old'),
+  );
+  assert.deepEqual(
+    with_.notes.filter((n) => n.includes('sec/tls-version-old')),
+    [],
+    'sec/tls-version-old spoke about an enumeration it is forbidden to read',
+  );
+});

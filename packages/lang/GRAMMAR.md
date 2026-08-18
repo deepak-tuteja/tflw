@@ -584,6 +584,14 @@ AuthorizedTargetOpt := 'probe' 'mutating'                         # (§3.10, M13
                                                                   #   because a body-size limit is a resource
                                                                   #   question, and D21 layer 4 makes
                                                                   #   exhaustion-shaped classes opt-in
+                     | 'probe' 'ciphers'                          # (§3.10, M137g, D485) — permission to open
+                                                                  #   one handshake per candidate suite, so
+                                                                  #   §9.14 judges what the host OFFERS and
+                                                                  #   not only the suite tflw's own client
+                                                                  #   negotiated. Off by default: D21 layer 4
+                                                                  #   names exhaustion, and this is the one
+                                                                  #   construct whose purpose is many
+                                                                  #   connections to one host
                      | 'probe' 'traversal'                        # (§3.10, M134a, D372) — permission to send
                                                                   #   §9.12's `../` payloads. Off by default:
                                                                   #   a positive finding means a file was

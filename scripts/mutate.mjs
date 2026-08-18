@@ -1527,8 +1527,13 @@ const REGISTRY = [
     pkg: '@tflw/runtime',
     file: 'packages/runtime/src/tlsProbe.ts',
     what: "D298 deleted: the probe uses Node's `DEFAULT_MIN_VERSION` of TLSv1.2, so a host speaking nothing but a deprecated protocol refuses the handshake and `sec/tls-version-old` reports \"could not tell\" in exactly the case it exists for. Invisible on any modern machine — the rule keeps passing every test, because no listener here can negotiate TLS 1.0 either way",
-    find: "    minVersion: 'TLSv1',",
-    replace: '',
+    // Anchored to the line **below** it rather than quoted bare. `M137g` added a second
+    // `minVersion: 'TLSv1'` to this file — `suiteHandshake`'s, which needs the same floor for the
+    // same reason — and the bare quote then matched twice and went stale. The SNI comment is unique
+    // to `connectionOptions`, which is the one this mutation is about: deleting the *enumeration's*
+    // floor is a different defect and would want its own row.
+    find: "    minVersion: 'TLSv1',\n    // SNI is a hostname extension",
+    replace: '    // SNI is a hostname extension',
   },
   {
     id: 'tls-probe-ignores-insecure-in-cache-key',
@@ -1590,8 +1595,71 @@ const REGISTRY = [
     pkg: '@tflw/runtime',
     file: 'packages/runtime/src/interpreter.ts',
     what: 'D300 removed: a rule blocked by a *failed instrument* goes back to being indistinguishable from one blocked by its precondition, so a green `expect response has no security violations` whose TLS probe never connected prints a clean line and says nothing. The silent-cap shape, in the control built to avoid it',
-    find: '  if (byReason.size === 0) return \'\';',
-    replace: '  return \'\';\n  if (byReason.size === 0) return \'\';',
+    // Retargeted in `M137g`. This used to quote `if (byReason.size === 0) return '';`, which the
+    // note channel's second tenant deleted. Deliberately narrowed to the **degraded-instrument**
+    // half rather than blanked to `return ''`: that would also silence M137g's notes, and one
+    // mutation standing in for two decisions is a control that cannot say which one broke.
+    find: '  const lines = [...byReason].map(([because, ids]) => `\\n  note: ${ids.join(\', \')} could not be evaluated — ${because}`);',
+    replace: '  const lines: string[] = [];',
+  },
+  // --- M137g -----------------------------------------------------------------------------------
+  //
+  // The offered-suite enumeration (D485/D486). Four of the five kill a *silence*, which is what this
+  // milestone is about: the rule it widens has been shipping since M128a and reporting clean on
+  // hosts that still offer RC4, because nobody had opened the second connection to find out.
+  {
+    id: 'a-half-asked-question-reported-as-a-clean-answer',
+    milestone: 'm137g',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/securityRules.ts',
+    what: 'D485 removed: without `probe ciphers` the rule goes back to passing quietly on the negotiated suite alone, so a host that offers a broken suite alongside a modern one reads clean and says nothing about what it did not ask. Exactly the false negative D441 exists to close, restored',
+    find: '  if (tls.offered === undefined) {',
+    replace: '  if (false && tls.offered === undefined) {',
+  },
+  {
+    id: 'the-ceiling-goes-unprinted',
+    milestone: 'm137g',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/securityRules.ts',
+    what: "D486 removed: suites this stack could not put in a ClientHello stop being reported, so \"enumerated the offer and found nothing\" covers a question that was never asked. M136a's rule — a scan that could not ask is not a scan that found nothing — with the instrument itself as the cap",
+    find: '  if (unaskable.length > 0) {',
+    replace: '  if (false && unaskable.length > 0) {',
+  },
+  {
+    id: 'unaskable-folded-into-refused',
+    milestone: 'm137g',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tlsProbe.ts',
+    what: "D486's three lists collapsed to two: a suite our own OpenSSL refused to offer is recorded as one the *server* declined, which reports a clean answer to a question that never reached the network",
+    find: "  return code.includes('NO_CIPHERS_AVAILABLE') || code.includes('NO_CIPHER_MATCH');",
+    replace: '  return false;',
+  },
+  {
+    id: 'enumeration-without-the-affirmation',
+    milestone: 'm137g',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tlsProbe.ts',
+    what: 'D485 removed: eighteen handshakes go out at every https host the suite touches, with no `probe ciphers` anywhere. D21 layer 4 names resource exhaustion, and this is the construct it names it for',
+    find: '    if (!policy.probeCiphers) return undefined;',
+    replace: '',
+  },
+  {
+    id: 'enumeration-verifies-the-certificate-after-all',
+    milestone: 'm137g',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tlsProbe.ts',
+    what: "D486's restriction inverted: the enumerating connection starts verifying certificates, so every candidate against a self-signed or otherwise-untrusted host comes back `refused` and the host reports a clean offer it never gave. The failure is silent and points at the server",
+    find: '        rejectUnauthorized: false,\n        ciphers: `${suite}:@SECLEVEL=0`,',
+    replace: '        rejectUnauthorized: !policy.insecure,\n        ciphers: `${suite}:@SECLEVEL=0`,',
+  },
+  {
+    id: 'enumeration-goes-concurrent',
+    milestone: 'm137g',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tlsProbe.ts',
+    what: 'D435 broken on the non-HTTP path: the candidate handshakes are raced instead of awaited one at a time, which is the change `probe rate`\'s deferral names as its own reviving condition — arriving without anybody deciding it',
+    find: '      const verdict = await suiteHandshake(host, port, suite, policy, track);',
+    replace: '      const verdict = (await Promise.all([suiteHandshake(host, port, suite, policy, track), suiteHandshake(host, port, suite, policy, track)]))[0];',
   },
   // --- M135a -----------------------------------------------------------------------------------
   {

@@ -1638,6 +1638,16 @@ export interface AuthorizedTargetDecl extends Node {
    * inputs. Detection-oriented (it attempts a read, never a write), but it is still an attempt at
    * unauthorized access, which is the other thing D21 layer 4 names. */
   readonly probeTraversal: boolean;
+  /** `probe ciphers` (M137g, D485/D486) — permission to open **one handshake per candidate suite**
+   * against this host, so `sec/tls-weak-cipher` can judge what the host *offers* rather than only
+   * what it gave tflw's own client.
+   *
+   * The fourth tenant of the mechanism `D311` predicted, and it has to be a tenant: `D21` layer 4
+   * names **resource exhaustion**, and this is the arc's first construct whose entire purpose is
+   * many connections to one host. Every other probe clause governs what a request may *contain*;
+   * this one governs how many connections may be opened, which is why it is a property of the host
+   * and not of any one assertion. */
+  readonly probeCiphers: boolean;
 }
 
 export type EvidenceLevel = 'full' | 'headers-only' | 'none';
