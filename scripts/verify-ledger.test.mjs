@@ -15,19 +15,30 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
-import { check, classify, isWellFormed, milestoneTokens, parseIndex, planClaims, newestPublishedTally } from './verify-ledger.mjs'
+import {
+  check,
+  classify,
+  isWellFormed,
+  locate,
+  milestoneTokens,
+  parseIndex,
+  parseStamp,
+  planClaims,
+  newestPublishedTally,
+  staleReport,
+} from './verify-ledger.mjs'
 
 const execFileAsync = promisify(execFile)
 const SCRIPT = fileURLToPath(new URL('verify-ledger.mjs', import.meta.url))
 
 /** A minimal but structurally faithful ledger: a prose tally, then §6 with rows. */
-function ledger({ rows, tally = null, milestone = 'M99' }) {
+function ledger({ rows, tally = null, milestone = 'M99', stamp = true }) {
   const t = tally ?? countOf(rows)
   return [
     '# Review findings',
@@ -40,13 +51,23 @@ function ledger({ rows, tally = null, milestone = 'M99' }) {
     '',
     '| id | sev | claim | status |',
     '|---|---|---|---|',
-    ...rows.map(([id, sev, status]) => `| \`${id}\` | ${sev} | a claim | ${status} |`),
+    ...rows.map(([id, sev, status]) => `| \`${id}\` | ${sev} | a claim | ${stamp ? stamped(status) : status} |`),
     '',
     '## 7. Something else',
     '',
     '| `NOT-01` | S2 | outside §6 | open |',
   ].join('\n')
 }
+
+/**
+ * `M140`'s stamp requirement applies to every open row, so a fixture that means to be *sound* has to
+ * satisfy it. Auto-stamping here rather than in each of the 21 pre-existing cases keeps them saying
+ * what they were written to say — none of them is about stamps — while making the sound baseline
+ * genuinely sound under the new rule. A case that IS about stamps writes its own status and this
+ * leaves it alone.
+ */
+const STAMP = 'rv 2026-08-19 @cfb256a reproduces** · `packages/lang/src/parser.ts:1` · still does it'
+const stamped = (status) => (classify(status) === 'open' && !status.includes('rv 2') ? `${status} — **${STAMP}` : status)
 
 function countOf(rows) {
   const t = { open: 0, closed: 0, deferred: 0, withdrawn: 0, total: rows.length, s2: 0, s3: 0, s4: 0 }
@@ -126,7 +147,7 @@ test('rows a shipped plan says it closed, still reading open, are caught', () =>
   const { problems } = check(sound({ ledger: ledger({ rows: STALE_M99 }) }))
   const stale = problems.filter((p) => /says M99 closes/.test(p))
   assert.equal(stale.length, 2, problems.join('\n'))
-  assert.match(stale[0], /`A3-05`.*still reads "open"/)
+  assert.match(stale[0], /`A3-05`.*still reads "open/)
 })
 
 test('the same rows are NOT flagged while the milestone is unshipped', () => {
@@ -298,6 +319,213 @@ test('a missing ledger is a hard failure, never a skip', async () => {
     assert.equal(r.code, 1)
     assert.match(r.stderr, /not found/)
     assert.match(r.stderr, /never a skip/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// ---- 4. the re-verification stamp (M140) --------------------------------------------------------
+//
+// `M136a-01`: nothing ever re-checked whether an open row still reproduces, so a row fixed in
+// passing stayed open and the queue planned around a defect that was not there. The sweep that
+// found that is a one-off; these are what make it an invariant.
+
+test('a stamp parses into its four parts', () => {
+  const s = parseStamp('open — **rv 2026-08-19 @cfb256a drifted** · `packages/lang/src/checker.ts:3071` · narrower now')
+  assert.deepEqual(s, {
+    date: '2026-08-19',
+    commit: 'cfb256a',
+    verdict: 'drifted',
+    paths: ['packages/lang/src/checker.ts'],
+  })
+})
+
+test('`fixed` is not a verdict an open row may carry', () => {
+  // A row that no longer reproduces is *closed*, and `✅ **fixed `M<N>`**` already says so. Allowing
+  // `fixed` here would create a second, quieter way to record a close — one the tally cannot see.
+  assert.equal(parseStamp('open — **rv 2026-08-19 @cfb256a fixed** · `packages/lang/src/parser.ts:1` · gone'), null)
+})
+
+test('a backticked command is not a citation, but a root-level file is', () => {
+  // Two failures this pins. A command (`env -u DISPLAY node scripts/verify-watch.mjs`) contains a
+  // path but is not one — git cannot be asked about it. And requiring a slash was this check's own
+  // first defect: `SPEC.md` is a repo-relative path that happens to live at the root.
+  const s = parseStamp(
+    'open — **rv 2026-08-19 @cfb256a reproduces** · `SPEC.md:2975` · shown by `env -u DISPLAY node scripts/verify-watch.mjs`',
+  )
+  assert.deepEqual(s.paths, ['SPEC.md'])
+})
+
+test('an open row with no stamp is a hard failure (D517)', () => {
+  const rows = [['B3-04', 'S2', 'open — never measured, just filed']]
+  const { problems } = check(sound({ ledger: ledger({ rows, stamp: false }), plans: [] }))
+  assert.ok(problems.some((p) => /`B3-04` is open with no re-verification stamp/.test(p)), problems.join('\n'))
+})
+
+test('only OPEN rows need one — a close, a deferral and a withdrawal do not', () => {
+  // A closed row's truth is its close; a deferred row is not a claim about the code. If this were
+  // wrong the guard would demand ~250 stamps for rows nobody is asking a question about.
+  const rows = [
+    ['A3-05', 'S2', '✅ **M99a** — fixed'],
+    ['A2-10', 'S3', '⏸ B'],
+    ['M98c-02', 'S4', '🚫 **withdrawn** — filed wrong'],
+  ]
+  const { problems } = check(sound({ ledger: ledger({ rows }), plans: [] }))
+  assert.deepEqual(problems, [], problems.join('\n'))
+})
+
+test('a 🟨 partial DOES need one — the unshipped half is a live claim', () => {
+  const rows = [['A4-07', 'S2', '🟨 **M97c** — shipped in part']]
+  const { problems } = check(sound({ ledger: ledger({ rows, stamp: false }), plans: [] }))
+  assert.ok(problems.some((p) => /`A4-07` is open with no re-verification stamp/.test(p)), problems.join('\n'))
+})
+
+test('a stamp citing nothing that exists is caught (D519 — evidence, not a re-reading)', () => {
+  // The vacuous-control class, pointed at this milestone: "I re-read it and it still looks true" is
+  // a check that runs, passes and cannot see anything. A path that resolves is what makes it a
+  // measurement, and it is also what `D525` keys the staleness question on.
+  const rows = [['B3-04', 'S2', 'open — **rv 2026-08-19 @cfb256a reproduces** · `no/such/file.ts:1` · trust me']]
+  const { problems } = check(sound({ ledger: ledger({ rows }), plans: [], resolve: () => false }))
+  assert.ok(problems.some((p) => /`B3-04` is stamped but cites no path that exists/.test(p)), problems.join('\n'))
+})
+
+test('the same row passes once the cited path resolves — the flag is resolution, not shape', () => {
+  const rows = [['B3-04', 'S2', 'open — **rv 2026-08-19 @cfb256a reproduces** · `no/such/file.ts:1` · trust me']]
+  const { problems } = check(sound({ ledger: ledger({ rows }), plans: [], resolve: () => true }))
+  assert.deepEqual(problems, [], problems.join('\n'))
+})
+
+// ---- 5. staleness: a report, and one that can actually fire (D525/D527/D529) --------------------
+//
+// The live run is not evidence here. On the branch this shipped from every stamp named the commit
+// the branch was cut at, so `<commit>..HEAD` was empty for all 70 citations and "none moved" was
+// true for free — a check that runs, passes and cannot see anything, which is precisely the class
+// this file exists to attack. So the tier is proven against a repo built to have moved.
+
+/** A throwaway git repo with one file, committed twice. Returns the first commit's sha. */
+async function twoCommitRepo(root, relPath) {
+  const git = (...a) => execFileAsync('git', ['-C', root, ...a])
+  await git('init', '-q', '-b', 'main')
+  await git('config', 'user.email', 't@example.invalid')
+  await git('config', 'user.name', 'test')
+  await mkdir(join(root, relPath, '..'), { recursive: true })
+  await writeFile(join(root, relPath), 'one\n')
+  await git('add', '-A')
+  await git('commit', '-qm', 'first')
+  const { stdout } = await git('rev-parse', 'HEAD')
+  const first = stdout.trim()
+  await writeFile(join(root, relPath), 'two\n')
+  await git('add', '-A')
+  await git('commit', '-qm', 'second')
+  return first
+}
+
+test('a stamp whose cited path has moved since its commit is reported', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tflw-stale-'))
+  try {
+    const sha = await twoCommitRepo(root, 'src/thing.ts')
+    const rows = [{ id: 'B3-04', status: `open — **rv 2026-08-19 @${sha} reproduces** · \`src/thing.ts:1\` · e`, line: 1 }]
+    const { lines, checked, unavailable } = staleReport(rows, root)
+    assert.equal(checked, 1)
+    assert.equal(unavailable, 0)
+    assert.equal(lines.length, 1, lines.join('\n'))
+    assert.match(lines[0], /`B3-04`.*`src\/thing\.ts` has changed since/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('…and one whose path has NOT moved is not reported (the control)', async () => {
+  // Without this the previous case passes for a checker that reports every stamp unconditionally.
+  const root = await mkdtemp(join(tmpdir(), 'tflw-stale-'))
+  try {
+    await twoCommitRepo(root, 'src/thing.ts')
+    const { stdout } = await execFileAsync('git', ['-C', root, 'rev-parse', 'HEAD'])
+    const rows = [
+      { id: 'B3-04', status: `open — **rv 2026-08-19 @${stdout.trim()} reproduces** · \`src/thing.ts:1\` · e`, line: 1 },
+    ]
+    const { lines, checked } = staleReport(rows, root)
+    assert.equal(checked, 1)
+    assert.deepEqual(lines, [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a sibling-repo path is judged by date, and says so (D529)', async () => {
+  // The stamped sha is a tflw commit and means nothing in testFlow-tests, so the question falls
+  // back to the date the stamp already carries. Skipping sibling paths instead would be `0 stale`
+  // wearing a hat — and a third of this corpus is about the sibling repo.
+  const ws = await mkdtemp(join(tmpdir(), 'tflw-ws-'))
+  try {
+    await mkdir(join(ws, 'tflw'), { recursive: true })
+    const sib = join(ws, 'testFlow-tests')
+    await mkdir(sib, { recursive: true })
+    await twoCommitRepo(sib, 'apiV2/package.json')
+    const rows = [
+      {
+        id: 'M138b-01',
+        status: 'open — **rv 2020-01-01 @cfb256a reproduces** · `testFlow-tests/apiV2/package.json:16` · e',
+        line: 1,
+      },
+    ]
+    const { lines, checked } = staleReport(rows, join(ws, 'tflw'))
+    assert.equal(checked, 1)
+    assert.equal(lines.length, 1, lines.join('\n'))
+    assert.match(lines[0], /by date/)
+  } finally {
+    await rm(ws, { recursive: true, force: true })
+  }
+})
+
+test('own repo wins over the sibling for the same relative path (D528)', async () => {
+  // `scripts/verify-watch.mjs` names a real file in testFlow-tests and nothing in tflw. If lookup
+  // order went the other way an unprefixed sibling path would silently resolve, and the citation
+  // would point at a file the reader cannot open.
+  const ws = await mkdtemp(join(tmpdir(), 'tflw-ws-'))
+  try {
+    const own = join(ws, 'tflw')
+    await mkdir(join(own, 'scripts'), { recursive: true })
+    await writeFile(join(own, 'scripts', 'x.mjs'), '')
+    await mkdir(join(ws, 'scripts'), { recursive: true })
+    await writeFile(join(ws, 'scripts', 'x.mjs'), '')
+    assert.deepEqual(locate('scripts/x.mjs', own), { dir: own, rel: 'scripts/x.mjs', sibling: false })
+    assert.equal(locate('nope/x.mjs', own), null)
+  } finally {
+    await rm(ws, { recursive: true, force: true })
+  }
+})
+
+test('where there is no git, the stale check says UNAVAILABLE and never `0 stale` (D527)', async () => {
+  // `exec.mjs` rsyncs the worktree without `.git`, which is why `verify:ledger` cannot run on the
+  // box at all (`M131-03`). The stale tier needs git per path and fails the same way. A check that
+  // reports zero when it could not look is the failure this whole file is about, so absence is
+  // announced — asserted here on the process's real output, not on an internal count.
+  const root = await mkdtemp(join(tmpdir(), 'tflw-nogit-'))
+  try {
+    await writeFile(
+      join(root, 'REVIEW_FINDINGS.md'),
+      [
+        '**Ledger after `M99`: 1 open — S2 1 · S3 0 · S4 0 — 0 closed, 0 deferred, 0 withdrawn, 1 total.**',
+        '<!-- tally:current -->',
+        '',
+        '## 6. Full index',
+        '',
+        '| id | sev | claim | status |',
+        '|---|---|---|---|',
+        '| `B3-04` | S2 | a claim | open — **rv 2026-08-19 @cfb256a reproduces** · `p.md:1` · e |',
+      ].join('\n'),
+    )
+    await writeFile(join(root, 'p.md'), 'x\n')
+    const r = await execFileAsync(process.execPath, [SCRIPT], {
+      env: { ...process.env, TFLW_LEDGER_ROOT: root, NO_COLOR: '1' },
+    }).then(
+      (o) => ({ code: 0, stdout: o.stdout }),
+      (e) => ({ code: e.code ?? 1, stdout: e.stdout ?? '' }),
+    )
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /stale check UNAVAILABLE — no git here/)
+    assert.doesNotMatch(r.stdout, /0 citations checked|none moved/)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
