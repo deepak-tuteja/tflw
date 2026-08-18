@@ -2476,6 +2476,21 @@ test "orders are owner-scoped" as shopper               # `as` names the owner
   the probe demonstrably did not get the resource **and** demonstrably never reached an authorization
   check — scoring a rate limiter as a boundary would let a suite that trips its own throttle report
   the throttle as a green result.
+- **A resource the public already receives has no owner, so it has no boundary to cross (D482).** If
+  the built-in `anonymous` principal lands in `leaked`, an unauthenticated stranger can read the
+  owner's own resources — so the data is public, and no authenticated principal reading it crossed
+  anything. Both leak rules find nothing.
+
+  The rule stays **applicable**: it ran and reached a verdict. Reporting not-applicable instead would
+  meet the no-power-to-fail rule below, and on a public array the pack's other two rules are already
+  not-applicable — so a crawl (§9.15) of any public API would come back red.
+
+  It is a question about the probe **set**, and it is narrow: only `leaked` counts. `served different
+  content` means the `2xx` carried none of the owner's resources, which is a route scoping correctly
+  for strangers that can still leak to a logged-in peer; `refused` means the route is guarded, which is
+  the shape most real BOLA has. The suppression is announced on the passing line, because `n leaked`
+  beside `0 violations` is two true statements that contradict each other unless the reason travels
+  with them.
 - **A probe set that landed entirely in the bottom two rows is a failure**, the same rule §9.10
   applies to a pack where nothing was applicable. And every "could not find out" is announced on the
   **passing** line too, because a green assertion whose whole probe set was rate-limited is precisely

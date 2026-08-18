@@ -54,6 +54,7 @@
 //     an *error* rather than a preserved backslash, so an emitted `\s` would not merely mean the wrong
 //     thing, it would refuse to parse.
 
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { DETECTOR_PATTERNS, type AuthzFinding, type InputHandlingFinding, type ReproSubject } from '@tflw/runtime';
@@ -184,13 +185,44 @@ function tflwString(s: string): string {
 export function reproFileName(f: ReproSubject): string {
   const path = slug(pathFor(f));
   if (f.kind === 'authorization') {
-    return `${slug(f.rule.replace(/^sec\/authz-/, ''))}--${slug(f.method)}--${path}--${slug(f.principal)}.tflw`;
+    return `${bound(`${slug(f.rule.replace(/^sec\/authz-/, ''))}--${slug(f.method)}--${path}--${slug(f.principal)}`)}.tflw`;
   }
   // `location` and `invariant` together, because `where` is what R8's fingerprint separates two
   // weaknesses on: one endpoint leaking a stack frame at one site and a SQL fragment at the same site
   // are two repairs and must not overwrite each other's file.
   const tail = f.invariant ? `--${slug(f.invariant)}` : '';
-  return `${slug(f.rule.replace(/^sec\//, ''))}--${slug(f.method)}--${path}--${slug(f.location)}${tail}.tflw`;
+  return `${bound(`${slug(f.rule.replace(/^sec\//, ''))}--${slug(f.method)}--${path}--${slug(f.location)}${tail}`)}.tflw`;
+}
+
+/**
+ * `NAME_MAX` is 255 bytes on every filesystem tflw targets; 195 leaves the `.tflw` suffix, a margin
+ * for a field a later scan might add, and a name a terminal still prints on one line.
+ *
+ * **This exists because a repro's name embeds the request's own path, and a mutated path contains the
+ * payload.** The reviewed corpus never tripped it — its one oversized value is 64 KiB, which Node
+ * refuses with `431` before a handler sees it, so no finding and no file. The **seeded** layer
+ * (`D369`) draws `256..32768` characters and targets `path`, `query` and `body` alike, so any draw
+ * that is short enough for Node to pass on and long enough for the app to accept produced a filename
+ * of a couple of thousand characters. `writeFile` then threw `ENAMETOOLONG` out of `writeRepros`,
+ * which runs after the whole suite — so the run died having written **no `results.json` at all**, and
+ * every result of a green suite was lost to a naming detail. Seed-dependent, therefore intermittent,
+ * which is why it survived `M137d`'s CI and first appeared in a regression sweep five milestones on.
+ *
+ * The suffix is a hash and the rest of the name is not, which reads against this function's own rule
+ * that "nothing here is a hash". The rule is about *recognising* a file in a listing, and a truncated
+ * name still does that; what a bare truncation cannot do is stay **distinct**. Two seeded draws on one
+ * endpoint differ only in the payload, i.e. only in the part being cut, so truncating alone would
+ * silently collapse two findings into one file — trading a loud crash for a quiet loss, which is the
+ * worse of the two failures.
+ */
+const STEM_MAX = 195;
+
+function bound(stem: string): string {
+  // `slug` emits `[a-z0-9-]` only, so character length is byte length and no multi-byte character can
+  // be cut in half here.
+  if (stem.length <= STEM_MAX) return stem;
+  const digest = createHash('sha256').update(stem, 'utf8').digest('hex').slice(0, 8);
+  return `${stem.slice(0, STEM_MAX - digest.length - 1)}-${digest}`;
 }
 
 /**

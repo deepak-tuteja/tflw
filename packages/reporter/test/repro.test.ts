@@ -86,6 +86,50 @@ test('an unparseable path still yields a named file rather than a silent skip', 
   assert.match(renderAuthzRepro(broken), /api GET not a url/);
 });
 
+// A mutated path carries the payload, and the seeded layer's payloads are up to 32 KiB (D369), so the
+// name is only bounded if something bounds it. The assertion is a **write**, not a length: the defect
+// this pins killed the whole run out of `writeRepros`, taking `results.json` with it, and a test that
+// only measured `.length` would pass against an implementation that still could not create the file.
+const oversizedQuery = (payload: string): InputHandlingFinding => ({
+  kind: 'input-handling',
+  rule: 'sec/oversized-input-accepted',
+  method: 'GET',
+  url: `http://localhost:4001/v1/products?q=${payload}`,
+  path: `/products?q=${payload}`,
+  env: 'secureLocal',
+  location: 'query `q`',
+  payloadId: 'seeded:oversized/1',
+  payloadText: payload,
+});
+
+test('an oversized payload in the path still yields a file the filesystem accepts', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tflw-repro-'));
+  const finding = oversizedQuery('A'.repeat(4096));
+  // The write comes FIRST and the length second, deliberately. Asserting the length up front reads
+  // better and is worth less: it short-circuits before `writeRepros` runs, so the negative check
+  // proves only that a number is large — never that the call which actually threw `ENAMETOOLONG` in
+  // production still throws. Ordered this way, removing the bound fails on the syscall.
+  const written = await writeRepros([finding], dir);
+  assert.equal(written.length, 1);
+  assert.ok(reproFileName(finding).length <= 200, 'the name must fit NAME_MAX with room to spare');
+});
+
+test('two oversized draws on one endpoint stay two files, because truncation alone would merge them', () => {
+  // They differ *only* in the part a bare truncation cuts, which is exactly why the cut carries a
+  // digest. Merging them would turn a loud crash into a silent loss of one of the two findings.
+  const a = oversizedQuery('A'.repeat(4096));
+  const b = oversizedQuery('A'.repeat(4097));
+  assert.notEqual(reproFileName(a), reproFileName(b));
+  assert.ok(reproFileName(a).length <= 200 && reproFileName(b).length <= 200);
+});
+
+test('a name that already fits is left exactly as it was', () => {
+  // The bound must be invisible to every name that has ever been written, or it is a rename of every
+  // published artifact rather than a fix.
+  assert.equal(reproFileName(objectLeak), 'object-leak--get--orders-a1e3-9f--peer.tflw');
+  assert.equal(reproFileName(oversizedQuery('AAAA')), 'oversized-input-accepted--get--products-q-aaaa--query-q.tflw');
+});
+
 test('no finding writes no directory — an ordinary run\'s report dir is unchanged', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tflw-repro-'));
   try {

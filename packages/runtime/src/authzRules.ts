@@ -1,7 +1,13 @@
 // The Tier 2 authorization rule pack (M130b1, PLAN_M130B_AUTHZ_ENGINE.md D320–D322/D324) — the
 // BOLA/IDOR half of the security arc, and deliberately `securityRules.ts`'s exact shape: **this is
-// the only file that knows what an authorization rule is**, it imports `finding.ts` and the trace
-// types and nothing else, and it produces the same generic `Finding[]`.
+// the only file that knows what an authorization rule is**, it imports `finding.ts`, the trace types
+// and one reserved word, and it produces the same generic `Finding[]`.
+//
+// That one word is `RESERVED_PRINCIPAL` (`M137c2`/D482), and it is `@tflw/lang`'s rather than a
+// literal here for the reason `authzProbe.ts:43` already gives: the checker reserves the name and
+// these files use it, and two string literals for one reserved word is how a checker comes to refuse
+// a name the runtime never actually probes with. It is a pure constant, so nothing below changed
+// about this file's testability — every branch is still exercisable against hand-built objects.
 //
 // Pure. No interpreter import, no I/O, no clock, no network. `authzProbe.ts` is the file that sends
 // a request; this one only judges what came back, which is why every branch below is exercisable
@@ -38,6 +44,7 @@
 // principal inconclusive or never probed — also makes the rule not applicable, so `clean` is
 // reachable only by a probe that really answered. See `judgeable` below.
 
+import { RESERVED_PRINCIPAL } from '@tflw/lang';
 import type { Finding, Severity } from './finding.js';
 import { SEVERITY_RANK } from './finding.js';
 import type { RequestTrace, ResponseTrace } from './types.js';
@@ -386,6 +393,42 @@ function leakRule(args: {
           findings: [],
           because: o.probes.length ? `no principal produced a judgeable response (${tally})` : 'no principal was available to probe',
         };
+      }
+
+      // **D482 — a resource the public already receives has no owner, so it has no boundary to
+      // cross.** If the built-in `anonymous` principal (D306) was served the owner's own resource
+      // ids, then an unauthenticated stranger can read them, and every *authenticated* principal
+      // reading the same thing is reading something public. Calling that a critical authorization
+      // violation is a false positive, and a loud one: it fires on every public catalog, feed and
+      // listing an application has.
+      //
+      // Found by measurement, not by review (`M137e`). Tier 2 only ever judged routes a test named,
+      // and nobody writes an authorization assertion on `GET /products` — so the first crawl of a
+      // real surface produced **20 critical findings across four public collections** beside the one
+      // true positive it was built to find. A crawler is what turns "nobody asked" into "everything
+      // is asked", and this is the first defect that changes shape under it rather than merely
+      // appearing more often.
+      //
+      // **Applicable, and no violation — not `applicable: false`.** The distinction is load-bearing
+      // rather than stylistic. Under D285 an assertion where nothing applied *fails*, and both other
+      // rules in this pack are already not-applicable on a public array (`authz-object-leak` reads an
+      // object, `csrf-not-enforced` needs a `csrf from` clause) — so routing this through the
+      // not-applicable door would turn 20 spurious findings into 4 spurious *failures* and leave a
+      // crawl of any public API red. The rule genuinely did run here, and the answer it genuinely
+      // reached is that there is nothing to violate.
+      //
+      // It reads the probe **set**, which is what this file's header says an authorization rule is
+      // for: "`sec/authz-collection-leak` can say something about the probe *set* rather than about
+      // one member of it." The taxonomy is deliberately untouched — `anonymous`'s outcome stays
+      // `leaked`, because that is a true statement about what the probe received, and D324's kinds
+      // describe observations rather than verdicts. The judgement belongs here.
+      //
+      // **The suppression is announced on the green line** by `probeNote`, for the reason that
+      // function already announces a `privileged` exclusion: a reader comparing two green runs has no
+      // other way to see that one of them found a boundary and the other found there was none.
+      const anonymous = o.probes.find((p) => p.principal === RESERVED_PRINCIPAL);
+      if (anonymous?.outcome.kind === 'leaked') {
+        return { applicable: true, findings: [] };
       }
 
       const findings: Finding[] = [];
