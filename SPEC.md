@@ -2743,7 +2743,7 @@ exists to make.
 
 ✅ The declaration, its seeds, its two structural rules (`TF068`, `TF070`), route synthesis from an
 OpenAPI document, the captured-traffic seed, the reachability channel and the crawl's own report entry
-all shipped in `M137c`. 🔧 The browser/spider seed is `M137f`.
+all shipped in `M137c`. ✅ The browser/spider seed shipped in `M137f`.
 
 Tiers 1–3 judge a response the suite asked for. A **crawl** is the other half: it *finds* the requests
 itself, from the surface the application documents and from what the run's own tests already touched,
@@ -2753,6 +2753,9 @@ and applies the same three assertion families to every response it gets back.
 crawl "the v1 API surface" as peer, shopperBearer
   seed openapi "/openapi.json"        # the documented surface
   seed traffic                        # every request this run's own tests made
+  seed spider "/admin"                # walk a site's links and forms
+    max pages 50                      # optional bounds; the runtime defaults both
+    max depth 3
   exclude "/vuln/**"                  # drop routes from the discovered set
 
   expect response has no critical security violations
@@ -2806,6 +2809,31 @@ and joins the document's declared prefix onto the **origin** the `api` base name
 config's decision rather than a field that survives a copy-paste. So an app behind a global prefix is
 crawled once-prefixed however the two are spelled. The seed *source* is a separate question and keeps
 §9.13's rule: a relative source resolves against the `api` base like any other path.
+
+**`seed spider` fetches and parses; it does not render** (`M137f`, `D442`). HTML is retrieved and its
+links and forms are read — there is no browser engine, and that is a safety statement before it is a
+scope one. Every gate this arc built lives on the request path (`allow hosts`, the blocked-port list,
+`authorized target`/`TF060`, `publicTargetRefusal`, the sequential pacing), so a spider issuing
+ordinary requests inherits all of them; a rendering crawl would have had to re-establish each at a
+different layer. A page's links are joined against the URL it **finally** resolved to, so a console
+that answers `/admin` with a redirect does not have relative links read against the wrong base.
+
+**The walk is a phase of its own, and it discloses before it walks** (`D483`). It is the only seed
+whose *enumeration is itself traffic* — the sole way to learn a route exists is to fetch the page
+linking to it — so where `seed openapi` and `seed traffic` resolve before the crawl says what it will
+send, a spider-seeded crawl prints two lines: the walk's **cap** before it walks, then the usual probe
+total before it probes. Neither phase sends anything before a line bounding it. `max pages` and
+`max depth` are the bound (`D435` — the surface is the one place in a crawl where volume is genuinely
+unknown in advance), the walk is breadth-first so `max depth` means distance from the root, and it is
+**same-origin**: a link off-site is reported as a skip rather than followed, because a crawl is
+authorized per origin. A walk stopped by a bound sets `walkCapped`, so a truncated surface can never
+read as a complete one, and `walked` is reported **beside** `discovered = withheld + sent` rather than
+inside it, since a fetched page is not an operation.
+
+**An origin with no links is a stated gap, not a zero.** Pointed at a client-rendered SPA the spider
+finds a shell it can fetch and nothing it can follow, and that origin goes to `scanBlindSpot.declines`
+as *needs rendering to crawl*. A scan that saw nothing and a site that has nothing are different facts,
+and only one of them is a limitation of the tool.
 
 **A crawl with no `seed` is `TF068`**, refused before the run starts: it discovers nothing, issues no
 request, and so every assertion in its body could not have failed whatever the application did. The

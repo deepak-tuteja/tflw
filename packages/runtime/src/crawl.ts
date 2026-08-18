@@ -21,7 +21,8 @@ import type { HttpMethod } from '@tflw/lang';
 import type { CrawlDecl } from '@tflw/lang';
 import { isSafeMethod, mayProbeMutating } from './authzProbe.js';
 import type { OpenApiDocument } from './contract.js';
-import { documentServerBasePath, enumerateOpenApiSurface, matchesRoutePattern, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
+import { documentServerBasePath, enumerateOpenApiSurface, excludedByReason, matchesRoutePattern, normalizeTemplate, type CrawlRequestPlan, type CrawlSurfaceSkip } from './crawlSurface.js';
+import { SPIDER_DEFAULTS, walkSpiderSurface, type SpiderPage } from './spiderSurface.js';
 import type { CrawlVia } from './scanFindings.js';
 import type { CrawlSurfaceReport, RequestTrace, ResolvedConfig, ResponseTrace, StepResult } from './types.js';
 
@@ -60,6 +61,12 @@ export interface CrawlDeps {
    *  parameter rather than something the judge could look up, because it is a fact about the *route*
    *  and the judge only ever sees one exchange. */
   readonly judge: (request: RequestTrace, response: ResponseTrace, via: CrawlVia) => Promise<readonly StepResult[]>;
+  /** `seed spider "<root>"` — retrieves one page and reports where it actually ended up, so links are
+   *  joined against the final URL rather than the requested one (`M137f`). Separate from `send`
+   *  because the walk is a phase of its own (`D483`) and its traffic is counted in its own field, not
+   *  in `sent`. It goes down the same request path all the same, which is what gives the spider
+   *  `allow hosts`, the blocked-port list and `authorized target` for free. */
+  readonly fetchPage: (url: string) => Promise<SpiderPage>;
   /** `RunReport.scanBlindSpot.declines` — what the crawl met and turned down, aggregated by reason. */
   readonly decline: (subject: string, reason: string) => void;
   /** A report line. `request`/`response` are attached to the `api` steps so `report.html` renders the
@@ -93,6 +100,9 @@ interface ResolvedSeed {
    *  run whose tests sent nothing. Its own field rather than a thrown error, because one broken seed
    *  must not discard what a working one found (`probePrincipalFor`'s rule, applied to seeds). */
   readonly failure?: string;
+  /** `M137f`/`D483` — set by the spider seed alone: pages fetched, and whether the walk was truncated. */
+  readonly walked?: number;
+  readonly walkCapped?: boolean;
 }
 
 export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: CrawlDeps): Promise<CrawlOutcome> {
@@ -101,6 +111,15 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
 
   const discovered = seeds.reduce((n, s) => n + s.requests.length + s.skipped.length, 0);
   const surfaceSeeds = seeds.map((s) => ({ seed: s.seed, ...(s.source ? { source: s.source } : {}), discovered: s.requests.length + s.skipped.length }));
+
+  // `D483`'s second total. Aggregated across seeds because a crawl may declare more than one spider,
+  // and left **absent** rather than zero when none did — a report carrying `walked: 0` for a phase
+  // that never existed reads as a walk that found nothing, which is a different fact.
+  const walkedSeeds = seeds.filter((s) => s.walked !== undefined);
+  const walkFigures =
+    walkedSeeds.length === 0
+      ? {}
+      : { walked: walkedSeeds.reduce((n, s) => n + (s.walked ?? 0), 0), walkCapped: walkedSeeds.some((s) => s.walkCapped === true) };
 
   // Every operation an enumerator refused, into the blind-spot channel with the reason that refused
   // it. Done before the gate below so the report's arithmetic holds even for a crawl that sends
@@ -144,9 +163,10 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
   for (const seed of seeds) {
     const found = seed.requests.length + seed.skipped.length;
     const label = `seed ${seed.seed}${seed.source ? ` "${seed.source}"` : ''}`;
+    const walk = seed.walked === undefined ? '' : ` (${seed.walked} page${seed.walked === 1 ? '' : 's'} walked${seed.walkCapped ? ', TRUNCATED at its cap' : ''})`;
     const detail = seed.failure
       ? `${label} → nothing: ${seed.failure}`
-      : `${label} → ${found} operation${found === 1 ? '' : 's'} discovered, ${seed.skipped.length} not sendable`;
+      : `${label} → ${found} operation${found === 1 ? '' : 's'} discovered, ${seed.skipped.length} not sendable${walk}`;
     steps.push(deps.step('seed', label, seed.failure === undefined, detail));
   }
   const plannedDetail =
@@ -167,7 +187,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
       error:
         `crawl "${crawl.name.value}" has nothing to crawl — its seeds resolved to no sendable request (${why}). ` +
         'Every assertion in its body would pass whatever the application did, so the crawl fails rather than reporting green over an empty surface (SPEC §9.15, `TF068`, D285)',
-      surface: { discovered, withheld, sent: 0, reached: 0, seeds: surfaceSeeds },
+      surface: { discovered, withheld, sent: 0, reached: 0, seeds: surfaceSeeds, ...walkFigures },
     };
   }
 
@@ -233,11 +253,11 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
         'Every assertion in its body passed having judged no response, so the crawl fails rather than reporting green over a surface it never touched. ' +
         "The blind-spot declines say why each one was turned away; if they are `404`s, check that your `api` base and the document's own `servers` agree " +
         '(SPEC §9.15, `TF068`, D285)',
-      surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds },
+      surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds, ...walkFigures },
     };
   }
 
-  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds } };
+  return { steps, ok, surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds, ...walkFigures } };
 }
 
 /**
@@ -316,15 +336,61 @@ async function resolveSeeds(crawl: CrawlDecl, config: ResolvedConfig, deps: Craw
       }
       continue;
     }
-    const surface = trafficSurface(deps.capturedTraffic(), excludes);
-    out.push({
-      seed: 'traffic',
-      requests: surface.requests,
-      skipped: surface.skipped,
-      ...(surface.requests.length === 0 && surface.skipped.length === 0
-        ? { failure: 'this run\'s own tests made no request the crawl could re-issue — a `traffic` seed is only as large as the suite that ran before it' }
-        : {}),
-    });
+    if (seed.type === 'TrafficSeed') {
+      const surface = trafficSurface(deps.capturedTraffic(), excludes);
+      out.push({
+        seed: 'traffic',
+        requests: surface.requests,
+        skipped: surface.skipped,
+        ...(surface.requests.length === 0 && surface.skipped.length === 0
+          ? { failure: 'this run\'s own tests made no request the crawl could re-issue — a `traffic` seed is only as large as the suite that ran before it' }
+          : {}),
+      });
+      continue;
+    }
+    if (seed.type === 'SpiderSeed') {
+      const caps = {
+        maxPages: seed.maxPages ? seed.maxPages.value : SPIDER_DEFAULTS.maxPages,
+        maxDepth: seed.maxDepth ? seed.maxDepth.value : SPIDER_DEFAULTS.maxDepth,
+      };
+      const root = absoluteFor(seed.root.value, undefined, config);
+      // `D483`'s first disclosure, and it is emitted **here**, before a single page is fetched. The
+      // walk is the one phase whose total cannot be known in advance — that is `D435`'s "browser half
+      // — bound it" — so what precedes it is the *cap* rather than the count. The property `D435` was
+      // protecting is unchanged: nothing goes out before a line saying what may.
+      deps.step(
+        'seed',
+        `seed spider "${seed.root.value}"`,
+        true,
+        `walking ${root} — at most ${caps.maxPages} page${caps.maxPages === 1 ? '' : 's'}, depth <= ${caps.maxDepth}, same-origin only`,
+      );
+      try {
+        const surface = await walkSpiderSurface(root, excludes, caps, deps.fetchPage);
+        if (surface.blindSpot) deps.decline(root, surface.blindSpot);
+        out.push({
+          seed: 'spider',
+          source: root,
+          requests: surface.requests,
+          skipped: surface.skipped,
+          walked: surface.walked,
+          walkCapped: surface.walkCapped,
+          ...(surface.walked === 0 ? { failure: 'the walk fetched no page — the spider root did not resolve to anything readable' } : {}),
+        });
+      } catch (err) {
+        out.push({ seed: 'spider', source: root, requests: [], skipped: [], walked: 0, walkCapped: false, failure: err instanceof Error ? err.message : String(err) });
+      }
+      continue;
+    }
+    // `M137f` — exhaustive on purpose, and the previous shape is why. Until now this loop ended in an
+    // **unconditional** traffic branch: anything that was not an `OpenApiSeed` fell through to
+    // `trafficSurface`. That was correct while the union had exactly two members and silently wrong
+    // the instant it had three — adding `SpiderSeed` to `CrawlSeed` compiled clean across every
+    // package and would have resolved `seed spider "/admin"` **as a traffic seed**, reporting
+    // `seed: 'traffic'` for a line the author did not write, with no error anywhere. A default branch
+    // that happens to be a real behaviour is the failure mode a `never` check exists to prevent, so
+    // the third member arrives together with the guard that would have caught it.
+    const unreached: never = seed;
+    throw new Error(`unhandled crawl seed: ${JSON.stringify(unreached)}`);
   }
   return out;
 }
@@ -357,7 +423,7 @@ function trafficSurface(traffic: readonly RequestTrace[], excludes: readonly str
     seen.add(key);
     const excludedBy = excludes.find((pattern) => matchesRoutePattern(template, pattern));
     if (excludedBy !== undefined) {
-      skipped.push({ method: request.method, template, reason: `excluded by this crawl's \`exclude "${excludedBy}"\`` });
+      skipped.push({ method: request.method, template, reason: excludedByReason(excludedBy) });
       continue;
     }
     const method = HTTP_METHODS.find((m) => m === request.method.toUpperCase());
@@ -396,16 +462,6 @@ function trafficSurface(traffic: readonly RequestTrace[], excludes: readonly str
 }
 
 const HTTP_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-
-/** Numeric and uuid path segments → `{id}`, so a suite's forty calls to one route are one entry. The
- *  same normalization `R8`'s fingerprint already applies to an endpoint, and for the same reason: the
- *  id is not part of what is being identified. */
-function normalizeTemplate(pathname: string): string {
-  return pathname
-    .split('/')
-    .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment) ? '{id}' : segment))
-    .join('/');
-}
 
 /** The URL a plan's `path` will resolve to, for the one decision that needs it before the request is
  *  built: `D465`'s per-origin `probe mutating` lookup. Absolute passes through; a bare path takes the

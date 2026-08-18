@@ -267,3 +267,135 @@ test('the hand-walked chain lands exactly where native `redirect: follow` lands 
 
   await server.close();
 });
+
+// ---------------------------------------------------------------------------------------------
+// `M137f-01` — the other half of the finding this file's own header describes.
+//
+// Read the top of this file again: *"because a request's headers are fixed once before the chain
+// starts, the hop to the protected page also went out unauthenticated."* `M88c1` fixed the
+// reporting half and wrote that sentence about the sending half, which was never built. Every
+// fixture above is blind to it for one reason — `/dashboard` answers `200` to anybody, so a hop
+// that arrives without the cookie is indistinguishable from a hop that arrives with it.
+//
+// That is the same shape as `M137c`'s uncovered reachability row and `M134a`'s lesson generally: a
+// fixture that cannot produce the failing case turns a behavioural test into a coverage claim
+// nothing checks. So the routes below **require** the cookie, and are otherwise identical.
+// ---------------------------------------------------------------------------------------------
+
+const AUTHED = 'sid=authed';
+
+/** The guarded counterpart of `loginChainRoutes`. `/dashboard` refuses rather than welcomes, which
+ * is the only difference and the whole reason this pair exists. `401` rather than a redirect back
+ * to the login page, so the chain terminates and the assertion is about the cookie rather than
+ * about a loop. */
+function guardedLoginChainRoutes(): Record<string, Handler> {
+  return {
+    '/login': (_req, res) => res.writeHead(302, { location: '/dashboard', 'set-cookie': [`${AUTHED}; Path=/; HttpOnly`] }).end(),
+    '/dashboard': (req, res) =>
+      req.headers.cookie?.includes(AUTHED) ? json(res, 200, { landed: true, as: 'admin' }) : json(res, 401, { landed: true, as: 'anonymous' }),
+  };
+}
+
+test('a cookie set on an intermediate hop is SENT on the next hop, not only reported (`M137f-01`)', async () => {
+  const server = await startFixtureServer(guardedLoginChainRoutes());
+  const res = await sendRequest({ method: 'GET', url: `${server.baseUrl}/login`, headers: {}, timeoutMs: 5000, followRedirects: true });
+
+  assert.equal(res.status, 200, 'the protected hop must arrive holding the cookie the previous hop set');
+  assert.deepEqual(JSON.parse(res.bodyText), { landed: true, as: 'admin' });
+  // The reporting half, restated: it was already true, and on its own it is not enough.
+  assert.deepEqual(res.cookieEvents[0]!.setCookie, [`${AUTHED}; Path=/; HttpOnly`]);
+
+  await server.close();
+});
+
+test('the pinned (workload) client carries it too — a login must not depend on `run … iterations`', async () => {
+  const server = await startFixtureServer(guardedLoginChainRoutes());
+  const agents = createKeepAliveAgents();
+  const opts = { method: 'GET', url: `${server.baseUrl}/login`, headers: {}, timeoutMs: 5000, followRedirects: true } as const;
+
+  const pooled = await sendRequest(opts);
+  const pinned = await sendPinnedRequest(opts, agents);
+
+  assert.equal(pinned.status, pooled.status);
+  assert.equal(pinned.bodyText, pooled.bodyText);
+  assert.equal(pinned.status, 200, 'sanity: both are the authenticated answer, not two matching failures');
+
+  destroyKeepAliveAgents(agents);
+  await server.close();
+});
+
+test('a chain that crosses origins does not hand the first origin\'s cookie to the second', async () => {
+  // The property the fix must not cost. `nextRedirectHop` already strips a *caller-supplied*
+  // `Cookie` cross-origin; this is the same rule for the cookies the chain itself collected, and it
+  // holds for a different reason — the jar is asked for the hop's own origin, so B is simply never
+  // offered A's entry.
+  const other = await startFixtureServer({
+    '/dashboard': (req, res) => json(res, 200, { sawCookie: req.headers.cookie ?? null }),
+  });
+  const home = await startFixtureServer({
+    '/login': (_req, res) => res.writeHead(302, { location: `${other.baseUrl}/dashboard`, 'set-cookie': [`${AUTHED}; Path=/`] }).end(),
+  });
+
+  const res = await sendRequest({ method: 'GET', url: `${home.baseUrl}/login`, headers: {}, timeoutMs: 5000, followRedirects: true });
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(JSON.parse(res.bodyText), { sawCookie: null }, 'host B must not receive host A\'s session cookie');
+
+  await home.close();
+  await other.close();
+});
+
+test('a cookie the chain sets supersedes the one the caller was already sending', async () => {
+  // Session-id rotation on login, which is what a server that regenerates its session does. The
+  // caller's value is the jar as it stood *before* the request; anything `Set-Cookie` says since is
+  // newer, so carrying the pre-login value forward would send the credential the server just
+  // replaced.
+  const server = await startFixtureServer({
+    '/login': (_req, res) => res.writeHead(302, { location: '/dashboard', 'set-cookie': ['sid=rotated; Path=/'] }).end(),
+    '/dashboard': (req, res) => json(res, 200, { sent: req.headers.cookie ?? null }),
+  });
+
+  const res = await sendRequest({ method: 'GET', url: `${server.baseUrl}/login`, headers: { Cookie: 'sid=stale; keep=me' }, timeoutMs: 5000, followRedirects: true });
+
+  const sent = JSON.parse(res.bodyText).sent as string;
+  assert.match(sent, /sid=rotated/, 'the chain\'s value wins');
+  assert.doesNotMatch(sent, /sid=stale/, 'the superseded value must not also go out');
+  assert.match(sent, /keep=me/, 'an unrelated cookie the caller was sending survives');
+
+  await server.close();
+});
+
+test('a login that redirects leaves the RUN authenticated, not merely reported as 200 (`M137f-01`)', async () => {
+  // The end-to-end consequence, and the shape that was live on `webV2/admin`: a console whose
+  // session middleware touches `req.session` on every request, so every anonymous response carries
+  // a fresh `Set-Cookie`. The chain used to be `POST /login` → `302` (authenticated cookie) →
+  // `GET /home` **anonymous** → `302` → `GET /login-page` (a *newer* anonymous cookie). Last-wins
+  // then left the jar holding the anonymous credential — and the run was green, because the login
+  // page is a `200`.
+  //
+  // Both assertions matter and they say opposite things: the login step passed either way, which is
+  // why nothing noticed for four milestones. Only the second request can tell the two worlds apart.
+  let anon = 0;
+  const server = await startFixtureServer({
+    '/login': (_req, res) => res.writeHead(302, { location: '/home', 'set-cookie': [`${AUTHED}; Path=/`] }).end(),
+    '/home': (req, res) => (req.headers.cookie?.includes(AUTHED) ? json(res, 200, { page: 'home' }) : res.writeHead(302, { location: '/login-page' }).end()),
+    '/login-page': (_req, res) => res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': [`sid=anon-${++anon}; Path=/`] }).end(JSON.stringify({ page: 'login' })),
+    '/whoami': (req, res) => json(res, 200, { user: req.headers.cookie?.includes(AUTHED) ? 'admin' : 'anonymous' }),
+  });
+
+  const source = `test "logs in through a redirect chain"
+  api POST /login
+  expect status equals 200
+  api GET /whoami
+  expect status equals 200
+  expect body.user equals "admin"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  const steps = report.tests[0]!.steps;
+  assert.equal(steps.find((s) => s.detail?.includes('/login'))!.ok, true, 'the login step was always green — that is the point');
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});

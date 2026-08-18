@@ -185,10 +185,10 @@ export interface CrawlDecl extends Node {
   readonly body: readonly Step[];
 }
 
-/** One `seed` line inside a `crawl` body (`D435`/`D436`). `spider` is deliberately absent: the browser
- * half is `M137f`, which is cuttable by design (`D446`), so the type gains its member when the
- * capability does rather than advertising one that resolves to nothing. */
-export type CrawlSeed = OpenApiSeed | TrafficSeed;
+/** One `seed` line inside a `crawl` body (`D435`/`D436`/`D442`). `spider` arrived in `M137f`, which
+ * is what the previous version of this comment reserved the slot for — the type gains its member when
+ * the capability does rather than advertising one that resolves to nothing. */
+export type CrawlSeed = OpenApiSeed | TrafficSeed | SpiderSeed;
 
 /**
  * `seed openapi "/openapi.json"` — the documented surface.
@@ -215,6 +215,46 @@ export interface OpenApiSeed extends Node {
  * document does not describe. It takes no argument: the traffic is whatever the run captured. */
 export interface TrafficSeed extends Node {
   readonly type: 'TrafficSeed';
+}
+
+/**
+ * `seed spider "/admin"` — the browser surface, found by **fetching and parsing** (`M137f`, `D442`).
+ * No browser engine: HTML is retrieved and its links and forms are read. That is a scope statement
+ * about capability and, first, a safety one — every existing gate (`allow hosts`, the blocked-port
+ * list, `authorized target`/`TF060`, `publicTargetRefusal`, sequential pacing) lives on the request
+ * path, so a fetching spider inherits all of them and a rendering one would have had to re-establish
+ * each at a different layer.
+ *
+ * **This is the first seed whose enumeration is itself traffic**, which is `D483`: `seed openapi`
+ * fetches one document and `seed traffic` fetches nothing, so both resolve before the crawl discloses
+ * what it will send. A spider cannot — the only way to learn a route exists is to fetch the page that
+ * links to it. So a spider-seeded crawl discloses twice: the walk's *cap* before it walks, then
+ * `D435`'s existing probe total before it probes. Neither phase sends anything before a line bounding
+ * it has been printed, which is the property `D435` was protecting.
+ */
+export interface SpiderSeed extends Node {
+  readonly type: 'SpiderSeed';
+  /**
+   * Where the walk starts. Named `root` rather than `source` or `path`: it is the origin of a *set* of
+   * pages, not the address of one document, and `OpenApiSeed.source` is already the field name that
+   * means "a document fetched over HTTP".
+   *
+   * Resolves exactly as `OpenApiSeed.source` does — absolute `http(s)://` passes through, anything
+   * else against the default service's base URL — and for the same reason it must not be called
+   * `path`: `fileReferenceDrift` would then demand a `TF043` file-existence check for a URL.
+   */
+  readonly root: StringLit;
+  /**
+   * `D435`'s "browser half — bound it", as declared numbers rather than as constants nobody can see.
+   * Both optional in the grammar and both defaulted by the runtime, because a cap is a property of the
+   * target's shape and an author who has walked their own app knows it better than this file does.
+   *
+   * They are sub-clauses indented beneath the seed line, which is the idiom `authorized target`
+   * already established for optional modifiers on a declaration (SPEC §3.10) — `D450`'s rule that the
+   * crawl derives its shape from existing idioms rather than inventing one.
+   */
+  readonly maxPages?: NumberLit;
+  readonly maxDepth?: NumberLit;
 }
 
 export type DataTable = InlineDataTable | FileDataTable;

@@ -86,7 +86,15 @@ const KEYWORDS = new Set([
   // All four are test-dialect and unambiguous in it: `crawl`/`seed` are leading keywords, `openapi`
   // and `traffic` only ever follow `seed`. That is the test D427a applies — unlike `send` or `up`,
   // none of them is a plausible ordinary identifier in a `.tflw` file.
-  'crawl', 'seed', 'openapi', 'traffic',
+  //
+  // M137f (D442) adds `spider` and passes the same test for the same reason: it only ever follows
+  // `seed`. **Its two sub-clause bounds are deliberately NOT here** — `max pages 200` / `max depth 3`
+  // would put `max`, `pages` and `depth` into a flat list that colours every occurrence anywhere, and
+  // all three are entirely plausible identifiers in a `.tflw` file (`capture body.pages as pages` is
+  // ordinary). D427a's test is about the word, not about the position the parser accepts it in, and
+  // this list has no way to say "only after `max`". So the bounds render as plain identifiers on
+  // purpose: an uncoloured keyword is a cosmetic gap, a wrongly-coloured identifier is `M133-01`.
+  'crawl', 'seed', 'openapi', 'traffic', 'spider',
   'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'privileged',
 ]);
 

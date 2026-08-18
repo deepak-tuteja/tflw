@@ -93,11 +93,16 @@ function firstDiagnostic(source: string) {
   return diagnostics[0]!;
 }
 
-test('`seed` with an unknown word names both seeds rather than saying "unexpected"', () => {
+test('`seed` with an unknown word names every seed rather than saying "unexpected"', () => {
   const d = firstDiagnostic('crawl "surface"\n  seed sitemap\n  expect response has no critical security violations\n');
-  assert.match(d.message, /expected `openapi` or `traffic` after `seed`/);
+  assert.match(d.message, /expected `openapi`, `traffic` or `spider` after `seed`/);
+  // All three, and the assertion is per-seed rather than on the whole sentence: the point of this
+  // message is that an author who typed a seed tflw does not have gets the *vocabulary*, and a hint
+  // that silently stopped listing one of them would still match a looser regex. `M137f` added the
+  // third, and this is the test that made adding it visible.
   assert.match(d.hint ?? '', /seed openapi/);
   assert.match(d.hint ?? '', /seed traffic/);
+  assert.match(d.hint ?? '', /seed spider/);
 });
 
 test('a crawl with no body is an empty block, and the message says what a body needs', () => {

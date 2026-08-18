@@ -26,7 +26,7 @@ import * as https from 'node:https';
 import { RuntimeError } from './eval.js';
 import { fetchErrorHint } from './http.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
-import { MAX_REDIRECTS, RedirectLimitError, cookieEventFor, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
+import { MAX_REDIRECTS, RedirectLimitError, chainCookieForRedirect, cookieEventFor, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { CookieEvent, ResponseTrace } from './types.js';
 
 export interface KeepAliveAgents {
@@ -246,7 +246,7 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: KeepAli
         // a workload could loop forever and still report a 0% error rate (M88a, `B4-09`). The pooled
         // path is normative (D-M88-1) and `fetch` throws here.
         if (redirects >= MAX_REDIRECTS) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
-        const hop = nextRedirectHop(current, status, res.headers.location);
+        const hop = nextRedirectHop(current, status, res.headers.location, chainCookieForRedirect(current.url, String(res.headers.location), cookieEvents));
         // The guardrail, one hop at a time (M85, C1/`B4-02`). `execApi` checked the URL *this step
         // names*; nothing checked where a 3xx then sent it, so an allowlisted staging host that
         // redirects to prod reached prod on both client paths. Refusing here is what makes SPEC

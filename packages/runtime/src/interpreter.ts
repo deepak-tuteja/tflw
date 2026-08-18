@@ -2725,6 +2725,24 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
   const deps: CrawlDeps = {
     loadDocument: (source) => loadOpenApiDocumentForCrawl(source, config),
     capturedTraffic: () => traffic,
+    // `M137f` (`D442`/`D483`) — the walk's page fetch, and it is deliberately `deps.send` and not a
+    // second transport. That is the whole safety argument for a *fetching* spider over a rendering
+    // one: `checkHostAllowed`, the blocked-port list, `authorized target`/`TF060`, the session's
+    // credential and the cookie jar all live on this path, so the walk inherits every one of them and
+    // an admin console behind a login is walkable for the same reason an authored step reaches it.
+    //
+    // `response.finalUrl` rather than the requested URL is load-bearing: a console answers `/admin`
+    // with a 302 to `/admin/dashboard`, and joining that page's relative links against `/admin` would
+    // manufacture addresses the application never served.
+    fetchPage: async (url: string) => {
+      const { response } = await deps.send({ method: 'GET', path: url });
+      return {
+        url: response.finalUrl || url,
+        status: response.status,
+        contentType: response.headers['content-type'] ?? '',
+        body: response.bodyText,
+      };
+    },
     send: async (request: CrawlRequest) => {
       // `resolveBaseUrl(null, …)`/`isAbsoluteUrl` — `api GET /path`'s own rule, so a traffic-seeded
       // request keeps the origin it was captured from instead of being silently retargeted at the

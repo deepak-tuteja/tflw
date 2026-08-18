@@ -182,7 +182,16 @@ function crawlLines(crawl: CrawlResult, c: typeof C): string[] {
   const { discovered, withheld, sent, reached } = crawl.surface;
   const lines = [`  ${mark} ${crawl.name} ${c.dim}(crawl, ${crawl.durationMs} ms)${c.reset}`];
   const seeds = crawl.surface.seeds.map((s) => `${s.seed}${s.source ? ` "${s.source}"` : ''} → ${s.discovered}`).join(', ');
-  lines.push(`    ${c.dim}surface: ${discovered} discovered (${seeds}) · ${withheld} withheld · ${sent} sent · ${reached} reached${c.reset}`);
+  // `M137f`/`D483` — the walk's own total, and it is rendered *only* when a spider ran. A zero here
+  // for a crawl that never had a `spider` seed would read as a walk that found nothing, which is a
+  // different fact from no walk at all. `TRUNCATED` is deliberately not dimmed: a capped walk is the
+  // one number in this line a reader must not skim past, because every figure after it is a floor
+  // rather than a total.
+  const walk =
+    crawl.surface.walked === undefined
+      ? ''
+      : ` · ${crawl.surface.walked} walked${crawl.surface.walkCapped ? `${c.reset}${c.bold} TRUNCATED at its cap${c.reset}${c.dim}` : ''}`;
+  lines.push(`    ${c.dim}surface: ${discovered} discovered (${seeds}) · ${withheld} withheld · ${sent} sent · ${reached} reached${walk}${c.reset}`);
   for (const step of crawl.steps) {
     if (!step.ok) lines.push(`    ${c.red}✗ ${step.source}${c.reset}${step.detail ? `\n      ${c.red}${step.detail}${c.reset}` : ''}`);
   }

@@ -155,7 +155,7 @@ export function enumerateOpenApiSurface(document: OpenApiDocument, excludes: rea
     // the one entry in this channel that is somebody's instruction rather than tflw's limitation.
     const excludedBy = excludes.find((pattern) => matchesRoutePattern(template, pattern));
     if (excludedBy !== undefined) {
-      skipped.push({ method: '*', template, reason: `excluded by this crawl's \`exclude "${excludedBy}"\`` });
+      skipped.push({ method: '*', template, reason: excludedByReason(excludedBy) });
       continue;
     }
 
@@ -559,6 +559,38 @@ function pointer(document: OpenApiDocument, ref: string): unknown {
  * A pattern is matched against the **template** (`/products/{id}`), never the filled-in path, so
  * whether a route is excluded cannot depend on the id synthesis happened to invent.
  */
+/**
+ * Numeric and uuid path segments → `{id}`, so a suite's forty calls to one route are one entry. The
+ * same normalization `R8`'s fingerprint already applies to an endpoint, and for the same reason: the
+ * id is not part of what is being identified.
+ *
+ * `M137f` moved it here from `crawl.ts`, where it served the traffic seed alone. The spider needs the
+ * identical rule — a link list containing `/admin/orders/1` … `/admin/orders/40` is one route to probe
+ * and forty would be a replay — and two copies of a grouping rule is how two seeds come to disagree
+ * about what counts as the same endpoint. It lives beside the enumerators rather than beside one of
+ * their callers because it is a fact about a surface, not about a crawl.
+ */
+export function normalizeTemplate(pathname: string): string {
+  return pathname
+    .split('/')
+    .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment) ? '{id}' : segment))
+    .join('/');
+}
+
+/** The one wording for "this route was withheld by `exclude`", shared by all three sites that can
+ *  produce it (`crawlSurface`'s openapi enumeration, `crawl`'s traffic seed, `spiderSurface`'s walk).
+ *
+ *  **It is a function because it was three string literals and one of them drifted.** `spiderSurface`
+ *  wrote ``excluded by `exclude "…"` `` where the other two wrote ``excluded by this crawl's
+ *  `exclude "…"` ``, and nothing in the engine could tell — a decline reason is prose. What noticed
+ *  was `testFlow-tests`' acceptance grader, which partitions declines by matching that prose: the
+ *  spider's exclusions fell out of the crawl-shaped bucket into the exact-set bucket and failed there,
+ *  with a message about a blind spot nobody had declared. A reason string that two graders and a
+ *  reader all key on is an interface, so it has one definition. */
+export function excludedByReason(pattern: string): string {
+  return `excluded by this crawl's \`exclude "${pattern}"\``;
+}
+
 export function matchesRoutePattern(template: string, pattern: string): boolean {
   const source = pattern
     .split('**')
