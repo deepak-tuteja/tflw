@@ -22,6 +22,8 @@ import {
   costProblem,
   coverage,
   coverageProblem,
+  elapsedLine,
+  formatElapsed,
   parseArgs,
   partition,
   registryProblem,
@@ -609,6 +611,70 @@ test('a sweep writes down what it ran, and the file says the same thing the run 
     assert.deepEqual(manifest.ids, ['bom-col']);
     assert.equal(manifest.registry, MUTATIONS.length);
     assert.match(r.stdout, /wrote .*shard-1\.json — 1 id\(s\)/);
+    // `D573`, on the run that was already being spawned: the clock is reported when nothing is
+    // wrong, which is the only condition under which a baseline can be established at all.
+    assert.match(r.stdout, /⏱ this sweep took \d/);
+    assert.ok(!r.stdout.includes('OVER BUDGET'), r.stdout);
+  } finally {
+    if (readFileSync(LEXER, 'utf8') !== before) writeFileSync(LEXER, before);
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// M143a — the sweep's own clock (`M137g-03`, re-stated).
+
+test('a sweep reports its own clock, and is loud only when it crosses the budget', () => {
+  // `M137g-03` asked for this and gave a falsified reason — it read JOB totals with a 14-minute apt
+  // stall inside them and concluded the shard packer was unstable. The recommendation survives the
+  // reason: five passes of archaeology went into separating a heavy shard from a stalled download,
+  // and this line is what would have done it at a glance.
+  const quiet = elapsedLine({ ms: 13 * 60_000 + 36_000, budgetMs: 20 * 60_000 });
+  assert.equal(quiet, '⏱ this sweep took 13m36s (soft budget 20m00s).');
+  assert.ok(!quiet.includes('OVER BUDGET'));
+
+  // `D573` — unconditional. A number that appears only when something is already wrong cannot
+  // establish a baseline, and the missing baseline is the whole reason this row stayed open.
+  assert.match(elapsedLine({ ms: 1_000, budgetMs: 20 * 60_000 }), /^⏱ this sweep took 1s/);
+
+  const loud = elapsedLine({ ms: 21 * 60_000, shard: { index: 11, of: 12 }, budgetMs: 20 * 60_000 });
+  assert.match(loud, /^⏱ shard 11 of 12 took 21m00s \(soft budget 20m00s\)\./);
+  assert.match(loud, /⚠ OVER BUDGET by 1m00s/);
+  // `M136a-01`'s rule, inside the message rather than in a plan nobody opens: a row cited by id is
+  // cited with its status, so the next reader does not go looking for an open `M131-06`.
+  assert.match(loud, /`M131-06`/);
+  assert.match(loud, /\(status: closed\)/);
+
+  // The budget is a ceiling to cross, not to reach. Exactly 20m is inside it — and the boundary
+  // matters because `D574` defers a re-shard behind two consecutive crossings, so an off-by-one
+  // here would start that clock a run early.
+  assert.ok(!elapsedLine({ ms: 20 * 60_000, budgetMs: 20 * 60_000 }).includes('OVER BUDGET'));
+
+  // The shape a CI log gets read in, including the minute boundary in both directions.
+  assert.equal(formatElapsed(59_400), '59s');
+  assert.equal(formatElapsed(60_000), '1m00s');
+  assert.equal(formatElapsed(20 * 60_000 + 100), '20m00s');
+});
+
+test('the budget warning is one a real run can be watched tripping', () => {
+  // `SUITE_TIMEOUT_MS`'s rule applied to the second bound this file now carries: a threshold nobody
+  // has ever seen fire is a claim, not a control. Overriding it is how the loud path gets exercised
+  // without running a twenty-minute shard — which is exactly the reachability problem that left the
+  // sharded tally unasserted until `M127` made it pure.
+  const before = readFileSync(LEXER, 'utf8');
+  const { file, cleanup } = sandboxJournal();
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, 'bom-col'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: withJournal(file, { TFLW_MUTATE_BUDGET_MS: '1' }),
+    });
+    // Loud and still green. The sweep is judged by its exit code and not by its clock: a budget
+    // that could fail a run would be a performance gate, and this repo has one of those already
+    // failing jobs with the work done and thrown away (PR #48).
+    assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stdout, /⏱ this sweep took \d/);
+    assert.match(r.stdout, /⚠ OVER BUDGET by /);
   } finally {
     if (readFileSync(LEXER, 'utf8') !== before) writeFileSync(LEXER, before);
     cleanup();

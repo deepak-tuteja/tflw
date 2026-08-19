@@ -124,7 +124,7 @@ const EXPECTED = {
   // fires, one asserting it stays quiet when the path did NOT move, one for `D529`'s date-based
   // sibling-repo tier, one for `D528`'s own-repo-wins lookup order, and one driving the real
   // process in a directory with no `.git` to prove it prints UNAVAILABLE and never `0 stale`.)
-  [ROOT_PKG]: 113,
+  [ROOT_PKG]: 115, // +2 in M143a (mutate.test.mjs — the sweep's own clock. One pure test over `elapsedLine`, because the sharded over-budget form of that line is otherwise reachable only by running a shard for twenty minutes; and one real spawn under `TFLW_MUTATE_BUDGET_MS=1`, because `SUITE_TIMEOUT_MS` already established that a bound nobody has watched fire is a claim rather than a control. The pair is the point: the pure test fixes the wording and the boundary, the spawn proves the wiring reaches stdout on a run that really applied a mutation).
 };
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));

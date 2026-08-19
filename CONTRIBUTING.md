@@ -33,6 +33,13 @@ Playwright's browsers are a separate download — `playwright` has no postinstal
 suites (`packages/cli`'s `watch`/`pick` tests, the browser-arc runtime tests) launch a **real
 headed** browser. Once per clone, not per run.
 
+**`--with-deps` here and not in CI, deliberately.** It runs `apt-get install`, and your machine may
+genuinely be missing the shared libraries an engine needs; you pay that once. CI dropped it in
+`M143a` because `ubuntu-latest` already carries the closure, and paying it on every job of every run
+cost up to 14.5 minutes per job and cancelled nine of twelve mutation shards on run `32272901684`
+with zero mutations applied. If an engine fails to launch on a runner, Playwright names the missing
+library on stderr — install that one, by name, and not the closure.
+
 Node **22 or newer** (`engines`). CI runs the suite on 22 and 24.
 
 ## The gates

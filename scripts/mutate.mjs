@@ -2781,6 +2781,66 @@ export function parseArgs(argv) {
 const SUITE_TIMEOUT_MS = Number(process.env.TFLW_MUTATE_TIMEOUT_MS ?? 10 * 60_000);
 const TIMEOUT_LABEL = SUITE_TIMEOUT_MS >= 60_000 ? `${SUITE_TIMEOUT_MS / 60_000}m` : `${SUITE_TIMEOUT_MS}ms`;
 
+// M143a (`M137g-03`, re-stated) — the sweep says how long it took, every time.
+//
+// `M137g-03` asked for exactly this, and gave a reason that turned out to be false: it read JOB
+// totals, saw the slowest shard change identity between consecutive runs, and concluded a
+// deterministic LPT bin-packer could not be producing that. The packer is fine. What moved was
+// `Install Playwright browsers` — an apt stall of up to 14.5m sitting inside those totals — and the
+// row's own two headline runs are one of each mechanism: `32136069351` shard 11 = 0.5m install +
+// 20.0m mutation (a genuinely heavy shard), `32154411348` shard 6 = 14.1m install + 13.7m mutation
+// (the stall). Five passes of archaeology went into telling those two apart. One printed line would
+// have done it, which is why the row's recommendation is worth more after the measurement than
+// before it.
+//
+// **Measured against this sweep, not against the job.** A budget on the job is not this tool's to
+// know, and taking one would re-import the exact contamination that made the row's reason wrong.
+//
+// Twenty minutes — the same number `M131-06` (status: closed) recorded as the re-shard trigger,
+// and the same on purpose: this warning firing on two consecutive runs of `main` then IS the
+// condition the re-shard is deferred behind, rather than a second threshold to correlate against
+// it. Calibrated on the `Mutation controls` step across 108 shard-jobs of 9 runs (2026-08-18):
+// median 13.6m, p90 15.5m, max 20.1m, under a 30m `timeout-minutes`. So it sits at the observed
+// ceiling, ~1.5x the median, and leaves ten minutes of notice before the job is killed.
+// `M137g-03` proposed ~22m; that came off totals with a stalled apt inside them and is not what
+// this is set from.
+//
+// Overridable for the reason `SUITE_TIMEOUT_MS` is: `TFLW_MUTATE_BUDGET_MS=1` puts any sweep over
+// budget, which is how the warning gets watched firing. A bound nobody has seen trip is a claim,
+// not a control.
+const SWEEP_BUDGET_MS = Number(process.env.TFLW_MUTATE_BUDGET_MS ?? 20 * 60_000);
+
+/** `ms` as `13m36s` or `47s` — the shape a CI log gets read in. */
+export function formatElapsed(ms) {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
+}
+
+/**
+ * What a finished sweep says about its own clock.
+ *
+ * Pure and exported for `M98d`'s reason — the same one that made `tallyLine` pure. The sharded,
+ * over-budget form of this line is otherwise reachable only by running a shard for twenty minutes,
+ * which is to say it would be asserted by nothing.
+ *
+ * `D573` — printed on every run, pass or fail; only crossing the budget is loud. A number that
+ * appears only when something is already wrong cannot establish a baseline, and not being able to
+ * establish the baseline is what cost this row five passes of guesswork.
+ */
+export function elapsedLine({ ms, shard, budgetMs = SWEEP_BUDGET_MS }) {
+  const what = shard ? `shard ${shard.index} of ${shard.of}` : 'this sweep';
+  const line = `⏱ ${what} took ${formatElapsed(ms)} (soft budget ${formatElapsed(budgetMs)}).`;
+  if (ms <= budgetMs) return line;
+  return (
+    `${line}\n` +
+    `⚠ OVER BUDGET by ${formatElapsed(ms - budgetMs)}. Nothing has failed — a sweep is judged by its exit\n` +
+    `  code and not by its clock — but this budget sits at the ~20m re-shard trigger \`M131-06\`\n` +
+    `  (status: closed) named, over a step whose measured median is 13.6m. Two consecutive runs of\n` +
+    `  \`main\` crossing it is the condition to re-shard; one crossing is the variance this has been\n` +
+    `  mistaken for before.`
+  );
+}
+
 export function suiteCommand(pkg) {
   return pkg === ROOT_SUITE ? 'npm run test:scripts 2>&1' : `npm test -w ${pkg} 2>&1`;
 }
@@ -3103,9 +3163,15 @@ function main(argv = process.argv) {
     });
   }
 
+  const startedAt = Date.now();
   try {
     return sweep(selected, scope, shard);
   } finally {
+    // `D573` — unconditional, and in the `finally` so it covers the paths that end a sweep early
+    // too. A red baseline aborts the run from inside the loop, which is how a shard could burn
+    // twenty minutes and leave no record of having burned them.
+    console.log(`\n${elapsedLine({ ms: Date.now() - startedAt, shard })}`);
+
     // In a `finally` because a shard that finds a survivor still has to say what it ran: the job
     // fails on the exit code, and `verify-shards.mjs` must still be able to tell "this shard ran and
     // found something" apart from "this shard never ran", which are the same missing file otherwise.

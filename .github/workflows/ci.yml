@@ -59,8 +59,32 @@ jobs:
       # doesn't exist" (confirmed on the first CI run after the browser arc landed, run 30316651481).
       # Only the two engines the suite actually exercises; webkit is a documented `--browser`
       # option but nothing launches it yet.
+      #
+      # M143a — no `--with-deps`, and that is a measurement rather than a preference.
+      #
+      # `--with-deps` runs `apt-get install` on every job of every run: 48.8 MB from
+      # azure.archive.ubuntu.com, fetched independently by fourteen concurrent jobs. Read at STEP
+      # level across 108 shard-jobs (9 runs), this step's median was 0.7m and its max 14.5m — 242
+      # minutes burned where the median would cost 74, and the entire tail is apt. The step's own
+      # log settles which half owns it: 48.8 MB of apt in 14min3s at 58 kB/s, then ~340 MB of
+      # browser archives from cdn.playwright.dev in about six seconds. The browsers are fifty times
+      # bigger and two hundred times faster, so caching `~/.cache/ms-playwright` — the obvious fix,
+      # and the one this milestone's seed proposed — would have saved those six seconds and
+      # prevented none of the stalls.
+      #
+      # On run 32272901684 the same stall cancelled NINE OF TWELVE mutation shards at their 30m
+      # ceiling with zero mutations applied, and held this job 45.9m against its 60m one.
+      #
+      # What apt fetches is fonts (CJK, Thai, colour emoji) and media codecs; `ubuntu-latest`
+      # already carries Playwright's real dependency closure. Nothing in this suite renders CJK
+      # text or plays video, and the `matches snapshot` tests seed their own baseline inside the
+      # same temp run — there are no committed baseline PNGs — so font availability moves both
+      # sides of every comparison equally.
+      #
+      # If an engine ever does fail to launch, Playwright names the missing library on stderr:
+      # install that one, by name, here. Never the closure again.
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox
+        run: npx playwright install chromium firefox
 
       - run: npm run build
 
@@ -261,8 +285,12 @@ jobs:
       # through the real dist binary. Without these two steps it blocks forever rather than failing:
       # run 31273904180 died after 31 minutes of silence, and the same suite passed under `xvfb-run`
       # four steps earlier in the same job (M112).
+      #
+      # No `--with-deps` — the reasoning is on the build job's install step above (M143a). The stall
+      # it removes is the one that cancelled nine of these twelve shards on run 32272901684, each
+      # having spent its whole 30-minute budget inside this step and applied zero mutations.
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox
+        run: npx playwright install chromium firefox
 
       - run: npm run build
 
