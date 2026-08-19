@@ -176,6 +176,76 @@ const FUNCTIONS = new Set([
  * which is why this direction of drift is the one that always fixes. */
 const DURATION_UNITS = new Set(['ms', 's', 'm']);
 
+/**
+ * The other half of the answer to "does this pass colour every word the language has?" — `M142`
+ * (`D551`), and the reason `packages/lang/test/vocabulary.test.ts` can assert completeness at all.
+ *
+ * That test walks `parser.ts`'s AST and collects every word the parser recognises, through all three
+ * of its recognition mechanisms. Held against the sets above, a residue is left over, and the
+ * residue is NOT one thing — it is a handful of quite different situations that a bare count cannot
+ * tell apart, which is how four separate milestones (`M4a`, `M33`, `M133`, `M136b`) each caught up a
+ * different subset and each believed it had finished. So every word in the residue is named here
+ * with the reason it is there, and the assertion is that **nothing is unclassified**: a word that is
+ * neither coloured nor listed below fails the build and has to be thought about once.
+ *
+ * The reasons are not new. They were already in this file, as prose, in the comment bodies of the
+ * sets above; this makes them machine-readable without moving them out of the argument they belong
+ * to. Same manoeuvre as `M138`, where the gate set lived in five prose places and `ci.yml` was made
+ * the authority.
+ *
+ * Two maps rather than one, because the two situations fail differently. A word in
+ * `DELIBERATELY_UNCOLOURED` is one the editor *could* paint and must not; a word in
+ * `REFUSED_ON_PURPOSE` is one the language does not have, which the parser knows only in order to
+ * say so.
+ */
+
+/**
+ * Real vocabulary this pass declines to colour, and strings the extraction finds that were never
+ * words at all. Both belong here for the same reason — the editor leaves them alone on purpose —
+ * and each entry says which it is.
+ *
+ * The first three are `D442`'s, argued at length in `KEYWORDS` above: a flat `Set` colours every
+ * occurrence anywhere and has no way to say "only after `max`", and under-colouring a keyword is a
+ * cosmetic gap where wrongly colouring an identifier is `M133-01`. The rest are strings that live in
+ * `parser.ts` arrays without being words a user types, and they are listed rather than filtered out
+ * of the extraction on purpose: a filter is a judgement inside a scrape, and every one of the seven
+ * earlier scrapes failed by exercising judgement it turned out not to have.
+ */
+export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
+  ['max', "D442 — `max pages`/`max depth` are position-dependent, and `max` alone is an ordinary identifier"],
+  ['pages', 'D442 — plausible as an identifier: `capture body.pages as pages` is ordinary tflw'],
+  ['depth', 'D442 — same, and this list cannot say "only after `max`"'],
+  ['non', 'not a word: a NEGATION_PREFIXES morpheme, used to decompose a mis-typed `nonvisible`'],
+  ['un', 'not a word: same — the morpheme behind `unchecked`, never a token on its own'],
+  ['im', 'not a word: same'],
+  ['dis', 'not a word: same'],
+  ['Retry-After', 'not a keyword: a header NAME the parser validates against, written as a string'],
+]);
+
+/**
+ * Words the parser recognises **only in order to refuse them**. Colouring one teaches the reader a
+ * word the language does not have — the same direction of error as `B5-10`'s `h`, where a
+ * highlighter finished a literal the checker then rejected.
+ *
+ * That "a word is refused" is expressed three unrelated ways in `parser.ts` —
+ * `RETIRED_STATEMENT_KEYWORDS` (`:251`), a `removedKeyword()` call (`:616`), and a bare did-you-mean
+ * hint (`:641`) — is a real defect and a different subject (diagnostics, not colouring). Filed as
+ * `M142-01` rather than fixed here (`D556`).
+ *
+ * NOTE, for the commit that turns the completeness assertion on: `uncheck` is in `KEYWORDS` above
+ * and so is coloured today, and `tflw.tmLanguage.json` colours `think` as well. Whether a retired
+ * spelling should be painted — the editor saying "I know this word" while the checker explains it
+ * was renamed — is a real question with a defensible answer either way, and it is deliberately NOT
+ * settled by this commit, which only classifies. It is settled where colouring changes belong.
+ */
+export const REFUSED_ON_PURPOSE: ReadonlyMap<string, string> = new Map([
+  ['think', 'retired by FS-05, renamed to `pause` — RETIRED_STATEMENT_KEYWORDS'],
+  ['uncheck', 'retired by FS-04, renamed to `untick` — RETIRED_STATEMENT_KEYWORDS'],
+  ['scenario', 'removed by M50/D93 — parser.ts:616 answers it with a D103 migration diagnostic'],
+  ['tests', 'never a keyword: parser.ts:641 recognises it only to answer "did you mean `test`?"'],
+  ['empty', 'never a matcher: parser.ts:3471 answers `is not empty` with the construction that works'],
+]);
+
 function spanLength(span: Span): number {
   return span.end.offset - span.start.offset;
 }

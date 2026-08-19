@@ -44,6 +44,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { assertGolden } from './helpers.js';
+import { DELIBERATELY_UNCOLOURED, REFUSED_ON_PURPOSE } from '../src/semanticTokens.js';
 
 const PARSER_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'parser.ts');
 
@@ -182,4 +183,32 @@ test('every one of the three mechanisms contributes words the others do not (M14
       `mechanism ${mechanism} contributed no word of its own — it has probably stopped matching`,
     );
   }
+});
+
+// The exemption maps (`D551`) are the other half of the completeness answer, and they rot in a way
+// the sets they sit beside do not: a wordlist that falls behind the parser is a gap somebody will
+// eventually see in an editor, but an exemption for a word the parser no longer has is INVISIBLE —
+// it makes the guard weaker while leaving it green, which is this milestone's whole subject wearing
+// a different hat. So each entry is held to the extraction, and the two maps are held apart.
+test('every exemption names a word the parser still recognises, and nothing is exempted twice (M142, D551)', () => {
+  for (const [map, name] of [
+    [DELIBERATELY_UNCOLOURED, 'DELIBERATELY_UNCOLOURED'],
+    [REFUSED_ON_PURPOSE, 'REFUSED_ON_PURPOSE'],
+  ] as const) {
+    for (const [word, why] of map) {
+      assert.ok(
+        vocabulary.has(word),
+        `${name} exempts \`${word}\`, which parser.ts no longer recognises — delete the entry rather than ` +
+          'leaving a dead exemption standing in for a check',
+      );
+      assert.ok(why.trim().length > 0, `${name}'s entry for \`${word}\` has no reason, which is the only thing it is for`);
+    }
+  }
+
+  const both = [...DELIBERATELY_UNCOLOURED.keys()].filter((word) => REFUSED_ON_PURPOSE.has(word));
+  assert.deepEqual(
+    both,
+    [],
+    'a word cannot be both a keyword this pass declines to paint and a word the language does not have',
+  );
 });
