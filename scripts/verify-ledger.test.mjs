@@ -530,3 +530,107 @@ test('where there is no git, the stale check says UNAVAILABLE and never `0 stale
     await rm(root, { recursive: true, force: true })
   }
 })
+
+// ---- 6. instrument precision: the two `M143` rows against this file (`M145`) -------------------
+//
+// Both rows are the arc's own subject turned on its own tooling — a check answering one level above
+// the one it claims. `M143-07` reads the commit *graph* where it means file *content*; `M143-08`
+// reads a plan's *header* where it means the plan's *claims*. Neither is a bug in what the check
+// does. Both are a mismatch between what it measures and what it reports, which is the class that
+// survives review precisely because the check keeps working.
+
+test('an explicit `plan:closes` list is the answer, and the header is not read at all', () => {
+  // `M143-08`. The header here names three ids in three different roles — one closed, one that
+  // LEAVES the cluster, one merely FILED — which is exactly the shape that produced two live false
+  // positives. The list settles it without anything having to read the verb.
+  const plan = [
+    '# M143 — sweep reliability',
+    'Closes `M137g-03`. `M115-02` leaves the cluster (`D575`). Files `M143-01`, `M143-02`.',
+    '<!-- plan:closes M137g-03 -->',
+  ].join('\n')
+  assert.deepEqual(planClaims(plan), ['M137g-03'])
+})
+
+test('…and the header heuristic still applies when no list is given (the control)', () => {
+  // Without this, the fix above passes just as well for a `planClaims` that returns `[]` always —
+  // which would silently disarm the check for every plan written before the marker existed.
+  const plan = ['# M143 — sweep reliability', 'Closes `M137g-03`. `M115-02` leaves the cluster.'].join('\n')
+  assert.deepEqual(planClaims(plan), ['M137g-03', 'M115-02'])
+})
+
+test('an empty `plan:closes` list is a claim of nothing, not a missing marker', () => {
+  // A plan that fixes nothing and files rows is a real shape (`M143c` was close to it). It must be
+  // able to say so, or its header's filed-row ids read as closures.
+  const plan = ['# M144a — two guards', 'Files `M144-01`. Half-fixes `A2-16`.', '<!-- plan:closes -->'].join('\n')
+  assert.deepEqual(planClaims(plan), [])
+})
+
+test('`plan:closes-at` is not read as `plan:closes` — the two markers share a prefix', () => {
+  // `\s+` after `closes` is the whole separation, and `-` is not whitespace. If this regressed, a
+  // staged plan's completion marker would silently become its close-claim list and claim nothing,
+  // disarming the check for exactly the plans that need it most.
+  const plan = ['# M125 — staged', 'Closes `A3-05`.', '<!-- plan:closes-at M125e -->'].join('\n')
+  assert.deepEqual(planClaims(plan), ['A3-05'])
+})
+
+test('bare and backticked ids are both read inside the list', () => {
+  const plan = ['# M99', 'header naming nothing', '<!-- plan:closes A3-05, `A3-08` -->'].join('\n')
+  assert.deepEqual(planClaims(plan), ['A3-05', 'A3-08'])
+})
+
+/** A repo whose file is changed and then changed back: history moved, content did not. */
+async function revertedRepo(root, relPath) {
+  const git = (...a) => execFileAsync('git', ['-C', root, ...a])
+  await git('init', '-q', '-b', 'main')
+  await git('config', 'user.email', 't@example.invalid')
+  await git('config', 'user.name', 'test')
+  await mkdir(join(root, relPath, '..'), { recursive: true })
+  await writeFile(join(root, relPath), 'one\n')
+  await git('add', '-A')
+  await git('commit', '-qm', 'first')
+  const { stdout } = await git('rev-parse', 'HEAD')
+  await writeFile(join(root, relPath), 'two\n')
+  await git('add', '-A')
+  await git('commit', '-qm', 'second')
+  await writeFile(join(root, relPath), 'one\n')
+  await git('add', '-A')
+  await git('commit', '-qm', 'third — back to the first content')
+  return stdout.trim()
+}
+
+test('a path whose history moved but whose content did not is NOT reported (M143-07)', async () => {
+  // The squash-merge shape, which is how every milestone lands here: one commit touching every path
+  // the branch touched, so `<commit>..HEAD -- <rel>` is non-empty for every stamp taken on that
+  // branch. Measured on the real repo when this row was filed — `M143-01` and `M143-02` reported
+  // drifted against `c5cfd83` with an empty `git diff` on their paths.
+  const root = await mkdtemp(join(tmpdir(), 'tflw-revert-'))
+  try {
+    const sha = await revertedRepo(root, 'src/thing.ts')
+    const rows = [{ id: 'B3-04', status: `open — **rv 2026-08-19 @${sha} reproduces** · \`src/thing.ts:1\` · e`, line: 1 }]
+    const { lines, checked, unavailable } = staleReport(rows, root)
+    assert.equal(checked, 1, 'the citation must still be CHECKED — going quiet by not looking is the D527 failure')
+    assert.equal(unavailable, 0)
+    assert.deepEqual(lines, [], lines.join('\n'))
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a cited path that git cannot resolve at HEAD still gets the history answer', async () => {
+  // `scripts/exec.mjs` is untracked in both repos (`D14`) and is cited by an open row, so
+  // `HEAD:<rel>` does not resolve for it. The blob question must fall through rather than throw,
+  // and the fallback's answer — no commit touched it — must survive.
+  const root = await mkdtemp(join(tmpdir(), 'tflw-untracked-'))
+  try {
+    const sha = await twoCommitRepo(root, 'src/thing.ts')
+    await mkdir(join(root, 'scripts'), { recursive: true })
+    await writeFile(join(root, 'scripts', 'exec.mjs'), 'untracked\n')
+    const rows = [{ id: 'M143-06', status: `open — **rv 2026-08-19 @${sha} reproduces** · \`scripts/exec.mjs:630\` · e`, line: 1 }]
+    const { lines, checked, unavailable } = staleReport(rows, root)
+    assert.equal(checked, 1)
+    assert.equal(unavailable, 0)
+    assert.deepEqual(lines, [], lines.join('\n'))
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
