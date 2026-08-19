@@ -155,12 +155,40 @@ export function parseIndex(text) {
 /** Row ids as they are written in prose: `A3-05`, `M97a-04`, `FU-11`, `V4-16`, `B6-15`. */
 const ROW_ID = /`([A-Z]+\d*[a-z]?-\d+)`/g
 
+/** Ids inside an explicit claim list, backticked or bare: `<!-- plan:closes A3-05, `M97a-04` -->`. */
+const ROW_ID_BARE = /\b([A-Z]+\d*[a-z]?-\d+)\b/g
+
 /**
- * The rows a plan says it closes. Only the opening paragraph counts: a plan's body cites dozens of
- * rows as context, its header states the charter. Measured on all 12 shipped plans — 44 ids, no
- * false positives beyond `A4-07`'s intentional partial.
+ * An explicit statement of what a plan closes (`M143-08`).
+ *
+ * Deliberately the same shape as `plan:closes-at` one function down — a plan already declares
+ * bookkeeping in HTML comments, and this needs no parser that understands English. The `\s+` after
+ * `closes` is what keeps `plan:closes-at` from matching here: `-` is not whitespace.
+ */
+const CLOSES = /<!--\s*plan:closes\s+([^>]*?)\s*-->/
+
+/**
+ * The rows a plan says it closes.
+ *
+ * **Two sources, explicit first** (`M143-08`). If the plan carries a `<!-- plan:closes … -->`
+ * comment, that list is the answer and the header is not read at all — including when the list is
+ * empty, which is a plan declaring outright that it closes nothing.
+ *
+ * Otherwise the opening paragraph counts, as it always has: a plan's body cites dozens of rows as
+ * context, its header states the charter. That heuristic was measured on all 12 shipped plans — 44
+ * ids, no false positives beyond `A4-07`'s intentional partial — and the measurement was true of
+ * the plans that existed and false of the ones written next. `PLAN_M142` said `M125e-01` *leaves
+ * the cluster*; `PLAN_M143`'s header listed what it had FILED, three of them open. Both read as
+ * unfulfilled close-claims the moment their milestone reached `main`. **The guard cannot read the
+ * verb**, and the fix is not to teach it to — it is to let the plan say which ids are claims.
+ *
+ * The heuristic is kept rather than replaced because replacing it would silently disarm the check
+ * for every plan written before this comment existed: no marker would mean no claims, and a guard
+ * that goes quiet on twelve plans at once is worse than one with two false positives on two.
  */
 export function planClaims(text, headerLines = 12) {
+  const explicit = text.match(CLOSES)
+  if (explicit) return [...new Set([...explicit[1].matchAll(ROW_ID_BARE)].map((m) => m[1]))]
   const head = text.split('\n').slice(0, headerLines).join('\n')
   return [...new Set([...head.matchAll(ROW_ID)].map((m) => m[1]))]
 }
@@ -383,19 +411,48 @@ export function locate(path, root) {
   return null
 }
 
-/** Has `rel` changed in `dir` since the stamp was taken? `null` means git could not answer. */
+/**
+ * Has `rel` changed in `dir` since the stamp was taken? `null` means git could not answer.
+ *
+ * **Content, not history** (`M143-07`). This asked `git log <commit>..HEAD -- <rel>` and called any
+ * non-empty answer drift, which is a question about the *commit graph* wearing the costume of a
+ * question about the file. A squash merge produces exactly one commit touching every path the
+ * branch touched, so every stamp a milestone takes on its own branch went stale the moment it
+ * landed — byte-identical or not. Measured: `M143-01` and `M143-02` were both reported drifted
+ * against `c5cfd83` while `git diff c5cfd83 origin/main --` on their paths was **empty**.
+ *
+ * That is the failure `D527` was written to avoid one level up. A report with routine false
+ * positives is a report people skim, and the true positive sitting next to them is what gets
+ * skimmed — `M131-03` was in that list on the day this was measured.
+ *
+ * So the exact question is asked first: same blob at the stamp as at `HEAD`? It is only askable
+ * when the stamped sha resolves *in this repo*, so two cases still fall back to the history
+ * question, and both keep their previous answers exactly:
+ *
+ *   · **a sibling path** (`D529`) — the stamped sha is a tflw commit and means nothing in
+ *     testFlow-tests, so the question is the stamp's date. Coarser, and said to be coarser
+ *     wherever this is printed. Skipping sibling paths instead would be `0 stale` wearing a hat.
+ *   · **an untracked or unreachable path** — `scripts/exec.mjs` is untracked in both repos
+ *     (`D14`) and is cited by an open row, so `HEAD:<rel>` does not resolve for it. The log
+ *     question returns empty there, as it always has.
+ */
 function changedSince({ dir, rel, sibling }, { commit, date }) {
-  // `D529`. In this repo the stamped sha is a real ref and the question is exact. In a sibling repo
-  // it is a tflw sha and means nothing, so the question falls back to the stamp's date — coarser,
-  // and said to be coarser wherever this is printed. The alternative, skipping sibling paths, is
-  // `0 stale` wearing a hat, which is the one thing `D527` forbids.
+  const git = (...args) =>
+    execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+
+  if (!sibling) {
+    try {
+      // Throws when the sha is not a ref here, or when the path did not exist at either end —
+      // all three are "cannot answer exactly", and all three fall through on purpose.
+      return git('rev-parse', `${commit}:${rel}`) !== git('rev-parse', `HEAD:${rel}`)
+    } catch {
+      // fall through to the history question
+    }
+  }
+
   const range = sibling ? [`--since=${date} 00:00`] : [`${commit}..HEAD`]
   try {
-    const out = execFileSync('git', ['log', '--format=%h', '-1', ...range, '--', rel], {
-      cwd: dir,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).toString()
-    return out.trim().length > 0
+    return git('log', '--format=%h', '-1', ...range, '--', rel).length > 0
   } catch {
     return null // no git here, or the stamped commit is not in this checkout
   }
