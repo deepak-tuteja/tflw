@@ -146,6 +146,36 @@ Two traps it is worth writing down, both of which have cost a real debugging ses
 The box is shared with other work and takes a whole-machine lock; a busy box is waited on, never
 worked around.
 
+## Before parking a claim on "this needs a real editor"
+
+> **This section is not guarded either**, and it is deliberately outside the gate region above.
+
+The editor surfaces are far more reachable from a shell than they look, and assuming otherwise has
+now cost two findings that sat parked for milestones before anybody checked. `B5-06` — an unsaved
+buffer silently getting no language support at all — carried that excuse for four milestones and
+then reproduced *in seconds* in a test file written for exactly this purpose. It happened again at
+`M106-01`, where three of the four shapes the claim named answered over stdio.
+
+Two ways in, neither of which needs a display:
+
+- **In-process.** `packages/lsp-server/test/protocol.test.ts` drives `startServer()` over the real
+  wire protocol — initialize, open a document, read the `publishDiagnostics` it pushes back, ask for
+  hover, semantic tokens or a rename. This is where a diagnostic's *position* and a server's
+  *behaviour* are settled.
+- **The shipped binary.** `node packages/cli/dist/cli.cjs lsp` speaks the same protocol on stdio, so
+  a handful of `Content-Length`-framed messages from a script answers the same questions against the
+  artifact a user actually installs. Worth using when the question is whether the CLI and the LSP
+  agree — they have disagreed.
+
+What genuinely needs a running Extension Host is **client-side wiring and presentation**: activation
+events, language-id association, whether a colour is the one you meant. That set is smaller than it
+first looks, and `packages/vscode/test/MANUAL.md` is the checklist for what is left of it — no
+automated test in this repo has ever started a real Extension Host (`M136b-02`).
+
+So the question is not *"is this an editor thing?"* but **"which half of this is protocol and which
+is presentation?"** Park the presentation half if you must; the protocol half is measurable today,
+and a claim parked whole is a claim nobody measured.
+
 ## Running from a clone
 
 Using `tflw` from a checkout without publishing to npm, or embedding it in another local project

@@ -33,6 +33,23 @@
 //      command run minutes earlier, against a file still being edited. The newest one must match
 //      what the column actually says now.
 //
+// `M140` added a fourth, after a sweep re-measured all 58 open rows and found that nothing had ever
+// asked whether an open row still reproduces (`M136a-01`): a row fixed in passing by a later
+// milestone stays open indefinitely, and the queue plans around a defect that is not there. The
+// sweep is a one-off; this is what makes it an invariant.
+//
+//   4. **Every open row carries a re-verification stamp** — `rv <date> @<commit> <verdict>` plus
+//      evidence naming at least one real path (`D516`/`D526`). Missing is **fatal** (`D517`): it is
+//      a known gap, and the rejected alternative — counting unstamped rows without failing — is the
+//      awk one-liner's shape all over again, a number nobody is obliged to act on.
+//
+// …and one thing that is deliberately **not** a check but a **report**: whether a stamp has gone
+// stale, i.e. whether the path it cites has changed since the commit it was taken at (`D525`). A
+// stale stamp is a suspicion, not a known gap, and a gate that reddens whenever someone edits a hot
+// file is a gate that gets routed around. It needs git, so where git is absent it says
+// `stale check UNAVAILABLE — no git here` and never `0 stale` (`D527`) — a check reporting zero when
+// it could not look is the whole failure class this file is about.
+//
 // **This is deliberately not a CI step.** `REVIEW_FINDINGS.md` is gitignored (the pre-1.0
 // launch-review corpus is local-only), so in CI the file is simply absent — and a guard that skips
 // when its input is missing is green about nothing, which is the failure this whole tool exists to
@@ -65,6 +82,44 @@ export function classify(status) {
 /** A status cell is well-formed if it opens with a marker or the bare word `open`. */
 export function isWellFormed(status) {
   return MARKERS.some(([m]) => status.startsWith(m)) || /^open\b/.test(status)
+}
+
+/**
+ * `D526`'s re-verification stamp, as it is written inside an open row's status cell:
+ *
+ *     open — **rv 2026-08-19 @cfb256a reproduces** · `packages/lang/src/checker.ts:3071` · evidence
+ *
+ * `fixed` is deliberately not a verdict here — a row that no longer reproduces is *closed*, and the
+ * corpus's existing `✅ **fixed \`M<N>\`**` idiom already carries that. So the vocabulary is exactly
+ * the two states an open row can be in: it still does the thing, or it does a different thing.
+ */
+const STAMP = /\brv (\d{4}-\d{2}-\d{2}) @([0-9a-f]{7,40}) (reproduces|drifted)\b/
+
+/**
+ * A backticked token that could be a path: ends in an extension, optionally with a `:<line>` suffix.
+ * Whitespace is excluded, which is what keeps a backticked *command* — `env -u DISPLAY node
+ * scripts/verify-watch.mjs` — from being read as a citation. That matters: `D526` requires the stamp
+ * to name the source the behaviour lives in, never the command that showed it, because a command is
+ * not something git can be asked about.
+ *
+ * A slash is **not** required, and requiring one was this check's first defect: it rejected
+ * `SPEC.md` and `CONTRIBUTING.md`, which are repo-relative paths that happen to live at the root.
+ * The cost of the looser rule is that prose tokens like `body.id` are also *candidates* — harmless,
+ * since resolution is what decides, and the failure message names everything it tried.
+ */
+const CITED = /`([^`\s]+\.[A-Za-z0-9]+)(?::\d+)?`/g
+
+/** Parse a status cell's stamp. Returns null when there is none — the caller decides if that is fatal. */
+export function parseStamp(status) {
+  const m = status.match(STAMP)
+  if (!m) return null
+  const evidence = status.slice(m.index + m[0].length)
+  return {
+    date: m[1],
+    commit: m[2],
+    verdict: m[3],
+    paths: [...new Set([...evidence.matchAll(CITED)].map((c) => c[1]))],
+  }
 }
 
 /** Split a markdown table row into its data cells, tolerant of `|` inside prose. */
@@ -223,8 +278,15 @@ export function derive(rows) {
   return t
 }
 
-/** Run all three checks. Pure — every input is passed in, so the tests need no repo. */
-export function check({ ledger, plans, shipped }) {
+/**
+ * Run every check. Pure — each input is passed in, so the tests need no repo.
+ *
+ * `resolve(path)` answers *does this path exist somewhere in the workspace* (`D528`). It is injected
+ * rather than imported so this function stays free of the filesystem; `main()` supplies the real
+ * one. Its default is permissive, which only ever affects a caller that declined to pass one — every
+ * fixture that cares about resolution passes a fake, and the live run always passes the real thing.
+ */
+export function check({ ledger, plans, shipped, resolve = () => true }) {
   const problems = []
   const rows = parseIndex(ledger)
   if (!rows.length) problems.push('§6 "Full index" has no rows — the section heading may have been renamed')
@@ -237,6 +299,25 @@ export function check({ ledger, plans, shipped }) {
       )
     if (seen.has(r.id)) problems.push(`§6:${r.line} \`${r.id}\` is listed twice (also at §6:${seen.get(r.id)})`)
     else seen.set(r.id, r.line)
+
+    // `D517`. Only open rows: a closed row's truth is its close, and a deferred one is not a claim
+    // about the code. `🟨` classifies open and is therefore included, which is right — a partial is
+    // a live claim about the half that did not ship.
+    if (classify(r.status) !== 'open') continue
+    const stamp = parseStamp(r.status)
+    if (!stamp) {
+      problems.push(
+        `§6:${r.line} \`${r.id}\` is open with no re-verification stamp — write \`rv <date> @<commit> ` +
+          `reproduces|drifted\` and cite a path. Nobody has measured whether this still happens: "${r.status.slice(0, 50)}"`,
+      )
+      continue
+    }
+    if (!stamp.paths.some(resolve))
+      problems.push(
+        `§6:${r.line} \`${r.id}\` is stamped but cites no path that exists` +
+          `${stamp.paths.length ? ` (tried ${stamp.paths.slice(0, 4).map((x) => `\`${x}\``).join(', ')})` : ''} — ` +
+          'a stamp with no live path cannot be checked for staleness, which is most of what it is for',
+      )
   }
 
   const byId = new Map(rows.map((r) => [r.id, r]))
@@ -282,6 +363,79 @@ export function check({ ledger, plans, shipped }) {
  */
 const CLOSES_AT = /<!--\s*plan:closes-at\s+M([0-9a-z]+)\s*-->/
 
+/**
+ * Where a cited path actually lives (`D528`).
+ *
+ * The ledger sits in tflw, but a third of the corpus is about testFlow-tests, so the stamp's path
+ * space is the **workspace**: `<root>/<path>` first, then `<root>/../<first-segment>/<rest>`. Order
+ * matters and is not arbitrary — `scripts/verify-watch.mjs` names a real file in testFlow-tests and
+ * nothing at all in tflw, so an unprefixed sibling path is a citation of a file the reader cannot
+ * open. Hence the prefix requirement, and hence own-repo-wins here.
+ */
+export function locate(path, root) {
+  if (existsSync(join(root, path))) return { dir: root, rel: path, sibling: false }
+  const seg = path.indexOf('/')
+  if (seg > 0) {
+    const dir = join(root, '..', path.slice(0, seg))
+    const rel = path.slice(seg + 1)
+    if (existsSync(join(dir, rel))) return { dir, rel, sibling: true }
+  }
+  return null
+}
+
+/** Has `rel` changed in `dir` since the stamp was taken? `null` means git could not answer. */
+function changedSince({ dir, rel, sibling }, { commit, date }) {
+  // `D529`. In this repo the stamped sha is a real ref and the question is exact. In a sibling repo
+  // it is a tflw sha and means nothing, so the question falls back to the stamp's date — coarser,
+  // and said to be coarser wherever this is printed. The alternative, skipping sibling paths, is
+  // `0 stale` wearing a hat, which is the one thing `D527` forbids.
+  const range = sibling ? [`--since=${date} 00:00`] : [`${commit}..HEAD`]
+  try {
+    const out = execFileSync('git', ['log', '--format=%h', '-1', ...range, '--', rel], {
+      cwd: dir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString()
+    return out.trim().length > 0
+  } catch {
+    return null // no git here, or the stamped commit is not in this checkout
+  }
+}
+
+/**
+ * `D525`'s report: which stamps sit on paths that have moved under them.
+ *
+ * Deliberately not a problem. A missing stamp is a known gap and blocks; a stale one is a suspicion
+ * and informs, because a gate that reddens every time somebody edits a hot file is a gate people
+ * learn to run with `|| true`. Age is not the measure either — a ten-milestone-old stamp against
+ * untouched code is current, and a week-old stamp against a file edited yesterday is not.
+ */
+export function staleReport(rows, root) {
+  const lines = []
+  let checked = 0
+  let unavailable = 0
+  for (const r of rows) {
+    if (classify(r.status) !== 'open') continue
+    const stamp = parseStamp(r.status)
+    if (!stamp) continue
+    for (const path of stamp.paths) {
+      const at = locate(path, root)
+      if (!at) continue
+      const moved = changedSince(at, stamp)
+      if (moved === null) {
+        unavailable++
+        continue
+      }
+      checked++
+      if (moved)
+        lines.push(
+          `  · \`${r.id}\` — \`${path}\` has changed since ${stamp.commit}` +
+            `${at.sibling ? ` (by date: anything after ${stamp.date}, the sha is not a ref in that repo)` : ''}`,
+        )
+    }
+  }
+  return { lines, checked, unavailable }
+}
+
 /** Collect the shipped plans from the repo root. */
 function loadPlans(root) {
   return readdirSync(root)
@@ -310,7 +464,12 @@ function main() {
   const ledger = readFileSync(LEDGER, 'utf8')
   const shipped = shippedMilestones()
   if (shipped === null) console.error('note: not a git checkout — the plan↔ledger check is running over every plan\n')
-  const { problems, derived } = check({ ledger, plans: loadPlans(ROOT), shipped })
+  const { problems, derived, rows } = check({
+    ledger,
+    plans: loadPlans(ROOT),
+    shipped,
+    resolve: (p) => locate(p, ROOT) !== null,
+  })
 
   if (problems.length) {
     console.error(`✗ ledger: ${problems.length} problem${problems.length === 1 ? '' : 's'}\n`)
@@ -322,8 +481,28 @@ function main() {
   console.log(
     `✓ ledger: ${derived.total} rows — ${derived.open} open (S2 ${derived.s2} · S3 ${derived.s3} · S4 ${derived.s4}), ` +
       `${derived.closed} closed, ${derived.deferred} deferred, ${derived.withdrawn} withdrawn; ` +
-      'vocabulary, plan claims and the published tally all agree',
+      'vocabulary, plan claims, the published tally and every open row\'s stamp all agree',
   )
+
+  // `D527`: this must never print `0 stale` when it could not look. The stale check needs git per
+  // cited path, and `exec.mjs` rsyncs the worktree without `.git` — the same reason `verify:ledger`
+  // cannot run on the box at all (`M131-03`). So absence is announced, not rounded down to zero.
+  const { lines, checked, unavailable } = staleReport(rows, ROOT)
+  if (checked === 0) {
+    console.log(`  stale check UNAVAILABLE — no git here (${unavailable} citation${unavailable === 1 ? '' : 's'} unread)`)
+  } else {
+    // Partial blindness gets said too, not just total blindness: a citation whose commit is not in
+    // this checkout (another branch, a rewritten history) is one git could not answer for, and
+    // rolling it into "none moved" is the same lie as `0 stale`, only smaller.
+    const blind = unavailable ? ` — ${unavailable} more could not be read here` : ''
+    if (lines.length) {
+      console.log(`  ${lines.length} stamp${lines.length === 1 ? '' : 's'} may be stale — the cited path has moved since:`)
+      for (const l of lines) console.log(l)
+      console.log(`  (${checked} citations checked${blind}. This informs; it does not fail — re-measure the row when you touch it.)`)
+    } else {
+      console.log(`  ${checked} citations checked, none moved since their stamp${blind}`)
+    }
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main()
