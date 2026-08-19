@@ -24,7 +24,7 @@
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { RuntimeError } from './eval.js';
-import { fetchErrorHint } from './http.js';
+import { RequestTimeoutError, fetchErrorHint } from './http.js';
 import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { MAX_REDIRECTS, RedirectLimitError, chainCookieForRedirect, cookieEventFor, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { CookieEvent, ResponseTrace } from './types.js';
@@ -171,7 +171,7 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: KeepAli
   }, opts.timeoutMs);
   // Phrased from the original request on every hop, like the redirect-cap message (M88a): it is
   // the request the author wrote, and it is all native `redirect: 'follow'` would have known.
-  const timeoutError = (): RuntimeError => new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
+  const timeoutError = (): RuntimeError => new RequestTimeoutError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
 
   // M88c1 (`B4-15`) — every hop's `Set-Cookie`, not just the last one's. This loop was already the
   // path with the *least* excuse for losing them: unlike native `redirect: 'follow'`, it has held

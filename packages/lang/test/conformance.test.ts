@@ -27,7 +27,29 @@ import { RUNTIME_RULES } from '../src/conformance.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const RUNTIME_SRC = join(here, '../../runtime/src');
-const NEEDLE = 'throw new RuntimeError(';
+/**
+ * The constructor names a throw site can carry. `RuntimeError` plus every class in the runtime that
+ * extends it, **derived rather than listed** (M143b).
+ *
+ * It was the bare string `'throw new RuntimeError('` for six milestones, which made every subclass
+ * a hole: `AllowHostsError` (5 sites) and `RedirectLimitError` (4) had been outside the classified
+ * corpus since they were introduced, and nothing said so — the completeness test cannot report a
+ * site it never collected. `M143b` found it by *moving* two classified sites into the hole (a
+ * request timeout became `RequestTimeoutError` so `wait until api` could tell it apart by type
+ * instead of by matching its text), at which point the other direction of the guard — a row
+ * matching zero sites — fired. That is the direction working; the corpus shrinking silently is not.
+ *
+ * Derived from the source, so the next subclass joins the corpus by existing rather than by
+ * somebody remembering this constant. A subclass whose sites are unclassified now fails loudly,
+ * which is the whole point of a completeness check.
+ */
+function throwNeedles(): string[] {
+  const names = new Set(['RuntimeError']);
+  for (const file of sourceFiles(RUNTIME_SRC)) {
+    for (const m of readFileSync(file, 'utf8').matchAll(/class\s+(\w+)\s+extends\s+RuntimeError\b/g)) names.add(m[1]!);
+  }
+  return [...names].map((n) => `throw new ${n}(`);
+}
 
 interface Site {
   file: string;
@@ -55,11 +77,13 @@ function normalize(text: string): string {
   return text.replace(/\\`/g, '`').replace(/\s+/g, ' ').trim();
 }
 
-/** Every `throw new RuntimeError(...)` under packages/runtime/src, argument text included. */
+/** Every `throw new <RuntimeError or subclass>(...)` under packages/runtime/src, argument text included. */
 function runtimeThrowSites(): Site[] {
   const sites: Site[] = [];
+  const needles = throwNeedles();
   for (const file of sourceFiles(RUNTIME_SRC).sort()) {
     const text = readFileSync(file, 'utf8');
+    for (const NEEDLE of needles) {
     let idx = 0;
     while ((idx = text.indexOf(NEEDLE, idx)) !== -1) {
       const open = idx + NEEDLE.length - 1;
@@ -81,6 +105,7 @@ function runtimeThrowSites(): Site[] {
         text: normalize(text.slice(open + 1, end)),
       });
       idx = end;
+    }
     }
   }
   return sites;

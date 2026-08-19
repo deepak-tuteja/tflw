@@ -99,7 +99,7 @@ import { evaluateFileMatch } from './binary-match.js';
 import { parseCsv } from './csv-parse.js';
 import { extractPdfText } from './pdf-text.js';
 import { CookieJar } from './cookieJar.js';
-import { sendRequest } from './http.js';
+import { RequestTimeoutError, sendRequest } from './http.js';
 import { absoluteUrlNeedsAllowHosts, AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest, warnPinnedFallback, type KeepAliveAgents } from './httpPinned.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
@@ -5482,9 +5482,36 @@ async function execWaitUntilApi(
     // outer deadline was previously only checked *after* `execApi` returned, so a single slow poll
     // could hang for up to the request's own (much larger) `config.timeouts.step` default, blowing
     // way past a short `wait <N>ms` budget.
-    const requestTimeout = Math.max(1, Math.min(step.request.timeoutMs ?? config.timeouts.step, remainingMs));
+    const configuredTimeout = step.request.timeoutMs ?? config.timeouts.step;
+    const requestTimeout = Math.max(1, Math.min(configuredTimeout, remainingMs));
+    // Whether the line above actually shortened this poll. If it did, a timeout at the clamped
+    // value is the *wait* deadline expiring, not the author's request timeout — see the catch below.
+    const clampedByWait = requestTimeout < configuredTimeout;
     const request = { ...step.request, timeoutMs: requestTimeout };
-    const { trace, redacted } = await execApi(request, config, ctx, redactor, baseDir, configDir, pinnedAgents);
+    let trace: ApiExec['trace'];
+    let redacted: ApiExec['redacted'];
+    try {
+      ({ trace, redacted } = await execApi(request, config, ctx, redactor, baseDir, configDir, pinnedAgents));
+    } catch (err) {
+      // M143b (`M115-02`). The clamp above is decision 67's, and when *it* is what aborted the poll
+      // the deadline that expired is the wait budget. Reporting the abort verbatim named a figure
+      // the author never configured — `request timed out after 186.63485000000003ms` under
+      // `timeout wait 500ms` — and blamed a clock they were not watching. It also made the timeout
+      // test load-sensitive rather than deterministic: which of the two deadlines won depended on
+      // how busy the machine was, so a contended box produced a spurious red, and `mutate.mjs`
+      // takes a red baseline as fatal to a twenty-minute sweep.
+      //
+      // An UNCLAMPED request timeout is still the author's own `timeout` on the request, means what
+      // it says, and still surfaces unchanged. Only the clamp's own firing is re-attributed.
+      if (!(err instanceof RequestTimeoutError) || !clampedByWait) throw err;
+      const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
+      const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${last ? last.message : 'no poll completed before the deadline'}`;
+      return {
+        result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last?.redacted.request, last?.redacted.response),
+        response: last?.response ?? null,
+        request: last?.request ?? null,
+      };
+    }
     // `wait until api` never opts into catching a connection failure (`checkRequestAssertions`
     // statically forbids a `request` assertion here, decision 18) — `connectionError` is always
     // null; a real connection failure still throws out of `execApi` above and crashes the poll
