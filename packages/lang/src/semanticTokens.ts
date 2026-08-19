@@ -96,6 +96,22 @@ const KEYWORDS = new Set([
   // purpose: an uncoloured keyword is a cosmetic gap, a wrongly-coloured identifier is `M133-01`.
   'crawl', 'seed', 'openapi', 'traffic', 'spider',
   'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'ciphers', 'privileged',
+  // M142 (`M136b-01`). `honoring` is the one of that row's four words that passes D427a's test:
+  // `retry honoring "Retry-After" up to 3` is its only construction and nobody names a variable
+  // `honoring`. Its three siblings do NOT pass it and are exempted with reasons instead — `up`,
+  // `method` and `schema` are all ordinary identifiers (`capture body.method as method` is plain
+  // tflw), and painting them would repaint files that already parse, which is M133-01 and a higher
+  // severity than the gap it would close.
+  'honoring',
+  // M142, and the answer to a split this file had with `tflw.tmLanguage.json`: retired spellings are
+  // coloured, deliberately and in both paths. `uncheck` has been in this list since it was live and
+  // the grammar colours `think` as well, but this list lost `think` when FS-05 renamed it to `pause`
+  // — one rename, two catch-ups, opposite choices, and nothing able to notice. Colouring is the
+  // right side of that: `parser.ts` really does recognise both as statement keywords, purely so it
+  // can answer with a rename diagnostic, so the editor saying "I know this word" while the checker
+  // explains it moved is the truth. This is NOT the `h` case (`B5-10`), where a highlighter finished
+  // a literal the language never had.
+  'think',
 ]);
 
 /** Keywords the **config dialect alone** uses (`M136b`, D427/D427a) — added to `KEYWORDS` only when
@@ -162,6 +178,7 @@ const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'req
  * so it can't join `TYPES` as a literal wordlist entry; checked separately below (M33 catch-up). */
 const PERCENTILE_RE = /^p([1-9][0-9]?)$/;
 
+
 /** Generator words (tflw.tmLanguage.json's `keywords-generator`). */
 const FUNCTIONS = new Set([
   'unique', 'random', 'like', 'of', 'number', 'decimal', 'date', 'in', 'past', 'future', 'between', 'and',
@@ -175,6 +192,26 @@ const FUNCTIONS = new Set([
  * cosmetic (`D442`); over-colouring is the editor asserting something false about the language,
  * which is why this direction of drift is the one that always fixes. */
 const DURATION_UNITS = new Set(['ms', 's', 'm']);
+/**
+ * Every word this pass will paint, in either dialect — the union of the sets above, exported so
+ * `test/vocabulary.test.ts` can ask the one question none of them can answer alone: *is there a word
+ * `parser.ts` recognises that nothing here accounts for?*
+ *
+ * Built from the sets rather than written out, for the reason `parser.ts`'s `MATCHER_VOCABULARY`
+ * gives about its own hand-written twin (`OBS-04`): the hand-written version drifted, and omitted
+ * the most-used matcher in the language from a line presenting itself as the option set.
+ *
+ * `PERCENTILE_RE` is deliberately absent — `p95` is a pattern, not a word, and `parser.ts` accepts
+ * any `p<1-99>`, so there is nothing to enumerate and nothing for the guard to compare against.
+ */
+export const COLOURED_VOCABULARY: ReadonlySet<string> = new Set<string>([
+  ...KEYWORDS,
+  ...CONFIG_KEYWORDS,
+  ...OPERATORS,
+  ...TYPES,
+  ...FUNCTIONS,
+  ...DURATION_UNITS,
+]);
 
 /**
  * The other half of the answer to "does this pass colour every word the language has?" — `M142`
@@ -215,6 +252,12 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   ['max', "D442 — `max pages`/`max depth` are position-dependent, and `max` alone is an ordinary identifier"],
   ['pages', 'D442 — plausible as an identifier: `capture body.pages as pages` is ordinary tflw'],
   ['depth', 'D442 — same, and this list cannot say "only after `max`"'],
+  // M142 (`M136b-01`), the three of that row's four words that fail D427a's test. Their sibling
+  // `honoring` is coloured; these are not, and the asymmetry is the row's answer rather than a
+  // residue of it.
+  ['up', 'M136b-01 — `retry … up to 3`, and `up` is as ordinary an identifier as this language has'],
+  ['method', 'M136b-01 — `stub request … with method "POST"`, against `capture body.method as method`'],
+  ['schema', 'M136b-01 — `expect body matches schema "…"`, against a captured `schema` field'],
   ['non', 'not a word: a NEGATION_PREFIXES morpheme, used to decompose a mis-typed `nonvisible`'],
   ['un', 'not a word: same — the morpheme behind `unchecked`, never a token on its own'],
   ['im', 'not a word: same'],
@@ -245,6 +288,29 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   ['full', 'not a keyword: same, EVIDENCE_LEVELS — `evidence "full"`'],
   ['headers-only', 'not a keyword: same, and it could not be one — `-` lexes as `minus`, so no bare tflw keyword is hyphenated'],
   ['none', 'not a keyword: same, EVIDENCE_LEVELS'],
+  // `M142` commit 5, and none of these was known to anyone before the completeness assertion below
+  // was switched on — §2's hand audit of this same residue found 23 words and missed all nine.
+  //
+  // The date-offset units are REAL vocabulary: `today + 2 days` parses to a `DateOffsetLit`. They
+  // are uncoloured for the reason `up`/`method`/`schema` are, and by the same test — every one is an
+  // ordinary field name. Their duration cousins `ms`/`s`/`m` are painted only because they are
+  // written *adjacent* to their number and this pass merges them into the number token; `2 days` has
+  // a space in it, so there is nothing to merge.
+  ['seconds', 'D427a — `today + 2 seconds` is real, and `seconds` is an ordinary identifier'],
+  ['minutes', 'D427a — same'],
+  ['hours', 'D427a — same'],
+  ['days', 'D427a — same, and `capture body.days as days` is plain tflw'],
+  ['weeks', 'D427a — same'],
+  // Literals, not keywords, and this pass HAS no colour for them: `SemanticTokenType` is eight
+  // names and `constant` is not among them. `tflw.tmLanguage.json` paints all three
+  // `constant.language.tflw`, which is the right answer and one the LSP cannot currently give —
+  // painting them `keyword` would be a worse statement than painting nothing.
+  ['true', 'a literal — no `constant` semantic token type exists; TextMate paints it constant.language.tflw'],
+  ['false', 'a literal — same'],
+  ['null', 'a literal — same'],
+  // Not a word at all: `SCAN_KIND_PHRASES` holds PHRASES, because what the parser offers a user is
+  // always a whole phrase (`M134a`). Both of its words are coloured individually, in `OPERATORS`.
+  ['input handling', 'not a word: a multi-word scan-kind phrase — `input` and `handling` are coloured separately'],
 ]);
 
 /**
@@ -257,18 +323,25 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
  * hint (`:641`) — is a real defect and a different subject (diagnostics, not colouring). Filed as
  * `M142-01` rather than fixed here (`D556`).
  *
- * NOTE, for the commit that turns the completeness assertion on: `uncheck` is in `KEYWORDS` above
- * and so is coloured today, and `tflw.tmLanguage.json` colours `think` as well. Whether a retired
- * spelling should be painted — the editor saying "I know this word" while the checker explains it
- * was renamed — is a real question with a defensible answer either way, and it is deliberately NOT
- * settled by this commit, which only classifies. It is settled where colouring changes belong.
+ * The two RETIRED spellings are deliberately not here. `think` and `uncheck` are refused too, but
+ * they are refused with a rename to offer, and `M142` settled that such a word is coloured — see
+ * the note beside `'think'` in `KEYWORDS`. The three below have no rename to offer: the language
+ * simply does not have them.
  */
 export const REFUSED_ON_PURPOSE: ReadonlyMap<string, string> = new Map([
-  ['think', 'retired by FS-05, renamed to `pause` — RETIRED_STATEMENT_KEYWORDS'],
-  ['uncheck', 'retired by FS-04, renamed to `untick` — RETIRED_STATEMENT_KEYWORDS'],
   ['scenario', 'removed by M50/D93 — parser.ts:616 answers it with a D103 migration diagnostic'],
   ['tests', 'never a keyword: parser.ts:641 recognises it only to answer "did you mean `test`?"'],
   ['empty', 'never a matcher: parser.ts:3471 answers `is not empty` with the construction that works'],
+  // `M142` commit 5. These five look like the comparison family and are not in it: `has at least 1`
+  // is an ERROR (`parser.ts:3441`), and the words exist only so that reaching for a size comparison
+  // gets `COUNT_BOUND_HELP` instead of a bare vocabulary line. Their two real siblings `greater` and
+  // `less` parse, and are coloured — the half of the family that works is painted and the half that
+  // does not is not, which is the distinction a flat wordlist could never have drawn.
+  ['at', 'never a matcher: `has at least 1` is an error — parser.ts:3441 recognises it to hint'],
+  ['least', 'never a matcher: same'],
+  ['most', 'never a matcher: same'],
+  ['more', 'never a matcher: same — `has more than 1` is an error, unlike `greater than`'],
+  ['fewer', 'never a matcher: same'],
 ]);
 
 function spanLength(span: Span): number {

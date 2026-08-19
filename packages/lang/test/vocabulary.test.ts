@@ -44,7 +44,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { assertGolden } from './helpers.js';
-import { DELIBERATELY_UNCOLOURED, REFUSED_ON_PURPOSE } from '../src/semanticTokens.js';
+import { COLOURED_VOCABULARY, DELIBERATELY_UNCOLOURED, REFUSED_ON_PURPOSE } from '../src/semanticTokens.js';
 
 const PARSER_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'parser.ts');
 
@@ -210,5 +210,46 @@ test('every exemption names a word the parser still recognises, and nothing is e
     both,
     [],
     'a word cannot be both a keyword this pass declines to paint and a word the language does not have',
+  );
+});
+
+// THE ASSERTION THIS WHOLE MILESTONE EXISTS FOR (`M136b-01`). Four milestones — `M4a`, `M33`,
+// `M133`, `M136b` — each caught the LSP wordlists up to `parser.ts` by hand, each found a different
+// subset, and each recorded the catch-up as complete. None of them was lying: there was no way to
+// ask the question, so "I went through the parser and added what was missing" was the strongest
+// claim anyone could make, and it happened to be false four times running.
+//
+// This is that question, asked by a program. Every word `parser.ts` recognises must be accounted
+// for — painted, or named in an exemption map with a reason. **Unclassified fails.** What it buys
+// is not the words it finds today (§2 of the plan found those by hand); it is that the fifth
+// catch-up cannot be believed without being true.
+test('every word parser.ts recognises is either coloured or exempted with a reason (M136b-01, M142)', () => {
+  const unclassified = [...vocabulary.keys()]
+    .filter((word) => !COLOURED_VOCABULARY.has(word))
+    .filter((word) => !DELIBERATELY_UNCOLOURED.has(word) && !REFUSED_ON_PURPOSE.has(word))
+    .sort();
+
+  assert.deepEqual(
+    unclassified,
+    [],
+    'these words are in parser.ts and in nothing else — colour them, or add them to ' +
+      'DELIBERATELY_UNCOLOURED / REFUSED_ON_PURPOSE with the reason. Leaving one here is how the ' +
+      'previous four catch-ups each recorded themselves as complete',
+  );
+});
+
+// The same assertion pointed the other way, and it is the half that rots quietly. An exemption for a
+// word that has SINCE been coloured is invisible: everything is painted, everything passes, and a
+// map whose entries are supposed to be reasons is quietly carrying a lie about one of them.
+test('no word is both painted and exempted from being painted (M142, D551)', () => {
+  const contradictory = [...DELIBERATELY_UNCOLOURED.keys(), ...REFUSED_ON_PURPOSE.keys()]
+    .filter((word) => COLOURED_VOCABULARY.has(word))
+    .sort();
+
+  assert.deepEqual(
+    contradictory,
+    [],
+    'these words are coloured AND carry a written reason for not being coloured — delete the ' +
+      'exemption, which is now describing something that is not happening',
   );
 });
