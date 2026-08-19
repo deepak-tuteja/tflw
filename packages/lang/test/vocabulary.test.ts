@@ -139,6 +139,31 @@ test('the vocabulary parser.ts recognises, as a committed golden (M142, D553)', 
   assertGolden('vocabulary.txt', renderVocabulary(vocabulary));
 });
 
+// The second golden, and the interchange between this guard's two halves (`D555`). The TextMate
+// path lives in `packages/vscode`, which has no dependency on this package and should not gain one
+// for a test: it is a VS Code extension, not a consumer of the language server's internals.
+// Emitting the LSP's answer as data lets `grammar.test.ts` compare the two paths by machine without
+// either package importing the other's source — which is what `B5-09` needs and has never had.
+function renderColoured(coloured: ReadonlySet<string>): string {
+  const words = [...coloured].sort();
+  return [
+    '# words the LSP semantic-token pass paints — GENERATED from packages/lang/src/semanticTokens.ts.',
+    '# Do not hand-edit. Regenerate with `npm run test:update -w @tflw/lang` (M142, D553).',
+    '#',
+    '# Read by packages/vscode/test/grammar.test.ts, which holds the TextMate grammars to it.',
+    '# A word added here and nowhere else fails that test — the drift B5-09 records, caught at once',
+    '# rather than by the next milestone to audit two wordlists by hand.',
+    '#',
+    `# ${words.length} words`,
+    '',
+    ...words,
+  ].join('\n');
+}
+
+test('the words the LSP paints, as a committed golden (M142, D553, B5-09)', () => {
+  assertGolden('coloured.txt', renderColoured(COLOURED_VOCABULARY));
+});
+
 // The self-test (`D550`, and `M140-5`'s throwaway-repo pattern applied to a scrape): a guard built
 // out of an extraction is worth exactly what the extraction is worth, and this one's six ancestors
 // all passed while wrong. Each witness below is a word a *specific* earlier attempt lost, so a

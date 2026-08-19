@@ -34,6 +34,11 @@ async function createOnigLib(): Promise<IOnigLib> {
 
 let grammar: IGrammar;
 let configGrammar: IGrammar;
+/** Every grammar the manifest contributes, by scope name. `D558`: the completeness assertions below
+ * iterate this and never name a file — naming one grammar file is what made `M140` mis-stamp
+ * `B5-08` (it read one of two) and is how two of the seven vocabulary extractions silently lost
+ * words. A grammar contributed tomorrow is compared by these tests without anyone editing them. */
+const contributedGrammars = new Map<string, IGrammar>();
 
 before(async () => {
   // Resolves *every* grammar the manifest contributes, not just `source.tflw` (`M136b`, D427a).
@@ -50,13 +55,20 @@ before(async () => {
       return parseRawGrammar(readFileSync(path, 'utf8'), path);
     },
   });
-  const loaded = await registry.loadGrammar('source.tflw');
-  if (!loaded) throw new Error('failed to load source.tflw grammar');
-  grammar = loaded;
+  for (const { scopeName } of grammars) {
+    const loaded = await registry.loadGrammar(scopeName);
+    if (!loaded) throw new Error(`failed to load ${scopeName} grammar`);
+    contributedGrammars.set(scopeName, loaded);
+  }
 
-  const loadedConfig = await registry.loadGrammar('source.tflw.config');
-  if (!loadedConfig) throw new Error('failed to load source.tflw.config grammar');
-  configGrammar = loadedConfig;
+  // The two the example-based tests below name directly. Both are contributed, so these are lookups
+  // into the map above rather than a second load.
+  const base = contributedGrammars.get('source.tflw');
+  if (!base) throw new Error('the manifest no longer contributes source.tflw');
+  grammar = base;
+  const config = contributedGrammars.get('source.tflw.config');
+  if (!config) throw new Error('the manifest no longer contributes source.tflw.config');
+  configGrammar = config;
 });
 
 interface Token {
@@ -391,5 +403,139 @@ test('the config-only words are NOT keywords in the .tflw grammar (M136b, D427)'
     const token = lines[i]!.find((t) => t.text.trim() === word);
     if (!token) continue; // no token at all is also "not a keyword"
     assert.equal(hasScope(token, 'keyword.control.tflw'), false, `\`${word}\` must not be a keyword in a .tflw buffer`);
+  }
+});
+
+// -- M142 (`B5-09`, D555, D558): the two highlighting paths, compared by machine ----------------
+//
+// tflw colours source twice over. TextMate paints instantly from the grammars this package
+// contributes; the LSP repaints once the server attaches. Both are hand-typed copies of vocabulary
+// `parser.ts` owns, and until now nothing compared them — which is why `M4a`, `M33`, `M133` and
+// `M136b` each caught them up by hand, each found a different subset, and each recorded itself
+// complete. `B5-09` is the row for the drift that produced; these two tests are the machine asking
+// the question, in both directions, through the real tokenizer rather than a read of grammar JSON.
+
+/** `packages/lang` emits both goldens. Read as DATA, deliberately: this package has no dependency
+ * on `@tflw/lang` and a test is not the reason to add one. A path, not an import, is also what
+ * keeps the assertion honest about the TextMate side — it tokenizes, it does not read a wordlist. */
+const goldenDir = join(here, '..', '..', 'lang', 'test', '__golden__');
+
+function readGolden(file: string): string[] {
+  return readFileSync(join(goldenDir, file), 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '' && !line.startsWith('#'));
+}
+
+/** Every word the LSP semantic-token pass paints. */
+const colouredByLsp = new Set(readGolden('coloured.txt'));
+/** Every word `parser.ts` recognises. `<flags> <word>`; the mechanism column is `lang`'s business. */
+const parserVocabulary = readGolden('vocabulary.txt').map((line) => line.slice(4));
+
+/**
+ * The three words a bare-word probe cannot see, each with the literal that shows it being painted.
+ *
+ * A duration unit has no token of its own in either path: `5m` is ONE numeric literal and the unit
+ * is coloured as part of that literal's span. So `m` alone on a line really is unpainted, and that
+ * is correct rather than drift — the language does not accept it there either. Exempting the three
+ * would have been the cheap move; giving each a line the language *does* accept asserts more than
+ * the exemption would, and it is `B5-10` pointing the other way — commit 1 took `h` out of both
+ * paths, and this holds the three real units asserted in both from here on.
+ */
+const PAINTED_IN_CONTEXT = new Map([
+  ['ms', '250ms'],
+  ['s', '30s'],
+  ['m', '5m'],
+]);
+
+/**
+ * Does any contributed grammar give this word a scope of its own?
+ *
+ * One word per line by default, matching `CONFIG_ONLY_WORDS` above: this is a vocabulary question,
+ * and it must fail for a missing word rather than for a surrounding rule that claimed the span
+ * first. A token's `scopes` always opens with the grammar's own root scope, so anything past the
+ * first is a colour.
+ */
+function paintedByAnyGrammar(word: string): boolean {
+  const literal = PAINTED_IN_CONTEXT.get(word);
+  const line = literal === undefined ? `  ${word}` : `  timeout ${literal}`;
+  const target = literal ?? word;
+  return [...contributedGrammars.values()].some((g) =>
+    tokenizeLines([line], g)[0]!.some((t) => t.text.trim() === target && t.scopes.length > 1),
+  );
+}
+
+/**
+ * The one legitimate asymmetry between the paths, and it is not drift.
+ *
+ * TextMate paints these `constant.language.tflw`. The LSP cannot: `SemanticTokenType` has eight
+ * members and `constant` is not among them, and inventing one to settle a cosmetic tie would change
+ * the protocol to satisfy a symmetry — which §8 of this milestone's plan refuses. `semanticTokens.ts`
+ * carries the same three words in `DELIBERATELY_UNCOLOURED`, giving the same reason from the other
+ * side, and the integrity test below stops this list outliving the situation it describes.
+ */
+const PAINTED_ONLY_BY_TEXTMATE = new Map([
+  ['true', 'constant.language.tflw; the LSP has no `constant` semantic token type'],
+  ['false', 'constant.language.tflw; the LSP has no `constant` semantic token type'],
+  ['null', 'constant.language.tflw; the LSP has no `constant` semantic token type'],
+]);
+
+test('the goldens are really read — the vacuity this whole cluster is about (M142)', () => {
+  // Both assertions below are `filter(...)` over these two collections. If a golden ever parsed to
+  // nothing, both would pass, forever, having compared nothing — which is precisely the failure
+  // shape Order 3 exists to repair, and it would be embarrassing to ship it inside the repair.
+  assert.ok(colouredByLsp.size > 0, 'coloured.txt parsed to no words at all');
+  assert.ok(parserVocabulary.length > 0, 'vocabulary.txt parsed to no words at all');
+  // Non-empty is not enough: a parse that dropped the header but mangled the words would pass it.
+  // These two are words M142 itself moved, so a mangled read fails here, by name.
+  assert.ok(colouredByLsp.has('honoring'), '`honoring` entered COLOURED_VOCABULARY in M142; coloured.txt is misparsed');
+  assert.ok(parserVocabulary.includes('schema'), '`schema` is the word `M136b-01` names; vocabulary.txt is misparsed');
+});
+
+test('every word the LSP paints, a contributed grammar paints too (B5-09, M142, D558)', () => {
+  const lspOnly = [...colouredByLsp].filter((word) => !paintedByAnyGrammar(word)).sort();
+
+  assert.deepEqual(
+    lspOnly,
+    [],
+    'these words colour once the language server attaches and are plain text until then — the ' +
+      'flicker `B5-09` describes. Add each to the grammar that owns its dialect, or, if it should ' +
+      'not be coloured at all, take it out of the LSP wordlist instead',
+  );
+});
+
+test('no grammar paints a parser word the LSP leaves grey (B5-09, M142)', () => {
+  // The direction `B5-09` filed as empty and `M140` measured as non-empty. It is the more dangerous
+  // one: a word TextMate paints and the LSP does not CHANGES COLOUR under the user as the server
+  // attaches, where the other direction merely arrives late.
+  const textMateOnly = parserVocabulary
+    .filter((word) => !colouredByLsp.has(word) && !PAINTED_ONLY_BY_TEXTMATE.has(word))
+    .filter(paintedByAnyGrammar)
+    .sort();
+
+  assert.deepEqual(
+    textMateOnly,
+    [],
+    'these are coloured by a grammar and not by the LSP, so they change colour when the server ' +
+      'attaches. Either add them to the LSP wordlist or remove them from the grammar',
+  );
+});
+
+test('every in-context probe still probes the word it claims to (M142, D551)', () => {
+  // Same rot, same shape: a literal that stopped containing its word, or a word that has since left
+  // the LSP's list, would leave this map describing something that is not happening while everything
+  // still passes. `250ms` is a duration; `250mss` would be a probe for nothing.
+  for (const [word, literal] of PAINTED_IN_CONTEXT) {
+    assert.ok(literal.endsWith(word), `\`${literal}\` is the probe for \`${word}\` and does not end with it`);
+    assert.ok(/^\d+(\.\d+)?[a-z]+$/.test(literal), `\`${literal}\` is not a duration literal, so it proves nothing about \`${word}\``);
+    assert.ok(colouredByLsp.has(word), `\`${word}\` is no longer in the LSP wordlist — delete its probe rather than leaving a dead one`);
+  }
+});
+
+test('every claimed TextMate-only word still is one (M142, D551)', () => {
+  // The same rot the `lang` side guards against, in the one map this file owns: an entry describing
+  // a state of affairs that has since changed is invisible, because everything still passes.
+  for (const [word, why] of PAINTED_ONLY_BY_TEXTMATE) {
+    assert.ok(paintedByAnyGrammar(word), `\`${word}\` is exempted as TextMate-only but no grammar paints it — delete the entry`);
+    assert.equal(colouredByLsp.has(word), false, `\`${word}\` is exempted as TextMate-only but the LSP now paints it too — delete the entry (${why})`);
   }
 });
