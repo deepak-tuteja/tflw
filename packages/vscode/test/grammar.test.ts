@@ -317,6 +317,21 @@ test('tokenizes every p50/p90/p95/p99 percentile form, but leaves a similarly-sh
   assert.equal(hasScope(varToken!, 'support.type.tflw'), false, '`p100x` is not a valid percentile shape and should not be tagged as one');
 });
 
+test('`h` is not a tflw duration unit, so `5h` produces no numeric token at all (B5-10, M142)', () => {
+  // `parser.ts`'s `DURATION_UNITS` is `['ms','s','m']` and its docblock explains the hour/day/week
+  // family is deliberately absent. The `numbers` pattern used to close on `(ms|s|m|h)?`, so `5h`
+  // rendered as a finished duration literal that the checker then rejects with `TF023`. With `h`
+  // gone the pattern cannot match `5h` at all — `\b` fails between the digit and the letter — and
+  // painting none of it is the honest answer: `5h` is not a literal in this language.
+  const lines = tokenizeLines(['  timeout step 5h', '  timeout step 5m']);
+
+  const bad = lines[0]!.filter((t) => hasScope(t, 'constant.numeric.tflw')).map((t) => t.text);
+  assert.deepEqual(bad, [], '`5h` must not be coloured as a numeric literal');
+
+  const good = lines[1]!.filter((t) => hasScope(t, 'constant.numeric.tflw')).map((t) => t.text);
+  assert.deepEqual(good, ['5m'], '`5m` is a real duration and must still tokenize as one numeric literal');
+});
+
 test('tokenizes tflw.config keywords (env/defaults/require/session) and env(NAME) calls', () => {
   const lines = tokenizeLines(['env local default', '  api "http://localhost:3001"', '', 'require env ADMIN_TOKEN', '', 'session admin', '  header "Authorization" is env(ADMIN_TOKEN)']);
 

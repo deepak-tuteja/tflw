@@ -66,6 +66,20 @@ test('collectSemanticTokens: numbers, including a duration literal merged with i
   assert.equal(dur!.span.end.offset - dur!.span.start.offset, '5000ms'.length);
 });
 
+test('collectSemanticTokens: `h` is not a duration unit, so `5h` is not merged into one number token (B5-10, M142)', () => {
+  // `parser.ts`'s `DURATION_UNITS` is `['ms','s','m']`, and its docblock says the hour/day/week
+  // family is deliberately absent — `5h` is `TF023: unknown time unit`. This list used to carry a
+  // fourth entry `h`, so the editor rendered `5h` as a finished duration literal and the checker
+  // then rejected it. Colouring a word the lexer rejects is the one drift direction that is never
+  // cosmetic: it is the editor asserting something false about the language.
+  const source = `test "ok"\n  api GET /health\n  expect duration is less than 5h\n`;
+  const tokens = tokensOf(source);
+  const tok = findToken(tokens, source, '5h');
+  assert.ok(tok, 'the bare number is still a token');
+  assert.equal(tok!.type, 'number');
+  assert.equal(tok!.span.end.offset - tok!.span.start.offset, 1, '`h` must be left uncoloured, not swallowed into the number');
+});
+
 test('collectSemanticTokens: variable def/ref (bare and inside string interpolation)', () => {
   const source = `test "ok"\n  let orderId = unique("ord")\n  api GET /orders/{orderId}\n    header "Authorization" is "Bearer {orderId}"\n  expect status equals 200\n`;
   const tokens = tokensOf(source);

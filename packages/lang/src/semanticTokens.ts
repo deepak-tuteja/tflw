@@ -168,8 +168,13 @@ const FUNCTIONS = new Set([
   'string', 'email', 'today', 'now', 'format', 'uuid', 'password', 'base64', 'hex', 'url', 'encode', 'decode',
 ]);
 
-/** Duration unit suffixes (`parser.ts`'s `DURATION_UNITS` + the bare `ms`/`h` forms the lexer splits off). */
-const DURATION_UNITS = new Set(['ms', 's', 'm', 'h']);
+/** Duration unit suffixes the lexer splits off a number — `parser.ts`'s `DURATION_UNITS`, and
+ * nothing beyond it. A fourth entry `h` sat here until `M142` (`B5-10`): `parser.ts:443` explains
+ * the hour/day/week family is *deliberately* absent, so `timeout step 5h` is `TF023` — and this
+ * list rendered it as a finished duration literal on the way to that error. Under-colouring is
+ * cosmetic (`D442`); over-colouring is the editor asserting something false about the language,
+ * which is why this direction of drift is the one that always fixes. */
+const DURATION_UNITS = new Set(['ms', 's', 'm']);
 
 function spanLength(span: Span): number {
   return span.end.offset - span.start.offset;

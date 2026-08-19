@@ -83,7 +83,7 @@
       "name": "constant.language.tflw"
     },
     "numbers": {
-      "match": "\\b\\d+(\\.\\d+)?(ms|s|m|h)?\\b",
+      "match": "\\b\\d+(\\.\\d+)?(ms|s|m)?\\b",
       "name": "constant.numeric.tflw"
     },
     "operators": {
