@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CLI_FLAGS } from '@tflw/lang';
+import { ARTIFACT_CONTRACT } from '@tflw/reporter';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -4526,6 +4527,37 @@ test('the built dist/cli.cjs runs an input-handling scan end to end against a re
     assert.deepEqual(sarif.runs[0]!.results, []);
     assert.ok(sarif.runs[0]!.tool.driver.rules.length > 0, 'a clean scan still names what it checked');
     assert.ok(sarif.runs[0]!.properties['tflw/notApplicable'], 'and what it did not');
+
+    // M141 (`M137a-01`) — the `results.json` half of the same cross-repo contract, asserted on this
+    // run's real document. It rides on this test rather than getting its own because the fixture
+    // already produces the state the contract is about, and a second scan run to assert names would
+    // cost thirty seconds to learn nothing new.
+    //
+    // **Why not in `sarif.test.ts` beside the other contract walk.** That file can only hand
+    // `writeResultsJson` a `RunReport` literal it wrote itself, and `writeResultsJson` is
+    // `JSON.stringify` — so the walk would be reading back the fixture's own keys and would pass
+    // through any rename of the real emitter. The keys are produced by `buildScanCoverage` in
+    // `cli.ts`, and this is the nearest test that observes what that function actually wrote,
+    // through the shipped binary. A contract test that cannot fail is the defect `M141` is closing,
+    // so it is not one this milestone gets to introduce.
+    const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as Record<string, unknown>;
+    const rc = ARTIFACT_CONTRACT.results;
+    const coverage = results[rc.scanCoverage] as Record<string, unknown>[] | undefined;
+    assert.ok(Array.isArray(coverage) && coverage.length > 0, `results.json carries a non-empty \`${rc.scanCoverage}\``);
+    for (const field of Object.values(rc.scanCoverageFields)) {
+      assert.ok(Object.hasOwn(coverage![0]!, field), `a census entry carries \`${field}\``);
+    }
+    // Both halves have to be non-empty or the walk below is vacuous in the way this milestone is
+    // about: an empty `notApplicable` array has no entry to check the field names of, and the loop
+    // would pass by iterating nothing. This fixture withholds two payload classes and reflects
+    // none, so it stands three rules down while `sec/error-detail-disclosure` applies.
+    const applied = coverage!.flatMap((c) => c[rc.scanCoverageFields.applied] as string[]);
+    const notApplicable = coverage!.flatMap((c) => c[rc.scanCoverageFields.notApplicable] as Record<string, unknown>[]);
+    assert.ok(applied.length > 0, 'the fixture applies at least one rule');
+    assert.ok(notApplicable.length > 0, 'and stands at least one down — otherwise the field walk below iterates nothing');
+    for (const field of Object.values(rc.notApplicableFields)) {
+      assert.ok(Object.hasOwn(notApplicable[0]!, field), `a stood-down entry carries \`${field}\` — the name \`verify-security-acceptance.mjs\` reads`);
+    }
   } finally {
     await rm(dir, { recursive: true, force: true });
     server.closeAllConnections();
