@@ -221,3 +221,100 @@ test('D330: `probe mutating` is shown on the target it was declared under', () =
   assert.match(out, /a\.test — ours \(probe mutating\)/);
   assert.doesNotMatch(out, /b\.test — also ours \(probe mutating\)/);
 });
+
+// -- `M146a`: the console tells you what it already knows ---------------------------------------
+//
+// Two rows, one renderer. `B4-12` is about a detail the console *has* and mangles; `M113-02` is
+// about a reason the console *has* and drops entirely. Both are the block that prints under a
+// failing entry, which is why they are fixed and tested together rather than in sequence.
+
+test('every line of a multi-line detail is indented to the block column, not just the first (B4-12)', () => {
+  const out = renderCliSummary(
+    {
+      ...baseReport,
+      ok: false,
+      passed: 0,
+      failed: 1,
+      tests: [
+        {
+          kind: 'functional',
+          name: 'scan the response',
+          ok: false,
+          durationMs: 5,
+          steps: [
+            {
+              kind: 'expect',
+              source: 'expect response has no security violations',
+              line: 4,
+              ok: false,
+              durationMs: 1,
+              detail: 'expected response to have no security violations, but found 2:\n  - [moderate] sec/nosniff-missing: X-Content-Type-Options absent\n  - [low] sec/referrer-policy: Referrer-Policy absent',
+            },
+          ],
+        },
+      ],
+    },
+    false,
+  );
+  const detailLines = out.split('\n').filter((l) => l.includes('sec/'));
+  assert.equal(detailLines.length, 2, `expected both finding lines to render, got ${detailLines.length}`);
+  for (const line of detailLines) {
+    // At *least* the block column. The row's complaint was column 2 — a finding line rendered flush
+    // against the per-step listing, reading as a new entry rather than as evidence for the ✗ above
+    // it. Six is the floor, not the target: the detail's own two-space indent is authored structure
+    // and is preserved on top of it, which is why this is `{6,}` and the next assertion exists.
+    assert.match(line, /^ {6,}- \[/, `every continuation line clears the detail column, got ${JSON.stringify(line)}`);
+  }
+  assert.ok(
+    detailLines.every((l) => l.startsWith('      ' + '  - [')),
+    'the detail\'s own relative indentation survives the re-indent — the renderer shifts the block, it does not reflow it',
+  );
+});
+
+test('a failed entry with no steps prints its error rather than only its name (M113-02)', () => {
+  const out = renderCliSummary(
+    {
+      ...baseReport,
+      ok: false,
+      passed: 0,
+      failed: 1,
+      tests: [
+        {
+          kind: 'functional',
+          name: 'suite.tflw (crashed)',
+          ok: false,
+          durationMs: 0,
+          steps: [],
+          file: 'suite.tflw',
+          error: 'could not load JS helper module "./helper.ts" (resolved /tmp/helper.ts): boom from the escape hatch',
+        },
+      ],
+    },
+    false,
+  );
+  assert.match(out, /could not load JS helper module "\.\/helper\.ts"/, 'the console is the surface a person watches; it must not be the only sink that withholds the reason');
+  assert.match(out, /boom from the escape hatch/, 'the cause, not just the wrapper');
+});
+
+test('a multi-line error is indented like a multi-line detail — one renderer, one rule (M113-02, B4-12)', () => {
+  const out = renderCliSummary(
+    {
+      ...baseReport,
+      ok: false,
+      passed: 0,
+      failed: 1,
+      tests: [
+        { kind: 'functional', name: 'suite.tflw (crashed)', ok: false, durationMs: 0, steps: [], error: 'first line\nsecond line' },
+      ],
+    },
+    false,
+  );
+  const second = out.split('\n').find((l) => l.includes('second line'));
+  assert.ok(second !== undefined, 'the error survives past its first line');
+  assert.match(second, /^ {6}second line$/, `continuation lines share the detail column, got ${JSON.stringify(second)}`);
+});
+
+test('a passing entry with no steps stays a single line — the error block must not be ambient (M113-02)', () => {
+  const out = renderCliSummary(baseReport, false);
+  assert.doesNotMatch(out, /^ {4}✗/m, 'nothing failed, so nothing renders a failure block');
+});
