@@ -220,6 +220,31 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   ['im', 'not a word: same'],
   ['dis', 'not a word: same'],
   ['Retry-After', 'not a keyword: a header NAME the parser validates against, written as a string'],
+  // `M142` commit 4, and the plan's `D552` REVERSED BY MEASUREMENT. These nine are the enumerated
+  // values of `evidence`, `log level` and `log destination`, and `D552` decided to colour them by
+  // adding them to `CONFIG_KEYWORDS`. They cannot be reached that way: every one is written as a
+  // STRING — `parseEvidenceDecl` and `parseLogConfigDecl` both call `expectString` — so the lexer
+  // hands this pass one `string` token and `CONFIG_KEYWORDS`, which is consulted against `ident`
+  // tokens, would never see them. Nine entries that can never fire is the disease, not the cure.
+  //
+  // `D552`'s reason was an inconsistency that measurement says does not exist: it held that
+  // `log level "error"` lights up while `log level "debug"` stays grey, because `threshold error
+  // rate` had put `error` in `TYPES`. In that clause NEITHER lights up — `error` is inside a string
+  // there too, and it colours as a `type` only in the other dialect and a different construction.
+  // Measured on 2026-08-19; the boundary is pinned by a test in `semanticTokens.test.ts`.
+  //
+  // What is left is a real question this milestone does not answer: whether the editor should paint
+  // enumerated values *inside* strings at all. That is a new capability, not a wordlist entry, and
+  // it is a product decision (`D538`).
+  ['debug', 'not a keyword: an enumerated STRING value — `log level "debug"`, coloured as the string it is'],
+  ['info', 'not a keyword: same, LOG_LEVELS'],
+  ['warn', 'not a keyword: same, LOG_LEVELS'],
+  ['console', 'not a keyword: same, LOG_DESTINATIONS — `log destination "console"`'],
+  ['html', 'not a keyword: same, LOG_DESTINATIONS'],
+  ['both', 'not a keyword: same, LOG_DESTINATIONS'],
+  ['full', 'not a keyword: same, EVIDENCE_LEVELS — `evidence "full"`'],
+  ['headers-only', 'not a keyword: same, and it could not be one — `-` lexes as `minus`, so no bare tflw keyword is hyphenated'],
+  ['none', 'not a keyword: same, EVIDENCE_LEVELS'],
 ]);
 
 /**

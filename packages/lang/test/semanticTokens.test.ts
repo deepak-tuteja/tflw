@@ -430,3 +430,44 @@ test('collectSemanticTokens: returned tokens are sorted by start offset with no 
     );
   }
 });
+
+// M142 commit 4 — the boundary `D552` was reversed on. The nine enumerated values of `evidence`,
+// `log level` and `log destination` are the residue of the vocabulary walk that nobody had ever
+// asked a question about, and the plan decided to colour them by putting them in `CONFIG_KEYWORDS`.
+// They cannot be reached that way: every one is written as a STRING, so the lexer hands this pass a
+// single `string` token and a set consulted against `ident` tokens never sees the word inside it.
+//
+// This pins that boundary, so a future "catch-up" that adds them to a wordlist is answered by a test
+// rather than by nine entries that silently never fire — and so that teaching this pass to paint
+// inside strings has to be a decision somebody takes, not a side effect.
+//
+// `D552`'s stated reason was an inconsistency that does not exist: it held that `log level "error"`
+// lights up while `log level "debug"` stays grey, in the same clause, because `threshold error rate`
+// had put `error` in `TYPES`. In that clause NEITHER lights up. `error` is a `type` only in the other
+// dialect and a different construction — which the `users`/`rps`/`error`/`rate` test above ALREADY
+// asserts, so the other half of this measurement needed no new test and does not get one.
+test('M142: the enumerated config VALUES are strings, not keywords, while the keys around them are', () => {
+  const source = 'defaults\n  evidence "headers-only"\n  log level "error"\n  log destination "console"\n';
+  const { config, diagnostics } = parseConfigSource(source);
+  assert.deepEqual(diagnostics.map((d) => d.message), [], 'the fixture config must parse cleanly');
+  const tokens = collectSemanticTokens(source, collectConfigSymbols(config, source), 'config');
+
+  // The keys are keywords, and stay so — this half is the control. Without it the assertion below
+  // would also pass against a pass that had stopped colouring the config dialect altogether.
+  assertTypeAt(tokens, source, 'evidence', 'keyword');
+  assertTypeAt(tokens, source, 'level', 'keyword');
+  assertTypeAt(tokens, source, 'destination', 'keyword');
+
+  // The values carry no token of their own at all. Asserted by span containment rather than by
+  // "no token whose text is `error`", because the point is that the *word* is not addressable here:
+  // it is interior to a string the lexer produced in one piece.
+  for (const value of ['headers-only', 'error', 'console']) {
+    const at = source.indexOf(`"${value}"`) + 1;
+    const covering = tokens.filter((t) => t.span.start.offset <= at && t.span.end.offset > at);
+    assert.deepEqual(
+      covering.map((t) => t.type),
+      [],
+      `\`${value}\` is inside a string literal and must not be classified — it is a value, not a keyword`,
+    );
+  }
+});
