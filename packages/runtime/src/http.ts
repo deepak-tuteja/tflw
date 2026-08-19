@@ -11,6 +11,20 @@ import { AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.
 import { MAX_REDIRECTS, RedirectLimitError, chainCookieForRedirect, cookieEventFor, isRedirectLimitCause, isRedirectStatus, nextRedirectHop, redirectLimitMessage } from './redirect.js';
 import type { CookieEvent, ResponseTrace } from './types.js';
 
+/**
+ * A request this client aborted on its own timeout, distinguishable by **type** rather than by
+ * matching its text — the reason `RedirectLimitError` and `AllowHostsError` exist, applied to the
+ * third thing a caller needs to tell apart from a transport failure.
+ *
+ * `wait until api` is that caller (`M115-02`, M143b). Decision 67 clamps every poll's request
+ * timeout to what is left of the *wait* budget, so a timeout at the clamped value is the wait
+ * deadline expiring wearing a request timeout's clothes: the step used to report
+ * `request timed out after 186.63485000000003ms`, a figure the author never configured, about a
+ * clock they were not watching. The message is unchanged — this is a subclass so every existing
+ * reader, matcher and report line sees exactly what it saw before.
+ */
+export class RequestTimeoutError extends RuntimeError {}
+
 export interface SendRequestOptions {
   readonly method: string;
   readonly url: string;
@@ -189,7 +203,7 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
       // buries it in undici's cause the same way the pooled path does (M88a, `B4-09`/`B4-10`).
       if (err instanceof RedirectLimitError) throw err;
       if (isRedirectLimitCause(err)) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
-      if ((err as { timedOut?: boolean }).timedOut) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
+      if ((err as { timedOut?: boolean }).timedOut) throw new RequestTimeoutError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
       throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err, opts.url)}`);
     }
   }
@@ -225,7 +239,7 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     // security directive must not decide what a redirect loop means (`B4-14`).
     if (err instanceof RedirectLimitError) throw err;
     if (isRedirectLimitCause(err)) throw new RedirectLimitError(redirectLimitMessage(opts.method, opts.url));
-    if (controller.signal.aborted) throw new RuntimeError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
+    if (controller.signal.aborted) throw new RequestTimeoutError(`request timed out after ${opts.timeoutMs}ms: ${opts.method} ${opts.url}`);
     throw new RuntimeError(`request failed: ${opts.method} ${opts.url} — ${(err as Error).message}${fetchErrorHint(err, opts.url)}`);
   } finally {
     clearTimeout(timer);

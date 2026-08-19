@@ -410,6 +410,66 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     decidable: 'needs-io',
     note: 'the network',
   },
+  // M143b — the nine sites the collector could not see.
+  //
+  // `runtimeThrowSites` matched the literal string `throw new RuntimeError(`, so every subclass was
+  // outside the corpus: `AllowHostsError` (5) and `RedirectLimitError` (4) had never been described
+  // by a row, and the completeness test cannot report a site it never collected. The needle set is
+  // now derived from `class … extends RuntimeError`, and these are the rows that owed.
+  //
+  // None is `'static'`. `allow hosts` is decidable from the AST only for a literal absolute URL —
+  // which the checker already decides, `TF061` — and every site below is reached with a URL that
+  // came from a redirect hop or an interpolated value, i.e. from the network.
+  {
+    id: 'http-redirect-limit',
+    file: 'http.ts',
+    // ONE row for four sites across two clients, and that is `M85`'s design showing through rather
+    // than an imprecision: `redirect.ts` states the cap once so the third client to need it adds a
+    // caller and not a fourth opinion, which means the two clients throw a byte-identical message
+    // and `matchesRule` — which reads the argument text, not the file — cannot tell them apart.
+    // Splitting the row would need two spellings of one decision, which is the thing `M85` removed.
+    excerpt: 'redirectLimitMessage(opts.method, opts.url)',
+    sites: 4,
+    decidable: 'needs-io',
+    note: 'the number of hops a server chooses to serve — 3 in http.ts, 1 in httpPinned.ts',
+  },
+  {
+    id: 'http-allow-hosts-redirect',
+    file: 'http.ts',
+    excerpt: "allowHostsRefusal(hop.url, opts.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` })",
+    decidable: 'needs-io',
+    note: 'the host is one a server redirected to — `TF061` decides the literal URL a step names, and nothing after it',
+  },
+  {
+    id: 'http-pinned-allow-hosts-redirect',
+    file: 'httpPinned.ts',
+    excerpt: "allowHostsRefusal(hop.url, current.allowHosts!, { kind: 'redirect', from: `${current.method} ${current.url}` })",
+    decidable: 'needs-io',
+    note: 'as above, on the pinned client',
+  },
+  {
+    id: 'interpreter-allow-hosts-request',
+    file: 'interpreter.ts',
+    excerpt: "allowHostsRefusal(url, config.allowHosts!, { kind: 'request' })",
+    decidable: 'static-if-literal',
+    checkerCode: 'TF061',
+    note: 'the checker decides this for a literal absolute URL; an interpolated one resolves at run time',
+  },
+  {
+    id: 'interpreter-allow-hosts-absolute-url',
+    file: 'interpreter.ts',
+    excerpt: 'absoluteUrlNeedsAllowHosts(url)',
+    decidable: 'static-if-literal',
+    checkerCode: 'TF061',
+    note: 'as above — the same rule reached with no `allow hosts` list configured at all',
+  },
+  {
+    id: 'interpreter-allow-hosts-after-redirect',
+    file: 'interpreter.ts',
+    excerpt: 'refusalAfter',
+    decidable: 'needs-io',
+    note: 'the refusal is composed from a hop the server chose',
+  },
   {
     id: 'http-request-failed',
     file: 'http.ts',
