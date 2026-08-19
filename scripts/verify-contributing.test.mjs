@@ -77,9 +77,9 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
-    cmd: 'npx playwright install --with-deps chromium firefox',
+    cmd: 'npx playwright install chromium firefox',
     class: 'setup',
-    why: 'playwright has no postinstall download hook; the browser-arc suites launch real Chromium/Firefox. Once per clone locally, not per run',
+    why: 'playwright has no postinstall download hook; the browser-arc suites launch real Chromium/Firefox. Once per clone locally, not per run. No `--with-deps` since `M143a` — CONTRIBUTING keeps it because a fresh developer machine may genuinely lack the libraries, and pays the apt cost once rather than fourteen times per run',
   },
   { wf: 'ci.yml', job: 'test', cmd: 'npm run build', class: 'gate', local: 'npm run build', why: 'every workspace compiles, and produces the same bundle `npm publish` would ship' },
   { wf: 'ci.yml', job: 'test', cmd: 'npm run typecheck', class: 'gate', local: 'npm run typecheck', why: 'types across all seven workspaces' },
@@ -112,7 +112,7 @@ const CLASSIFIED = [
 
   // --- ci.yml, job `mutations` (12 shards) ------------------------------------------------------
   { wf: 'ci.yml', job: 'mutations', cmd: 'npm ci', class: 'setup', why: 'dependency install, again — this job is a fresh runner' },
-  { wf: 'ci.yml', job: 'mutations', cmd: 'npx playwright install --with-deps chromium firefox', class: 'setup', why: 'the sweep baselines `tflw`, whose cli suite launches real headed Chromium' },
+  { wf: 'ci.yml', job: 'mutations', cmd: 'npx playwright install chromium firefox', class: 'setup', why: 'the sweep baselines `tflw`, whose cli suite launches real headed Chromium. `M143a` dropped `--with-deps` here first: this step stalled at 30m on nine of twelve shards of run 32272901684, which applied zero mutations between them' },
   {
     wf: 'ci.yml',
     job: 'mutations',
