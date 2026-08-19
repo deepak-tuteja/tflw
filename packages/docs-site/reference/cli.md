@@ -4,10 +4,9 @@ title: CLI flags reference
 
 <script setup>
 import { CLI_FLAGS } from '../../lang/src/spec-data.ts';
-// Both markdown fences, doubled first — see reference/diagnostics.md for the failure a
-// single-fence regex has on a span containing a backtick of its own. This manifest carries no
-// doubled fence today, so the fix is pre-emptive: it is the same one line in four files.
-const code = (s) => s.replace(/``\s?([\s\S]+?)\s?``|`([^`]+)`/g, (_, doubled, single) => `<code>${doubled ?? single}</code>`);
+// `code()` turns spec-data.ts's markdown inline-code spans into <code> tags for the plain HTML
+// table below; it is one shared module because it used to be four identical copies (`M110b-02`).
+import { code } from '../.vitepress/mdCode.ts';
 const runFlags = CLI_FLAGS.filter((f) => f.command === 'run');
 const checkFlags = CLI_FLAGS.filter((f) => f.command === 'check');
 const initFlags = CLI_FLAGS.filter((f) => f.command === 'init');

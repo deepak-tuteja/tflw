@@ -1,8 +1,16 @@
-// Semantic checks that go beyond grammar. M1 covers the config dialect (PLAN P#28): a key must
-// appear in the right block, and env `default`/name conflicts are errors. M2 adds named-service
-// validation against the active env (P#29). M2.65 adds a conservative unknown-variable pass
-// (decision 57); full matcher↔subject compatibility checking is still deferred to a later
-// milestone (SPEC §1's "static scope" note).
+// Semantic checks that go beyond grammar — the `check*` passes `checkProgram` composes, plus the
+// config-level ones `run`/`check`/the LSP call around it.
+//
+// The milestone names below are each pass's *origin*, not this file's current scope. M1 covered the
+// config dialect (PLAN P#28): a key must appear in the right block, and env `default`/name
+// conflicts are errors. M2 added named-service validation against the active env (P#29). M2.65
+// added a conservative unknown-variable pass (decision 57). The list has grown through the
+// enterprise, browser, perf and security arcs since, and no guard holds a prose scope note to it.
+//
+// **Matcher↔subject compatibility is no longer deferred** — M97b shipped it as `TF042`, over the
+// subject's *kind* and no further, reading `MATCHERS` directly so §6.2's table and this checker are
+// one statement rather than two. This header claimed the opposite for eleven milestones, and SPEC
+// §1's own note — the thing it pointed at for authority — had already been corrected (`A4-19`).
 
 import type {
   ActionDecl,

@@ -49,13 +49,19 @@ export class TflwSyntaxError extends Error {
   }
 }
 
-/** Diagnostic codes used by the M0 lexer/parser. Kept in one place so they stay unique. Meanings:
+/** **Every diagnostic code tflw assigns** — lexer, parser, config dialect, checker passes and the
+ * security scans alike. Kept in one place so they stay unique. This comment read "codes used by the
+ * M0 lexer/parser" until `M144b` (`A4-19`): that scope ended at `TF016`, and the list has run past
+ * it in every arc since. A heading that names a milestone dates itself the moment the next one
+ * lands, so this one names the *contents* instead. Meanings:
  * see `DIAGNOSTICS` in `spec-data.ts` (decision 20.7, docs-site polish cluster 9) — the single
  * source of truth for what each code means, feeding SPEC.md §17, the docs-site Reference page,
  * and LSP hover.
  *
  * **Before you delete an entry here, read this — you are the condition it names.** No code has ever
- * been retired (M132 measured it: 57 assigned, zero removals in this file's history). The day one
+ * been retired (`M132` measured it: 57 assigned then, zero removals in this file's history — the
+ * count has grown since, the zero has not, and `diagnosticsCoverage.test.ts` has held both
+ * directions against `DIAGNOSTICS` since `M86`). The day one
  * is, `testFlow-tests` breaks: `scripts/verify-check-diagnostics.mjs` asserts against the *installed*
  * bundle in both directions, so a dogfood fixture keyed to the removed code reports "is dogfooded
  * but is not in the installed tflw's manifest" — a message that cannot tell *retired* from *the
