@@ -2373,7 +2373,15 @@ interface SessionRefreshResult {
  * concurrently-running sibling test or the shared cache. Stops at the first session that fails to
  * re-establish, returning `ok: false` so the caller doesn't retry the api step against headers
  * that are still stale or absent; either way, a synthetic step records what happened so a 401
- * retry is visible evidence in the report, never a silent, invisible extra round-trip (P#5/P#16). */
+ * retry is visible evidence in the report, never a silent, invisible extra round-trip (P#5/P#16).
+ *
+ * **The synthetic step is evidence of the retry, not of the login it performed.** `M146a`
+ * (`B3-20`) — `reestablish` runs the session's own body, and those `outcome.steps` are discarded
+ * here. So the *decision to re-establish* is in the report and the requests it actually sent are
+ * not: their latencies are missing from the run's numbers and their endpoints have no bucket. The
+ * sentence above was written about the retry and read for years as if it covered both. Correcting
+ * the claim is separate from fixing it — attribution lands in `M146b`, and whether the body should
+ * appear as steps at all is `M146-02`, a structural question `M117` declined to answer. */
 async function refreshSessions(
   ctx: EvalCtx,
   names: readonly string[],

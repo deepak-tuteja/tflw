@@ -96,14 +96,16 @@ test('two `parallel`-tagged tests actually overlap in wall time (D109/D111)', as
   });
   const source = 'test "a" parallel\n  api GET /slow\n  expect status equals 200\n\ntest "b" parallel\n  api GET /slow\n  expect status equals 200\n';
   const { program } = parseSource(source);
-  const start = Date.now();
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
-  const elapsedMs = Date.now() - start;
 
   assert.equal(report.ok, true);
+  // `B6-13` (`M146a`, `D614`) — `sawOverlap` is the assertion, and a wall-clock bound underneath it
+  // was strictly weaker than the line it followed: the fixture server sets the flag the moment two
+  // requests are genuinely in flight, so concurrency is already proven exactly, while `< 150ms` on
+  // two 80ms requests was the suite's tightest timing bound and could only ever go red on a loaded
+  // machine that had run correctly. A check that cannot fail for the reason it names, and can fail
+  // for reasons it does not, is removed rather than loosened.
   assert.equal(sawOverlap, true, 'a `parallel` batch must run its members concurrently');
-  // Two 80ms requests run concurrently should take much less than 160ms total (sequential would).
-  assert.ok(elapsedMs < 150, `expected concurrent execution to finish well under 150ms, took ${elapsedMs}ms`);
   await server.close();
 });
 

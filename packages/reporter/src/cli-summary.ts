@@ -1,7 +1,7 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
 import { exhaustiveEntry, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
-import type { CrawlResult, LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, TestResult, WorkloadTestResult } from '@tflw/runtime';
+import type { CrawlResult, LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { grantedProbeClauses } from './probe-clauses.js';
 import { findingsSummaryLine, sortFindings } from './findings.js';
 import { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
@@ -33,9 +33,7 @@ export function renderCliSummary(report: RunReport, color = true): string {
     }
     if (test.kind !== 'functional') return exhaustiveEntry(test);
     lines.push(testLine(test, c));
-    for (const step of test.steps) {
-      if (!step.ok) lines.push(`    ${c.red}✗ ${step.source}${c.reset}${step.detail ? `\n      ${c.red}${step.detail}${c.reset}` : ''}`);
-    }
+    lines.push(...failureLines(test, c));
   }
   const tally = `${report.passed}/${report.total} passed${report.failed ? `, ${report.failed} failed` : ''}`;
   // `FU-07` — three states, not two. `report.ok` alone said `PASS` over a run that was Ctrl-C'd
@@ -161,6 +159,40 @@ function backOffRelation(report: RunReport, c: typeof C): string {
   return `\n${c.dim}    ↳ a back-off warning above blames the target system instead — these are two readings of one overloaded machine, not a contradiction. Believe this line first: a saturated generator mistimes its own requests, so the back-off estimate is computed from numbers this saturation already distorted. Give tflw more headroom, re-run, and only then read the target's verdict.${c.reset}`;
 }
 
+/**
+ * `M146a` (`B4-12`, `M113-02`) — the block that prints beneath a failing entry, in one place.
+ *
+ * It used to be two byte-identical copies, one in `renderCliSummary` and one in `crawlLines`, and
+ * both indented only the **first** line of a detail. That was survivable while a detail was one
+ * line; the pentest arc's scan listings made multi-line the common case, and a finding rendered at
+ * column 2 inside a block indented to 6 reads as a new entry rather than as evidence for the one
+ * above it. Splitting on newlines here is the whole fix, and it is one function so the two callers
+ * cannot drift apart again.
+ *
+ * The `error` clause is `M113-02`: a test that died before any step ran has nothing to iterate, so
+ * the loop printed the name and stopped. The reason was never missing — it reached `results.json`,
+ * `report.html`, `junit.xml` and both ndjson streams — the console, the one surface a person is
+ * actually watching while the command runs, was the only sink that dropped it. It renders **only**
+ * when no failing step did, because a test that failed at a step already says why there; printing
+ * both would duplicate the message rather than add to it.
+ */
+function failureLines(entry: { readonly ok: boolean; readonly steps: readonly StepResult[]; readonly error?: string }, c: typeof C): string[] {
+  const lines: string[] = [];
+  for (const step of entry.steps) {
+    if (!step.ok) lines.push(`    ${c.red}✗ ${step.source}${c.reset}`, ...indentedBlock(step.detail, c));
+  }
+  if (!entry.ok && lines.length === 0) lines.push(...indentedBlock(entry.error, c));
+  return lines;
+}
+
+/** One line per source line, every one of them at the detail column. Colour is re-opened per line
+ * rather than spanning the block, so a pager or a `grep` that cuts the text mid-block cannot leave
+ * a terminal holding an unterminated red. */
+function indentedBlock(text: string | undefined, c: typeof C): string[] {
+  if (!text) return [];
+  return text.split('\n').map((line) => `      ${c.red}${line}${c.reset}`);
+}
+
 function testLine(test: TestResult, c: typeof C): string {
   const mark = test.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
   const flaky = test.flaky ? ` ${c.dim}(flaky)${c.reset}` : '';
@@ -192,9 +224,7 @@ function crawlLines(crawl: CrawlResult, c: typeof C): string[] {
       ? ''
       : ` · ${crawl.surface.walked} walked${crawl.surface.walkCapped ? `${c.reset}${c.bold} TRUNCATED at its cap${c.reset}${c.dim}` : ''}`;
   lines.push(`    ${c.dim}surface: ${discovered} discovered (${seeds}) · ${withheld} withheld · ${sent} sent · ${reached} reached${walk}${c.reset}`);
-  for (const step of crawl.steps) {
-    if (!step.ok) lines.push(`    ${c.red}✗ ${step.source}${c.reset}${step.detail ? `\n      ${c.red}${step.detail}${c.reset}` : ''}`);
-  }
+  lines.push(...failureLines(crawl, c));
   return lines;
 }
 
