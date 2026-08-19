@@ -424,10 +424,15 @@ export interface ThresholdDecl extends Node {
   readonly op: ThresholdOp;
   readonly value: number;
   /** `threshold p95 duration for "checkout" is less than 250ms` (M43, D70) — scopes this
-   * threshold to one endpoint's own histogram instead of the whole scenario's. Matches either an
+   * threshold to one endpoint's own histogram instead of the whole test's. Matches either an
    * explicit `ApiRequestSpec.tag` or an automatically-derived `METHOD path.raw` identity string.
    * Null (the default) keeps today's whole-iteration-scoped meaning unchanged. Checker-enforced
-   * (`TF034`) to resolve to at least one step's identity within the same scenario. */
+   * (`TF034`) to resolve to at least one step's identity within the same test.
+   *
+   * `scenario` was the keyword here until `M50` folded it into `test`; `tflw migrate` still
+   * rewrites it in *source*, but nothing rewrites it in prose, which is how it survived here for
+   * eleven milestones (`A2-16`). The `M144a` denylist cannot reach it — that guard knows removed
+   * *command* names, and this is a removed *keyword*. */
   readonly scope: StringLit | null;
 }
 
