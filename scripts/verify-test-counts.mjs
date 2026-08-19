@@ -112,7 +112,19 @@ const EXPECTED = {
   // classified gate/setup/ci-only, and `CONTRIBUTING.md` held to that table exactly, both ways.
   // The bump belongs in the same commit as the tests for the reason this whole file exists, and
   // that reason is now also written down in the document those tests guard.)
-  [ROOT_PKG]: 100,
+  // +13 in M140 (verify-ledger.test.mjs — the re-verification stamp, `D516`/`D517`/`D525`/`D527`.
+  // Eight are shape: what parses, that `fixed` is not a verdict an OPEN row may carry, that a
+  // backticked *command* is not a citation while a root-level `SPEC.md` is, that a missing stamp
+  // fails while a closed/deferred/withdrawn row needs none, and that a `🟨` partial does need one.
+  // Five are the staleness tier, and they are the ones worth the disk: the tier CANNOT be tested
+  // against this repo, because on the branch it shipped from every stamp named the commit the
+  // branch was cut at, so `<commit>..HEAD` was empty for all 70 citations and "none moved" was true
+  // for free. That is the vacuous-control class the whole file is about, arriving inside the check
+  // built to end it. So they build throwaway git repos with two commits — one asserting the report
+  // fires, one asserting it stays quiet when the path did NOT move, one for `D529`'s date-based
+  // sibling-repo tier, one for `D528`'s own-repo-wins lookup order, and one driving the real
+  // process in a directory with no `.git` to prove it prints UNAVAILABLE and never `0 stale`.)
+  [ROOT_PKG]: 113,
 };
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
