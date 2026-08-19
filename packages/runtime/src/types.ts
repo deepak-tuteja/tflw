@@ -845,7 +845,7 @@ export interface LoadWorkloadRampableStage extends LoadWorkloadStage {
   readonly ramped: boolean;
 }
 
-/** One scenario's own slice of a `tflw load` run (R6's "per-scenario" axis) — every field scoped
+/** One scenario's own slice of a load run (R6's "per-scenario" axis) — every field scoped
  * to just this scenario's iterations, computed exactly the way a single-scenario M29 report was. */
 export interface LoadScenarioReport {
   readonly name: string;
@@ -924,7 +924,7 @@ export interface LoadReport {
 
 // ---- Multi-process load generator (M31, D19/R4) ----------------------------------------------
 //
-// `tflw load --workers N` (N>1) forks N OS processes rather than scaling in-process — load
+// `tflw run --workers N` (N>1) forks N OS processes rather than scaling in-process — load
 // generation is CPU-bound (TLS, JSON parse, ajv, redaction scanning) and Node caps at one core per
 // process. Each forked worker runs `runLoadShard` for an equal (±1) striped share of every
 // scenario's workload target and reports back a compact `LoadShardResult` (histograms, not raw

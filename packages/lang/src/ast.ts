@@ -303,7 +303,7 @@ export type Workload =
  * `users` ramps linearly from 0 to `users` over `overMs`, one VU roughly every `overMs/users`.
  * When the target system slows down, in-flight VUs simply take longer per iteration and issue
  * fewer of them — "coordinated omission": the load backs off exactly when it matters most, which
- * understates measured latency. `tflw load`'s report flags this (D17's back-off diagnostic) when
+ * understates measured latency. The load report flags this (D17's back-off diagnostic) when
  * a closed run's VUs spent a large share of wall time waiting rather than iterating. */
 export interface RampUsersWorkload extends Node {
   readonly type: 'RampUsersWorkload';
@@ -566,7 +566,7 @@ export interface ApiRequestSpec {
    * *replaces* the automatic `(service, method, path.raw)` endpoint identity for load-report
    * aggregation and `threshold … for "label"` scoping, rather than merely relabeling it — this is
    * what lets a tflw scenario share an identity with a k6 script's own `{name: 'checkout'}` tag.
-   * Only meaningful under `tflw load`; ignored by `test`/`action` execution. Null means the step
+   * Only meaningful for a workload-bearing test; ignored by `test`/`action` execution. Null means the step
    * falls back to the automatic identity. */
   readonly tag: StringLit | null;
 }

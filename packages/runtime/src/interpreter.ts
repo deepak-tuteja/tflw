@@ -1280,8 +1280,8 @@ function partitionIntoBatches(tests: readonly TestDecl[]): TestDecl[][] {
  * once, reused by both — same run-lifetime cache `test … as <session>` uses). */
 async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadOptions): Promise<LoadCoreResult> {
   // M50 (D93-D95): a "scenario" is now any `test` block whose `workload` is non-null — `scenario`
-  // no longer exists as its own keyword/array. `tflw load` (this function's caller) only ever
-  // wants the workload-bearing subset of a file's `program.tests`.
+  // no longer exists as its own keyword/array. This function only ever wants the workload-bearing
+  // subset of a file's `program.tests`.
   const scenarios: LoadTest[] = filterWorkloadTests(program.tests);
   if (scenarios.length === 0) {
     // `B3-08` (M90c): this used to name `tflw load`, a command M53 removed — and naming `tflw run`
@@ -1932,7 +1932,7 @@ async function expandTestCases(program: Program, baseDir: string): Promise<TestC
   for (const test of program.tests) {
     // M50 (D93-D95): `program.tests` now also holds workload-bearing blocks (formerly a separate
     // `program.scenarios` array `tflw run`'s functional path never saw at all). Those run only
-    // under `tflw load`'s per-VU loop (`runLoadCore`), never here as a single-shot case.
+    // under `runLoadCore`'s per-VU loop, never here as a single-shot case.
     if (test.workload) continue;
     if (!test.table) {
       cases.push({ test, cells: null });

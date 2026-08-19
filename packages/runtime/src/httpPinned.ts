@@ -90,7 +90,7 @@ export function warnPinnedFallback(reason: 'formdata' | 'mtls'): void {
   warnedFallbacks.add(reason);
   const detail = reason === 'formdata' ? 'a multipart/upload body' : 'an mTLS client cert';
   process.stderr.write(
-    `⚠ tflw load: pinned connection skipped for a request with ${detail} — falling back to the unpinned client for that request (M45 known limitation)\n`,
+    `⚠ tflw run: pinned connection skipped for a request with ${detail} — falling back to the unpinned client for that request (M45 known limitation)\n`,
   );
 }
 
