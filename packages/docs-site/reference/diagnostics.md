@@ -4,18 +4,9 @@ title: Diagnostic codes reference
 
 <script setup>
 import { DIAGNOSTICS } from '../../lang/src/spec-data.ts';
-// spec-data.ts's cell text uses markdown inline-code spans — turn those into <code> tags for the
-// plain HTML table below rather than duplicating the manifest as a second, HTML-flavored copy
-// (same approach reference/matchers.md already uses).
-//
-// **Both fences, and the doubled one first.** A cell whose code span contains a backtick of its own
-// is fenced ``like this``, which markdown reads as one span with literal inner backticks. The
-// single-fence-only regex this replaced read it as *two* spans starting one character in, so
-// ``did you mean `expect`?`` rendered as "<code> did you mean </code>expect<code>? </code>" with a
-// stray backtick either side. That was already wrong on 13 of the 41 rows before M110b, which
-// generated the cells from probes and took it to 35 — a pre-existing bug found only because
-// something downstream started leaning on it harder.
-const code = (s) => s.replace(/``\s?([\s\S]+?)\s?``|`([^`]+)`/g, (_, doubled, single) => `<code>${doubled ?? single}</code>`);
+// `code()` turns spec-data.ts's markdown inline-code spans into <code> tags for the plain HTML
+// table below; it is one shared module because it used to be four identical copies (`M110b-02`).
+import { code } from '../.vitepress/mdCode.ts';
 </script>
 
 # Diagnostic codes reference
@@ -28,6 +19,14 @@ gaps in the numbering are reserved, not skipped by accident.
 
 Codes print in every `error[TFxxx]: …` line, so they're what a CI grep filter, a bug report, or a
 search anchors on. This page exists so looking one up doesn't require reading the source.
+
+**Reuse-hint `RF0xx` ids are deliberately not listed here.** The [reuse pass](/guide/actions)
+numbers the hints `tflw check` prints `RF001`, `RF002`, … **in order of first occurrence within a
+single scan** — add a file that sorts earlier and every id after it shifts. An `RF0xx` is a handle
+you type straight back into `tflw refactor apply RF001` in the seconds after the scan that printed
+it, not a stable identity, which is why `refactor apply` tells you to re-run `tflw check` for fresh
+ids rather than trusting an old one. A lookup table of them would be wrong by the next scan, so
+there isn't one — this page's promise is about `TF0xx`, and `TF0xx` alone.
 
 <table>
   <thead>

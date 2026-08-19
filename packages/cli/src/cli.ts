@@ -1225,6 +1225,12 @@ async function loadAndValidate(
       // `importedActions` does: `@tflw/lang` does no I/O. Before this, `tflw check` printed `no
       // problems found` for a file whose `import` named nothing, and `tflw run` then printed
       // `✗ t.tflw (crashed) (0 ms)` and not one word more, `--verbose` included.
+      //
+      // **The past tense covers the missing-file trigger only.** A helper that *exists* and then
+      // throws on load still prints exactly `✗ t.tflw (crashed)` and nothing else, under `--verbose`
+      // as well; "could not load JS helper module … <the real message>" reaches `report/results.json`
+      // and no stream. `TF043` cannot help — the file is there. Tracked as `M144-04`, and it is a
+      // report-honesty defect rather than a checker one, which is why it did not close with `A4-07`.
       missingFiles: await resolveMissingFiles(file, parsed.program),
       // M116/D148 — the same two booleans the config stage above computed once. `TF051` is the
       // only rule here that can be wrong about a *whole suite* at once, which is why it is
