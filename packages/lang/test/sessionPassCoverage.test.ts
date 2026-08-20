@@ -168,6 +168,11 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
       'M97d/D141. Both halves of the pass are unreachable from a session: it walks `program.actions`, which the config dialect never declares, and its edges are calls, which a session body can never make at all — `runSession` builds an empty registry by construction, so `checkCalls` inverted (`unknown call` is *always* right there) is the rule that applies, and it already does. A cycle needs two frames; a session body cannot get to one',
   },
   checkWorkloadTests: { verdict: 'n/a', reason: 'reasons about `workload`/`threshold` on a `test`; a session has neither' },
+  checkImportsParse: {
+    verdict: 'n/a',
+    reason:
+      "`M147c`/`M140-03`. `TF073` reasons about `program.imports`, and the config dialect has no `import` — a session body is a step list inside `tflw.config`, which declares no actions and imports no files, so there is nothing for this pass to find and no analogous rule for it to be missing. The nearest thing a session body *can* do is name a file (`body from \"./creds.json\"`), and that is `checkReferencedFiles`' subject below, classified there for a reason that is about the caller rather than about sessions. Where `checkReferencedFiles` needed three retired reasons before landing on the right one, this row has only ever had one: the construct does not exist in the dialect",
+  },
   checkReferencedFiles: {
     verdict: 'n/a',
     reason:

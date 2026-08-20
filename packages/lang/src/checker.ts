@@ -90,6 +90,22 @@ export interface ProgramCheckOptions {
    */
   readonly missingFiles?: ReadonlySet<string>;
   /**
+   * Which of this file's `import` path literals name a file that **exists and does not parse**
+   * (`M147c`, `M140-03`) — again the *answers*, computed by `@tflw/runtime`'s
+   * `resolveImportedActions` on the same walk that produces `importedActions`.
+   *
+   * Deliberately disjoint from `missingFiles`: an import naming nothing is `TF043`'s, an import
+   * naming something unparseable is `TF073`'s, and no path can be in both sets. The pair travels
+   * together — whenever this is non-empty, `importedActions` is `undefined`, because a file that
+   * did not parse contributed no actions and the world is therefore unknown. Nothing here depends
+   * on that, but a caller that broke it would be describing a world it had not resolved.
+   *
+   * `undefined` skips the pass, on the docs-site editor demo's account, exactly like the option
+   * above it: in a browser the question cannot be asked at all, and an empty set would say the
+   * caller looked and found every import fine.
+   */
+  readonly importsWithErrors?: ReadonlySet<string>;
+  /**
    * Which base URLs the active env declares (M116, D148) — see `EnvBaseUrls`.
    *
    * `undefined` skips `checkBaseUrls` entirely, for the same reason as every option above it: a
@@ -280,6 +296,10 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkValueSubjects(program),
     ...checkMatcherSubjects(program),
     ...checkReferencedFiles(program, opts),
+    // `M147c` (`M140-03`) — `TF073`, wired beside `TF043` because they are one question asked of
+    // one path literal: is the file there, and if it is, does it parse. Both are answered by the
+    // caller and turned into diagnostics here.
+    ...checkImportsParse(program, opts),
     ...checkBaseUrls(program, opts),
     ...checkSnapshotMasks(program),
     ...checkCapturableSubjects(program),
@@ -1117,7 +1137,76 @@ export function checkCalls(program: Program, opts: ProgramCheckOptions = {}): Di
   for (const test of program.tests) visit(test, true);
   for (const hook of program.hooks) visit(hook, true);
   for (const action of program.actions) visit(action, false);
+  diags.push(...importedBodyCalls(program, known, closedWorld, opts.importedActions ?? []));
 
+  return diags;
+}
+
+/**
+ * `A4-21` (`M147c`) — the calls written inside an **imported** action's body, resolved against the
+ * world of the file doing the importing.
+ *
+ * This is the exact case the rule above sets aside and it is set aside for a good reason that stops
+ * applying here. Calls bind late, against the entry file's registry, so a call inside an `action`
+ * body is undecidable *while checking the file that declares it* — `shared/root.tflw` in the
+ * dogfood suite calls names only its importers define, and reporting there would fail every library
+ * file in every suite. But one level up the same call is fully decidable: this is the registry it
+ * will be resolved against, and `resolveImportedActions` already hands over each imported action's
+ * `body` (M109, for `TF044`). The undecidable frame and the decidable one are the same code read
+ * from two positions, which is why the answer is a second pass and not a loosened flag.
+ *
+ * What it catches is the row verbatim: **`import` does not recurse.** `main` imports
+ * `lib/orders.tflw`, which imports `lib/helpers.tflw` and calls `makeId` — `buildRegistry` takes
+ * only `program.actions` from an import, never its `imports` or its `uses`, so `makeId` is not in
+ * the registry `createOrder` runs under. `tflw check .` said *3 files checked, no problems found*
+ * and the run died on the first step with `unknown call \`makeId(...)\``. An extracted action could
+ * not carry its own dependency, and nothing said so until the run.
+ *
+ * **`TF037`, not a new code** (D634's allocation rule): the call is genuinely unknown in the
+ * registry it will be resolved against, so the code's published meaning is true here — only the
+ * *location* differs, and location is what the message and the caret are for.
+ *
+ * Three narrowings, each of which would otherwise make this lie:
+ *
+ *  - **`closedWorld` only**, exactly as above. A `use` in this file can define the name.
+ *  - **Evaluated positions only.** A call that never runs cannot fail, and `collectEvaluatedCalls`
+ *    exists over bare `Step[]` for precisely this — an imported body arrives with no `Program`
+ *    around it.
+ *  - **Once per (import, name).** A helper called eleven times in a library is one missing import,
+ *    and eleven diagnostics on one line is the cascade shape this milestone keeps deleting.
+ *
+ * The caret goes on the local `import` path literal, never into the imported file's text: that span
+ * belongs to another file's coordinates and rendering it against this source underlines an
+ * unrelated line. `TF044` already draws that line — a call inside an imported body can be *named*
+ * in a message and never underlined — and `TF073` draws it again from the parse side.
+ */
+function importedBodyCalls(program: Program, known: Map<string, KnownAction>, closedWorld: boolean, imported: readonly KnownAction[]): Diagnostic[] {
+  if (!closedWorld) return [];
+  const diags: Diagnostic[] = [];
+  const seen = new Set<string>();
+  for (const action of imported) {
+    if (!action.body || action.from === null) continue;
+    const imp = program.imports.find((i) => i.path.value === action.from);
+    if (!imp) continue; // no local line to point at — silence beats a diagnostic with a wrong span
+    const evaluated = new Set<CallExpr>();
+    collectEvaluatedCalls([action.body], evaluated);
+    for (const call of evaluated) {
+      if (known.has(call.name)) continue;
+      const key = `${action.from}\u0000${call.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const near = suggest(call.name, [...known.keys()]);
+      diags.push({
+        code: Codes.UNKNOWN_CALL,
+        severity: 'error',
+        message: `imported action "${action.name}" calls \`${call.name}(...)\`, which nothing in this file defines`,
+        span: imp.path.span,
+        hint: near
+          ? `did you mean \`${near}\`? An imported action's calls resolve against *this* file's registry, not against its own file's`
+          : `\`import\` brings in a file's \`action\`s and nothing else — not the \`import\`s or \`use\`s that file itself declares. Whatever "${action.from}" depends on has to be brought into this file too, or the run fails on the first step that reaches it`,
+      });
+    }
+  }
   return diags;
 }
 
@@ -2877,6 +2966,43 @@ export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions
     });
   }
   return diags;
+}
+
+/**
+ * `TF073` (`M147c`, `M140-03`) — an `import` naming a file that is there and does not parse.
+ *
+ * `tflw check a.tflw` printed `1 file checked, no problems found.` and exited 0 for a file whose
+ * import target could not parse, and it had the diagnostics in hand when it said so: the resolver
+ * ran a full `parseSource` on the imported file and kept only the verdict *world unknown*,
+ * discarding every diagnostic it had just computed. The run then failed with `✗ a.tflw (crashed)`,
+ * whose reason reached `report/results.json` and — until this milestone's `A4-18` half — no
+ * console at all. So the information existed twice and reached the surface the docs tell people to
+ * put in CI exactly never.
+ *
+ * **One diagnostic per broken import, and it names the file rather than underlining it.** The
+ * imported file's own diagnostics carry spans in *that* file's coordinates; rendering them against
+ * this file's source would draw a caret on an unrelated line, which is the `M106` stance and the
+ * same line `TF044` draws when it names a call written inside an imported body and refuses to
+ * underline it. The hint therefore hands over the one command that shows the real errors with
+ * their real carets.
+ *
+ * **`tflw check` over a whole directory already reported those errors**, because it checks the
+ * broken file directly — which is exactly why this went unnoticed for so long. The gap belongs to
+ * the run that checks one entry file, and a `tflw check <entry>` in CI is the shape this language
+ * recommends.
+ */
+export function checkImportsParse(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const broken = opts.importsWithErrors;
+  if (!broken || broken.size === 0) return [];
+  return program.imports
+    .filter((imp) => broken.has(imp.path.value))
+    .map((imp) => ({
+      code: Codes.IMPORT_PARSE_ERRORS,
+      severity: 'error' as const,
+      message: `imported file "${imp.path.value}" does not parse`,
+      span: imp.path.span,
+      hint: `run \`tflw check ${imp.path.value}\` to see why — its line numbers belong to that file, so they are named here rather than underlined. Until it parses nothing it declares is in scope, and this file cannot run`,
+    }));
 }
 
 // ---------------------------------------------------------------------------

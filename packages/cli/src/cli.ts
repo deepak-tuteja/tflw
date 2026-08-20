@@ -1219,13 +1219,20 @@ async function loadAndValidate(
   for (const file of files) {
     const source = await readFile(file, 'utf8');
     const parsed = parseSource(source);
+    // `M147c`/`M140-03` — resolved once and *both* of its answers used. This call already read and
+    // parsed every imported file; until now the caller took the actions and threw away the fact
+    // that one of them had not parsed, which is how `tflw check` came to print `no problems found`
+    // for a file whose `import` target cannot parse. `importsWithErrors` carries that fact to
+    // `TF073` the same way `missingFiles` carries `resolveMissingFiles`'s to `TF043`.
+    const imports = await resolveImportedActions(file, parsed.program);
     // One composed pass list, shared with the language server and the docs-site editor demo (M60)
     // — those two used to assemble their own shorter lists and silently drifted behind this one.
     const checkDiags = checkProgram(parsed.program, {
       knownServices: Object.keys(resolved.services),
       knownSessions,
       privilegedSessions,
-      importedActions: await resolveImportedActions(file, parsed.program),
+      importedActions: imports.actions,
+      importsWithErrors: imports.unparseable,
       // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
       // `importedActions` does: `@tflw/lang` does no I/O. Before this, `tflw check` printed `no
       // problems found` for a file whose `import` named nothing, and `tflw run` then printed
@@ -2491,13 +2498,19 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
   let rejected = false;
   for (const [abs, source] of pending) {
     const parsed = parseSource(source);
+    // `M147c`/`M140-03` — same one-resolution-two-answers shape as `checkCommand`. A refactor that
+    // would leave a suite importing an unparseable file is refused here for the same reason it is
+    // refused for any other error, and it could not be before, because this call discarded the
+    // only evidence that the import was broken.
+    const imports = await resolveImportedActions(abs, parsed.program, readPending);
     const diagnostics = [
       ...parsed.diagnostics,
       ...checkProgram(parsed.program, {
         knownServices,
         knownSessions,
         privilegedSessions,
-        importedActions: await resolveImportedActions(abs, parsed.program, readPending),
+        importedActions: imports.actions,
+        importsWithErrors: imports.unparseable,
         missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),
       }),
     ].filter((d) => d.severity === 'error');

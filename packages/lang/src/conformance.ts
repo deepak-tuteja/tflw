@@ -601,8 +601,8 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'interpreter.ts',
     excerpt: 'has parse errors',
     decidable: 'needs-io',
-    filedRow: 'M140-03',
-    note: 'needs the imported file read. **The diagnostics do not surface, and this note asserted that they did until `M147a`**: `resolveImportedActions` runs a full `parseSource` during `tflw check` and then discards every diagnostic it just computed, so `tflw check` prints `no problems found` on a file whose `import` target cannot parse and the run fails afterwards with nothing but `✗ (crashed)`. Measured by `M140-03`, which this row now points at — so the claim is anchored to a row status the ledger gate reads, instead of to prose nothing checks',
+    checkerCode: 'TF073',
+    note: 'needs the imported file read, so the *fact* is `needs-io` — but the reading happens at check time, in `resolveImportedActions`, which is why this pairs a `needs-io` verdict with a code rather than contradicting one (the same shape `unknown-table-column` carries for `TF027`). **This note has now been wrong in both directions and the second correction is the instructive one.** It originally asserted the diagnostics surfaced; `M140-03` measured that they did not — the resolver ran a full `parseSource` and kept only the verdict *world unknown*, discarding everything it had computed — and `M147a` corrected the note and anchored it to the row. `M147c` then closed the row by making the claim true, which retired the `filedRow` pointer the ledger gate holds to an **open** row. That is the pointer working exactly as designed: a claim tied to a row status cannot outlive the row, and the field that had to change is the machine-checked one. The throw here is now genuine run-time residue — reachable when `runProgram` is driven as a library with no check pass in front of it, which is the only door `TF073` does not stand in',
   },
   {
     id: 'use-module-unloadable',
@@ -663,7 +663,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'an action that reaches itself never terminates',
     decidable: 'static',
     checkerCode: 'TF044',
-    note: 'D141 shipped `TF044` same-file only and left the cross-file case to this guard; M109 (`M97d-01`, now closed) gave `KnownAction` a body, so the checker decides that case too whenever the imports resolve. What is left here is genuinely undecidable statically and so is exactly what clause 2 excludes: an import that cannot be read or parsed, a cycle whose every call site is inside imported files (no span in the file being checked), and `runProgram` driven as a library with no check pass in front of it. Detecting a repeat on the live call stack rather than counting to a depth limit is what lets both halves name the same cycle in the same notation',
+    note: 'D141 shipped `TF044` same-file only and left the cross-file case to this guard; M109 (`M97d-01`, now closed) gave `KnownAction` a body, so the checker decides that case too whenever the imports resolve. What is left here is genuinely undecidable statically and so is exactly what clause 2 excludes: an import that cannot be read (`TF073` now refuses one that cannot be *parsed*, so only the unreadable half is left), a cycle whose every call site is inside imported files (no span in the file being checked), and `runProgram` driven as a library with no check pass in front of it. Detecting a repeat on the live call stack rather than counting to a depth limit is what lets both halves name the same cycle in the same notation',
   },
   {
     id: 'unknown-call',
@@ -671,7 +671,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'unknown call',
     decidable: 'static',
     checkerCode: 'TF037',
-    note: 'decided for tests by `checkCalls`, and for `session` bodies by `checkNoCallsInSteps` — **inverted** there, because the config dialect declares no `action`s at all, so a call in a session body is impossible rather than unknown and the hint has to say the second thing (D142, `M97b`). "Checked nowhere" was this note until `M147a`, and it was already false when `M97b` merged',
+    note: 'decided for tests by `checkCalls`, and for `session` bodies by `checkNoCallsInSteps` — **inverted** there, because the config dialect declares no `action`s at all, so a call in a session body is impossible rather than unknown and the hint has to say the second thing (D142, `M97b`). "Checked nowhere" was this note until `M147a`, and it was already false when `M97b` merged. **`M147c` (`A4-21`) added the third frame and it is the one the `static` verdict was always straining against**: a call written inside an *imported* action\'s body, which is undecidable while checking the file that declares it — calls bind late, so a library action may call a name only its importers define — and fully decidable one level up, where the importer\'s registry is the registry it will run under. `importedBodyCalls` reports it there, on the `import` line, since the call\'s own span belongs to another file',
   },
   {
     id: 'mtls-material-unreadable',

@@ -63,6 +63,7 @@ export {
   checkValueSubjects,
   checkMatcherSubjects,
   checkReferencedFiles,
+  checkImportsParse,
   checkActionCycles,
   checkBaseUrls,
   checkSnapshotMasks,

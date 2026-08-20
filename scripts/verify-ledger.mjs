@@ -119,10 +119,24 @@ const CITED = /`([^`\s]+\.[A-Za-z0-9]+)(?::\d+)?`/g
  *
  * The manifest is TypeScript and this is a regex, which is the same trade `conformance.test.ts`
  * made and defended (D138): the failure mode is a pointer this cannot see, never a row it invents.
- * `check` guards that direction explicitly — a manifest text yielding **zero** pointers is a
- * problem, because a scan matching nothing passes silently and this file has never had none.
+ * `check` guards that direction — a scan matching nothing passes every check below it silently.
+ *
+ * **What "nothing" means changed in `M147c-4`, and it changed by the manifest succeeding.** The
+ * guard originally read zero pointers as broken outright, on the evidence that the file had never
+ * had none. It has none now: `M147a` corrected eighteen stale pointers, and closing `M140-03`
+ * retired the nineteenth, which is the instrument arriving at the state it was built to produce.
+ * A guard whose alarm cannot tell "the scan broke" from "there is nothing left to track" would
+ * have made finishing the work indistinguishable from breaking the tool — `M145`'s one-level-above
+ * class, arriving this time as a false *positive*. So the two are separated by asking a question
+ * only the first can fail: `FILED_ROW_DECLARED` looks for the field's own declaration in the
+ * interface. Field present and no pointers is an empty ledger of gaps; field gone is a rename this
+ * regex would otherwise sail past.
  */
 const FILED_ROW = /^\s*filedRow: '([^']+)'/gm
+
+/** The `filedRow` field's declaration in `RuntimeRule`/`RuntimeGap`. Its absence is what a rename
+ *  looks like; see `FILED_ROW` above for why that has to be asked separately from the count. */
+const FILED_ROW_DECLARED = /^\s*filedRow\?: string/m
 
 /** Parse a status cell's stamp. Returns null when there is none — the caller decides if that is fatal. */
 export function parseStamp(status) {
@@ -407,13 +421,16 @@ export function check({ ledger, plans, shipped, resolve = () => true, manifests 
   // cross-corpus reference, and is reported as its own thing rather than skipped.
   for (const { file, text } of manifests) {
     const pointers = [...text.matchAll(FILED_ROW)].map((m) => m[1])
-    if (!pointers.length) {
+    if (!FILED_ROW_DECLARED.test(text)) {
       problems.push(
-        `${file} yielded no \`filedRow\` pointers — either the field was renamed or the scan broke. ` +
+        `${file} no longer declares a \`filedRow\` field — either it was renamed or this scan broke. ` +
           'A scan that matches nothing passes every check below it, which is the one outcome this must not report as clean',
       )
       continue
     }
+    // Zero pointers with the field still declared is the manifest tracking no open gap, which is
+    // the state this whole guard exists to make reachable. Silence, not an alarm.
+    if (!pointers.length) continue
     for (const id of new Set(pointers)) {
       const row = byId.get(id)
       if (!row) {

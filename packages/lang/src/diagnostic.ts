@@ -293,6 +293,29 @@ export const Codes = {
   // multi-line table, while the production reading the header holds each name's own token. The
   // caret lands on the *second* `name`, which is the one to rename.
   DUPLICATE_TABLE_COLUMN: 'TF072',
+  // M147c (`M140-03`, D634) — **an `import` naming a file that exists and does not parse.**
+  // `tflw check` printed `1 file checked, no problems found.` and exited 0 on a file whose import
+  // target could not parse, and it had the diagnostics in hand when it said so:
+  // `resolveImportedActions` ran a full `parseSource` on the imported file and then discarded every
+  // diagnostic it had just computed, keeping only the verdict *world unknown*. The run afterwards
+  // failed with the rendered `TF010` — so the information existed, twice, and reached the one
+  // surface the docs tell people to put in CI exactly never.
+  //
+  // **Not `TF043`.** That code is `MISSING_FILE` and this file is present; `MISSING_FILE` would be
+  // false in the only word that tells the reader where to look. That is `M97a-01`→`TF056`'s
+  // argument applied a second time, and the division of labour it draws is deliberate: an `import`
+  // that names nothing is `TF043`'s (shipped `M97c`, `A4-07`), an `import` that names something
+  // unparseable is this one's, and the two can never both fire for one path.
+  //
+  // **The message names the file and does not underline it.** An imported file's diagnostics carry
+  // spans into *that* file's text, and rendering them against this file's source would put a caret
+  // on an unrelated line — the `M106` stance, and the same reason `TF044` can name a call written
+  // inside an imported body but never underline it. So one diagnostic per broken import, anchored
+  // on the path literal that is in this file, telling the reader which file to check. Checking the
+  // *directory* still reports the underlying errors in full, because the broken file is checked
+  // directly there; this exists for the run that checks one entry file, which is the shape a
+  // `tflw check` in CI usually has.
+  IMPORT_PARSE_ERRORS: 'TF073',
 } as const;
 
 // ---------------------------------------------------------------------------

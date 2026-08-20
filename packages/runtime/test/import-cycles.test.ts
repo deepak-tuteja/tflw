@@ -28,7 +28,7 @@ async function checkWithImports(entry: string, other: string): Promise<ReturnTyp
     await writeFile(join(dir, 'other.tflw'), other);
     const { program, diagnostics } = parseSource(entry);
     assert.deepEqual(diagnostics, [], 'the entry fixture must parse cleanly');
-    return checkProgram(program, { importedActions: await resolveImportedActions(file, program) });
+    return checkProgram(program, { importedActions: (await resolveImportedActions(file, program)).actions });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -61,7 +61,7 @@ test('an unreadable import leaves the cycle undecided rather than guessed at', a
     const source = 'import "./missing.tflw"\n\naction a()\n  b()\n\ntest "t"\n  a()\n';
     await writeFile(file, source);
     const { program } = parseSource(source);
-    const diags = checkProgram(program, { importedActions: await resolveImportedActions(file, program) });
+    const diags = checkProgram(program, { importedActions: (await resolveImportedActions(file, program)).actions });
     assert.deepEqual(diags.filter((d) => d.code === Codes.CALL_CYCLE), []);
   } finally {
     await rm(dir, { recursive: true, force: true });

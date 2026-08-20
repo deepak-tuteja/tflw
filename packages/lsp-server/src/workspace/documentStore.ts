@@ -190,7 +190,13 @@ export class DocumentStore {
     // !== undefined`): `undefined` means "these could not be read", which is exactly true of a
     // buffer with nowhere to read from, and suppresses the passes that would otherwise report
     // every import in an unsaved scratch file as unresolved.
-    const importedActions = doc.absPath === undefined ? undefined : await resolveImportedActions(doc.absPath, parsed.program, async (absPath) => {
+    //
+    // `M147c`/`M140-03` — this now returns *two* answers and the editor uses both, so an `import`
+    // naming a file that cannot parse is squiggled here as well as refused by `tflw check`. Which
+    // is the whole point of resolving through the shared function: the gap M60 closed was the
+    // editor knowing less than the CLI, and a fix landing in only one of them would have reopened
+    // it on the day it shipped.
+    const imports = doc.absPath === undefined ? undefined : await resolveImportedActions(doc.absPath, parsed.program, async (absPath) => {
       const open = [...this.docs.values()].find((d) => d.absPath === absPath);
       return open ? open.text : readFile(absPath, 'utf8');
     });
@@ -211,7 +217,12 @@ export class DocumentStore {
         knownServices,
         knownSessions,
         privilegedSessions,
-        ...(importedActions === undefined ? {} : { importedActions }),
+        // `undefined` still means *world unknown* and still suppresses the negative passes — and it
+        // now arrives by two routes that mean the same thing: a pathless buffer with nowhere to
+        // read from (D214), and an import that was read and could not be parsed. Both are "these
+        // could not be resolved", which is the only thing `checkCalls` asks of this option.
+        ...(imports?.actions === undefined ? {} : { importedActions: imports.actions }),
+        ...(imports === undefined ? {} : { importsWithErrors: imports.unparseable }),
         ...(missingFiles === undefined ? {} : { missingFiles }),
         ...(envBaseUrls ? { envBaseUrls } : {}),
         ...(envTimeouts ? { envTimeouts } : {}),
