@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, join, resolve as resolvePath } from 'node:path';
-import { isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, type ActionDecl, type CallExpr } from '@tflw/lang';
+import { isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   FindingSeverity,
   ApiBody,
@@ -2608,7 +2608,10 @@ async function runTestAttempt(
 
   let name: string;
   try {
-    if (cells) for (const cell of cells) scope.set(cell.name, 'expr' in cell ? evalValue(cell.expr!, nameCtx) : cell.value);
+    if (cells) {
+      for (const cell of cells) scope.set(cell.name, 'expr' in cell ? evalValue(cell.expr!, nameCtx) : cell.value);
+      checkNameColumns(test, cells);
+    }
     name = evalValue(test.name, nameCtx) as string;
   } catch (err) {
     const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
@@ -2637,6 +2640,46 @@ async function runTestAttempt(
     return trace ? { ...result, trace } : result;
   } finally {
     if (browserPageState) await browserPageState.close();
+  }
+}
+
+/**
+ * `M147c`/`A4-18` — a `{col}` in a `with each` test's **name** that this row does not carry.
+ *
+ * The name of a row-case is evaluated in a scope holding the row's cells and nothing else: no
+ * `let`, no `capture`, no environment. So when a reference in it fails to resolve, `lookupVar`'s
+ * general sentence — *"is it defined with `let` or `capture` earlier?"* — names two keywords that
+ * could not have helped and never mentions the one thing that could, which is the header. The row
+ * was filed on that: not a missing error, a **wrong remedy**.
+ *
+ * Checking here rather than widening `lookupVar` keeps that generality intact. `lookupVar` is
+ * reached from every expression in the language and has no idea it is being asked about a table;
+ * this function is called at the one site where the scope is known to be a table row, before the
+ * name is evaluated, so the general message stays right everywhere it is still right.
+ *
+ * **This is the file-backed form's only possible home.** `checkDataTables` raises `TF027` for the
+ * identical mistake on an *inline* table, and cannot do it here: the columns of
+ * `with each from "./rows.csv"` are not known until the file is read, and `@tflw/lang` does no
+ * I/O (SPEC §4.3 says so, and `TF056`/`TF043` are the two static properties of that path that do
+ * survive). The runtime holds the loaded row, so it can say the sentence the checker cannot —
+ * deliberately the *same* sentence, so a reader who has met `TF027` recognises this one. It carries
+ * no code, because the runtime carries none (`V4-12`).
+ *
+ * Inline tables reach it too, and that is not dead code: it is what `tflw run` says to anyone who
+ * never ran `tflw check`, and it says it identically.
+ */
+function checkNameColumns(test: TestDecl, cells: readonly RowCell[]): void {
+  const columns = cells.map((cell) => cell.name);
+  for (const part of test.name.parts) {
+    if (part.kind !== 'interp' || part.ref.length === 0) continue;
+    const first = part.ref[0]!;
+    if (first.kind !== 'prop' || columns.includes(first.name)) continue;
+    const from = test.table?.type === 'FileDataTable' ? ` from "${test.table.path.value}"` : '';
+    const hint = suggest(first.name, columns);
+    throw new RuntimeError(
+      `unknown table column "${first.name}" referenced in the test name — ` +
+        (hint ? `did you mean \`${hint}\`?` : `this row${from} has: ${columns.join(', ')}`),
+    );
   }
 }
 

@@ -519,6 +519,14 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
 
   // -- interpreter.ts --------------------------------------------------------
   {
+    id: 'unknown-table-column',
+    file: 'interpreter.ts',
+    excerpt: 'unknown table column',
+    decidable: 'needs-io',
+    checkerCode: 'TF027',
+    note: '`M147c`/`A4-18` — one rule reached two ways, and the pairing of `needs-io` with a `checkerCode` is the point rather than a contradiction. For an **inline** table the columns are in the AST and `TF027` decides it at check time; for `with each from "./rows.csv"` they are not known until the file is read, `@tflw/lang` does no I/O, and SPEC §4.3 has said since D144 that this half is not the checker\'s. So the throw exists for the file-backed half and is reached by the inline half only when nobody ran `tflw check`. It says `TF027`\'s sentence deliberately, down to the "did you mean" — the row was filed because the *generic* unbound-variable message named `let` and `capture`, two keywords that cannot bind a table column, in the one scope where the header is the only thing that can',
+  },
+  {
     id: 'unknown-session',
     file: 'interpreter.ts',
     excerpt: 'unknown session',

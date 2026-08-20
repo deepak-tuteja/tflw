@@ -4901,3 +4901,54 @@ test('M137d — the repros tflw writes are not collected as tests by the next ru
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// `M147c`/`A4-18` — the live ticker is the console's **third** sink for a failure's reason, and
+// `M146a` (`M113-02`) fixed only the first two. That milestone found two byte-identical copies of
+// the summary block and folded them into one `failureLines`, whose docstring says so; this one is
+// in `cli.ts`, renders a deliberately terser line, and was never in that count. A test whose only
+// step is a name it cannot resolve dies before any step runs, so the loop over failing steps has
+// nothing to print — and the surface a person is actually watching during the run said `✗ <name>`
+// and stopped.
+//
+// Asserted through the built CLI rather than against `formatEvent`, which is private and whose
+// output is only a console line by the time it matters. The negative half is the load-bearing one:
+// the reason must not *also* appear twice in the live section, which is what a naive "always append
+// the error" would do to every ordinary step failure.
+test('a test that dies before its first step prints its reason live, not just its name (A4-18)', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-live-reason-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'rows.csv'), 'name\nalice\n', 'utf8');
+      await writeFile(
+        join(dir, 'rows.tflw'),
+        `with each from "./rows.csv"\ntest "row {nmae}"\n  api GET /health\n  expect status equals 200\n`,
+        'utf8',
+      );
+
+      // `execFileAsync` rejects on a failing run, so take the output off the rejection itself.
+      const { code, out } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], {
+        cwd: dir,
+        env: envWithout('GITHUB_ACTIONS'),
+      }).then(
+        (r) => ({ code: 0, out: r.stdout }),
+        (e: { code?: number; stdout?: string }) => ({ code: e.code ?? -1, out: e.stdout ?? '' }),
+      );
+      assert.equal(code, 1, out);
+
+      // Anchored to adjacency rather than to a section split: the reason must be on the line
+      // *directly under* the live tick line, which is the whole of what was missing. Splitting the
+      // output into "live" and "summary" was the first draft and it counts the summary's copy too.
+      const lines = out.split('\n');
+      const tick = lines.findIndex((l) => l.includes('✗ row {nmae}'));
+      assert.notEqual(tick, -1, out);
+      assert.match(lines[tick + 1] ?? '', /unknown table column "nmae" referenced in the test name/, out);
+
+      // Twice overall and no more — once live, once in the summary block `M146a` fixed. A third
+      // copy would mean the two surfaces had been made to share a renderer that suits neither.
+      assert.equal((out.match(/unknown table column/g) ?? []).length, 2, out);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

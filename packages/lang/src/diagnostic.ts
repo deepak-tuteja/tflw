@@ -274,6 +274,25 @@ export const Codes = {
   // on `0` and `api` cannot act on any `tflw://` address but one, and both repairs are *write a
   // value the setting accepts*, which is `D419`'s bar.
   INVALID_SETTING_VALUE: 'TF071',
+  // M147c (`A2-11`, D633) — **the same column name declared twice in one `with each` header.**
+  // `| name | name |` parsed, checked clean and ran: a row binds each name once, so the second
+  // column overwrote the first and every cell under the earlier one was discarded silently. The
+  // test still ran, still passed, and read data nobody could see it read.
+  //
+  // **Not `TF027`.** That code is `UNKNOWN_TABLE_COLUMN` and its published meaning is a `{col}` in a
+  // test's *name* that the table does not declare. Here the column is declared — twice — so calling
+  // it unknown would be false in the one word the reader keys on. Not `TF035` either, whose
+  // meaning is bound to `action` namespaces, and not `TF033`, which would point a table header at
+  // load-workload documentation. This is the language's second duplicate-declaration rule and its
+  // first outside the config dialect, where `TF024`/`TF029` already do the job for envs and
+  // sessions; the repair is theirs too, and it is one repair — **rename one**.
+  //
+  // Refused in `parser.ts` rather than in `checkDataTables` next to `TF027`, for the reason
+  // `TF071`'s numeric half gives and one this rule adds: `InlineDataTable.columns` is
+  // `readonly string[]` with no per-column spans, so the checker could only point at the whole
+  // multi-line table, while the production reading the header holds each name's own token. The
+  // caret lands on the *second* `name`, which is the one to rename.
+  DUPLICATE_TABLE_COLUMN: 'TF072',
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -137,12 +137,24 @@ export function parseStamp(status) {
   }
 }
 
-/** Split a markdown table row into its data cells, tolerant of `|` inside prose. */
+/**
+ * Split a markdown table row into its data cells.
+ *
+ * The header of this function used to say "tolerant of `|` inside prose" and it was not: it split
+ * on every `|`, and since the status is read as the **last** cell, a pipe anywhere in a row's prose
+ * silently made a fragment of that prose the status — which fails the "starts with a status word"
+ * test and reports the row as OPEN. `M147c-3` hit it writing up `TF072`, whose whole subject is a
+ * `with each` header, so its close stamp cannot describe itself without quoting one.
+ *
+ * Now it honours GFM's own escape: `\|` is a literal pipe and does not end a cell. Same rule the
+ * SPEC table generator learnt in the same commit, and the same one `M134` recorded from the plan
+ * side — three instruments, one markdown fact, and each of them had to meet it separately.
+ */
 function cells(line) {
   let l = line.trim()
   if (l.startsWith('|')) l = l.slice(1)
   if (l.endsWith('|')) l = l.slice(0, -1)
-  return l.split('|')
+  return l.split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, '|'))
 }
 
 /**

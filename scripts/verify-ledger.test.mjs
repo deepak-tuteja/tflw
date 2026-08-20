@@ -712,3 +712,31 @@ test('no manifest means no manifest problems — `check` is pure over what it is
   assert.deepEqual(check(sound()).problems, [])
 })
 
+
+// ---- `M147c-3`: a `|` inside a row's prose ----------------------------------------------------
+//
+// `cells()` read the **last** cell as the status and split on every `|`, so a pipe anywhere in a
+// row's prose made a fragment of that prose the status — which starts with no status word, so the
+// row was reported malformed *and* counted OPEN, and the published tally then disagreed with a
+// status column that had never changed. Found writing `A2-11`'s close stamp: `TF072` is a rule
+// about `with each` headers and cannot describe itself without quoting one.
+//
+// The escape is GFM's own and the fix is one regex, so what earns these two tests is the direction:
+// the first proves an escaped pipe is *text*, the second proves an unescaped one still ends a cell,
+// which is what stops the fix from silently swallowing a genuinely malformed row.
+
+test('an escaped `\\|` in a row\'s prose is text, not a cell boundary (M147c-3)', () => {
+  const rows = [['A2-11', 'S3', '✅ **M99a** — refuses a `\\| name \\| name \\|` header']]
+  const parsed = parseIndex(ledger({ rows }))
+  assert.equal(parsed.length, 1)
+  assert.equal(classify(parsed[0].status), 'closed')
+  // …and the escape is undone, so a consumer reads what the author wrote.
+  assert.match(parsed[0].status, /`\| name \| name \|` header/)
+})
+
+test('an unescaped `|` still ends a cell — the fix does not make malformed rows readable', () => {
+  const rows = [['A2-11', 'S3', '✅ **M99a** — refuses a | name | name | header']]
+  const parsed = parseIndex(ledger({ rows }))
+  assert.equal(parsed.length, 1)
+  assert.notEqual(classify(parsed[0].status), 'closed')
+})

@@ -2768,7 +2768,12 @@ class Parser {
       return null;
     }
     this.advance(); // indent
-    const columns = this.parseTableRow('a column name', () => this.parseTableColumnName());
+    // `M147c`/`A2-11` — the header's own uniqueness, carried through the row so each name is judged
+    // against the ones already read rather than against a list assembled afterwards. A `Set` here
+    // and not a scan of `columns` because a duplicate must still be *kept* in `columns` (see
+    // `parseTableColumnName`), so `columns` stops being the list of names seen exactly once.
+    const seenColumns = new Set<string>();
+    const columns = this.parseTableRow('a column name', () => this.parseTableColumnName(seenColumns));
     if (!columns) {
       // Discard the whole table, not just the header line (M83, C11/`A2-05`). The old form only
       // synchronized past the header and then looked for a `dedent` that the *data rows* were still
@@ -2809,7 +2814,7 @@ class Parser {
     return { type: 'InlineDataTable', columns, rows, span: this.spanFrom(start) };
   }
 
-  private parseTableColumnName(): string | null {
+  private parseTableColumnName(seen: Set<string>): string | null {
     const tok = this.peek();
     if (tok.type === 'string') {
       // A `with each` table quotes its *cells* and not its *column names*, and the likeliest way to
@@ -2825,7 +2830,30 @@ class Parser {
       return null;
     }
     const name = this.expect('ident', 'a column name');
-    return name ? name.value : null;
+    if (!name) return null;
+    // `M147c`/`A2-11` — judged **here**, inside the loop that reads the header, and not over
+    // `columns` once `parseTableRow` has returned. The obvious post-hoc version was written first
+    // and measured: M83's panic mode drops any diagnostic raised without the cursor having moved
+    // (`this.pos === this.lastErrorPos`), and after the header is read the cursor does not move
+    // between one complaint and the next — so `| id | id | id |` reported once instead of twice,
+    // and the caret pointed past the whole header rather than at a name. Reading each name first
+    // gives both properties for free: a `|` is consumed between any two complaints, and the token
+    // whose span is wanted is in hand. `TF071`'s `viewport` pair learnt the same lesson from the
+    // other end — there the two numbers are adjacent, so the reading itself had to be interleaved.
+    if (seen.has(name.value)) {
+      this.error(
+        Codes.DUPLICATE_TABLE_COLUMN,
+        `duplicate table column \`${name.value}\``,
+        name.span,
+        `a row binds each column name once, so this \`${name.value}\` wins and every cell under the earlier one is discarded without a word — rename one`,
+      );
+    }
+    seen.add(name.value);
+    // Returned anyway, and kept in `columns`. The header's *width* is what every data row below is
+    // matched against, so dropping the offending name would turn one mistake into a
+    // ``expected N cell(s) in this table row`` for every row in the table — the cascade M83 spent a
+    // milestone removing from this very production.
+    return name.value;
   }
 
   /** One `| cell | cell | … |` line, generic over what a cell is (a column-name ident for the
