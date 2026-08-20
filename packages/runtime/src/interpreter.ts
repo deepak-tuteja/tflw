@@ -870,6 +870,9 @@ interface ScenarioAccumulator {
    * charts once shaped into `LoadMetrics.timeline`. */
   readonly timeline: Timeline;
   failures: number;
+  /** `M146b` (`B3-17`) — `expect`/`check` steps run across this scenario's iterations. Counted in
+   * the same walk `recordEndpointMetrics` already makes, so it costs one predicate per step. */
+  assertions: number;
   /** M34 (D17) — split by which half of the scenario's own wall-clock window (`overMs / 2`) an
    * iteration's *start* landed in, regardless of workload model (only consumed by `computeBackOff`
    * for a closed-model scenario, but cheap enough to track unconditionally rather than branching
@@ -906,6 +909,7 @@ function newScenarioAccumulator(scenario: LoadTest): ScenarioAccumulator {
     successHistogram: new LatencyHistogram(),
     timeline: new Timeline(),
     failures: 0,
+    assertions: 0,
     early: { count: 0, sum: 0 },
     late: { count: 0, sum: 0 },
     endpoints: new Map(),
@@ -1018,6 +1022,12 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       const ref = sessionCache.currentRef(sessionName);
       if (ref !== undefined) sessionRefs.set(sessionName, ref);
     }
+    // `M146b` (`B3-20`) — one per iteration, drained into the endpoint accumulator below. A sink
+    // rather than a return value because the only writer, `refreshSessions`, is reached through
+    // `execSteps`' recursive api-step branch: threading it back would have meant a new field on
+    // `StepsExec` merged at every nested call site (`within`, `action`, hooks), for a value only the
+    // load path reads.
+    const metricsSink: StepResult[] = [];
     const ctx: EvalCtx = {
       scope,
       environ,
@@ -1032,6 +1042,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       sessionFindings,
       sessionRefs,
       cookieJar,
+      metricsSink,
     };
     const iterStart = performance.now();
     let result: LoadIterationResult;
@@ -1076,7 +1087,19 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
     // the code one line down falsified it — the claim was the correct design, so it is now
     // implemented rather than deleted.
     if (result.ok) acc.successHistogram.record(result.durationMs);
+    // `M146b` (`B3-17`) — counted off the *scenario body's* steps only. A session body's own
+    // `expect`s are setup: they assert that the login worked, not that the system under load did,
+    // and folding them in would make a scenario that asserts nothing report a non-zero count purely
+    // for having authenticated.
+    acc.assertions += countAssertions(iterSteps);
     recordEndpointMetrics(acc, iterSteps, runStart);
+    // `M146b` (`B3-20`) — the requests a reactive 401 re-establish actually sent. They are real
+    // samples against a real endpoint and until now they landed nowhere: `refreshSessions` pushes
+    // one synthetic `header` step into the trace and drops `outcome.steps`, so the *decision* to
+    // re-login was in the report and the round-trips it cost were not. Attributed, not spliced —
+    // they do not join `iterSteps`, because whether a session body belongs in the step listing is a
+    // structural question (`M146-02`) with three defensible answers and no row has ruled it.
+    recordEndpointMetrics(acc, metricsSink, runStart);
     acc.timeline.record((performance.now() - runStart) / 1000, result.durationMs, result.ok);
     // M34 (D17) — which half of the scenario's own wall-clock window this iteration *started*
     // in, by real elapsed time (not request order — see `computeBackOff`'s doc for why an
@@ -1407,7 +1430,7 @@ function summarizeHistogram(h: LatencyHistogram): LoadDurationStats {
 /** M32 (R3/R4) — shapes one accumulated histogram+timeline into a full `LoadMetrics`, used for
  * every metrics-shaped view a `LoadReport` has (each scenario's own, and the combined pool) —
  * exactly one place decides what a "metrics" object contains. */
-function buildLoadMetrics(histogram: LatencyHistogram, successHistogram: LatencyHistogram, failures: number, timeline: Timeline): LoadMetrics {
+function buildLoadMetrics(histogram: LatencyHistogram, successHistogram: LatencyHistogram, failures: number, timeline: Timeline, assertions: number | null): LoadMetrics {
   return {
     // M89a: still the *all*-iterations histogram, so `iterations` and the `errorRate` denominator
     // below keep their exact prior meaning. This is the trap the milestone was most likely to walk
@@ -1415,6 +1438,9 @@ function buildLoadMetrics(histogram: LatencyHistogram, successHistogram: Latency
     // `errorRate` would silently have become `failures / successes` (960/40 = 2400 %).
     iterations: histogram.count,
     failures,
+    // `M146b` (`B3-17`) — `null` at endpoint scope and a real count everywhere else; the caller
+    // decides, because only the caller knows which scope it is building. See `LoadMetrics`.
+    assertions,
     errorRate: histogram.count > 0 ? failures / histogram.count : 0,
     durations: summarizeHistogram(histogram),
     histogram: histogram.toBuckets(),
@@ -1503,15 +1529,39 @@ function buildLoadReportEndpoints(
   scenario: LoadTest,
   endpoints: ReadonlyMap<string, EndpointAccumulator>,
 ): readonly { readonly identity: string; readonly metrics: LoadMetrics }[] {
-  return scenarioEndpointIdentities(scenario).map((identity) => {
+  const declared = scenarioEndpointIdentities(scenario);
+  // `M146b` (`B3-20`) — declared identities first, in source order, then any identity the run
+  // actually reached that the scenario body never declares. Before this, the map was only ever read
+  // *through* the declared list, so a bucket with no matching source line existed in memory and
+  // appeared in no report — which is why fixing `B3-20`'s accumulator alone would have changed
+  // nothing a reader can see. Today's only such identity is a reactive re-establish's login, and
+  // the rule is deliberately about provenance rather than about sessions: an endpoint appears here
+  // because a request went to it, never because a slot was reserved for it in advance. Map
+  // insertion order is first-contact order, which is the order a reader would list them in.
+  const observedOnly = [...endpoints.keys()].filter((identity) => !declared.includes(identity));
+  return [...declared, ...observedOnly].map((identity) => {
     const bucket = endpoints.get(identity);
     return {
       identity,
       metrics: bucket
-        ? buildLoadMetrics(bucket.histogram, bucket.successHistogram, bucket.failures, bucket.timeline)
-        : buildLoadMetrics(new LatencyHistogram(), new LatencyHistogram(), 0, new Timeline()),
+        ? buildLoadMetrics(bucket.histogram, bucket.successHistogram, bucket.failures, bucket.timeline, null)
+        : buildLoadMetrics(new LatencyHistogram(), new LatencyHistogram(), 0, new Timeline(), null),
     };
   });
+}
+
+/** `M146b` (`B3-17`) — `expect` and `check` steps in one iteration's trace.
+ *
+ * Both kinds, because the difference between them is what happens *after* a failure — `expect`
+ * stops the iteration, `check` accumulates and carries on — and neither is less of an assertion for
+ * it. A scenario built entirely out of soft `check`s is asserting; one built out of neither is not.
+ * `undefined` steps (an iteration that died before its body ran) count as zero, matching what
+ * `recordEndpointMetrics` does with the same argument. */
+function countAssertions(steps: readonly StepResult[] | undefined): number {
+  if (!steps) return 0;
+  let n = 0;
+  for (const step of steps) if (step.kind === 'expect' || step.kind === 'check') n++;
+  return n;
 }
 
 /** M43 (D67-D69) — records one iteration's own `api`-kind step durations into this scenario's
@@ -1720,8 +1770,8 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
  * It used to have a third, `buildLoadReport`, which M91a deleted along with `runLoad` (review
  * finding `B3-06`): a single-process `LoadReport` had no production caller once M56 routed the
  * shipped path through `runProgramInner`. */
-function finalizeScenario({ scenario, histogram, successHistogram, timeline, failures, early, late, endpoints }: ScenarioAccumulator): LoadScenarioReport {
-  const metrics = buildLoadMetrics(histogram, successHistogram, failures, timeline);
+function finalizeScenario({ scenario, histogram, successHistogram, timeline, failures, assertions, early, late, endpoints }: ScenarioAccumulator): LoadScenarioReport {
+  const metrics = buildLoadMetrics(histogram, successHistogram, failures, timeline, assertions);
   const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, successHistogram, failures }, endpoints);
   const backOff = computeBackOff(scenario, early, late);
   const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
@@ -1738,11 +1788,14 @@ function finalizeScenario({ scenario, histogram, successHistogram, timeline, fai
  * Phase 2b/D111) can produce the exact same shape for its own shard-0 contribution when
  * `opts.shard` is set, without duplicating this mapping. */
 function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], selfDiagnosis: SelfDiagnosis): LoadShardResult {
-  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, successHistogram, timeline, failures, early, late, endpoints }) => ({
+  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, successHistogram, timeline, failures, assertions, early, late, endpoints }) => ({
     name: scenario.name.value,
     workload: workloadOf(scenario.workload),
     iterations: histogram.count,
     failures,
+    // `M146b` (`B3-17`) — this shard's own count, summed parent-side. Without it a `--workers N>1`
+    // run would report `assertions: 0` for a suite that asserts on every iteration.
+    assertions,
     sum: histogram.sum,
     min: histogram.min,
     max: histogram.max,
@@ -1793,6 +1846,7 @@ export function mergeLoadShardReports(
     const timeline = new Timeline();
     let iterations = 0;
     let failures = 0;
+    let assertions = 0;
     const early = { count: 0, sum: 0 };
     const late = { count: 0, sum: 0 };
     const endpoints = new Map<string, EndpointAccumulator>();
@@ -1807,6 +1861,9 @@ export function mergeLoadShardReports(
       timeline.merge(Timeline.fromBuckets(match.timeline));
       iterations += match.iterations;
       failures += match.failures;
+      // `M146b` (`B3-17`) — summed like `failures`, for the same reason: every shard asserted its
+      // own share and the run's count is the total, not any one shard's.
+      assertions += match.assertions;
       early.count += match.early.count;
       early.sum += match.early.sum;
       late.count += match.late.count;
@@ -1825,7 +1882,7 @@ export function mergeLoadShardReports(
         bucket.failures += e.failures;
       }
     }
-    return { scenario, histogram, successHistogram, timeline, iterations, failures, early, late, endpoints };
+    return { scenario, histogram, successHistogram, timeline, iterations, failures, assertions, early, late, endpoints };
   });
 
   // M34 (D17): `finalizeScenario` recomputes back-off from whatever `early`/`late` totals it's
@@ -2106,6 +2163,19 @@ export interface SessionOutcome {
    * whose body makes three requests to the same host would otherwise report one `hsts-missing` per
    * request, and the finding is about the host, not about how many times the session called it. */
   readonly securityFindings: readonly Finding[];
+  /** `M146b` (`B3-20`) — the same steps as `steps`, **never blanked by the splice-owner rule**.
+   *
+   * `ensure()` returns `{ ...outcome, steps: [] }` to every non-owner so one login renders once in
+   * the report rather than once per test that uses the session. That is the right answer to *should
+   * this be shown here*. It is the wrong answer to *what requests did this login make*, and the two
+   * were one field — so `reestablish`, which always calls `ensure` with `isOwner: false`, saw `[]`
+   * and a reactive re-login's round-trips reached no accumulator at all. `refreshSessions` was
+   * blamed for discarding them; it never had them. Another check answering one level above the
+   * question it was asked (`M145`).
+   *
+   * One answer for every caller, because it is a fact about the run rather than about the reader.
+   * Only the load path reads it, into `EvalCtx.metricsSink`; it is not a second trace. */
+  readonly requestSteps: readonly StepResult[];
 }
 
 /** Opaque handle to a `SessionCache` entry (M37, D45) — compared only by `===` identity, never
@@ -2234,6 +2304,7 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
     ok: exec.ok,
     ...(exec.error ? { error: exec.error } : {}),
     steps: exec.steps,
+    requestSteps: exec.steps,
     securityFindings: scanSessionObservations(decl.name, securitySink),
   };
 }
@@ -2297,6 +2368,7 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
     ok: false,
     error,
     steps: [mkStep('api', src, oauth2.span, false, start, error, request, response)],
+    requestSteps: [mkStep('api', src, oauth2.span, false, start, error, request, response)],
   });
 
   const tokenUrl = String(evalValue(oauth2.tokenUrl, ctx));
@@ -2347,6 +2419,7 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
     cookieJar,
     ok: true,
     steps: [mkStep('api', src, oauth2.span, true, start, detail, redactedRequest, redactedResponse)],
+    requestSteps: [mkStep('api', src, oauth2.span, true, start, detail, redactedRequest, redactedResponse)],
     // D287 applies to an `oauth2` session exactly as it does to a hand-written one: the token
     // endpoint's response is a login response, and it is the one this session actually made. Scanned
     // from the *live* `request`/`response` above rather than the redacted pair one line up, for the
@@ -2399,6 +2472,11 @@ async function refreshSessions(
       return { ok: false, steps };
     }
     const outcome = await tc.sessionCache.reestablish(name, ctx.sessionRefs?.get(name), decl, config, tc);
+    // `M146b` (`B3-20`) — the session body's own requests, pushed to the metrics sink whether or not
+    // the re-establish went on to succeed: a login that failed still cost the round-trips it made,
+    // and dropping them would leave exactly the blind spot this fixes. Not added to `steps`, which
+    // is the report's trace — see the sink's declaration in `runLoadCore` and `M146-02`.
+    if (ctx.metricsSink) ctx.metricsSink.push(...outcome.requestSteps);
     if (!outcome.ok) {
       steps.push(mkStep('header', src, span, false, start, `401 response → re-establishing session "${name}" failed: ${outcome.error ?? 'a step failed'}`));
       return { ok: false, steps };
@@ -3539,6 +3617,10 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       ...(callerCtx.sessionCsrfHeaders ? { sessionCsrfHeaders: callerCtx.sessionCsrfHeaders } : {}),
       sessionNames: callerCtx.sessionNames,
       ...(callerCtx.sessionFindings ? { sessionFindings: callerCtx.sessionFindings } : {}),
+      // `M146b` (`B3-20`) — spelled out for the reason `sessionCsrfHeaders` above is: the field is
+      // optional, so omitting it typechecks and silently drops the metrics of every re-establish
+      // triggered by an `api` step written inside an `action`. Same shape of bug, same invisibility.
+      ...(callerCtx.metricsSink ? { metricsSink: callerCtx.metricsSink } : {}),
       // Shares the caller's live jar (by reference, not cloned) — an action's own api steps read
       // and update the same cookies its caller sees on the next step, the same way it shares the
       // caller's `rng`/`redactor`/etc.

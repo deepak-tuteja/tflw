@@ -10,6 +10,7 @@ import type { BrowserManager, BrowserPageState, LocatorScope } from './browser.j
 import type { SessionRef } from './interpreter.js';
 import type { Finding } from './finding.js';
 import type { Observation } from './securityRules.js';
+import type { StepResult } from './types.js';
 
 /** This test attempt's browser state (M3a) — present whenever the run was given a
  * `BrowserManager` (SPEC §9), regardless of whether this particular test ends up using a browser
@@ -101,6 +102,17 @@ export interface EvalCtx {
    * concurrent VU already refreshed this session since I read it" and skip a redundant re-login
    * when the answer is the latter. */
   readonly sessionRefs?: ReadonlyMap<string, SessionRef>;
+  /** `M146b` (`B3-20`) — a mutable sink for steps that are **real requests but not part of this
+   * test's own trace**: today, exactly the requests a reactive 401 re-establish sends. The load
+   * path creates one per iteration and drains it into the per-endpoint accumulator; every other
+   * caller leaves it undefined and the writer becomes a no-op.
+   *
+   * A sink rather than a return value because the only writer, `refreshSessions`, is reached
+   * through `execSteps`' recursive `api`-step branch — returning it would mean a new field on
+   * `StepsExec` that every nested call site (`within`, `action`, both hook loops) has to merge
+   * upward, for a value only one caller reads. Mutable by design, and the only mutable field on an
+   * otherwise-readonly context, which is why it is named for what it is. */
+  readonly metricsSink?: StepResult[];
   /** Present only while executing a `session` block's own steps: a `HeaderStmt` writes into this
    * instead of the (nonexistent) response/report subject it would otherwise need (P#42). */
   readonly headerSink?: Record<string, string>;

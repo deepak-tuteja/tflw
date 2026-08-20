@@ -701,6 +701,27 @@ export interface LoadDurationStats {
 export interface LoadMetrics {
   readonly iterations: number;
   readonly failures: number;
+  /** `M146b` (`B3-17`) — how many `expect`/`check` steps this scope's iterations actually ran.
+   *
+   * Every other number here describes the **instrument**: a p95 and an error rate say that a
+   * request left the machine and something came back, and they say exactly that whether the
+   * scenario asserted fifty things about the response or nothing at all. A workload with no
+   * assertion is a load generator with a stopwatch, and until this field the report could not tell
+   * a reader which one they were looking at. `0` is the whole point of the field, not an edge case.
+   *
+   * **`null` means "this scope cannot answer", which is not `0`** — the same distinction
+   * `D-M89-1` drew for `LoadThresholdResult.actual`, and for the same reason: a `0` that means "no
+   * answer" reads as a measurement. Endpoint-scope metrics are `null`, because an assertion names
+   * no endpoint. `expect status equals 200` after two `api` steps is about whichever response the
+   * author had in mind, and attributing it to the nearest preceding request would be a guess
+   * rendered as a number. Scenario and combined scopes carry a real count.
+   *
+   * Purely additive, like `successful` below: nothing reads it to grade anything. Whether a
+   * zero-assertion threshold should *fail* is `M146-01`, and it is open precisely because this repo
+   * already answers "this cannot be graded" two incompatible ways (`D-M89-1` fails such a
+   * threshold, R11 leaves it alone and renders `<skipped/>`). Counting is separable from grading,
+   * so the count ships now and the verdict waits for the freeze pass to rule once. */
+  readonly assertions: number | null;
   /** `failures / iterations`, `0` when `iterations === 0`. */
   readonly errorRate: number;
   /** Active (pause-excluded) iteration duration, ms — see `LoadIterationResult.durationMs`. */
@@ -941,6 +962,14 @@ export interface LoadShardScenarioResult {
   readonly workload: LoadScenarioReport['workload'];
   readonly iterations: number;
   readonly failures: number;
+  /** `M146b` (`B3-17`) — this shard's own assertion count, summed parent-side like `failures`.
+   *
+   * It has to cross the IPC boundary for the reason `successful` below spells out: the parent
+   * cannot re-derive it. Omitting it would have made `--workers 1` and `--workers 2` disagree about
+   * the same suite — and disagree *silently*, since a merged report reading `assertions: 0` is
+   * indistinguishable from a workload that genuinely asserts nothing, which is the exact confusion
+   * the field was added to end. */
+  readonly assertions: number;
   readonly sum: number;
   readonly min: number;
   readonly max: number;

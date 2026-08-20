@@ -279,7 +279,15 @@ function workloadLines(test: WorkloadTestResult, c: typeof C, noVerdict: NoVerdi
 }
 
 function metricsLines(metrics: LoadMetrics, c: typeof C): string[] {
-  const lines = [`    ${c.dim}iterations: ${metrics.iterations}  failures: ${metrics.failures}  error rate: ${(metrics.errorRate * 100).toFixed(2)}%${c.reset}`];
+  // `M146b` (`B3-17`) — the assertion count sits on the same line as `iterations`, deliberately.
+  // Every other figure here is a statement about the instrument: `iterations`, `failures` and
+  // `errorRate` say that requests went out and came back, and they say it identically whether the
+  // scenario asserted fifty things or nothing. Reading `assertions: 0` beside them is the one thing
+  // that tells a person which of those two runs they are looking at. It is **not** dimmed away into
+  // a footnote and not rendered only when zero: a count that appears only on the bad run is a count
+  // nobody learns to read. `null` (endpoint scope) prints nothing — see `LoadMetrics.assertions`.
+  const assertions = metrics.assertions === null ? '' : `  assertions: ${metrics.assertions}`;
+  const lines = [`    ${c.dim}iterations: ${metrics.iterations}  failures: ${metrics.failures}${assertions}  error rate: ${(metrics.errorRate * 100).toFixed(2)}%${c.reset}`];
   // M89a (D-M89-0) — **both** populations, labelled. Thresholds read the successful-only line, so
   // that one is what an author needs to reconcile a verdict against; the all-iterations line stays
   // because it is the run that actually happened, and seeing the two diverge is itself the signal

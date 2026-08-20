@@ -1664,3 +1664,125 @@ test('workloads that used to serialize identically no longer do', () => {
     assert.notDeepEqual(workloadFrom(a), workloadFrom(b), `\`${a}\` and \`${b}\` still report the same thing`);
   }
 });
+
+// ---- `M146b`: the numbers stop being true of the instrument only ------------------------------
+//
+// `B3-17` and `B3-20` are two ways for a load report to describe tflw rather than the target. The
+// first: a scenario that asserts nothing still reports a p95 and an error rate, and both measure
+// only whether a request left the machine and came back — the report has never said how many
+// assertions it made, so a workload with zero and one with fifty are indistinguishable in it. The
+// second: a reactive 401 re-establish sends real requests whose latencies land in no bucket at all.
+
+test('a workload reports how many assertions its iterations actually made (`B3-17`)', async () => {
+  const server = await startFixtureServer({ '/x': (_req, res) => json(res, 200, { ok: true }) });
+
+  const bare = 'test "Unasserted"\n  hold 2 users for 200ms\n  api GET /x\n  threshold error rate is less than 1%\n';
+  const bareReport = await runWorkload(parseSource(bare).program, testConfig(server.baseUrl), { source: bare });
+  const bareMetrics = bareReport.scenarios[0]!.metrics;
+  assert.ok(bareMetrics.iterations > 0, 'the scenario has to have run for the count to mean anything');
+  assert.equal(bareMetrics.assertions, 0, 'a scenario with no `expect`/`check` asserted nothing, and the report must say so rather than leaving it unsaid');
+
+  const asserted = 'test "Asserted"\n  hold 2 users for 200ms\n  api GET /x\n  expect status equals 200\n  threshold error rate is less than 1%\n';
+  const assertedReport = await runWorkload(parseSource(asserted).program, testConfig(server.baseUrl), { source: asserted });
+  const assertedMetrics = assertedReport.scenarios[0]!.metrics;
+  assert.equal(assertedMetrics.assertions, assertedMetrics.iterations, 'one `expect` per iteration, so the count is the iteration count');
+
+  await server.close();
+});
+
+test('a `check` counts as an assertion too — the soft one is still an assertion (`B3-17`)', async () => {
+  const server = await startFixtureServer({ '/x': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "Soft"\n  hold 2 users for 200ms\n  api GET /x\n  check status equals 200\n  check body.ok equals true\n';
+  const report = await runWorkload(parseSource(source).program, testConfig(server.baseUrl), { source });
+  const m = report.scenarios[0]!.metrics;
+  assert.equal(m.assertions, m.iterations * 2, 'both `check` lines count, every iteration');
+  await server.close();
+});
+
+test('an endpoint-scope metrics object reports `assertions: null`, never 0 (`B3-17`, `D-M89-1`’s distinction)', async () => {
+  const server = await startFixtureServer({ '/x': (_req, res) => json(res, 200, { ok: true }) });
+  const source = 'test "Scoped"\n  hold 2 users for 200ms\n  api GET /x as "x"\n  expect status equals 200\n';
+  const report = await runWorkload(parseSource(source).program, testConfig(server.baseUrl), { source });
+  const endpoint = report.scenarios[0]!.endpoints.find((e) => e.identity === 'x');
+  assert.ok(endpoint, 'the tagged endpoint has its own report');
+  assert.equal(
+    endpoint.metrics.assertions,
+    null,
+    'an `expect` names no endpoint — attributing it to the preceding `api` would be a guess, and `0` would read as "measured zero assertions here", which is a different and false claim',
+  );
+  assert.ok(endpoint.metrics.iterations > 0, 'the rest of the endpoint metrics are unaffected');
+  await server.close();
+});
+
+test('a reactive 401 re-establish attributes its login requests to their own endpoint (`B3-20`)', async () => {
+  let logins = 0;
+  let token = 'tok-1';
+  let calls = 0;
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => {
+      logins++;
+      token = `tok-${logins}`;
+      json(res, 200, { token });
+    },
+    '/health': (req, res) => {
+      calls++;
+      // One-use token: the first call after each login succeeds, every later one 401s until the
+      // session is re-established. That is the shape the row was filed against — a reactive
+      // re-login inside the VU loop, not the once-before-the-loop establishment.
+      const ok = req.headers['authorization'] === `Bearer ${token}` && calls % 2 === 1;
+      json(res, ok ? 200 : 401, {});
+    },
+  });
+  const configSource = `env test default
+  api "${server.baseUrl}"
+
+session admin
+  api POST /auth/login
+  capture body.token as tok
+  header "Authorization" is "Bearer {tok}"
+`;
+  const parsedConfig = parseConfigSource(configSource);
+  assert.deepEqual(parsedConfig.diagnostics, []);
+  const config = resolveConfig(parsedConfig.config, selectEnv(parsedConfig.config, {}));
+
+  const source = 'test "Stale" as admin\n  hold 2 users for 400ms\n  api GET /health\n  expect status equals 200\n';
+  const report = await runWorkload(parseSource(source).program, config, { source });
+
+  assert.ok(logins > 1, `the fixture has to have forced at least one reactive re-login, got ${logins}`);
+  const endpoints = report.scenarios[0]!.endpoints;
+  const login = endpoints.find((e) => e.identity === 'POST /auth/login');
+  assert.ok(
+    login,
+    `the login requests the re-establish actually sent must land in their own bucket; got only ${JSON.stringify(endpoints.map((e) => e.identity))}`,
+  );
+  assert.ok(login.metrics.iterations > 0, 'and carry real samples, not a zero-sample placeholder');
+  await server.close();
+});
+
+test('the login bucket is additional, not a replacement — the scenario’s own endpoints keep their samples (`B3-20`)', async () => {
+  const server = await startFixtureServer({
+    '/auth/login': (_req, res) => json(res, 200, { token: 'tok' }),
+    '/health': (req, res) => json(res, req.headers['authorization'] === 'Bearer tok' ? 200 : 401, {}),
+  });
+  const configSource = `env test default
+  api "${server.baseUrl}"
+
+session admin
+  api POST /auth/login
+  capture body.token as tok
+  header "Authorization" is "Bearer {tok}"
+`;
+  const parsedConfig = parseConfigSource(configSource);
+  const config = resolveConfig(parsedConfig.config, selectEnv(parsedConfig.config, {}));
+  const source = 'test "Steady" as admin\n  hold 2 users for 200ms\n  api GET /health\n  expect status equals 200\n';
+  const report = await runWorkload(parseSource(source).program, config, { source });
+
+  const health = report.scenarios[0]!.endpoints.find((e) => e.identity === 'GET /health');
+  assert.ok(health && health.metrics.iterations > 0, 'the declared endpoint is still first-class');
+  assert.equal(
+    report.scenarios[0]!.endpoints.filter((e) => e.identity === 'POST /auth/login').length,
+    0,
+    'no reactive re-establish happened here, so no login bucket appears — the bucket is evidence of a real request, never a slot reserved in advance',
+  );
+  await server.close();
+});
