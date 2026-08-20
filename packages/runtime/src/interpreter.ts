@@ -3526,6 +3526,15 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           result = mkStep('pause', src, step.span, true, stepStart, `paused for ${ms}ms`);
           break;
         }
+        case 'MalformedStep':
+          // Unreachable, and worth failing loudly rather than skipping (`M147c`, `M140-01`). This
+          // node only exists in the AST of a file that did not parse, and every entry point refuses
+          // one before it reaches here — `tflw run` exits on the parse diagnostics, and `V4-12`'s
+          // rule that the runtime carries no diagnostic codes is why this is a thrown invariant and
+          // not a `TF0xx`. A `runProgram` driven as a library, on an AST hand-built or reused from a
+          // failed parse, is the only way in; silently treating it as a no-op there would run a
+          // suite that is missing a step nobody was told about.
+          throw new Error(`internal: a \`${step.head}\` step that failed to parse reached the interpreter — run \`tflw check\` on this file first`);
       }
       // A browser request this step's page tried to make and `allow hosts` refused (M85,
       // `B4-03`). The route handler that refused it runs on Playwright's event loop with no step
@@ -6121,6 +6130,10 @@ function apiStepIdentity(step: ApiStep): string {
 
 function stepKind(step: Step): StepResult['kind'] {
   switch (step.type) {
+    case 'MalformedStep':
+      // Same unreachable frontier as `execSteps`' own case above, and it reports the same way. There
+      // is no honest `StepResult['kind']` for a step whose kind is what the parser could not read.
+      throw new Error(`internal: a \`${step.head}\` step that failed to parse has no run-time kind`);
     case 'ApiStep':
       return 'api';
     case 'ExpectStmt':

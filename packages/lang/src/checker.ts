@@ -1458,6 +1458,23 @@ function checkResponseScopeInSteps(steps: readonly Step[], diags: Diagnostic[]):
       case 'WaitUntilApiStmt':
         established = true;
         break;
+      case 'MalformedStep':
+        // `M147c`/`M140-01`. The user wrote an `api` step here and the parser could not finish
+        // reading it, so this frame *does* have a response — saying otherwise on the next line is
+        // not a redundant diagnostic, it is a false one, and it points at a line that is fine.
+        //
+        // Reached by six measured shapes, not the one the row named: a bad inline `body`, a bad
+        // `form`, a bad duration after `timeout`, an unknown method, `without` not followed by
+        // `redirects`, and a non-string after `as`. The row's discriminator — that a trailing-token
+        // error like `api GET /o headerz "x"` does *not* cascade — is real but reads the wrong
+        // joint. It is not the body branch; it is that `endLine()` reports after the node is built
+        // while every one of those six returns `null` before it. So the repair belongs where the
+        // node goes missing, not in `parseApiBody`.
+        //
+        // **Establishing on a malformed head loses nothing.** The only diagnostic it can suppress
+        // is one that says no `api` step precedes this — and if the head is `api`, one does.
+        if (step.head === 'api' || step.head === 'wait until api') established = true;
+        break;
       case 'ExpectStmt':
         if (!established && readsResponse(step.subject)) {
           diags.push(noResponse(step.subject, step.span, step.soft ? 'check' : 'expect'));
@@ -2363,12 +2380,37 @@ export function freeVariableRefs(steps: readonly Step[]): Diagnostic[] {
   return diags.filter((d) => d.code === Codes.UNKNOWN_VARIABLE);
 }
 
+/** Whether this scope still knows what is bound in it (`M147c`, `M140-01`). Shared by reference
+ * with the three nested-block cases below — `within`, `switch to new tab` and `download` all thread
+ * the *same* `bound` set through, because they share their enclosing variable scope, so an unknown
+ * binding above one of them is unknown inside it too. A fresh holder per top-level frame: an
+ * abandoned `capture` in a `before each` hook says nothing about the test body it runs ahead of. */
+interface BindingWorld {
+  unknown: boolean;
+}
+
 /** Walk a step sequence in declaration order, checking each step's referenced variables against
  * `bound` *before* adding any new binding it introduces (`let`/`capture`) — a step can never see
  * its own not-yet-assigned name, and a later step correctly sees everything bound before it. */
-function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Diagnostic[]): void {
+function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Diagnostic[], bindings: BindingWorld = { unknown: false }): void {
   for (const step of steps) {
+    const before = diags.length;
     switch (step.type) {
+      case 'MalformedStep':
+        // `M147c`/`M140-01`, the second half of the same mechanism. Three step kinds add a name to
+        // `bound` — `let`, `capture` and `download … as` — and when the parser abandons one of them
+        // the name it would have bound is exactly what is missing. Measured: `capture body.id as`
+        // reports `TF010` for the absent name and then `TF030` *"unknown variable"* on every later
+        // `{{id}}`, about a variable the file does bind.
+        //
+        // So the world goes unknown for the rest of this scope, the same shape `M147c`'s import
+        // work settled on (`resolveImportedActions` returning `actions: undefined`): once the
+        // checker has failed to *look*, it stops answering negative questions. It costs the genuine
+        // unknown-variable reports further down the same body — but the file has a parse error and
+        // cannot run either way, and fixing that error gives every one of them back on the next
+        // check. A false report costs more than a late one.
+        if (step.head === 'let' || step.head === 'capture' || step.head === 'download') bindings.unknown = true;
+        break;
       case 'ApiStep':
         checkApiRequestSpec(step, bound, diags);
         break;
@@ -2443,7 +2485,7 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         // is visible inside it and (deliberately, same as any other nested block in this checker) a
         // `let` inside it stays visible to steps after the block too. Same sharing for `within
         // frame` (M3b) — `frame` only changes *where* nested locators resolve, not variable scope.
-        checkStepSequence(step.body, bound, diags);
+        checkStepSequence(step.body, bound, diags, bindings);
         break;
       case 'AcceptDialogStmt':
       case 'DismissDialogStmt':
@@ -2455,13 +2497,13 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'SwitchToNewTabBlock':
         // Shares scope with its enclosing sequence, same as `within` (M3b) — the block exists to
         // let the runtime catch a popup event around its trigger step(s), not to isolate variables.
-        checkStepSequence(step.body, bound, diags);
+        checkStepSequence(step.body, bound, diags, bindings);
         break;
       case 'SwitchToTabStmt':
       case 'CloseTabStmt':
         break;
       case 'DownloadBlock':
-        checkStepSequence(step.body, bound, diags);
+        checkStepSequence(step.body, bound, diags, bindings);
         bound.add(step.name);
         break;
       case 'DragStmt':
@@ -2482,6 +2524,14 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'PauseStmt':
         // `minMs`/`maxMs` are plain numbers (parser-level, ast.ts) — no `{var}` interpolation to check.
         break;
+    }
+    // Drop only `TF030` and only from here on. Filtering after the step, rather than gating each
+    // `checkValue` call, keeps every other diagnostic this walk raises — `checkStepSequence` also
+    // carries the `upload … type "…"` shape check, which is about a literal's format and has
+    // nothing to do with whether a name is bound.
+    if (bindings.unknown && diags.length > before) {
+      const kept = diags.splice(before).filter((d) => d.code !== Codes.UNKNOWN_VARIABLE);
+      diags.push(...kept);
     }
   }
 }

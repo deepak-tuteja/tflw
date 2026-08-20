@@ -77,6 +77,7 @@ import type {
   LogLevel,
   LogLevelDecl,
   LogStmt,
+  MalformedStep,
   Matcher,
   MatcherName,
   NetworkRequestRef,
@@ -949,7 +950,11 @@ class Parser {
       } else {
         const step = this.parseStep();
         if (step) body.push(step);
-        else this.recover(before);
+        else {
+          const gap = this.malformedStepAt(before);
+          if (gap) body.push(gap);
+          this.recover(before);
+        }
       }
       if (this.pos === before) this.advance(); // guarantee progress
     }
@@ -1571,7 +1576,11 @@ class Parser {
       // than a new checker pass and a new code to say the same thing.
       const step = this.isKw(head, 'header') ? this.parseHeaderStmt() : this.isKw(head, 'csrf') ? this.parseCsrfStmt() : this.parseStep();
       if (step) steps.push(step);
-      else this.synchronize();
+      else {
+        const gap = this.malformedStepAt(before);
+        if (gap) steps.push(gap);
+        this.synchronize();
+      }
       if (this.pos === before) this.advance(); // guarantee progress
     }
     if (this.check('dedent')) this.advance();
@@ -2407,6 +2416,42 @@ class Parser {
    * production that consumed *nothing* also leaves `previous()` on the previous line's newline, and
    * skipping the sync there would leave its whole line to be re-parsed a token at a time — which is
    * the cascade this milestone is about, just one scope down. */
+  /**
+   * The placeholder left behind when a step was identified and then abandoned (`M147c`,
+   * `M140-01`). See `MalformedStep` in `ast.ts` for why the body keeps a node here rather than
+   * closing the gap: every pass that answers a question by looking at what *precedes* a step was
+   * answering it from a body the user did not write.
+   *
+   * `before` is the token index the step started at — the same `before` the four call sites already
+   * hold for their progress guard, so no site has to remember a second position.
+   *
+   * **Only a word starts a step**, so a failure that begins on punctuation or a string gets no
+   * placeholder. Those are not abandoned steps; they are the parser landing mid-line after some
+   * other production gave up, and inventing a step there would put a node in the body at a
+   * position the user wrote nothing at.
+   *
+   * **Silent in completion mode.** `parseStep` returns `null` at a completion point without
+   * reporting anything — that null means "the cursor is here", not "this failed" — and a
+   * placeholder built from it would be a step the editor's own keystroke invented.
+   *
+   * `wait` is the one head that needs more than its first word: `wait until api …` establishes a
+   * response and `wait until <ui condition>` does not, and by the time `parseWaitUntilApiRest`
+   * fails that distinction is gone. Read from the tokens rather than reported by the production,
+   * so the phrase recorded is the one the user typed.
+   */
+  private malformedStepAt(before: number): MalformedStep | null {
+    if (this.completionMode) return null;
+    const first = this.tokens[before];
+    if (!first || first.type !== 'ident') return null;
+    let head = first.value;
+    const second = this.tokens[before + 1];
+    const third = this.tokens[before + 2];
+    if (head === 'wait' && second && this.isKw(second, 'until')) {
+      head = third && this.isKw(third, 'api') ? 'wait until api' : 'wait until';
+    }
+    return { type: 'MalformedStep', head, span: this.spanFrom(first.span.start) };
+  }
+
   private recover(startPos: number): void {
     if (this.pos === startPos) {
       this.synchronize();
@@ -2630,7 +2675,11 @@ class Parser {
       } else {
         const step = this.parseStep();
         if (step) body.push(step);
-        else this.recover(before);
+        else {
+          const gap = this.malformedStepAt(before);
+          if (gap) body.push(gap);
+          this.recover(before);
+        }
       }
       if (this.pos === before) this.advance(); // guarantee progress
     }
@@ -2886,7 +2935,11 @@ class Parser {
       const before = this.pos;
       const step = this.parseStep();
       if (step) steps.push(step);
-      else this.synchronize();
+      else {
+        const gap = this.malformedStepAt(before);
+        if (gap) steps.push(gap);
+        this.synchronize();
+      }
       if (this.pos === before) this.advance(); // guarantee progress
     }
     if (this.check('dedent')) this.advance();

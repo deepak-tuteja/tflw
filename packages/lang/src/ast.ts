@@ -455,6 +455,41 @@ export interface PauseStmt extends Node {
   readonly maxMs: number | null;
 }
 
+/**
+ * A step the parser identified and then could not finish — the `api` line whose body would not
+ * parse, the `capture` with no name after `as` (`M147c`, `M140-01`).
+ *
+ * **It exists so that later passes stop reading a parse failure as a fact about the user's file.**
+ * A step that fails to parse used to be dropped from the body outright, and every pass that answers
+ * a question by looking at what *precedes* a step then answered it from a body the user did not
+ * write. Measured, both from one mistake: `api POST /o body [1, 2]` raises `TF010` and then `TF039`
+ * *"no response yet — an `api` step must run before this assertion/capture"* on the next line, which
+ * is false — an `api` step is written right there; and `capture body.id as` raises `TF010` and then
+ * `TF030` *"unknown variable"* on every later use of a name the user did bind. The second diagnostic
+ * in each pair is not merely redundant, it contradicts the file.
+ *
+ * **`head` is the keyword the user actually typed**, not what the parser decided the step meant —
+ * `'api'`, `'capture'`, `'wait until api'`, or a misspelling if that is what is there. The parser
+ * reports what is written; which heads matter is each pass's own decision, and `checker.ts` makes it
+ * in two places for two different reasons. Recording an "establishes a response"/"binds a name"
+ * classification here instead would put one consumer's semantics into the syntax tree.
+ *
+ * **Distinct from `recoveredSpans`, which stays**, and the split is worth keeping straight: that
+ * field lets a pass suppress a diagnostic the parser *already caused at the same span*, matched by
+ * offset. This node is for the opposite shape — the wrong diagnostic lands on a **different line**
+ * from the mistake, sometimes several lines later and more than once, so there is no span to match
+ * on. What is needed is not a filter but a placeholder that holds the position in the body.
+ *
+ * Never present in a program that parses, so no consumer on the path that matters ever sees one,
+ * and no parser golden file changes. Nothing executes it: `tflw run` refuses a program with parse
+ * errors before `execSteps` is reached.
+ */
+export interface MalformedStep extends Node {
+  readonly type: 'MalformedStep';
+  /** The keyword the step began with, as written. */
+  readonly head: string;
+}
+
 export type Step =
   | ApiStep
   | ExpectStmt
@@ -488,7 +523,8 @@ export type Step =
   | DropFileStmt
   | ScreenshotStmt
   | StubStmt
-  | PauseStmt;
+  | PauseStmt
+  | MalformedStep;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */
 export interface GiveStmt extends Node {
