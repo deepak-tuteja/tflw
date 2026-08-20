@@ -32,6 +32,9 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
                                           # that can legitimately outlast the ordinary UI-expect
                                           # budget. Always hard-fails; no soft/`check` form.
 wait until text "Error" is not visible for 2s   # must hold *continuously* for 2s
+wait until list "Results" has count 50 timeout wait 5m
+                                          # this step polls for five minutes; every other wait
+                                          # in the suite keeps the configured `timeout wait`
 ```
 
 `switch to new tab`'s popup listener starts *before* its block runs, so a fast-opening tab can't
@@ -59,6 +62,34 @@ rejected outright rather than burning 30s to report a mystery timeout.
 `for` is UI-only. Sustaining an *API* condition would mean re-issuing the request for the whole
 window, which is load testing rather than waiting — `wait until api … for` is refused by name and
 points you at [load testing](/guide/load-testing).
+
+## One slow wait: `timeout wait <duration>` on the step
+
+Most suites have one wait that is nothing like the others — an import job, a report build, a queue
+that drains in its own time. Raising `timeout wait` in config to accommodate it slows down every
+*failure* in the suite, because every other wait now takes the same long budget to give up.
+
+Write the budget on the step instead. It is available on both forms of `wait until`, and goes last
+on the line:
+
+```tflw fragment
+wait until text "Import complete" is visible timeout wait 10m
+```
+
+Don't confuse it with the `timeout` an `api` request takes. That one bounds a **single HTTP
+request**; on a poll it bounds one poll, and it is clamped to whatever is left of the wait budget
+anyway. They are different quantities and a poll may carry both:
+
+```tflw fragment
+wait until api GET /jobs/latest timeout 5s timeout wait 5m
+  expect body.status equals "done"
+```
+
+No single poll may hang past 5s; the whole step gives up after five minutes.
+
+A `for` hold has to fit inside whichever budget applies, and `tflw check` compares them for you —
+against the step's own when it wrote one, which means it can now answer without resolving an env at
+all.
 
 ## Evidence: screenshots & Playwright trace
 

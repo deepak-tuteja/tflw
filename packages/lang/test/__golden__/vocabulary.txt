@@ -241,7 +241,7 @@ K   value
 A   viewport
 AK  violations
 A   visible
-A   wait
+AK  wait
 A   warn
 A   was
 A   web

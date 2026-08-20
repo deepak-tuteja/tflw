@@ -702,7 +702,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'can never be satisfied',
     decidable: 'static',
     checkerCode: 'TF055',
-    note: 'M124/D232 — the hold duration is a literal in the AST and `timeouts.wait` is in `tflw.config`; the runtime already phrases it as a never-satisfiable program, which is a checker sentence. `TF055` is a **warning** while this stays a hard error, and the split is D147: the checker compares against one resolved env, so it predicts, and a suite whose CI env raises `timeout wait` must stay runnable',
+    note: 'M124/D232 — the hold duration is a literal in the AST and `timeouts.wait` is in `tflw.config`; the runtime already phrases it as a never-satisfiable program, which is a checker sentence. `TF055` is a **warning** while this stays a hard error, and the split is D147: the checker compares against one resolved env, so it predicts, and a suite whose CI env raises `timeout wait` must stay runnable. **D640 (`M147d`, `A3-10`) narrows what that split covers**: a step carrying its own `timeout wait <duration>` puts both operands in the file, the checker observes rather than predicts, and `checkHoldWindows` now reaches it with no env resolved at all. The tier stayed a warning anyway rather than becoming severity-by-provenance — the condition on revisiting is recorded on `checkHoldWindows`',
   },
   {
     id: 'quantifier-vs-request-to',

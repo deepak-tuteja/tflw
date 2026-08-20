@@ -121,8 +121,13 @@ export interface ProgramCheckOptions {
    * The fifth field to carry the same `undefined` rule, and the one where getting it backwards is
    * cheapest to do and most embarrassing to ship: a default of `{ wait: 0 }` would make *every*
    * `for` clause in the language "longer than the budget", so a file the CLI was handed without a
-   * config would light up entirely. `undefined` means nobody resolved an env, and the pass is
+   * config would light up entirely. `undefined` means nobody resolved an env, and the comparison is
    * skipped rather than guessed at.
+   *
+   * **`M147d`/D640 made that skip per-step rather than per-file.** A `wait until` step may now carry
+   * its own `timeout wait <duration>`, which supplies the second operand itself — so `TF055` reaches
+   * those steps with this field `undefined`, and only the steps that still depend on the env are
+   * skipped. The doctrine is unchanged; what changed is how many steps it applies to.
    */
   readonly envTimeouts?: EnvTimeouts;
   /**
@@ -3680,11 +3685,23 @@ function literalText(value: Value): string | null {
  * mistake once (`A4-05`) inside the milestone whose thesis forbade it, which is why the tier is
  * written down twice — here and in `spec-data.ts`.
  *
- * Skipped entirely without `opts.envTimeouts`: see `ProgramCheckOptions`.
+ * **Since D640 the pass is no longer skipped without `opts.envTimeouts`** — only the steps that
+ * still need one are. A step carrying its own `timeout wait <duration>` (`M147d`, `A3-10`) puts
+ * *both* operands in the file, so the comparison is settled by reading the program and holds under
+ * every env. That is a strictly wider reach on the same rule: before, `wait until x is hidden for
+ * 60s timeout wait 30s` could not be diagnosed by an editor that had resolved no config, even
+ * though nothing outside the file was in question.
+ *
+ * The **tier deliberately did not change with it.** D147 made this a warning because the second
+ * operand came from `tflw.config` and the checker was therefore predicting; for an in-file budget
+ * that reason is simply absent, and by the standard `TF071` was allocated under it would be an
+ * error. Making one code mean *error here, warning there* is a bigger change than it looks — every
+ * consumer that partitions diagnostics by severity would start seeing `TF055` in both halves — so
+ * it is recorded as open in SPEC §9.5 rather than settled in passing. Condition for revisiting: a
+ * second diagnostic in this language needs a severity that depends on where its operand came from.
  */
 export function checkHoldWindows(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
   const diags: Diagnostic[] = [];
-  if (!opts.envTimeouts) return diags;
   for (const test of program.tests) checkHoldWindowsInSteps(test.body, opts.envTimeouts, diags);
   for (const action of program.actions) checkHoldWindowsInSteps(action.body, opts.envTimeouts, diags);
   for (const hook of program.hooks) checkHoldWindowsInSteps(hook.body, opts.envTimeouts, diags);
@@ -3693,7 +3710,7 @@ export function checkHoldWindows(program: Program, opts: ProgramCheckOptions = {
 
 /** One body's `wait until` steps (D152) — reachable in a `session`, which may well wait for a login
  *  redirect to settle before capturing the token. */
-function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts, diags: Diagnostic[]): void {
+function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts | undefined, diags: Diagnostic[]): void {
   const seen = new Set<object>();
   const visit = (value: unknown): void => {
     if (value === null || typeof value !== 'object') return;
@@ -3706,16 +3723,31 @@ function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts, diags
     const node = value as Record<string, unknown>;
     if (node['type'] === 'WaitUntilUiStmt') {
       const hold = node['holdMs'];
+      // D640. The step's own `timeout wait` wins over the env's, exactly as the runtime resolves it
+      // — without this the widened grammar would produce a false positive on its very first use:
+      // `for 60s timeout wait 2m` is a perfectly satisfiable program that the old comparison reads
+      // against the env's 30s default and calls impossible.
+      const own = node['waitMs'];
+      const budget = typeof own === 'number' ? own : env?.wait;
       // `>=`, not `>`, and the runtime's test is the same one: a window exactly as long as the
       // budget still cannot close, because the condition would have to survive past the deadline
-      // that ends the step.
-      if (typeof hold === 'number' && hold >= env.wait) {
+      // that ends the step. `budget === undefined` is the env-derived case with no resolved env —
+      // still skipped, still not defaulted, for the reason `ProgramCheckOptions` gives.
+      if (typeof hold === 'number' && budget !== undefined && hold >= budget) {
+        // Naming the env is what makes the env-derived form actionable, and is a lie about the
+        // in-file form — the budget is on the line the caret already points at, and no env supplied
+        // it. So the sentence ends differently rather than naming an env that had no say.
+        const detail =
+          typeof own === 'number' ? `\`timeout wait ${budget}ms\` on this step` : `\`timeout wait\` (${budget}ms in env "${env!.envName}")`;
         diags.push({
           code: Codes.HOLD_EXCEEDS_WAIT_TIMEOUT,
           severity: 'warning',
-          message: `\`for ${hold}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${env.wait}ms in env "${env.envName}")`,
+          message: `\`for ${hold}ms\` can never be satisfied — the whole step is bounded by ${detail}`,
           span: (node as unknown as { span: Span }).span,
-          hint: `the hold window has to be shorter than the budget the step runs inside — raise \`timeout wait\` in \`tflw.config\`, or shorten the hold (SPEC §9.5)`,
+          hint:
+            typeof own === 'number'
+              ? `the hold window has to be shorter than the budget the step runs inside — raise this step's \`timeout wait\`, or shorten the hold (SPEC §9.5)`
+              : `the hold window has to be shorter than the budget the step runs inside — raise \`timeout wait\` in \`tflw.config\`, or shorten the hold (SPEC §9.5)`,
         });
       }
     }

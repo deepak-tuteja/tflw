@@ -759,6 +759,49 @@ test('FS-05: a condition interrupted mid-window fails, and reports the longest u
   assert.match(report.tests[0]!.error ?? '', /longest unbroken hold \d+ms of 600ms/);
 });
 
+// ---- M147d (`A3-10`, D640): the per-step wait budget ------------------------
+//
+// `timeout wait <duration>` on a `wait until` step overrides the env's for that step alone. Both
+// tests here are written against the FS-05 backstop rather than against elapsed time, because the
+// two outcomes it produces are *qualitatively* different — "can never be satisfied" or a pass — so
+// neither assertion can be satisfied by a slow machine or a lucky poll.
+
+test('M147d: the step budget lengthens the window a hold has to fit inside', async () => {
+  // Under the env's 500ms alone this program is refused by name: a 600ms hold cannot close inside
+  // it. With the step's own 2s it is an ordinary, satisfiable wait — so a `waitMs` that parsed and
+  // was then dropped fails this test loudly rather than subtly.
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 500 } };
+  const { program, diagnostics } = parseSource(`test "own budget"
+  open "/"
+  wait until button "Hidden button" is hidden for 600ms timeout wait 2s
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.match(report.tests[0]!.steps[1]!.detail ?? '', /held for 600ms/);
+});
+
+test('M147d: the step budget shortens it too, and the refusal names the step number rather than the env one', async () => {
+  // The mirror, and the half that proves which operand the backstop read: the env says 3s, so the
+  // old comparison called a 600ms hold perfectly fine. It is the step's own 500ms that makes it
+  // impossible, and it is 500ms the message has to quote — a report naming 3000ms would send the
+  // reader to edit a config line that was not the problem.
+  const longWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 3000 } };
+  const { program, diagnostics } = parseSource(`test "own budget, shorter"
+  open "/"
+  wait until button "Hidden button" is hidden for 600ms timeout wait 500ms
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, longWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /can never be satisfied/);
+  assert.match(error, /\(500ms\)/);
+  assert.doesNotMatch(error, /3000ms/);
+  // And the remedy names the line the reader is looking at, not `tflw.config`.
+  assert.match(error, /Raise this step's `timeout wait`/);
+});
+
 test('FS-05: a hold window at least as long as `timeout wait` is refused by name — it could never pass, and would otherwise surface as an ordinary timeout that explains nothing', async () => {
   const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 500 } };
   const { program } = parseSource(`test "impossible hold"

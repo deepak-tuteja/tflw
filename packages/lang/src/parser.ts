@@ -3157,8 +3157,13 @@ class Parser {
       if (!body) return null;
     }
 
+    // `!this.atWaitBudget()` is the whole of D640's disambiguation, and it is deliberately read
+    // from *this* side rather than only from the clause it protects: the per-request `timeout` must
+    // decline precisely what the per-step wait budget takes, and one predicate consulted by both
+    // makes that an invariant instead of a coincidence. A plain `api` step has no wait budget, so
+    // `api GET /x timeout wait 5m` falls through to `endLine()` — see `trailingHint`.
     let timeoutMs: number | null = null;
-    if (this.isKw(this.peek(), 'timeout')) {
+    if (this.isKw(this.peek(), 'timeout') && !this.atWaitBudget()) {
       this.advance();
       timeoutMs = this.parseDuration();
       if (timeoutMs === null) return null;
@@ -3380,6 +3385,47 @@ class Parser {
 
   // -- wait until api / wait until <ui> ---------------------------------------
 
+  /** True at the two-token opener of a per-step wait budget, `timeout wait <duration>` (`M147d`,
+   * `A3-10`, D640).
+   *
+   * Exists as a predicate rather than as an inline test because it is read from **both** sides of
+   * the ambiguity it resolves: `parseApiRequestLine` must decline exactly what `parseWaitBudget`
+   * takes, or `wait until api GET /jobs timeout wait 5m` loses its first token to the per-request
+   * clause and dies on ``expected a duration … found `wait` ``. Two copies of that test would agree
+   * until one of them was edited. */
+  private atWaitBudget(): boolean {
+    return this.isKw(this.peek(), 'timeout') && this.isKw(this.peek(1), 'wait');
+  }
+
+  /** `timeout wait <duration>` — how long *this* `wait until` may poll, overriding the active env's
+   * `timeout wait` for one step (`M147d`, `A3-10`, D640). Shared by both forms; absent means the
+   * config value, exactly as before.
+   *
+   * **Why this spelling and not the bare `timeout` the row asked for.** `A3-10` observed that `wait
+   * until api … timeout 30s` parses while the locator form's `timeout 30s` is `TF010`, and read the
+   * difference as a capability. It is not: on the api form `timeout` sets *one poll's request*
+   * timeout, which decision 67 then clamps to what remains of the wait deadline — it cannot extend
+   * the wait at all. The locator form has no request for that clause to bound, and the budget the
+   * row's author actually wanted was un-overridable on **both** forms. So copying the bare spelling
+   * across would have made one word mean the request budget on one sibling and the step budget on
+   * the other, inside a single statement. Naming the config key it overrides keeps them separable,
+   * and lets a poll state both at once:
+   *
+   *     wait until api GET /jobs timeout 5s timeout wait 5m
+   *
+   * — no single poll may hang past 5s, and the whole step gives up after five minutes.
+   *
+   * Returns `{ ok: false }` when the duration itself was malformed; `parseDuration` has already
+   * reported, and the caller aborts the step the way every other clause here does. */
+  private parseWaitBudget(): { ok: boolean; ms: number | null } {
+    if (!this.atWaitBudget()) return { ok: true, ms: null };
+    this.advance(); // `timeout`
+    this.advance(); // `wait`
+    const ms = this.parseDuration();
+    if (ms === null) return { ok: false, ms: null };
+    return { ok: true, ms };
+  }
+
   /** `wait until …` — dispatches on what follows `until`: `api …` re-issues a request until its
    * nested `expect`s pass or wait times out (SPEC §5.5, P#15); anything else is parsed as a UI
    * locator condition (SPEC §9.5, M3b). Caller has not yet consumed `wait`. */
@@ -3395,6 +3441,8 @@ class Parser {
     this.advance(); // `api`
     const request = this.parseApiRequestLine();
     if (!request) return null;
+    const budget = this.parseWaitBudget();
+    if (!budget.ok) return null;
     // FS-05 scoped `for <duration>` to the UI form, where the measured gap was ("the error toast
     // never appears"). Someone who learned it there will try it here, so say what it costs rather
     // than letting `endLine()` report a bare unexpected `for`: sustaining an API condition means
@@ -3415,6 +3463,7 @@ class Parser {
       type: 'WaitUntilApiStmt',
       request: headers.length ? { ...request, headers } : request,
       expects,
+      waitMs: budget.ms,
       span: this.spanFrom(start),
     };
   }
@@ -3448,8 +3497,10 @@ class Parser {
       holdMs = this.parseDuration();
       if (holdMs === null) return null;
     }
+    const budget = this.parseWaitBudget();
+    if (!budget.ok) return null;
     this.endLine();
-    const stmt: WaitUntilUiStmt = { type: 'WaitUntilUiStmt', subject, matcher, holdMs, span: this.spanFrom(start) };
+    const stmt: WaitUntilUiStmt = { type: 'WaitUntilUiStmt', subject, matcher, holdMs, waitMs: budget.ms, span: this.spanFrom(start) };
     return stmt;
   }
 
@@ -5082,7 +5133,11 @@ class Parser {
       case 'within':
         return '`within` opens a block, it is not an inline suffix — put `within <locator>` on its own line and indent the steps it scopes';
       case 'timeout':
-        return 'a per-step `timeout` is only accepted on `api` requests — elsewhere set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
+        // Two mistakes share this token since D640, and the second one is only distinguishable by
+        // looking at the token after it — which is the same two-token test the grammar itself uses.
+        return this.atWaitBudget()
+          ? '`timeout wait <duration>` sets the poll budget of one `wait until` step — no other step has one. To bound a single request write `timeout <duration>`; to change the whole run set `timeout wait` in `tflw.config`'
+          : 'a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, or set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
       case 'and':
         return 'one assertion per `expect` — put the second one on its own `expect` line';
       case 'ms':

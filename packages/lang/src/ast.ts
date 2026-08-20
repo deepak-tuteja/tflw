@@ -630,6 +630,15 @@ export interface WaitUntilApiStmt extends Node {
   readonly type: 'WaitUntilApiStmt';
   readonly request: ApiRequestSpec;
   readonly expects: readonly ExpectStmt[];
+  /** `timeout wait <duration>` (`M147d`, `A3-10`, D640) — this step's own poll budget in ms, or
+   *  null for the active env's `timeout wait`.
+   *
+   *  **Not `request.timeoutMs`, and the difference is the whole row.** `wait until api GET /jobs
+   *  timeout 30s` has always parsed, and sets how long *one poll's HTTP request* may take — then
+   *  decision 67 clamps even that to whatever is left of the wait deadline. It does not lengthen the
+   *  wait by a millisecond. `A3-10` read that acceptance as a capability the locator form lacked;
+   *  on the quantity actually at issue the two forms were equally narrow, so this widens both. */
+  readonly waitMs: number | null;
 }
 
 /** `wait until <locator> [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` added by FS-05) —
@@ -652,6 +661,16 @@ export interface WaitUntilUiStmt extends Node {
    * clock restarts from zero whenever the condition goes false, so the step passes only on an
    * uninterrupted window, and the whole thing stays bounded by `timeout wait`. */
   readonly holdMs: number | null;
+  /** `timeout wait <duration>` (`M147d`, `A3-10`, D640) — this step's own poll budget in ms, or
+   *  null for the active env's `timeout wait`. Identical in meaning to the api form's field of the
+   *  same name; the two clauses are one production read from both rests.
+   *
+   *  It is also the second operand `TF055` compares `holdMs` against. Written here, both operands
+   *  are in the file and the check no longer needs a resolved env to run at all — D147's reason for
+   *  keeping that code a *warning* is exactly the env dependency this clause removes. The tier did
+   *  not change in `M147d`; see SPEC §9.5 for why that is now an open question rather than a
+   *  settled one. */
+  readonly waitMs: number | null;
 }
 
 export interface ApiHeader extends Node {

@@ -167,3 +167,82 @@ test('an author’s OWN shorter `timeout` on the poll still reports as a request
 
   await server.close();
 });
+
+// ---- M147d (`A3-10`, D640): the two budgets, and the one the row mistook for the other ---------
+
+test('M147d: `timeout 30s` on the poll does not lengthen the wait by a millisecond', async () => {
+  // The program `A3-10`'s author would have written, and the reason the row's asymmetry is not one.
+  // `wait until api … timeout 30s` parses — that is the acceptance the row observed — but `timeout`
+  // here is `ApiRequestSpec.timeoutMs`, one poll's request budget, which decision 67 then clamps to
+  // whatever is left of the wait deadline. The step still gives up at `timeout wait`. So the
+  // capability the locator form was said to be missing did not exist on this form either.
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => json(res, 200, { status: 'pending' }),
+  });
+
+  const source = `test "never ships"
+  wait until api GET /poll timeout 30s
+    expect body.status equals "shipped"
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const started = performance.now();
+  const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 500 }), { source });
+
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /timed out after 500ms/);
+  // Not merely the message: had `timeout 30s` set the wait budget, this would have taken 30 seconds.
+  assert.ok(performance.now() - started < 10_000, 'the 30s request timeout must not have become the step budget');
+
+  await server.close();
+});
+
+test('M147d: `timeout wait` on the poll is the one that does, overriding the env for this step', async () => {
+  // The widening, in the lengthening direction: the env allows 200ms, the endpoint settles on the
+  // third call, and only the step's own 5s budget gets the poll loop there. Without `waitMs` reaching
+  // the deadline this fails on the env's 200ms.
+  let calls = 0;
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => {
+      calls++;
+      json(res, 200, { status: calls >= 3 ? 'shipped' : 'pending' });
+    },
+  });
+
+  const source = `test "waits longer than the env allows"
+  wait until api GET /poll timeout wait 5s
+    expect body.status equals "shipped"
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 200 }), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.ok(calls >= 3);
+
+  await server.close();
+});
+
+test('M147d: the timeout report quotes the budget that actually expired', async () => {
+  // The shortening direction, and the assertion that pins *which* number reaches the reader: the env
+  // says 5s, the step says 300ms, and a report naming 5000ms would describe a deadline that had not
+  // passed.
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => json(res, 200, { status: 'pending' }),
+  });
+
+  const source = `test "gives up early on purpose"
+  wait until api GET /poll timeout wait 300ms
+    expect body.status equals "shipped"
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source });
+
+  assert.equal(report.ok, false);
+  const detail = report.tests[0]!.steps[0]!.detail ?? '';
+  assert.match(detail, /timed out after 300ms/);
+  assert.doesNotMatch(detail, /5000ms/);
+
+  await server.close();
+});

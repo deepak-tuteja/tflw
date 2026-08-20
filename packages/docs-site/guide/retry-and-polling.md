@@ -27,7 +27,8 @@ on every attempt (same per-test seed) — see
 
 For state that becomes true asynchronously (a job finishes, an order ships), re-issues the
 request until its `expect`-only block passes or the wait timeout elapses (default 30s,
-`timeout wait <duration>` in config to override):
+`timeout wait <duration>` in config to override — or on the step itself, for one slow poll; see
+[browser advanced](/guide/browser-advanced)):
 
 ```tflw
 test "order eventually ships"

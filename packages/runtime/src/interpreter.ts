@@ -4066,6 +4066,10 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
   const scope = browser.scope ?? page;
   const name = String(evalValue(subject.locator.value, ctx));
   const holdMs = step.holdMs;
+  // D640 (`M147d`, `A3-10`) — the step's own `timeout wait <duration>` when it wrote one, otherwise
+  // the env's. Resolved once and used for the deadline, the backstop below and every message, so
+  // there is no path on which the number a failure reports is not the number that bounded it.
+  const waitBudget = step.waitMs ?? config.timeouts.wait;
   // A hold window at least as long as the poll budget can never pass — the condition would have to
   // stay true past the deadline that ends the step. That is a written-wrong test, not a slow app,
   // and it would otherwise surface as an ordinary timeout that says nothing about the real cause.
@@ -4074,12 +4078,13 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
   // built for `TF051`; this throw is the backstop for a run whose config the checker was never
   // given. It is a warning there and a hard error here on purpose (D147): the checker predicts
   // against one env, and a suite whose CI env raises `timeout wait` is correct.
-  if (holdMs !== null && holdMs >= config.timeouts.wait) {
+  if (holdMs !== null && holdMs >= waitBudget) {
+    const raise = step.waitMs === null ? 'Raise `timeout wait` in tflw.config' : "Raise this step's `timeout wait`";
     throw new RuntimeError(
-      `\`for ${holdMs}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${config.timeouts.wait}ms), so the hold window has to be shorter than it. Raise \`timeout wait\` in tflw.config, or shorten the hold.`,
+      `\`for ${holdMs}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${waitBudget}ms), so the hold window has to be shorter than it. ${raise}, or shorten the hold.`,
     );
   }
-  const deadline = performance.now() + config.timeouts.wait;
+  const deadline = performance.now() + waitBudget;
   let heldSince: number | null = null;
   let longestHoldMs = 0;
   for (;;) {
@@ -5604,7 +5609,12 @@ async function execWaitUntilApi(
   start: number,
   pinnedAgents?: KeepAliveAgents,
 ): Promise<{ result: StepResult; response: ResponseTrace | null; request: RequestTrace | null }> {
-  const deadline = performance.now() + config.timeouts.wait;
+  // D640 (`M147d`, `A3-10`) — this step's own `timeout wait <duration>`, else the env's. Distinct
+  // from `step.request.timeoutMs`, which is one *poll's* request timeout and is clamped to whatever
+  // is left of this deadline a few lines down; that clamp is decision 67 and is why the per-request
+  // clause could never have served as the poll budget the row asked the locator form to gain.
+  const waitBudget = step.waitMs ?? config.timeouts.wait;
+  const deadline = performance.now() + waitBudget;
   let attempt = 0;
   let last: { redacted: ApiExec['redacted']; response: ResponseTrace; request: RequestTrace; message: string } | null = null;
   for (;;) {
@@ -5614,7 +5624,7 @@ async function execWaitUntilApi(
     const remainingMs = deadline - performance.now();
     if (remainingMs <= 0 && last) {
       const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
-      const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${last.message}`;
+      const detail = `timed out after ${waitBudget}ms (${attempts}): ${last.message}`;
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last.redacted.request, last.redacted.response),
         response: last.response,
@@ -5649,7 +5659,7 @@ async function execWaitUntilApi(
       // it says, and still surfaces unchanged. Only the clamp's own firing is re-attributed.
       if (!(err instanceof RequestTimeoutError) || !clampedByWait) throw err;
       const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
-      const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${last ? last.message : 'no poll completed before the deadline'}`;
+      const detail = `timed out after ${waitBudget}ms (${attempts}): ${last ? last.message : 'no poll completed before the deadline'}`;
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last?.redacted.request, last?.redacted.response),
         response: last?.response ?? null,
@@ -5674,7 +5684,7 @@ async function execWaitUntilApi(
     const lastMessage = outcomes.find((o) => !o.ok)!.message;
     last = { redacted, response: trace.response, request: trace.request, message: lastMessage };
     if (performance.now() >= deadline) {
-      const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${lastMessage}`;
+      const detail = `timed out after ${waitBudget}ms (${attempts}): ${lastMessage}`;
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), redacted.request, redacted.response),
         response: trace.response,

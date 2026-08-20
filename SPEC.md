@@ -129,6 +129,10 @@ env staging
   (`wait until api`, and since M3b `wait until <ui condition>`, §9.5), and `timeout expect` (a UI
   `expect`/`check`'s retry budget, M3a — still inert for a plain API `expect`, which evaluates once
   and fails fast, P#15) are all consumed today.
+- **Two of the three can be overridden for one step.** `timeout step` by an `api` step's own
+  `timeout <duration>` (§5.1), and — since `M147d`/D640 — `timeout wait` by a `wait until` step's own
+  `timeout wait <duration>` (§9.5). `timeout expect` has no per-step form. The two clauses are
+  different quantities and may appear on the same line; see §9.5.
 - `insecure true` — a per-env (or `defaults`) key that disables TLS certificate verification for
   the whole run, for self-signed/private-CA staging certs (PLAN decision 78). Explicit and
   greppable in review; a run with it active carries a visible warning in the CLI summary and the
@@ -1333,6 +1337,22 @@ Each individual poll's own request timeout is clamped to whatever's left of the 
 just the (usually much longer) per-request `timeout step` — so a slow/hanging endpoint can't make
 the whole `wait until api` block silently exceed its configured budget (PLAN decision 67).
 
+**The two budgets on a poll line** (`M147d`, `A3-10`, D640). `wait until api GET /jobs timeout 30s`
+has always parsed, and the `timeout` in it is `ApiRequestLine`'s own — it bounds **one poll's HTTP
+request**, and the clamp described just above then shortens even that to whatever is left of the
+wait deadline. It does not lengthen the wait by a millisecond. To give *this* step a poll budget of
+its own, write `timeout wait <duration>`; both may stand on the same line, in that order:
+
+```
+wait until api GET /jobs timeout 5s timeout wait 5m
+  expect body.status equals "done"
+```
+
+— no single poll may hang past 5s, and the whole step gives up after five minutes. Omitting the
+second takes the active env's `timeout wait`, exactly as before. The bare `timeout` is documented
+here for the first time: it was inherited silently from the shared request line, which is how
+`A3-10` came to read it as a capability the locator form was missing.
+
 `wait until api` may carry its own `header "…" is <value>` lines, exactly like an `api` step's
 header sub-block (§5.1) — the same `header`/`expect` block, headers first by convention but not
 enforced by the grammar. Every poll re-sends them, so a poll that needs a specific auth token,
@@ -2243,6 +2263,10 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
 
 wait until text "Error" is hidden for 2s  # must hold *continuously* for 2s, not merely be true on
                                           # one poll — the only way to assert a sustained condition
+
+wait until list "Results" has count 50 timeout wait 5m
+                                          # this step polls for five minutes; every other wait in
+                                          # the suite keeps the env's `timeout wait` (M147d, D640)
 ```
 
 - **`within frame <locator>`** — the container locator must resolve to exactly one `<iframe>`
@@ -2265,6 +2289,30 @@ wait until text "Error" is hidden for 2s  # must hold *continuously* for 2s, not
   api` (§5.5): same "budget, not a moment" framing, but for a UI condition — no separate request to
   re-issue, so it's a single line rather than a block. `has count` keeps its ambiguity exception
   from §9.4.
+- **`timeout wait <duration>`** (`M147d`, `A3-10`, D640) gives one `wait until` step its own poll
+  budget in place of the active env's. Available on **both** forms, and written last on the line:
+  `wait until <locator> [is] [not] <matcher> [for <dur>] [timeout wait <dur>]`.
+
+  **Why the spelling names the config key it overrides.** `A3-10` observed that `wait until api …
+  timeout 30s` parses while the locator form's `timeout 30s` is `TF010`, and read the difference as
+  a capability. It is not one: on the api form that `timeout` is the request line's own and bounds
+  **one poll's HTTP request** (§5.5), which the wait deadline then clamps — it cannot extend the
+  wait at all. The locator form has no request for that clause to bound, and the budget the row was
+  really asking for was un-overridable on *both* forms. So a bare `timeout` here would have meant
+  the request budget on one sibling and the step budget on the other inside a single statement.
+  Naming the key keeps them separable and lets a poll state both at once.
+
+  A bare `timeout` on a locator wait therefore remains `TF010`. Its hint now names this clause.
+
+  **`TF055`'s tier is now an open question, and is deliberately unchanged.** That warning compares a
+  `for` hold against `timeout wait`, and D147 made it a warning rather than an error because the
+  second operand came from `tflw.config`, so the checker was *predicting* what a given env would do.
+  When the budget is written on the step, both operands are in the file: the checker observes, and
+  the pass now runs even with no env resolved. By the standard `TF071` was allocated under, that
+  case is an error. It stayed a warning here because making one code mean *error from one source,
+  warning from another* is a larger change than it looks — every consumer that partitions
+  diagnostics by severity would begin seeing `TF055` in both halves. Condition for revisiting: a
+  second diagnostic in this language needs a severity that depends on where its operand came from.
 - **`for <duration>`** (FS-05) requires the condition to hold *continuously* for that long instead
   of passing on the first poll that satisfies it. Without it a negative is unassertable: `wait until
   text "Error" is hidden` passes immediately, because the toast has not rendered *yet*, and would
@@ -3570,7 +3618,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF052` | Checker (M116, `M97a-05`): `mask <locator>` written against a matcher other than `matches snapshot "…"`. A mask blanks a region *of a snapshot* before comparing it, so against any other matcher there is nothing for it to blank and the clause is silently doing nothing — which is the failure mode worth a diagnostic, since the author plainly believed it was masking something. The parser accepts a mask after any matcher **by design** (`parseSnapshotMasks`): rejecting it there would produce a parse error pointing at the wrong token, where this points at the mask itself. One diagnostic per mask rather than per statement, because each mask is a separate thing the author wrote and expected to do something. | `api GET /a` then `expect status equals 200 mask field "Email"` → `` only applies alongside `matches snapshot `` |
 | `TF053` | Checker (M116, `M97a-11`–`M97a-14`): `capture` against a subject that can be *asserted about* but not bound to a name — `page`, `request`, a UI locator, or an observed `request to "…"`. One code for what the runtime throws from five sites, because all five say the same sentence, and the hint names the operation each subject actually supports. **The `of request to "…"` case is the one that is easy to get wrong**: `status`/`header`/`body`/`body text` are ordinary value subjects, and `capture status as n` is perfectly legal — it is the `of` modifier that makes them uncapturable, since an observed network request is read from the browser's network log rather than from the last api step's response. So the rule tests the modifier before the subject kind; a kind-only rule looks complete and passes `capture status of request to "/x" as n` straight through. | `api GET /a` then `capture request as r` → `` does not support `request` ``; `api GET /a` then `capture status of request to "/a" as s` → `` does not support a `request to `` |
 | `TF054` | Checker (M124, `M97a-02`/`M97a-03`/`M97a-16`): an operand **written in the file** that the step will reject the moment it evaluates — `random number 5 to 1` (an empty range), `random password 2` (no room for the four character classes it guarantees), `hex`/`base64`/`url` `decode("…")` over a literal that will not decode, or a `matches`/`fails matching` pattern that is not a valid regular expression. Seven runtime `throw`s, one sentence, one code. **The rule fires on literals only, and that is the point rather than a limitation**: `random number {lo} to {hi}` is ordinary, legal and unknowable until the run binds those names, so an interpolated operand stays the runtime's. The decode tests are *imported* from the same module `eval.ts` uses (`literalValidity.ts`) rather than restated — "valid hex" has a length clause and "valid base64" excludes the URL-safe alphabet, and a second copy that drifted would report an error on a program that runs fine. | `let bad = random number 5 to 1` → `` `to` must be ≥ `from` ``; `let x = hex decode("not-hex!")` → `is not valid hex`; `api GET /a` then `expect body.name matches "("` → `invalid regex in matcher` |
-| `TF055` | Checker (M124, `M97a-06`): `wait until <locator> … for <duration>` whose hold window is at least as long as `timeout wait`. The window asks the condition to stay true for longer than the step is allowed to run, so it can never close — the step can only end by timing out, reporting a slow app, which is the one thing that was not wrong. **A warning, not an error, and the tier is the whole decision.** The second operand comes from `tflw.config` and differs per env, so the checker is *predicting* what this run will do rather than observing something settled: a suite whose CI env raises `timeout wait` to 120s is correct, and an error would make it unrunnable with no override. That is D147, filed after `A4-05` shipped exactly this mistake inside the milestone whose thesis forbade it. Skipped entirely when the caller resolved no env — `undefined` means nobody looked, not "the budget is zero". | `open "/x"` then `wait until button "Hidden" is hidden for 60s` → `can never be satisfied` |
+| `TF055` | Checker (M124, `M97a-06`): `wait until <locator> … for <duration>` whose hold window is at least as long as `timeout wait`. The window asks the condition to stay true for longer than the step is allowed to run, so it can never close — the step can only end by timing out, reporting a slow app, which is the one thing that was not wrong. **A warning, not an error, and the tier is the whole decision.** The second operand comes from `tflw.config` and differs per env, so the checker is *predicting* what this run will do rather than observing something settled: a suite whose CI env raises `timeout wait` to 120s is correct, and an error would make it unrunnable with no override. That is D147, filed after `A4-05` shipped exactly this mistake inside the milestone whose thesis forbade it. Skipped entirely when the caller resolved no env — `undefined` means nobody looked, not "the budget is zero". **Since `M147d`/D640 that skip is per-step, not per-file**: a step carrying its own `timeout wait <duration>` (§9.5) supplies the second operand itself, so it is compared with no env resolved at all, and where it *is* resolved the step's own budget wins over the env's — without which the widened grammar would have produced a false positive on its first use. The tier did not move with the reach; §9.5 records why, and the condition on revisiting it. | `open "/x"` then `wait until button "Hidden" is hidden for 60s` → `can never be satisfied` |
 | `TF056` | Checker (M124, `M97a-01`): `with each from "…"` naming a file whose extension is neither `.csv` nor `.json`. The loader reads rows from CSV (a header row) or JSON (an array of row objects) and picks between them by extension, so anything else is refused — but only *after* the file is opened, which means the run gets far enough to read a path whose problem was legible in the source all along. **Its own code rather than `TF043`**: `TF043` is `MISSING_FILE`, and here the file is very likely present — being present is what leaves the extension as the only thing wrong. They also sit on opposite sides of D147, since a missing file may be created by an earlier step (a prediction, warning) while an extension cannot change between check and run (an observation, error). Interpolated paths are skipped, like every other M124 rule. | `with each from "./rows.txt"` then `test "t"` then `api GET /health` → `` must be `.csv` or `.json` `` |
 | `TF057` | Checker (M125b1, `FU-18`, D245): an `api`/`wait until api`/`open` step whose target is written as an absolute URL rather than a path under the active env's base. Absolute URLs became legal in M125b1 — before it, `api GET https://x/y` was a parse error and `open "https://x/y"` was *silently concatenated* onto the `web` base, opening `http://localhost:5173/https://x/y`, which loads on any SPA with a catch-all route and fails later on an unrelated assertion. This warning is the cost of making it legal: the step is fixed wherever it points, so `--env staging` moves every other request in the suite and not this one. **Not phrased as a mistake, because it frequently is not one** — a one-off request to a second host is the case the row was filed about, and the warning exists so that "this step ignores the env" is something the file says out loud rather than something a reader has to notice. Emitted when the caller resolved no config at all (nothing can be predicted about a refusal) or when an allowlist exists; when a config *was* resolved and declares none, `TF058` is emitted instead, because a step that is going to be refused does not also need to be told it is unportable. | `api GET https://api.example.com/orders` → `` `--env` will not move it ``; `open "https://example.com/checkout"` → `absolute URL` |
 | `TF058` | Checker (M125b1, `FU-18`, D246): an absolute URL in a suite whose resolved env declares no `allow hosts` — the run will refuse to send it. **This is the one place in the language where the *absence* of an allowlist means enforcement rather than the lack of it**, and that inversion is the rule: `allow hosts` is opt-in and unset means every host is permitted (`allowHosts.ts:30`), which is the right default for a suite written entirely against its env's base URL, because that base *is* the declaration of where it talks. An absolute URL is the one form that can reach a host `tflw.config` never mentions, so writing one opts the suite into declaring where it may reach. **A warning here and a refusal at run time, and the split is D147**: `allow hosts` is read from `tflw.config` and differs per env, so the checker is predicting what *this* run would do — a suite whose CI env declares an allowlist is correct, and an error would make it unrunnable with no override — while the runtime has resolved the config and is looking at the URL it is about to fetch, so it observes and may refuse outright. Requires the caller to distinguish "a config was resolved and declares none" from "no config was resolved": the first is this rule, the second is `TF057`. | `api GET https://api.example.com/orders` → `the run will refuse to send it` |

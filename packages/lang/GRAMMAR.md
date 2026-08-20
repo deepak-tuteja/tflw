@@ -233,13 +233,30 @@ PauseStmt   := 'pause' Duration ('to' Duration)? NEWLINE
 
 ```
 ApiStep         := 'api' ApiRequestLine NEWLINE (INDENT (HeaderLine | RetryAfterClause)* DEDENT)?
-WaitUntilApiStep:= 'wait' 'until' 'api' ApiRequestLine NEWLINE
+WaitUntilApiStep:= 'wait' 'until' 'api' ApiRequestLine WaitBudget? NEWLINE
                     INDENT (HeaderLine* ExpectStmt+) DEDENT      # (§5.5) — expect-only body, no
                                                                   # `retry honoring` clause here;
                                                                   # `wait until` has its own
                                                                   # poll-until-passes retry semantics
 
+WaitBudget      := 'timeout' 'wait' Duration                     # M147d/D640 (`A3-10`) — how long
+                                                                  # THIS `wait until` may poll,
+                                                                  # overriding the env's
+                                                                  # `timeout wait`. Distinct from
+                                                                  # ApiRequestLine's own `timeout`,
+                                                                  # which bounds ONE poll's request
+                                                                  # and is clamped to what remains
+                                                                  # of this budget (decision 67); a
+                                                                  # poll may carry both. Read by
+                                                                  # both `wait until` forms and by
+                                                                  # nothing else — no other step has
+                                                                  # a poll budget to override
+
 ApiRequestLine  := IDENT? METHOD PATH BodyForm? ('timeout' Duration)? ('without' 'redirects')?
+                                                                 # the `timeout` here declines the
+                                                                 # two-token `timeout wait` above,
+                                                                 # so the two clauses can stand on
+                                                                 # one line in either combination
 METHOD          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'
 IDENT?                                                           # an optional named service prefix (§3.2)
 
@@ -491,7 +508,8 @@ DownloadBlock   := 'download' 'as' IDENT NEWLINE Block                # M3b — 
 DragStmt        := 'drag' Locator 'to' Locator                        # M3b
 DropFileStmt    := 'drop' 'file' STRING 'onto' Locator                 # M3b
 
-WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)?    # M3b — the UI sibling of
+WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)? WaitBudget?
+                                                                       # M3b — the UI sibling of
                                                                        # WaitUntilApiStep (§5.5);
                                                                        # polls `timeout wait`, not
                                                                        # `timeout expect`; always
