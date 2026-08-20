@@ -22,7 +22,7 @@
 // filter (test 7), and dropping the per-(import, name) dedup (test 6).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, checkProgram, Codes, type KnownAction } from '../src/index.js';
+import { parseSource, checkProgram, Codes, type Diagnostic, type KnownAction } from '../src/index.js';
 
 /** The imported actions `resolveImportedActions` would hand over for `source`, built the same way
  *  it builds them — by parsing the file and keeping name, arity and body. Written out rather than
@@ -34,7 +34,14 @@ const importedFrom = (from: string, source: string): KnownAction[] => {
   return program.actions.map((a) => ({ name: a.name, arity: a.params.length, from, body: a.body }));
 };
 
-const check = (source: string, imported: KnownAction[]): ReturnType<typeof checkProgram> => {
+// The return type is spelled `Diagnostic[]` and not `ReturnType<typeof checkProgram>`, which is
+// the same type: `verify-test-observability.mjs` gives up on an arrow helper whose return-type
+// annotation runs more than twenty characters between the parameter list and the `=>`, and a
+// helper it cannot read is a harness it cannot resolve. With the long spelling the nine tests
+// below resolved to `importedFrom`'s stages alone — lex and parse — and every one was reported
+// as a vacuous `TF037` assertion, which they are not. Filed as `M147-06`; this is the annotation
+// a reader would have written anyway.
+const check = (source: string, imported: KnownAction[]): Diagnostic[] => {
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, [], 'the entry fixture must parse cleanly');
   return checkProgram(program, { importedActions: imported });

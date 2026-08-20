@@ -2301,6 +2301,95 @@ const REGISTRY = [
     replace: '  headers = withChainCookie(headers, undefined);',
   },
 
+  // --- M147c -----------------------------------------------------------------------------------
+  // Order 6's checker/runtime contract. Ten rules shipped across five slices, each entered here as
+  // the one mutation that removes the rule and leaves the build green. The registry had not grown
+  // since `m137g` — nine milestones — because the ones between it and here were instrument and
+  // documentation work whose breaks were demonstrated in throwaway scripts. A throwaway script
+  // proves the assertion could fail *once*; only this array keeps proving it.
+  {
+    id: 'reversed-date-bounds-check-clean',
+    milestone: 'm147c',
+    file: CHECKER,
+    what: "D630 removed: `random date between \"2030-01-01\" and \"2020-01-01\"` goes back to checking clean and dying in `asDate` at run time — `M140-05`. The two numeric siblings (`random number`, `random decimal`) have always thrown on a reversed literal range, so the mutant is a language where three generators of one family answer the same mistake two different ways, which is the asymmetry `M124-01` was filed about",
+    find: '  if (from === null || to === null || from.anchor !== to.anchor || to.ms >= from.ms) return;',
+    replace: '  if (from === null || to === null || from.anchor !== to.anchor || true) return;',
+  },
+  {
+    id: 'setting-value-floor-unchecked',
+    milestone: 'm147c',
+    file: PARSER,
+    what: "D631's floor removed: `workers 0` and `viewport 0 0` parse again — a worker pool that can run nothing and a window with no pixels in it, both accepted by `check` and discovered at run time or not at all (`A2-09`). The zeros that are *legal* survive this mutation untouched, which is the half of the rule that is easy to lose: `retry 0` and `timeout expect 0s` are meaningful settings and their tests stay green either way",
+    find: '    if (n < min) {',
+    replace: '    if (false && n < min) {',
+  },
+  {
+    id: 'setting-value-fraction-unchecked',
+    milestone: 'm147c',
+    file: PARSER,
+    what: "D631's other half: `retry 2.5` is accepted and truncated somewhere downstream without a word. A fractional count of whole things is the shape `A2-09` named first, and it is a separate branch from the floor above because a value can be legal on one and not the other — which is why one mutation could not have covered both",
+    find: '    if (integer && !Number.isInteger(n)) {',
+    replace: '    if (false && integer && !Number.isInteger(n)) {',
+  },
+  {
+    id: 'reserved-scheme-typo-runs',
+    milestone: 'm147c',
+    file: CHECKER,
+    what: "D632 removed: `api \"tflw://dmeo\"` checks clean and fails at run time in `guardDemoUrl` (`M118-01`). The reserved scheme has exactly one legal host, it is written as a string literal in `tflw.config`, and the set is known at check time — the mutant is the statically decidable rule left to the runtime, which is D137 clause 2 broken in the one place the manifest could not see it",
+    find: '  if (!url.value.startsWith(DEMO_SCHEME) || url.value === DEMO_BASE_URL) return;',
+    replace: '  if (true || !url.value.startsWith(DEMO_SCHEME) || url.value === DEMO_BASE_URL) return;',
+  },
+  {
+    id: 'duplicate-table-column-accepted',
+    milestone: 'm147c',
+    file: PARSER,
+    what: "D633 removed: `| id | id |` parses again, the second column silently wins, and every cell under the first is discarded without a word (`A2-11`). `TF072` is raised inside the loop that reads the header rather than over the finished column list, and the mutant is what the post-hoc version also produced — so this entry guards the *placement* as much as the rule: M83's panic mode swallows the second complaint when the cursor has not moved",
+    find: '    if (seen.has(name.value)) {',
+    replace: '    if (false && seen.has(name.value)) {',
+  },
+  {
+    id: 'row-case-name-column-typo-silent',
+    milestone: 'm147c',
+    pkg: '@tflw/runtime',
+    file: INTERP,
+    what: "`A4-18`'s runtime half removed: a `{col}` in a `with each` test's **name** that the row does not carry goes back to `lookupVar`'s general sentence, which names `let` and `capture` — two keywords that cannot bind a table column — in the one scope where the header is the only thing that could have helped. The row was filed on the *remedy*, not on a missing error, and this is the only home for the file-backed form: `@tflw/lang` does no I/O, so `TF027` cannot see the columns of `with each from \"./rows.csv\"`",
+    find: '    if (first.kind !== \'prop\' || columns.includes(first.name)) continue;',
+    replace: '    if (first.kind !== \'prop\' || true) continue;',
+  },
+  {
+    id: 'unparseable-import-reported-nowhere',
+    milestone: 'm147c',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/imports.ts',
+    what: "`M140-03` restored exactly: the resolver still runs a full `parseSource` on the imported file and still throws every diagnostic away, so `tflw check <entry>` prints `no problems found` about a program that cannot start. `actions: undefined` keeps the world unknown either way, which is why this hid — the *verdict* was always right and only the report was missing, and a check that is right and silent looks identical to a check that is right",
+    find: '      unparseable.add(imp.path.value);\n',
+    replace: '',
+  },
+  {
+    id: 'imported-body-calls-unresolved',
+    milestone: 'm147c',
+    file: CHECKER,
+    what: "`A4-21` reopened: a call written inside an imported action's body is never resolved against the importing file's registry, so an extracted `action` that calls a helper nobody brought in checks clean and dies on the first step that reaches it. The frame is the whole finding — the same call is *undecidable* in the file that declares it, because calls bind late and a library action may call a name only its importers define, and *fully decidable* one file up. Five wrong implementations were built for this; the test that catches each of them is the one asserting a library file stays clean",
+    find: '  if (!closedWorld) return [];',
+    replace: '  if (!closedWorld || true) return [];',
+  },
+  {
+    id: 'malformed-api-step-loses-its-response-scope',
+    milestone: 'm147c',
+    file: CHECKER,
+    what: "`M140-01`'s first victim restored: an `api` step the parser could not finish reading stops establishing a response scope, so the *next* line — which is correct — is told `TF039`, no response to read. The mistake and the diagnostic are on different lines, sometimes several apart, which is why neither `recoveredSpans` nor M83's panic mode could ever have filtered it: both match by position and there is no position to match",
+    find: '        if (step.head === \'api\' || step.head === \'wait until api\') established = true;\n',
+    replace: '',
+  },
+  {
+    id: 'malformed-step-blinds-the-whole-variable-world',
+    milestone: 'm147c',
+    file: CHECKER,
+    what: "the second victim's fix over-applied: *any* malformed head makes the scope's bindings unknown, not just the three that bind a name (`let`, `capture`, `download … as`). `TF030` then stops being reported after a malformed `click` or `fill`, which is a real diagnostic suppressed by an unrelated typo — the mirror of the bug being fixed, and the reason the two suppressions in this pass are kept independent with a negative control each way",
+    find: '        if (step.head === \'let\' || step.head === \'capture\' || step.head === \'download\') bindings.unknown = true;',
+    replace: '        bindings.unknown = true;',
+  },
+
 ];
 
 /**
