@@ -1773,9 +1773,22 @@ class Parser {
         return decls.length ? decls : null;
       }
       this.advance();
+      const durStart = this.peek().span.start;
       const ms = this.parseDuration();
       if (ms === null) return decls.length ? decls : null;
-      decls.push({ type: 'TimeoutDecl', target: targetTok.value as TimeoutTarget, ms, span: this.spanFrom(start) });
+      const target = targetTok.value as TimeoutTarget;
+      // **Only `step`.** `timeout step 0s` hands `setTimeout(abort, 0)` to every request, so the
+      // whole suite fails before a single byte is sent; `timeout expect 0s` and `timeout wait 0s`
+      // are *meaningful* — both poll loops are `for (;;)` bodies that evaluate once and test the
+      // deadline afterwards, so zero there means "evaluate once, don't poll" and is a setting
+      // someone may genuinely want. Measured in `interpreter.ts`/`http.ts`, not assumed, and the
+      // asymmetry is kept rather than flattened for the same reason `random string 0` is legal.
+      // Durations skip the whole-number test: `parseDuration` multiplies, so `1.5s` is 1500ms and
+      // fractional milliseconds are odd rather than impossible.
+      if (target === 'step' && !this.settingValue(ms, this.spanFrom(durStart), `timeout step ${ms}ms`, 1, '`timeout step 0s` aborts every request before it is sent, so every api step in the suite fails identically — give it a real budget, or drop the line to take the default. `timeout expect 0s`/`timeout wait 0s` are different and stay legal: they mean "evaluate once, don\'t poll"', false)) {
+        return decls.length ? decls : null;
+      }
+      decls.push({ type: 'TimeoutDecl', target, ms, span: this.spanFrom(start) });
       if (this.check('comma')) {
         this.advance();
         continue;
@@ -1882,13 +1895,65 @@ class Parser {
     return true;
   }
 
+  /** **The setting-value rule** (`M147c`, `A2-09`, D631) — `TF071`.
+   *
+   * *A setting is refused when the value written cannot configure anything: when no run could act
+   * on it.* Five slots take a bare number and none of them looked at it, so `workers 0`,
+   * `viewport 0 0`, `timeout step 0s` and `retry 2.5` each reached "no problems found" and then ran
+   * something nobody wrote — zero workers, a viewport with no area, a timeout that aborts every
+   * request before it is sent, and two retries where two-and-a-half was asked for.
+   *
+   * **Negatives were never the gap and this does not handle them.** The lexer emits `-` as its own
+   * token, so `workers -1` fails `expect('number')` and has always been `TF010` — measured, not
+   * assumed. What is new here is *zero where zero cannot configure anything* and *a fraction where
+   * only whole things exist*.
+   *
+   * **The `min` is per-slot on purpose, and the zeros that survive are the point.** `retry 0` and
+   * `retry honoring "…" up to 0` are the defaults spelled out loud; `timeout expect 0s` and
+   * `timeout wait 0s` mean *evaluate once, do not poll*, because both loops test their deadline
+   * only after the first evaluation. Same line `random string 0` draws in SPEC §4.1: the question
+   * is never whether the number is zero, it is whether the setting can still keep its promise.
+   *
+   * Returns `false` when it reported, so a caller can stop rather than build a node around a value
+   * it has just called impossible.
+   */
+  private settingValue(n: number, span: Span, written: string, min: number, hint: string, integer = true): boolean {
+    if (integer && !Number.isInteger(n)) {
+      this.error(
+        Codes.INVALID_SETTING_VALUE,
+        `\`${written}\` is not a whole number`,
+        span,
+        hint,
+      );
+      return false;
+    }
+    if (n < min) {
+      this.error(
+        Codes.INVALID_SETTING_VALUE,
+        `\`${written}\` is below the smallest value this setting can take (${min})`,
+        span,
+        hint,
+      );
+      return false;
+    }
+    return true;
+  }
+
   private parseWorkersDecl(): WorkersDecl | null {
     const start = this.peek().span.start;
     this.advance(); // `workers`
     const num = this.expect('number', 'a worker count, e.g. `workers 4`');
     if (!num) return null;
+    // The same sentence `--workers` has always printed for the same value ("expects a positive
+    // integer", `cli.ts`). One rule, two doors — the flag refused `0` and the config door accepted
+    // it, which is the whole of `A2-09`'s first line.
+    const count = Number(num.value);
+    if (!this.settingValue(count, num.span, `workers ${num.value}`, 1, 'a run needs at least one worker — `workers 1` runs the suite sequentially, which is the default when `workers` is omitted')) {
+      this.endLine();
+      return null;
+    }
     this.endLine();
-    return { type: 'WorkersDecl', count: Number(num.value), span: this.spanFrom(start) };
+    return { type: 'WorkersDecl', count, span: this.spanFrom(start) };
   }
 
   private parseInsecureDecl(): InsecureDecl | null {
@@ -2219,10 +2284,25 @@ class Parser {
     this.advance(); // `viewport`
     const width = this.expect('number', 'a viewport width in px, e.g. `viewport 1280 720`');
     if (!width) return null;
+    // **Both dimensions, and each checked the moment it is read.** `viewport 0 0` is two mistakes on
+    // one line, and reporting only the first sends someone back for a second `check` to be told the
+    // other half. Getting both out is not a matter of avoiding `&&`: M83's panic mode drops any
+    // diagnostic raised without the cursor having moved since the last one (`this.pos ===
+    // this.lastErrorPos`), so checking both values *after* reading both tokens silently loses the
+    // second one — measured, it reported width and swallowed height. Interleaving read-then-check
+    // puts a consumed token between the two calls, which is the condition panic mode actually
+    // tests. Any future setting that takes two numbers on one line inherits this ordering
+    // requirement.
+    const px = 'a viewport is measured in whole pixels and needs area to render anything — `viewport 1280 720` is Playwright\'s own default, which is what applies when `viewport` is omitted';
+    const w = Number(width.value);
+    const okW = this.settingValue(w, width.span, `viewport width ${width.value}`, 1, px);
     const height = this.expect('number', 'a viewport height in px, e.g. `viewport 1280 720`');
     if (!height) return null;
+    const h = Number(height.value);
+    const okH = this.settingValue(h, height.span, `viewport height ${height.value}`, 1, px);
     this.endLine();
-    return { type: 'ViewportDecl', width: Number(width.value), height: Number(height.value), span: this.spanFrom(start) };
+    if (!okW || !okH) return null;
+    return { type: 'ViewportDecl', width: w, height: h, span: this.spanFrom(start) };
   }
 
   private parseReportDecl(): ReportDecl | null {
@@ -2412,7 +2492,12 @@ class Parser {
         sawRetry = true;
         this.advance();
         const n = this.expect('number', 'a retry count, e.g. `retry 2`');
-        if (n && !duplicate) retry = Number(n.value);
+        // `retry 0` is legal and is the default — no retry. `retry 2.5` was not: the interpreter
+        // computes `1 + Math.max(0, test.retry)` attempts, so two-and-a-half retries silently ran
+        // three attempts, which is `retry 2`. A count of attempts is whole or it is a typo.
+        if (n && !duplicate && this.settingValue(Number(n.value), n.span, `retry ${n.value}`, 0, 'a retry count is a whole number of re-runs — `retry 2` runs the test up to three times, and `retry 0` (the default) never re-runs it')) {
+          retry = Number(n.value);
+        }
         continue;
       }
       // `parallel`/`sequential` (D105-D107) — contextual keyword; defaults to `'sequential'` when
@@ -3110,6 +3195,13 @@ class Parser {
     const num = this.expect('number', 'a max retry count, e.g. `up to 3`');
     if (!num) {
       this.synchronize();
+      return null;
+    }
+    // Same rule, same family, one line away — and `up to 0` stays legal for the same reason
+    // `retry 0` does: it says "honour the header, then don't re-issue", which is a position, not a
+    // mistake. Only the fractional case is new here.
+    if (!this.settingValue(Number(num.value), num.span, `up to ${num.value}`, 0, 'a maximum number of re-issues is whole — `up to 3` re-sends this one request at most three times, and `up to 0` never re-sends it')) {
+      this.endLine();
       return null;
     }
     this.endLine();

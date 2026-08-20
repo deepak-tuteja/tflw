@@ -146,6 +146,39 @@ env staging
   for `insecure true`'s reason: a green run that proves nothing about the reader's system must never
   look like one that does. `tflw://` is reserved; no other address under it resolves.
 
+**The setting-value rule** (`M147c`, D631/D632). *A setting is refused when the value written
+cannot configure anything — when no run could act on it.* Five slots in the language take a bare
+number: `workers`, `viewport`, `timeout <target>` here, plus a test header's `retry N` (§4.4) and an
+api step's `retry honoring "…" up to N` (§5.5). None of them read the number before `M147c`, so a
+value no run can honour was accepted in silence and something nobody wrote ran instead.
+
+| written | refused (`TF071`) | why |
+|---|---|---|
+| `workers 0` | yes | a run needs at least one worker — `--workers 0` has always said so on the flag side |
+| `workers 2.5` | yes | workers are whole processes |
+| `viewport 0 720`, `viewport 1280 0` | yes | a viewport with no area renders nothing |
+| `viewport 1280.5 720` | yes | pixels are whole |
+| `timeout step 0s` | yes | `setTimeout(abort, 0)` on every request — the whole suite fails before a byte is sent |
+| `timeout expect 0s`, `timeout wait 0s` | **no** | *evaluate once, don't poll* — both loops test the deadline only after the first evaluation |
+| `retry 2.5` | yes | attempts are whole; the interpreter computes `1 + max(0, N)`, so 2.5 silently ran three |
+| `retry 0` | **no** | the default, spelled out loud |
+| `retry honoring "…" up to 0` | **no** | honour the header, then don't re-issue — a position, not a mistake |
+| `retry honoring "…" up to 1.5` | yes | a count of re-issues is whole |
+
+Two things this rule deliberately does **not** say. It says nothing about negatives: `workers -1`
+was never silent and is not this code's business, because the lexer emits `-` as its own token and
+every one of these slots has always rejected it as *not a number* (`TF010`). And it does not read
+"zero is invalid" — three of the ten rows above are zeros that stay legal. The question is never
+whether the number is zero, it is whether the setting can still keep its promise at that value,
+which is the same line §7.3's generator-operand rule draws for `random string 0`.
+
+The refusal lands at **parse time**, not check time, and that is where the rest of the family
+already lives: `hold 0 users` and `run 0 iterations` have been parser refusals (`TF033`) since M29.
+A setting operand is always a literal — there is no interpolated form to defer to the run — so
+there is nothing for the checker to be conservative about and no runtime rule behind it. `TF071` is
+deliberately not `TF054`, whose published meaning is an operand *the step will reject the moment it
+evaluates*; a setting has no step and gets no rejection, which is exactly why it was silent.
+
 ### 3.2 Named API services (P#29)
 
 ```
@@ -821,7 +854,9 @@ number and cell counts, never silent padding/truncation.
 ### 4.4 `retry` (P#10)
 
 `retry 2` on a test declares up to 2 re-runs on failure; passes-after-retry are flagged
-**flaky** in the report, never silently green. Each attempt re-derives the *same* per-test seed,
+**flaky** in the report, never silently green. The count is a whole number of re-runs and `retry 0`
+(the default) is legal — §3.1's setting-value rule, `TF071`. `retry 2.5` is refused: the interpreter
+computes `1 + max(0, N)` attempts, so it used to run three and say nothing. Each attempt re-derives the *same* per-test seed,
 so `random` values are identical on every attempt — but `unique(...)`/`unique email`/etc. are not:
 their run-wide counter keeps advancing across attempts by design, so a retry can never collide
 with data the failed attempt already created (§7.2, §7.4).
@@ -1111,7 +1146,9 @@ where `<target>` is either a path (`/orders`) or an absolute URL (`https://host/
   A response with no `Retry-After` header, or one that fails to parse as either format, is never
   retried — guessing a wait time is worse than not retrying at all. A retried step's report line
   says so directly: `..., retried 1x honoring Retry-After (waited 2000ms total)`. Not available on
-  `wait until api`, which already has its own poll-until-expect-passes retry mechanism.
+  `wait until api`, which already has its own poll-until-expect-passes retry mechanism. `N` is a
+  whole number of re-issues (§3.1's setting-value rule, `TF071`), and `up to 0` is legal — it means
+  *honour the header and then don't re-send*, which is a position rather than a mistake.
   ```
   api POST /orders/{orderId}/reviews body { rating: 5 }
     header "Authorization" is "Bearer {userToken}"
@@ -3435,6 +3472,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF067` | Checker + runtime (M134a, D382): an `input handling violations` assertion on a step whose request carries nothing to mutate — no identifier path segment, no query parameter, and no JSON body. The oracle re-sends the observed request once per payload per mutable input; with no mutable input it sends nothing, no rule applies, and the assertion could not have failed whatever the application did. That is D285's no-power-to-fail shape, which this tier is required to make speakable rather than report as a green. **Two doors, and the runtime is the load-bearing one** — the same shape as `TF065`, and its second instance in this table. The checker decides it only where it provably can: a `{var}` anywhere in the path is skipped (interpolation can produce an id segment or a whole query string), `body from "…"` is skipped (the file is not the checker's to read), and `body "…"` raw text is skipped (it may well be JSON, and guessing from a content-type header would be a guess about a header that may itself be interpolated). What is left is the case people actually write — `api GET /health` with the assertion under it. The runtime holds the request that actually went out and re-decides the same question against it, **reusing this code rather than minting one**, because the repair is identical from either door: assert it on a step that takes an id, a query parameter or a JSON body. **Deliberately not a fourth `AUTHZ_*` code**: nothing here is about authorization, and unlike Tier 2 this scan needs no owner at all — it changes no identity, so `TF062` and `TF063` have no analogue. | `test "t"` then `api GET /health` then `expect response has no input handling violations` → `nothing to mutate` |
 | `TF068` | Checker (M137c, D443): a `crawl` that declares no `seed`, so its surface is empty before the run starts. D285's no-power-to-fail shape on Tier 4's new construct — a crawl discovers its routes from its seeds, and with none it issues no request, so every assertion in its body could not have failed whatever the application did. Refused at **check time** for `TF067`'s stated reason: the cheapest place to say *this assertion has no power to fail* is before anything executes. Decided here only where it provably can be, which is the same line `TF067`'s static half draws — zero `seed` clauses is a fact about the file, while an OpenAPI document that answers 404, a run whose own tests captured no traffic, and an `exclude` list that happens to cover every discovered route are facts about the run. Those belong to the **runtime door**, which reuses this same code rather than minting one, because the repair is the same sentence from either: give the crawl something to crawl. **`M137c1` (D481) adds a fourth runtime cause, and it is the only one whose repair differs:** a crawl that sent requests and reached *none* of them. The surface was real and the requests went out; every one was turned away before the application saw it, so every assertion in the body passed having judged no response — `D285`'s shape again, arrived at from the far side. Its hint points at addressing rather than at seeds, because that is what produces it: a document's paths resolve against the document's own `servers`, so an `api` base carrying a prefix the document also carries dials it twice. It stays one code despite the different repair, because a **runtime-only** diagnostic is unbuildable — the probes below execute through the checker, so a code with no check-time door has nothing to verify it, which is why `TF069` was withdrawn (D456). One code whose hint branches beats a second row no gate can check. The span is the `crawl` header rather than the first assertion, since the missing thing is a header clause and the body is correct. | `crawl "the v1 surface"` then `expect response has no critical security violations` → `has nothing to crawl` |
 | `TF070` | Checker (M137c, D443/D450): a step in a `crawl` body that is not one of the three `violations` assertions — `security`, `authorization` or `input handling`. **What the rule protects is the claim that made Tier 4 a declaration rather than a sixth workload kind**: a crawl is a *source of requests*, not a kind of judgement. It issues one request per discovered route per declared principal, and each `expect` in its body judges every one of those responses — so an `api` step there is a request nobody will send under a principal nobody chose, and `expect status equals 200` names a response the construct does not have, because a crawl has many. One repair covers all of it: put the step in a `test`. **Enforced by the checker, not the grammar** (`ast.ts`'s `CrawlDecl.body`), the same layering `D96`'s `retry` rule and `D19`'s browser-step rejection use: the parser admits any step so that a misplaced one gets this sentence instead of `expected an expect`. **`TF069` is skipped permanently** — `D456` withdrew it, and by the time this code was minted six comments across three packages already used that number as a pointer to the withdrawal, so it was spent even though it was never allocated (`D463`). Deliberately **not** `TF033`, which is what `D19`'s sibling rule reuses: `TF033` predates the one-code-one-repair rule this arc settled on and already carries several unrelated repairs, so it is the counter-example rather than the pattern. | `crawl "the v1 surface"` then `seed traffic` then `api GET /products` then `expect response has no critical security violations` → `` takes only `violations` assertions ``; `crawl "the v1 surface"` then `seed traffic` then `expect status equals 200` → `a crawl has many` |
+| `TF071` | Parser (`M147c`, `A2-09`, D631): **a setting whose written value is outside the range the setting can act on.** Five slots take a bare number — `workers`, `viewport`, `timeout <target>`, a test header's `retry N`, and an api step's `retry honoring "…" up to N` — and none of them read it, so `workers 0`, `viewport 0 0`, `timeout step 0s` and `retry 2.5` all reached "no problems found" and then ran something nobody wrote: zero workers, a viewport with no area, a `setTimeout(abort, 0)` on every request, and three attempts where two-and-a-half retries were asked for. **Negatives were never the gap** — the lexer emits `-` as its own token, so `workers -1` has always been `TF010` for not being a number at all. What this code adds is *zero where zero cannot configure anything* and *a fraction where only whole things exist*. **Two zeros stay legal on purpose**: `timeout expect 0s`/`timeout wait 0s` mean "evaluate once, don't poll" (both loops test their deadline only after the first evaluation), and `retry 0`/`up to 0` are the defaults spelled out loud. Deliberately not `TF054`, whose published meaning is an operand *the step will reject the moment it evaluates* — a setting has no step and gets no rejection. | `defaults` then `workers 0` in `tflw.config` → `below the smallest value`; `defaults` then `viewport 0 0` in `tflw.config` → `viewport width 0`; `test "t" retry 2.5` then `api GET /a` then `expect status equals 200` → `is not a whole number` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

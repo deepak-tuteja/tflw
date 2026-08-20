@@ -241,6 +241,30 @@ export const Codes = {
   // split two) and already carries several unrelated repairs — it is the counter-example, not the
   // pattern to copy.
   CRAWL_BODY_INVALID: 'TF070',
+  // M147c (`A2-09`, D631/D632) — **a setting whose written value is outside the range the setting
+  // can act on.** The other three families next door refuse the *key* (`TF020` unknown, `TF022`
+  // misplaced, `TF025` wrong block) and `TF024`/`TF029` refuse a *name*; not one of them looks at
+  // the value, so `workers 0`, `viewport 0 0`, `timeout step 0s` and `retry 2.5` all reached
+  // "no problems found" and then quietly ran something nobody wrote.
+  //
+  // **Negative values were never the gap.** `workers -1` is already `TF010` and always was — the
+  // lexer emits `-` as its own token, so every one of these slots rejects it as *not a number*
+  // before meaning is ever considered. What was silent is **zero where zero cannot configure
+  // anything, and a fraction where only whole things exist**, and that is exactly what this code
+  // says. It is the setting-side twin of `TF054`, and deliberately not `TF054` itself: that code's
+  // published meaning is an operand *"the step will reject the moment it evaluates"*, and a setting
+  // has no step and gets no rejection — reusing it would have made the message name a throw that
+  // does not exist. Not `TF033` either, whose `hold 0 users` is the nearest precedent in the
+  // language but arrives attached to load-workload documentation a `viewport` line has no business
+  // pointing at.
+  //
+  // **Two zeros stay legal, and they are the reason the rule is phrased around the promise rather
+  // than around the number** (the same line `random string 0` draws in §4.1). `timeout expect 0s`
+  // and `timeout wait 0s` mean *evaluate once, do not poll* — both loops test the deadline after
+  // the first evaluation, so zero is a real setting there; `timeout step 0s` aborts every request
+  // before it is sent. `retry 0` and `retry honoring "…" up to 0` are likewise the defaults spelled
+  // out loud, not mistakes.
+  INVALID_SETTING_VALUE: 'TF071',
 } as const;
 
 // ---------------------------------------------------------------------------
