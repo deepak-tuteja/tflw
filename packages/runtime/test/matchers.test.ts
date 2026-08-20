@@ -166,6 +166,45 @@ test('the comparison matchers still accept real numbers and durations (B3-04 neg
   await server.close();
 });
 
+// M147d (`A3-13`, D638) — the spelled-out spelling of the same bound, which used to check clean and
+// then fail every run with ``\`is less than\` expects a number, got object``. `2 seconds` parses to a
+// `DateOffsetLit` because `today + 2 seconds` needs the tagged shape; the numeric matchers had only
+// ever met `DurationLit.ms`, a plain number. The pairing with `2s` below is the assertion — one
+// spelling working and the other throwing is the whole defect, so neither line means anything alone.
+test('`duration is less than` reads a spelled-out unit as the duration it is', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+
+  const source = `test "spelled out"
+  api GET /health
+  expect duration is less than 2 seconds
+  expect duration is less than 2s
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, [], 'fixture did not parse');
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});
+
+// NEGATIVE — `B3-04`'s guard is the reason this had to be an unwrap of one named shape rather than a
+// loosening of the number test. If `null` ever compares as 0 again, `expect body.total is less than
+// 100` starts reporting PASS about a field that is not there.
+test('the widened number test still refuses everything `B3-04` refuses', async () => {
+  const server = await startFixtureServer({ '/o': (_req, res) => json(res, 200, { total: null }) });
+
+  const source = `test "null is not zero"
+  api GET /o
+  expect body.total is less than 100
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /expects a number, got/);
+
+  await server.close();
+});
+
 test('`connects`/`fails` on a non-`request` subject is a clear runtime error naming the right subject, not the UI-only message (decision 18)', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
 

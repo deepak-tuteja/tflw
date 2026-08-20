@@ -3582,17 +3582,25 @@ const DATE_OFFSET_MS: Readonly<Record<DateOffsetUnit, number>> = {
  *  operand nobody has bound and returns `null`, which is the whole rule. */
 function literalDateBound(value: Value): { anchor: 'today' | 'now'; ms: number; text: string } | null {
   if (value.type === 'DateAtom') return { anchor: value.which, ms: 0, text: value.which };
-  if (
-    value.type === 'BinaryExpr' &&
-    (value.op === '+' || value.op === '-') &&
-    value.left.type === 'DateAtom' &&
-    value.right.type === 'DateOffsetLit'
-  ) {
-    const magnitude = DATE_OFFSET_MS[value.right.unit] * value.right.amount;
+  if (value.type === 'BinaryExpr' && (value.op === '+' || value.op === '-') && value.left.type === 'DateAtom') {
+    // Both spellings of an offset, and the second one is why this reads two node types rather than
+    // one (`M147d`, `A3-13`, D638). `today - 10 seconds` parses to a `DateOffsetLit` and `today -
+    // 10s` to a `DurationLit`, because the value path builds an adjacent abbreviation as a duration
+    // — so before this, the identical program was judged under one spelling and waved through under
+    // the other. Measured: `random date between today and today - 10 seconds` raised `TF054` and
+    // `... today - 10s` reached `no problems found`, hours after `M147c` shipped that rule.
+    const offset = value.right;
+    const measured =
+      offset.type === 'DateOffsetLit'
+        ? { ms: DATE_OFFSET_MS[offset.unit] * offset.amount, text: `${offset.amount} ${offset.unit}` }
+        : offset.type === 'DurationLit'
+          ? { ms: offset.ms, text: offset.raw }
+          : null;
+    if (measured === null) return null;
     return {
       anchor: value.left.which,
-      ms: value.op === '-' ? -magnitude : magnitude,
-      text: `${value.left.which} ${value.op} ${value.right.amount} ${value.right.unit}`,
+      ms: value.op === '-' ? -measured.ms : measured.ms,
+      text: `${value.left.which} ${value.op} ${measured.text}`,
     };
   }
   return null;

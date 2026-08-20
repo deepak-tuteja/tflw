@@ -569,6 +569,46 @@ const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
 export const DURATION_UNITS = ['ms', 's', 'm'] as const;
 export const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
 
+/** **One time vocabulary** (`M147d`, `A3-13`, D638). Every unit the language has, abbreviations and
+ * words alike, in milliseconds — and the single table both duration positions and date arithmetic
+ * resolve through.
+ *
+ * The two arrays above stay because they still name a real distinction, but it is a distinction of
+ * *spelling*, not of meaning: **an abbreviation must touch its number, a word need not.** That rule
+ * was already true in the two positions that accepted both spellings (`today + 3s` parses, `today +
+ * 3 s` is `TF023: a duration unit must touch its number`, `today + 3 seconds` and `today +
+ * 3seconds` both parse); it simply had nowhere to be written down, because the third position —
+ * `parseDuration`, which `pause`/`timeout`/`for`/`over`/`within` all use — accepted no word at all.
+ *
+ * What that cost was measured before this table existed, and it was more than `pause 2 seconds`
+ * being refused:
+ *
+ *  - `expect duration is less than 2 seconds` reached `no problems found` and then failed every run
+ *    with ``\`is less than\` expects a number, got object`` — the value path built a
+ *    `DateOffsetLit`, which no numeric matcher had ever been taught to read.
+ *  - `random date between today and today - 10s` escaped `TF054`'s reversed-bounds rule entirely,
+ *    while `today - 10 seconds` was caught. Same program, two spellings, one judged.
+ *
+ * So the vocabulary split was not an ergonomic complaint. It halved the reach of a checker rule and
+ * left a statically decidable type error to be discovered at run time.
+ *
+ * There is no `h` and no `milliseconds` on purpose. The union makes the spellings the language
+ * *has* work in every position; inventing the two it lacks is a separate decision with no row
+ * behind it, and `B5-10` is the record of what a fourth unit nobody implemented costs. */
+export const TIME_UNIT_MS: Readonly<Record<string, number>> = {
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  seconds: 1_000,
+  minutes: 60_000,
+  hours: 3_600_000,
+  days: 86_400_000,
+  weeks: 7 * 86_400_000,
+};
+
+/** The `expected …` half of every unknown-unit hint, so the eight spellings are listed once. */
+const TIME_UNITS_HELP = 'expected `ms`, `s`, `m`, `seconds`, `minutes`, `hours`, `days`, or `weeks`';
+
 type DurationUnit = (typeof DURATION_UNITS)[number];
 
 /** Spellings that can only have been meant as one of tflw's three time units, mapped to the one
@@ -1814,7 +1854,7 @@ class Parser {
     if (!num) return null;
     const unitTok = this.peek();
     if (unitTok.type !== 'ident') {
-      this.error(Codes.UNKNOWN_DURATION_UNIT, `expected a time unit (ms/s/m) after ${num.value}, found ${describeToken(unitTok)}`, unitTok.span);
+      this.error(Codes.UNKNOWN_DURATION_UNIT, `expected a time unit (ms/s/m or seconds/minutes/hours/days/weeks) after ${num.value}, found ${describeToken(unitTok)}`, unitTok.span);
       return null;
     }
     const n = Number(num.value);
@@ -1828,28 +1868,28 @@ class Parser {
     // that premise was never measured. It is now: **66 closed-up durations in the corpus, 0 spaced
     // ones.** The single grep hit for a spaced duration is inside a comment. There are no programs
     // to break, so the narrowing costs nothing and the two positions stop disagreeing.
+    //
+    // D638 widens the adjacency test rather than removing it: it applies to an **abbreviation**,
+    // which is what makes `250 ms` a mistake worth teaching, and not to a **word**, which the other
+    // two positions have always accepted with a space (`today + 3 days`). Asking it of words would
+    // have made `pause 2 seconds` legal only as `pause 2seconds`, which is the union arriving with
+    // a new rule attached.
     const adjacent = num.span.end.offset === unitTok.span.start.offset;
-    if (!adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;
-    switch (unitTok.value) {
-      case 'ms':
-        this.advance();
-        return n;
-      case 's':
-        this.advance();
-        return n * 1000;
-      case 'm':
-        this.advance();
-        return n * 60_000;
-      default:
-        // D160: shared with the value path, so `pause 2sec` and `expect duration is less than 2sec`
-        // give the same answer. `reportBadDurationUnit` returns false only for a word that was never
-        // reaching for a unit, which in *this* position — a duration is the only thing the grammar
-        // allows — is still a wrong unit, so the old message stays as the fallback.
-        if (!this.reportBadDurationUnit(num, unitTok, adjacent)) {
-          this.error(Codes.UNKNOWN_DURATION_UNIT, `unknown time unit \`${unitTok.value}\``, unitTok.span, 'expected `ms`, `s`, or `m`');
-        }
-        return null;
+    const spelledOut = (DATE_OFFSET_UNITS as readonly string[]).includes(unitTok.value);
+    if (!spelledOut && !adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;
+    const perUnit = TIME_UNIT_MS[unitTok.value];
+    if (perUnit !== undefined) {
+      this.advance();
+      return n * perUnit;
     }
+    // D160: shared with the value path, so `pause 2sec` and `expect duration is less than 2sec`
+    // give the same answer. `reportBadDurationUnit` returns false only for a word that was never
+    // reaching for a unit, which in *this* position — a duration is the only thing the grammar
+    // allows — is still a wrong unit, so the old message stays as the fallback.
+    if (!this.reportBadDurationUnit(num, unitTok, adjacent)) {
+      this.error(Codes.UNKNOWN_DURATION_UNIT, `unknown time unit \`${unitTok.value}\``, unitTok.span, TIME_UNITS_HELP);
+    }
+    return null;
   }
 
   /**
@@ -1895,7 +1935,7 @@ class Parser {
     const why =
       unitTok.value.toLowerCase() === canonical
         ? 'time units are lowercase'
-        : `tflw's time units are \`ms\`, \`s\` and \`m\``;
+        : `tflw's abbreviated time units are \`ms\`, \`s\` and \`m\``;
     this.error(
       Codes.UNKNOWN_DURATION_UNIT,
       `unknown time unit \`${unitTok.value}\``,
@@ -4459,7 +4499,7 @@ class Parser {
         if (unitTok.type === 'ident' && unitTok.span.start.offset === tok.span.end.offset && (DURATION_UNITS as readonly string[]).includes(unitTok.value)) {
           this.advance();
           const ms = toMs(Number(tok.value), unitTok.value as (typeof DURATION_UNITS)[number]);
-          const lit: DurationLit = { type: 'DurationLit', ms, span: { start: tok.span.start, end: unitTok.span.end } };
+          const lit: DurationLit = { type: 'DurationLit', ms, raw: `${tok.raw}${unitTok.value}`, span: { start: tok.span.start, end: unitTok.span.end } };
           return lit;
         }
         // A number followed (whitespace allowed) by a spelled-out unit is a date offset, e.g.
@@ -4483,7 +4523,7 @@ class Parser {
             const canonical = nearestDurationUnit(unitTok.value);
             const span = { start: tok.span.start, end: unitTok.span.end };
             if (canonical !== null && unitTok.value === canonical) {
-              const lit: DurationLit = { type: 'DurationLit', ms: toMs(Number(tok.value), canonical), span };
+              const lit: DurationLit = { type: 'DurationLit', ms: toMs(Number(tok.value), canonical), raw: `${tok.raw}${canonical}`, span };
               return lit;
             }
             return { type: 'NumberLit', value: Number(tok.value), raw: tok.raw, span };
@@ -5161,15 +5201,8 @@ class Parser {
   }
 }
 
-function toMs(n: number, unit: 'ms' | 's' | 'm'): number {
-  switch (unit) {
-    case 'ms':
-      return n;
-    case 's':
-      return n * 1000;
-    case 'm':
-      return n * 60_000;
-  }
+function toMs(n: number, unit: string): number {
+  return n * (TIME_UNIT_MS[unit] ?? NaN);
 }
 
 /** Split a decoded string value into literal text and `{ref}` interpolation holes. */

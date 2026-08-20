@@ -353,6 +353,23 @@ function isDateOffset(v: unknown): v is DateOffsetValue {
   return typeof v === 'object' && v !== null && (v as Partial<DateOffsetValue>).__tflwDateOffset === true;
 }
 
+/** The millisecond count behind a spelled-out time literal, or `null` for anything else
+ *  (`M147d`, `A3-13`, D638).
+ *
+ * `2 seconds` and `2s` are the same duration and parse to different nodes: the adjacent
+ * abbreviation is a `DurationLit`, which evaluates to a plain `2000`, and the word is a
+ * `DateOffsetLit`, which evaluates to the tagged object `evalBinary` needs to add to a date. Every
+ * numeric consumer had only ever met the first, so `expect duration is less than 2 seconds` checked
+ * clean and failed every run with ``\`is less than\` expects a number, got object`` — a type error
+ * the checker could see and the author met at run time.
+ *
+ * Exported as a *named* unwrap rather than by loosening either numeric guard, because both guards
+ * are load-bearing: `matcher.ts`'s `num()` is `B3-04`'s fix for `expect body.total is less than 100`
+ * reporting PASS against `null`, and re-opening it to objects is how that returns. */
+export function dateOffsetMs(v: unknown): number | null {
+  return isDateOffset(v) ? v.ms : null;
+}
+
 function evalBinary(op: BinaryOp, l: unknown, r: unknown): unknown {
   if (l instanceof Date && isDateOffset(r)) {
     if (op === '+') return new Date(l.getTime() + r.ms);
@@ -420,6 +437,8 @@ function formatDate(date: Date, pattern: string): string {
 }
 
 function asNumber(v: unknown, ctx: string): number {
+  const offset = dateOffsetMs(v);
+  if (offset !== null) return offset;
   const n = typeof v === 'number' ? v : Number(v);
   if (Number.isNaN(n)) throw new RuntimeError(`\`${ctx}\` expects a number, got ${describe(v)}`);
   return n;

@@ -1268,6 +1268,11 @@ export interface CallExpr extends Node {
 export interface DurationLit extends Node {
   readonly type: 'DurationLit';
   readonly ms: number;
+  /** The literal as written — `500ms`, `10s`. Kept for the same reason `NumberLit` and
+   *  `ReportDecl.dir` keep theirs (`A2-12`): `ms` alone cannot be quoted back to the author, and
+   *  `M147d` needed exactly that when `today - 10s` became a bound `TF054` can read — a hint saying
+   *  ``write `random date between today - 10000 and today` `` names a program nobody wrote. */
+  readonly raw: string;
 }
 
 // ---- Value expressions: arithmetic + date math (P#25, SPEC §7.5) ----------

@@ -1830,6 +1830,31 @@ tflw will never grow a JavaScript-style shorthand-key form — `{stock}` meaning
 permanently spoken for by interpolation. This is what lets `expect body.stock equals {stock}` and
 `expect body matches subset {id: 1}` sit on consecutive lines and each mean the obvious thing.
 
+**Time units — one vocabulary, two spellings (M147d, `A3-13`, D638).** Every position that takes an
+amount of time takes any of eight units:
+
+| written | means |
+|---|---|
+| `ms` `s` `m` | milliseconds, seconds, minutes — **abbreviations, which must touch the number** |
+| `seconds` `minutes` `hours` `days` `weeks` | the same scale spelled out — **words, which need not** |
+
+```
+pause 2 seconds                 timeout step 2m
+timeout wait 90 seconds         expect duration is less than 500ms
+today + 3 days                  today - 10s
+expect duration is less than 2 seconds
+```
+
+`250 ms` is still `TF023: a duration unit must touch its number` — the adjacency rule applies to an
+abbreviation, which is what makes a stray space a mistake worth teaching, and not to a word, which
+date arithmetic has always accepted spaced. There is no `h` and no `milliseconds`: the rule makes the
+spellings tflw *has* work everywhere, and does not invent the two it lacks.
+
+Before D638 the three positions had three vocabularies, and the cost was not only that `pause 2
+seconds` was refused. `expect duration is less than 2 seconds` passed `tflw check` and failed every
+run as a type error, and `random date between today and today - 10s` escaped the reversed-bounds rule
+(§7.3) that catches `today - 10 seconds`.
+
 **Trailing commas, and the one rule that decides where they are legal (M147d, `A3-18`, D637).**
 A comma-separated list that is **closed by a bracket** accepts a trailing comma; one that ends at
 the **end of the line** does not:

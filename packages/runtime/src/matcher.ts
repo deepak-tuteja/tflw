@@ -3,7 +3,7 @@
 // subject" until the browser half (M3). API expects evaluate once and fail fast (P#15).
 
 import type { Matcher } from '@tflw/lang';
-import { describe, evalValue, RuntimeError, type EvalCtx } from './eval.js';
+import { dateOffsetMs, describe, evalValue, RuntimeError, type EvalCtx } from './eval.js';
 
 export interface MatchOutcome {
   readonly ok: boolean;
@@ -233,6 +233,15 @@ function num(value: unknown, matcher: string): number {
   // side from `env(…)`, which is always a string: silently accepting `"100"` there would leave a
   // second coercion path open for the sake of a spelling no corpus uses (measured: 0 occurrences of
   // `is less than env(` / `is greater than env(` across both repos' 25 files using these matchers).
+  //
+  // D638's one exception, and it is an unwrap rather than a coercion: `2 seconds` is a time literal
+  // whose value *is* a number of milliseconds, it simply arrives tagged because `today + 2 seconds`
+  // needs it to. `expect duration is less than 2 seconds` used to check clean and fail every run
+  // here; `2s` on the same line has always worked. Nothing else about the guard moves — `null`,
+  // `false`, `[]`, `""` and a one-element array are all still refused, which is the whole of
+  // `B3-04`.
+  const offset = dateOffsetMs(value);
+  if (offset !== null) return offset;
   if (typeof value !== 'number' || Number.isNaN(value)) {
     const got = Number.isNaN(value as number) ? 'NaN' : describe(value);
     throw new RuntimeError(`\`${matcher}\` expects a number, got ${got}`);

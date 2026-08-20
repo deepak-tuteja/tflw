@@ -211,7 +211,8 @@
             "negated": false,
             "value": {
               "type": "DurationLit",
-              "ms": 500
+              "ms": 500,
+              "raw": "500ms"
             }
           },
           "masks": []

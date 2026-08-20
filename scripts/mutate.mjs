@@ -167,7 +167,7 @@ const SUITE_SECONDS = {
 const DURATION_BRANCH = `        if (unitTok.type === 'ident' && unitTok.span.start.offset === tok.span.end.offset && (DURATION_UNITS as readonly string[]).includes(unitTok.value)) {
           this.advance();
           const ms = toMs(Number(tok.value), unitTok.value as (typeof DURATION_UNITS)[number]);
-          const lit: DurationLit = { type: 'DurationLit', ms, span: { start: tok.span.start, end: unitTok.span.end } };
+          const lit: DurationLit = { type: 'DurationLit', ms, raw: \`\${tok.raw}\${unitTok.value}\`, span: { start: tok.span.start, end: unitTok.span.end } };
           return lit;
         }
 `;
@@ -342,6 +342,16 @@ const REGISTRY = [
     // adjacent duration (`30s`) is not a date word. Probed on all four shapes with identical output.
     // Left in the registry rather than deleted: if the tables ever stop being disjoint this becomes
     // a real mutation, and it will report itself as mislabelled rather than quietly pass.
+    //
+    // **It reported itself, and the report was right about the file and wrong about the premise**
+    // (`M147d`, D638). `DurationLit` gained a `raw` field, `DURATION_BRANCH`'s quoted text moved,
+    // and `mutate.test.mjs` failed this entry as stale in the same milestone that folded the three
+    // unit vocabularies into one — which reads exactly like the condition above coming true. It is
+    // not: D638's union lives in `TIME_UNIT_MS` and in `parseDuration`, and the two arrays this
+    // branch pair tests against are still **disjoint**, because in *value* position the split is
+    // what distinguishes `500ms` (a duration) from `3 days` (a date offset). So the entry stays
+    // `equivalent`, and the thing worth keeping is that a comment written eight milestones ago
+    // named its own falsification condition precisely enough to be checked when it nearly fired.
     equivalent: true,
   },
   {
@@ -2411,6 +2421,59 @@ const REGISTRY = [
     what: "the same widening on the declaration side: `action make id(prefix,)` back to an error. Kept as a separate entry from the call site on purpose — they are two independent `if`s in two productions, and one registry entry covering both would let either be deleted with the sweep still green, which is exactly the coverage claim `verify-shards.mjs` exists to keep honest",
     find: "          if (this.check('rparen')) break; // trailing comma — D637\n          continue;\n        }\n        break;\n      }\n    }\n    if (!this.expect('rparen', '`)` to close the parameter list')) return null;",
     replace: "          continue;\n        }\n        break;\n      }\n    }\n    if (!this.expect('rparen', '`)` to close the parameter list')) return null;",
+  },
+  {
+    id: 'spelled-out-unit-refused-as-duration',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "`A3-13`'s own clause restored: `seconds` leaves the one time table, so `timeout wait 90 seconds` and `pause 2 seconds` are `TF023` again while `today + 3 seconds` two lines away stays clean. Targeted at the table rather than at `parseDuration`, because the date-offset path resolves through `DATE_OFFSET_UNITS` and its own `DATE_OFFSET_MS`/`offsetToMs` — so this breaks exactly the position the row is about and leaves the position it compared against alone",
+    find: '  seconds: 1_000,\n',
+    replace: '',
+  },
+  {
+    id: 'adjacency-dropped-with-the-union',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "the union taken too far — the adjacency test removed outright instead of narrowed to abbreviations, so `timeout wait 2 s` and `expect duration is less than 250 ms` become legal again and D170 is undone. This is the failure the union invites, since the easy way to accept `2 seconds` is to stop asking where the unit sits",
+    find: '    if (!spelledOut && !adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;\n',
+    replace: '',
+  },
+  {
+    id: 'spelled-out-unit-must-touch-its-number',
+    milestone: 'm147d',
+    file: PARSER,
+    equivalent: true,
+    what: "adjacency asked of a **word** as well as an abbreviation — the plausible wrong version of D638, where `pause 2 seconds` is legal only as `pause 2seconds`",
+    // Surviving is correct, and finding that out is why this entry exists. `reportBadDurationUnit`
+    // reports nothing unless `nearestDurationUnit` can name the unit the word was reaching for, and
+    // that lookup consults `DURATION_UNITS` and `UNIT_SPELLINGS` — neither of which contains any of
+    // the five spelled-out words. So dropping `!spelledOut` changes no program today: the guard is a
+    // fence around a collision that does not yet exist.
+    //
+    // Kept rather than deleted, on `date-check-before-duration`'s precedent and for its reason: the
+    // day a plural joins `UNIT_SPELLINGS` — `minutes` is one edit from `minute`, which is already
+    // there — this becomes a real mutation and reports itself as mislabelled rather than quietly
+    // passing. That entry's identical comment was written eight milestones ago and was worth having
+    // this week, which is the whole argument.
+    find: '    if (!spelledOut && !adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;',
+    replace: '    if (!adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;',
+  },
+  {
+    id: 'abbreviated-date-bound-invisible-to-tf054',
+    milestone: 'm147d',
+    file: CHECKER,
+    what: "the state `M147c` shipped in and this milestone found: `random date between today and today - 10s` reaches `no problems found` while `today - 10 seconds` raises `TF054`. One rule, two spellings, one of them judged — and the survivor is a *silence*, so nothing but a negative-facing test can catch it",
+    find: '        : offset.type === \'DurationLit\'\n          ? { ms: offset.ms, text: offset.raw }\n          : null;',
+    replace: '        : null;',
+  },
+  {
+    id: 'spelled-out-duration-not-a-number',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/matcher.ts',
+    what: "the second consequence restored: `expect duration is less than 2 seconds` checks clean and fails every run with ``\`is less than\` expects a number, got object``, while `2s` on the next line passes. Registered against `matcher.ts` rather than `eval.ts` because this is the guard `B3-04` hardened — the mutation has to prove the unwrap is a named exception to that guard and not a re-loosening of it",
+    find: '  const offset = dateOffsetMs(value);\n  if (offset !== null) return offset;\n  if (typeof value !== \'number\' || Number.isNaN(value)) {',
+    replace: '  if (typeof value !== \'number\' || Number.isNaN(value)) {',
   },
 
 ];
