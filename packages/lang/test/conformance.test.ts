@@ -23,7 +23,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 import { Codes } from '../src/index.js';
-import { RUNTIME_RULES } from '../src/conformance.js';
+import { RUNTIME_RULES, RUNTIME_GAPS } from '../src/conformance.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const RUNTIME_SRC = join(here, '../../runtime/src');
@@ -193,3 +193,44 @@ test('rule ids are unique', () => {
   const ids = RUNTIME_RULES.map((r) => r.id);
   assert.equal(new Set(ids).size, ids.length, `duplicate rule id: ${ids.filter((id, i) => ids.indexOf(id) !== i).join(', ')}`);
 });
+
+// ---------------------------------------------------------------------------------------------
+// `RUNTIME_GAPS` — the inverse table (`M147a`, `M147-03`)
+//
+// `RUNTIME_RULES` cannot hold a rule the runtime *should* enforce and does not: the sites check
+// above asserts an exact count, so a row for a rule throwing nowhere fails the build. These four
+// assertions are the whole contract for the table that can. There is deliberately no coverage
+// check in either direction — a gap has no thrown message to match on, and inventing one would be
+// guessing at the wording of a throw that does not exist. What keeps an entry honest instead is
+// `verify-ledger.mjs`: it holds every `filedRow` in this file to a row that is still **open**, so
+// the day the runtime gains the rule and the row closes, the stale entry here goes red.
+// ---------------------------------------------------------------------------------------------
+
+test('gap ids are unique, and no id names both a rule and a gap', () => {
+  // A shared id would let a reader — or a grep — believe the runtime both enforces a rule and does
+  // not, which is the one thing these two tables must never say together.
+  const ids = RUNTIME_GAPS.map((g) => g.id);
+  assert.equal(new Set(ids).size, ids.length, `duplicate gap id: ${ids.filter((id, i) => ids.indexOf(id) !== i).join(', ')}`);
+  const collisions = ids.filter((id) => RUNTIME_RULES.some((r) => r.id === id));
+  assert.deepEqual(collisions, [], 'an id names either an enforced rule or an unenforced one, never both — if the runtime gained the rule, move the entry rather than duplicating it');
+});
+
+test('every gap is either tracked by an open row or ruled deliberate — never neither', () => {
+  // The same "never neither" the static-rule check enforces one table up, and for the same reason:
+  // an absence with no row and no ruling is indistinguishable from an absence nobody has noticed.
+  const orphans = RUNTIME_GAPS.filter((g) => !g.filedRow && !g.ruling).map((g) => g.id);
+  assert.deepEqual(orphans, [], 'give each gap a `filedRow` naming an open REVIEW_FINDINGS row, or a `ruling` saying the absence is deliberate and permanent');
+});
+
+test('a ruling is a decision id, not prose', () => {
+  // A free-text ruling is a sentence someone wrote once; a decision id is a thing a reader can go
+  // and read. The distinction is what stops this field becoming a second `note`.
+  const loose = RUNTIME_GAPS.filter((g) => g.ruling && !/^D\d+$/.test(g.ruling)).map((g) => `${g.id} -> ${g.ruling}`);
+  assert.deepEqual(loose, [], 'a `ruling` names the decision that settled it, e.g. `D627`. The reasoning goes in `note`');
+});
+
+test('every gap says what happens instead, and why it is worth writing down', () => {
+  const silent = RUNTIME_GAPS.filter((g) => !g.shape.trim() || !g.instead.trim() || !g.note.trim()).map((g) => g.id);
+  assert.deepEqual(silent, [], 'a gap with no `shape`, no `instead` or no `note` records that something is missing without saying what — which is not more useful than the silence it describes');
+});
+

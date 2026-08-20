@@ -19,10 +19,26 @@
 // legitimately carry a `filedRow` instead of a `checkerCode`; that is what lets this manifest ship
 // green *today* while still being a machine-checked ledger of what the checker still owes.
 //
-// `conformance.test.ts` enforces three things against this table:
+// `conformance.test.ts` enforces, against this table:
 //   - every `throw new RuntimeError(` site under `packages/runtime/src` is described by a row;
 //   - every row still matches the number of sites it claims (so a deleted throw fails too);
-//   - every `'static'` row carries a `checkerCode` in `Codes`, or a `filedRow`, or both.
+//   - no site is claimed by two rows, and no two rows share an id;
+//   - every `'static'` row carries a `checkerCode` in `Codes`, or a `filedRow`, or both;
+//   - every row the checker does not owe carries a `note` saying why.
+//
+// And `verify-ledger.mjs` enforces the one thing this file cannot see: **a `filedRow` must name a
+// row that is still open.** It did not, for eleven milestones, and `M147-01` is what that cost —
+// eighteen of nineteen pointers naming a closed or withdrawn row, seven of them with no
+// `checkerCode` either, so seven statically decidable rules the checker does not decide were being
+// held green by a row that had stopped tracking anything. The gate above passes a rule with *a
+// pointer*; the question it is asked is whether *the gap is tracked*. Those are different
+// questions, and the check went on working while answering the wrong one — the class `M143-07`,
+// `M143-08` and `B3-20` are also instances of.
+//
+// **The inverse table is at the bottom of this file.** `RUNTIME_GAPS` records a rule the runtime
+// *should* enforce and does not, which `RUNTIME_RULES` cannot express: a row here must match its
+// `sites` count exactly, so a rule that throws nowhere fails the build rather than being written
+// down (`M147-03`).
 //
 // ## Two corrections to D138, from doing the enumeration
 //
@@ -111,6 +127,12 @@ export interface RuntimeRule {
    * The `REVIEW_FINDINGS.md` row tracking the gap. Present on a `'static'` row means the checker
    * does *not* yet decide it. Present *alongside* a `checkerCode` means it decides it only
    * partially — `TF035` vs. the runtime's imported-duplicate case (D143 half 1) is the live example.
+   *
+   * **It must name an open row, and `verify-ledger.mjs` checks that** (`M147a`). A pointer at a
+   * closed row is not documentation of history — it is an unanswered rule reading as an answered
+   * one. When the row closes, the pointer comes out and whatever closed it goes in: a `checkerCode`
+   * if the checker now decides the rule, a different `decidable` if the verdict itself was wrong.
+   * History belongs in the `note`, which is prose and cannot be mistaken for a live claim.
    */
   filedRow?: string;
   /** Why this rule is not the checker's, or what the checker still owes on it. */
@@ -133,8 +155,8 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'binary-match.ts',
     excerpt: 'for \\`matches file\\`',
     decidable: 'static-if-literal',
-    filedRow: 'A4-07',
-    note: 'the read stays runtime (a file can vanish between check and run), but *existence* of a literal path is decidable — D144, implemented in M97c',
+    checkerCode: 'TF043',
+    note: 'the read stays runtime (a file can vanish between check and run), but *existence* of a literal path is decidable and `TF043` decides it — D144, shipped by `M97c`. Warning tier under D147, because an earlier step may write the file between check and run',
   },
 
   // -- browser.ts ------------------------------------------------------------
@@ -225,8 +247,8 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'dataTable.ts',
     excerpt: 'could not read data table file',
     decidable: 'static-if-literal',
-    filedRow: 'A4-07',
-    note: 'existence of a literal `with each from` path is decidable — D144, M97c',
+    checkerCode: 'TF043',
+    note: 'existence of a literal `with each from` path is decidable and `TF043` decides it — D144, shipped by `M97c`, warning tier (D147). The *extension* is a separate rule on its own error-tier code, the row directly below',
   },
   {
     id: 'data-table-bad-extension',
@@ -234,7 +256,6 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'must be \\`.csv\\` or \\`.json\\`',
     decidable: 'static',
     checkerCode: 'TF056',
-    filedRow: 'M97a-01',
     note: 'M124/D233 — the extension of a literal path is pure string inspection, no I/O at all. Its own code rather than `TF043`: `TF043` is `MISSING_FILE`, and here the file is very likely there, which is what leaves the extension as the only thing wrong. Different tiers too — a missing file may be created by an earlier step (D147, warning), an extension cannot change between check and run (error)',
   },
   {
@@ -287,8 +308,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'random number ${from} to ${to}',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    filedRow: 'M97a-02',
-    note: 'M124/D232 — `random number 5 to 1` is decidably empty when both bounds are literal, and `random number {lo} to {hi}` is not decidable at all, which is what `static-if-literal` names. The row stays for the interpolated half this throw keeps',
+    note: 'M124/D232 — `random number 5 to 1` is decidably empty when both bounds are literal, and `random number {lo} to {hi}` is not decidable at all, which is what `static-if-literal` names. The interpolated half is the carve-out, not an outstanding gap: `M97a-02` closed at `M124`',
   },
   {
     id: 'random-decimal-range',
@@ -296,7 +316,6 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'random decimal ${from} to ${to}',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    filedRow: 'M97a-02',
     note: 'M124/D232 — as above, same rule and same code',
   },
   {
@@ -305,8 +324,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'random password ${length}',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    filedRow: 'M97a-02',
-    note: 'M124/D232 — a literal length below 4 is decidable. Note the asymmetry this milestone measured and did NOT close: `random string 0` throws nothing at all (`M124-02`), so there is no runtime rule here for a checker to predict',
+    note: 'M124/D232 — a literal length below 4 is decidable. The asymmetry this note has recorded since `M97a` — `random string 0` throws nothing at all, so there is no runtime rule here for a checker to predict — is now written where it can be checked rather than only mentioned: `random-string-zero-length` in `RUNTIME_GAPS`, against `M124-02`',
   },
   {
     id: 'eval-invalid-reference',
@@ -321,8 +339,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'unknown variable',
     decidable: 'static',
     checkerCode: 'TF030',
-    filedRow: 'A4-04',
-    note: 'decided by `checkUnknownVariables` for tests and hooks — but *not* for `session` bodies, which receive one of the twelve passes (D142, M97b)',
+    note: '`checkStepSequence` walks tests, hooks **and** `session` bodies. The session half was the whole of `A4-04` and shipped with `M97b`/D142; `sessionPassCoverage.test.ts` holds the pass list to the source, so the next pass added cannot skip the question. This note claimed the opposite until `M147a` — written while the gap was real, never revisited when the row closed',
   },
   {
     id: 'eval-prop-of-non-object',
@@ -379,7 +396,6 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'url decode(...)',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    filedRow: 'M97a-03',
     note: 'M124/D232 — a literal argument is decidable; an interpolated one is skipped. **The site `M97a-03` does not name**: the row accounts for two, and probing found three. The checker shares `isDecodablePercentEncoding` with this throw rather than restating it (D233)',
   },
   {
@@ -388,7 +404,6 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'hex decode(...)',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    filedRow: 'M97a-03',
     note: 'M124/D232 — as above, and the clause nobody remembers is the odd-length one, which is exactly why `isDecodableHex` is imported rather than re-derived',
   },
   {
@@ -397,7 +412,6 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'base64 decode(...)',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    filedRow: 'M97a-03',
     note: 'M124/D232 — as above. `isDecodableBase64` rejects the URL-safe `-`/`_` alphabet that `Buffer.from` accepts, so a re-derived checker copy would report `TF054` on a program that runs',
   },
 
@@ -555,23 +569,24 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'interpreter.ts',
     excerpt: 'could not read imported file',
     decidable: 'static-if-literal',
-    filedRow: 'A4-07',
-    note: 'existence of a literal `import` path is decidable — D144, M97c',
+    checkerCode: 'TF043',
+    note: 'existence of a literal `import` path is decidable and `TF043` decides it — D144, shipped by `M97c`. **Error** tier under D147 rather than warning, and the asymmetry is the point: `tflw check` opens imports itself, so a missing one degrades the check that is running',
   },
   {
     id: 'import-parse-errors',
     file: 'interpreter.ts',
     excerpt: 'has parse errors',
     decidable: 'needs-io',
-    note: 'needs the imported file read; `resolveImportedActions` already does this during `tflw check`, so the *diagnostics* surface — this throw is the run-time residue',
+    filedRow: 'M140-03',
+    note: 'needs the imported file read. **The diagnostics do not surface, and this note asserted that they did until `M147a`**: `resolveImportedActions` runs a full `parseSource` during `tflw check` and then discards every diagnostic it just computed, so `tflw check` prints `no problems found` on a file whose `import` target cannot parse and the run fails afterwards with nothing but `✗ (crashed)`. Measured by `M140-03`, which this row now points at — so the claim is anchored to a row status the ledger gate reads, instead of to prose nothing checks',
   },
   {
     id: 'use-module-unloadable',
     file: 'interpreter.ts',
     excerpt: 'could not load JS helper module',
     decidable: 'static-if-literal',
-    filedRow: 'A4-07',
-    note: 'existence of a literal `use` path is decidable — D144, M97c',
+    checkerCode: 'TF043',
+    note: 'existence of a literal `use` path is decidable and `TF043` decides it — D144, shipped by `M97c`, error tier under D147 for the same reason `import` is. `TF043` covers **existence only**: this same throw also fires for a helper that is present and throws on load, and that half is `needs-io` and stays the runtime\'s',
   },
   {
     id: 'duplicate-helper-export',
@@ -632,8 +647,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'unknown call',
     decidable: 'static',
     checkerCode: 'TF037',
-    filedRow: 'A4-04',
-    note: 'decided for tests; a call in a `session` body can *never* resolve (the session registry is empty by construction) and is checked nowhere — D142, M97b',
+    note: 'decided for tests by `checkCalls`, and for `session` bodies by `checkNoCallsInSteps` — **inverted** there, because the config dialect declares no `action`s at all, so a call in a session body is impossible rather than unknown and the hint has to say the second thing (D142, `M97b`). "Checked nowhere" was this note until `M147a`, and it was already false when `M97b` merged',
   },
   {
     id: 'mtls-material-unreadable',
@@ -647,16 +661,16 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'interpreter.ts',
     excerpt: 'could not read \\`body from\\` file',
     decidable: 'static-if-literal',
-    filedRow: 'A4-07',
-    note: 'existence of a literal `body from` path is decidable — D144, M97c',
+    checkerCode: 'TF043',
+    note: 'existence of a literal `body from` path is decidable and `TF043` decides it — D144, shipped by `M97c`, warning tier (D147)',
   },
   {
     id: 'upload-unreadable',
     file: 'interpreter.ts',
     excerpt: 'could not read \\`upload\\` file',
     decidable: 'static-if-literal',
-    filedRow: 'A4-07',
-    note: 'existence of a literal `upload` path is decidable — D144, M97c',
+    checkerCode: 'TF043',
+    note: 'existence of a literal `upload` path is decidable and `TF043` decides it — D144, shipped by `M97c`, warning tier (D147). An interpolated path such as `upload "./fixtures/{name}.png"` names no file until the run picks a `name`, which is the `static-if-literal` half',
   },
   {
     id: 'hold-exceeds-wait-timeout',
@@ -664,7 +678,6 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'can never be satisfied',
     decidable: 'static',
     checkerCode: 'TF055',
-    filedRow: 'M97a-06',
     note: 'M124/D232 — the hold duration is a literal in the AST and `timeouts.wait` is in `tflw.config`; the runtime already phrases it as a never-satisfiable program, which is a checker sentence. `TF055` is a **warning** while this stays a hard error, and the split is D147: the checker compares against one resolved env, so it predicts, and a suite whose CI env raises `timeout wait` must stay runnable',
   },
   {
@@ -694,9 +707,8 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'subject-vs-of-request-to',
     file: 'interpreter.ts',
     excerpt: 'does not support \\`of request to',
-    decidable: 'static',
-    filedRow: 'M97a-09',
-    note: 'subject kind × modifier, both in the AST — named in the M97 plan triage as unfiled',
+    decidable: 'internal',
+    note: 'unreachable by construction, which is why `M97a-09` was **withdrawn** at `M113` rather than closed. `execSteps` only routes here when `subjectNetworkRef` found a ref, which is set on exactly the four subject types the switch above handles, and `of` is declared on exactly those four — so `expect page of request to "…"` dies in the parser with `TF014` and there is no program the checker could reject that the parser accepts. Carried as `static` with a pointer at that withdrawn row until `M147a`, which is the shape `M147-01` is about: the verdict outlived the evidence for it',
   },
   {
     id: 'matcher-vs-page',
@@ -898,7 +910,6 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     sites: 2,
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    filedRow: 'M97a-16',
     note: 'M124/D232 — a literal pattern compiles or does not, at check time, and both sides call `new RegExp` so the engine is the shared authority. The second site is reached by `expect request fails matching "…"` and **not** by `expect request to "/x" fails matching "…"`, which `TF042` refuses first — `M97a-16` reads as the latter, and taking its wording literally would have "confirmed" a site the checker never sees',
   },
   {
@@ -984,5 +995,73 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     decidable: 'static',
     checkerCode: 'TF042',
     note: 'matcher × subject kind — the UI twin of `matcher-request-only`',
+  },
+];
+
+/**
+ * A rule the runtime **should** enforce and does not — the inverse table (`M147a`, `M147-03`).
+ *
+ * `RUNTIME_RULES` above is a list of throws, and `conformance.test.ts` asserts each row matches its
+ * claimed `sites` count **exactly** so that a deleted throw fails rather than reading as coverage.
+ * That exactness is right, and it has a consequence nobody noticed for eleven milestones: a row
+ * describing a rule that throws *nowhere* fails the build, so **the manifest cannot say a rule is
+ * missing.** `M124-01` and `M124-02` are precisely that shape — `random date between` with reversed
+ * bounds and `random string 0` both return a wrong-looking value in silence while every sibling
+ * twenty lines away throws — and the instrument built to enumerate what the runtime enforces was
+ * structurally blind to what it fails to enforce, which is the defect class this order exists to
+ * close.
+ *
+ * **Two states, one table.** A gap is either *tracked* — it carries a `filedRow`, and the ledger
+ * gate holds that row open — or *ruled* — it carries a decision id saying the absence is deliberate
+ * and permanent. Never neither, which is the same "never neither" the `static`-rule gate enforces
+ * one table up. The distinction matters more than the list: `random string 0` returning `""` may
+ * well be ruled legal, and today a ruling like that has nowhere to live except a plan nobody greps.
+ *
+ * **How an entry leaves.** When the runtime gains the rule, its throw appears in `RUNTIME_RULES`
+ * with a real `sites` count, the ledger row closes, and the ledger gate then reports the `filedRow`
+ * here as naming a closed row — so the entry cannot be forgotten on the way out. That is the same
+ * two-way shape `M143b` found by *moving* a classified site: a guard is worth having only when both
+ * directions of the drift make something go red.
+ *
+ * Deliberately not a `RuntimeRule` with `sites: 0`. The exactness gate's own message says a row
+ * matching zero sites "describes a rule that no longer exists" — true of a drifted row, false of a
+ * declared-absent one, and one table cannot mean both without the reader having to know which.
+ */
+export interface RuntimeGap {
+  /** Stable id, unique across `RUNTIME_GAPS` **and** `RUNTIME_RULES`. */
+  id: string;
+  /** Source file under `packages/runtime/src` where the rule would live. Documentation, not a key. */
+  file: string;
+  /** The program shape that goes unrefused, written the way an author would type it. */
+  shape: string;
+  /** What happens instead of a refusal. */
+  instead: string;
+  /**
+   * The `REVIEW_FINDINGS.md` row tracking the gap, which `verify-ledger.mjs` holds **open**. Either
+   * this or `ruling`, never neither.
+   */
+  filedRow?: string;
+  /** The decision id ruling this absence deliberate and permanent — `D627`-shaped, not prose. */
+  ruling?: string;
+  /** Why the gap is worth writing down, and what closing it would cost. */
+  note: string;
+}
+
+export const RUNTIME_GAPS: readonly RuntimeGap[] = [
+  {
+    id: 'random-date-reversed-bounds',
+    file: 'eval.ts',
+    shape: 'random date between today and today - 10 days',
+    instead: 'returns a date *before* `from`, with no throw and no diagnostic',
+    filedRow: 'M124-01',
+    note: '`RandomDateBetweenExpr` computes `from.getTime() + rng() * (to.getTime() - from.getTime())` with no ordering test, so a reversed range yields a negative delta and a value outside the range the author wrote, which then flows into a request body. Both siblings twenty lines above throw ``to` must be ≥ `from`` on the identical condition and both are rows in `RUNTIME_RULES`. Closing it is a runtime `throw` mirroring theirs, after which `TF054` gains an eighth site for free — `literalNumber`-style operand inspection already exists',
+  },
+  {
+    id: 'random-string-zero-length',
+    file: 'eval.ts',
+    shape: 'random string 0',
+    instead: 'returns `""`, while `random password 2` throws',
+    filedRow: 'M124-02',
+    note: 'the finding is the asymmetry, not either behaviour: `randomAlnum` loops `for (let i = 0; i < len; i++)` so a literal `0` — or `random string 0 - 3`, whose `0 - n` desugaring `literalNumber` already folds for `TF054` — yields an empty string, while `RandomPasswordExpr` rejects `< 4` with a message explaining why the bound exists. One of the two is deliberate and neither is written down. This is the entry the `ruling` field exists for: a decision that a zero-length random string stays legal is an answer, and it belongs here rather than in a plan',
   },
 ];
