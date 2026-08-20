@@ -109,6 +109,21 @@ const STAMP = /\brv (\d{4}-\d{2}-\d{2}) @([0-9a-f]{7,40}) (reproduces|drifted)\b
  */
 const CITED = /`([^`\s]+\.[A-Za-z0-9]+)(?::\d+)?`/g
 
+/**
+ * A `filedRow` pointer as `packages/lang/src/conformance.ts` writes one (`M147a`, `M147-01`).
+ *
+ * Anchored at the start of a line so the field's own **doc comment** — which spells the shape out
+ * as `` `filedRow: 'M97a-NN'` `` — is not read as a nineteenth pointer. That is not a hypothetical
+ * nicety: the comment sits forty lines above the table and would otherwise be a permanent false
+ * positive naming a row id that has never existed.
+ *
+ * The manifest is TypeScript and this is a regex, which is the same trade `conformance.test.ts`
+ * made and defended (D138): the failure mode is a pointer this cannot see, never a row it invents.
+ * `check` guards that direction explicitly — a manifest text yielding **zero** pointers is a
+ * problem, because a scan matching nothing passes silently and this file has never had none.
+ */
+const FILED_ROW = /^\s*filedRow: '([^']+)'/gm
+
 /** Parse a status cell's stamp. Returns null when there is none — the caller decides if that is fatal. */
 export function parseStamp(status) {
   const m = status.match(STAMP)
@@ -314,7 +329,7 @@ export function derive(rows) {
  * one. Its default is permissive, which only ever affects a caller that declined to pass one — every
  * fixture that cares about resolution passes a fake, and the live run always passes the real thing.
  */
-export function check({ ledger, plans, shipped, resolve = () => true }) {
+export function check({ ledger, plans, shipped, resolve = () => true, manifests = [] }) {
   const problems = []
   const rows = parseIndex(ledger)
   if (!rows.length) problems.push('§6 "Full index" has no rows — the section heading may have been renamed')
@@ -361,6 +376,43 @@ export function check({ ledger, plans, shipped, resolve = () => true }) {
       if (classify(row.status) === 'open' && !row.status.startsWith('🟨'))
         problems.push(
           `${file} says M${milestone} closes \`${id}\` and M${gate} is on main, but §6:${row.line} still reads "${row.status.slice(0, 40)}"`,
+        )
+    }
+  }
+
+  // `M147a` / `M147-01` — a conformance manifest's `filedRow` must name a row that is still OPEN.
+  //
+  // `conformance.test.ts` passes a statically decidable rule that carries *either* a `checkerCode`
+  // *or* a `filedRow`, and it cannot ask whether the row still tracks anything, because the ledger
+  // is gitignored and that test runs in CI. So the question lands here, which is the only guard
+  // that reads both halves. It went unasked for eleven milestones: eighteen of nineteen pointers
+  // named a closed or withdrawn row, and seven of those carried no `checkerCode` either — seven
+  // statically decidable rules the checker does not decide, all reading as answered.
+  //
+  // A pointer at a **closed** row is the interesting failure, not a missing one: the rule was
+  // answered by something, and the answer belongs in the manifest as a `checkerCode` or a changed
+  // `decidable`. A pointer at a row this ledger has never heard of is likelier a typo than a
+  // cross-corpus reference, and is reported as its own thing rather than skipped.
+  for (const { file, text } of manifests) {
+    const pointers = [...text.matchAll(FILED_ROW)].map((m) => m[1])
+    if (!pointers.length) {
+      problems.push(
+        `${file} yielded no \`filedRow\` pointers — either the field was renamed or the scan broke. ` +
+          'A scan that matches nothing passes every check below it, which is the one outcome this must not report as clean',
+      )
+      continue
+    }
+    for (const id of new Set(pointers)) {
+      const row = byId.get(id)
+      if (!row) {
+        problems.push(`${file} points at \`${id}\`, which is not a row in §6 — a typo, or a row that was renamed and left a dangling pointer`)
+        continue
+      }
+      const kind = classify(row.status)
+      if (kind !== 'open')
+        problems.push(
+          `${file} points at \`${id}\` as an outstanding gap, but §6:${row.line} says it is ${kind} — ` +
+            'a rule held answered by a row that tracks nothing. Put what closed it in the manifest (a `checkerCode`, or a corrected `decidable`) and take the pointer out',
         )
     }
   }
@@ -519,12 +571,29 @@ function main() {
     process.exit(1)
   }
   const ledger = readFileSync(LEDGER, 'utf8')
+  // The conformance manifests, whose `filedRow` pointers this holds to an open row.
+  //
+  // **Announced when absent, never skipped quietly** — `D527`'s rule for the stale tier, which
+  // applies for the same reason: `TFLW_LEDGER_ROOT` can point anywhere, and a root without the
+  // manifest must not read as a root whose pointers all check out. It is announced rather than
+  // fatal because a manifest genuinely missing from this repo turns the whole `lang` suite red
+  // first — this guard is not that one's backstop. The vacuity it *is* the backstop for is the
+  // field being renamed while the file stays: that surfaces inside `check`, as zero pointers.
+  const MANIFESTS = ['packages/lang/src/conformance.ts']
+  const manifests = []
+  const missing = []
+  for (const rel of MANIFESTS) {
+    const f = join(ROOT, rel)
+    if (existsSync(f)) manifests.push({ file: rel, text: readFileSync(f, 'utf8') })
+    else missing.push(rel)
+  }
   const shipped = shippedMilestones()
   if (shipped === null) console.error('note: not a git checkout — the plan↔ledger check is running over every plan\n')
   const { problems, derived, rows } = check({
     ledger,
     plans: loadPlans(ROOT),
     shipped,
+    manifests,
     resolve: (p) => locate(p, ROOT) !== null,
   })
 
@@ -538,8 +607,13 @@ function main() {
   console.log(
     `✓ ledger: ${derived.total} rows — ${derived.open} open (S2 ${derived.s2} · S3 ${derived.s3} · S4 ${derived.s4}), ` +
       `${derived.closed} closed, ${derived.deferred} deferred, ${derived.withdrawn} withdrawn; ` +
-      'vocabulary, plan claims, the published tally and every open row\'s stamp all agree',
+      // The summary names only what was actually read. Claiming the pointers agree when no manifest
+      // was found would be this file's own subject, one layer out.
+      `vocabulary, plan claims, the published tally${manifests.length ? ', every conformance pointer' : ''} ` +
+      "and every open row's stamp all agree",
   )
+
+  for (const rel of missing) console.log(`  conformance pointers UNAVAILABLE — no manifest at ${rel}`)
 
   // `D527`: this must never print `0 stale` when it could not look. The stale check needs git per
   // cited path, and `exec.mjs` rsyncs the worktree without `.git` — the same reason `verify:ledger`
