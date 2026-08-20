@@ -526,6 +526,10 @@ test('where there is no git, the stale check says UNAVAILABLE and never `0 stale
     assert.equal(r.code, 0, r.stdout)
     assert.match(r.stdout, /stale check UNAVAILABLE — no git here/)
     assert.doesNotMatch(r.stdout, /0 citations checked|none moved/)
+    // `M147a` — the same rule for the manifest tier. This fixture root has no `conformance.ts`,
+    // and a root without one must not read as a root whose pointers all check out.
+    assert.match(r.stdout, /conformance pointers UNAVAILABLE — no manifest at/)
+    assert.doesNotMatch(r.stdout, /every conformance pointer/)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -634,3 +638,77 @@ test('a cited path that git cannot resolve at HEAD still gets the history answer
     await rm(root, { recursive: true, force: true })
   }
 })
+
+// ---- 8. a conformance pointer must name an OPEN row (`M147a`, `M147-01`) ----------------------
+//
+// The manifest is handed in as text rather than read from disk, for the same reason the ledger is:
+// a check that only works against the real repo can only be tested by breaking the real repo.
+
+/** A `RUNTIME_RULES`-shaped fragment. The doc-comment line is deliberately present in every fixture. */
+const manifest = (...ids) =>
+  [
+    '// The `REVIEW_FINDINGS.md` row tracking the gap, written in prose here as',
+    "//   `filedRow: 'M97a-NN'` — a shape, not a pointer.",
+    'export const RUNTIME_RULES = [',
+    ...ids.flatMap((id) => ['  {', "    id: 'a-rule',", "    decidable: 'static',", `    filedRow: '${id}',`, '  },']),
+    '];',
+  ].join('\n')
+
+const withManifest = (...ids) => sound({ manifests: [{ file: 'conformance.ts', text: manifest(...ids) }] })
+
+test('a pointer at an open row is fine', () => {
+  const { problems } = check(withManifest('B3-04'))
+  assert.deepEqual(problems, [], problems.join('\n'))
+})
+
+test('a pointer at a CLOSED row is caught — the rule reads answered and is not', () => {
+  const { problems } = check(withManifest('A3-05'))
+  assert.equal(problems.length, 1, problems.join('\n'))
+  assert.match(problems[0], /`A3-05`.*says it is closed/)
+})
+
+test('a pointer at a WITHDRAWN row is caught too — the row was filed wrong, so the verdict was as well', () => {
+  const { problems } = check(withManifest('M98c-02'))
+  assert.equal(problems.length, 1, problems.join('\n'))
+  assert.match(problems[0], /says it is withdrawn/)
+})
+
+test('a 🟨 partial is NOT caught — a partial is a live claim about the half that did not ship', () => {
+  // Same rule the stamp check applies, and for the same reason: `classify` counts `🟨` open.
+  assert.deepEqual(check(withManifest('A4-07')).problems, [])
+})
+
+test('a pointer at a row §6 has never heard of is its own problem, not a silent skip', () => {
+  const { problems } = check(withManifest('ZZ-99'))
+  assert.equal(problems.length, 1, problems.join('\n'))
+  assert.match(problems[0], /not a row in §6/)
+})
+
+test('a manifest yielding NO pointers is a problem — a scan matching nothing passes everything', () => {
+  // The failure this check would otherwise have: rename the field, and the guard reports clean
+  // forever. `M141`'s Order-1 subject exactly, so it is asserted here rather than assumed.
+  const { problems } = check(sound({ manifests: [{ file: 'conformance.ts', text: 'export const RUNTIME_RULES = [];' }] }))
+  assert.equal(problems.length, 1, problems.join('\n'))
+  assert.match(problems[0], /yielded no `filedRow` pointers/)
+})
+
+test("the field's own doc comment is not read as a pointer", () => {
+  // `conformance.ts` documents the field by writing its literal shape, naming a row id that has
+  // never existed. Anchoring at line start is what keeps that from being a permanent false alarm —
+  // and this fixture carries the comment while declaring one real pointer, so the assertion is that
+  // exactly one is seen, not that none is.
+  const { problems } = check(withManifest('A3-05'))
+  assert.equal(problems.length, 1, 'the comment line must not add a second problem')
+  assert.doesNotMatch(problems[0], /M97a-NN/)
+})
+
+test('the same pointer written twice is reported once', () => {
+  const { problems } = check(withManifest('A3-05', 'A3-05'))
+  assert.equal(problems.length, 1, problems.join('\n'))
+})
+
+test('no manifest means no manifest problems — `check` is pure over what it is handed', () => {
+  // `main` is what guarantees the real caller always passes one; a missing file there exits 1.
+  assert.deepEqual(check(sound()).problems, [])
+})
+
