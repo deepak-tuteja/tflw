@@ -21,6 +21,7 @@ import type {
   ConfigFile,
   CrawlDecl,
   DataTable,
+  DateOffsetUnit,
   EnvBlock,
   ExpectStmt,
   MatcherName,
@@ -88,6 +89,22 @@ export interface ProgramCheckOptions {
    * says the caller looked and everything was there.
    */
   readonly missingFiles?: ReadonlySet<string>;
+  /**
+   * Which of this file's `import` path literals name a file that **exists and does not parse**
+   * (`M147c`, `M140-03`) — again the *answers*, computed by `@tflw/runtime`'s
+   * `resolveImportedActions` on the same walk that produces `importedActions`.
+   *
+   * Deliberately disjoint from `missingFiles`: an import naming nothing is `TF043`'s, an import
+   * naming something unparseable is `TF073`'s, and no path can be in both sets. The pair travels
+   * together — whenever this is non-empty, `importedActions` is `undefined`, because a file that
+   * did not parse contributed no actions and the world is therefore unknown. Nothing here depends
+   * on that, but a caller that broke it would be describing a world it had not resolved.
+   *
+   * `undefined` skips the pass, on the docs-site editor demo's account, exactly like the option
+   * above it: in a browser the question cannot be asked at all, and an empty set would say the
+   * caller looked and found every import fine.
+   */
+  readonly importsWithErrors?: ReadonlySet<string>;
   /**
    * Which base URLs the active env declares (M116, D148) — see `EnvBaseUrls`.
    *
@@ -279,6 +296,10 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkValueSubjects(program),
     ...checkMatcherSubjects(program),
     ...checkReferencedFiles(program, opts),
+    // `M147c` (`M140-03`) — `TF073`, wired beside `TF043` because they are one question asked of
+    // one path literal: is the file there, and if it is, does it parse. Both are answered by the
+    // caller and turned into diagnostics here.
+    ...checkImportsParse(program, opts),
     ...checkBaseUrls(program, opts),
     ...checkSnapshotMasks(program),
     ...checkCapturableSubjects(program),
@@ -342,6 +363,50 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
  * An unparseable target is the same error one step earlier: `authorized target "staging.example.com"`
  * (no scheme) reads like a declaration and authorizes nothing, since `TF060` compares origins.
  */
+/**
+ * `TF071` — **`tflw://` is reserved and has exactly one address** (`M118-01`, `M118`/`FU-04`/D199,
+ * SPEC §3.1).
+ *
+ * `api "tflw://dmeo"` parsed, checked green, and died at run time in `guardDemoUrl` with a perfectly
+ * good sentence naming the only legal spelling. The set of legal hosts under this scheme has one
+ * member, that member is known at check time, and the operand is a string literal in `tflw.config` —
+ * so a typo here is decidable before the run starts, and D137 clause 2 says the checker decides it.
+ *
+ * **Why this shares `TF071` with `workers 0` rather than minting its own code.** The row was filed
+ * predicting a new code, and it would have needed one against `TF054`, whose published meaning is an
+ * operand *the step will reject the moment it evaluates*. `TF071` says something broader and true of
+ * both: **a setting whose written value is not one this setting can act on.** `workers` cannot act
+ * on `0`; `api` cannot act on any `tflw://` address but one. Same repair in both cases — write a
+ * value the setting accepts — which is `D419`'s one-code-one-repair bar, and §6's rule says reuse
+ * when the meaning is right. The suggestion in the hint is richer here because a closed set of one
+ * *has* a nearest spelling; that is a better hint, not a different code.
+ *
+ * **The parse-time siblings are refused in `parser.ts`; this one is refused here**, and the split is
+ * principled rather than incidental. `workers 0` is a fact about the *shape* of a number, which the
+ * production that reads it already knows everything about. Which addresses a scheme reserves is a
+ * fact about the *language's own semantics*, and it lives beside the other config semantics — the
+ * same reason `TF033` is documented as "Parser/checker".
+ *
+ * **Interpolated values are skipped**, D147's line: `api "tflw://{TARGET}"` is a string nobody can
+ * evaluate here, and a checker that guessed at it would refuse a config that runs.
+ */
+function checkReservedScheme(entry: ConfigEntry, diags: Diagnostic[]): void {
+  if (entry.type !== 'ApiServiceDecl') return;
+  const url = entry.url;
+  // `value` has the holes flattened out, so an interpolated string can look like a literal one.
+  // `parts` is the only field that can tell them apart, which is exactly why `M74`/`A2-12` fought to
+  // keep the `StringLit` on these nodes rather than its `.value`.
+  if (url.parts.some((part) => part.kind === 'interp')) return;
+  if (!url.value.startsWith(DEMO_SCHEME) || url.value === DEMO_BASE_URL) return;
+  diags.push({
+    code: Codes.INVALID_SETTING_VALUE,
+    severity: 'error',
+    message: `\`${url.value}\` is not an address this setting can take`,
+    span: url.span,
+    hint: `\`${DEMO_SCHEME}\` is reserved and \`${DEMO_BASE_URL}\` is the only address under it — write \`${DEMO_BASE_URL}\` for tflw's bundled demo service, or a real \`http(s)://\` base URL`,
+  });
+}
+
 function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): void {
   if (entry.type !== 'AuthorizedTargetDecl') return;
   const raw = entry.target.value;
@@ -378,6 +443,24 @@ function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): 
  */
 export const RESERVED_PRINCIPAL = 'anonymous';
 
+/** The one base URL the language reserves (`M118`/`FU-04`, D199), and the scheme it lives under.
+ *
+ * Defined **here**, in the lowest package, for `RESERVED_PRINCIPAL`'s reason and with a sharper
+ * version of it: `packages/cli/src/demo-service.ts` owned this string, and `@tflw/lang` cannot
+ * import from `@tflw/cli`, so the checker had no way to know the set of legal `tflw://` addresses
+ * has exactly one member — which is the whole of `M118-01`. `demo-service.ts` re-exports both, so
+ * every call site upstream is unchanged and there is still one spelling in the repo.
+ *
+ * A real URL with a reserved scheme, deliberately: `api` still takes a string and
+ * `new URL('tflw://demo').hostname` still answers, so nothing in the grammar knows about this
+ * feature. What is new is that the *checker* now does, in one place, for one question.
+ */
+export const DEMO_BASE_URL = 'tflw://demo';
+
+/** Anything under the reserved scheme. Nothing but `DEMO_BASE_URL` resolves under it — SPEC §3.1,
+ *  "`tflw://` is reserved; no other address under it resolves". */
+export const DEMO_SCHEME = 'tflw://';
+
 /** Keys valid only in `defaults`, only in `env`, or in both. */
 const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl', 'ViewportDecl']);
 const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl']);
@@ -391,6 +474,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
         diags.push(contextError(entry, 'defaults', 'an `env` block'));
       }
       checkAuthorizedTargetLiteral(entry, diags);
+      checkReservedScheme(entry, diags);
     }
   }
 
@@ -413,6 +497,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
         diags.push(contextError(entry, `env ${env.name}`, 'the `defaults` block'));
       }
       checkAuthorizedTargetLiteral(entry, diags);
+      checkReservedScheme(entry, diags);
     }
   }
 
@@ -1052,7 +1137,76 @@ export function checkCalls(program: Program, opts: ProgramCheckOptions = {}): Di
   for (const test of program.tests) visit(test, true);
   for (const hook of program.hooks) visit(hook, true);
   for (const action of program.actions) visit(action, false);
+  diags.push(...importedBodyCalls(program, known, closedWorld, opts.importedActions ?? []));
 
+  return diags;
+}
+
+/**
+ * `A4-21` (`M147c`) — the calls written inside an **imported** action's body, resolved against the
+ * world of the file doing the importing.
+ *
+ * This is the exact case the rule above sets aside and it is set aside for a good reason that stops
+ * applying here. Calls bind late, against the entry file's registry, so a call inside an `action`
+ * body is undecidable *while checking the file that declares it* — `shared/root.tflw` in the
+ * dogfood suite calls names only its importers define, and reporting there would fail every library
+ * file in every suite. But one level up the same call is fully decidable: this is the registry it
+ * will be resolved against, and `resolveImportedActions` already hands over each imported action's
+ * `body` (M109, for `TF044`). The undecidable frame and the decidable one are the same code read
+ * from two positions, which is why the answer is a second pass and not a loosened flag.
+ *
+ * What it catches is the row verbatim: **`import` does not recurse.** `main` imports
+ * `lib/orders.tflw`, which imports `lib/helpers.tflw` and calls `makeId` — `buildRegistry` takes
+ * only `program.actions` from an import, never its `imports` or its `uses`, so `makeId` is not in
+ * the registry `createOrder` runs under. `tflw check .` said *3 files checked, no problems found*
+ * and the run died on the first step with `unknown call \`makeId(...)\``. An extracted action could
+ * not carry its own dependency, and nothing said so until the run.
+ *
+ * **`TF037`, not a new code** (D634's allocation rule): the call is genuinely unknown in the
+ * registry it will be resolved against, so the code's published meaning is true here — only the
+ * *location* differs, and location is what the message and the caret are for.
+ *
+ * Three narrowings, each of which would otherwise make this lie:
+ *
+ *  - **`closedWorld` only**, exactly as above. A `use` in this file can define the name.
+ *  - **Evaluated positions only.** A call that never runs cannot fail, and `collectEvaluatedCalls`
+ *    exists over bare `Step[]` for precisely this — an imported body arrives with no `Program`
+ *    around it.
+ *  - **Once per (import, name).** A helper called eleven times in a library is one missing import,
+ *    and eleven diagnostics on one line is the cascade shape this milestone keeps deleting.
+ *
+ * The caret goes on the local `import` path literal, never into the imported file's text: that span
+ * belongs to another file's coordinates and rendering it against this source underlines an
+ * unrelated line. `TF044` already draws that line — a call inside an imported body can be *named*
+ * in a message and never underlined — and `TF073` draws it again from the parse side.
+ */
+function importedBodyCalls(program: Program, known: Map<string, KnownAction>, closedWorld: boolean, imported: readonly KnownAction[]): Diagnostic[] {
+  if (!closedWorld) return [];
+  const diags: Diagnostic[] = [];
+  const seen = new Set<string>();
+  for (const action of imported) {
+    if (!action.body || action.from === null) continue;
+    const imp = program.imports.find((i) => i.path.value === action.from);
+    if (!imp) continue; // no local line to point at — silence beats a diagnostic with a wrong span
+    const evaluated = new Set<CallExpr>();
+    collectEvaluatedCalls([action.body], evaluated);
+    for (const call of evaluated) {
+      if (known.has(call.name)) continue;
+      const key = `${action.from}\u0000${call.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const near = suggest(call.name, [...known.keys()]);
+      diags.push({
+        code: Codes.UNKNOWN_CALL,
+        severity: 'error',
+        message: `imported action "${action.name}" calls \`${call.name}(...)\`, which nothing in this file defines`,
+        span: imp.path.span,
+        hint: near
+          ? `did you mean \`${near}\`? An imported action's calls resolve against *this* file's registry, not against its own file's`
+          : `\`import\` brings in a file's \`action\`s and nothing else — not the \`import\`s or \`use\`s that file itself declares. Whatever "${action.from}" depends on has to be brought into this file too, or the run fails on the first step that reaches it`,
+      });
+    }
+  }
   return diags;
 }
 
@@ -1303,6 +1457,23 @@ function checkResponseScopeInSteps(steps: readonly Step[], diags: Diagnostic[]):
       case 'ApiStep':
       case 'WaitUntilApiStmt':
         established = true;
+        break;
+      case 'MalformedStep':
+        // `M147c`/`M140-01`. The user wrote an `api` step here and the parser could not finish
+        // reading it, so this frame *does* have a response — saying otherwise on the next line is
+        // not a redundant diagnostic, it is a false one, and it points at a line that is fine.
+        //
+        // Reached by six measured shapes, not the one the row named: a bad inline `body`, a bad
+        // `form`, a bad duration after `timeout`, an unknown method, `without` not followed by
+        // `redirects`, and a non-string after `as`. The row's discriminator — that a trailing-token
+        // error like `api GET /o headerz "x"` does *not* cascade — is real but reads the wrong
+        // joint. It is not the body branch; it is that `endLine()` reports after the node is built
+        // while every one of those six returns `null` before it. So the repair belongs where the
+        // node goes missing, not in `parseApiBody`.
+        //
+        // **Establishing on a malformed head loses nothing.** The only diagnostic it can suppress
+        // is one that says no `api` step precedes this — and if the head is `api`, one does.
+        if (step.head === 'api' || step.head === 'wait until api') established = true;
         break;
       case 'ExpectStmt':
         if (!established && readsResponse(step.subject)) {
@@ -2209,12 +2380,37 @@ export function freeVariableRefs(steps: readonly Step[]): Diagnostic[] {
   return diags.filter((d) => d.code === Codes.UNKNOWN_VARIABLE);
 }
 
+/** Whether this scope still knows what is bound in it (`M147c`, `M140-01`). Shared by reference
+ * with the three nested-block cases below — `within`, `switch to new tab` and `download` all thread
+ * the *same* `bound` set through, because they share their enclosing variable scope, so an unknown
+ * binding above one of them is unknown inside it too. A fresh holder per top-level frame: an
+ * abandoned `capture` in a `before each` hook says nothing about the test body it runs ahead of. */
+interface BindingWorld {
+  unknown: boolean;
+}
+
 /** Walk a step sequence in declaration order, checking each step's referenced variables against
  * `bound` *before* adding any new binding it introduces (`let`/`capture`) — a step can never see
  * its own not-yet-assigned name, and a later step correctly sees everything bound before it. */
-function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Diagnostic[]): void {
+function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Diagnostic[], bindings: BindingWorld = { unknown: false }): void {
   for (const step of steps) {
+    const before = diags.length;
     switch (step.type) {
+      case 'MalformedStep':
+        // `M147c`/`M140-01`, the second half of the same mechanism. Three step kinds add a name to
+        // `bound` — `let`, `capture` and `download … as` — and when the parser abandons one of them
+        // the name it would have bound is exactly what is missing. Measured: `capture body.id as`
+        // reports `TF010` for the absent name and then `TF030` *"unknown variable"* on every later
+        // `{{id}}`, about a variable the file does bind.
+        //
+        // So the world goes unknown for the rest of this scope, the same shape `M147c`'s import
+        // work settled on (`resolveImportedActions` returning `actions: undefined`): once the
+        // checker has failed to *look*, it stops answering negative questions. It costs the genuine
+        // unknown-variable reports further down the same body — but the file has a parse error and
+        // cannot run either way, and fixing that error gives every one of them back on the next
+        // check. A false report costs more than a late one.
+        if (step.head === 'let' || step.head === 'capture' || step.head === 'download') bindings.unknown = true;
+        break;
       case 'ApiStep':
         checkApiRequestSpec(step, bound, diags);
         break;
@@ -2289,7 +2485,7 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         // is visible inside it and (deliberately, same as any other nested block in this checker) a
         // `let` inside it stays visible to steps after the block too. Same sharing for `within
         // frame` (M3b) — `frame` only changes *where* nested locators resolve, not variable scope.
-        checkStepSequence(step.body, bound, diags);
+        checkStepSequence(step.body, bound, diags, bindings);
         break;
       case 'AcceptDialogStmt':
       case 'DismissDialogStmt':
@@ -2301,13 +2497,13 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'SwitchToNewTabBlock':
         // Shares scope with its enclosing sequence, same as `within` (M3b) — the block exists to
         // let the runtime catch a popup event around its trigger step(s), not to isolate variables.
-        checkStepSequence(step.body, bound, diags);
+        checkStepSequence(step.body, bound, diags, bindings);
         break;
       case 'SwitchToTabStmt':
       case 'CloseTabStmt':
         break;
       case 'DownloadBlock':
-        checkStepSequence(step.body, bound, diags);
+        checkStepSequence(step.body, bound, diags, bindings);
         bound.add(step.name);
         break;
       case 'DragStmt':
@@ -2328,6 +2524,14 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
       case 'PauseStmt':
         // `minMs`/`maxMs` are plain numbers (parser-level, ast.ts) — no `{var}` interpolation to check.
         break;
+    }
+    // Drop only `TF030` and only from here on. Filtering after the step, rather than gating each
+    // `checkValue` call, keeps every other diagnostic this walk raises — `checkStepSequence` also
+    // carries the `upload … type "…"` shape check, which is about a literal's format and has
+    // nothing to do with whether a name is bound.
+    if (bindings.unknown && diags.length > before) {
+      const kept = diags.splice(before).filter((d) => d.code !== Codes.UNKNOWN_VARIABLE);
+      diags.push(...kept);
     }
   }
 }
@@ -2814,6 +3018,43 @@ export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions
   return diags;
 }
 
+/**
+ * `TF073` (`M147c`, `M140-03`) — an `import` naming a file that is there and does not parse.
+ *
+ * `tflw check a.tflw` printed `1 file checked, no problems found.` and exited 0 for a file whose
+ * import target could not parse, and it had the diagnostics in hand when it said so: the resolver
+ * ran a full `parseSource` on the imported file and kept only the verdict *world unknown*,
+ * discarding every diagnostic it had just computed. The run then failed with `✗ a.tflw (crashed)`,
+ * whose reason reached `report/results.json` and — until this milestone's `A4-18` half — no
+ * console at all. So the information existed twice and reached the surface the docs tell people to
+ * put in CI exactly never.
+ *
+ * **One diagnostic per broken import, and it names the file rather than underlining it.** The
+ * imported file's own diagnostics carry spans in *that* file's coordinates; rendering them against
+ * this file's source would draw a caret on an unrelated line, which is the `M106` stance and the
+ * same line `TF044` draws when it names a call written inside an imported body and refuses to
+ * underline it. The hint therefore hands over the one command that shows the real errors with
+ * their real carets.
+ *
+ * **`tflw check` over a whole directory already reported those errors**, because it checks the
+ * broken file directly — which is exactly why this went unnoticed for so long. The gap belongs to
+ * the run that checks one entry file, and a `tflw check <entry>` in CI is the shape this language
+ * recommends.
+ */
+export function checkImportsParse(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const broken = opts.importsWithErrors;
+  if (!broken || broken.size === 0) return [];
+  return program.imports
+    .filter((imp) => broken.has(imp.path.value))
+    .map((imp) => ({
+      code: Codes.IMPORT_PARSE_ERRORS,
+      severity: 'error' as const,
+      message: `imported file "${imp.path.value}" does not parse`,
+      span: imp.path.span,
+      hint: `run \`tflw check ${imp.path.value}\` to see why — its line numbers belong to that file, so they are named here rather than underlined. Until it parses nothing it declares is in scope, and this file cannot run`,
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // M116 (`PLAN_M97_CHECKER_CONTRACT.md`, D148-D150) — three rules the runtime enforced alone.
 //
@@ -3142,6 +3383,12 @@ function checkLiteralOperandsInSteps(steps: unknown, diags: Diagnostic[]): void 
       case 'RandomPasswordExpr':
         checkRandomPasswordLength(node as unknown as { length?: Value; span: Span }, diags);
         break;
+      case 'RandomStringExpr':
+        checkRandomStringLength(node as unknown as { length: Value; span: Span }, diags);
+        break;
+      case 'RandomDateBetweenExpr':
+        checkRandomDateBounds(node as unknown as { from: Value; to: Value; span: Span }, diags);
+        break;
       case 'TransformExpr':
         checkTransformOperand(node as unknown as TransformExpr, diags);
         break;
@@ -3214,6 +3461,141 @@ function checkRandomPasswordLength(node: { length?: Value; span: Span }, diags: 
     span: node.span,
     hint: '`random password` always includes an uppercase letter, a lowercase letter, a digit and a symbol (SPEC §7.4), so it needs at least four characters to put them in — raise the length, or use `random string` if the character classes do not matter',
   });
+}
+
+/**
+ * `random string n` (`M124-02`).
+ *
+ * The rule this applies is SPEC §7.3's: *a generator rejects a numeric operand when no value it
+ * could produce satisfies the generator's own stated promise.* `random string` promises a random
+ * string of length *n*, so **`0` keeps that promise** — the empty string is a string of length 0 —
+ * and a negative length cannot be kept by any string at all. That asymmetry is the finding, not an
+ * accident: the row asked whether `0` and `-3` were one defect and they are not, so only one of them
+ * moves.
+ *
+ * `randomAlnum`'s `for (let i = 0; i < len; i++)` runs zero times for both, which is why both used
+ * to return `""` and pass. `literalNumber` already folds the `0 - 3` desugaring a negative bound
+ * arrives as, so this reads the operand the author wrote either way.
+ */
+function checkRandomStringLength(node: { length: Value; span: Span }, diags: Diagnostic[]): void {
+  const length = literalNumber(node.length);
+  if (length === null || length.n >= 0) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    // The runtime's own sentence (`eval.ts`), for `checkRandomRange`'s reason.
+    message: `\`random string ${length.text}\`: length must be 0 or more`,
+    span: node.span,
+    hint: '`random string 0` is legal and produces the empty string, but no string has a negative length (SPEC §7.3) — if the length is meant to vary, bind it with `let` and the checker will leave it to the run',
+  });
+}
+
+/**
+ * `random date between A and B` (`M140-05`).
+ *
+ * Not the ordering test — that one is `M124-01`'s and lives in the runtime, because `today` and
+ * `now` resolve against the run clock and the checker has no clock. This is the narrower fact the
+ * checker *can* settle: a bound written as a string, a number or a boolean can never be a date on
+ * any run, so `asDate` will throw every time, and the operand is right there in the file. Exactly
+ * `TF054`'s `static-if-literal` shape, a third construct in the same family as `M124-01`'s.
+ *
+ * Deliberately a **type** test rather than a content test, which is why it does not go through
+ * `literalText`: `random date between "{start}" and "{end}"` interpolates to a string too, and a
+ * string is the wrong kind of thing here however it was spelled.
+ */
+/** The literal forms that can never evaluate to a date, described in the words the language uses
+ *  for them. One table, so membership and the message cannot disagree — the shape `M147b` put on
+ *  the parser's refusals for the same reason. Anything absent is left to the run: a `VarRef` may
+ *  well hold a date, and the checker has no way to know. */
+const NEVER_A_DATE = {
+  StringLit: 'a string',
+  NumberLit: 'a number',
+  BoolLit: 'a boolean',
+  NullLit: '`null`',
+  DurationLit: 'a duration',
+} as const satisfies Partial<Record<Value['type'], string>>;
+
+function checkRandomDateBounds(node: { from: Value; to: Value; span: Span }, diags: Diagnostic[]): void {
+  let refused = false;
+  for (const [side, bound] of [
+    ['from', node.from],
+    ['to', node.to],
+  ] as const) {
+    const described = (NEVER_A_DATE as Partial<Record<Value['type'], string>>)[bound.type];
+    if (described === undefined) continue;
+    refused = true;
+    diags.push({
+      code: Codes.INVALID_LITERAL_OPERAND,
+      severity: 'error',
+      message: `\`random date between\`: the \`${side}\` bound is ${described}, not a date`,
+      span: bound.span,
+      // `asDate`'s own sentence (`eval.ts`), so the check-time and run-time answers read alike.
+      hint: 'a bound must be a date (`today`/`now`, optionally with a date-math offset such as `today - 10 days`) — a quoted date like `"2030-01-01"` is a string and is rejected on every run (SPEC §7.3)',
+    });
+  }
+  // A bound that is not a date has no order, so asking about the range as well would be two
+  // complaints about one mistake — `M140-01`'s shape, which this milestone also fixes elsewhere.
+  if (!refused) checkRandomDateOrder(node, diags);
+}
+
+/**
+ * The ordering half of `random date between` (`M124-01`).
+ *
+ * The runtime throws on an empty range, mirroring its two numeric siblings. This decides the case
+ * that is settled before the run: **two bounds measured from the same anchor**. `today - 10 days`
+ * is ten days before `today` whatever day it is, so the comparison needs no clock at all — only the
+ * offsets, which `offsetToMs` turns into milliseconds by pure arithmetic with no calendar in it, so
+ * the checker's answer and the runtime's cannot diverge across a DST boundary.
+ *
+ * **Different anchors are silence, and that is the interesting line.** `random date between now and
+ * today` is empty on every run except one starting exactly at midnight, because `today` is the start
+ * of the day and `now` is somewhere after it — so it is *almost* always wrong, and almost is not the
+ * checker's to refuse (D147, and `A4-05` is what happens when it is).
+ */
+function checkRandomDateOrder(node: { from: Value; to: Value; span: Span }, diags: Diagnostic[]): void {
+  const from = literalDateBound(node.from);
+  const to = literalDateBound(node.to);
+  if (from === null || to === null || from.anchor !== to.anchor || to.ms >= from.ms) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    // The clause after the colon is the runtime's, word for word; the prefix cannot be, because the
+    // runtime knows the two dates and the checker knows the two phrases the author typed.
+    message: `\`random date between ${from.text} and ${to.text}\`: \`to\` must be ≥ \`from\``,
+    span: node.span,
+    hint: `the bounds are the wrong way round — write \`random date between ${to.text} and ${from.text}\` (SPEC §7.3)`,
+  });
+}
+
+/** `offsetToMs`'s table (`eval.ts`), duplicated rather than imported: `@tflw/lang` does not depend
+ *  on `@tflw/runtime` and must not start to. `conformance.test.ts` is what keeps the two honest. */
+const DATE_OFFSET_MS: Readonly<Record<DateOffsetUnit, number>> = {
+  seconds: 1000,
+  minutes: 60_000,
+  hours: 3_600_000,
+  days: 86_400_000,
+  weeks: 7 * 86_400_000,
+};
+
+/** A bound the checker can place on a timeline, or `null` — `literalNumber`'s test for dates, and
+ *  exactly as narrow: an anchor, or an anchor plus one literal offset. `today - {n} days` has an
+ *  operand nobody has bound and returns `null`, which is the whole rule. */
+function literalDateBound(value: Value): { anchor: 'today' | 'now'; ms: number; text: string } | null {
+  if (value.type === 'DateAtom') return { anchor: value.which, ms: 0, text: value.which };
+  if (
+    value.type === 'BinaryExpr' &&
+    (value.op === '+' || value.op === '-') &&
+    value.left.type === 'DateAtom' &&
+    value.right.type === 'DateOffsetLit'
+  ) {
+    const magnitude = DATE_OFFSET_MS[value.right.unit] * value.right.amount;
+    return {
+      anchor: value.left.which,
+      ms: value.op === '-' ? -magnitude : magnitude,
+      text: `${value.left.which} ${value.op} ${value.right.amount} ${value.right.unit}`,
+    };
+  }
+  return null;
 }
 
 /** `hex`/`base64`/`url` `decode(...)` over a literal that will not decode. `encode` never fails and

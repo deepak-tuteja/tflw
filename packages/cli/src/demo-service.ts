@@ -20,11 +20,23 @@ import type { ResolvedConfig } from '@tflw/runtime';
  * `new URL('tflw://demo').hostname` still answers, so the config grammar, the checker and the LSP
  * are all untouched by this feature. It is also obviously not a real address — nobody ships
  * `tflw://demo` to staging by accident, which a `http://localhost:3001` default cannot claim.
+ *
+ * **Moved to `@tflw/lang` by `M147c` (`M118-01`) and re-exported here**, so every call site in this
+ * package is unchanged. The checker needs the same string to say `tflw://dmeo` is wrong at check
+ * time, and `@tflw/lang` cannot import from `@tflw/cli` — a second copy here would have been two
+ * spellings of a set with one member. `RESERVED_PRINCIPAL` set the precedent: the package that
+ * *decides* owns the constant, the packages that *use* it import.
  */
-export const DEMO_BASE_URL = 'tflw://demo';
+import { DEMO_BASE_URL } from '@tflw/lang';
+export { DEMO_BASE_URL };
 
 /** Anything under the reserved scheme — so a typo like `tflw://demoo` is caught by the runtime's
- * guard with a real sentence, rather than reaching `fetch` as an unsupported protocol. */
+ * guard with a real sentence, rather than reaching `fetch` as an unsupported protocol.
+ *
+ * **Local, and deliberately not the `DEMO_SCHEME` `@tflw/lang` exports.** This one is `URL.protocol`
+ * shaped (`tflw:`, what `new URL(u).protocol` returns); the checker's is the literal prefix a config
+ * string starts with (`tflw://`). Same scheme, two spellings for two different comparisons, and
+ * collapsing them would silently change whichever call site lost. */
 export const DEMO_SCHEME = 'tflw:';
 
 export interface DemoService {

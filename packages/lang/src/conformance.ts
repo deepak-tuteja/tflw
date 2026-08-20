@@ -324,7 +324,23 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'random password ${length}',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    note: 'M124/D232 — a literal length below 4 is decidable. The asymmetry this note has recorded since `M97a` — `random string 0` throws nothing at all, so there is no runtime rule here for a checker to predict — is now written where it can be checked rather than only mentioned: `random-string-zero-length` in `RUNTIME_GAPS`, against `M124-02`',
+    note: 'M124/D232 — a literal length below 4 is decidable. The asymmetry this note has recorded since `M97a` — `random password 2` throws while `random string 0` returns — is no longer an open question: D629 ruled it deliberate, because the two generators promise different things and only one of the promises fails. `random-string-zero-length` in `RUNTIME_GAPS` carries the ruling; `random-string-length` above carries the half that did become a rule',
+  },
+  {
+    id: 'random-string-length',
+    file: 'eval.ts',
+    excerpt: 'random string ${len}: length must be 0 or more',
+    decidable: 'static-if-literal',
+    checkerCode: 'TF054',
+    note: '`M147c`/D629 — the rule is SPEC §7.3\'s, and it deliberately does not cover `random string 0`: the empty string *is* a string of length 0, so nothing the generator promised goes undelivered. Only a negative length is refused, and `literalNumber` already folds the `0 - n` desugaring one arrives as. The asymmetry with `random password 2` that `M124-02` filed is therefore kept rather than removed — the two generators promise different things',
+  },
+  {
+    id: 'random-date-reversed-bounds',
+    file: 'eval.ts',
+    excerpt: 'random date between ${from.toISOString()} and ${to.toISOString()}',
+    decidable: 'static-if-literal',
+    checkerCode: 'TF054',
+    note: '`M147c`/D630 — `M124-01`, closed by the throw its two numeric siblings have always had. `static-if-literal` is exact here and the literal case is narrower than it looks: two bounds **measured from the same anchor** are ordered without a clock (`today - 10 days` is ten days before `today` on every run, and `offsetToMs` is pure arithmetic with no calendar in it), while `now` against `today` differs by however far into the day the run started and is left to the runtime. The interpolated half is the carve-out, as with the two numeric rows above',
   },
   {
     id: 'eval-invalid-reference',
@@ -503,6 +519,14 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
 
   // -- interpreter.ts --------------------------------------------------------
   {
+    id: 'unknown-table-column',
+    file: 'interpreter.ts',
+    excerpt: 'unknown table column',
+    decidable: 'needs-io',
+    checkerCode: 'TF027',
+    note: '`M147c`/`A4-18` — one rule reached two ways, and the pairing of `needs-io` with a `checkerCode` is the point rather than a contradiction. For an **inline** table the columns are in the AST and `TF027` decides it at check time; for `with each from "./rows.csv"` they are not known until the file is read, `@tflw/lang` does no I/O, and SPEC §4.3 has said since D144 that this half is not the checker\'s. So the throw exists for the file-backed half and is reached by the inline half only when nobody ran `tflw check`. It says `TF027`\'s sentence deliberately, down to the "did you mean" — the row was filed because the *generic* unbound-variable message named `let` and `capture`, two keywords that cannot bind a table column, in the one scope where the header is the only thing that can',
+  },
+  {
     id: 'unknown-session',
     file: 'interpreter.ts',
     excerpt: 'unknown session',
@@ -577,8 +601,8 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     file: 'interpreter.ts',
     excerpt: 'has parse errors',
     decidable: 'needs-io',
-    filedRow: 'M140-03',
-    note: 'needs the imported file read. **The diagnostics do not surface, and this note asserted that they did until `M147a`**: `resolveImportedActions` runs a full `parseSource` during `tflw check` and then discards every diagnostic it just computed, so `tflw check` prints `no problems found` on a file whose `import` target cannot parse and the run fails afterwards with nothing but `✗ (crashed)`. Measured by `M140-03`, which this row now points at — so the claim is anchored to a row status the ledger gate reads, instead of to prose nothing checks',
+    checkerCode: 'TF073',
+    note: 'needs the imported file read, so the *fact* is `needs-io` — but the reading happens at check time, in `resolveImportedActions`, which is why this pairs a `needs-io` verdict with a code rather than contradicting one (the same shape `unknown-table-column` carries for `TF027`). **This note has now been wrong in both directions and the second correction is the instructive one.** It originally asserted the diagnostics surfaced; `M140-03` measured that they did not — the resolver ran a full `parseSource` and kept only the verdict *world unknown*, discarding everything it had computed — and `M147a` corrected the note and anchored it to the row. `M147c` then closed the row by making the claim true, which retired the `filedRow` pointer the ledger gate holds to an **open** row. That is the pointer working exactly as designed: a claim tied to a row status cannot outlive the row, and the field that had to change is the machine-checked one. The throw here is now genuine run-time residue — reachable when `runProgram` is driven as a library with no check pass in front of it, which is the only door `TF073` does not stand in',
   },
   {
     id: 'use-module-unloadable',
@@ -639,7 +663,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'an action that reaches itself never terminates',
     decidable: 'static',
     checkerCode: 'TF044',
-    note: 'D141 shipped `TF044` same-file only and left the cross-file case to this guard; M109 (`M97d-01`, now closed) gave `KnownAction` a body, so the checker decides that case too whenever the imports resolve. What is left here is genuinely undecidable statically and so is exactly what clause 2 excludes: an import that cannot be read or parsed, a cycle whose every call site is inside imported files (no span in the file being checked), and `runProgram` driven as a library with no check pass in front of it. Detecting a repeat on the live call stack rather than counting to a depth limit is what lets both halves name the same cycle in the same notation',
+    note: 'D141 shipped `TF044` same-file only and left the cross-file case to this guard; M109 (`M97d-01`, now closed) gave `KnownAction` a body, so the checker decides that case too whenever the imports resolve. What is left here is genuinely undecidable statically and so is exactly what clause 2 excludes: an import that cannot be read (`TF073` now refuses one that cannot be *parsed*, so only the unreadable half is left), a cycle whose every call site is inside imported files (no span in the file being checked), and `runProgram` driven as a library with no check pass in front of it. Detecting a repeat on the live call stack rather than counting to a depth limit is what lets both halves name the same cycle in the same notation',
   },
   {
     id: 'unknown-call',
@@ -647,7 +671,7 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'unknown call',
     decidable: 'static',
     checkerCode: 'TF037',
-    note: 'decided for tests by `checkCalls`, and for `session` bodies by `checkNoCallsInSteps` — **inverted** there, because the config dialect declares no `action`s at all, so a call in a session body is impossible rather than unknown and the hint has to say the second thing (D142, `M97b`). "Checked nowhere" was this note until `M147a`, and it was already false when `M97b` merged',
+    note: 'decided for tests by `checkCalls`, and for `session` bodies by `checkNoCallsInSteps` — **inverted** there, because the config dialect declares no `action`s at all, so a call in a session body is impossible rather than unknown and the hint has to say the second thing (D142, `M97b`). "Checked nowhere" was this note until `M147a`, and it was already false when `M97b` merged. **`M147c` (`A4-21`) added the third frame and it is the one the `static` verdict was always straining against**: a call written inside an *imported* action\'s body, which is undecidable while checking the file that declares it — calls bind late, so a library action may call a name only its importers define — and fully decidable one level up, where the importer\'s registry is the registry it will run under. `importedBodyCalls` reports it there, on the `import` line, since the call\'s own span belongs to another file',
   },
   {
     id: 'mtls-material-unreadable',
@@ -895,9 +919,9 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'reserved-demo-scheme',
     file: 'interpreter.ts',
     excerpt: 'is not a real base URL',
-    decidable: 'static',
-    filedRow: 'M118-01',
-    note: "M118 (`FU-04`) — `tflw run` substitutes the real loopback address for `tflw://demo` before anything executes, so this only fires on a typo under the reserved scheme (`tflw://demoo`). A base URL is a `tflw.config` string literal, so the checker could say it at check time and doesn't; filed rather than folded in, since it wants a diagnostic code and M118 declared none",
+    decidable: 'static-if-literal',
+    checkerCode: 'TF071',
+    note: "M118 (`FU-04`), answered by `M147c` (`M118-01`, D632). `tflw run` substitutes the real loopback address for `tflw://demo` before anything executes, so this only ever fired on a typo under the reserved scheme (`tflw://demoo`) — and the set of legal hosts under that scheme has exactly one member, known at check time, written as a string literal in `tflw.config`. `checkReservedScheme` now says it before the run starts. **Reclassified `static-if-literal` rather than `static` at the same time, and that is a correction, not a consequence of the fix**: `api \"tflw://{TARGET}\"` is a config string nobody can evaluate at check time, so this rule was never fully static and the manifest said it was. The runtime keeps the throw for the interpolated case and for a caller that skipped the substitution",
   },
 
   // -- matcher.ts ------------------------------------------------------------
@@ -1049,19 +1073,11 @@ export interface RuntimeGap {
 
 export const RUNTIME_GAPS: readonly RuntimeGap[] = [
   {
-    id: 'random-date-reversed-bounds',
-    file: 'eval.ts',
-    shape: 'random date between today and today - 10 days',
-    instead: 'returns a date *before* `from`, with no throw and no diagnostic',
-    filedRow: 'M124-01',
-    note: '`RandomDateBetweenExpr` computes `from.getTime() + rng() * (to.getTime() - from.getTime())` with no ordering test, so a reversed range yields a negative delta and a value outside the range the author wrote, which then flows into a request body. Both siblings twenty lines above throw ``to` must be ≥ `from`` on the identical condition and both are rows in `RUNTIME_RULES`. Closing it is a runtime `throw` mirroring theirs, after which `TF054` gains an eighth site for free — `literalNumber`-style operand inspection already exists',
-  },
-  {
     id: 'random-string-zero-length',
     file: 'eval.ts',
     shape: 'random string 0',
-    instead: 'returns `""`, while `random password 2` throws',
-    filedRow: 'M124-02',
-    note: 'the finding is the asymmetry, not either behaviour: `randomAlnum` loops `for (let i = 0; i < len; i++)` so a literal `0` — or `random string 0 - 3`, whose `0 - n` desugaring `literalNumber` already folds for `TF054` — yields an empty string, while `RandomPasswordExpr` rejects `< 4` with a message explaining why the bound exists. One of the two is deliberate and neither is written down. This is the entry the `ruling` field exists for: a decision that a zero-length random string stays legal is an answer, and it belongs here rather than in a plan',
+    instead: 'returns `""`, and is meant to',
+    ruling: 'D629',
+    note: '`M124-02` asked which of `random string 0` and `random password 2` was deliberate, since one returns and one throws and neither reason was written down. Answered by SPEC §7.3\'s rule — a generator refuses an operand when no value it could produce keeps the generator\'s own promise — which lands on opposite sides of the two: four character classes cannot fit in two characters, while the empty string *is* a string of length 0. So this absence is permanent and the neighbouring `random string -1` is not, which is why `random-string-length` above is a rule and this stays a ruled gap. Kept as an entry rather than deleted because the next reader will ask the same question the row asked',
   },
 ];

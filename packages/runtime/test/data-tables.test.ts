@@ -225,3 +225,110 @@ test('a plain test with no table still runs as a single case (unaffected by the 
 
   await server.close();
 });
+
+// ---------------------------------------------------------------------------
+// `M147c` (`A4-18`) — the remedy a mistyped column gets.
+//
+// A row-case's *name* is evaluated in a scope holding the row's cells and nothing else. So when a
+// `{col}` in it fails to resolve, the general unbound-variable sentence — *"is it defined with
+// `let` or `capture` earlier?"* — names two keywords that could not have helped, in the one scope
+// where the header is the only thing that can bind anything. The row was filed on that: not a
+// missing error, a **wrong remedy**.
+//
+// `checkDataTables` raises `TF027` for the identical mistake on an *inline* table and cannot reach
+// the file-backed one: those columns are not known until the file is read and `@tflw/lang` does no
+// I/O (SPEC §4.3, D144). The runtime holds the loaded row, so it says `TF027`'s sentence — the same
+// words, the same "did you mean", no code, because the runtime carries none (`V4-12`).
+//
+// The blunt control: delete the `checkNameColumns` call and the three positives below fail while
+// the last two — the ones asserting the general message is still general — keep passing. That
+// asymmetry is the point of including them.
+
+test('a mistyped column in a file-backed table names the column, not `let` and `capture` (A4-18)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-table-typo-'));
+  await writeFile(join(dir, 'rows.csv'), 'name\nalice\n');
+  const source = `with each from "./rows.csv"
+test "row {nmae}"
+  api GET /health
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source, baseDir: dir });
+
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error!;
+  assert.match(error, /unknown table column "nmae" referenced in the test name/);
+  assert.match(error, /did you mean `name`\?/);
+  // The half the row is actually about — the old remedy pointed at two keywords that cannot bind a
+  // table column, and a fix that only *added* words would have left it there.
+  assert.doesNotMatch(error, /`let` or `capture`/);
+
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('with no near spelling, it lists the row\'s columns and names the file they came from', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-table-far-'));
+  await writeFile(join(dir, 'rows.csv'), 'name,email\nalice,a@x.com\n');
+  const source = `with each from "./rows.csv"
+test "row {quantity}"
+  api GET /health
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source, baseDir: dir });
+
+  const error = report.tests[0]!.error!;
+  assert.match(error, /this row from ".\/rows.csv" has: name, email/);
+
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('an inline table reaching the runtime unchecked gets the same sentence `TF027` gives', async () => {
+  // Not dead code behind `TF027`: this is what `tflw run` says to anyone who never ran
+  // `tflw check`, and saying it differently would be two remedies for one mistake.
+  const source = `with each
+  | name |
+  | "alice" |
+test "row {nmae}"
+  api GET /health
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
+
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error!, /unknown table column "nmae" referenced in the test name/);
+});
+
+test('a correctly spelled column is silent — the check does not fire on a name it can resolve', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
+  const source = `with each
+  | name |
+  | "alice" |
+test "row {name}"
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.deepEqual(report.tests.map((t) => t.name), ['row alice']);
+
+  await server.close();
+});
+
+test('the general unbound-variable remedy survives where it is still the right one', async () => {
+  // `lookupVar` is reached from every expression in the language and knows nothing about tables.
+  // Widening *it* instead of checking at the one site that knows the scope is a table row would
+  // have made this message wrong: here `let` and `capture` are exactly what is missing.
+  // A `log` step so the reference is evaluated on its own, with no request in front of it to fail
+  // first — the first draft used a header and measured the blocked-port error instead.
+  const source = `test "t"
+  log "{traceId}"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
+
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error!;
+  assert.match(error, /unknown variable "traceId" — is it defined with `let` or `capture` earlier\?/);
+  assert.doesNotMatch(error, /unknown table column/);
+});

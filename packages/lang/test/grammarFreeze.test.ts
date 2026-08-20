@@ -113,9 +113,14 @@ test('FS-04 step 3: a bare `check <locator>` is an error naming both readings, n
   // have to guess, and guessing wrong here is what the old dual grammar did.
   assert.match(diagnostics[0]!.hint ?? '', /`tick field "…"`/);
   assert.match(diagnostics[0]!.hint ?? '', /`check field "…" is checked`/);
-  // The step is dropped, not recovered into a tick.
-  const body = program.tests[0]!.body as readonly { type: string }[];
-  assert.deepEqual(body.map((s) => s.type), ['OpenStmt']);
+  // Not recovered into a tick — which is the property FS-04 froze, and it is unchanged. What the
+  // body holds in its place is a `MalformedStep` since `M147c`/`M140-01`: the step is still refused,
+  // but the position is no longer erased, so a later pass cannot mistake the gap for a body the
+  // author wrote. Asserting the placeholder's `head` rather than merely its absence keeps this test
+  // saying what it was written to say — `check` did not silently become `tick`.
+  const body = program.tests[0]!.body as readonly { type: string; head?: string }[];
+  assert.deepEqual(body.map((s) => s.type), ['OpenStmt', 'MalformedStep']);
+  assert.equal(body[1]!.head, 'check');
 });
 
 test('FS-04 step 3: `uncheck` is refused by name, naming `untick` outright (D103 style)', () => {

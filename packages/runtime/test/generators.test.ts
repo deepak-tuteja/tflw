@@ -59,6 +59,53 @@ test('`random number`/`random decimal` with a reversed range fail clearly instea
   assert.match(decimalReport.tests[0]!.error ?? '', /random decimal 10\.5 to 2\.5.*`to` must be ≥ `from`/);
 });
 
+test('`random date between` with the bounds reversed fails instead of returning a date before `from` (M124-01)', async () => {
+  // **Spelled through a `let` on purpose.** `TF054` now decides the same-anchor case before the run,
+  // so a fixture written `random date between today and today - 10 days` would be refused by the
+  // checker and never reach this throw — and a runtime rule no suite can provoke is the `M97a-09`
+  // trap, a manifest row describing a rule that is not there. A reference is what the checker
+  // declines to type, so it is what leaves the throw reachable.
+  const source = `test "reversed date range"
+  let past = today - 10 days
+  let when = random date between today and {past}
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /random date between .*`to` must be ≥ `from`/);
+});
+
+test('`random string` with a negative length fails instead of returning the empty string (M124-02)', async () => {
+  // Through a `let` for the same reason as above: the literal `random string -3` is `TF054` now.
+  const source = `test "negative length"
+  let n = 0 - 3
+  let s = random string {n}
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /random string -3: length must be 0 or more/);
+});
+
+test('`random string 0` stays legal and produces the empty string (D629)', async () => {
+  // The positive half of the ruling, and the control that keeps the throw above from widening into
+  // "any length that produces nothing": the empty string is a string of length 0, so the generator
+  // kept its promise and the run is clean.
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+  const source = `test "zero length"
+  let s = random string 0
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true);
+  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /""/);
+  await server.close();
+});
+
 test('`unique(...)`/`unique email`/`unique number` are guaranteed distinct across a run', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
 

@@ -241,6 +241,81 @@ export const Codes = {
   // split two) and already carries several unrelated repairs — it is the counter-example, not the
   // pattern to copy.
   CRAWL_BODY_INVALID: 'TF070',
+  // M147c (`A2-09`, D631/D632) — **a setting whose written value is outside the range the setting
+  // can act on.** The other three families next door refuse the *key* (`TF020` unknown, `TF022`
+  // misplaced, `TF025` wrong block) and `TF024`/`TF029` refuse a *name*; not one of them looks at
+  // the value, so `workers 0`, `viewport 0 0`, `timeout step 0s` and `retry 2.5` all reached
+  // "no problems found" and then quietly ran something nobody wrote.
+  //
+  // **Negative values were never the gap.** `workers -1` is already `TF010` and always was — the
+  // lexer emits `-` as its own token, so every one of these slots rejects it as *not a number*
+  // before meaning is ever considered. What was silent is **zero where zero cannot configure
+  // anything, and a fraction where only whole things exist**, and that is exactly what this code
+  // says. It is the setting-side twin of `TF054`, and deliberately not `TF054` itself: that code's
+  // published meaning is an operand *"the step will reject the moment it evaluates"*, and a setting
+  // has no step and gets no rejection — reusing it would have made the message name a throw that
+  // does not exist. Not `TF033` either, whose `hold 0 users` is the nearest precedent in the
+  // language but arrives attached to load-workload documentation a `viewport` line has no business
+  // pointing at.
+  //
+  // **Two zeros stay legal, and they are the reason the rule is phrased around the promise rather
+  // than around the number** (the same line `random string 0` draws in §4.1). `timeout expect 0s`
+  // and `timeout wait 0s` mean *evaluate once, do not poll* — both loops test the deadline after
+  // the first evaluation, so zero is a real setting there; `timeout step 0s` aborts every request
+  // before it is sent. `retry 0` and `retry honoring "…" up to 0` are likewise the defaults spelled
+  // out loud, not mistakes.
+  //
+  // **Two homes, one rule** (`M118-01`, D632). The five numeric slots are refused in `parser.ts`,
+  // because the range of a number is a fact about its *shape* and the production reading it knows
+  // everything needed. `api "tflw://dmeo"` is refused in `checker.ts`, because which addresses a
+  // scheme reserves is a fact about the *language's own semantics* and belongs beside the rest of
+  // the config semantics. `TF033` is documented "Parser/checker" for the same reason. The row was
+  // filed predicting a new code — true against `TF054`, false against this one: `workers` cannot act
+  // on `0` and `api` cannot act on any `tflw://` address but one, and both repairs are *write a
+  // value the setting accepts*, which is `D419`'s bar.
+  INVALID_SETTING_VALUE: 'TF071',
+  // M147c (`A2-11`, D633) — **the same column name declared twice in one `with each` header.**
+  // `| name | name |` parsed, checked clean and ran: a row binds each name once, so the second
+  // column overwrote the first and every cell under the earlier one was discarded silently. The
+  // test still ran, still passed, and read data nobody could see it read.
+  //
+  // **Not `TF027`.** That code is `UNKNOWN_TABLE_COLUMN` and its published meaning is a `{col}` in a
+  // test's *name* that the table does not declare. Here the column is declared — twice — so calling
+  // it unknown would be false in the one word the reader keys on. Not `TF035` either, whose
+  // meaning is bound to `action` namespaces, and not `TF033`, which would point a table header at
+  // load-workload documentation. This is the language's second duplicate-declaration rule and its
+  // first outside the config dialect, where `TF024`/`TF029` already do the job for envs and
+  // sessions; the repair is theirs too, and it is one repair — **rename one**.
+  //
+  // Refused in `parser.ts` rather than in `checkDataTables` next to `TF027`, for the reason
+  // `TF071`'s numeric half gives and one this rule adds: `InlineDataTable.columns` is
+  // `readonly string[]` with no per-column spans, so the checker could only point at the whole
+  // multi-line table, while the production reading the header holds each name's own token. The
+  // caret lands on the *second* `name`, which is the one to rename.
+  DUPLICATE_TABLE_COLUMN: 'TF072',
+  // M147c (`M140-03`, D634) — **an `import` naming a file that exists and does not parse.**
+  // `tflw check` printed `1 file checked, no problems found.` and exited 0 on a file whose import
+  // target could not parse, and it had the diagnostics in hand when it said so:
+  // `resolveImportedActions` ran a full `parseSource` on the imported file and then discarded every
+  // diagnostic it had just computed, keeping only the verdict *world unknown*. The run afterwards
+  // failed with the rendered `TF010` — so the information existed, twice, and reached the one
+  // surface the docs tell people to put in CI exactly never.
+  //
+  // **Not `TF043`.** That code is `MISSING_FILE` and this file is present; `MISSING_FILE` would be
+  // false in the only word that tells the reader where to look. That is `M97a-01`→`TF056`'s
+  // argument applied a second time, and the division of labour it draws is deliberate: an `import`
+  // that names nothing is `TF043`'s (shipped `M97c`, `A4-07`), an `import` that names something
+  // unparseable is this one's, and the two can never both fire for one path.
+  //
+  // **The message names the file and does not underline it.** An imported file's diagnostics carry
+  // spans into *that* file's text, and rendering them against this file's source would put a caret
+  // on an unrelated line — the `M106` stance, and the same reason `TF044` can name a call written
+  // inside an imported body but never underline it. So one diagnostic per broken import, anchored
+  // on the path literal that is in this file, telling the reader which file to check. Checking the
+  // *directory* still reports the underlying errors in full, because the broken file is checked
+  // directly there; this exists for the run that checks one entry file, which is the shape a
+  // `tflw check` in CI usually has.
+  IMPORT_PARSE_ERRORS: 'TF073',
 } as const;
 
 // ---------------------------------------------------------------------------

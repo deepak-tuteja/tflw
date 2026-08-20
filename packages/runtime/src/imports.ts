@@ -29,42 +29,85 @@ export type ReadText = (absPath: string) => Promise<string>;
 
 const readFromDisk: ReadText = (absPath) => readFile(absPath, 'utf8');
 
+/** What one file's `import` lines resolved to: the actions they bring into scope, and which of them
+ * named a file that could not be parsed.
+ *
+ * **Two fields because there are two answers and neither derives the other** (`M147c`,
+ * `M140-03`). `actions: undefined` means *world unknown* and tells `checkCalls` to stop asking
+ * negative questions; `unparseable` is what the reader is told about. Before this the function
+ * computed both and returned only the first — it ran a full `parseSource` on a broken import and
+ * threw the result away, so `tflw check` printed `no problems found` about a program that cannot
+ * start. Returning both from one walk, rather than adding a second pass that re-reads and
+ * re-parses, is this file's own rule: a pass that exists twice is a pass that drifts.
+ *
+ * **`unparseable` is a set of path literals and not a list of diagnostics**, which is the same
+ * shape `resolveMissingFiles` returns for `TF043` and the same reason: `@tflw/lang` does no I/O, so
+ * it is handed *answers* and builds every check-time diagnostic itself. Keeping the diagnostic on
+ * that side is what lets `TF073` have a runnable worked example in SPEC §17 — `diagnosticExamples`
+ * executes each probe through `checkProgram` and cannot reach into this package at all.
+ */
+export interface ImportResolution {
+  /** The imported actions, or `undefined` when any import could not be read or could not be parsed. */
+  readonly actions: KnownAction[] | undefined;
+  /** The path literals, as written, of imports naming a file that exists and does not parse. */
+  readonly unparseable: ReadonlySet<string>;
+}
+
 /**
- * The actions a file's `import` lines bring into scope, or `undefined` if that cannot be determined.
+ * The actions a file's `import` lines bring into scope, plus which of those imports could not be
+ * parsed.
  *
  * Shaped by `buildRegistry`, and inheriting its two properties on purpose:
  *
  *  - **One level, no recursion.** An imported file's own `import` lines are not followed at run
  *    time, so following them here would let the checker resolve names the runtime then fails on.
  *    A checker that is more permissive than the runtime is worse than one that is less. It also
- *    means there is no import cycle to guard against.
+ *    means there is no import cycle to guard against. **`A4-21` is what that rule costs, and
+ *    `M147c` made the checker pay it out loud instead of the run** — see `importedBodyCalls` in
+ *    `checker.ts`, which resolves the calls written inside an imported action's body against the
+ *    importing file's world, because that is the world they will actually be resolved against.
  *  - **First declaration wins**, left to the caller (`checkCalls`) — a duplicate across files is
  *    a run-time refusal and `TF035`'s business, not this function's.
  *
- * `undefined` — returned when any import is unreadable or does not parse — means "world unknown",
- * and `checkCalls` answers no *negative* question under it (it will not call a name unknown when it
- * did not manage to look). Neither condition is reported from here: the runtime has its own error
- * for both, and having the checker report a missing imported file is `A4-07`, a separate row.
- * The case that must not happen is the middle one — resolving half the imports and then declaring
- * a name unknown on the strength of it.
+ * `actions: undefined` — returned when any import is unreadable or does not parse — means "world
+ * unknown", and `checkCalls` answers no *negative* question under it (it will not call a name
+ * unknown when it did not manage to look). The case that must not happen is the middle one —
+ * resolving half the imports and then declaring a name unknown on the strength of it.
+ *
+ * **Only the unparseable half is reported.** An import that cannot be *read* is almost always one
+ * that is not there, and `TF043` already reports that from `resolveMissingFiles` (`M97c`, D144,
+ * `A4-07`) — reporting it twice would be two diagnostics for one typo. The residue is a file that
+ * exists and cannot be read anyway: a permissions accident, left with no check-time diagnostic
+ * knowingly rather than given a code of its own.
+ *
+ * **Every import is walked even after one fails**, where this used to return on the first. A file
+ * importing two broken files has two things wrong with it, and hearing about them one run at a
+ * time is the cascade shape this milestone keeps removing.
  */
 export async function resolveImportedActions(
   filePath: string,
   program: Program,
   readText: ReadText = readFromDisk,
-): Promise<KnownAction[] | undefined> {
-  if (program.imports.length === 0) return [];
+): Promise<ImportResolution> {
+  if (program.imports.length === 0) return { actions: [], unparseable: new Set() };
   const baseDir = dirname(filePath);
   const out: KnownAction[] = [];
+  const unparseable = new Set<string>();
+  let worldKnown = true;
   for (const imp of program.imports) {
     let text: string;
     try {
       text = await readText(resolve(baseDir, imp.path.value));
     } catch {
-      return undefined;
+      worldKnown = false;
+      continue;
     }
     const parsed = parseSource(text);
-    if (parsed.diagnostics.some((d) => d.severity === 'error')) return undefined;
+    if (parsed.diagnostics.some((d) => d.severity === 'error')) {
+      worldKnown = false;
+      unparseable.add(imp.path.value);
+      continue;
+    }
     for (const action of parsed.program.actions) {
       // `body` (M109, `M97d-01`): the parse above already produced it and this loop used to drop it,
       // which is the whole reason `TF044` could not decide a cycle that left the file. It is a
@@ -72,7 +115,7 @@ export async function resolveImportedActions(
       out.push({ name: action.name, arity: action.params.length, from: imp.path.value, body: action.body });
     }
   }
-  return out;
+  return { actions: worldKnown ? out : undefined, unparseable };
 }
 
 /** Does this path exist? Injectable for the same reason `ReadText` is: the language server has to

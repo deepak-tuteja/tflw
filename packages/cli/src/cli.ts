@@ -1219,13 +1219,20 @@ async function loadAndValidate(
   for (const file of files) {
     const source = await readFile(file, 'utf8');
     const parsed = parseSource(source);
+    // `M147c`/`M140-03` — resolved once and *both* of its answers used. This call already read and
+    // parsed every imported file; until now the caller took the actions and threw away the fact
+    // that one of them had not parsed, which is how `tflw check` came to print `no problems found`
+    // for a file whose `import` target cannot parse. `importsWithErrors` carries that fact to
+    // `TF073` the same way `missingFiles` carries `resolveMissingFiles`'s to `TF043`.
+    const imports = await resolveImportedActions(file, parsed.program);
     // One composed pass list, shared with the language server and the docs-site editor demo (M60)
     // — those two used to assemble their own shorter lists and silently drifted behind this one.
     const checkDiags = checkProgram(parsed.program, {
       knownServices: Object.keys(resolved.services),
       knownSessions,
       privilegedSessions,
-      importedActions: await resolveImportedActions(file, parsed.program),
+      importedActions: imports.actions,
+      importsWithErrors: imports.unparseable,
       // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
       // `importedActions` does: `@tflw/lang` does no I/O. Before this, `tflw check` printed `no
       // problems found` for a file whose `import` named nothing, and `tflw run` then printed
@@ -2491,13 +2498,19 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
   let rejected = false;
   for (const [abs, source] of pending) {
     const parsed = parseSource(source);
+    // `M147c`/`M140-03` — same one-resolution-two-answers shape as `checkCommand`. A refactor that
+    // would leave a suite importing an unparseable file is refused here for the same reason it is
+    // refused for any other error, and it could not be before, because this call discarded the
+    // only evidence that the import was broken.
+    const imports = await resolveImportedActions(abs, parsed.program, readPending);
     const diagnostics = [
       ...parsed.diagnostics,
       ...checkProgram(parsed.program, {
         knownServices,
         knownSessions,
         privilegedSessions,
-        importedActions: await resolveImportedActions(abs, parsed.program, readPending),
+        importedActions: imports.actions,
+        importsWithErrors: imports.unparseable,
         missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),
       }),
     ].filter((d) => d.severity === 'error');
@@ -2964,7 +2977,10 @@ function formatLogLine(step: StepResult, color: boolean, logLevelThreshold: LogL
  * `test:end`, failing: always prints — `✗ name` plus each failing step's already-capped/
  * subset-aware `detail` (gap #8's `truncate()`/`subsetMismatches()`, baked into `StepResult.detail`
  * by the time it gets here) indented underneath, live, with no flag and no TTY requirement, so a
- * failure is diagnosable without opening report.html even in a piped/CI run.
+ * failure is diagnosable without opening report.html even in a piped/CI run. When no step printed
+ * anything — a test that died before the first one ran — the test-level `error` takes their place
+ * (`M147c`/`A4-18`), so the promise in the sentence before this one holds for every failure and not
+ * only for the ones that got far enough to have a step.
  *
  * `test:end`, passing: only a cosmetic `✓ name` tick, gated on `color` (today's existing
  * interactive-only ticker) or `--verbose` — a plain CI/piped green run stays exactly as terse as
@@ -3010,6 +3026,18 @@ function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActio
       const lines = [`${tick(color, false)} ${ev.result.name}${durSuffix}`];
       for (const step of ev.result.steps) {
         if (!step.ok && step.detail) lines.push(`    ${step.detail}`);
+      }
+      // `M147c`/`A4-18` — the same rule `failureLines` applies in `renderCliSummary` (`M113-02`):
+      // a test that died before any step could fail has nothing to iterate, so the loop above
+      // printed a name and stopped. `M146a` fixed the summary block and folded its two copies into
+      // one function; this is a **third** sink it did not reach, and the live ticker is the one a
+      // person is actually watching. Kept as a condition on what *this* surface printed rather than
+      // as a call to `failureLines`: that function renders `✗ <source>` per failing step and this
+      // one renders the step's detail alone, so their "nothing was said yet" tests are genuinely
+      // different — a failing step with no `detail` is silent here and not there. Sharing the
+      // rendering would change the live line; sharing the rule is what matters and is what this is.
+      if (lines.length === 1 && ev.result.error) {
+        for (const line of ev.result.error.split('\n')) lines.push(`    ${line}`);
       }
       return lines.join('\n') + closeGroup;
     }

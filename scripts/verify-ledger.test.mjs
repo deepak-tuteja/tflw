@@ -644,11 +644,16 @@ test('a cited path that git cannot resolve at HEAD still gets the history answer
 // The manifest is handed in as text rather than read from disk, for the same reason the ledger is:
 // a check that only works against the real repo can only be tested by breaking the real repo.
 
-/** A `RUNTIME_RULES`-shaped fragment. The doc-comment line is deliberately present in every fixture. */
+/** A `RUNTIME_RULES`-shaped fragment. The doc-comment line is deliberately present in every fixture,
+ *  and so is the field's own **declaration** — since `M147c-4` that is what separates "the scan
+ *  broke" from "no gap is currently tracked", so a fixture without it is testing the other rule. */
 const manifest = (...ids) =>
   [
     '// The `REVIEW_FINDINGS.md` row tracking the gap, written in prose here as',
     "//   `filedRow: 'M97a-NN'` — a shape, not a pointer.",
+    'export interface RuntimeRule {',
+    '  filedRow?: string;',
+    '}',
     'export const RUNTIME_RULES = [',
     ...ids.flatMap((id) => ['  {', "    id: 'a-rule',", "    decidable: 'static',", `    filedRow: '${id}',`, '  },']),
     '];',
@@ -684,12 +689,32 @@ test('a pointer at a row §6 has never heard of is its own problem, not a silent
   assert.match(problems[0], /not a row in §6/)
 })
 
-test('a manifest yielding NO pointers is a problem — a scan matching nothing passes everything', () => {
-  // The failure this check would otherwise have: rename the field, and the guard reports clean
-  // forever. `M141`'s Order-1 subject exactly, so it is asserted here rather than assumed.
+test('a manifest that no longer DECLARES the field is a problem — a scan matching nothing passes everything', () => {
+  // The failure this check exists for: rename the field, and the guard reports clean forever.
+  // `M141`'s Order-1 subject exactly, so it is asserted here rather than assumed.
   const { problems } = check(sound({ manifests: [{ file: 'conformance.ts', text: 'export const RUNTIME_RULES = [];' }] }))
   assert.equal(problems.length, 1, problems.join('\n'))
-  assert.match(problems[0], /yielded no `filedRow` pointers/)
+  assert.match(problems[0], /no longer declares a `filedRow` field/)
+})
+
+test('a manifest that declares the field and carries no pointer is CLEAN (M147c-4)', () => {
+  // The state the whole guard exists to produce, and until `M147c-4` it was indistinguishable from
+  // the rename above: `conformance.ts` had never had zero pointers, so zero was read as broken.
+  // `M147a` corrected eighteen stale ones and closing `M140-03` retired the nineteenth. An alarm
+  // that cannot tell finishing the work from breaking the tool is `M145`'s one-level-above class
+  // arriving as a false positive — which is why the two questions are now asked separately.
+  const text = ['export interface RuntimeRule {', '  filedRow?: string;', '}', 'export const RUNTIME_RULES = [];'].join('\n')
+  assert.deepEqual(check(sound({ manifests: [{ file: 'conformance.ts', text }] })).problems, [])
+})
+
+test('the two are genuinely different questions, not one spelled twice', () => {
+  // NEGATIVE CONTROL on the split. Same zero pointers in both fixtures; only the declaration moves,
+  // and the verdict flips. Without this, the pair above would pass if the new check silently
+  // subsumed the old one.
+  const declared = ['export interface RuntimeRule {', '  filedRow?: string;', '}', 'export const RUNTIME_RULES = [];'].join('\n')
+  const renamed = ['export interface RuntimeRule {', '  trackedBy?: string;', '}', 'export const RUNTIME_RULES = [];'].join('\n')
+  assert.equal(check(sound({ manifests: [{ file: 'c.ts', text: declared }] })).problems.length, 0)
+  assert.equal(check(sound({ manifests: [{ file: 'c.ts', text: renamed }] })).problems.length, 1)
 })
 
 test("the field's own doc comment is not read as a pointer", () => {
@@ -712,3 +737,31 @@ test('no manifest means no manifest problems — `check` is pure over what it is
   assert.deepEqual(check(sound()).problems, [])
 })
 
+
+// ---- `M147c-3`: a `|` inside a row's prose ----------------------------------------------------
+//
+// `cells()` read the **last** cell as the status and split on every `|`, so a pipe anywhere in a
+// row's prose made a fragment of that prose the status — which starts with no status word, so the
+// row was reported malformed *and* counted OPEN, and the published tally then disagreed with a
+// status column that had never changed. Found writing `A2-11`'s close stamp: `TF072` is a rule
+// about `with each` headers and cannot describe itself without quoting one.
+//
+// The escape is GFM's own and the fix is one regex, so what earns these two tests is the direction:
+// the first proves an escaped pipe is *text*, the second proves an unescaped one still ends a cell,
+// which is what stops the fix from silently swallowing a genuinely malformed row.
+
+test('an escaped `\\|` in a row\'s prose is text, not a cell boundary (M147c-3)', () => {
+  const rows = [['A2-11', 'S3', '✅ **M99a** — refuses a `\\| name \\| name \\|` header']]
+  const parsed = parseIndex(ledger({ rows }))
+  assert.equal(parsed.length, 1)
+  assert.equal(classify(parsed[0].status), 'closed')
+  // …and the escape is undone, so a consumer reads what the author wrote.
+  assert.match(parsed[0].status, /`\| name \| name \|` header/)
+})
+
+test('an unescaped `|` still ends a cell — the fix does not make malformed rows readable', () => {
+  const rows = [['A2-11', 'S3', '✅ **M99a** — refuses a | name | name | header']]
+  const parsed = parseIndex(ledger({ rows }))
+  assert.equal(parsed.length, 1)
+  assert.notEqual(classify(parsed[0].status), 'closed')
+})
