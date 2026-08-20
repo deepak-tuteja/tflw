@@ -219,6 +219,113 @@ test('a matcher with no operand at all does not reach the rule', () => {
 });
 
 // ---------------------------------------------------------------------------
+// `TF054`, site 8: `random string` with a length no string can have — `M124-02`.
+// ---------------------------------------------------------------------------
+
+test('`random string` with a negative length is `TF054`', () => {
+  assert.deepEqual(codes('  let bad = random string -3\n'), [Codes.INVALID_LITERAL_OPERAND]);
+  assert.deepEqual(codes('  let ok = random string 8\n'), []);
+});
+
+test('`random string 0` stays legal, and that is the ruling rather than an oversight', () => {
+  // SPEC §7.3's rule scored against this generator's own promise: the empty string *is* a string of
+  // length 0, so nothing was promised that cannot be delivered. The row that filed this asked
+  // whether `0` and `-3` were one defect; they are not, and this is where the two part company.
+  // Control: a rule written `length.n <= 0` — the tempting one — fails on this line.
+  assert.deepEqual(codes('  let ok = random string 0\n'), []);
+});
+
+test('a negative length arrives as the `0 - n` desugaring, like every other bound', () => {
+  // The clause `random number` needed too. Without the `BinaryExpr` fold in `literalNumber` this
+  // whole site reads as non-literal and reports nothing.
+  const [msg] = messages('  let bad = random string -3\n');
+  assert.match(msg!, /random string -3/);
+  assert.doesNotMatch(msg!, /0 - /);
+});
+
+test('the hint says `0` is fine, because the message alone reads like a ban on short strings', () => {
+  const [msg] = messages('  let bad = random string -1\n');
+  assert.match(msg!, /length must be 0 or more/);
+  assert.match(msg!, /`random string 0` is legal/);
+});
+
+test('an interpolated length is skipped (D237)', () => {
+  assert.deepEqual(codes('  let n = 4\n  let s = random string {n}\n'), []);
+});
+
+// ---------------------------------------------------------------------------
+// `TF054`, site 9: a `random date between` bound that is not a date — `M140-05`.
+// ---------------------------------------------------------------------------
+
+test('a quoted date bound is `TF054` on both sides', () => {
+  // The program `M124-01` was filed with. It never reached the ordering defect that row is about:
+  // `asDate` throws on the first bound, on every run, and the operand is written in the file.
+  assert.deepEqual(codes('  let bad = random date between "2030-01-01" and "2020-01-01"\n'), [
+    Codes.INVALID_LITERAL_OPERAND,
+    Codes.INVALID_LITERAL_OPERAND,
+  ]);
+  assert.deepEqual(codes('  let ok = random date between today - 10 days and today\n'), []);
+});
+
+test('one bad bound reports once, and the message names which one', () => {
+  const msgs = messages('  let bad = random date between today and 5\n');
+  assert.equal(msgs.length, 1);
+  assert.match(msgs[0]!, /the `to` bound is a number, not a date/);
+});
+
+test('this is a **type** test, so an interpolated bound is reported too', () => {
+  // The deliberate departure from D237's silence, and the reason it is sound: `literalText` asks
+  // what a string *says*, which nobody can know before the run, while this asks what it *is*. A
+  // `StringLit` evaluates to a string however it was spelled, and a string is never a date.
+  assert.deepEqual(codes('  let d = "2030-01-01"\n  let bad = random date between "{d}" and today\n'), [
+    Codes.INVALID_LITERAL_OPERAND,
+  ]);
+});
+
+test('a bound the checker cannot type is left to the run', () => {
+  // A `let` may well hold a date — `let d = today` does — so a reference is silence, not a guess.
+  // Control: a membership test written as "anything that is not a DateAtom" fails here.
+  assert.deepEqual(codes('  let d = today\n  let ok = random date between {d} and now\n'), []);
+});
+
+test('a range measured from one anchor is ordered here, not left to the run', () => {
+  // `M124-01`. `today - 10 days` is ten days before `today` whatever day it is, so no clock is
+  // needed — only the offsets. Control: the same two bounds the right way round are silent.
+  assert.deepEqual(codes('  let bad = random date between today and today - 10 days\n'), [Codes.INVALID_LITERAL_OPERAND]);
+  assert.deepEqual(codes('  let ok = random date between today - 10 days and today\n'), []);
+  assert.deepEqual(codes('  let ok = random date between now - 2 hours and now + 2 hours\n'), []);
+});
+
+test('equal bounds are legal here too — the runtime\'s test is `to < from`', () => {
+  assert.deepEqual(codes('  let ok = random date between today and today\n'), []);
+  assert.deepEqual(codes('  let ok = random date between today + 1 weeks and today + 7 days\n'), []);
+});
+
+test('two different anchors are silence, and that is D147\'s line rather than an oversight', () => {
+  // `today` is the start of the day and `now` is somewhere after it, so `between now and today` is
+  // empty on every run that does not start exactly at midnight. *Almost* always wrong is not the
+  // checker's to refuse — the runtime still throws on the runs where it is.
+  assert.deepEqual(codes('  let ok = random date between now and today\n'), []);
+});
+
+test('one unknown bound is enough to leave the range alone (D237)', () => {
+  // The `undefined`-vs-`[]` doctrine: a `let` may hold any date, so a range with one reference in
+  // it is not knowably empty however literal the other half looks. The offset itself cannot be a
+  // reference — `today - {n} days` is a parse error, the grammar wants a number there — so a bound
+  // is either fully readable or not a date-math bound at all, and this is the only shape of unknown.
+  assert.deepEqual(codes('  let d = today\n  let ok = random date between {d} and today - 10 days\n'), []);
+  assert.deepEqual(codes('  let d = today\n  let ok = random date between today and {d}\n'), []);
+});
+
+test('a bound that is not a date is one complaint, not two', () => {
+  // The `M140-01` shape, refused in advance: a bound with no date in it has no order either, so
+  // asking about the range as well would report the same mistake from the next production up.
+  assert.deepEqual(codes('  let bad = random date between "2030-01-01" and today - 10 days\n'), [
+    Codes.INVALID_LITERAL_OPERAND,
+  ]);
+});
+
+// ---------------------------------------------------------------------------
 // `TF054` — reach: the pass walks the object graph, not a list of statement kinds.
 // ---------------------------------------------------------------------------
 

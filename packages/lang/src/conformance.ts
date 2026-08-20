@@ -324,7 +324,23 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: 'random password ${length}',
     decidable: 'static-if-literal',
     checkerCode: 'TF054',
-    note: 'M124/D232 — a literal length below 4 is decidable. The asymmetry this note has recorded since `M97a` — `random string 0` throws nothing at all, so there is no runtime rule here for a checker to predict — is now written where it can be checked rather than only mentioned: `random-string-zero-length` in `RUNTIME_GAPS`, against `M124-02`',
+    note: 'M124/D232 — a literal length below 4 is decidable. The asymmetry this note has recorded since `M97a` — `random password 2` throws while `random string 0` returns — is no longer an open question: D629 ruled it deliberate, because the two generators promise different things and only one of the promises fails. `random-string-zero-length` in `RUNTIME_GAPS` carries the ruling; `random-string-length` above carries the half that did become a rule',
+  },
+  {
+    id: 'random-string-length',
+    file: 'eval.ts',
+    excerpt: 'random string ${len}: length must be 0 or more',
+    decidable: 'static-if-literal',
+    checkerCode: 'TF054',
+    note: '`M147c`/D629 — the rule is SPEC §7.3\'s, and it deliberately does not cover `random string 0`: the empty string *is* a string of length 0, so nothing the generator promised goes undelivered. Only a negative length is refused, and `literalNumber` already folds the `0 - n` desugaring one arrives as. The asymmetry with `random password 2` that `M124-02` filed is therefore kept rather than removed — the two generators promise different things',
+  },
+  {
+    id: 'random-date-reversed-bounds',
+    file: 'eval.ts',
+    excerpt: 'random date between ${from.toISOString()} and ${to.toISOString()}',
+    decidable: 'static-if-literal',
+    checkerCode: 'TF054',
+    note: '`M147c`/D630 — `M124-01`, closed by the throw its two numeric siblings have always had. `static-if-literal` is exact here and the literal case is narrower than it looks: two bounds **measured from the same anchor** are ordered without a clock (`today - 10 days` is ten days before `today` on every run, and `offsetToMs` is pure arithmetic with no calendar in it), while `now` against `today` differs by however far into the day the run started and is left to the runtime. The interpolated half is the carve-out, as with the two numeric rows above',
   },
   {
     id: 'eval-invalid-reference',
@@ -1049,19 +1065,11 @@ export interface RuntimeGap {
 
 export const RUNTIME_GAPS: readonly RuntimeGap[] = [
   {
-    id: 'random-date-reversed-bounds',
-    file: 'eval.ts',
-    shape: 'random date between today and today - 10 days',
-    instead: 'returns a date *before* `from`, with no throw and no diagnostic',
-    filedRow: 'M124-01',
-    note: '`RandomDateBetweenExpr` computes `from.getTime() + rng() * (to.getTime() - from.getTime())` with no ordering test, so a reversed range yields a negative delta and a value outside the range the author wrote, which then flows into a request body. Both siblings twenty lines above throw ``to` must be ≥ `from`` on the identical condition and both are rows in `RUNTIME_RULES`. Closing it is a runtime `throw` mirroring theirs, after which `TF054` gains an eighth site for free — `literalNumber`-style operand inspection already exists',
-  },
-  {
     id: 'random-string-zero-length',
     file: 'eval.ts',
     shape: 'random string 0',
-    instead: 'returns `""`, while `random password 2` throws',
-    filedRow: 'M124-02',
-    note: 'the finding is the asymmetry, not either behaviour: `randomAlnum` loops `for (let i = 0; i < len; i++)` so a literal `0` — or `random string 0 - 3`, whose `0 - n` desugaring `literalNumber` already folds for `TF054` — yields an empty string, while `RandomPasswordExpr` rejects `< 4` with a message explaining why the bound exists. One of the two is deliberate and neither is written down. This is the entry the `ruling` field exists for: a decision that a zero-length random string stays legal is an answer, and it belongs here rather than in a plan',
+    instead: 'returns `""`, and is meant to',
+    ruling: 'D629',
+    note: '`M124-02` asked which of `random string 0` and `random password 2` was deliberate, since one returns and one throws and neither reason was written down. Answered by SPEC §7.3\'s rule — a generator refuses an operand when no value it could produce keeps the generator\'s own promise — which lands on opposite sides of the two: four character classes cannot fit in two characters, while the empty string *is* a string of length 0. So this absence is permanent and the neighbouring `random string -1` is not, which is why `random-string-length` above is a rule and this stays a ruled gap. Kept as an entry rather than deleted because the next reader will ask the same question the row asked',
   },
 ];

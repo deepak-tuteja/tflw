@@ -21,6 +21,7 @@ import type {
   ConfigFile,
   CrawlDecl,
   DataTable,
+  DateOffsetUnit,
   EnvBlock,
   ExpectStmt,
   MatcherName,
@@ -3142,6 +3143,12 @@ function checkLiteralOperandsInSteps(steps: unknown, diags: Diagnostic[]): void 
       case 'RandomPasswordExpr':
         checkRandomPasswordLength(node as unknown as { length?: Value; span: Span }, diags);
         break;
+      case 'RandomStringExpr':
+        checkRandomStringLength(node as unknown as { length: Value; span: Span }, diags);
+        break;
+      case 'RandomDateBetweenExpr':
+        checkRandomDateBounds(node as unknown as { from: Value; to: Value; span: Span }, diags);
+        break;
       case 'TransformExpr':
         checkTransformOperand(node as unknown as TransformExpr, diags);
         break;
@@ -3214,6 +3221,141 @@ function checkRandomPasswordLength(node: { length?: Value; span: Span }, diags: 
     span: node.span,
     hint: '`random password` always includes an uppercase letter, a lowercase letter, a digit and a symbol (SPEC §7.4), so it needs at least four characters to put them in — raise the length, or use `random string` if the character classes do not matter',
   });
+}
+
+/**
+ * `random string n` (`M124-02`).
+ *
+ * The rule this applies is SPEC §7.3's: *a generator rejects a numeric operand when no value it
+ * could produce satisfies the generator's own stated promise.* `random string` promises a random
+ * string of length *n*, so **`0` keeps that promise** — the empty string is a string of length 0 —
+ * and a negative length cannot be kept by any string at all. That asymmetry is the finding, not an
+ * accident: the row asked whether `0` and `-3` were one defect and they are not, so only one of them
+ * moves.
+ *
+ * `randomAlnum`'s `for (let i = 0; i < len; i++)` runs zero times for both, which is why both used
+ * to return `""` and pass. `literalNumber` already folds the `0 - 3` desugaring a negative bound
+ * arrives as, so this reads the operand the author wrote either way.
+ */
+function checkRandomStringLength(node: { length: Value; span: Span }, diags: Diagnostic[]): void {
+  const length = literalNumber(node.length);
+  if (length === null || length.n >= 0) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    // The runtime's own sentence (`eval.ts`), for `checkRandomRange`'s reason.
+    message: `\`random string ${length.text}\`: length must be 0 or more`,
+    span: node.span,
+    hint: '`random string 0` is legal and produces the empty string, but no string has a negative length (SPEC §7.3) — if the length is meant to vary, bind it with `let` and the checker will leave it to the run',
+  });
+}
+
+/**
+ * `random date between A and B` (`M140-05`).
+ *
+ * Not the ordering test — that one is `M124-01`'s and lives in the runtime, because `today` and
+ * `now` resolve against the run clock and the checker has no clock. This is the narrower fact the
+ * checker *can* settle: a bound written as a string, a number or a boolean can never be a date on
+ * any run, so `asDate` will throw every time, and the operand is right there in the file. Exactly
+ * `TF054`'s `static-if-literal` shape, a third construct in the same family as `M124-01`'s.
+ *
+ * Deliberately a **type** test rather than a content test, which is why it does not go through
+ * `literalText`: `random date between "{start}" and "{end}"` interpolates to a string too, and a
+ * string is the wrong kind of thing here however it was spelled.
+ */
+/** The literal forms that can never evaluate to a date, described in the words the language uses
+ *  for them. One table, so membership and the message cannot disagree — the shape `M147b` put on
+ *  the parser's refusals for the same reason. Anything absent is left to the run: a `VarRef` may
+ *  well hold a date, and the checker has no way to know. */
+const NEVER_A_DATE = {
+  StringLit: 'a string',
+  NumberLit: 'a number',
+  BoolLit: 'a boolean',
+  NullLit: '`null`',
+  DurationLit: 'a duration',
+} as const satisfies Partial<Record<Value['type'], string>>;
+
+function checkRandomDateBounds(node: { from: Value; to: Value; span: Span }, diags: Diagnostic[]): void {
+  let refused = false;
+  for (const [side, bound] of [
+    ['from', node.from],
+    ['to', node.to],
+  ] as const) {
+    const described = (NEVER_A_DATE as Partial<Record<Value['type'], string>>)[bound.type];
+    if (described === undefined) continue;
+    refused = true;
+    diags.push({
+      code: Codes.INVALID_LITERAL_OPERAND,
+      severity: 'error',
+      message: `\`random date between\`: the \`${side}\` bound is ${described}, not a date`,
+      span: bound.span,
+      // `asDate`'s own sentence (`eval.ts`), so the check-time and run-time answers read alike.
+      hint: 'a bound must be a date (`today`/`now`, optionally with a date-math offset such as `today - 10 days`) — a quoted date like `"2030-01-01"` is a string and is rejected on every run (SPEC §7.3)',
+    });
+  }
+  // A bound that is not a date has no order, so asking about the range as well would be two
+  // complaints about one mistake — `M140-01`'s shape, which this milestone also fixes elsewhere.
+  if (!refused) checkRandomDateOrder(node, diags);
+}
+
+/**
+ * The ordering half of `random date between` (`M124-01`).
+ *
+ * The runtime throws on an empty range, mirroring its two numeric siblings. This decides the case
+ * that is settled before the run: **two bounds measured from the same anchor**. `today - 10 days`
+ * is ten days before `today` whatever day it is, so the comparison needs no clock at all — only the
+ * offsets, which `offsetToMs` turns into milliseconds by pure arithmetic with no calendar in it, so
+ * the checker's answer and the runtime's cannot diverge across a DST boundary.
+ *
+ * **Different anchors are silence, and that is the interesting line.** `random date between now and
+ * today` is empty on every run except one starting exactly at midnight, because `today` is the start
+ * of the day and `now` is somewhere after it — so it is *almost* always wrong, and almost is not the
+ * checker's to refuse (D147, and `A4-05` is what happens when it is).
+ */
+function checkRandomDateOrder(node: { from: Value; to: Value; span: Span }, diags: Diagnostic[]): void {
+  const from = literalDateBound(node.from);
+  const to = literalDateBound(node.to);
+  if (from === null || to === null || from.anchor !== to.anchor || to.ms >= from.ms) return;
+  diags.push({
+    code: Codes.INVALID_LITERAL_OPERAND,
+    severity: 'error',
+    // The clause after the colon is the runtime's, word for word; the prefix cannot be, because the
+    // runtime knows the two dates and the checker knows the two phrases the author typed.
+    message: `\`random date between ${from.text} and ${to.text}\`: \`to\` must be ≥ \`from\``,
+    span: node.span,
+    hint: `the bounds are the wrong way round — write \`random date between ${to.text} and ${from.text}\` (SPEC §7.3)`,
+  });
+}
+
+/** `offsetToMs`'s table (`eval.ts`), duplicated rather than imported: `@tflw/lang` does not depend
+ *  on `@tflw/runtime` and must not start to. `conformance.test.ts` is what keeps the two honest. */
+const DATE_OFFSET_MS: Readonly<Record<DateOffsetUnit, number>> = {
+  seconds: 1000,
+  minutes: 60_000,
+  hours: 3_600_000,
+  days: 86_400_000,
+  weeks: 7 * 86_400_000,
+};
+
+/** A bound the checker can place on a timeline, or `null` — `literalNumber`'s test for dates, and
+ *  exactly as narrow: an anchor, or an anchor plus one literal offset. `today - {n} days` has an
+ *  operand nobody has bound and returns `null`, which is the whole rule. */
+function literalDateBound(value: Value): { anchor: 'today' | 'now'; ms: number; text: string } | null {
+  if (value.type === 'DateAtom') return { anchor: value.which, ms: 0, text: value.which };
+  if (
+    value.type === 'BinaryExpr' &&
+    (value.op === '+' || value.op === '-') &&
+    value.left.type === 'DateAtom' &&
+    value.right.type === 'DateOffsetLit'
+  ) {
+    const magnitude = DATE_OFFSET_MS[value.right.unit] * value.right.amount;
+    return {
+      anchor: value.left.which,
+      ms: value.op === '-' ? -magnitude : magnitude,
+      text: `${value.left.which} ${value.op} ${value.right.amount} ${value.right.unit}`,
+    };
+  }
+  return null;
 }
 
 /** `hex`/`base64`/`url` `decode(...)` over a literal that will not decode. `encode` never fails and

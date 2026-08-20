@@ -1673,6 +1673,30 @@ No built-in faker realism (names/addresses) — use `random of` with your own li
 upper/lower/digit/symbol), not a fake human identity, same category as `unique like`'s pattern
 fill (decision 98).
 
+**The generator-operand rule** (`M147c`, D629/D630). *A generator refuses an operand when no value
+it could produce keeps the generator's own promise.* Until this milestone the family had four
+different answers to the same question and none of them was written down, so nobody could say which
+were deliberate: `random password 2` threw, `random number 5 to 1` threw, `random string 0` returned
+`""`, and `random date between` with the bounds reversed returned a date *before* `from` and said
+nothing. Scored against each generator's own promise:
+
+| written | refused | why |
+|---|---|---|
+| `random password 2` | yes | four character classes will not fit in two characters |
+| `random number 5 to 1` | yes | the range is empty |
+| `random decimal 5 to 1` | yes | the range is empty |
+| `random date between today and today - 10 days` | yes | the range is empty |
+| `random date between "2030-01-01" and today` | yes | a string is never a date, on any run |
+| `random string 0` | **no** | the empty string *is* a string of length 0 |
+| `random string -3` | yes | no string has a negative length |
+
+The rule keeps the `0`-versus-`2` asymmetry rather than flattening it, because the two generators
+promise different things. **Where the refusal lands** follows the checker's usual line: an operand
+written in the file is `TF054` at check time, and anything else is a runtime error with the same
+sentence. For `random date between` that line falls inside the construct — two bounds measured from
+the same anchor (`today - 10 days` against `today`) are ordered without a clock, while `now` against
+`today` differs by however far into the day the run started and is left to the run.
+
 ### 7.3.1 Generators quick reference (PLAN decision 103, enterprise arc cluster 4)
 
 <!-- GENERATED:generators:start -->
@@ -1683,10 +1707,10 @@ fill (decision 98).
 | unique | `unique number` | collision-safe across tests/workers/retries | `unique number` |
 | unique | `unique like "ORD-######"` | `#` = digit; pattern fill, collision-safe | `unique like "ORD-######"` |
 | unique | `unique uuid` | v4-shaped; trailing digits are the run-wide counter, so distinctness is guaranteed, not probabilistic | `unique uuid` |
-| random | `random number A to B` / `random decimal A to B` | seed-reproducible; rejects a reversed range as a runtime error | `random number 1 to 100` |
-| random | `random date in past` / `in future` / `between A and B` | seed- and run-clock-reproducible (`--seed`/`--now`) | `random date in past` |
+| random | `random number A to B` / `random decimal A to B` | seed-reproducible; a reversed range is refused — at check time when both bounds are literal, at run time otherwise | `random number 1 to 100` |
+| random | `random date in past` / `in future` / `between A and B` | seed- and run-clock-reproducible (`--seed`/`--now`); `between` refuses a reversed range, and a bound that is not a date | `random date in past` |
 | random | `random of "a", "b", ...` | seed-reproducible pick from an inline list | `random of "red", "blue", "green"` |
-| random | `random string N` | seed-reproducible alnum string of length N | `random string 12` |
+| random | `random string N` | seed-reproducible alnum string of length N; `0` is legal and yields `""`, a negative length is refused | `random string 12` |
 | random | `random like "SKU-####-??"` | `#` = digit, `?` = letter; seed-reproducible pattern fill | `random like "SKU-####-??"` |
 | random | `random uuid` | v4, collisions allowed (not collision-guaranteed like `unique uuid`) | `random uuid` |
 | random | `random password [N]` | default length 12, min 4; satisfies a validation policy, not fake-identity realism | `random password 16` |

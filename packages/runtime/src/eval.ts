@@ -229,6 +229,13 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
     case 'RandomDateBetweenExpr': {
       const from = asDate(evalValue(value.from, ctx));
       const to = asDate(evalValue(value.to, ctx));
+      // `M124-01`. The two numeric siblings twenty lines above both refuse an empty range; this one
+      // computed a *negative* delta and returned a date before `from`, silently, and that value went
+      // on into a request body. Same rule as theirs, and the same sentence, so a reader who has seen
+      // one has seen all three (SPEC §7.3's generator-operand rule).
+      if (to.getTime() < from.getTime()) {
+        throw new RuntimeError(`random date between ${from.toISOString()} and ${to.toISOString()}: \`to\` must be ≥ \`from\``);
+      }
       return new Date(from.getTime() + ctx.rng() * (to.getTime() - from.getTime()));
     }
     case 'RandomOfExpr': {
@@ -237,6 +244,10 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
     }
     case 'RandomStringExpr': {
       const len = asNumber(evalValue(value.length, ctx), 'random string');
+      // `M124-02`, and the asymmetry it named is kept rather than flattened: `0` stays legal because
+      // the empty string *is* a string of length 0, while no string has length -3. `randomAlnum`'s
+      // loop simply never runs for either, so both used to return `""` and pass.
+      if (len < 0) throw new RuntimeError(`random string ${len}: length must be 0 or more`);
       return randomAlnum(len, ctx.rng);
     }
     case 'RandomLikeExpr':
