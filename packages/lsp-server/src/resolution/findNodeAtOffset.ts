@@ -165,8 +165,13 @@ function children(node: Node): readonly Node[] {
     }
     case 'PathExpr':
       return [];
-    case 'InlineBody':
-      return (node as InlineBody).object.fields;
+    case 'InlineBody': {
+      // The wrapper node is skipped on purpose — the path a hover reports has always gone
+      // `ApiStep → InlineBody → Field`, and D639's array form keeps that shape by descending
+      // straight into the elements rather than inserting an `ArrayLit` nobody was navigating.
+      const inline = (node as InlineBody).value;
+      return inline.type === 'ObjectLit' ? inline.fields : inline.elements;
+    }
     case 'FileBody':
       return [(node as FileBody).path];
     case 'FormBody':

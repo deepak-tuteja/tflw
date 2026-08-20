@@ -672,7 +672,14 @@ export type ApiBody = InlineBody | FileBody | FormBody | TextBody | UploadBody;
 
 export interface InlineBody extends Node {
   readonly type: 'InlineBody';
-  readonly object: ObjectLit;
+  /** The JSON document being sent — an object or a **top-level array** (`M147d`, `A3-12`, D639).
+   *
+   *  Named `value` rather than `object` because it is no longer always an object. Three of the four
+   *  surfaces that read a top-level JSON document already accepted an array before D639 — `body from`
+   *  reads any JSON the file contains, `expect body equals [1, 2]` matches one, and `body { items: [1,
+   *  2] }` nests one a single level down — so the inline request body was the odd one out, and D627's
+   *  rider resolves an asymmetry by widening the narrower side. */
+  readonly value: ObjectLit | ArrayLit;
 }
 
 /** `body from "./payloads/x.json"` — file is a template; `{vars}` interpolate at send time. */
@@ -1030,7 +1037,10 @@ export interface StubStmt extends Node {
   readonly method: HttpMethod;
   readonly urlPattern: StringLit;
   readonly status: NumberLit;
-  readonly body: ObjectLit | null;
+  /** The stubbed response document — an object or a **top-level array** (`M147d`, `A3-12`, D639).
+   *  A list endpoint answers with an array, so this was the narrower of the two `body` positions in
+   *  practice even though `A3-12` named the other one. */
+  readonly body: ObjectLit | ArrayLit | null;
 }
 
 export type ClickKind = 'single' | 'double' | 'right';

@@ -3193,9 +3193,37 @@ class Parser {
       if (!value) return null;
       return { type: 'TextBody', value, span: this.spanFrom(start) };
     }
-    const object = this.parseObject();
-    if (!object) return null;
-    return { type: 'InlineBody', object, span: this.spanFrom(start) };
+    const value = this.parseJsonDocument('the request body');
+    if (!value) return null;
+    return { type: 'InlineBody', value, span: this.spanFrom(start) };
+  }
+
+  /** **A `body` is a JSON document, not specifically an object** (`M147d`, `A3-12`, D639).
+   *
+   *  The dispatch is on the opening bracket, because that is the only thing that distinguishes the
+   *  two, and both sub-parsers already existed and were already reachable from every other value
+   *  position — an array body was refused by one `expect('lbrace', …)` and by nothing else.
+   *
+   *  **What this deliberately does not widen** is the set of things a `body` may be. A top-level
+   *  scalar — `body 5`, `body "text"` — is still refused, because `body text "…"` is the form for a
+   *  payload that is not a JSON document and it already exists; accepting a bare string here would
+   *  give the language two spellings for one thing, which is the defect `D638` had just finished
+   *  removing from the time units one slice earlier.
+   *
+   *  The refusal is raised here rather than inside `parseObject`. That helper is shared with nested
+   *  values, `with each` rows and `stub`'s pre-D639 callers, and every one of those really does want
+   *  an object — widening its message would make it lie at five sites to tell the truth at two. */
+  private parseJsonDocument(what: string): ObjectLit | ArrayLit | null {
+    if (this.check('lbracket')) return this.parseArray();
+    if (this.check('lbrace')) return this.parseObject();
+    const tok = this.peek();
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      `expected \`{\` or \`[\` to start ${what}, found ${describeToken(tok)}`,
+      tok.span,
+      'a `body` is a JSON object or array — for anything else, use `body text "…"`',
+    );
+    return null;
   }
 
   private parseFormBody(): FormBody | null {
@@ -4327,10 +4355,13 @@ class Parser {
     const statusTok = this.expect('number', 'a status code, e.g. `respond status 200`');
     if (!statusTok) return null;
     const status: NumberLit = { type: 'NumberLit', value: Number(statusTok.value), raw: statusTok.raw, span: statusTok.span };
-    let body: ObjectLit | null = null;
+    // D639 reaches `stub` as well as `api`, and this is the site where the narrowness bit hardest:
+    // a list endpoint answers with a top-level array, so `stub GET "/api/orders" respond status 200
+    // body [ … ]` is the ordinary case rather than an exotic one, and it was unwritable.
+    let body: ObjectLit | ArrayLit | null = null;
     if (this.isKw(this.peek(), 'body')) {
       this.advance();
-      body = this.parseObject();
+      body = this.parseJsonDocument('the stubbed response body');
       if (!body) return null;
     }
     this.endLine();

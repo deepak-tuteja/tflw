@@ -1189,7 +1189,7 @@ interpolate the raw value, unencoded, since that's JSON/text content, not a URL.
 
 | Form | Syntax | Notes |
 |---|---|---|
-| Inline JSON | `body { name: {n}, qty: random number 1 to 5 }` | small payloads; expressions + generators inside |
+| Inline JSON | `body { name: {n}, qty: random number 1 to 5 }` or `body [{ id: 1 }, { id: 2 }]` | small payloads; expressions + generators inside; object **or top-level array** (M147d, `A3-12`, D639) |
 | File-backed | `body from "./payloads/order.json"` | file is a template — `{vars}` interpolate; checker warns when a literal path names nothing (`TF043`, M97c; warning not error since M97e/D147 — the file is read at step time) |
 | Form-encoded | `form user={u}, pass=env(PW)` | `application/x-www-form-urlencoded` |
 | Multipart upload | `upload "./files/img.png" as "avatar"` | Content-Type inferred from the file extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` overrides the inference; may combine with `form` fields (decision 22/M19) |
@@ -1204,6 +1204,32 @@ extension) falls back to `application/octet-stream`, matching pre-M19 behavior e
 `type` always wins over inference — useful for a negative test deliberately sending a wrong or
 missing type. A non-interpolated `type` literal is checker-validated against a light
 `type/subtype` shape (TF032) — a typo check, not an IANA-vocabulary gatekeeper.
+
+**A `body` is a JSON document, not specifically an object** (M147d, `A3-12`, D639). Both `body`
+positions — an `api` step's inline body and a `stub`'s stubbed response — take an object or a
+**top-level array**:
+
+```
+api POST /orders/bulk body [{ name: "Widget" }, { name: "Sprocket" }]
+stub GET "/api/orders" respond status 200 body [{ id: 1 }, { id: 2 }]
+```
+
+This was the last position in the language that refused one. A file body reads whatever JSON the
+file holds, `expect body equals [1, 2]` matches a top-level array, and an array nested one level
+inside an object was always legal — the two inline `body` sites were the exception, and each was
+made so by a single "expect `{`" in the parser. A list endpoint answers with an array, so the
+`stub` half in particular made the ordinary case unwritable.
+
+**What is still refused is a top-level scalar** — `body 5`, `body "payload"`. The widening is to
+JSON *documents*, not to any value: `body text "…"` is the form for a payload that is not a JSON
+document, and it is worth reaching for deliberately rather than by accident, because it sends
+`text/plain` rather than `application/json` (a JSON API is entitled to answer it with a 415).
+The refusal names both openers and points at that form:
+
+```
+error[TF010]: expected `{` or `[` to start the request body, found `5`
+  = help: a `body` is a JSON object or array — for anything else, use `body text "…"`
+```
 
 **Multi-line object/array literals** (`body { … }` spanning several hand-indented lines) are
 supported: the lexer tracks `{}`/`[]` bracket depth and suppresses `NEWLINE`/`INDENT`/`DEDENT`
@@ -2320,7 +2346,7 @@ expect text "gateway down" is visible
   last-`api`-step-response behavior). No matching request yet retries the same way `was made` does;
   a genuinely non-JSON response still needs `body text` instead of `body.<path>`, exactly as §5.3
   already requires.
-- **`stub <METHOD> "<url-pattern>" respond status <code> [body {...}]`** — route-level response
+- **`stub <METHOD> "<url-pattern>" respond status <code> [body {...} | body [...]]`** — route-level response
   mocking for the active page (Playwright's `page.route()`), registered for the rest of the test. A
   bare path like `/api/payments/**` is auto-prefixed with Playwright's own `**` glob wildcard so it
   matches regardless of origin; an already-absolute URL or an already-wildcarded pattern passes

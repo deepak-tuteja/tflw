@@ -101,7 +101,7 @@ a substring (e.g. a checkout `POST` followed by a confirmation-page `GET` to a r
 `status`/`header`/`body[.path]`/`body text` `of request to "<url>"` reads that request's real
 response instead of the last `api` step's.
 
-`stub <METHOD> "<url-pattern>" respond status <code> [body {...}]` mocks a route for the rest of
+`stub <METHOD> "<url-pattern>" respond status <code> [body {...} | body [...]]` mocks a route for the rest of
 the test — reach for it when the real dependency is unreliable or out of scope (a flaky payment
 sandbox, a webhook this suite doesn't own), not as a general substitute for a real fixture: tflw's
 own dogfood suites never mock the API they're testing.

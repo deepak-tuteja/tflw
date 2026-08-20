@@ -33,7 +33,11 @@ const codes = (source: string): string[] => {
 /** The six `api` shapes that abandon the step, each with an `expect` under it that reads the
  *  response. Every one raised its own parse error plus a `TF039` before this change. */
 const API_SHAPES: ReadonlyArray<readonly [string, string]> = [
-  ['inline body', 'api POST /o body [1, 2]'],
+  // Was `body [1, 2]` when this file was written for `M147c`; D639 (`M147d`, one day later) made a
+  // top-level array a legal body, so the fixture stopped being malformed and these tests would have
+  // gone quietly vacuous — the class `M141` exists for. `body 5` fails at the same site, in the same
+  // branch, and is still refused on purpose: a `body` is a JSON document, not any value.
+  ['inline body', 'api POST /o body 5'],
   ['form body', 'api POST /o form { a: 1 }'],
   ['timeout duration', 'api POST /o timeout xyz'],
   ['http method', 'api PSOT /o'],
@@ -50,13 +54,13 @@ for (const [what, line] of API_SHAPES) {
 }
 
 test('one mistake, one diagnostic — the cascade did not merely move', () => {
-  assert.deepEqual(codes('test "t"\n  api POST /o body [1, 2]\n  expect status equals 200\n'), [Codes.UNEXPECTED_TOKEN]);
+  assert.deepEqual(codes('test "t"\n  api POST /o body 5\n  expect status equals 200\n'), [Codes.UNEXPECTED_TOKEN]);
 });
 
 test('a malformed `api` step suppresses every following assertion in the frame, not just the first', () => {
   // The count is the point: `mix.tflw` in the repro raised *two* `TF039`s from one mistake, because
   // the flag is positional and every later `expect` consults it.
-  const got = codes('test "t"\n  api POST /o body [1]\n  expect request connects\n  expect status equals 200\n');
+  const got = codes('test "t"\n  api POST /o body 5\n  expect request connects\n  expect status equals 200\n');
   assert.deepEqual(got, [Codes.UNEXPECTED_TOKEN]);
 });
 
@@ -89,7 +93,7 @@ test('NEGATIVE — a malformed step that is not an `api` step does not establish
 });
 
 test('NEGATIVE — a malformed `api` step leaves the variable world alone', () => {
-  const got = codes('test "t"\n  api GET /o body [1]\n  expect body.x equals "{{nope}}"\n');
+  const got = codes('test "t"\n  api GET /o body 5\n  expect body.x equals "{{nope}}"\n');
   assert.ok(got.includes(Codes.UNKNOWN_VARIABLE), got.join(', '));
 });
 
@@ -99,7 +103,7 @@ test('NEGATIVE — a malformed `capture` does not establish a response scope', (
 });
 
 test('the placeholder is in the body, at the position the user wrote', () => {
-  const { program } = parseSource('test "t"\n  api POST /o body [1, 2]\n  expect status equals 200\n');
+  const { program } = parseSource('test "t"\n  api POST /o body 5\n  expect status equals 200\n');
   const body = program.tests[0]!.body;
   assert.equal(body.length, 2);
   const gap = body[0]!;
@@ -110,10 +114,10 @@ test('the placeholder is in the body, at the position the user wrote', () => {
 });
 
 test('`wait until api` is recorded as its whole phrase, and establishes', () => {
-  const { program } = parseSource('test "t"\n  wait until api GET /o body [1]\n  expect status equals 200\n');
+  const { program } = parseSource('test "t"\n  wait until api GET /o body 5\n  expect status equals 200\n');
   const gap = program.tests[0]!.body[0]!;
   assert.equal(gap.type === 'MalformedStep' ? gap.head : '', 'wait until api');
-  assert.ok(!codes('test "t"\n  wait until api GET /o body [1]\n  expect status equals 200\n').includes(Codes.NO_RESPONSE_YET));
+  assert.ok(!codes('test "t"\n  wait until api GET /o body 5\n  expect status equals 200\n').includes(Codes.NO_RESPONSE_YET));
 });
 
 test('NEGATIVE — `wait until` on a UI condition is a different phrase and does not establish', () => {
@@ -133,7 +137,7 @@ test('an `action` body gets the same treatment as a test body', () => {
   // Four call sites drop steps and all four had to be wired; an action body is the one a library
   // file is made of, so a fix that reached only `parseTest` would be invisible in the file that
   // matters most.
-  const got = codes('action doIt\n  api POST /o body [1]\n  expect status equals 200\n');
+  const got = codes('action doIt\n  api POST /o body 5\n  expect status equals 200\n');
   assert.ok(!got.includes(Codes.NO_RESPONSE_YET), got.join(', '));
 });
 

@@ -3510,7 +3510,9 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'StubStmt': {
           const urlPattern = String(evalValue(step.urlPattern, ctx));
           const status = step.status.value;
-          const body = step.body ? Object.fromEntries(step.body.fields.map((f) => [f.key, evalValue(f.value, ctx)])) : null;
+          // Was `Object.fromEntries(step.body.fields.map(…))`, which is what `evalValue` does to an
+          // `ObjectLit` — identical for the object form, and the only shape that reads an array too.
+          const body = step.body ? evalValue(step.body, ctx) : null;
           const page = await ensurePageForStep(ctx);
           await performStub(page, step.method, urlPattern, status, body);
           result = mkStep('stub', src, step.span, true, stepStart, `stub ${step.method} ${JSON.stringify(urlPattern)} → ${status}`);
@@ -3911,7 +3913,7 @@ interface PreparedBody {
 async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promise<PreparedBody> {
   switch (body.type) {
     case 'InlineBody': {
-      const text = JSON.stringify(evalValue(body.object, ctx));
+      const text = JSON.stringify(evalValue(body.value, ctx));
       return { sendBody: text, traceText: text, contentType: 'application/json' };
     }
     case 'TextBody': {

@@ -2519,7 +2519,7 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         break;
       case 'StubStmt':
         checkStringLit(step.urlPattern, bound, diags);
-        if (step.body) for (const field of step.body.fields) checkValue(field.value, bound, diags);
+        if (step.body) checkValue(step.body, bound, diags);
         break;
       case 'PauseStmt':
         // `minMs`/`maxMs` are plain numbers (parser-level, ast.ts) — no `{var}` interpolation to check.
@@ -2587,7 +2587,9 @@ function checkApiRequestSpec(spec: ApiRequestSpec, bound: Set<string>, diags: Di
 function checkApiBody(body: ApiBody, bound: Set<string>, diags: Diagnostic[]): void {
   switch (body.type) {
     case 'InlineBody':
-      for (const field of body.object.fields) checkValue(field.value, bound, diags);
+      // `checkValue` already walks both `ObjectLit` and `ArrayLit`, so D639's widening needed no
+      // new arm here — only the loop that assumed fields had to go.
+      checkValue(body.value, bound, diags);
       break;
     case 'FileBody':
       checkStringLit(body.path, bound, diags);

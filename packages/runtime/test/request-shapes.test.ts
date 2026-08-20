@@ -209,3 +209,84 @@ test('a captured value containing URL-special characters is percent-encoded in t
 
   await server.close();
 });
+
+// M147d (`A3-12`, D639) — the array body end to end, and the consequence the row never named.
+//
+// The row was written as an ergonomics complaint: a shape that parses everywhere else is refused
+// here. Running the workaround is what makes it more than that. Before D639 the only way to send a
+// top-level JSON array was `body text "[1,2]"`, and `prepareBody`'s `TextBody` arm sets no
+// `contentType` — by design, since a raw payload is not necessarily JSON.
+//
+// **Measured, because the prediction was wrong.** The expectation written first was that the
+// request would arrive with no `Content-Type` at all; it arrives with
+// `text/plain;charset=UTF-8`, which `undici` supplies for a string `BodyInit` when the caller
+// names nothing. That is worse than absent: a JSON API that dispatches on the header answers a
+// `body text` array with a 415, so the pre-D639 workaround did not merely lose a header, it sent a
+// request the server was entitled to refuse — while `check` and the report both said the file was
+// fine.
+//
+// Both halves are asserted here. The text form's `text/plain` is a negative control, not a defect
+// to fix: `body text` promises to set no JSON content-type (SPEC §5.2) and it keeps that promise.
+test('an inline top-level array body is sent as JSON, with the JSON content-type', async () => {
+  const server = await startFixtureServer({
+    '/orders/bulk': (_req, res) => json(res, 201, { accepted: 2 }),
+  });
+
+  const source = `test "bulk create"
+  api POST /orders/bulk body [{ name: "Widget" }, { name: "Sprocket" }]
+  expect status equals 201
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  const received = server.received.get('/orders/bulk')![0]!;
+  assert.equal(received.headers['content-type'], 'application/json');
+  assert.equal(received.body, '[{"name":"Widget"},{"name":"Sprocket"}]');
+
+  await server.close();
+});
+
+// NEGATIVE — the pre-D639 workaround, kept as a measurement rather than a memory. If this ever
+// starts sending `application/json`, `body text` has stopped being the raw-payload form.
+test('`body text` with the same array is sent as text/plain — the workaround D639 replaces', async () => {
+  const server = await startFixtureServer({
+    '/orders/bulk': (_req, res) => json(res, 201, { accepted: 2 }),
+  });
+
+  const source = `test "bulk create, the old way"
+  api POST /orders/bulk body text "[{\\"name\\":\\"Widget\\"}]"
+  expect status equals 201
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  const received = server.received.get('/orders/bulk')![0]!;
+  assert.equal(received.headers['content-type'], 'text/plain;charset=UTF-8');
+  assert.equal(received.body, '[{"name":"Widget"}]');
+
+  await server.close();
+});
+
+// The generators and `{var}` interpolations that make an inline body worth having reach an array
+// element exactly as they reach an object field — `evalValue` was always the shared path, and D639
+// only stopped the caller from pre-flattening it into fields.
+test('an array body evaluates its elements, not just its literals', async () => {
+  const server = await startFixtureServer({
+    '/tags': (_req, res) => json(res, 200, { ok: true }),
+  });
+
+  const source = `test "array of interpolations"
+  let a = "alpha"
+  api POST /tags body ["{a}", "beta"]
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  assert.equal(server.received.get('/tags')![0]!.body, '["alpha","beta"]');
+
+  await server.close();
+});

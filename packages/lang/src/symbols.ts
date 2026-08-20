@@ -406,7 +406,7 @@ function walkSteps(
         break;
       case 'StubStmt':
         walkStringLit(source, step.urlPattern, bound, scopeId, refs);
-        if (step.body) for (const field of step.body.fields) walkValue(field.value, bound, scopeId, source, actionDefs, refs);
+        if (step.body) walkValue(step.body, bound, scopeId, source, actionDefs, refs);
         break;
       // `pause 2s` / `pause 1s to 3s` (M29, D18, FS-05) — `minMs`/`maxMs` are plain numbers, no name to
       // resolve; listed explicitly (not left as a silent switch fallthrough) so a future field
@@ -453,7 +453,7 @@ function walkApiRequestSpec(spec: ApiRequestSpec, bound: Map<string, Span>, scop
 function walkApiBody(body: ApiBody, bound: Map<string, Span>, scopeId: string, source: string, actionDefs: Map<string, SymbolDef>, refs: SymbolRef[]): void {
   switch (body.type) {
     case 'InlineBody':
-      for (const field of body.object.fields) walkValue(field.value, bound, scopeId, source, actionDefs, refs);
+      walkValue(body.value, bound, scopeId, source, actionDefs, refs);
       break;
     case 'FileBody':
       walkStringLit(source, body.path, bound, scopeId, refs);

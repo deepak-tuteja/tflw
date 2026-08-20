@@ -111,6 +111,39 @@ test('findNodeAtOffset: descends into a StubStmt\'s urlPattern and body field va
   );
 });
 
+// M147d (`A3-12`, D639): both `body` positions now take a top-level array, and the walker had to
+// learn to descend into one. `InlineBody` skips its own wrapper — the path has always read
+// `ApiStep → InlineBody → Field`, and the array form keeps that shape by going straight to the
+// elements rather than inserting an `ArrayLit` nobody was navigating. `StubStmt` returns the body
+// node itself and so already reported the wrapper; both conventions are asserted, because a hover
+// that lands on the wrong node is not a smaller failure than one that lands on nothing.
+test('findNodeAtOffset (M147d): descends into an array body element, at both body positions', () => {
+  // A bare element, so the two conventions are visible with nothing between them: `InlineBody`
+  // reports no wrapper, `StubStmt` reports its `ArrayLit`.
+  const apiSource = `test "ok"\n  api POST /orders body [3]\n`;
+  const { program: apiProgram } = parseSource(apiSource);
+  assert.deepEqual(
+    findNodeAtOffset(apiProgram, apiSource.indexOf('[3]') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'ApiStep', 'InlineBody', 'NumberLit'],
+  );
+
+  const stubSource = `test "ok"\n  stub GET "/api/orders" respond status 200 body [3]\n`;
+  const { program: stubProgram } = parseSource(stubSource);
+  assert.deepEqual(
+    findNodeAtOffset(stubProgram, stubSource.indexOf('[3]') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'StubStmt', 'ArrayLit', 'NumberLit'],
+  );
+
+  // An object inside the array is one more level, not a special case — the element is walked by
+  // the same generic descent every other value position uses.
+  const nestedSource = `test "ok"\n  api POST /orders body [{ total: 3 }]\n`;
+  const { program: nestedProgram } = parseSource(nestedSource);
+  assert.deepEqual(
+    findNodeAtOffset(nestedProgram, nestedSource.indexOf('3 }') + 1).map((n) => n.type),
+    ['Program', 'TestDecl', 'ApiStep', 'InlineBody', 'ObjectLit', 'Field', 'NumberLit'],
+  );
+});
+
 test('findNodeAtOffset: descends into a LocatorSubject expect and a NetworkRequestSubject/ref', () => {
   const uiSource = `test "ok"\n  expect button "Pay" is visible\n`;
   const { program: uiProgram } = parseSource(uiSource);

@@ -243,7 +243,10 @@ ApiRequestLine  := IDENT? METHOD PATH BodyForm? ('timeout' Duration)? ('without'
 METHOD          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'
 IDENT?                                                           # an optional named service prefix (§3.2)
 
-BodyForm        := 'body' Object                                 # inline JSON
+BodyForm        := 'body' JsonDoc                                # inline JSON (M147d/D639 — an
+                                                                    # object or a top-level array;
+                                                                    # a scalar is refused, `body text`
+                                                                    # is the form for one)
                  | 'body' 'from' STRING                          # file-backed JSON
                  | 'body' 'text' STRING                          # raw payload, any content-type
                  | 'form' FormField (',' FormField)*              # application/x-www-form-urlencoded
@@ -406,6 +409,7 @@ Atom        := STRING | NUMBER | 'true' | 'false' | 'null'
              | IDENT                                              # variable/capture reference
 
 Interp      := '{' IDENT ('.' IDENT | '[' NUMBER ']')* '}'
+JsonDoc     := Object | Array                                    # what a `body` may be (M147d/D639)
 Object      := '{' (Field (',' Field)* ','?)? '}'
 Field       := (IDENT | STRING) ':' Value
 Array       := '[' (Value (',' Value)* ','?)? ']'
@@ -505,10 +509,12 @@ WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)?    # M3b —
 ScreenshotStmt  := 'screenshot' STRING                                 # M3c — captures the active
                                                                         # page unconditionally
 
-StubStmt        := 'stub' Method STRING 'respond' 'status' NUMBER Object?   # M3d, §9.7 — route-level
-                                                                              # response mocking; Object
-                                                                              # is the same {...} literal
-                                                                              # `body {...}` (§5.2) uses
+StubStmt        := 'stub' Method STRING 'respond' 'status' NUMBER JsonDoc?  # M3d, §9.7 — route-level
+                                                                              # response mocking; JsonDoc
+                                                                              # is the same document
+                                                                              # `body` (§5.2) takes — a
+                                                                              # list endpoint answers with
+                                                                              # an array (M147d/D639)
 Method          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'   # same method-
                                                                                         # word recognition
                                                                                         # as ApiStep (§5.1)
