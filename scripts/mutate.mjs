@@ -2390,6 +2390,29 @@ const REGISTRY = [
     replace: '        bindings.unknown = true;',
   },
 
+  // -- M147d --------------------------------------------------------------------------------
+  //
+  // Cluster 4's additive widenings (D627's rider: resolve an asymmetry by widening the narrower
+  // side). Every entry here breaks a rule the language *gained*, so a survivor means the widening
+  // is unasserted rather than that a guard rotted — the failure mode D636 added this milestone for.
+
+  {
+    id: 'call-argument-trailing-comma-refused',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "`A3-18` restored on the call side: `sign(\"x\",)` goes back to ``TF010: expected a value, found `)` `` while `{ a: 1, }` two lines away stays clean. The row named this one site; the rule that resolves it (D637 — a bracket-closed list takes a trailing comma, a line-terminated one does not) names two, and this is the half a reader meets first",
+    find: "            if (this.check('rparen')) break; // trailing comma — D637\n            continue;\n          }\n          break;\n        }\n      }\n      if (!this.expect('rparen', '`)` to close the call')) return null;",
+    replace: "            continue;\n          }\n          break;\n        }\n      }\n      if (!this.expect('rparen', '`)` to close the call')) return null;",
+  },
+  {
+    id: 'action-parameter-trailing-comma-refused',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "the same widening on the declaration side: `action make id(prefix,)` back to an error. Kept as a separate entry from the call site on purpose — they are two independent `if`s in two productions, and one registry entry covering both would let either be deleted with the sweep still green, which is exactly the coverage claim `verify-shards.mjs` exists to keep honest",
+    find: "          if (this.check('rparen')) break; // trailing comma — D637\n          continue;\n        }\n        break;\n      }\n    }\n    if (!this.expect('rparen', '`)` to close the parameter list')) return null;",
+    replace: "          continue;\n        }\n        break;\n      }\n    }\n    if (!this.expect('rparen', '`)` to close the parameter list')) return null;",
+  },
+
 ];
 
 /**

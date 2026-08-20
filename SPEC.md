@@ -1830,6 +1830,26 @@ tflw will never grow a JavaScript-style shorthand-key form — `{stock}` meaning
 permanently spoken for by interpolation. This is what lets `expect body.stock equals {stock}` and
 `expect body matches subset {id: 1}` sit on consecutive lines and each mean the obvious thing.
 
+**Trailing commas, and the one rule that decides where they are legal (M147d, `A3-18`, D637).**
+A comma-separated list that is **closed by a bracket** accepts a trailing comma; one that ends at
+the **end of the line** does not:
+
+```
+api POST /orders body { id: 1, }        # legal — closed by `}`
+let ids = [1, 2,]                       # legal — closed by `]`
+let token = sign("payload",)            # legal — closed by `)`
+action make id(prefix,)                 # legal — closed by `)`
+
+require env ADMIN_EMAIL, ADMIN_PW,      # not legal — the list ends at the line
+let choice = random of "a", "b",        # not legal — same
+```
+
+The line is not drawn on taste. A bracket gives the parser a token to stop at, so the trailing comma
+is unambiguous and local; a line-terminated list has only the newline, and a comma in front of it
+reads as a continuation that this grammar does not have. `require env`'s version of that once hung
+the config parser outright (`require-env-trailing-comma-continuation` in the parser fixtures, found
+dogfooding on 2026-07-18), which is why the nine line-terminated lists keep refusing it and say so.
+
 A variable named `get`, `post`, `put`, `delete`, or `patch` (any case) followed by `/` lexes as
 division, not an HTTP path — `let ratio = get / 2` parses fine, since PATH-start requires the
 preceding ident to actually sit in HTTP-method grammatical position (right after `api`, optionally

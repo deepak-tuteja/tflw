@@ -876,6 +876,7 @@ class Parser {
         params.push(p.value);
         if (this.check('comma')) {
           this.advance();
+          if (this.check('rparen')) break; // trailing comma — D637
           continue;
         }
         break;
@@ -4552,6 +4553,7 @@ class Parser {
           args.push(arg);
           if (this.check('comma')) {
             this.advance();
+            if (this.check('rparen')) break; // trailing comma — D637
             continue;
           }
           break;
