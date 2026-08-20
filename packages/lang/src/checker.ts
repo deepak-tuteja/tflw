@@ -343,6 +343,50 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
  * An unparseable target is the same error one step earlier: `authorized target "staging.example.com"`
  * (no scheme) reads like a declaration and authorizes nothing, since `TF060` compares origins.
  */
+/**
+ * `TF071` — **`tflw://` is reserved and has exactly one address** (`M118-01`, `M118`/`FU-04`/D199,
+ * SPEC §3.1).
+ *
+ * `api "tflw://dmeo"` parsed, checked green, and died at run time in `guardDemoUrl` with a perfectly
+ * good sentence naming the only legal spelling. The set of legal hosts under this scheme has one
+ * member, that member is known at check time, and the operand is a string literal in `tflw.config` —
+ * so a typo here is decidable before the run starts, and D137 clause 2 says the checker decides it.
+ *
+ * **Why this shares `TF071` with `workers 0` rather than minting its own code.** The row was filed
+ * predicting a new code, and it would have needed one against `TF054`, whose published meaning is an
+ * operand *the step will reject the moment it evaluates*. `TF071` says something broader and true of
+ * both: **a setting whose written value is not one this setting can act on.** `workers` cannot act
+ * on `0`; `api` cannot act on any `tflw://` address but one. Same repair in both cases — write a
+ * value the setting accepts — which is `D419`'s one-code-one-repair bar, and §6's rule says reuse
+ * when the meaning is right. The suggestion in the hint is richer here because a closed set of one
+ * *has* a nearest spelling; that is a better hint, not a different code.
+ *
+ * **The parse-time siblings are refused in `parser.ts`; this one is refused here**, and the split is
+ * principled rather than incidental. `workers 0` is a fact about the *shape* of a number, which the
+ * production that reads it already knows everything about. Which addresses a scheme reserves is a
+ * fact about the *language's own semantics*, and it lives beside the other config semantics — the
+ * same reason `TF033` is documented as "Parser/checker".
+ *
+ * **Interpolated values are skipped**, D147's line: `api "tflw://{TARGET}"` is a string nobody can
+ * evaluate here, and a checker that guessed at it would refuse a config that runs.
+ */
+function checkReservedScheme(entry: ConfigEntry, diags: Diagnostic[]): void {
+  if (entry.type !== 'ApiServiceDecl') return;
+  const url = entry.url;
+  // `value` has the holes flattened out, so an interpolated string can look like a literal one.
+  // `parts` is the only field that can tell them apart, which is exactly why `M74`/`A2-12` fought to
+  // keep the `StringLit` on these nodes rather than its `.value`.
+  if (url.parts.some((part) => part.kind === 'interp')) return;
+  if (!url.value.startsWith(DEMO_SCHEME) || url.value === DEMO_BASE_URL) return;
+  diags.push({
+    code: Codes.INVALID_SETTING_VALUE,
+    severity: 'error',
+    message: `\`${url.value}\` is not an address this setting can take`,
+    span: url.span,
+    hint: `\`${DEMO_SCHEME}\` is reserved and \`${DEMO_BASE_URL}\` is the only address under it — write \`${DEMO_BASE_URL}\` for tflw's bundled demo service, or a real \`http(s)://\` base URL`,
+  });
+}
+
 function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): void {
   if (entry.type !== 'AuthorizedTargetDecl') return;
   const raw = entry.target.value;
@@ -379,6 +423,24 @@ function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): 
  */
 export const RESERVED_PRINCIPAL = 'anonymous';
 
+/** The one base URL the language reserves (`M118`/`FU-04`, D199), and the scheme it lives under.
+ *
+ * Defined **here**, in the lowest package, for `RESERVED_PRINCIPAL`'s reason and with a sharper
+ * version of it: `packages/cli/src/demo-service.ts` owned this string, and `@tflw/lang` cannot
+ * import from `@tflw/cli`, so the checker had no way to know the set of legal `tflw://` addresses
+ * has exactly one member — which is the whole of `M118-01`. `demo-service.ts` re-exports both, so
+ * every call site upstream is unchanged and there is still one spelling in the repo.
+ *
+ * A real URL with a reserved scheme, deliberately: `api` still takes a string and
+ * `new URL('tflw://demo').hostname` still answers, so nothing in the grammar knows about this
+ * feature. What is new is that the *checker* now does, in one place, for one question.
+ */
+export const DEMO_BASE_URL = 'tflw://demo';
+
+/** Anything under the reserved scheme. Nothing but `DEMO_BASE_URL` resolves under it — SPEC §3.1,
+ *  "`tflw://` is reserved; no other address under it resolves". */
+export const DEMO_SCHEME = 'tflw://';
+
 /** Keys valid only in `defaults`, only in `env`, or in both. */
 const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl', 'ViewportDecl']);
 const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl']);
@@ -392,6 +454,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
         diags.push(contextError(entry, 'defaults', 'an `env` block'));
       }
       checkAuthorizedTargetLiteral(entry, diags);
+      checkReservedScheme(entry, diags);
     }
   }
 
@@ -414,6 +477,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
         diags.push(contextError(entry, `env ${env.name}`, 'the `defaults` block'));
       }
       checkAuthorizedTargetLiteral(entry, diags);
+      checkReservedScheme(entry, diags);
     }
   }
 

@@ -911,9 +911,9 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'reserved-demo-scheme',
     file: 'interpreter.ts',
     excerpt: 'is not a real base URL',
-    decidable: 'static',
-    filedRow: 'M118-01',
-    note: "M118 (`FU-04`) — `tflw run` substitutes the real loopback address for `tflw://demo` before anything executes, so this only fires on a typo under the reserved scheme (`tflw://demoo`). A base URL is a `tflw.config` string literal, so the checker could say it at check time and doesn't; filed rather than folded in, since it wants a diagnostic code and M118 declared none",
+    decidable: 'static-if-literal',
+    checkerCode: 'TF071',
+    note: "M118 (`FU-04`), answered by `M147c` (`M118-01`, D632). `tflw run` substitutes the real loopback address for `tflw://demo` before anything executes, so this only ever fired on a typo under the reserved scheme (`tflw://demoo`) — and the set of legal hosts under that scheme has exactly one member, known at check time, written as a string literal in `tflw.config`. `checkReservedScheme` now says it before the run starts. **Reclassified `static-if-literal` rather than `static` at the same time, and that is a correction, not a consequence of the fix**: `api \"tflw://{TARGET}\"` is a config string nobody can evaluate at check time, so this rule was never fully static and the manifest said it was. The runtime keeps the throw for the interpolated case and for a caller that skipped the substitution",
   },
 
   // -- matcher.ts ------------------------------------------------------------

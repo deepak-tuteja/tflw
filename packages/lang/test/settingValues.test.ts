@@ -29,7 +29,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseConfigSource, parseSource, Codes } from '../src/index.js';
+import { parseConfigSource, parseSource, Codes, DEMO_BASE_URL } from '../src/index.js';
 
 /** A `defaults` block's diagnostics, as codes. The `env` block is present because a config without
  *  one is a different complaint, and this file is not testing that one. */
@@ -225,4 +225,77 @@ test('`viewport -2 -3` is TF010, not TF071', () => {
 
 test('`retry -1` is TF010, not TF071', () => {
   assert.deepEqual(fileCodes(RETRY('retry -1')), [Codes.UNEXPECTED_TOKEN]);
+});
+
+// -- the sixth slot, and it is not a number ----------------------------------------------------
+//
+// `M118-01`. `tflw://` is reserved and `tflw://demo` is the only address under it, so
+// `api "tflw://dmeo"` names a value the setting cannot act on for exactly the reason `workers 0`
+// does — and it used to parse, check green, and die at run time naming the only legal spelling.
+//
+// This one is decided in the **checker**, not the parser, and the difference is principled: the
+// range of a number is a fact about its shape that the production reading it already knows
+// everything about, while what a scheme reserves is a fact about the language's own semantics. The
+// interpolated control is D147's line and the one that would matter most if it broke — a checker
+// that evaluated `"tflw://{TARGET}"` would refuse a config that runs.
+
+test('`api "tflw://dmeo"` is refused — one legal address under the reserved scheme', () => {
+  assert.deepEqual(
+    parseConfigSource('env local default\n  api "tflw://dmeo"\n').diagnostics.map((d) => d.code),
+    [Codes.INVALID_SETTING_VALUE],
+  );
+});
+
+test('`api "tflw://demo"` is silent — what `tflw init` scaffolds', () => {
+  assert.deepEqual(parseConfigSource('env local default\n  api "tflw://demo"\n').diagnostics, []);
+});
+
+test('`api "tflw://{TARGET}"` is silent — not decidable here (D147)', () => {
+  assert.deepEqual(parseConfigSource('env local default\n  api "tflw://{TARGET}"\n').diagnostics, []);
+});
+
+test('an ordinary http base URL is untouched', () => {
+  assert.deepEqual(parseConfigSource('env local default\n  api "https://example.test"\n').diagnostics, []);
+});
+
+test('the reserved-scheme rule reaches a named service too', () => {
+  assert.deepEqual(
+    parseConfigSource('env local default\n  api "https://example.test"\n  api billing "tflw://demoo"\n').diagnostics.map((d) => d.code),
+    [Codes.INVALID_SETTING_VALUE],
+  );
+});
+
+test('a misplaced `api` gets both complaints — the placement AND the value', () => {
+  // Measured, and it corrected the test that was written first. `api` is `ENV_ONLY`, so it cannot
+  // appear in `defaults` at all and `TF025` says so — but the value is *also* wrong, and both are
+  // reported rather than the second waiting behind the first. The pass is wired into both loops for
+  // that reason and not because `defaults` can hold an `api` today: a rule scoped to the block it
+  // happens to be legal in now is a rule that silently stops covering it later.
+  assert.deepEqual(
+    parseConfigSource('defaults\n  api "tflw://dmeo"\n\nenv local default\n  api "https://example.test"\n').diagnostics.map(
+      (d) => d.code,
+    ),
+    [Codes.CONFIG_KEY_CONTEXT, Codes.INVALID_SETTING_VALUE],
+  );
+});
+
+test('the message names the typo and the hint names the only legal address', () => {
+  const [d] = parseConfigSource('env local default\n  api "tflw://dmeo"\n').diagnostics;
+  assert.match(d!.message, /`tflw:\/\/dmeo` is not an address this setting can take/);
+  assert.match(d!.hint!, /`tflw:\/\/demo` is the only address under it/);
+});
+
+test('the span covers the string literal, not the whole `api` line', () => {
+  // `M147e` is about producer-side spans; this one is already right and is pinned so it stays that
+  // way — the caret belongs on the value that is wrong, not on the directive that is fine.
+  const source = 'env local default\n  api "tflw://dmeo"\n';
+  const [d] = parseConfigSource(source).diagnostics;
+  assert.equal(source.slice(d!.span.start.offset, d!.span.end.offset), '"tflw://dmeo"');
+});
+
+test('`DEMO_BASE_URL` is not refused by the rule that reads it — the constant and the check agree', () => {
+  // A one-line guard against the failure this move is meant to prevent: the constant now lives in
+  // `@tflw/lang` and `demo-service.ts` re-exports it, so a future edit to either can no longer make
+  // the scaffolded config fail its own checker without something going red here.
+  assert.deepEqual(parseConfigSource(`env local default\n  api "${DEMO_BASE_URL}"\n`).diagnostics, []);
 });

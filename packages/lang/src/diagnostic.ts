@@ -264,6 +264,15 @@ export const Codes = {
   // the first evaluation, so zero is a real setting there; `timeout step 0s` aborts every request
   // before it is sent. `retry 0` and `retry honoring "…" up to 0` are likewise the defaults spelled
   // out loud, not mistakes.
+  //
+  // **Two homes, one rule** (`M118-01`, D632). The five numeric slots are refused in `parser.ts`,
+  // because the range of a number is a fact about its *shape* and the production reading it knows
+  // everything needed. `api "tflw://dmeo"` is refused in `checker.ts`, because which addresses a
+  // scheme reserves is a fact about the *language's own semantics* and belongs beside the rest of
+  // the config semantics. `TF033` is documented "Parser/checker" for the same reason. The row was
+  // filed predicting a new code — true against `TF054`, false against this one: `workers` cannot act
+  // on `0` and `api` cannot act on any `tflw://` address but one, and both repairs are *write a
+  // value the setting accepts*, which is `D419`'s bar.
   INVALID_SETTING_VALUE: 'TF071',
 } as const;
 

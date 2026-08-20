@@ -76,6 +76,8 @@ export {
   identityCensus,
   type IdentityCensus,
   RESERVED_PRINCIPAL,
+  DEMO_BASE_URL,
+  DEMO_SCHEME,
   type EnvBaseUrls,
   type EnvTimeouts,
   type EnvAllowHosts,
