@@ -1,0 +1,8 @@
+error[TF010]: `evidence` takes a bare keyword — write `evidence headers only` instead of `evidence "headers-only"`
+ --> tflw.config:2:12
+  |
+2 |   evidence "headers-only"
+  |            ^^^^^^^^^^^^^^
+  |
+  = help: a quoted value here was retired in favour of one spelling per directive; `tflw migrate` rewrites this for you
+  = fix: run `tflw migrate` to apply this automatically

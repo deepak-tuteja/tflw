@@ -1,0 +1,8 @@
+error[TF010]: `log level` takes a bare keyword — write `log level warn` instead of `log level "warn"`
+ --> tflw.config:2:13
+  |
+2 |   log level "warn"
+  |             ^^^^^^
+  |
+  = help: a quoted value here was retired in favour of one spelling per directive; `tflw migrate` rewrites this for you
+  = fix: run `tflw migrate` to apply this automatically

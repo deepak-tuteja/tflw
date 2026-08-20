@@ -117,7 +117,9 @@ export interface ResolvedConfig {
    * Empty means "nothing was affirmed", which is the same thing absent would mean, so unlike
    * `allowHosts` there is no `null` case to distinguish. */
   readonly allowPublicTargets: readonly string[];
-  /** `evidence full|headers-only|none` — how much of the request/response trace lands in the
+  /** `evidence full|headers only|none` in a config, `full|headers-only|none` in this type and on
+   * `--evidence` (`M147b`/`D628`: tflw identifiers have no hyphen, a shell argument has no space) —
+   * how much of the request/response trace lands in the
    * report-only trace (SPEC §13, PLAN decision 101c). Override semantics (env wins), default
    * `'full'` (today's unchanged behavior). `--evidence` overrides this again for one run. */
   readonly evidenceLevel: EvidenceLevel;
@@ -127,14 +129,14 @@ export interface ResolvedConfig {
   /** `viewport <width> <height>` — browser window size in px (M3c, SPEC §9, D11). `null` = let
    * Playwright use its own default (1280×720). `defaults`-only, like `workers`/`report`. */
   readonly viewport: { readonly width: number; readonly height: number } | null;
-  /** `log destination "…"` — the default a bare `log "…"` (no `to` clause) resolves to (M27,
+  /** `log destination <dest>` — the default a bare `log "…"` (no `to` clause) resolves to (M27,
    * PLAN_LOG.md decision 116). Override semantics like `evidence` (env wins over `defaults`),
    * default `'both'`. `'none'` is reachable only via `--log-output none` overriding this for a
    * whole run (decision 121) — never a value `LogDestinationDecl` itself can carry, since `'none'`
    * isn't a valid `log … to <destination>` grammar target either (a global kill-switch for bare
    * calls only, not a per-statement one). */
   readonly logDestination: LogDestination | 'none';
-  /** `log level "…"` — the minimum level a `log` step must clear to be *rendered* (console text,
+  /** `log level <level>` — the minimum level a `log` step must clear to be *rendered* (console text,
    * `report.html`); never affects whether it's *recorded* (M27, PLAN_LOG.md decision 122).
    * Default `'debug'` (show everything). */
   readonly logLevel: LogLevel;

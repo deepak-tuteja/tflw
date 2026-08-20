@@ -101,7 +101,7 @@ A   give
 AK  greater
 A   has
 AK  header
-A   headers-only
+A   headers only
 V   hex
 A   hidden
 K   hold
@@ -185,7 +185,7 @@ A   right
 K   rps
 K   run
 A   s
-K   scenario
+AK  scenario
 K   schema
 K   scope
 A   screenshot
@@ -211,7 +211,7 @@ A   switch
 K   tab
 K   target
 K   test
-K   tests
+A   tests
 AK  text
 AK  than
 A   think

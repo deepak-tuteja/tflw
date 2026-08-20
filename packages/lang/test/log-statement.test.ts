@@ -70,26 +70,51 @@ test('`{var}` interpolation resolves once bound by a prior `capture`/`let`', () 
   assert.deepEqual(diags, []);
 });
 
-test('config: `log destination "html"` parses into a LogDestinationDecl', () => {
-  const { config, diagnostics } = parseConfigSource('defaults\n  log destination "html"\n');
+test('config: `log destination html` parses into a LogDestinationDecl', () => {
+  const { config, diagnostics } = parseConfigSource('defaults\n  log destination html\n');
   assert.deepEqual(diagnostics, []);
   const entry = config.defaults!.entries[0] as LogDestinationDecl;
   assert.equal(entry.type, 'LogDestinationDecl');
   assert.equal(entry.destination, 'html');
 });
 
-test('config: `log level "warn"` parses into a LogLevelDecl', () => {
-  const { config, diagnostics } = parseConfigSource('defaults\n  log level "warn"\n');
+test('config: `log level warn` parses into a LogLevelDecl', () => {
+  const { config, diagnostics } = parseConfigSource('defaults\n  log level warn\n');
   assert.deepEqual(diagnostics, []);
   const entry = config.defaults!.entries[0] as LogLevelDecl;
   assert.equal(entry.type, 'LogLevelDecl');
   assert.equal(entry.level, 'warn');
 });
 
-test('config: `log destination "bogus"` is a diagnostic', () => {
-  const { diagnostics } = parseConfigSource('defaults\n  log destination "bogus"\n');
+test('config: `log destination bogus` is a diagnostic', () => {
+  const { diagnostics } = parseConfigSource('defaults\n  log destination bogus\n');
   assert.equal(diagnostics.length, 1);
-  assert.match(diagnostics[0]!.message, /unknown log destination/);
+  assert.match(diagnostics[0]!.message, /expected a log destination/);
+});
+
+// `M147b` (`A2-14`/`D623`) — `LOG_LEVELS` used to be spelled two ways in one language: bare in the
+// statement dialect (`log warn "hi"`), quoted in the config dialect (`log level "warn"`). It is one
+// vocabulary, so it is now one spelling, and the retired one is answered rather than refused.
+test('config: the retired quoted spelling names the bare form and carries a migrate payload', () => {
+  for (const [source, replacement] of [
+    ['defaults\n  log level "warn"\n', 'warn'],
+    ['defaults\n  log destination "console"\n', 'console'],
+  ] as const) {
+    const { diagnostics } = parseConfigSource(source);
+    assert.equal(diagnostics.length, 1, source);
+    assert.match(diagnostics[0]!.message, /takes a bare keyword/, source);
+    assert.match(diagnostics[0]!.message, new RegExp(`write \`log (level|destination) ${replacement}\``), source);
+    assert.equal(diagnostics[0]!.deprecation?.replacement, replacement, source);
+  }
+});
+
+// The payload is withheld when the quoted text names nothing, for `D-M90-3`'s reason: there is no
+// single right splice, and guessing writes a config nobody asked for.
+test('config: a quoted value that names no member gets no migrate payload', () => {
+  const { diagnostics } = parseConfigSource('defaults\n  log level "shout"\n');
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0]!.message, /is not a log level/);
+  assert.equal(diagnostics[0]!.deprecation, undefined);
 });
 
 test('config: `log` alone (no `destination`/`level`) is a diagnostic', () => {

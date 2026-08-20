@@ -139,10 +139,10 @@ const KEY_EXAMPLE: Record<string, string> = {
   cert: 'cert "./c.pem"',
   key: 'key "./k.pem"',
   allow: 'allow hosts "x.com"',
-  evidence: 'evidence "full"',
+  evidence: 'evidence full',
   redact: 'redact header "X-Token"',
   viewport: 'viewport 1280 720',
-  log: 'log level "info"',
+  log: 'log level info',
 };
 
 /** A config with `line` in `defaults` or in an `env`, plus whatever the other block needs to be

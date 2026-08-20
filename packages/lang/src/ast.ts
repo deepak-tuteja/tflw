@@ -1666,7 +1666,8 @@ export interface EvidenceDecl extends Node {
   readonly level: EvidenceLevel;
 }
 
-/** `log destination "console"|"html"|"both"` (M27, PLAN_LOG.md decision 116) — the default a bare
+/** `log destination console|html|both` (M27, PLAN_LOG.md decision 116; bare keywords since
+ * `M147b`/`D623`) — the default a bare
  * `log "…"` (no `to` clause) resolves to. Override semantics like `evidence`/`insecure` (env wins
  * over `defaults`), default `'both'` when never declared. */
 export interface LogDestinationDecl extends Node {
@@ -1674,7 +1675,8 @@ export interface LogDestinationDecl extends Node {
   readonly destination: LogDestination;
 }
 
-/** `log level "debug"|"info"|"warn"|"error"` (M27, PLAN_LOG.md decision 122) — the minimum level a
+/** `log level debug|info|warn|error` (M27, PLAN_LOG.md decision 122; bare keywords since
+ * `M147b`/`D623`) — the minimum level a
  * `log` step must clear to be *rendered* (console text, `report.html`); never affects whether a
  * step is *recorded* (`results.json`/ndjson always carry every log step, decision 119/122). Same
  * override semantics as `evidence`, default `'debug'` (show everything) when never declared. */

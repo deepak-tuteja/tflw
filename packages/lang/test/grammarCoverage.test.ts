@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { REFUSED_SPELLINGS } from '../src/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const parserSource = readFileSync(join(here, '../src/parser.ts'), 'utf8');
@@ -24,6 +25,11 @@ const grammar = readFileSync(join(here, '../GRAMMAR.md'), 'utf8');
 /** Every keyword literal the parser tests a token against. */
 function parserKeywords(): string[] {
   const found = new Set<string>();
+  // `M147b` — the refused words moved out of inline `isKw` calls and into `REFUSED_WORDS`, so the
+  // regex below no longer reaches them. Read from the table instead of narrowing the corpus in
+  // silence: `tests` dropping out of this set is exactly how `EXEMPT` would have gone stale while
+  // the honesty test below kept passing.
+  for (const word of REFUSED_SPELLINGS) found.add(word);
   // `this.isKw(tok, 'ramp')`, `this.expectKw('users')`, `this.matchKw('for')`
   for (const m of parserSource.matchAll(/\b(?:isKw\([^,]+,\s*|expectKw\(|matchKw\()'([a-z][a-z0-9]*)'/g)) {
     found.add(m[1]!);
@@ -35,9 +41,14 @@ function parserKeywords(): string[] {
 const EXEMPT = new Map<string, string>([
   // Removed keywords the parser still recognizes only to emit a "renamed/removed" diagnostic.
   // Documenting them as productions would re-assert a grammar that no longer exists (D103). Their
-  // errors are covered by SPEC §17's TF033 entry instead. (`think`/`uncheck` are *not* here: they
-  // are matched by their own dedicated paths, not `isKw`, so they never reach this list.)
+  // errors are covered by SPEC §17's TF033 entry instead.
   ['scenario', 'removed in D103 — recognized only to raise TF033 naming `test`'],
+  // `M147b` widened the corpus: `think` and `uncheck` were matched by dedicated `case` arms rather
+  // than `isKw`, so the regex above never reached them and this list never had to account for them.
+  // `REFUSED_WORDS` names all four, so all four are now asked the question — and the answer for
+  // these two is the same as `scenario`'s, which is why the widening cost two lines and no thought.
+  ['think', 'FS-05 — renamed to `pause`; recognized only to raise the migration diagnostic'],
+  ['uncheck', 'FS-04 — renamed to `untick`; same'],
   // Not grammar at all: `tests` exists solely so a top-level `tests "…"` typo can say
   // "did you mean `test`?". There is nothing to write a production for.
   ['tests', 'not a construct — only a did-you-mean hint for a mistyped `test`'],

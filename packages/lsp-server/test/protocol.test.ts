@@ -436,7 +436,7 @@ test('M136b/D428: a `tflw.config` buffer opened under the new language id still 
 
 test('M136b/D427: semanticTokens/full colors config-only vocabulary in a `tflw.config` buffer', async () => {
   const { client } = await connectServer();
-  const text = 'defaults\n  allow hosts "api.example.com"\n  evidence "headers-only"\n';
+  const text = 'defaults\n  allow hosts "api.example.com"\n  evidence headers only\n';
   openConfigDocument(client, CONFIG_URI, text);
 
   const result = (await client.sendRequest('textDocument/semanticTokens/full', { textDocument: { uri: CONFIG_URI } })) as { data: number[] } | null;
@@ -444,8 +444,10 @@ test('M136b/D427: semanticTokens/full colors config-only vocabulary in a `tflw.c
   assert.ok(result);
   assert.equal(result!.data.length % 5, 0);
   // `defaults` alone would satisfy a non-empty check — it is in the shared wordlist and was colored
-  // before this milestone. Four tokens is the claim: `defaults`, plus `allow`/`hosts`/`evidence`,
-  // none of which the server could color until it was told which dialect it was looking at.
-  assert.equal(result!.data.length / 5, 4, 'expected `defaults` plus the three config-only keywords');
+  // before this milestone. Six tokens is the claim: `defaults`, plus `allow`/`hosts`/`evidence`,
+  // none of which the server could color until it was told which dialect it was looking at, plus
+  // `headers`/`only` — the evidence level, which `M147b` turned from a string into two bare
+  // keywords and which `M142` had recorded as unreachable by any wordlist while it was a string.
+  assert.equal(result!.data.length / 5, 6, 'expected `defaults`, the three config-only keywords, and both words of the level');
   client.dispose();
 });

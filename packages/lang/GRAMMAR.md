@@ -21,7 +21,8 @@ being silent about it. Those productions now exist — see the **Load testing** 
 `grammarCoverage.test.ts` now asserts that every keyword the parser recognizes appears somewhere in
 this file, so the next construct that ships without a production fails CI instead of drifting for
 seven milestones. Writing the productions also surfaced three gaps nobody had filed: `redact header`/
-`redact query` (FS-03, M64), the `log destination`/`log level` config keys (M27), and
+`redact query` (FS-03, M64), the `log destination`/`log level` config keys (M27, values bare since
+M147b), and
 `matches snapshot … mask` (M4b).
 
 Notation: `UPPER` = terminal token class, `'x'` = literal keyword/punct, `?` optional, `*` zero+,
@@ -85,9 +86,11 @@ TAG         '@' IDENT
   position; everywhere else `/` is the arithmetic divide operator. A variable literally named
   `get`/`post`/`put`/`delete`/`patch` still divides fine (`let ratio = get / 2`) since the check is
   positional, not lexical (P#60).
-- The lexer has no hyphen in identifiers — a few config values that read naturally with one
-  (`evidence "headers-only"`, `retry honoring "Retry-After"`) are string literals instead of bare
-  words, validated against a fixed vocabulary by the parser/checker rather than the lexer.
+- The lexer has no hyphen in identifiers. Where a value that reads naturally with one is drawn
+  from a closed set the language defines, it is spelled as **two bare words** rather than quoted —
+  `evidence headers only`, matching `input handling` (M134a/D366, M147b/D628). A value that is not
+  from a closed set stays a string literal (`retry honoring "Retry-After"` is a header *name*, and
+  header names are quoted everywhere in this grammar for the same lexical reason).
 
 ## Program structure
 
@@ -599,16 +602,17 @@ AuthorizedTargetOpt := 'probe' 'mutating'                         # (§3.10, M13
                                                                   #   is the probe that does it.
                                                                   #   Each sibling grants only itself; three
                                                                   #   independent lines, never one word list
-EvidenceDecl    := 'evidence' STRING                              # "full" | "headers-only" | "none" (§13)
+EvidenceDecl    := 'evidence' EvidenceLevel                       # §13; bare keywords, M147b/D623
+EvidenceLevel   := 'full' | 'headers' 'only' | 'none'             # two words, never a hyphen (D628)
 RedactDecl      := 'redact' RedactPattern (',' RedactPattern)*    # accumulates across defaults+env (§3.4)
 RedactPattern   := 'body' ('.' IDENT | '.' '*')+
                  | 'header' STRING                                # FS-03/M64 — quoted, not dotted:
                  | 'query' STRING                                 #   an ident can't hold the hyphen
                                                                    #   `X-Api-Key`/`Set-Cookie` need
-LogDestinationDecl := 'log' 'destination' STRING                  # "console" | "html" | "both" (§3.8,
-                                                                   # M27) — `--log-output` overrides
-LogLevelDecl    := 'log' 'level' STRING                           # "debug"|"info"|"warn"|"error"
-                                                                   # (§3.10) — `--log-level` overrides
+LogDestinationDecl := 'log' 'destination' LogDestination          # §3.8, M27 — `--log-output`
+LogDestination  := 'console' | 'html' | 'both'                    #   overrides; bare, M147b/D623
+LogLevelDecl    := 'log' 'level' LogLevel                         # §3.10 — `--log-level` overrides
+LogLevel        := 'debug' | 'info' | 'warn' | 'error'            #   one spelling, both dialects
 ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height, px (§9, M3c, D11);
                                                                    # `defaults`-only, like `workers`/
                                                                    # `report`; omitted = Playwright's

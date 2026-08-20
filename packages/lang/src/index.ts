@@ -24,6 +24,13 @@ export {
   // the parser actually dispatches on, rather than against prose.
   STATEMENT_KEYWORDS,
   RETIRED_STATEMENT_KEYWORDS,
+  // `M147b`/`M142-01` — the one table every refusal site reads. Exported so the guards can hold the
+  // colouring pass, the GRAMMAR coverage floor and `migrate`'s termination argument against it
+  // rather than against three restatements of it.
+  REFUSED_SPELLINGS,
+  REFUSED_WORDS,
+  type RefusedWord,
+  type RefusedSpelling,
   // `M137a`/D444 — the same arrangement for the config dialect: `CONFIG_KEYWORDS` is asserted
   // against these, and completion filters through `configKeyAllowedIn` rather than restating which
   // keys belong in which block.

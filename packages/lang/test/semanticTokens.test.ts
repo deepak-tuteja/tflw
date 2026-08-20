@@ -256,15 +256,27 @@ test('collectSemanticTokens: `input handling` (D366) is `operator`, and `probe o
 // (and four more in the test dialect, filed as `M136b-01`). These three tests are the two
 // directions of the split plus the realistic case.
 
-/** The eighteen, in declaration order: the `CONFIG_KEYS` top-level directives (`parser.ts:352`),
- * the `oauth2` session block, then the `log`/`redact` sub-clause words. */
+/** In declaration order: the `CONFIG_KEYS` top-level directives (`parser.ts:352`), the `oauth2`
+ * session block, the `log`/`redact` sub-clause words, and — since `M147b` (`A2-14`/`D623`) — the
+ * enumerated *values* of `evidence`, `log destination` and `log level`, which became bare keywords
+ * and so became reachable by a set consulted against `ident` tokens.
+ *
+ * **`debug`/`info`/`warn` and `console`/`html`/`both` are also statement-dialect vocabulary** —
+ * `log warn "hi"`, `log "hi" to console` — and this pass does not paint them there. That asymmetry
+ * is deliberate and filed (`M147-04`): colouring them in `.tflw` files means colouring `html`,
+ * `both`, `full` and `none` wherever they appear as ordinary identifiers, which is exactly the risk
+ * that kept `up`/`method`/`schema` out of the shared set in `M136b`. So the loop below asserts
+ * "uncoloured in a test buffer" as a *measurement*, not as a claim that the word means nothing
+ * there. `error` is absent from the list entirely: it is a log level too, and it is already painted
+ * as a `type` from the shared set. */
 const CONFIG_ONLY_WORDS = [
   'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'redact', 'viewport',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
   'destination', 'level', 'query',
+  'debug', 'info', 'warn', 'console', 'html', 'both', 'full', 'headers', 'only', 'none',
 ] as const;
 
-test('collectSemanticTokens (M136b, D427a): all eighteen config-only keywords classify as `keyword` in a real tflw.config', () => {
+test('collectSemanticTokens (M136b, D427a): every config-only keyword classifies as `keyword` in a real tflw.config', () => {
   // Parses with zero diagnostics — asserted below, because a source the parser rejects would still
   // colour (the lexer-driven pass never consults the parse) and the test would pass while claiming
   // to describe a config anybody could write.
@@ -274,12 +286,12 @@ test('collectSemanticTokens (M136b, D427a): all eighteen config-only keywords cl
     '  cert "./client.pem"\n' +
     '  key "./client-key.pem"\n' +
     '  allow hosts "api.example.com"\n' +
-    '  evidence "headers-only"\n' +
+    '  evidence headers only\n' +
     '  redact header "Authorization"\n' +
     '  redact query "token"\n' +
     '  viewport 1280 720\n' +
-    '  log level "debug"\n' +
-    '  log destination "both"\n' +
+    '  log level debug\n' +
+    '  log destination both\n' +
     '\n' +
     'env local\n' +
     '  api "https://api.example.com"\n' +
@@ -309,13 +321,20 @@ test('collectSemanticTokens (M136b, D427a): all eighteen config-only keywords cl
   assertTypeAt(tokens, source, 'destination', 'keyword');
   assertTypeAt(tokens, source, 'oauth2', 'keyword');
   assertTypeAt(tokens, source, 'scope', 'keyword');
+  // `M147b` — the values, in the same real config rather than in a snippet of their own.
+  assertTypeAt(tokens, source, 'headers', 'keyword');
+  assertTypeAt(tokens, source, 'only', 'keyword');
+  assertTypeAt(tokens, source, 'debug', 'keyword');
+  assertTypeAt(tokens, source, 'both', 'keyword');
 });
 
 test('collectSemanticTokens (M136b, D427): the config vocabulary is a keyword in `config` and nothing at all in `test`', () => {
   // Both directions on the same one-word source, so the *only* variable is the dialect argument.
   // This is the assertion the split exists for: `key`, `web` and `destination` are ordinary
   // identifiers in a .tflw file, and a fix that coloured them everywhere would be worse than the
-  // uncoloured config this milestone set out to repair.
+  // uncoloured config this milestone set out to repair. See the note on `CONFIG_ONLY_WORDS` for the
+  // six `M147b` added that are *not* ordinary identifiers in a test buffer — the measurement is the
+  // same, the reason is not.
   const noSymbols = { defs: [], refs: [] };
   for (const word of CONFIG_ONLY_WORDS) {
     const inConfig = collectSemanticTokens(word, noSymbols, 'config');
@@ -431,43 +450,49 @@ test('collectSemanticTokens: returned tokens are sorted by start offset with no 
   }
 });
 
-// M142 commit 4 — the boundary `D552` was reversed on. The nine enumerated values of `evidence`,
-// `log level` and `log destination` are the residue of the vocabulary walk that nobody had ever
-// asked a question about, and the plan decided to colour them by putting them in `CONFIG_KEYWORDS`.
-// They cannot be reached that way: every one is written as a STRING, so the lexer hands this pass a
-// single `string` token and a set consulted against `ident` tokens never sees the word inside it.
+// `M147b` (`A2-14`/`D623`) — the successor to `M142` commit 4's boundary, which the grammar moved.
 //
-// This pins that boundary, so a future "catch-up" that adds them to a wordlist is answered by a test
-// rather than by nine entries that silently never fire — and so that teaching this pass to paint
-// inside strings has to be a decision somebody takes, not a side effect.
+// `M142` REVERSED `D552` (colour the enumerated values of `evidence`, `log level` and `log
+// destination` by adding them to `CONFIG_KEYWORDS`) by measuring that every one of them was written
+// as a STRING: the lexer handed this pass a single `string` token, and a set consulted against
+// `ident` tokens could never see the word inside it. Nine wordlist entries that can never fire.
 //
-// `D552`'s stated reason was an inconsistency that does not exist: it held that `log level "error"`
-// lights up while `log level "debug"` stays grey, in the same clause, because `threshold error rate`
-// had put `error` in `TYPES`. In that clause NEITHER lights up. `error` is a `type` only in the other
-// dialect and a different construction — which the `users`/`rps`/`error`/`rate` test above ALREADY
-// asserts, so the other half of this measurement needed no new test and does not get one.
-test('M142: the enumerated config VALUES are strings, not keywords, while the keys around them are', () => {
-  const source = 'defaults\n  evidence "headers-only"\n  log level "error"\n  log destination "console"\n';
+// `D623` made them bare keywords, so `D552`'s mechanism reaches them exactly as it always claimed.
+// They are now in `CONFIG_KEYWORDS` and this test asserts the *opposite* of its predecessor — which
+// is the honest shape when a grammar change lands under a measured boundary, rather than deleting
+// the test that recorded the old one.
+//
+// The question `M142` left open stays open and is still not answered here: whether this pass should
+// paint enumerated values *inside* strings (`D538`). It is simply no longer what these words ask.
+test('M147b: the enumerated config values are bare keywords now, and are coloured as keywords', () => {
+  const source = 'defaults\n  evidence headers only\n  log level error\n  log destination console\n';
   const { config, diagnostics } = parseConfigSource(source);
   assert.deepEqual(diagnostics.map((d) => d.message), [], 'the fixture config must parse cleanly');
   const tokens = collectSemanticTokens(source, collectConfigSymbols(config, source), 'config');
 
-  // The keys are keywords, and stay so — this half is the control. Without it the assertion below
-  // would also pass against a pass that had stopped colouring the config dialect altogether.
+  // The keys stay keywords — the control. Without it the assertion below would also pass against a
+  // pass that had started painting every ident in a config buffer.
   assertTypeAt(tokens, source, 'evidence', 'keyword');
   assertTypeAt(tokens, source, 'level', 'keyword');
   assertTypeAt(tokens, source, 'destination', 'keyword');
 
-  // The values carry no token of their own at all. Asserted by span containment rather than by
-  // "no token whose text is `error`", because the point is that the *word* is not addressable here:
-  // it is interior to a string the lexer produced in one piece.
-  for (const value of ['headers-only', 'error', 'console']) {
-    const at = source.indexOf(`"${value}"`) + 1;
-    const covering = tokens.filter((t) => t.span.start.offset <= at && t.span.end.offset > at);
-    assert.deepEqual(
-      covering.map((t) => t.type),
-      [],
-      `\`${value}\` is inside a string literal and must not be classified — it is a value, not a keyword`,
-    );
-  }
+  // Both words of the two-word level, because `headers only` is one value spelled with a space
+  // (`D628`) and painting half of it would be worse than painting none.
+  for (const value of ['headers', 'only', 'console']) assertTypeAt(tokens, source, value, 'keyword');
+
+  // `error` is a `LOG_LEVELS` member AND lives in `TYPES` from `threshold error rate`. It is
+  // deliberately absent from `CONFIG_KEYWORDS`, so it must still classify — through the shared set,
+  // as the type it already was. A second entry would be a second answer to a settled question.
+  assertTypeAt(tokens, source, 'error', 'type');
+});
+
+// The other side of the same move: a *value in a config file that predates it* is still a string,
+// and this pass must not paint inside it. `M142`'s boundary survives where strings survive.
+test('M147b: the retired quoted spelling is still a string, and nothing inside it is classified', () => {
+  const source = 'defaults\n  log level "warn"\n';
+  const { config } = parseConfigSource(source);
+  const tokens = collectSemanticTokens(source, collectConfigSymbols(config, source), 'config');
+  const at = source.indexOf('"warn"') + 1;
+  const covering = tokens.filter((t) => t.span.start.offset <= at && t.span.end.offset > at);
+  assert.deepEqual(covering.map((t) => t.type), [], '`warn` is interior to a string literal here');
 });

@@ -578,19 +578,24 @@ destination/level explicitly.
 
 ```
 defaults
-  log destination "console"
-  log level "warn"
+  log destination console
+  log level warn
 
 env ci
-  log destination "html"
+  log destination html
 ```
 
-- `log destination "console"|"html"|"both"` — where a `log` call with no `to …` clause ends up.
-  Default `"both"` when never declared.
-- `log level "debug"|"info"|"warn"|"error"` — the minimum level a `log` step must clear to be
+- `log destination console|html|both` — where a `log` call with no `to …` clause ends up.
+  Default `both` when never declared.
+- `log level debug|info|warn|error` — the minimum level a `log` step must clear to be
   *rendered* in console output/`report.html`; never affects whether it's *recorded* (`results.json`/
   `--format ndjson` always carry every `log` step, regardless of level or destination — §13).
-  Default `"debug"` (show everything) when never declared.
+  Default `debug` (show everything) when never declared.
+- **Bare keywords, not strings, since `M147b`** (`A2-14`, D623). The value comes from a closed set
+  the language defines, so it is written as a keyword — the same rule `timeout step 10s` and
+  `insecure true` already followed, and the same words `log warn "…"` (§7.7) already used bare in
+  the statement dialect. Before it, one vocabulary was spelled two ways in one language. The retired
+  quoted form is an error naming the bare one and carrying a `tflw migrate` payload (§15).
 - Override semantics like `evidence`/`insecure` (env wins over `defaults`), not accumulating like
   `header`/`allow hosts`.
 - `--log-output`/`--log-level` (§12) override these for one run; `--log-output` only ever reaches a
@@ -3058,14 +3063,22 @@ them — any suite a reader opens hands back the seed needed to reproduce the ru
 arrives with no `file` at all (`TestResult.file` is optional; the interpreter never sets it) groups
 under `(no file)`, the same placeholder `report.html` uses.
 
-**Evidence levels — `evidence full\|headers-only\|none` (PLAN decision 101c, enterprise arc
-cluster 2).** A `tflw.config` key (`evidence "headers-only"` — a string literal, since the lexer
-has no hyphen in identifiers) controlling how much of each step's request/response trace lands in
-`report.html`; `--evidence LEVEL` (§12) overrides it for one run. Override semantics like
+**Evidence levels — `evidence full\|headers only\|none` (PLAN decision 101c, enterprise arc
+cluster 2).** A `tflw.config` key controlling how much of each step's request/response trace lands
+in `report.html`; `--evidence LEVEL` (§12) overrides it for one run. Override semantics like
 `insecure` (env wins over `defaults`); default `full`, today's unchanged behavior.
 
+**Bare keywords, and `headers only` is two words** (`M147b`, D623/D628). The level was a quoted
+string precisely because the lexer has no hyphen in identifiers — a real reason whose conclusion
+this language had already overruled elsewhere: `M134a`/D366 met the identical problem naming the
+fourth scan and answered it with two space-separated words, having measured that tflw has **zero**
+hyphenated bare keywords. `evidence headers only` is that same answer. The tree still carries
+`headers-only`, and so does `--evidence headers-only`: a CLI argument is typed into a shell, not
+into this lexer. The retired `evidence "headers-only"` is an error naming the bare form and
+carrying a `tflw migrate` payload (§15).
+
 - `full` — everything, as always: method/url/status/headers/body, plus all binary evidence.
-- `headers-only` — drops the request/response body, replaced with a `[omitted by evidence level]`
+- `headers only` — drops the request/response body, replaced with a `[omitted by evidence level]`
   marker (distinguishable in the report from a genuinely empty, e.g. 204, body). Headers still
   shown.
 - `none` — drops headers too. Only method/url/status/statusText/duration remain.
@@ -3289,8 +3302,9 @@ milestones and the eventual `1.0.0` publish — see decision 112).
   first publish** (P#45), i.e. from `1.0.0` — the only version that ever actually ships (decision
   112); any pre-1.0 breaking change requires a checker deprecation warning one full release ahead.
   `tflw migrate` was the browser arc's (`0.2.0`-equivalent) deliverable (P#45) and has already
-  shipped, proven against synthetic diagnostics since the grammar has had nothing to deprecate
-  yet; the additive-only freeze itself takes effect for good at `1.0.0` (P#38, decision 112).
+  shipped. It was proven against synthetic diagnostics for four arcs, having nothing real to
+  deprecate; `M147b` (D623) gave it the first three — `evidence`, `log destination` and `log level`
+  each answer their retired quoted spelling with a replacement payload; the additive-only freeze itself takes effect for good at `1.0.0` (P#38, decision 112).
   TF0xx diagnostic codes fall under the same promise: never renumbered or reused once shipped
   (P#77). A root `CHANGELOG.md` (Keep-a-Changelog style) tracks progress arc-by-arc under
   `[Unreleased]` starting from `0.1.0`'s internal milestone label, becoming real release notes

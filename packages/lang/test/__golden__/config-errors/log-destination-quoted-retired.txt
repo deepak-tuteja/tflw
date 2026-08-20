@@ -1,0 +1,8 @@
+error[TF010]: `log destination` takes a bare keyword — write `log destination console` instead of `log destination "console"`
+ --> tflw.config:2:19
+  |
+2 |   log destination "console"
+  |                   ^^^^^^^^^
+  |
+  = help: a quoted value here was retired in favour of one spelling per directive; `tflw migrate` rewrites this for you
+  = fix: run `tflw migrate` to apply this automatically

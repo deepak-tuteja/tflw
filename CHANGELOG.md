@@ -19,7 +19,7 @@ performance arc closed 2026-08-02 and is included below.
 - Session hardening: refresh-on-`401`, per-session TTL, `session <name> oauth2` client-credentials
   sugar, and per-env `cert`/`key` mTLS client certificates (decisions 99–100).
 - Safety and evidence controls: the `allow hosts` allowlist, `--forbid-insecure` as a CI policy
-  gate, `evidence full|headers-only|none`, and `redact` (decision 101).
+  gate, `evidence full|headers only|none`, and `redact` (decision 101).
 - `matches schema` contract validation against a JSON Schema or OpenAPI document (cached per run),
   and `Retry-After`-aware retry (decision 102).
 - The documentation site (VitePress) plus `spec-data.ts` — one structured manifest of matcher,
@@ -388,6 +388,30 @@ a different thing depending on which matcher a file happened to use.
   set of class names and no matching stylesheet rule, so the one section a reader scans by severity
   rendered as an unstyled browser table.
 
+### Changed — config directive spelling (M147b)
+
+The rule the language never had, and the last breaking change before `1.0.0`: **a directive whose
+value comes from a closed set the language defines is written as a bare keyword; a directive whose
+value is a boolean or an open string is written as a literal.** Three of the four closed-set
+directives were on the wrong side of it — `timeout step 10s` and `insecure true` were already right.
+
+- `evidence "full"` → **`evidence full`**, and `evidence "headers-only"` → **`evidence headers
+  only`**. Two words rather than a hyphen: tflw identifiers have no `-`, and every multi-word
+  construct in the language is space-separated (the answer `input handling` already got in M134a).
+  The AST value, `report.html` and `--evidence headers-only` are unchanged — a CLI argument is typed
+  into a shell, not into this lexer.
+- `log destination "console"` → **`log destination console`**, `log level "warn"` → **`log level
+  warn`**. `LOG_LEVELS` was previously spelled *both* ways in one language: bare in the statement
+  dialect (`log warn "…"`), quoted in the config dialect.
+
+Each retired spelling is a `TF010` naming the bare form and carrying a `tflw migrate` payload, so
+`tflw migrate` rewrites an existing config in place. These are the first three real deprecations
+`migrate` has had; it had been proven against synthetic diagnostics for four arcs.
+
+The enumerated values are now `ident` tokens in a config buffer, which is what finally makes the
+editor able to colour them — a reversal M142 recorded as unreachable *against the grammar of the
+day*, and it was right then.
+
 ### Changed — `results.json` (M136a)
 
 - **`authzBlindSpot` → `scanBlindSpot`, and `declines[].principal` → `declines[].subject` with a new
@@ -573,7 +597,7 @@ First public draft. API-only — the browser half lands in `0.2.0`.
   redacted from every report, trace, and CLI line automatically.
 - Safety/redaction: `allow hosts "…"` config allowlist — a request to a host outside the list is
   refused before any network I/O; `--forbid-insecure` fails a run up front if `insecure true` is
-  active; `evidence full|headers-only|none` config key + `--evidence` CLI override control how
+  active; `evidence full|headers only|none` config key + `--evidence` CLI override control how
   much of the request/response trace lands in the report (never affects what `expect`/`capture`
   can see); `redact body.email, body.*.address` masks matching JSON fields with `[redacted]` in
   the report, a declarative mechanism distinct from the existing `env(...)` secret redaction — now
