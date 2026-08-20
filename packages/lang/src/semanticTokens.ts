@@ -139,6 +139,31 @@ const CONFIG_KEYWORDS = new Set([
   'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'redact', 'viewport',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
   'destination', 'level', 'query',
+  // `M147b` (`A2-14`/`D623`/`D628`) — the enumerated values of `evidence`, `log destination` and
+  // `log level`, and `D552` reinstated on its own terms.
+  //
+  // `M142` commit 4 REVERSED `D552`, which had decided exactly this, by measuring that every one of
+  // these words was written as a STRING: `parseEvidenceDecl` and `parseLogConfigDecl` both called
+  // `expectString`, so the lexer handed this pass one `string` token and a set consulted against
+  // `ident` tokens could never have seen the word inside it. Nine entries that can never fire is
+  // the disease, not the cure — and that was the right call against the grammar of the day. `D623`
+  // changed the grammar under it, and the mechanism now reaches them exactly as it always claimed
+  // it would. Their `DELIBERATELY_UNCOLOURED` entries are gone.
+  //
+  // Config dialect only, so a `.tflw` file naming a variable `full` or `both` is untouched. The
+  // residual risk is a *config* identifier — a service named `console` — which is the same risk
+  // `csrf`/`send` were weighed against and smaller, since a service name is chosen by the author of
+  // the file the colouring appears in. The other side of that boundary is filed as `M147-04`:
+  // `warn` and the destinations are statement-dialect vocabulary too (`log warn "hi"`), and this
+  // pass does not paint them there.
+  //
+  // `error` is deliberately absent: it is a `LOG_LEVELS` member and already coloured, as a `type`,
+  // from the shared set. Listing it here would be a second answer to a settled question.
+  //
+  // The question `M142` left open stays open and is not answered here: whether this pass should
+  // paint enumerated values *inside* strings at all (`D538`). It is simply no longer what these
+  // words ask.
+  'debug', 'info', 'warn', 'console', 'html', 'both', 'full', 'headers', 'only', 'none',
   // M137b (D433) — `csrf from <subject> send as header "<name>"`. Both words belong *here* rather
   // than in the shared list above, by D427a's own test: they are reachable only from the config
   // dialect's session-block production, and `send` in particular is a plausible ordinary identifier
@@ -263,31 +288,11 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   ['im', 'not a word: same'],
   ['dis', 'not a word: same'],
   ['Retry-After', 'not a keyword: a header NAME the parser validates against, written as a string'],
-  // `M142` commit 4, and the plan's `D552` REVERSED BY MEASUREMENT. These nine are the enumerated
-  // values of `evidence`, `log level` and `log destination`, and `D552` decided to colour them by
-  // adding them to `CONFIG_KEYWORDS`. They cannot be reached that way: every one is written as a
-  // STRING — `parseEvidenceDecl` and `parseLogConfigDecl` both call `expectString` — so the lexer
-  // hands this pass one `string` token and `CONFIG_KEYWORDS`, which is consulted against `ident`
-  // tokens, would never see them. Nine entries that can never fire is the disease, not the cure.
-  //
-  // `D552`'s reason was an inconsistency that measurement says does not exist: it held that
-  // `log level "error"` lights up while `log level "debug"` stays grey, because `threshold error
-  // rate` had put `error` in `TYPES`. In that clause NEITHER lights up — `error` is inside a string
-  // there too, and it colours as a `type` only in the other dialect and a different construction.
-  // Measured on 2026-08-19; the boundary is pinned by a test in `semanticTokens.test.ts`.
-  //
-  // What is left is a real question this milestone does not answer: whether the editor should paint
-  // enumerated values *inside* strings at all. That is a new capability, not a wordlist entry, and
-  // it is a product decision (`D538`).
-  ['debug', 'not a keyword: an enumerated STRING value — `log level "debug"`, coloured as the string it is'],
-  ['info', 'not a keyword: same, LOG_LEVELS'],
-  ['warn', 'not a keyword: same, LOG_LEVELS'],
-  ['console', 'not a keyword: same, LOG_DESTINATIONS — `log destination "console"`'],
-  ['html', 'not a keyword: same, LOG_DESTINATIONS'],
-  ['both', 'not a keyword: same, LOG_DESTINATIONS'],
-  ['full', 'not a keyword: same, EVIDENCE_LEVELS — `evidence "full"`'],
-  ['headers-only', 'not a keyword: same, and it could not be one — `-` lexes as `minus`, so no bare tflw keyword is hyphenated'],
-  ['none', 'not a keyword: same, EVIDENCE_LEVELS'],
+  // `M142` commit 4's nine entries — the enumerated values of `evidence`, `log level` and `log
+  // destination` — LEFT THIS LIST IN `M147b`. `D623` made them bare keywords, so they are now
+  // reachable by a set consulted against `ident` tokens and they live in `CONFIG_KEYWORDS`, where
+  // the whole argument is written out. `headers-only` has no successor entry either: `D628` spells
+  // the level `headers only`, two ordinary lexemes, both coloured.
   // `M142` commit 5, and none of these was known to anyone before the completeness assertion below
   // was switched on — §2's hand audit of this same residue found 23 words and missed all nine.
   //
@@ -311,6 +316,10 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   // Not a word at all: `SCAN_KIND_PHRASES` holds PHRASES, because what the parser offers a user is
   // always a whole phrase (`M134a`). Both of its words are coloured individually, in `OPERATORS`.
   ['input handling', 'not a word: a multi-word scan-kind phrase — `input` and `handling` are coloured separately'],
+  // `M147b`/`D628` — the same shape one milestone later, and for the same reason: `-` lexes as
+  // `minus`, so a hyphenated bare keyword is unspellable and the level is two words. Both of them
+  // are coloured individually, in `CONFIG_KEYWORDS`.
+  ['headers only', 'not a word: a two-word evidence level — `headers` and `only` are coloured separately'],
 ]);
 
 /**
@@ -318,10 +327,11 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
  * word the language does not have — the same direction of error as `B5-10`'s `h`, where a
  * highlighter finished a literal the checker then rejected.
  *
- * That "a word is refused" is expressed three unrelated ways in `parser.ts` —
- * `RETIRED_STATEMENT_KEYWORDS` (`:251`), a `removedKeyword()` call (`:616`), and a bare did-you-mean
- * hint (`:641`) — is a real defect and a different subject (diagnostics, not colouring). Filed as
- * `M142-01` rather than fixed here (`D556`).
+ * That "a word is refused" used to be expressed three unrelated ways in `parser.ts` —
+ * a statement-scoped array, a `removedKeyword()` call, and a bare did-you-mean hint with no list
+ * behind it — was filed as `M142-01` rather than fixed here (`D556`), being a different subject
+ * (diagnostics, not colouring). `M147b` closed it: `parser.ts`'s `REFUSED_WORDS` is now the one
+ * table all three sites read, and `stepKeywords.test.ts` holds this map against it.
  *
  * The two RETIRED spellings are deliberately not here. `think` and `uncheck` are refused too, but
  * they are refused with a rename to offer, and `M142` settled that such a word is coloured — see

@@ -1126,7 +1126,11 @@ test('`tflw --help` mentions `tflw migrate`', async () => {
   assert.match(stdout, /tflw migrate \[files/);
 });
 
-test('`tflw migrate` against a real, checker-clean suite reports nothing to migrate and touches no files (no deprecation exists in the grammar yet, decision 45)', async () => {
+test('`tflw migrate` against a real, checker-clean suite reports nothing to migrate and touches no files (decision 45)', async () => {
+  // The title used to end "no deprecation exists in the grammar yet". `M147b` gave the grammar its
+  // first three, so what this test pins is now the *other* direction: a suite with none is left
+  // alone, config included.
+
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-clean-'));
     try {
@@ -1280,6 +1284,36 @@ test('migrate keeps going until nothing is left: a `think` hidden inside a `scen
     assert.match(after, /^test "burst"$/m, '`scenario` became `test`');
     assert.match(after, /^ {2}pause 2s$/m, 'and the `think` it was hiding became `pause`');
     assert.doesNotMatch(after, /scenario|think/, after);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`M147b`: migrate rewrites `tflw.config` itself — the first three real deprecations all live there', async () => {
+  // The measurement that made this a code change rather than a doc line: with `D623`'s retirement
+  // diagnostic in place and migrate untouched, this exact config produced the diagnostic, exit 2,
+  // and a byte-identical file — while the diagnostic's own help said "`tflw migrate` rewrites this
+  // for you". `loadAndValidate` renders a config-level failure and returns before the per-file hook
+  // fires once, so migrate's splice loop never saw the file the deprecation was in.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-migrate-config-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      'defaults\n  log level "warn"\n  evidence "headers-only"\nenv local default\n  api "http://127.0.0.1:1"\n',
+      'utf8',
+    );
+    await writeFile(join(dir, 'a.tflw'), 'test "t"\n  api GET /x\n  expect status equals 200\n', 'utf8');
+
+    const { stdout } = await execFileAsync('node', [cliEntry, 'migrate', '--no-color'], { cwd: dir });
+    assert.match(stdout, /migrated 1 file/, stdout);
+    assert.match(stdout, /the rewritten suite checks clean\./, stdout);
+
+    const after = await readFile(join(dir, 'tflw.config'), 'utf8');
+    assert.match(after, /^ {2}log level warn$/m, 'the quoted log level became a bare keyword');
+    // Both words, not `headers` alone: the payload is the whole phrase, and a splice that dropped
+    // `only` would leave a config that parses and means something else.
+    assert.match(after, /^ {2}evidence headers only$/m, 'and the two-word evidence level came through whole');
+    assert.doesNotMatch(after, /"warn"|"headers-only"/, after);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

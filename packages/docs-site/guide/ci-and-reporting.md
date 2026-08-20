@@ -127,12 +127,13 @@ test "reads a session"
 
 ```tflw-config
 env staging
-  evidence "headers-only"
+  evidence headers only
 ```
 
 - `full` (default) — everything: method/url/status/headers/body, screenshots and traces included.
-- `headers-only` — drops the request/response body (replaced with an `[omitted by evidence
-  level]` marker).
+- `headers only` — drops the request/response body (replaced with an `[omitted by evidence
+  level]` marker). Two words, not a hyphen — an identifier in this language cannot contain `-`, and
+  every multi-word construct it has is space-separated.
 - `none` — drops headers too; only method/url/status/duration remain.
 
 The level governs three things, not just the trace:
@@ -143,7 +144,7 @@ The level governs three things, not just the trace:
    evidence level]`: you still see *what* was compared, just not the value.
 3. **Screenshots and traces — captured only at `full`.** Nothing can redact a screenshot; it is
    pixels, and a page that renders a token on screen renders it into the image. So rather than
-   promise to clean them, `headers-only` and `none` don't capture them at all. A `screenshot` step
+   promise to clean them, `headers only` and `none` don't capture them at all. A `screenshot` step
    still passes below `full`, reporting `not captured (evidence level)`; a `matches snapshot`
    assertion still runs and still tells you how many pixels differed, it just doesn't attach the
    images. The cost is real: at `evidence none` a failing browser test has no trace to open.
@@ -234,8 +235,8 @@ author signal, never an assertion. An explicit `to …` clause always wins over 
 `--log-output` override — only a bare `log "…"` (no `to`) resolves against config/CLI at all.
 
 Two `tflw.config` keys (`defaults`/`env`, override semantics like `evidence`): `log destination
-"console"|"html"|"both"` and `log level "debug"|"info"|"warn"|"error"` — the minimum level a step
-must clear to render. `results.json`/`--format ndjson` always record every `log` step regardless of
+console|html|both` and `log level debug|info|warn|error` — the minimum level a step must clear to
+render. Bare keywords, the same words `log warn "…"` already used bare in a test. `results.json`/`--format ndjson` always record every `log` step regardless of
 level or destination; only console text and `report.html` filter what's actually displayed. See
 [CLI flags reference](/reference/cli#tflw-run) for `--log-output`/`--log-level`, which override
 both config keys for a single run.

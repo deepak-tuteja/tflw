@@ -901,6 +901,11 @@ interface RunArgs {
   readonly probeSeededRaw?: string | undefined;
 }
 
+/** `--evidence LEVEL`'s vocabulary, which **keeps the hyphen** the language dropped in `M147b`
+ * (`D623`/`D628`). `evidence headers only` is two bare words in a `tflw.config` because tflw
+ * identifiers have no `-`; a CLI argument is typed into a shell, where a space would need quoting
+ * and where this lexer never runs. Same value, two surfaces, and the surface decides the spelling —
+ * as `--log-output console|html|both|none` and `--fail-on minor|…` already do. */
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
 /** M27, PLAN_LOG.md decisions 121/122 — `LOG_OUTPUT_VALUES` adds `none` (a CLI-only global
  * kill-switch for bare `log` calls, decision 121) on top of the DSL grammar's own three `to`
@@ -2532,7 +2537,8 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
  * now on disk** and let it render whatever remains. Two rejected alternatives, both worse:
  * all-or-nothing-per-file would make a tool whose purpose is unbreaking a file refuse *because* the
  * file is broken (`B5-05` restated); splicing and then telling the user to run `tflw check` would
- * print carets against pre-splice offsets, and two of the three renames change length
+ * print carets against pre-splice offsets, and most replacements change length — two of the three
+ * keyword renames do, and every `M147b` config payload does, since it drops a pair of quotes —
  * (`scenario`→`test` is −4, `uncheck`→`untick` is −1), so those carets would underline the wrong
  * text. Re-checking is the only way residual diagnostics point at the bytes the user will open.
  *
@@ -2550,6 +2556,39 @@ async function migrateCommand(argv: string[]): Promise<number> {
   let clean = false;
   let hitCap = false;
 
+  // `tflw.config` FIRST, and outside the loop below — `M147b`, and a promise this command could not
+  // otherwise keep.
+  //
+  // `loadAndValidate` renders a config-level failure itself and returns before the per-file hook has
+  // fired even once, so `byFile` comes back empty and the loop below returns immediately. Measured
+  // rather than assumed: with `D623`'s retirement diagnostic in place, `tflw migrate` on a config
+  // holding `log level "warn"` printed the diagnostic, exited 2 and **left the file exactly as it
+  // was** — while the diagnostic's own help line said "`tflw migrate` rewrites this for you". The
+  // first three real deprecations the grammar has ever had are all config directives, and the
+  // command that exists to answer them could not see the file they live in.
+  //
+  // A pre-pass rather than a change to `loadAndValidate`: every other caller wants a config that
+  // does not parse to be a hard stop, and only this one wants to fix it. Single-pass by
+  // construction — a config directive's payload replaces a quoted string with a bare keyword, which
+  // no rule refuses, so there is nothing a second pass could find.
+  //
+  // It runs whatever files were named, including none, because `tflw.config` is not a discovered
+  // file — it is the thing that makes discovery possible, and a retired spelling in it blocks every
+  // other file in the suite. Rewriting it is reported like any other change (`migrated 1 file:`),
+  // so `tflw migrate one.tflw` touching the config is visible rather than a surprise.
+  const configPath = join(cwd, 'tflw.config');
+  try {
+    const configText = await readFile(configPath, 'utf8');
+    const edits = collectMigrations(parseConfigSource(configText).diagnostics, configText);
+    if (edits.length > 0) {
+      await writeFile(configPath, applyMigrations(configText, edits), 'utf8');
+      changedFiles.add(relative(cwd, configPath));
+    }
+  } catch {
+    // No `tflw.config` here at all. Not this pre-pass's business to say so: `loadAndValidate` below
+    // reports it with the `tflw init` advice, and reporting it twice would be worse than once.
+  }
+
   // Repeat until a pass finds nothing left to rewrite (M90b). The plan predicted one pass would
   // always suffice — "recovery is not a problem, `recoverTopLevel()` resyncs cleanly" — and a probe
   // disproved it: `recoverTopLevel()` skips the *entire* offending block, so a `think` inside a
@@ -2557,10 +2596,12 @@ async function migrateCommand(argv: string[]): Promise<number> {
   // `scenario`→`test` and exited 2 pointing at a `think` it had not been able to see. That is
   // honest, and it is still a tool that does half its job and tells you to run it again.
   //
-  // Termination is structural rather than a hope: every edit replaces a removed keyword with a live
-  // one, the supply of removed keywords in a file is finite, and no rewrite can introduce one (all
-  // three replacements — `test`, `pause`, `untick` — are current grammar). The cap is a backstop for
-  // a future rule that breaks that property, not the mechanism.
+  // Termination is structural rather than a hope: every edit replaces a retired spelling with a live
+  // one, the supply of retired spellings in a file is finite, and no rewrite can introduce one. That
+  // property is asserted rather than argued — `stepKeywords.test.ts` holds every `REFUSED_WORDS`
+  // replacement to being live grammar, and `M147b`'s config-directive payloads replace a quoted
+  // string with the bare keyword the parser now wants, which nothing refuses. The cap is a backstop
+  // for a future rule that breaks that property, not the mechanism.
   const MAX_PASSES = 10;
   for (let pass = 0; ; pass++) {
     const byFile = new Map<string, { source: string; diagnostics: Diagnostic[] }>();

@@ -144,5 +144,6 @@ The terminal only ever shows a summary. `report/report.html` (written on every r
 has the complete picture for every step: full request/response — method, URL, headers, body,
 status, timing — with secrets redacted the same way everywhere. Open it in a browser first when a
 failure isn't self-explanatory from the terminal output alone. `--evidence <level>` trims how much
-of that detail gets captured (`full`/`headers-only`/`none`) — see
+of that detail gets captured (`full`/`headers only`/`none`; the CLI flag keeps the hyphen,
+`--evidence headers-only`, since a shell argument is not lexed by tflw) — see
 [CI, reporting & safety](/guide/ci-and-reporting#evidence-levels).

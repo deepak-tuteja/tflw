@@ -241,14 +241,114 @@ export const STATEMENT_KEYWORDS = [
   // whose did-you-mean is an edit-distance search that will never reach `pause` from `think`.
   'think',
 ] as const;
-/** Keywords the parser still recognises only in order to *reject* them with a migration diagnostic
- * (FS-05's `think`, FS-04's `uncheck`). They have to stay in `STATEMENT_KEYWORDS` so dispatch
- * reaches them at all, but they are not steps anyone may write — so the "expected one of" fallback
- * must not advertise them, and did-you-mean must not route a typo through a spelling that is itself
- * an error. Neither replacement is reachable by edit distance either (`think`→`pause` shares no
- * letters; `uncheck`→`untick` is 3 edits, past `suggest`'s threshold), which is why both are named
- * outright rather than left to a did-you-mean. */
-export const RETIRED_STATEMENT_KEYWORDS: readonly string[] = ['think', 'uncheck'];
+/**
+ * One word the language deliberately refuses, and everything its refusal has to say (`M142-01`).
+ *
+ * Before this interface there were **three unrelated mechanisms and no way to ask the question**: a
+ * statement-scoped array holding `think` and `uncheck`, a `removedKeyword()` call at `scenario`'s
+ * top-level dispatch case carrying a migration diagnostic, and a bare did-you-mean hint for `tests`
+ * with no list behind it at all. They differed in *kind* rather than in spelling, so `scenario` was
+ * a retired keyword that was **not in the retired-keyword list**, and nothing anywhere would have
+ * noticed a fourth added in a fourth way. `semanticTokens.ts` had already written that down as a
+ * hazard beside `REFUSED_ON_PURPOSE`, which is a *second* list of the same words kept for a
+ * different purpose and never checked against the first.
+ */
+export interface RefusedWord {
+  /** Which dispatch reaches the word: `parseProgram`'s top level or `parseStep`'s switch. A `step`
+   * word must also stay in `STATEMENT_KEYWORDS` — dispatch is how the refusal is reached at all,
+   * and dropping the word would surface as `TF011: unknown statement`, whose did-you-mean is an
+   * edit-distance search that will never reach `pause` from `think`. Held by `stepKeywords.test.ts`. */
+  readonly position: 'top-level' | 'step';
+  /** The sentence that names the replacement. Every row has one — it is what the table is for. */
+  readonly hint: string;
+  /** Present when the refusal owns its whole diagnostic. Absent for a word refused *inside* a
+   * broader "unexpected …" error, where the surrounding site already says what was expected and
+   * this row contributes only the hint. */
+  readonly diagnostic?: { readonly code: string; readonly message: string };
+  /** What `tflw migrate` splices over the word's own span. Only ever alongside `diagnostic`, since
+   * a splice needs a span and the span is the diagnostic's — asserted, not merely intended. The
+   * replacement is itself live grammar, which is what makes `migrateCommand`'s termination
+   * structural rather than hopeful; that too is asserted rather than argued. */
+  readonly replacement?: string;
+}
+
+/** The refused spellings, as an **array literal** as well as as the record's keys — for `M142-02`'s
+ * reason, met a second time while fixing `M142-01`. `vocabulary.test.ts` reads array literals,
+ * `isKw`/`expectKw` arguments and `.value === '…'` comparisons; object keys are the fourth
+ * mechanism it cannot see, and moving these four words out of their inline `isKw` calls and into a
+ * record would have removed them from the corpus that asks whether the editor accounts for every
+ * word the parser knows. `grammarCoverage.test.ts` reads this constant for the same reason. */
+export const REFUSED_SPELLINGS = ['scenario', 'tests', 'think', 'uncheck'] as const;
+
+/** The spellings `refuse()` accepts, derived from the tuple above so the lookup inside it is total:
+ * a call naming a word with no row is a type error, not a silent no-op. */
+export type RefusedSpelling = (typeof REFUSED_SPELLINGS)[number];
+
+/**
+ * Every word the parser recognises **only in order to refuse it** — the answer to *which words does
+ * this language deliberately refuse*, asked by a program instead of by hand.
+ *
+ * **Where the boundary is, and why it is not further out.** These are words refused by *dispatch*:
+ * the parser has a case for the word and the case is an error. Words refused *by construction* are
+ * not here and could not be — `empty`, `at`, `least`, `most`, `more` and `fewer` are not matchers,
+ * and the site that answers them (`:3441`) tests one word list that also holds `greater` and
+ * `less`, which are live matchers. A row for those would be a row for "not being in a list", which
+ * is true of every word in every language. `REFUSED_ON_PURPOSE` in `semanticTokens.ts` is wider on
+ * purpose, because a highlighter has to decide about a word in *any* position; the assertion that
+ * reconciles the two lives in `stepKeywords.test.ts` and runs in the direction that holds.
+ */
+export const REFUSED_WORDS: Readonly<Record<RefusedSpelling, RefusedWord>> = {
+  scenario: {
+    // M50/D93. The block is now just `test "…"`, kind inferred from the workload clause it already
+    // contains.
+    //
+    // The hint used to read ``write `test "…" { ramp to … }` instead`` (`A3-01`, D-M90-5). That
+    // brace form is a *parse error* in an indentation-based language — following the advice
+    // literally earns a `TF010` — and the `ramp to …` line it told the user to write is already in
+    // their file: `parseScenarioDecl` made a workload line mandatory (verified at `a2c457c^`), so
+    // no legal old `scenario` ever lacked one. The instruction was noise on top of a syntax error.
+    // It is a one-word rename, and the payload says so.
+    //
+    // That mandatory workload line is also why the splice is *total* rather than approximate: every
+    // legal old `scenario` becomes a workload-bearing `test`, never a functional one, so a silent
+    // load-test→functional-test demotion is structurally impossible. All three body constructs the
+    // old block allowed (`as admin, userA`, `threshold …`, `cleanup`) still parse inside `parseTest`.
+    position: 'top-level',
+    diagnostic: { code: Codes.LOAD_INVALID, message: '`scenario` was removed — write `test` instead' },
+    hint: 'a `test` block is a load test whenever it contains a workload line (`ramp to …`); there is no longer a separate keyword',
+    replacement: 'test',
+  },
+  tests: {
+    // Never a keyword, so there is no removal to report and nothing to migrate *from* — the word is
+    // simply a plural nobody warned the user about. It earns a row because the parser recognises it
+    // by name, which is the property this table enumerates; the `tests`-shaped hole in the old
+    // arrangement was that this refusal lived nowhere but an inline ternary.
+    position: 'top-level',
+    hint: 'did you mean `test`?',
+  },
+  think: {
+    // FS-05, D103 teaching style: name the replacement outright rather than leaving a did-you-mean
+    // to bridge two words that share no letters.
+    position: 'step',
+    diagnostic: { code: Codes.LOAD_INVALID, message: '`think` was renamed to `pause` — write `pause 2s` / `pause 1s to 3s` instead' },
+    hint: 'same semantics and the same workload-only restriction; `pause` describes the statement rather than the modelled user, and stays unambiguous against `wait until …`',
+    replacement: 'pause',
+  },
+  uncheck: {
+    // FS-04. `uncheck`→`untick` is 3 edits, past `suggest`'s threshold, so it is named outright for
+    // the same reason `think` is.
+    position: 'step',
+    diagnostic: { code: Codes.UNKNOWN_STATEMENT, message: '`uncheck` was renamed to `untick` — write `untick field "…"` instead' },
+    hint: 'same step, same semantics; it moved with `check <locator>` → `tick <locator>`, which had to stop being a checkbox action so `check` means only the soft assertion (SPEC §9.1)',
+    replacement: 'untick',
+  },
+};
+
+/** Retired *step* spellings, derived rather than restated — the list `SUGGESTABLE_STATEMENT_KEYWORDS`
+ * subtracts and `stepKeywords.test.ts` holds undocumented. They are not steps anyone may write, so
+ * the "expected one of" fallback must not advertise them and did-you-mean must not route a typo
+ * through a spelling that is itself an error. */
+export const RETIRED_STATEMENT_KEYWORDS: readonly string[] = REFUSED_SPELLINGS.filter((w) => REFUSED_WORDS[w].position === 'step');
 const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
 const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page', 'response'] as const;
 /** What may stand in subject position, for the "expected …" half of every `TF013`. `{variable}` is
@@ -286,10 +386,28 @@ const COUNT_BOUND_HELP =
   'write `not has count 0` for "at least one" (`has count 0` for the empty case), or put the ' +
   'comparison on the length instead — `expect body.items.length is greater than 0`, which takes ' +
   '`greater than`/`less than`/`equals` alike';
-/** The size comparisons a user writes after `has count`/`has value`, where the grammar wants a
- * value. `at` takes `least`/`most`; the rest take `than`. Rendered back as the whole phrase the
- * user typed, so the message quotes their own words rather than one token of them (FU-09). */
-const BOUND_SECOND_WORDS: Readonly<Record<string, readonly string[]>> = {
+/**
+ * The size comparisons a user writes after `has count`/`has value`, where the grammar wants a value.
+ * `at` takes `least`/`most`; the rest take `than`. Rendered back as the whole phrase the user typed,
+ * so the message quotes their own words rather than one token of them (FU-09).
+ *
+ * **The first words are an array as well as the record's keys** (`M142-02`).
+ *
+ * `vocabulary.test.ts` walks `parser.ts` for the three shapes that recognise a word — a string in
+ * an array literal, a string argument to `expectKw`/`isKw`, and a `<expr>.value === '…'` comparison
+ * (`D550`). An object literal's **keys** are a fourth, and the walk saw only the words in the arrays
+ * that were this record's values. It was harmless only because every key happened to be reachable
+ * another way, which is the kind of coincidence the guard exists to stop depending on.
+ *
+ * Reading object keys *in general* was the rejected alternative: it floods the golden with `type`,
+ * `kind`, `span` and every other property name in a 4700-line file, and picking the vocabulary-
+ * bearing literals by name is the hand-selection that lost words in three of the seven earlier
+ * extractions. So the record is restated instead — the keys are a tuple the walk already reads, and
+ * the record is keyed *by* that tuple, so a sixth first-word cannot be added to one and not the
+ * other without a type error.
+ */
+const BOUND_FIRST_WORDS = ['greater', 'less', 'more', 'fewer', 'at'] as const;
+const BOUND_SECOND_WORDS: Readonly<Record<(typeof BOUND_FIRST_WORDS)[number], readonly string[]>> = {
   greater: ['than'],
   less: ['than'],
   more: ['than'],
@@ -302,8 +420,8 @@ const BOUND_SECOND_WORDS: Readonly<Record<string, readonly string[]>> = {
  * (`has count greater 0`) still reports the word rather than inventing the missing one. */
 function boundPhrase(tok: Token, after: Token): string | undefined {
   if (tok.type !== 'ident') return undefined;
-  const seconds = BOUND_SECOND_WORDS[tok.value];
-  if (!seconds) return undefined;
+  if (!(BOUND_FIRST_WORDS as readonly string[]).includes(tok.value)) return undefined;
+  const seconds = BOUND_SECOND_WORDS[tok.value as (typeof BOUND_FIRST_WORDS)[number]];
   return after.type === 'ident' && seconds.includes(after.value) ? `${tok.value} ${after.value}` : tok.value;
 }
 
@@ -413,11 +531,36 @@ const PROBE_SUB_CLAUSE_FIELDS: Readonly<
  * three places at once when it added the fourth clause. */
 export type ProbeSubClauseField = (typeof PROBE_SUB_CLAUSE_FIELDS)[(typeof PROBE_SUB_CLAUSES)[number]];
 const PROBE_SUB_CLAUSE_HELP = `an \`authorized target\` takes ${PROBE_SUB_CLAUSES.map((w) => `\`probe ${w}\``).join(', ')}, each on its own indented line`;
-const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
+/**
+ * What a user writes after `evidence` (§13, PLAN decision 101c) — **bare keywords as of `M147b`**
+ * (`A2-14`, `D623`), and two words rather than a hyphen (`D628`).
+ *
+ * The level was a quoted string precisely because of the hyphen: SPEC §13 said so outright —
+ * *"`evidence "headers-only"` — a string literal, since the lexer has no hyphen in identifiers"*.
+ * That reason was real and its conclusion is the one the language has since overruled elsewhere.
+ * `M134a`/`D366` met the identical problem naming the fourth scan `input-handling`, measured that
+ * this language has **zero** hyphenated bare keywords, and answered it with two space-separated
+ * words. `evidence headers only` is that same answer, so the hyphen buys a quoted spelling for one
+ * value of one directive and a rule with an exception in it.
+ *
+ * The **AST value keeps the hyphen** (`EvidenceLevel` is `'headers-only'`), because it is an
+ * internal enum reaching `report.html`, `ResolvedConfig` and `--evidence LEVEL`, none of which is
+ * lexed by this lexer. What a user types and what the tree carries are allowed to differ; the
+ * record below is where they are reconciled, exactly as `SCAN_MATCHER_NAMES` does it.
+ */
+const EVIDENCE_PHRASES = ['full', 'headers only', 'none'] as const;
+/** Phrase → the `EvidenceLevel` the tree carries. A total record over the tuple, so a fourth level
+ * cannot be added to the vocabulary without being given a value. */
+const EVIDENCE_LEVEL_OF: Readonly<Record<(typeof EVIDENCE_PHRASES)[number], EvidenceLevel>> = {
+  full: 'full',
+  'headers only': 'headers-only',
+  none: 'none',
+};
 /** `log [<level>] "…" [to <destination>]` (M27, PLAN_LOG.md) — bare-keyword enums, same shape as
- * `SEVERITY_FLOOR_WORDS`/`LOCATOR_KEYWORDS`. Also reused (against a quoted string, not a bare
- * keyword) by `log destination "…"`/`log level "…"` in the config dialect, mirroring how
- * `EVIDENCE_LEVELS` validates `evidence "…"`. */
+ * `SEVERITY_FLOOR_WORDS`/`LOCATOR_KEYWORDS`. As of `M147b` the config dialect reads them the same
+ * way: `log level warn` and `log destination console`, not `log level "warn"`. One vocabulary
+ * spelled one way — before `A2-14` closed, `LOG_LEVELS` was doing both at once, `log warn "hi"`
+ * bare in the statement dialect against `log level "warn"` quoted in the config dialect. */
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 const LOG_DESTINATIONS = ['console', 'html', 'both'] as const;
 const RETRY_AFTER_HEADERS = ['Retry-After'] as const;
@@ -616,29 +759,21 @@ class Parser {
       } else if (this.isKw(tok, 'scenario')) {
         // D103 migration diagnostic: `scenario` was removed in M50 (D93) — a workload-bearing
         // block is now just `test "…"`, kind inferred from the workload clause it already contains.
-        //
-        // The message used to read ``write `test "…" { ramp to … }` instead`` (`A3-01`, D-M90-5).
-        // That brace form is a *parse error* in an indentation-based language — following the
-        // advice literally earns a `TF010` — and the `ramp to …` line it tells the user to write is
-        // already in their file: `parseScenarioDecl` made a workload line mandatory (verified at
-        // `a2c457c^`), so no legal old `scenario` ever lacked one. The instruction was noise on top
-        // of a syntax error. It is a one-word rename, and the payload below says so.
-        //
-        // That mandatory workload line is also why the splice is *total* rather than approximate:
-        // every legal old `scenario` becomes a workload-bearing `test`, never a functional one, so
-        // a silent load-test→functional-test demotion is structurally impossible. All three body
-        // constructs the old block allowed (`as admin, userA`, `threshold …`, `cleanup`) still
-        // parse inside `parseTest` today.
-        this.removedKeyword(
-          Codes.LOAD_INVALID,
-          '`scenario` was removed — write `test` instead',
-          tok.span,
-          'a `test` block is a load test whenever it contains a workload line (`ramp to …`); there is no longer a separate keyword',
-          'test',
-        );
+        // What this refusal says, and why the payload is a total rewrite rather than an
+        // approximation, is written once beside its row in `REFUSED_WORDS`.
+        this.refuse('scenario', tok.span);
         this.recoverTopLevel();
       } else {
-        const hint = this.isKw(tok, 'tests') ? 'did you mean `test`?' : 'only `test`, `crawl`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
+        // `scenario` is answered by its own branch above, so a row still matching here is one refused
+        // *inside* this broader error — contributing a hint and no removal of its own. Reading the
+        // row rather than restating it is the point of `M142-01`: this line was the third mechanism.
+        const refused = REFUSED_SPELLINGS.find((w) => {
+          const row = REFUSED_WORDS[w];
+          return row.position === 'top-level' && !row.diagnostic && this.isKw(tok, w);
+        });
+        const hint = refused
+          ? REFUSED_WORDS[refused].hint
+          : 'only `test`, `crawl`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
         this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`crawl\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
         // The offending token may itself be the `indent` opening an orphaned body, in which case
         // `synchronize()` would step *into* the block and report it line by line all over again.
@@ -1913,50 +2048,105 @@ class Parser {
     return probes;
   }
 
+  /**
+   * One config directive whose value comes from a closed set the language defines, read as a **bare
+   * keyword** — `A2-14`, `D623`.
+   *
+   * The rule the language never had: *a directive whose value is drawn from a closed set the
+   * language defines is written as a bare keyword; a directive whose value is a boolean or an open
+   * string is written as a literal.* Measured before it was written, three of the four closed-set
+   * directives were backwards — `evidence`, `log destination` and `log level` all took quoted
+   * strings, while `timeout <target>` and `insecure <bool>` were already right. The plan named two;
+   * `log destination` is the third and was simply never measured, being nowhere in the row that
+   * filed the defect.
+   *
+   * **The retired spelling is answered, not merely rejected** (`SPEC.md` §15). A quoted value gets
+   * a migration diagnostic naming the bare form, and — when the quoted text names a real member —
+   * a `deprecation.replacement` payload, so `tflw migrate` rewrites the file. When it does not name
+   * one there is no single right answer to splice, so the payload is withheld and the hint names
+   * the vocabulary instead: the same discipline `D-M90-3` applies to a bare `check <locator>`,
+   * where guessing writes a mutation into a test that keeps passing.
+   *
+   * Phrases rather than words, longest first, for `SCAN_KIND_PHRASES`' reason — a one-word phrase
+   * must not shadow a two-word one starting with the same token. `evidence headers only` is the
+   * only multi-word member today (`D628`).
+   *
+   * `what` carries its own article (`an evidence level`), because the three directives do not agree
+   * on one and a message that reads *"expected a evidence level"* teaches carelessness about the
+   * rest of the sentence.
+   */
+  private parseClosedSetDirective(directive: string, phrases: readonly string[], what: string): string | null {
+    const vocabulary = phrases.map((p) => `\`${p}\``).join(', ');
+    const tok = this.peek();
+    if (tok.type === 'string') {
+      // `headers-only` was the spelling of the quoted era, so the hyphen is what a migrating file
+      // actually contains — matched here rather than left to a did-you-mean that would have to
+      // bridge a punctuation change.
+      const wanted = phrases.find((p) => p === tok.value || p.replace(/ /g, '-') === tok.value);
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        wanted
+          ? `\`${directive}\` takes a bare keyword — write \`${directive} ${wanted}\` instead of \`${directive} "${tok.value}"\``
+          : `\`${directive}\` takes a bare keyword, and "${tok.value}" is not ${what}`,
+        tok.span,
+        wanted
+          ? `a quoted value here was retired in favour of one spelling per directive; \`tflw migrate\` rewrites this for you`
+          : `expected one of ${vocabulary}, written without quotes`,
+        undefined,
+        wanted ? { replacement: wanted } : undefined,
+      );
+      return null;
+    }
+    const phrase = [...phrases]
+      .sort((a, b) => b.split(' ').length - a.split(' ').length)
+      .find((p) => p.split(' ').every((word, i) => this.isKw(this.peek(i), word)));
+    if (phrase === undefined) {
+      // Suggested against the *first* words, since that is all the parser has read — and the hint
+      // offers the whole phrase, because `headers` alone is not something a user can write.
+      const firsts = [...new Set(phrases.map((p) => p.split(' ')[0]!))];
+      const near = tok.type === 'ident' ? suggest(tok.value, firsts) : undefined;
+      const whole = near === undefined ? undefined : (phrases.find((p) => p.startsWith(`${near} `)) ?? near);
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `expected ${what} after \`${directive}\`, found ${describeToken(tok)}`,
+        tok.span,
+        whole ? `did you mean \`${whole}\`?` : `expected one of ${vocabulary}`,
+      );
+      return null;
+    }
+    for (let i = 0; i < phrase.split(' ').length; i++) this.advance();
+    return phrase;
+  }
+
   private parseEvidenceDecl(): EvidenceDecl | null {
     const start = this.peek().span.start;
     this.advance(); // `evidence`
-    const tok = this.expectString('an evidence level string: `evidence "full"`, `evidence "headers-only"`, or `evidence "none"`');
-    if (!tok) return null;
-    if (!(EVIDENCE_LEVELS as readonly string[]).includes(tok.value)) {
-      const hint = suggest(tok.value, EVIDENCE_LEVELS);
-      this.error(Codes.UNEXPECTED_TOKEN, `unknown evidence level "${tok.value}"`, tok.span, hint ? `did you mean \`${hint}\`?` : `expected one of: ${EVIDENCE_LEVELS.join(', ')}`);
-      return null;
-    }
+    const phrase = this.parseClosedSetDirective('evidence', EVIDENCE_PHRASES, 'an evidence level');
+    if (phrase === null) return null;
     this.endLine();
-    return { type: 'EvidenceDecl', level: tok.value as EvidenceLevel, span: this.spanFrom(start) };
+    return { type: 'EvidenceDecl', level: EVIDENCE_LEVEL_OF[phrase as (typeof EVIDENCE_PHRASES)[number]], span: this.spanFrom(start) };
   }
 
-  /** `log destination "console"|"html"|"both"` / `log level "debug"|"info"|"warn"|"error"` (M27,
-   * PLAN_LOG.md decisions 116/122) — a compound key, same shape as `allow hosts`: `log` alone
-   * disambiguates on the next bare word. */
+  /** `log destination console|html|both` / `log level debug|info|warn|error` (M27, PLAN_LOG.md
+   * decisions 116/122; bare keywords as of `M147b`/`D623`) — a compound key, same shape as
+   * `allow hosts`: `log` alone disambiguates on the next bare word, and now so does its value. */
   private parseLogConfigDecl(): ConfigEntry | null {
     const start = this.peek().span.start;
     this.advance(); // `log`
     const sub = this.peek();
     if (this.isKw(sub, 'destination')) {
       this.advance();
-      const tok = this.expectString('a log destination string: `log destination "console"`, `"html"`, or `"both"`');
-      if (!tok) return null;
-      if (!(LOG_DESTINATIONS as readonly string[]).includes(tok.value)) {
-        const hint = suggest(tok.value, LOG_DESTINATIONS);
-        this.error(Codes.UNEXPECTED_TOKEN, `unknown log destination "${tok.value}"`, tok.span, hint ? `did you mean \`${hint}\`?` : `expected one of: ${LOG_DESTINATIONS.join(', ')}`);
-        return null;
-      }
+      const phrase = this.parseClosedSetDirective('log destination', LOG_DESTINATIONS, 'a log destination');
+      if (phrase === null) return null;
       this.endLine();
-      return { type: 'LogDestinationDecl', destination: tok.value as LogDestination, span: this.spanFrom(start) };
+      return { type: 'LogDestinationDecl', destination: phrase as LogDestination, span: this.spanFrom(start) };
     }
     if (this.isKw(sub, 'level')) {
       this.advance();
-      const tok = this.expectString('a log level string: `log level "debug"`, `"info"`, `"warn"`, or `"error"`');
-      if (!tok) return null;
-      if (!(LOG_LEVELS as readonly string[]).includes(tok.value)) {
-        const hint = suggest(tok.value, LOG_LEVELS);
-        this.error(Codes.UNEXPECTED_TOKEN, `unknown log level "${tok.value}"`, tok.span, hint ? `did you mean \`${hint}\`?` : `expected one of: ${LOG_LEVELS.join(', ')}`);
-        return null;
-      }
+      const phrase = this.parseClosedSetDirective('log level', LOG_LEVELS, 'a log level');
+      if (phrase === null) return null;
       this.endLine();
-      return { type: 'LogLevelDecl', level: tok.value as LogLevel, span: this.spanFrom(start) };
+      return { type: 'LogLevelDecl', level: phrase as LogLevel, span: this.spanFrom(start) };
     }
     this.error(Codes.UNEXPECTED_TOKEN, `expected \`destination\` or \`level\` after \`log\`, found ${describeToken(sub)}`, sub.span);
     return null;
@@ -2631,13 +2821,7 @@ class Parser {
         case 'untick':
           return this.parseUntickStep();
         case 'uncheck':
-          this.removedKeyword(
-            Codes.UNKNOWN_STATEMENT,
-            '`uncheck` was renamed to `untick` — write `untick field "…"` instead',
-            tok.span,
-            'same step, same semantics; it moved with `check <locator>` → `tick <locator>`, which had to stop being a checkbox action so `check` means only the soft assertion (SPEC §9.1)',
-            'untick',
-          );
+          this.refuse('uncheck', tok.span);
           return null;
         case 'press':
           return this.parsePressStep();
@@ -2668,15 +2852,7 @@ class Parser {
         case 'pause':
           return this.parsePause();
         case 'think':
-          // FS-05 migration diagnostic, D103 teaching style: name the replacement outright rather
-          // than leaving a did-you-mean to bridge two words that share no letters.
-          this.removedKeyword(
-            Codes.LOAD_INVALID,
-            '`think` was renamed to `pause` — write `pause 2s` / `pause 1s to 3s` instead',
-            tok.span,
-            'same semantics and the same workload-only restriction; `pause` describes the statement rather than the modelled user, and stays unambiguous against `wait until …`',
-            'pause',
-          );
+          this.refuse('think', tok.span);
           return null;
         default: {
           if (this.looksLikeCallStart()) return this.parseCallStmt(tok);
@@ -4784,21 +4960,29 @@ class Parser {
     });
   }
 
-  /** A keyword this grammar removed or renamed, whose fix is a single-token splice at `span`
-   * (M90b, cluster C8). The payload is what makes `tflw migrate` able to act — and, via
-   * `renderDiagnostic`'s derived line (D-M90-4), what makes the diagnostic offer the tool at all.
+  /** Refuse a word by its row in `REFUSED_WORDS` (`M142-01`, replacing `removedKeyword()`). The
+   * whole diagnostic — code, message, hint, and the migrate payload that makes the fix a
+   * single-token splice at `span` (M90b, cluster C8) — comes from the table, so a refusal is
+   * *declared* in one place and *reached* from several rather than being restated at each.
    *
-   * `parser.ts`'s keyword table keeps these dead words alive *specifically* so these diagnostics
-   * can fire (see the note on `SUGGESTABLE_STATEMENT_KEYWORDS`) — dropping them would surface as
-   * `TF011: unknown statement`, whose did-you-mean is an edit-distance search that will never reach
-   * `pause` from `think`. This is what that retention was for.
+   * The payload is what makes `tflw migrate` able to act — and, via `renderDiagnostic`'s derived
+   * line (D-M90-4), what makes the diagnostic offer the tool at all.
    *
    * Deliberately *not* used by `TF014`'s bare `check <locator>` (D-M90-3): that one has two honest
    * readings — `tick field "…"` (the old click) and `check field "…" is checked` (the assertion) —
    * and guessing wrong writes a mutation into a test that keeps passing. It stays a human decision,
-   * and the absence of a payload is the whole mechanism by which migrate declines it. */
-  private removedKeyword(code: string, message: string, span: Span, hint: string, replacement: string): void {
-    this.error(code, message, span, hint, undefined, { replacement });
+   * and the absence of a payload is the whole mechanism by which migrate declines it. Which is why
+   * a row's `replacement` is optional rather than assumed: `tests` has none.
+   *
+   * `RefusedSpelling` is derived from the table, so the lookup is total — a call naming a word with
+   * no row fails to compile rather than silently reporting nothing. A row reached here always owns
+   * its diagnostic; `tests` is the one that does not, and it is read directly at its site. */
+  private refuse(word: RefusedSpelling, span: Span): void {
+    const row = REFUSED_WORDS[word];
+    // Every row reached through `refuse()` owns its diagnostic — `stepKeywords.test.ts` asserts it,
+    // rather than this `!` asserting it silently.
+    const { code, message } = row.diagnostic!;
+    this.error(code, message, span, row.hint, undefined, row.replacement ? { replacement: row.replacement } : undefined);
   }
 }
 

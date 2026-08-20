@@ -456,11 +456,11 @@ env staging
   {
     name: 'evidence-level',
     source: `defaults
-  evidence "full"
+  evidence full
 
 env staging
   api "https://staging.example.com"
-  evidence "headers-only"
+  evidence headers only
 `,
   },
   {
@@ -646,7 +646,36 @@ env staging
   {
     name: 'evidence-bad-value',
     source: `defaults
+  evidence verbose
+`,
+  },
+  // `M147b` (`A2-14`/`D623`) — the retired quoted spelling, which is what every file written before
+  // this milestone contains. It has to keep producing a diagnostic that names the bare form AND a
+  // migrate payload, so the retirement is answered rather than merely refused (`SPEC.md` §15).
+  {
+    name: 'evidence-quoted-retired',
+    source: `defaults
+  evidence "headers-only"
+`,
+  },
+  // The other half of the same rule: a quoted value that names nothing. There is no single right
+  // splice, so the diagnostic must withhold the payload and name the vocabulary instead.
+  {
+    name: 'evidence-quoted-unknown',
+    source: `defaults
   evidence "verbose"
+`,
+  },
+  {
+    name: 'log-level-quoted-retired',
+    source: `defaults
+  log level "warn"
+`,
+  },
+  {
+    name: 'log-destination-quoted-retired',
+    source: `defaults
+  log destination "console"
 `,
   },
   {

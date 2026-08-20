@@ -5,7 +5,7 @@
 # A word added here and nowhere else fails that test — the drift B5-09 records, caught at once
 # rather than by the next milestone to audit two wordlists by hand.
 #
-# 208 words
+# 218 words
 
 DELETE
 GET
@@ -31,6 +31,7 @@ base64
 before
 between
 body
+both
 button
 bytes
 capture
@@ -43,6 +44,7 @@ click
 client
 close
 connects
+console
 contains
 count
 crawl
@@ -51,6 +53,7 @@ csrf
 css
 csv
 date
+debug
 decimal
 decode
 default
@@ -83,21 +86,25 @@ form
 format
 frame
 from
+full
 future
 give
 greater
 handling
 has
 header
+headers
 hex
 hidden
 hold
 honoring
 hosts
 hover
+html
 id
 import
 in
+info
 input
 insecure
 is
@@ -120,12 +127,14 @@ ms
 mutating
 new
 no
+none
 not
 now
 number
 oauth2
 of
 on
+only
 onto
 open
 openapi
@@ -208,6 +217,7 @@ viewport
 violations
 visible
 wait
+warn
 was
 web
 with
