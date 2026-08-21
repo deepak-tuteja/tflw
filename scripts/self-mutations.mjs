@@ -182,4 +182,13 @@ export const SELF_MUTATIONS = [
     find: "  const overflowed = err.code === 'ENOBUFS';",
     replace: '  const overflowed = false;',
   },
+  {
+    id: 'cross-workspace-mutation-scored-stale',
+    milestone: 'm147e',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: "`M147-09` restored: a mutation whose file is in one workspace and whose suite is in another is scored against the previous build, so it can only ever come back `SURVIVED`. A false survival, not a no-verdict — it reads as a measurement that the assertion is weak, and the response it invites is deleting the test that was right",
+    find: '  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName) : null;',
+    replace: '  const rebuild = null;',
+  },
 ];

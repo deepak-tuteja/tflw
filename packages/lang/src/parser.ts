@@ -5387,9 +5387,21 @@ class Parser {
       case 'ms':
       case 's':
       case 'm': {
-        // The adjacency rule (`A3-13`): inside an expression a unit must touch its number, though
-        // after `think`/`timeout` it need not. `previous()` is that number, so the fix can be shown
-        // rather than described.
+        // The adjacency rule, corrected (`M147e`/`M140-02`). This comment used to read *"inside an
+        // expression a unit must touch its number, though after `think`/`timeout` it need not"*, and
+        // by the time `M140` re-measured it neither half was true: `pause 2 s` and `timeout step 10 s`
+        // raise `TF023` exactly as `500 ms` does, so the rule is uniform — which is what `A3-13` was
+        // asking for, and `M147d-2` closed it. `think` had been renamed to `pause` by `M67` two arcs
+        // earlier, so the comment also named a keyword the parser answers with a deprecation.
+        //
+        // What holds now (D638): adjacency is asked of an **abbreviation** and not of a word.
+        // `250 ms` is a mistake worth teaching in every position; `today + 3 days` has always taken
+        // the space, because a spelled-out unit cannot be run together with its number and still be
+        // read. `previous()` is the number, so the fix can be shown rather than described.
+        //
+        // Worth the paragraph rather than a silent edit because the old text cited a ledger row by
+        // id — one of the few places the corpus and the source are cross-linked — so a reader who
+        // trusted it concluded an open row where the measurement says closed.
         const num = this.previous();
         return num.type === 'number'
           ? `a duration unit must touch its number here — write \`${num.value}${tok.value}\`, not \`${num.value} ${tok.value}\``

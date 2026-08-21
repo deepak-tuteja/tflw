@@ -2930,7 +2930,7 @@ const REGISTRY = [
     id: 'header-span-taken-after-the-newline',
     milestone: 'm147e',
     file: 'packages/lang/src/parser.ts',
-    what: "`M106-02` verbatim, at the mechanism: the header span is computed from wherever the cursor sits rather than from the header, so every one of the eleven rules points past its construct again. `this `before file` has no steps` goes back to underlining the word `test` on a later line — a declaration with nothing wrong with it",
+    what: "the header span loses its extent — captured before `endLine()`, `peek()` is the header's own terminating newline, so all eleven rules go back to a zero-width caret sitting one cell past the header instead of underlining it. Right line, no extent, which is the half of `M106-02` the CLI *could* see: sixteen goldens move. The half it could not see is `empty-block-anchors-past-the-block` below",
     find: '  private headerSpanFrom(start: Position): Span {\n    return this.spanFrom(start);\n  }',
     replace: '  private headerSpanFrom(_start: Position): Span {\n    return this.peek().span;\n  }',
   },
@@ -2949,6 +2949,30 @@ const REGISTRY = [
     what: '`fill form`\'s second raise takes `spanFrom(start)` instead of the header span — the shape this slice replaced, and the one that looks correct: it starts in the right place. It ends at the last token *consumed*, so the caret underlines the whole malformed block rather than the line that opened it, and `M106`\'s one-cell rule is the only reason that is visible at all',
     find: "      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', headerSpan, 'add at least one `| \"Field\" | value |` row');",
     replace: "      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.spanFrom(start), 'add at least one `| \"Field\" | value |` row');",
+  },
+
+  // --- `M147e-6` (`M106-01`) — the CLI and the editor agree, and something holds them to it -------
+  //
+  // The same producer edit as `header-span-taken-after-the-newline`, aimed at the *other* suite.
+  // `M106-01` is an agreement between two surfaces, and a mutation that only runs `@tflw/lang`'s
+  // tests cannot see the editor half go wrong — which is precisely how the disagreement `M140-3`
+  // measured survived from `M106` to here without a red test anywhere.
+  {
+    id: 'empty-block-anchors-past-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "`M106-02` verbatim, at the rule rather than at the helper: the span is read at the *error site*, where `endLine()` has run and `peek()` is the first token of whatever comes next — the phantom last line for a file that ends there. This is the shape the helper exists to prevent, and mutating the helper does not reproduce it: called before `endLine()`, even `peek()` is still on the header line",
+    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+  },
+  {
+    id: 'lsp-loses-the-header-anchor',
+    milestone: 'm147e',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lang/src/parser.ts',
+    what: "`M106-01` reopened in the editor, and the reason this entry names a *different* suite than the identical edit above: the row is an agreement between two surfaces, so the failure only appears where both are read. With `test`'s empty-block rule anchoring past its construct again, the LSP publishes a range on the phantom last line while the CLI caret walks back to the header — `M140-3`'s measurement, which no test in either package could see",
+    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
   },
 
 ];
@@ -3511,6 +3535,38 @@ export function suiteCommand(pkg) {
 }
 
 /**
+ * Which workspace has to be **rebuilt** before a mutation's suite can see it (`M147e`, `M147-09`).
+ *
+ * A workspace's own tests run from source — `@tflw/lang` is `node --import tsx --test`, and the
+ * mutated `.ts` is what tsx compiles — so a mutation and its suite normally need no build between
+ * them. That stops being true the moment the two are in *different* workspaces. `@tflw/lsp-server`
+ * imports `@tflw/lang` by name, and `packages/lang/package.json` exports `./dist/index.js`, so a
+ * mutation to `packages/lang/src/parser.ts` scored against the lsp-server suite ran the *previous*
+ * build. Every such mutation therefore came back **`SURVIVED`**, which is the worst verdict this
+ * file can print wrongly: a hang is a no-verdict and says so, but a false survival reads as a
+ * measured statement that the assertion is weak, and the honest response to it is to weaken or
+ * delete the test.
+ *
+ * Found by `M147e-6`, whose whole subject is an agreement between two surfaces and therefore has to
+ * be scored against the *other* package's suite by construction. Confirmed by hand: the same edit,
+ * with `npm run build --workspaces` in front of it, takes the lsp-server suite from `# pass 171` to
+ * `# fail 1`, naming exactly the test written for the row.
+ *
+ * Returns `null` in the common case, so nothing is rebuilt for a mutation whose file and suite live
+ * together, and the sweep does not get slower for the sake of a case it does not have.
+ *
+ * `nameOf` is injected so this stays pure and testable against a fixture map rather than the tree.
+ */
+export function rebuildTargetFor(file, pkg, nameOf) {
+  const m = /^(packages\/[^/]+)\//.exec(file);
+  if (!m) return null;
+  const dir = m[1];
+  const name = nameOf(dir);
+  if (!name || name === pkg) return null;
+  return name;
+}
+
+/**
  * M123 (`M123-02`) — the environment a suite must NOT inherit.
  *
  * `NODE_TEST_CONTEXT` is how `node --test` tells a child test process to speak its internal
@@ -3538,7 +3594,29 @@ function suiteEnv() {
   return env;
 }
 
-function runSuite(pkg) {
+/** `packages/<dir>` -> the workspace's declared package name, or `null` if there is no manifest. */
+function workspaceName(dir) {
+  try {
+    return JSON.parse(readFileSync(path.join(ROOT, dir, 'package.json'), 'utf8')).name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function runSuite(pkg, mutatedFile) {
+  // `M147-09` — see `rebuildTargetFor`. Skipped entirely when the mutation and its suite share a
+  // workspace, which is every mutation in the registry but one.
+  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName) : null;
+  if (rebuild) {
+    try {
+      execSync(`npm run build -w ${rebuild} 2>&1`, { cwd: ROOT, encoding: 'utf8', env: suiteEnv(), timeout: SUITE_TIMEOUT_MS, maxBuffer: SUITE_MAX_BUFFER });
+    } catch (err) {
+      // A mutation that does not compile is a *stale* mutation, not a survivor — the registry entry
+      // is quoting a line the source no longer has in a form that type-checks. Reported as a red
+      // suite so it lands in the kill/stale reporting rather than being silently scored.
+      return { green: false, out: `building ${rebuild} for a cross-workspace mutation failed:\n${(err.stdout ?? '') + (err.stderr ?? '')}`, timedOut: false, overflowed: false };
+    }
+  }
   try {
     const out = execSync(suiteCommand(pkg), {
       cwd: ROOT,
@@ -3706,7 +3784,7 @@ function sweep(selected, scope, shard) {
     if (!openJournal({ id: m.id, milestone: m.milestone, pid: process.pid, startedAt: new Date().toISOString(), files })) return 2;
     writeFileSync(full, mutated);
     try {
-      const result = runSuite(pkg);
+      const result = runSuite(pkg, m.file);
       if (result.overflowed) {
         // Distinct from the hang below on purpose (`M147e-01`): this suite *finished*, and what
         // stopped us reading its verdict was our own buffer. No verdict either way, but the reader

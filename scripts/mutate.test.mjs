@@ -21,6 +21,7 @@ import {
   UNRECONSTRUCTED,
   classifySuiteFailure,
   costProblem,
+  rebuildTargetFor,
   coverage,
   coverageProblem,
   elapsedLine,
@@ -655,6 +656,32 @@ test('a sweep reports its own clock, and is loud only when it crosses the budget
   assert.equal(formatElapsed(59_400), '59s');
   assert.equal(formatElapsed(60_000), '1m00s');
   assert.equal(formatElapsed(20 * 60_000 + 100), '20m00s');
+});
+
+test('a cross-workspace mutation rebuilds what it mutated', () => {
+  // `M147-09`. A workspace's own tests run from source, so a mutation and its suite normally need no
+  // build between them. Across workspaces they do: `@tflw/lsp-server` imports `@tflw/lang` by name
+  // and that package exports `./dist/index.js`, so a mutation to `packages/lang/src/parser.ts`
+  // scored against the lsp-server suite ran the *previous* build and came back `SURVIVED`.
+  //
+  // That is the worst verdict this file can print wrongly. A hang says it reached no verdict; a
+  // false survival reads as a measurement that the assertion is weak, and the honest response to
+  // that reading is to delete the test.
+  const nameOf = (dir) => ({ 'packages/lang': '@tflw/lang', 'packages/lsp-server': '@tflw/lsp-server' })[dir] ?? null;
+
+  // The broken case: mutate lang, score against lsp-server.
+  assert.equal(rebuildTargetFor('packages/lang/src/parser.ts', '@tflw/lsp-server', nameOf), '@tflw/lang');
+
+  // The common case, which must stay free: same workspace, no build.
+  assert.equal(rebuildTargetFor('packages/lang/src/parser.ts', '@tflw/lang', nameOf), null);
+
+  // Not under `packages/` at all — the root `scripts/` suite mutating its own file.
+  assert.equal(rebuildTargetFor('scripts/mutate.mjs', ROOT_SUITE, nameOf), null);
+
+  // A workspace with no manifest cannot be named, so nothing is built rather than something wrong
+  // being built: `npm run build -w <undefined>` would fail the whole mutation for a path shape the
+  // registry does not have.
+  assert.equal(rebuildTargetFor('packages/not-a-workspace/src/x.ts', '@tflw/lang', nameOf), null);
 });
 
 test('an output overflow is not a hang', () => {
