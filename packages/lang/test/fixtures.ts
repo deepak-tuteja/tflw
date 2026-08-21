@@ -373,6 +373,19 @@ test "the mTLS listener rejects a client with no certificate, the plain one acce
   check request not fails
 `,
   },
+  // `M147e`/`A3-14`'s control. Exactly 256 unary minuses — the last depth the parser descends —
+  // parse and check clean, so `TF075` is a boundary and not a blanket ban on a legal operator.
+  // Built from the same `repeat` as its invalid sibling so the two cannot drift apart by a
+  // hand-counted character.
+  //
+  // **Two of them, and that is the point.** The depth counter is incremented on the way down and
+  // decremented on the way back up; drop the decrement and it stops measuring *this* expression and
+  // starts measuring the file. One 256-deep `let` would still pass — the second is what turns that
+  // leak into a false `TF075` on a line that is fine.
+  {
+    name: 'unary-minus-nested-at-the-limit',
+    source: `test "still fine"\n  let a = ${'-'.repeat(256)}1\n  let b = ${'-'.repeat(256)}2\n  api GET /health\n  expect status equals 200\n`,
+  },
 ];
 
 // Config-dialect fixtures (tflw.config). Valid ones parse + check clean; invalid ones each
@@ -1037,5 +1050,14 @@ test "and a step after it"
     source: `test "no suggestion, one word"
   zzz
 `,
+  },
+  // `M147e`/`A3-14` — 300 unary minuses, past the 256 limit and nowhere near the stack. The point
+  // of the fixture is not the number: it is that a file this shape produces a *diagnostic*, which
+  // is what `parseSource`'s "never throws for a syntax error" contract says and what a raw V8
+  // `RangeError` was not. The source is built rather than written out so the limit and the fixture
+  // cannot drift apart on a hand-counted string.
+  {
+    name: 'unary-minus-nested-past-the-limit',
+    source: `test "generated, not written"\n  let a = ${'-'.repeat(300)}1\n`,
   },
 ];

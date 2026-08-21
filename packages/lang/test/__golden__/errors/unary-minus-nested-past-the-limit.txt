@@ -1,0 +1,7 @@
+error[TF075]: too many nested `-` signs — this expression nests more than 256 deep
+ --> unary-minus-nested-past-the-limit.tflw:2:267
+  |
+2 | …-----------------------------------------------------------------------------------------------------------------------------------------------1
+  |                                                                                                     ^
+  |
+  = help: tflw stops descending here so the parser cannot run out of stack. Nothing written by hand reaches this depth, so if a generator produced this line, fold the sign into the value it applies to

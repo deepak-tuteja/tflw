@@ -19,6 +19,7 @@ import {
   MUTATIONS,
   ROOT_SUITE,
   UNRECONSTRUCTED,
+  classifySuiteFailure,
   costProblem,
   coverage,
   coverageProblem,
@@ -654,6 +655,28 @@ test('a sweep reports its own clock, and is loud only when it crosses the budget
   assert.equal(formatElapsed(59_400), '59s');
   assert.equal(formatElapsed(60_000), '1m00s');
   assert.equal(formatElapsed(20 * 60_000 + 100), '20m00s');
+});
+
+test('an output overflow is not a hang', () => {
+  // `M147e-01`. `execSync` kills on both a timeout and a `maxBuffer` overflow, and it uses the same
+  // signal for both, so the signal alone cannot tell them apart — reading it that way reported a
+  // suite that ran to completion as one that never started. Found by `M147e-4`'s demonstrated break:
+  // failing a 256-deep AST snapshot prints the diff, which took the run to 1 084 562 bytes.
+  //
+  // Both outcomes are still "no verdict", so this is not about correctness of the sweep's exit code.
+  // It is about the sentence the reader gets: `the suite hung` sends them looking for an infinite
+  // loop that is not there.
+  assert.deepEqual(classifySuiteFailure({ code: 'ENOBUFS', signal: 'SIGKILL' }), { timedOut: false, overflowed: true });
+  assert.deepEqual(classifySuiteFailure({ code: 'ETIMEDOUT', signal: 'SIGKILL' }), { timedOut: true, overflowed: false });
+
+  // A `SIGKILL` with neither code — the OOM killer, or a `kill -9` from outside — stays a hang. It
+  // is the one case where "we do not know why it stopped" is the honest answer, and the hang branch
+  // is the one that says so.
+  assert.deepEqual(classifySuiteFailure({ signal: 'SIGKILL' }), { timedOut: true, overflowed: false });
+
+  // An ordinary red suite: a non-zero exit, no signal. Neither branch may claim it, or every kill in
+  // the sweep would be reported as no-verdict.
+  assert.deepEqual(classifySuiteFailure({ status: 1 }), { timedOut: false, overflowed: false });
 });
 
 test('the budget warning is one a real run can be watched tripping', () => {

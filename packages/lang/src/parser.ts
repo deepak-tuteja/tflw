@@ -4708,6 +4708,18 @@ class Parser {
     return this.parseAddSub();
   }
 
+  /**
+   * `M147e`/`A3-14`, D643. How many nested unary minuses `parseAtom` will descend through before it
+   * refuses. 256 rather than something nearer the measured cliff (the throw appears between 3 200
+   * and 6 400 on fedora-box) because the stack that matters is not this machine's: the same parser
+   * runs in the LSP worker and in whatever container someone puts `tflw check` in, and a limit
+   * tuned to the roomiest stack is a limit that still crashes on the smallest. Nothing written by
+   * hand comes within two orders of magnitude of it.
+   */
+  private static readonly MAX_UNARY_DEPTH = 256;
+
+  private unaryDepth = 0;
+
   private parseAddSub(): Value | null {
     let left = this.parseMulDiv();
     if (!left) return null;
@@ -4741,11 +4753,35 @@ class Parser {
   private parseAtom(): Value | null {
     const tok = this.peek();
     if (tok.type === 'minus') {
+      // `M147e`/`A3-14`, D643. This is the one production in the grammar that recurses once per
+      // token instead of looping, so it is the one that can exhaust the stack — and it did, as a
+      // raw `RangeError` out of a function documented as never throwing for a syntax error. The
+      // refusal is a diagnostic like any other, which is the whole point: `parseSource`'s contract
+      // is that a file is either parsed or explained, never neither.
+      if (this.unaryDepth >= Parser.MAX_UNARY_DEPTH) {
+        // Consumed before the refusal, so the guard always makes progress. Returning `null` without
+        // advancing is safe in *this* parser — reaching the limit means 256 minuses were consumed on
+        // the way down, so the cursor has moved — but it is safe by an argument two frames away from
+        // the code, and a production that can decline without consuming is one edit from a spin. The
+        // `unary-depth-never-unwinds` mutation is what showed it: with the counter leaking across
+        // expressions the guard fires at the *first* minus in a line, and the suite hung instead of
+        // failing. A mutation that hangs is a mutation with no verdict.
+        this.advance();
+        this.error(
+          Codes.NESTING_TOO_DEEP,
+          `too many nested \`-\` signs — this expression nests more than ${Parser.MAX_UNARY_DEPTH} deep`,
+          tok.span,
+          'tflw stops descending here so the parser cannot run out of stack. Nothing written by hand reaches this depth, so if a generator produced this line, fold the sign into the value it applies to',
+        );
+        return null;
+      }
       // Unary minus is sugar for `0 - operand` — the operand can be anything that might evaluate
       // to a number at runtime (a literal, `{var}`, a generator, …); whether it actually does is a
       // runtime type check like every other arithmetic mismatch (P#25), not a parse-time one.
       this.advance();
+      this.unaryDepth++;
       const operand = this.parseAtom();
+      this.unaryDepth--;
       if (!operand) return null;
       const zero: NumberLit = { type: 'NumberLit', value: 0, raw: '0', span: tok.span };
       const expr: BinaryExpr = { type: 'BinaryExpr', op: '-', left: zero, right: operand, span: { start: tok.span.start, end: operand.span.end } };

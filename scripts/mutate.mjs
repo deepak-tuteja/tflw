@@ -2896,6 +2896,30 @@ const REGISTRY = [
     replace: '    return true;',
   },
 
+  // --- `M147e-4` (`A3-14`, D643) — the recursion depth limit -------------------------------------
+  //
+  // Two mutations, not three. The *bound* is deliberately not mutated: 256 against 257 is an
+  // arbitrary point on a scale whose only real constraint is "far below the stack and far above
+  // anything a person writes", and a test pinning the exact integer would assert a number rather
+  // than a property. What is load-bearing is that the limit exists and that it measures one
+  // expression rather than the file.
+  {
+    id: 'unary-depth-unbounded',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A3-14` verbatim, and the worst failure in this milestone: `parseSource` throws a raw V8 `RangeError` out of a function documented as never throwing for a syntax error. The user sees `Maximum call stack size exceeded` with no filename, no line and no caret — not a bad diagnostic but none at all',
+    find: '      if (this.unaryDepth >= Parser.MAX_UNARY_DEPTH) {',
+    replace: '      if (false) {',
+  },
+  {
+    id: 'unary-depth-never-unwinds',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the counter stops measuring the expression and starts measuring the file: every unary minus anywhere spends depth that is never returned, so the 257th one in a file — however shallow the expression it sits in — is refused. A limit against pathological input turned into a limit on how many times a legal operator may appear',
+    find: '      this.unaryDepth--;',
+    replace: '',
+  },
+
 ];
 
 /**
@@ -3376,6 +3400,21 @@ export function parseArgs(argv) {
 const SUITE_TIMEOUT_MS = Number(process.env.TFLW_MUTATE_TIMEOUT_MS ?? 10 * 60_000);
 const TIMEOUT_LABEL = SUITE_TIMEOUT_MS >= 60_000 ? `${SUITE_TIMEOUT_MS / 60_000}m` : `${SUITE_TIMEOUT_MS}ms`;
 
+// `M147e` (`M147e-01`) — and the bound above needs a *second* bound beside it, because `execSync`
+// has one of its own that nobody chose. Its default `maxBuffer` is 1 MB; a suite that prints more
+// than that is killed with `SIGKILL` and throws with `code: 'ENOBUFS'`. `runSuite` read the signal
+// alone, so an overflow arrived here as a hang — and `M147e-4`'s demonstrated break tripped it: a
+// mutation that fails a 256-deep AST snapshot prints the diff, the run reached 1 084 562 bytes, and
+// a mutation that had in fact been *killed* was reported as `TIMED OUT — the suite hung`, with no
+// verdict and the wrong cause named. Silent in the safe direction — it can never manufacture a
+// `killed` — but a control that cannot score its own success is not a control.
+//
+// 64 MB matches `no-nul-bytes.test.mjs` and `removed-commands.test.mjs`, the two places in this repo
+// that had already met the default. It is a buffer and not a budget: nothing is expected to approach
+// it, and if anything ever does, the `ENOBUFS` branch below now says so in those words instead of
+// blaming a clock.
+const SUITE_MAX_BUFFER = 64 * 1024 * 1024;
+
 // M143a (`M137g-03`, re-stated) — the sweep says how long it took, every time.
 //
 // `M137g-03` asked for exactly this, and gave a reason that turned out to be false: it read JOB
@@ -3475,17 +3514,38 @@ function runSuite(pkg) {
       encoding: 'utf8',
       env: suiteEnv(),
       timeout: SUITE_TIMEOUT_MS,
+      maxBuffer: SUITE_MAX_BUFFER,
       killSignal: 'SIGKILL',
     });
-    return { green: true, out, timedOut: false };
+    return { green: true, out, timedOut: false, overflowed: false };
   } catch (err) {
     // A timeout is NOT a red suite, and the difference is load-bearing: the `else` below prints
     // `✓ killed … suite exited non-zero` for anything non-green, so without this flag a mutation
     // whose suite hung would be credited with killing it. That is the vacuous-control shape —
     // a control that passes because nothing ran — arrived at from the opposite direction.
-    const timedOut = err.code === 'ETIMEDOUT' || err.signal === 'SIGKILL';
-    return { green: false, out: (err.stdout ?? '') + (err.stderr ?? ''), timedOut };
+    return { green: false, out: (err.stdout ?? '') + (err.stderr ?? ''), ...classifySuiteFailure(err) };
   }
+}
+
+/**
+ * Why a non-green `execSync` came back — the three answers that are not "the suite went red".
+ *
+ * Pure and exported for the same reason `formatElapsed` and `tallyLine` are: the branch it decides
+ * can only be reached by a suite that actually blows up, and a branch reachable only by catastrophe
+ * is a branch nobody ever sees run. `scripts/mutate.test.mjs` calls it with the three error shapes
+ * directly.
+ *
+ * `ENOBUFS` is tested first and separately (`M147e-01`). An output overflow is *also* delivered as
+ * `SIGKILL`, so reading the signal alone folded it into the hang bucket and reported a suite that
+ * ran to completion as one that never started. Same no-verdict outcome either way, but the wrong
+ * cause named and the wrong fix implied — the reader goes looking for an infinite loop that is not
+ * there. Found by `M147e-4`, whose demonstrated break fails a 256-deep AST snapshot: printing that
+ * diff took the run to 1 084 562 bytes, eighty kilobytes past `execSync`'s 1 MB default.
+ */
+export function classifySuiteFailure(err) {
+  const overflowed = err.code === 'ENOBUFS';
+  const timedOut = !overflowed && (err.code === 'ETIMEDOUT' || err.signal === 'SIGKILL');
+  return { timedOut, overflowed };
 }
 
 // M123 (`M115-01`): the summary parse moved to `scripts/reporter-summary.mjs`, shared with
@@ -3616,7 +3676,13 @@ function sweep(selected, scope, shard) {
     writeFileSync(full, mutated);
     try {
       const result = runSuite(pkg);
-      if (result.timedOut) {
+      if (result.overflowed) {
+        // Distinct from the hang below on purpose (`M147e-01`): this suite *finished*, and what
+        // stopped us reading its verdict was our own buffer. No verdict either way, but the reader
+        // is sent to the right place.
+        console.log(`✗ NO VERDICT ${m.id} (${m.milestone}) — ${pkg}'s output passed ${SUITE_MAX_BUFFER / (1024 * 1024)}MB and was truncated before a summary could be read; no verdict on: ${m.what}`);
+        survivors.push({ ...m, verdict: 'timeout' });
+      } else if (result.timedOut) {
         // Not a kill and not a survival — the suite never reached a verdict, so neither has this
         // mutation. Counted against the run so a hang can never leave the sweep exiting 0.
         console.log(`✗ TIMED OUT ${m.id} (${m.milestone}) — ${pkg}'s suite hung; no verdict on: ${m.what}`);

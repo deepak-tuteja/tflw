@@ -173,4 +173,13 @@ export const SELF_MUTATIONS = [
     find: '    if (shard.of > selected.length) {',
     replace: '    if (false) {',
   },
+  {
+    id: 'overflow-reported-as-a-hang',
+    milestone: 'm147e',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: "`M147e-01` restored: an output overflow is read off the signal alone and reported as `the suite hung`. The verdict is right by accident — no verdict either way — and the sentence is wrong in the one word that tells the reader where to look, so they go hunting an infinite loop in a suite that ran to completion. The instrument's own failure mode, which is why it is registered here rather than beside the product row that found it",
+    find: "  const overflowed = err.code === 'ENOBUFS';",
+    replace: '  const overflowed = false;',
+  },
 ];

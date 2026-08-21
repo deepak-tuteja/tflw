@@ -334,6 +334,27 @@ export const Codes = {
   // its own code, and reusing a conflict code for a resolution failure would put the wrong word in
   // front of the reader.
   CONFIG_UNKNOWN_ENV: 'TF074',
+  // M147e (`A3-14`, D643) — **the parser refusing input that would otherwise exhaust the call
+  // stack.** `parseSource` is documented as never throwing for a syntax error (`index.ts`), and a
+  // file of 30 000 unary minuses broke that contract outright: a raw V8 `RangeError`, exit 2, no
+  // filename, no line, no caret. Not a bad diagnostic — *no* diagnostic, and a stack trace where a
+  // caret should be. The one place in this grammar that recurses per token rather than looping is
+  // unary minus, and it is the only reachable path: `+`/`-`/`*`/`/` chains iterate, `within` nesting
+  // is bounded by the lexer's indent handling, and a JSON body is parsed by `JSON.parse` rather than
+  // by descent. Measured on fedora-box, the throw appears between 3 200 and 6 400 minuses; the limit
+  // is set an order of magnitude below the nearer of those, because the number that matters is not
+  // this machine's stack but the smallest one the parser might run on — the LSP worker, a different
+  // Node, a container with a smaller thread stack.
+  //
+  // **Its own code rather than `TF010`.** The `-` is legal exactly where it is written and the token
+  // is not unexpected in any sense the author could act on; calling it an unexpected token would put
+  // a false word in the only sentence they read. What is wrong is the *shape of the input*, which no
+  // shipped code names. This is also the one code `M147e` allocates — the milestone's budget, spent
+  // on the only row whose message could not be told the truth with an existing one.
+  //
+  // **The message names a limit and not a mistake.** Nothing a person types by hand reaches 256, so
+  // the reader is a generator, and what a generator's author needs is the number.
+  NESTING_TOO_DEEP: 'TF075',
 } as const;
 
 // ---------------------------------------------------------------------------
