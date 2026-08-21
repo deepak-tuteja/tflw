@@ -666,14 +666,35 @@ ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height
                                                                    # `report`; omitted = Playwright's
                                                                    # own default (1280×720)
 
-SessionDecl     := 'session' IDENT ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
-                                    | 'privileged'? NEWLINE Block)
+SessionDecl     := 'session' IDENT EnvScope? ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
+                                              | 'privileged'? NEWLINE Block)
                                                                   # `privileged` (§3.3, M130b, D307) — this
                                                                   #   principal is meant to reach other
                                                                   #   principals' resources, so `has no …
                                                                   #   authorization violations` leaves it out
                                                                   #   of the probe set. A whole config of
                                                                   #   privileged sessions is a checker error
+EnvScope        := 'for' 'env' IDENT (',' IDENT)*
+                                                                  # (§3.3, M147d/`M137f-02`, D642) — the
+                                                                  #   `env` blocks this session belongs to.
+                                                                  #   Absent means *every* env, which is
+                                                                  #   what makes the clause additive: the
+                                                                  #   clause only ever narrows, and a name
+                                                                  #   matching no `env` block narrows it to
+                                                                  #   nothing and is `TF074`.
+                                                                  #   Read *before* both modifiers, so
+                                                                  #   `oauth2 privileged` stays the adjacent
+                                                                  #   pair D307/D310 settled rather than
+                                                                  #   having a comma list dropped into it.
+                                                                  #   Line-terminated, so no trailing comma
+                                                                  #   (D637) — same as `require env` and
+                                                                  #   `allow hosts`.
+                                                                  #   `env` is the *block*, not the OS
+                                                                  #   variable `require env`/`env(NAME)`
+                                                                  #   name; the AST says so too, where
+                                                                  #   `EnvRef` was already taken by
+                                                                  #   `env(NAME)` and this one is
+                                                                  #   `EnvScopeRef`
 Oauth2Config    := 'token' 'url' Value NEWLINE
                     'client' 'id' Value NEWLINE
                     'client' 'secret' Value NEWLINE

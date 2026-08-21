@@ -2687,6 +2687,114 @@ const REGISTRY = [
     replace: '      const matched = findLastMatchingRequest([], urlPattern, method);',
   },
 
+  // --- `M147d-6` / `M137f-02` (D642) — the env-scoped `session` -------------------------------
+  //
+  // The product half of this slice is one filter in `resolve.ts` and one argument in `cli.ts`, and
+  // the two are registered separately on purpose: the filter decides what a session *is* under an
+  // env, and the argument decides whether the checker was told. Reverting either one alone reopens
+  // the row, and only the second one reopens it the way it was originally filed.
+  {
+    id: 'session-scope-never-narrows',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the scope clause parses, is checked, is documented — and resolves to nothing, because every session is in scope for every env again. The row reopens with the grammar in place, which is the worst of the available failures: a config that says `for env one` and behaves as though it did not',
+    find: 's.envs === null || s.envs.some((e) => e.name === env.name)',
+    replace: 'true',
+  },
+  {
+    id: 'session-scope-drops-the-unscoped',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: '`envs === null` stops meaning *every env* and starts meaning *no env*, so every session written before D642 resolves nowhere. This is the mutation that would turn an additive clause into a breaking change, and it is one character of the filter away at all times',
+    find: 's.envs === null ||',
+    replace: 's.envs !== null &&',
+  },
+  {
+    id: 'out-of-scope-map-always-empty',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the roster is still filtered correctly and the record of *why* is dropped, so `TF028` falls back to `known sessions: ...` in front of an author looking straight at the `session` block it says does not exist. The scoping works and the diagnostic lies about it',
+    find: 'config.sessions.filter((s) => !sessions.has(s.name))',
+    replace: 'config.sessions.filter(() => false)',
+  },
+  {
+    id: 'check-session-body-sees-every-session',
+    milestone: 'm147d',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`M137f-02` verbatim: the config-stage check goes back to reading every declared session against the active env\'s service map, so a session scoped to another env is `TF026` at its own line before a single assertion runs. This is the pre-D642 line, restored',
+    find: '...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services), envBaseUrls, envTimeouts),',
+    replace: '...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),',
+  },
+  {
+    id: 'tf074-never-fires',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'a `for env` clause naming an env that does not exist is accepted, which scopes the session to nothing at all. Every `as <name>` opting into it becomes a `TF028` pointing at a test file, and the suite quietly runs one identity short of the probe set it thinks it has',
+    find: '      if (seen.has(ref.name)) continue;',
+    replace: '      if (seen.has(ref.name) || true) continue;',
+  },
+  {
+    id: 'tf074-underlines-the-declaration',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the diagnostic anchors on the `session` instead of on the name, and a session span runs to the end of its indented body — so a five-step login gets a caret under the whole paragraph to complain about one word. The reason `SessionDecl.envs` carries nodes rather than strings, deleted',
+    find: '        span: ref.span,',
+    replace: '        span: session.span,',
+  },
+  {
+    id: 'tf028-forgets-the-scoping-hint',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the out-of-scope branch never runs, so `as console` under the wrong env reports `known sessions: shopper, peer` — true, useless, and the exact reading that sends an author looking for a typo in a name they spelled correctly',
+    find: '      if (outOfScope && scopedTo) {',
+    replace: '      if (false && outOfScope && scopedTo) {',
+  },
+  {
+    id: 'env-scope-clause-never-parsed',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the clause stops being read at all. `session console for env one` then reaches `endLine()` with three tokens left over, so the fix is unreachable from the grammar',
+    find: "    if (!this.isKw(this.peek(), 'for')) return null;",
+    replace: '    return null;',
+  },
+  {
+    id: 'env-scope-takes-only-one-name',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the comma loop stops after the first name, so `for env plaintext, staging` silently scopes to `plaintext` alone and the second env loses the session. Silently, because the leftover `, staging` is what `endLine()` then complains about — a diagnostic about a comma, for a bug about an identity',
+    find: '      if (!this.check(\'comma\')) break;',
+    replace: '      break;',
+  },
+  {
+    id: 'late-env-scope-silent',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: '`session admin privileged for env local` loses its named diagnostic and falls through to `endLine()`, which is the cascade D310 spent a message to avoid: one honest complaint about `for`, then the indented body parsed as something it is not',
+    find: "    if (!this.isKw(this.peek(), 'for')) return;",
+    replace: '    return;',
+  },
+  {
+    id: 'lsp-session-check-ignores-env-scope',
+    milestone: 'm147d',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/workspace/configResolution.ts',
+    what: '`M137f-02` survives in the editor after the CLI is fixed: the language server checks every declared session against whichever env the workspace resolved, so a session scoped elsewhere is `TF026` in VS Code on a config `tflw check` calls clean. The CLI and the LSP disagreeing about what is legal, which is the one failure neither is allowed to have',
+    find: '      ...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services)),',
+    replace: '      ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services)),',
+  },
+  {
+    id: 'for-without-env-unnamed',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: '`session admin for local` stops being told which of the language\'s two `for`s it wrote — the other being `header "X" is "Y" for <service>`, which is exactly what an author reaching for a scope clause is likely to have had in mind. It becomes an anonymous unexpected token instead',
+    find: "    if (!this.isKw(this.peek(), 'env')) {",
+    replace: '    if (false) {',
+  },
+
 ];
 
 /**

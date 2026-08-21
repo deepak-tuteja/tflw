@@ -38,6 +38,7 @@
     {
       "type": "SessionDecl",
       "name": "admin",
+      "envs": null,
       "oauth2": {
         "type": "Oauth2SessionConfig",
         "tokenUrl": {

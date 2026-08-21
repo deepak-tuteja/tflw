@@ -57,6 +57,11 @@ import { parseStringParts } from './parser.js';
 export interface ProgramCheckOptions {
   readonly knownServices?: readonly string[];
   readonly knownSessions?: readonly string[];
+  /** `M147d`/`M137f-02` (D642) — the sessions this config declares that the active env does *not*
+   * get, so `TF028` can say "scoped to another env" instead of "no such session". Rides alongside
+   * `knownSessions` and is read only when that is present: the two are the same question answered
+   * about two disjoint sets of names, and a caller holding one always holds the other. */
+  readonly outOfScopeSessions?: OutOfScopeSessions;
   /**
    * The subset of `knownSessions` declared `privileged` (M130b, D307) — principals `has no
    * authorization violations` leaves out of its probe set because they are *meant* to reach other
@@ -295,7 +300,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
   return byPosition([
     ...(opts.knownServices ? checkServices(program, opts.knownServices) : []),
     ...checkDataTables(program),
-    ...(opts.knownSessions ? checkSessions(program, opts.knownSessions) : []),
+    ...(opts.knownSessions ? checkSessions(program, opts.knownSessions, opts.outOfScopeSessions) : []),
     ...checkActionDecls(program, opts),
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
@@ -545,6 +550,29 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
       });
     }
     seenSessions.add(session.name);
+    // M147d (`M137f-02`, D642) — the env scope clause's own names, checked against the `env` blocks
+    // this same file declares. Purely local: both halves are in `ConfigFile`, so unlike `TF026`'s
+    // service names this needs no resolved env and fires in the editor on the config alone.
+    //
+    // One diagnostic per unknown name, anchored on the name — the rule `checkSessions` states for
+    // its own comma list, and the reason `SessionDecl.envs` carries `EnvScopeRef` nodes instead of
+    // strings. `suggest()` is what makes the common case one keystroke: the mistakes this catches
+    // are overwhelmingly typos of an env that is right there in the file.
+    for (const ref of session.envs ?? []) {
+      if (seen.has(ref.name)) continue;
+      const hint = suggest(ref.name, [...seen]);
+      diags.push({
+        code: Codes.CONFIG_UNKNOWN_ENV,
+        severity: 'error',
+        message: `unknown env "${ref.name}"`,
+        span: ref.span,
+        hint: hint
+          ? `did you mean \`${hint}\`?`
+          : seen.size
+            ? `\`for env\` names \`env\` blocks in this file, and this one declares: ${[...seen].join(', ')}`
+            : 'this config declares no `env` blocks, so there is no env for a session to be scoped to — drop the `for env` clause and the session belongs to every env',
+      });
+    }
   }
 
   return diags;
@@ -652,6 +680,16 @@ function literalHostname(lit: StringLit): string | null {
   }
 }
 
+/** The sessions a config declares that the *active* env does not get (`M147d`/`M137f-02`, D642) —
+ * `declaredElsewhere` maps such a name to the envs its `for env` clause does name. Optional for the
+ * same reason every resolved-config option in this file is: a caller that resolved no env has not
+ * got an answer to give, and inventing one would turn the docs-site editor demo's every `as admin`
+ * into a scoping error. */
+export interface OutOfScopeSessions {
+  readonly envName: string;
+  readonly declaredElsewhere: ReadonlyMap<string, readonly string[]>;
+}
+
 /**
  * Validate `test "…" as <session>[, <session>...]` references against the sessions declared in
  * `tflw.config` (SPEC §3.3, P#42). Called by the CLI once the config is parsed — like
@@ -660,11 +698,27 @@ function literalHostname(lit: StringLit): string | null {
  * `test "..." as admin, gohst` (one typo among several valid names) still points precisely at the
  * bad one instead of a single-message-lists-everything wall of text.
  */
-export function checkSessions(program: Program, knownSessions: readonly string[]): Diagnostic[] {
+export function checkSessions(program: Program, knownSessions: readonly string[], outOfScope?: OutOfScopeSessions): Diagnostic[] {
   const diags: Diagnostic[] = [];
   const check = (sessions: readonly string[], span: Span): void => {
     for (const session of sessions) {
       if (knownSessions.includes(session)) continue;
+      // M147d (`M137f-02`, D642) — the name *is* declared, just not for the env this run resolved.
+      // Same code, because it is the same fact about this file (no session by that name is available
+      // here) and a second code would split one question across two numbers. What changes is the
+      // hint, and it has to: `known sessions: shopper, peer` in front of an author looking straight
+      // at `session console` in their config is a diagnostic that reads as a bug in the checker.
+      const scopedTo = outOfScope && outOfScope.declaredElsewhere.get(session);
+      if (outOfScope && scopedTo) {
+        diags.push({
+          code: Codes.UNKNOWN_SESSION,
+          severity: 'error',
+          message: `unknown session "${session}" in env "${outOfScope.envName}"`,
+          span,
+          hint: `\`session ${session}\` is declared \`for env ${scopedTo.join(', ')}\`, and this run resolved env "${outOfScope.envName}" — add "${outOfScope.envName}" to that clause, or run this file under an env the session is scoped to (SPEC §3.3)`,
+        });
+        continue;
+      }
       const hint = suggest(session, knownSessions);
       diags.push({
         code: Codes.UNKNOWN_SESSION,

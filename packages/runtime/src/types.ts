@@ -89,6 +89,10 @@ export interface ResolvedConfig {
   readonly exclude: readonly string[];
   /** `session <name> ... ` blocks declared in `tflw.config`, by name (SPEC §3.3, P#42). */
   readonly sessions: ReadonlyMap<string, SessionDecl>;
+  /** `M147d`/`M137f-02` (D642) — the declared sessions this env does **not** get, mapped to the envs
+   * their `for env` clause does name. Never used to establish anything; its only consumer is
+   * `TF028`, which needs the difference between *no session by that name* and *not this env's*. */
+  readonly sessionsOutOfScope: ReadonlyMap<string, readonly string[]>;
   /** `cert`/`key` — per-env mTLS client certificate paths, resolved relative to the config file's
    * directory at request time (SPEC §3.5, decision 3b, enterprise arc). `null` when neither is
    * set; `resolveConfig` rejects one without the other. */

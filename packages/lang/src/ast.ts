@@ -1585,6 +1585,18 @@ export interface ConfigFile extends Node {
 export interface SessionDecl extends Node {
   readonly type: 'SessionDecl';
   readonly name: string;
+  /** `session <name> for env <a>[, <b>...]` (`M147d`/`M137f-02`, D642) — the envs this session is
+   * declared for, or `null` for a session written without the clause.
+   *
+   * **`null` means every env, and that is what keeps this additive.** A `session` was env-independent
+   * from P#20 until here, so every session that already exists parses to `null` and resolves exactly
+   * as it did. The clause only ever *narrows*.
+   *
+   * Refs rather than bare strings, unlike `RequireDecl.names`: `checkSessions`' rule is one
+   * diagnostic per unknown name rather than one aggregated per site, and that rule needs a span per
+   * name to point at. It is also the preference `ReportDecl.dir` states for its own field (`A2-12`)
+   * — keep the position, flatten at the point of use. */
+  readonly envs: readonly EnvScopeRef[] | null;
   readonly oauth2: Oauth2SessionConfig | null;
   readonly body: readonly Step[];
   /** `session <name> [oauth2] privileged` (M130b, D307/D310) — this principal is *supposed* to be
@@ -1596,6 +1608,20 @@ export interface SessionDecl extends Node {
    * authz assertion fast would otherwise be to declare away the thing it measures. The lever for
    * cost is fewer assertion sites. */
   readonly privileged: boolean;
+}
+
+/** One env-block name from a `session ... for env` clause (`M147d`, D642). A node rather than a
+ * string so the unknown-env diagnostic can underline the name that is wrong instead of the whole
+ * declaration — a `session` span runs to the end of its indented body, which for a five-step login
+ * is a diagnostic pointing at a paragraph to complain about a word.
+ *
+ * **`EnvScopeRef` and not `EnvRef`, because `EnvRef` is already this file's name for `env(NAME)`** —
+ * an *operating-system* environment variable, and a `Value`. That collision is the clearest evidence
+ * for the note on `SessionDecl.envs`: the two meanings of the word predate this clause and had
+ * already reached the type names. This one is the block `env <name>` declares and `--env` selects. */
+export interface EnvScopeRef extends Node {
+  readonly type: 'EnvScopeRef';
+  readonly name: string;
 }
 
 /** `session <name> oauth2 / token url … / client id … / client secret … / scope …` — OAuth2

@@ -1175,7 +1175,14 @@ async function loadAndValidate(
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
   };
   const configEnvDiags = [
-    ...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),
+    // **`resolved.sessions`, not `parsedConfig.config.sessions` — this is the line `M137f-02` is
+    // about** (`M147d`, D642). A `session` body names services, and services are per-env, so
+    // checking *every* declared session against *this* env's service map is what forced a session's
+    // origin into env blocks that never touch it: `TF026` before a single assertion ran, and then
+    // `TF060` and `TF065` behind it, because declaring the service made the file checkable in an env
+    // that had not affirmed the target. Reading the env-filtered roster means a session scoped
+    // elsewhere is not this env's business, which is the whole repair.
+    ...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services), envBaseUrls, envTimeouts),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
     ...(await checkConfigFiles(parsedConfig.config, cwd)),
   ];
@@ -1231,6 +1238,7 @@ async function loadAndValidate(
       knownServices: Object.keys(resolved.services),
       knownSessions,
       privilegedSessions,
+      outOfScopeSessions: { envName: resolved.envName, declaredElsewhere: resolved.sessionsOutOfScope },
       importedActions: imports.actions,
       importsWithErrors: imports.unparseable,
       // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
@@ -2509,6 +2517,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
         knownServices,
         knownSessions,
         privilegedSessions,
+        outOfScopeSessions: { envName: loaded.resolved.envName, declaredElsewhere: loaded.resolved.sessionsOutOfScope },
         importedActions: imports.actions,
         importsWithErrors: imports.unparseable,
         missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),

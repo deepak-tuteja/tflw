@@ -44,6 +44,7 @@ import type {
   DurationLit,
   EnvBlock,
   EnvRef,
+  EnvScopeRef,
   EvidenceDecl,
   EvidenceLevel,
   ExcludeDecl,
@@ -1464,6 +1465,7 @@ class Parser {
     this.advance(); // `session`
     const name = this.expect('ident', 'a session name, e.g. `session admin`');
     if (!name) return null;
+    const envs = this.parseSessionEnvScope();
     // `session <name> privileged oauth2` — one order is legal (below) and this is the other one.
     // Reported here, before anything else reads the header, and then *recovered from by reading
     // the header the way it was plainly meant*: left to `endLine()` it produced one honest error
@@ -1484,15 +1486,80 @@ class Parser {
     if (this.isKw(this.peek(), 'oauth2')) {
       this.advance(); // `oauth2`
       const privileged = this.parsePrivilegedModifier() || misordered;
+      this.lateEnvScope(name.value, envs);
       this.endLine();
       const oauth2 = this.parseOauth2SessionConfig(start);
       if (!oauth2) return null;
-      return { type: 'SessionDecl', name: name.value, oauth2, body: [], privileged, span: this.spanFrom(start) };
+      return { type: 'SessionDecl', name: name.value, envs, oauth2, body: [], privileged, span: this.spanFrom(start) };
     }
     const privileged = this.parsePrivilegedModifier();
+    this.lateEnvScope(name.value, envs);
     this.endLine();
     const body = this.parseSessionBlock();
-    return { type: 'SessionDecl', name: name.value, oauth2: null, body, privileged, span: this.spanFrom(start) };
+    return { type: 'SessionDecl', name: name.value, envs, oauth2: null, body, privileged, span: this.spanFrom(start) };
+  }
+
+  /** `session <name> for env <a>[, <b>...]` — the env scope clause (`M147d`/`M137f-02`, D642).
+   *
+   * **Read immediately after the name, ahead of both modifiers.** The two modifiers already have a
+   * settled order that a third clause must not disturb: D307/D310 fixed `oauth2 privileged` as the
+   * one spelling and spends a diagnostic on the other one, and `oauth2` introduces an indented sugar
+   * block. Dropping a comma list between them would put a multi-token clause inside the pair that
+   * decision was about. After the name is also where `env <name> default`'s qualifier sits, so the
+   * shape "declare a thing, then say which slice of the config it belongs to" reads the same in
+   * both directions.
+   *
+   * `for` is the language's existing scoping preposition — `header "X" is "Y" for <service>` scopes
+   * a header to a service, and this scopes a session to an env. `env` is the noun because that is
+   * what the block is called and what `--env` selects.
+   *
+   * **The word `env` is already overloaded and this deliberately sides with the majority.** `require
+   * env USER_A_EMAIL` means an *operating-system* environment variable, not a block in this file —
+   * an older use, and the outlier: `env <name>`, `--env <name>` and `TFLW_ENV` all mean the block.
+   * A new clause could not avoid the collision without inventing a second word for the thing every
+   * other surface already calls an env, so it joins the three rather than the one. */
+  private parseSessionEnvScope(): EnvScopeRef[] | null {
+    if (!this.isKw(this.peek(), 'for')) return null;
+    this.advance(); // `for`
+    if (!this.isKw(this.peek(), 'env')) {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`for` on a `session` header introduces an env scope, so it is followed by `env`',
+        this.peek().span,
+        'write `for env <name>` — e.g. `session console for env plaintext`. Unlike `header "X" is "Y" for <service>`, a session is scoped to the env it belongs to rather than to a service',
+      );
+      return null;
+    }
+    this.advance(); // `env`
+    const envs: EnvScopeRef[] = [];
+    for (;;) {
+      const tok = this.expect('ident', 'an env name after `for env`');
+      if (!tok) return envs.length > 0 ? envs : null;
+      envs.push({ type: 'EnvScopeRef', name: tok.value, span: tok.span });
+      // Line-terminated, so no trailing comma — D637's rule, which turns on what closes the list and
+      // not on what it holds. Same shape as `require env` and `allow hosts` two directives over.
+      if (!this.check('comma')) break;
+      this.advance();
+    }
+    return envs;
+  }
+
+  /** `session admin privileged for env local` — the clause in the one position it is not read from
+   * (`M147d`, D642), reported the way D310 reports its own misordering: one diagnostic naming the
+   * spelling that works, rather than an `endLine()` failure followed by the body being parsed as
+   * something else. Recovery consumes the clause so the block below still parses. */
+  private lateEnvScope(sessionName: string, already: EnvScopeRef[] | null): void {
+    if (!this.isKw(this.peek(), 'for')) return;
+    const at = this.peek().span;
+    const late = this.parseSessionEnvScope();
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      '`for env` comes before `oauth2`/`privileged` on a `session` header',
+      at,
+      already
+        ? `this header already carries a \`for env\` clause — write every env in one clause: \`session ${sessionName} for env ${[...already, ...(late ?? [])].map((e) => e.name).join(', ')}\``
+        : `write \`session ${sessionName} for env ${(late ?? []).map((e) => e.name).join(', ') || '<name>'} privileged\` — the env scope is read first so that \`oauth2 privileged\` stays the one spelling D310 settled`,
+    );
   }
 
   /** The optional trailing `privileged` on a `session` header (M130b, D307/D310) — read after

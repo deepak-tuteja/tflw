@@ -50,6 +50,7 @@ export {
   validateConfig,
   checkServices,
   checkSessionBody,
+  type OutOfScopeSessions,
   checkSessionServices,
   checkAllowHostsCoversBaseUrls,
   checkDataTables,

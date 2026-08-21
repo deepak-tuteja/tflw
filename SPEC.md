@@ -223,6 +223,30 @@ session admin
 ```
 
 - Steps inside a session are ordinary parsed steps (API or browser).
+- **A session may be scoped to named envs: `session console for env plaintext, staging`** (`M147d`,
+  D642). Without the clause a session belongs to **every** env, which is what every session written
+  before this clause existed continues to do — the clause only ever narrows.
+
+  It exists because a `session` was the one top-level declaration whose *body* resolves against
+  per-env state. A session body names `api <service>` and services are per-env, so a session against
+  a second origin had to resolve under every declared env or fail `TF026` before a single assertion
+  ran — and repairing that by declaring the service then pulled `TF060`'s affirmation and `TF065`'s
+  `allow hosts` entry into env blocks that never reach the origin. The cost was never the service
+  name; it was the two D21 declarations behind it, which is why "let a session name an absolute
+  origin" was rejected as the fix: it removes the cheap line and leaves the affirmation.
+
+  Under an env a session is not scoped to, the session does not exist: its body is not checked
+  against that env's services, it joins no authorization probe set, and a `test … as <name>` there is
+  `TF028` with a hint naming the envs it *is* scoped to. An env name the config does not declare is
+  `TF074` — the clause would otherwise narrow the session to nothing at all, silently removing a
+  principal from every probe set in the suite while every assertion stayed green.
+
+  The clause is read **before** `oauth2`/`privileged`, so `session admin for env local oauth2
+  privileged` is the one order; D307/D310 settled `oauth2 privileged` as an adjacent pair and a
+  comma list does not go between them. `for` is the same scoping preposition as `header "X" is "Y"
+  for <service>`. Note that `env` here means an `env` block, **not** the operating-system variable
+  `require env` and `env(NAME)` refer to — the word was already carrying both meanings, and this
+  clause sides with `env <name>`/`--env`/`TFLW_ENV` rather than with the outlier.
 - Runtime: each session executes **once per run per worker**; results are cached.
 - A test opting in with `test "…" as admin` (§4.1) starts with the session's declared headers and
   cookie jar applied to its **api** steps.
