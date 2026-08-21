@@ -607,6 +607,28 @@ session admin oauth2
 `,
   },
   {
+    // `M147e`/`A2-15` — the two siblings of the fixture above. With nothing indented the message is
+    // still the whole requirement (and keeps its worked example); with two absent it names two, so
+    // the goldens pin all three arities of the narrowed wording rather than just the one-missing
+    // case that gave the row its name.
+    name: 'oauth2-missing-all-three',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+  scope "read"
+`,
+  },
+  {
+    name: 'oauth2-missing-two',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+  token url "http://localhost:3001/oauth/token"
+`,
+  },
+  {
     name: 'oauth2-unknown-field',
     source: `env local default
   api "http://localhost:3001"

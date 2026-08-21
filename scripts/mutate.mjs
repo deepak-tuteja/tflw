@@ -2795,6 +2795,30 @@ const REGISTRY = [
     replace: '    if (false) {',
   },
 
+  // --- `M147e-1` (`A2-15`) — an oauth2 session names only what is missing ------------------------
+  //
+  // The shipped message restated all three required fields whichever ones were written, so an author
+  // who forgot one read a paragraph about two they had. The narrowing is one `filter`, and both
+  // mutations below put the paragraph back — one through the field list, one through the help arity.
+  // The all-three golden is byte-identical to the old message, so it deliberately survives both:
+  // what these break is the *partial* case, which is the only case the row was ever about.
+  {
+    id: 'oauth2-names-all-three-regardless',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A2-15` verbatim: `session admin oauth2` with two of three fields present is told it `needs `token url`, `client id`, and `client secret`` — an answer to a question the author did not ask, and the reading that sends them checking two lines that are already correct',
+    find: '      const missing = OAUTH2_REQUIRED.filter((f) => !bound[f.name]);',
+    replace: '      const missing = OAUTH2_REQUIRED.slice();',
+  },
+  {
+    id: 'oauth2-help-always-restates-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the field list narrows but the help does not, so a config missing one line is shown a fresh three-line `session admin oauth2` block to write — next to the one it already has. The message and its worked example disagree about what is wrong, which is worse than either being wrong alone',
+    find: '        missing.length === OAUTH2_REQUIRED.length',
+    replace: '        true',
+  },
+
 ];
 
 /**

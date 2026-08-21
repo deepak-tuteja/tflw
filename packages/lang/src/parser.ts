@@ -534,6 +534,25 @@ const PROBE_SUB_CLAUSE_FIELDS: Readonly<
 export type ProbeSubClauseField = (typeof PROBE_SUB_CLAUSE_FIELDS)[(typeof PROBE_SUB_CLAUSES)[number]];
 const PROBE_SUB_CLAUSE_HELP = `an \`authorized target\` takes ${PROBE_SUB_CLAUSES.map((w) => `\`probe ${w}\``).join(', ')}, each on its own indented line`;
 /**
+ * The three required `session … oauth2` lines, each with the value it is shown as. One list, because
+ * `A2-15`'s narrowed message and its worked example are both rendered from it: a fourth required
+ * field cannot be added to the wording and forgotten in the example.
+ */
+const OAUTH2_REQUIRED = [
+  { name: 'token url', example: '"https://api.example.com/oauth/token"' },
+  { name: 'client id', example: 'env(CLIENT_ID)' },
+  { name: 'client secret', example: 'env(CLIENT_SECRET)' },
+] as const;
+
+/** `` `a` ``, `` `a` and `b` ``, `` `a`, `b`, and `c` `` — the Oxford comma only once there are three
+ * to separate, which is what the shipped three-field message already reads as. */
+function listAnd(words: readonly string[]): string {
+  const quoted = words.map((w) => `\`${w}\``);
+  if (quoted.length === 1) return quoted[0]!;
+  if (quoted.length === 2) return `${quoted[0]} and ${quoted[1]}`;
+  return `${quoted.slice(0, -1).join(', ')}, and ${quoted[quoted.length - 1]}`;
+}
+/**
  * What a user writes after `evidence` (§13, PLAN decision 101c) — **bare keywords as of `M147b`**
  * (`A2-14`, `D623`), and two words rather than a hyphen (`D628`).
  *
@@ -1647,12 +1666,24 @@ class Parser {
       if (this.pos === before) this.advance(); // guarantee progress
     }
     if (this.check('dedent')) this.advance();
+    // `M147e`/`A2-15` — the loop above has already bound whichever of the three were written, so
+    // this names what is *missing* rather than restating the whole requirement. Naming all three
+    // when two are present is `A3-19`'s defect in miniature: an answer to a question the author did
+    // not ask. When all three really are absent the wording still reads as the requirement and the
+    // worked example is unchanged, so this is a narrowing and nothing else.
+    // The condition is the shipped one and not `missing.length > 0`, so the three locals stay
+    // narrowed for the `return` below — a `filter` result carries no control-flow information.
     if (!tokenUrl || !clientId || !clientSecret) {
+      const bound: Readonly<Record<string, Value | null>> = { 'token url': tokenUrl, 'client id': clientId, 'client secret': clientSecret };
+      const missing = OAUTH2_REQUIRED.filter((f) => !bound[f.name]);
+      const example = missing.map((f) => `    ${f.name} ${f.example}`).join('\n');
       this.error(
         Codes.CONFIG_UNEXPECTED,
-        'an oauth2 session needs `token url`, `client id`, and `client secret`',
+        `an oauth2 session needs ${listAnd(missing.map((f) => f.name))}`,
         this.spanFrom(start),
-        'e.g.\n  session admin oauth2\n    token url "https://api.example.com/oauth/token"\n    client id env(CLIENT_ID)\n    client secret env(CLIENT_SECRET)',
+        missing.length === OAUTH2_REQUIRED.length
+          ? `e.g.\n  session admin oauth2\n${example}`
+          : `indent ${missing.length === 1 ? 'it' : 'them'} under the \`session … oauth2\` line, e.g.\n${example}`,
       );
       return null;
     }
