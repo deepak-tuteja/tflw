@@ -13,8 +13,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { MUTATIONS, partition } from './mutate.mjs';
-import { checkManifests, findManifests } from './verify-shards.mjs';
+import { MUTATIONS, RESHARD_AT, SHARD_BUDGET_SECONDS, partition } from './mutate.mjs';
+import { checkManifests, checkShardCost, findManifests } from './verify-shards.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(HERE, 'verify-shards.mjs');
@@ -165,11 +165,106 @@ test('ci.yml writes the same shard count in all three places (D449)', () => {
   const of = [...ci.matchAll(/verify-shards\.mjs \S+ --of=(\d+)/g)].map((m) => Number(m[1]));
   assert.ok(of.length > 0, 'ci.yml no longer passes --of=n to verify-shards.mjs');
 
-  for (const n of [...perShard, ...of]) {
+  // M148 — a FOURTH copy, found by moving the other three. The job's display name carries the count
+  // too, and it is the only one a reader sees: `mutation controls (shard 3/12)` sitting in the
+  // checks list of a run that dealt eighteen ways is a job lying about its own scope, in a repo that
+  // has spent four milestones on reports that describe something other than what ran. It cannot
+  // under-apply the registry, so it is here rather than in a job — cheap, static, and it moves with
+  // the rest.
+  const named = [...ci.matchAll(/name: mutation controls \(shard \$\{\{ matrix\.shard \}\}\/(\d+)\)/g)].map((m) => Number(m[1]));
+  assert.ok(named.length > 0, "ci.yml no longer names the shard job `mutation controls (shard i/n)`");
+
+  for (const n of [...perShard, ...of, ...named]) {
     assert.equal(
       n,
       matrixCount,
       `ci.yml's shard count disagrees with itself: the matrix lists ${matrixCount} shards, and another copy says ${n}. Every shard will pass and the registry will be under-applied, or the reassembly job will fail after a full sweep. All three copies move together.`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// M148 (`M147-11`) — the cost half.
+
+test('SHARD_BUDGET_SECONDS is the shard job\'s timeout-minutes, in seconds', () => {
+  const ci = readFileSync(path.join(HERE, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
+  const job = ci.slice(ci.indexOf('\n  mutations:'));
+  const m = job.match(/^\s*timeout-minutes: (\d+)/m);
+  assert.ok(m, 'the mutations job no longer declares timeout-minutes');
+  assert.equal(
+    SHARD_BUDGET_SECONDS,
+    Number(m[1]) * 60,
+    `mutate.mjs budgets a shard at ${SHARD_BUDGET_SECONDS}s and ci.yml gives it ${Number(m[1]) * 60}s. The re-shard trigger is a fraction of the limit, so a wrong limit moves the trigger and the check goes quiet at exactly the wrong moment.`,
+  );
+});
+
+test('a shard past the re-shard trigger fails, and one under it does not', () => {
+  const trigger = SHARD_BUDGET_SECONDS * RESHARD_AT;
+  const under = checkShardCost([{ shard: 1, of: 2, actualSeconds: Math.floor(trigger) - 1, costs: {} }]);
+  assert.deepEqual(under.problems, [], 'a shard just under the trigger is not a problem');
+
+  const over = checkShardCost([{ shard: 1, of: 2, actualSeconds: Math.ceil(trigger) + 1, costs: {} }]);
+  assert.equal(over.problems.length, 1);
+  assert.match(over.problems[0], /re-shard trigger/);
+  assert.match(over.problems[0], /shard 1\/2/);
+
+  // The trigger is not the limit. This is the whole point of the number, and the assertion is here
+  // because writing the trigger *at* the limit is the mistake `M131-06` made in prose and `M148`
+  // then paid for: a check that only fires once a shard has died reports the death, not the cause.
+  assert.ok(trigger < SHARD_BUDGET_SECONDS, 'the trigger must be strictly below the limit');
+});
+
+test('a SUITE_SECONDS entry that has gone light fails; one that has gone heavy is only reported', () => {
+  const manifests = [{ shard: 1, of: 1, actualSeconds: 60, costs: { '@tflw/slow': 108, '@tflw/fast': 4 } }];
+
+  // Light: this is M147-11 itself, 31 against a measured 108.
+  const light = checkShardCost(manifests, { '@tflw/slow': 31, '@tflw/fast': 4 });
+  assert.equal(light.problems.length, 1);
+  assert.match(light.problems[0], /is 31s and its baseline measured 108s — 3\.5× light/);
+
+  // Heavy is safe: it over-provisions. Reported so it can be corrected, never red.
+  const heavy = checkShardCost(manifests, { '@tflw/slow': 300, '@tflw/fast': 4 });
+  assert.deepEqual(heavy.problems, []);
+  assert.equal(heavy.notes.length, 1);
+  assert.match(heavy.notes[0], /heavy, so it over-provisions rather than overruns/);
+});
+
+test('a small package that doubles on noise is not a stale constant', () => {
+  // `tflw-vscode` measured 1s against a table entry of 3. That is 3× and it means nothing: the
+  // absolute floor is what keeps this check about shards that overrun rather than about rounding.
+  const { problems, notes } = checkShardCost([{ shard: 1, of: 1, actualSeconds: 60, costs: { 'tflw-vscode': 3 } }], { 'tflw-vscode': 1 });
+  assert.deepEqual(problems, [], 'a 2s absolute error is not worth a red build whatever the ratio');
+  assert.deepEqual(notes, []);
+});
+
+test('a package baselined with no SUITE_SECONDS entry is a problem, not a default', () => {
+  const { problems } = checkShardCost([{ shard: 1, of: 1, actualSeconds: 60, costs: { '@tflw/unpriced': 90 } }], {});
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /no SUITE_SECONDS entry/);
+});
+
+test('manifests written before the cost telemetry are noted, not failed', () => {
+  // The transition run. A check that goes red the first time it ships, for a reason that is not the
+  // thing it checks, is a check everybody learns to click past.
+  const { problems, notes } = checkShardCost([{ shard: 1, of: 1, ids: [] }]);
+  assert.deepEqual(problems, []);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /predate the cost telemetry/);
+});
+
+test('a real sweep of this registry is priced by constants that would pass their own check', () => {
+  // The round trip: partition by the shipped constants, pretend every shard cost exactly what the
+  // model says, and assert the check is happy. It fails if a constant is edited without the model
+  // being re-run — which is how the 31 survived eleven milestones.
+  const n = 18;
+  const manifests = partition(MUTATIONS, n).map((shard, i) => ({
+    shard: i + 1,
+    of: n,
+    registry: MUTATIONS.length,
+    actualSeconds: 1,
+    costs: {},
+    ids: shard.map((m) => m.id),
+  }));
+  const { problems } = checkShardCost(manifests);
+  assert.deepEqual(problems, []);
 });

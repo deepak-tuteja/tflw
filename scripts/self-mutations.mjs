@@ -173,4 +173,29 @@ export const SELF_MUTATIONS = [
     find: '    if (shard.of > selected.length) {',
     replace: '    if (false) {',
   },
+
+  // --- M148 (`M147-11`) ---------------------------------------------------------------------
+  //
+  // Both of these are the same shape as the row that produced them: a number the packer trusts,
+  // with nothing downstream re-measuring it. The first kills the measurement at the source; the
+  // second kills the check that reads it back. Neither can be caught by any mutation already here,
+  // because before M148 there was nothing in this file that knew what a shard cost.
+  {
+    id: 'baseline-cost-never-measured',
+    milestone: 'm148',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: 'the measured baseline seconds are dropped on the floor, so every manifest reports `costs: {}` and `verify-shards.mjs` has nothing to compare `SUITE_SECONDS` against. The sweep still runs, every shard still passes, and the constants go back to being unfalsifiable — which is exactly the state that let the root suite drift 3.5× and cost a shard',
+    find: '  measuredSeconds.set(pkg, Math.round((Date.now() - startedAt) / 1000));',
+    replace: '  void startedAt;',
+  },
+  {
+    id: 'shard-budget-is-the-limit-itself',
+    milestone: 'm148',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: "the re-shard trigger is moved from two-thirds of the limit to the limit, which is `M131-06`'s error made executable: a shard that reaches 30m has already been cancelled by `timeout-minutes` and uploaded no manifest, so the check can only ever fire on a run where it had nothing to read. A trigger at the limit is a trigger that never fires",
+    find: 'export const RESHARD_AT = 2 / 3;',
+    replace: 'export const RESHARD_AT = 1;',
+  },
 ];
