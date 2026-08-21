@@ -2920,6 +2920,37 @@ const REGISTRY = [
     replace: '',
   },
 
+  // --- `M147e-5` (`M106-02`) — the empty-block rules anchor on their own header -------------------
+  //
+  // Eleven rules, one mechanism, and the mutations go at the mechanism rather than at each rule:
+  // `headerSpanFrom` itself, the two rules whose span is hardest to get right, and the census
+  // property. `parseStepOrSpikeWorkload` is deliberately not mutated — it has anchored correctly
+  // since `A2-04` and this slice only moved it onto the shared helper.
+  {
+    id: 'header-span-taken-after-the-newline',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "`M106-02` verbatim, at the mechanism: the header span is computed from wherever the cursor sits rather than from the header, so every one of the eleven rules points past its construct again. `this `before file` has no steps` goes back to underlining the word `test` on a later line — a declaration with nothing wrong with it",
+    find: '  private headerSpanFrom(start: Position): Span {\n    return this.spanFrom(start);\n  }',
+    replace: '  private headerSpanFrom(_start: Position): Span {\n    return this.peek().span;\n  }',
+  },
+  {
+    id: 'wait-until-second-raise-anchors-past-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the row's own example, and the half a one-line fix misses: `wait until` raises `TF015` twice, and the *second* raise fires after the dedent is consumed, so `peek()` is the first token beyond the whole block. Headers-but-no-`expect` is the shape that reaches it, and the caret lands two lines below the construct the sentence names",
+    find: "      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', headerSpan, 'indent at least one `expect` under the request line');\n    }\n    return { headers, expects };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');\n    }\n    return { headers, expects };",
+  },
+  {
+    id: 'fill-form-header-span-spans-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`fill form`\'s second raise takes `spanFrom(start)` instead of the header span — the shape this slice replaced, and the one that looks correct: it starts in the right place. It ends at the last token *consumed*, so the caret underlines the whole malformed block rather than the line that opened it, and `M106`\'s one-cell rule is the only reason that is visible at all',
+    find: "      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', headerSpan, 'add at least one `| \"Field\" | value |` row');",
+    replace: "      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.spanFrom(start), 'add at least one `| \"Field\" | value |` row');",
+  },
+
 ];
 
 /**

@@ -1,0 +1,7 @@
+error[TF015]: this `within` has no steps
+ --> empty-within-block.tflw:2:3
+  |
+2 |   within css "#panel"
+  |   ^^^^^^^^^^^^^^^^^^^
+  |
+  = help: indent at least one step under the `within` line

@@ -1,0 +1,7 @@
+error[TF015]: this `switch to new tab` has no steps
+ --> empty-switch-to-new-tab-block.tflw:2:3
+  |
+2 |   switch to new tab
+  |   ^^^^^^^^^^^^^^^^^
+  |
+  = help: indent at least one step under the `switch to new tab` line

@@ -1,0 +1,7 @@
+error[TF015]: this `action` has no steps
+ --> empty-action-block.tflw:1:1
+  |
+1 | action create widget(name)
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: indent at least one step under the `action` line

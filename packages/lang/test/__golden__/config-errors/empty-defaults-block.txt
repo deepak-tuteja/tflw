@@ -1,0 +1,7 @@
+error[TF015]: this `defaults` block has no entries
+ --> tflw.config:1:1
+  |
+1 | defaults
+  | ^^^^^^^^
+  |
+  = help: indent at least one entry under the block header

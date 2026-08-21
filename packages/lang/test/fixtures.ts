@@ -844,6 +844,48 @@ env local default
   api "http://localhost:3001"
 `,
   },
+  // `M147e`/`M106-02`, the config dialect's four empty-block rules. Each is written with something
+  // *after* it, because the defect the row names is only visible when there is a next construct for
+  // the caret to land on — an empty block at the end of a file pointed at nothing in particular,
+  // which reads as merely unhelpful rather than as wrong.
+  {
+    name: 'empty-defaults-block',
+    source: `defaults
+
+env local default
+  api "http://localhost:3001"
+`,
+  },
+  {
+    name: 'empty-env-block',
+    source: `env local default
+
+env staging
+  api "https://staging.example.com"
+`,
+  },
+  {
+    name: 'empty-session-block',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin
+
+session peer
+  api POST /login
+`,
+  },
+  {
+    name: 'empty-oauth2-config',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+
+session peer
+  api POST /login
+`,
+  },
 ];
 
 export const INVALID: readonly Fixture[] = [
@@ -1056,6 +1098,73 @@ test "and a step after it"
   // is what `parseSource`'s "never throws for a syntax error" contract says and what a raw V8
   // `RangeError` was not. The source is built rather than written out so the limit and the fixture
   // cannot drift apart on a hand-counted string.
+  // `M147e`/`M106-02`, the test dialect's remaining empty-block rules. Same construction as the
+  // config four: a following construct in every one, so a caret that lands past the block lands
+  // somewhere identifiable and the golden records which. `hook-missing-block` is the shipped example
+  // of what that looked like — `this \`before file\` has no steps` with the caret under the word
+  // `test` on line 3, a declaration with nothing wrong with it.
+  {
+    name: 'empty-crawl-block',
+    source: `crawl "site"
+
+test "unaffected"
+  api GET /health
+`,
+  },
+  {
+    name: 'empty-action-block',
+    source: `action create widget(name)
+
+test "unaffected"
+  api GET /health
+`,
+  },
+  {
+    name: 'empty-within-block',
+    source: `test "x"
+  within css "#panel"
+  click css "#save"
+`,
+  },
+  {
+    name: 'empty-fill-form-block',
+    source: `test "x"
+  fill form
+  click css "#save"
+`,
+  },
+  // The *second* `fill form` raise: an indented block that yields no rows at all. It fires after
+  // the block has been consumed, which is the shape `M106-02` names — and the one a fix applied only
+  // to the `!check('indent')` arm above would miss, since that arm is never reached here.
+  {
+    name: 'fill-form-block-with-no-rows',
+    source: `test "x"
+  fill form
+    not a row
+  click css "#save"
+`,
+  },
+  {
+    name: 'empty-download-block',
+    source: `test "x"
+  download as report
+  click css "#save"
+`,
+  },
+  {
+    name: 'empty-switch-to-new-tab-block',
+    source: `test "x"
+  switch to new tab
+  click css "#save"
+`,
+  },
+  {
+    name: 'with-each-table-no-rows',
+    source: `with each
+test "unaffected"
+  api GET /health
+`,
+  },
   {
     name: 'unary-minus-nested-past-the-limit',
     source: `test "generated, not written"\n  let a = ${'-'.repeat(300)}1\n`,

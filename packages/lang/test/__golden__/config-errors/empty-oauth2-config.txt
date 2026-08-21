@@ -1,0 +1,19 @@
+error[TF015]: this `session … oauth2` has no config
+ --> tflw.config:4:1
+  |
+4 | session admin oauth2
+  | ^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: indent `token url`, `client id`, and `client secret` under the `session … oauth2` line
+
+error[TF022]: expected `defaults`, `env`, `session`, `require`, or `exclude`, found an indented block
+ --> tflw.config:7:3
+  |
+7 |   api POST /login
+  |   ^
+
+error[TF022]: expected `defaults`, `env`, `session`, `require`, or `exclude`, found the end of the block
+ --> tflw.config:7:18
+  |
+7 |   api POST /login
+  |                  ^

@@ -1,0 +1,7 @@
+error[TF015]: this `session` has no steps
+ --> tflw.config:4:1
+  |
+4 | session admin
+  | ^^^^^^^^^^^^^
+  |
+  = help: indent at least one step under the `session` line

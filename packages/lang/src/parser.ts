@@ -904,8 +904,9 @@ class Parser {
       this.advance();
       scope = 'file';
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock(scope === 'file' ? `${when} file` : when);
+    const body = this.parseBlock(scope === 'file' ? `${when} file` : when, headerSpan);
     return { type: 'HookDecl', when, scope, body, span: this.spanFrom(start) };
   }
 
@@ -957,8 +958,9 @@ class Parser {
       }
     }
     if (!this.expect('rparen', '`)` to close the parameter list')) return null;
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock('action');
+    const body = this.parseBlock('action', headerSpan);
     return { type: 'ActionDecl', name: nameParts.join(' '), params, body, span: this.spanFrom(start) };
   }
 
@@ -981,9 +983,9 @@ class Parser {
    * it an ordinary functional test rather than a load test, D94). Checker-enforced (D96): a
    * non-null workload can't coexist with `retry`/`with each` (`parseTest` reports those before
    * calling this). */
-  private parseTestBody(context: string): { workload: Workload | null; thresholds: ThresholdDecl[]; cleanup: boolean; body: Step[] } {
+  private parseTestBody(context: string, headerSpan: Span): { workload: Workload | null; thresholds: ThresholdDecl[]; cleanup: boolean; body: Step[] } {
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, this.peek().span, `indent at least one step under the \`${context}\` line`);
+      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, headerSpan, `indent at least one step under the \`${context}\` line`);
       return { workload: null, thresholds: [], cleanup: false, body: [] };
     }
     this.advance(); // indent
@@ -1156,9 +1158,7 @@ class Parser {
       this.error(Codes.UNEXPECTED_TOKEN, `expected \`users\` or \`rps\`, found ${describeToken(unitTok)}`, unitTok.span);
       return null;
     }
-    // Captured before `endLine()` so a diagnostic about the block as a whole can point at the line
-    // that opened it, rather than wherever the cursor happens to be once the block is consumed.
-    const headerSpan: Span = { start, end: this.previous().span.end };
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     const stages = this.parseStageBlock(headKind, unit, headerSpan);
     if (!stages) return null;
@@ -1522,15 +1522,17 @@ class Parser {
       this.advance(); // `oauth2`
       const privileged = this.parsePrivilegedModifier() || misordered;
       this.lateEnvScope(name.value, envs);
+      const headerSpan = this.headerSpanFrom(start);
       this.endLine();
-      const oauth2 = this.parseOauth2SessionConfig(start);
+      const oauth2 = this.parseOauth2SessionConfig(start, headerSpan);
       if (!oauth2) return null;
       return { type: 'SessionDecl', name: name.value, envs, oauth2, body: [], privileged, span: this.spanFrom(start) };
     }
     const privileged = this.parsePrivilegedModifier();
     this.lateEnvScope(name.value, envs);
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseSessionBlock();
+    const body = this.parseSessionBlock(headerSpan);
     return { type: 'SessionDecl', name: name.value, envs, oauth2: null, body, privileged, span: this.spanFrom(start) };
   }
 
@@ -1612,12 +1614,12 @@ class Parser {
   /** `session <name> oauth2` body — a fixed sugar shape, not ordinary steps (SPEC §3.3, decision
    * 3c): `token url`, `client id`, `client secret` are required; `scope` is optional. Each is a
    * full `Value` (so `env(...)`/interpolation work, matching every other config value). */
-  private parseOauth2SessionConfig(start: Position): Oauth2SessionConfig | null {
+  private parseOauth2SessionConfig(start: Position, headerSpan: Span): Oauth2SessionConfig | null {
     if (!this.check('indent')) {
       this.error(
         Codes.EMPTY_BLOCK,
         'this `session … oauth2` has no config',
-        this.peek().span,
+        headerSpan,
         'indent `token url`, `client id`, and `client secret` under the `session … oauth2` line',
       );
       return null;
@@ -1708,9 +1710,9 @@ class Parser {
 
   /** Like `parseBlock`, but also accepts a bare `header "…" is …` line (only valid inside a
    * session — SPEC §3.3). */
-  private parseSessionBlock(): Step[] {
+  private parseSessionBlock(headerSpan: Span): Step[] {
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `session` has no steps', this.peek().span, 'indent at least one step under the `session` line');
+      this.error(Codes.EMPTY_BLOCK, 'this `session` has no steps', headerSpan, 'indent at least one step under the `session` line');
       return [];
     }
     this.advance(); // indent
@@ -1796,8 +1798,9 @@ class Parser {
   private parseDefaultsBlock(): DefaultsBlock | null {
     const start = this.peek().span.start;
     this.advance(); // `defaults`
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const entries = this.parseConfigEntries('defaults');
+    const entries = this.parseConfigEntries('defaults', headerSpan);
     return { type: 'DefaultsBlock', entries, span: this.spanFrom(start) };
   }
 
@@ -1811,15 +1814,16 @@ class Parser {
       this.advance();
       isDefault = true;
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const entries = this.parseConfigEntries('env');
+    const entries = this.parseConfigEntries('env', headerSpan);
     return { type: 'EnvBlock', name: name.value, isDefault, entries, span: this.spanFrom(start) };
   }
 
-  private parseConfigEntries(block: ConfigBlockKind): ConfigEntry[] {
+  private parseConfigEntries(block: ConfigBlockKind, headerSpan: Span): ConfigEntry[] {
     const entries: ConfigEntry[] = [];
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this block has no entries', this.peek().span, 'indent at least one entry under the block header');
+      this.error(Codes.EMPTY_BLOCK, `this \`${block}\` block has no entries`, headerSpan, 'indent at least one entry under the block header');
       return entries;
     }
     this.advance(); // indent
@@ -2718,11 +2722,12 @@ class Parser {
       }
       break;
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     // D96 (`retry`/`with each` vs. a workload clause) is checker-enforced, not parser-enforced —
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
-    const { workload, thresholds, cleanup, body } = this.parseTestBody('test');
+    const { workload, thresholds, cleanup, body } = this.parseTestBody('test', headerSpan);
     return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
   }
 
@@ -2792,8 +2797,9 @@ class Parser {
         if (s && !duplicate) sessions.push(s.value);
       }
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const { seeds, excludes, body } = this.parseCrawlBody();
+    const { seeds, excludes, body } = this.parseCrawlBody(headerSpan);
     return { type: 'CrawlDecl', name, tags, sessions, seeds, excludes, body, span: this.spanFrom(start) };
   }
 
@@ -2801,12 +2807,12 @@ class Parser {
    * `parseTestBody` uses for `workload`/`threshold`/`cleanup`. The steps are **not** restricted here —
    * a crawl body holding an `api GET /orders` line is a semantic error about a fully-formed node, so
    * the checker owns it, the same layering `D96` and `D19` already use. */
-  private parseCrawlBody(): { seeds: CrawlSeed[]; excludes: StringLit[]; body: Step[] } {
+  private parseCrawlBody(headerSpan: Span): { seeds: CrawlSeed[]; excludes: StringLit[]; body: Step[] } {
     const seeds: CrawlSeed[] = [];
     const excludes: StringLit[] = [];
     const body: Step[] = [];
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `crawl` has no body', this.peek().span, 'indent at least one `seed` line and one `expect` under the `crawl` line');
+      this.error(Codes.EMPTY_BLOCK, 'this `crawl` has no body', headerSpan, 'indent at least one `seed` line and one `expect` under the `crawl` line');
       return { seeds, excludes, body };
     }
     this.advance(); // indent
@@ -2967,9 +2973,10 @@ class Parser {
       this.endLine();
       return { type: 'FileDataTable', path, span: this.spanFrom(start) };
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `with each` table has no rows', this.peek().span, 'indent a header row and at least one data row, e.g. `| col | … |`');
+      this.error(Codes.EMPTY_BLOCK, 'this `with each` table has no rows', headerSpan, 'indent a header row and at least one data row, e.g. `| col | … |`');
       return null;
     }
     this.advance(); // indent
@@ -3076,9 +3083,9 @@ class Parser {
     return cells;
   }
 
-  private parseBlock(context = 'test'): Step[] {
+  private parseBlock(context: string, headerSpan: Span): Step[] {
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, this.peek().span, `indent at least one step under the \`${context}\` line`);
+      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, headerSpan, `indent at least one step under the \`${context}\` line`);
       return [];
     }
     this.advance(); // indent
@@ -3611,8 +3618,9 @@ class Parser {
       );
       return null;
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const { headers, expects } = this.parseWaitUntilBody();
+    const { headers, expects } = this.parseWaitUntilBody(headerSpan);
     return {
       type: 'WaitUntilApiStmt',
       request: headers.length ? { ...request, headers } : request,
@@ -3689,11 +3697,11 @@ class Parser {
   /** The indented block under `wait until api …`: optional `header "…" is …` lines (SPEC §5.5,
    * gap #4 — mirrors an `api` step's own header sub-block so a poll can carry per-step auth,
    * namespace, or idempotency-key headers) followed by the required `expect` lines. */
-  private parseWaitUntilBody(): { headers: ApiHeader[]; expects: ExpectStmt[] } {
+  private parseWaitUntilBody(headerSpan: Span): { headers: ApiHeader[]; expects: ExpectStmt[] } {
     const headers: ApiHeader[] = [];
     const expects: ExpectStmt[] = [];
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');
+      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', headerSpan, 'indent at least one `expect` under the request line');
       return { headers, expects };
     }
     this.advance(); // indent
@@ -3718,7 +3726,10 @@ class Parser {
     }
     if (this.check('dedent')) this.advance();
     if (expects.length === 0) {
-      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');
+      // The dedent is consumed by here, so `peek()` is the token *after* the whole block — a caret
+      // two lines past the construct the sentence names. `M106-02` verbatim, and the reason this
+      // rule needed the header span twice rather than once.
+      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', headerSpan, 'indent at least one `expect` under the request line');
     }
     return { headers, expects };
   }
@@ -4303,16 +4314,17 @@ class Parser {
 
   private parseFillFormStep(start: Position): Step | null {
     this.advance(); // `form`
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.peek().span, 'indent at least one `| "Field" | value |` row');
+      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', headerSpan, 'indent at least one `| "Field" | value |` row');
       return null;
     }
     this.advance(); // indent
     const rows = this.parseFillFormRows();
     if (this.check('dedent')) this.advance();
     if (rows.length === 0) {
-      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.spanFrom(start), 'add at least one `| "Field" | value |` row');
+      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', headerSpan, 'add at least one `| "Field" | value |` row');
       return null;
     }
     return { type: 'FillFormStmt', rows, span: this.spanFrom(start) };
@@ -4467,8 +4479,9 @@ class Parser {
     }
     const locator = this.parseLocator();
     if (!locator) return null;
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock(frame ? 'within frame' : 'within');
+    const body = this.parseBlock(frame ? 'within frame' : 'within', headerSpan);
     return { type: 'WithinBlock', locator, frame, body, span: this.spanFrom(start) };
   }
 
@@ -4493,8 +4506,9 @@ class Parser {
     if (this.isKw(this.peek(), 'new')) {
       this.advance(); // `new`
       if (!this.expectKw('tab')) return null;
+    const headerSpan = this.headerSpanFrom(start);
       this.endLine();
-      const body = this.parseBlock('switch to new tab');
+      const body = this.parseBlock('switch to new tab', headerSpan);
       const stmt: SwitchToNewTabBlock = { type: 'SwitchToNewTabBlock', body, span: this.spanFrom(start) };
       return stmt;
     }
@@ -4522,8 +4536,9 @@ class Parser {
     if (!this.expectKw('as')) return null;
     const name = this.expect('ident', 'a variable name after `as`, e.g. `download as file`');
     if (!name) return null;
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock('download');
+    const body = this.parseBlock('download', headerSpan);
     const stmt: DownloadBlock = { type: 'DownloadBlock', name: name.value, body, span: this.spanFrom(start) };
     return stmt;
   }
@@ -5396,6 +5411,27 @@ class Parser {
 
   private spanFrom(start: Position): Span {
     return { start, end: this.previous().span.end };
+  }
+
+  /**
+   * The span of a block's **header line**, captured by its production before `endLine()` runs.
+   *
+   * Every "this X has no Y" rule in this file is raised *after* the header has been read, and most
+   * of them used to anchor on `this.peek()` — which by then is the first token of whatever comes
+   * next. `M106` measured the result and `M106-02` named it: the caret lands on the line after the
+   * construct, or, where the rule fires past a consumed `dedent`, on the line after the whole
+   * block. Right file, right block, adjacent line, wrong token — and `M106` could not fix it,
+   * because a renderer holding a `Diagnostic` and a string cannot know which token the sentence is
+   * about. Only the production knows, so only the production can say (D191's rejected option, taken
+   * here for the eleven rules where the subject is named in the message and is always a real token).
+   *
+   * `previous()` rather than `peek()` is the whole trick: called before `endLine()`, the last token
+   * consumed is the last token *of the header*, so `start … previous().end` is exactly the line the
+   * author would point at. `parseStepOrSpikeWorkload` has done this since `A2-04` and its comment
+   * gave the reason; this is that one fix generalised.
+   */
+  private headerSpanFrom(start: Position): Span {
+    return this.spanFrom(start);
   }
 
   /**

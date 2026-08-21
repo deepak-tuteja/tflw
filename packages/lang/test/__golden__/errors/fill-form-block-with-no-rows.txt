@@ -1,0 +1,15 @@
+error[TF015]: this `fill form` has no rows
+ --> fill-form-block-with-no-rows.tflw:2:3
+  |
+2 |   fill form
+  |   ^^^^^^^^^
+  |
+  = help: add at least one `| "Field" | value |` row
+
+error[TF010]: expected `|` to start the form row, found `not`
+ --> fill-form-block-with-no-rows.tflw:3:5
+  |
+3 |     not a row
+  |     ^^^
+  |
+  = help: expected `|`

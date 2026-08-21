@@ -1,0 +1,7 @@
+error[TF015]: this `crawl` has no body
+ --> empty-crawl-block.tflw:1:1
+  |
+1 | crawl "site"
+  | ^^^^^^^^^^^^
+  |
+  = help: indent at least one `seed` line and one `expect` under the `crawl` line

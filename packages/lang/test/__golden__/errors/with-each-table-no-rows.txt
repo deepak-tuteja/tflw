@@ -1,0 +1,7 @@
+error[TF015]: this `with each` table has no rows
+ --> with-each-table-no-rows.tflw:1:1
+  |
+1 | with each
+  | ^^^^^^^^^
+  |
+  = help: indent a header row and at least one data row, e.g. `| col | … |`

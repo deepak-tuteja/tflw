@@ -653,7 +653,21 @@ function isCodeLine(line: string): boolean {
  * would depend on lexer internals. Measurement says the two sets coincide exactly today.
  *
  * Total by construction (D196): a prefix that is entirely blank and comment lines has nothing to
- * fall back to, so the original position is returned. Measured 0 times in the corpus, and reachable. */
+ * fall back to, so the original position is returned. Measured 0 times in the corpus, and reachable.
+ *
+ * **`M147e`/`M106-02` took the walk-back's subject away, and it is kept anyway.** `M106-02` said the
+ * real fix for the eleven "this X has no Y" rules was producer-side — each carrying a span for the
+ * construct its sentence names — and this milestone made it. Re-measured over the same corpus shape
+ * `M106` used (every `.tflw` in testFlow-tests plus every line-boundary truncation, 11 710 parses,
+ * 1 748 diagnostics) immediately before and after: zero-extent spans **1 569 → 451**, re-anchored
+ * carets **410 → 0**, and all 410 of the originals were `TF015`. So this function's entire caseload
+ * was one code, and that code no longer reaches it.
+ *
+ * Kept because the alternative is worse than the dead branch: the guard is a few lines, the next
+ * rule anchored at end-of-source will want it, and deleting it would take D192's zero-extent test
+ * and D196's floor with it. What changed is its standing — a backstop rather than a working part —
+ * and `errors.test.ts` says so, drives its three walk-back tests through this function directly, and
+ * asserts in its own test that no parser rule reaches it. */
 export function displayAnchor(span: Span, source: string): { readonly line: number; readonly column: number } {
   const { start, end } = span;
   const here = { line: start.line, column: start.column };
