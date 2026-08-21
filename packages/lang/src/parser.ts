@@ -3180,6 +3180,31 @@ class Parser {
         default: {
           if (this.looksLikeCallStart()) return this.parseCallStmt(tok);
           const hint = suggest(tok.value, SUGGESTABLE_STATEMENT_KEYWORDS);
+          // `M147e`/`A3-19`. `let x = create order` has been told ``multi-word calls need parens``
+          // since D168; `create order` as a *step* was told `unknown step` and handed the whole
+          // keyword list. Same mistake, same file, two answers — and the statement position, which
+          // is where a bare call is actually written, got the worse one. D168's mechanism cannot
+          // reach here: it fires from `parseIdentOrCall`'s back-off against a following
+          // `UNEXPECTED_TOKEN`, and this branch never calls into the value grammar at all. So the
+          // shape is recognised directly.
+          //
+          // `suggest` wins when it has an answer, because a near-miss keyword is the likelier
+          // reading of a word run that starts with one: `expct status equals 200` is a typo, not a
+          // call. Only a run this parser can offer nothing else about is read as a missing `(`.
+          //
+          // The code stays `TF011`. `create order` *is* an unknown statement — the message now says
+          // why rather than listing what else it could have been — so reusing it makes nothing
+          // false (§6). The value position keeps `TF010` because that is the code its enclosing
+          // production raised; the two positions have always differed there.
+          if (!hint && this.looksLikeBareWordRun()) {
+            this.error(
+              Codes.UNKNOWN_STATEMENT,
+              `\`${tok.value}\` looks like the start of a call but never reaches \`(\``,
+              tok.span,
+              'multi-word calls need parens, e.g. `create order(...)`',
+            );
+            return null;
+          }
           this.error(
             Codes.UNKNOWN_STATEMENT,
             `unknown step \`${tok.value}\``,
@@ -3202,6 +3227,19 @@ class Parser {
     let k = 0;
     while (this.peek(k).type === 'ident') k++;
     return k > 0 && this.peek(k).type === 'lparen';
+  }
+
+  /** `looksLikeCallStart`'s near miss (`M147e`, `A3-19`): a run of two or more words that fills the
+   * whole line and reaches no `(`. Two is the floor because one word is just an unknown keyword and
+   * has nothing call-shaped about it. The run must reach the end of the line — `expct status equals
+   * 200` stops at a number, and a line with an argument on it is a mis-spelled step far more often
+   * than a call missing its parens. */
+  private looksLikeBareWordRun(): boolean {
+    let k = 0;
+    while (this.peek(k).type === 'ident') k++;
+    if (k < 2) return false;
+    const end = this.peek(k).type;
+    return end === 'newline' || end === 'dedent' || end === 'eof';
   }
 
   /** `login("alice", "secret1")` — a call statement (M6). Only reached once `looksLikeCallStart`

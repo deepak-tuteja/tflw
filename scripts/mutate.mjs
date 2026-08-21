@@ -2866,6 +2866,36 @@ const REGISTRY = [
     replace: '',
   },
 
+  // --- `M147e-3` (`A3-19`) — a bare word run is a call missing its parens -----------------------
+  //
+  // Three ways to lose this: the branch itself, the two-word floor, and the end-of-line test. The
+  // last two are the ones that matter, because both leave the branch present and working on the
+  // row's own example while quietly answering the wrong question everywhere else.
+  {
+    id: 'bare-word-run-gets-the-keyword-wall',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A3-19` verbatim: `create order` as a step goes back to `unknown step` plus all thirty step keywords, while `let x = create order` one line below still gets the parens advice. The same mistake answered two ways in the same file, and the worse answer at the position where a bare call is actually written',
+    find: '          if (!hint && this.looksLikeBareWordRun()) {',
+    replace: '          if (false) {',
+  },
+  {
+    id: 'one-word-is-a-call-shape',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the floor drops to one word, so every unrecognised single keyword with no near miss is told it looks like a call — `zzz` becomes paren advice instead of the list of what may go there. The enumeration stops being reachable at all, which is the failure mode of fixing a diagnostic by widening it",
+    find: '    if (k < 2) return false;',
+    replace: '    if (k < 1) return false;',
+  },
+  {
+    id: 'word-run-need-not-fill-the-line',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the end-of-line test goes away, so `expct status equals 200` is read as a call — a mis-spelled `expect` with three arguments after it, answered with advice about parentheses. Only reachable when `suggest` has nothing, so it looks harmless until a typo lands outside the edit-distance window",
+    find: "    const end = this.peek(k).type;\n    return end === 'newline' || end === 'dedent' || end === 'eof';",
+    replace: '    return true;',
+  },
+
 ];
 
 /**

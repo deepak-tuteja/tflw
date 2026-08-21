@@ -1013,4 +1013,29 @@ test "and a step after it"
     source: `use "./b.ts" 5
 `,
   },
+  // `M147e`/`A3-19` — the row's own example and its own control, in one file so the golden shows
+  // both answers side by side. `let x = create order` has had the parens advice since D168;
+  // `create order` as a step got `unknown step` and the whole keyword list.
+  {
+    name: 'bare-multi-word-call-statement',
+    source: `test "a call without parens"
+  create order
+  let x = create order
+`,
+  },
+  // The two shapes that must *not* take the new branch. `expct status equals 200` has a near-miss
+  // keyword and an argument, so it stays a typo; `zzz` is one word, which is not call-shaped at
+  // all and still gets the enumeration.
+  {
+    name: 'unknown-step-keeps-its-suggestion',
+    source: `test "a typo, not a call"
+  expct status equals 200
+`,
+  },
+  {
+    name: 'unknown-single-word-step',
+    source: `test "no suggestion, one word"
+  zzz
+`,
+  },
 ];
