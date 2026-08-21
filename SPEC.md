@@ -129,6 +129,10 @@ env staging
   (`wait until api`, and since M3b `wait until <ui condition>`, §9.5), and `timeout expect` (a UI
   `expect`/`check`'s retry budget, M3a — still inert for a plain API `expect`, which evaluates once
   and fails fast, P#15) are all consumed today.
+- **Two of the three can be overridden for one step.** `timeout step` by an `api` step's own
+  `timeout <duration>` (§5.1), and — since `M147d`/D640 — `timeout wait` by a `wait until` step's own
+  `timeout wait <duration>` (§9.5). `timeout expect` has no per-step form. The two clauses are
+  different quantities and may appear on the same line; see §9.5.
 - `insecure true` — a per-env (or `defaults`) key that disables TLS certificate verification for
   the whole run, for self-signed/private-CA staging certs (PLAN decision 78). Explicit and
   greppable in review; a run with it active carries a visible warning in the CLI summary and the
@@ -219,6 +223,30 @@ session admin
 ```
 
 - Steps inside a session are ordinary parsed steps (API or browser).
+- **A session may be scoped to named envs: `session console for env plaintext, staging`** (`M147d`,
+  D642). Without the clause a session belongs to **every** env, which is what every session written
+  before this clause existed continues to do — the clause only ever narrows.
+
+  It exists because a `session` was the one top-level declaration whose *body* resolves against
+  per-env state. A session body names `api <service>` and services are per-env, so a session against
+  a second origin had to resolve under every declared env or fail `TF026` before a single assertion
+  ran — and repairing that by declaring the service then pulled `TF060`'s affirmation and `TF065`'s
+  `allow hosts` entry into env blocks that never reach the origin. The cost was never the service
+  name; it was the two D21 declarations behind it, which is why "let a session name an absolute
+  origin" was rejected as the fix: it removes the cheap line and leaves the affirmation.
+
+  Under an env a session is not scoped to, the session does not exist: its body is not checked
+  against that env's services, it joins no authorization probe set, and a `test … as <name>` there is
+  `TF028` with a hint naming the envs it *is* scoped to. An env name the config does not declare is
+  `TF074` — the clause would otherwise narrow the session to nothing at all, silently removing a
+  principal from every probe set in the suite while every assertion stayed green.
+
+  The clause is read **before** `oauth2`/`privileged`, so `session admin for env local oauth2
+  privileged` is the one order; D307/D310 settled `oauth2 privileged` as an adjacent pair and a
+  comma list does not go between them. `for` is the same scoping preposition as `header "X" is "Y"
+  for <service>`. Note that `env` here means an `env` block, **not** the operating-system variable
+  `require env` and `env(NAME)` refer to — the word was already carrying both meanings, and this
+  clause sides with `env <name>`/`--env`/`TFLW_ENV` rather than with the outlier.
 - Runtime: each session executes **once per run per worker**; results are cached.
 - A test opting in with `test "…" as admin` (§4.1) starts with the session's declared headers and
   cookie jar applied to its **api** steps.
@@ -1062,7 +1090,7 @@ name (§17), and documenting them would be teaching a spelling that is itself an
 | Family | Keyword | Syntax | What it does | Example |
 |---|---|---|---|---|
 | api | `api` | `api [<service>] <METHOD> <target> [body …] [timeout <dur>] [without redirects]` | issue one HTTP request; `<target>` is a path against the env base URL or an absolute URL | `api POST /orders body { name: "Widget", qty: 1 }` |
-| api | `wait` | `wait until api <METHOD> <target>` + indented expects, or `wait until <locator> [is] <matcher> [for <dur>]` | re-issue a request, or re-poll a UI condition, until it passes or the wait budget elapses | `wait until button "Submit" is enabled` |
+| api | `wait` | `wait until api <METHOD> <target>` + indented expects, or `wait until <pollable subject> [is] <matcher> [for <dur>]` | re-issue a request, or re-poll a browser condition, until it passes or the wait budget elapses | `wait until button "Submit" is enabled` |
 | assertion | `expect` | `expect <subject> [not] <matcher> [value]` | hard assertion — evaluated once against the received response, fails the test immediately | `expect status equals 201` |
 | assertion | `check` | `check <subject> [not] <matcher> [value]` | the soft twin of `expect`: records a failure and keeps going. Not the checkbox action — that is `tick` (FS-04) | `check body.total equals 42` |
 | value | `let` | `let <name> = <expr>` | bind a value — a literal, a generator, an expression, or a call — for later steps to interpolate as `{name}` | `let email = unique email` |
@@ -1189,7 +1217,7 @@ interpolate the raw value, unencoded, since that's JSON/text content, not a URL.
 
 | Form | Syntax | Notes |
 |---|---|---|
-| Inline JSON | `body { name: {n}, qty: random number 1 to 5 }` | small payloads; expressions + generators inside |
+| Inline JSON | `body { name: {n}, qty: random number 1 to 5 }` or `body [{ id: 1 }, { id: 2 }]` | small payloads; expressions + generators inside; object **or top-level array** (M147d, `A3-12`, D639) |
 | File-backed | `body from "./payloads/order.json"` | file is a template — `{vars}` interpolate; checker warns when a literal path names nothing (`TF043`, M97c; warning not error since M97e/D147 — the file is read at step time) |
 | Form-encoded | `form user={u}, pass=env(PW)` | `application/x-www-form-urlencoded` |
 | Multipart upload | `upload "./files/img.png" as "avatar"` | Content-Type inferred from the file extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` overrides the inference; may combine with `form` fields (decision 22/M19) |
@@ -1204,6 +1232,32 @@ extension) falls back to `application/octet-stream`, matching pre-M19 behavior e
 `type` always wins over inference — useful for a negative test deliberately sending a wrong or
 missing type. A non-interpolated `type` literal is checker-validated against a light
 `type/subtype` shape (TF032) — a typo check, not an IANA-vocabulary gatekeeper.
+
+**A `body` is a JSON document, not specifically an object** (M147d, `A3-12`, D639). Both `body`
+positions — an `api` step's inline body and a `stub`'s stubbed response — take an object or a
+**top-level array**:
+
+```
+api POST /orders/bulk body [{ name: "Widget" }, { name: "Sprocket" }]
+stub GET "/api/orders" respond status 200 body [{ id: 1 }, { id: 2 }]
+```
+
+This was the last position in the language that refused one. A file body reads whatever JSON the
+file holds, `expect body equals [1, 2]` matches a top-level array, and an array nested one level
+inside an object was always legal — the two inline `body` sites were the exception, and each was
+made so by a single "expect `{`" in the parser. A list endpoint answers with an array, so the
+`stub` half in particular made the ordinary case unwritable.
+
+**What is still refused is a top-level scalar** — `body 5`, `body "payload"`. The widening is to
+JSON *documents*, not to any value: `body text "…"` is the form for a payload that is not a JSON
+document, and it is worth reaching for deliberately rather than by accident, because it sends
+`text/plain` rather than `application/json` (a JSON API is entitled to answer it with a 415).
+The refusal names both openers and points at that form:
+
+```
+error[TF010]: expected `{` or `[` to start the request body, found `5`
+  = help: a `body` is a JSON object or array — for anything else, use `body text "…"`
+```
 
 **Multi-line object/array literals** (`body { … }` spanning several hand-indented lines) are
 supported: the lexer tracks `{}`/`[]` bracket depth and suppresses `NEWLINE`/`INDENT`/`DEDENT`
@@ -1306,6 +1360,22 @@ wait until api GET /orders/{orderId}
 Each individual poll's own request timeout is clamped to whatever's left of the `wait` deadline, not
 just the (usually much longer) per-request `timeout step` — so a slow/hanging endpoint can't make
 the whole `wait until api` block silently exceed its configured budget (PLAN decision 67).
+
+**The two budgets on a poll line** (`M147d`, `A3-10`, D640). `wait until api GET /jobs timeout 30s`
+has always parsed, and the `timeout` in it is `ApiRequestLine`'s own — it bounds **one poll's HTTP
+request**, and the clamp described just above then shortens even that to whatever is left of the
+wait deadline. It does not lengthen the wait by a millisecond. To give *this* step a poll budget of
+its own, write `timeout wait <duration>`; both may stand on the same line, in that order:
+
+```
+wait until api GET /jobs timeout 5s timeout wait 5m
+  expect body.status equals "done"
+```
+
+— no single poll may hang past 5s, and the whole step gives up after five minutes. Omitting the
+second takes the active env's `timeout wait`, exactly as before. The bare `timeout` is documented
+here for the first time: it was inherited silently from the shared request line, which is how
+`A3-10` came to read it as a capability the locator form was missing.
 
 `wait until api` may carry its own `header "…" is <value>` lines, exactly like an `api` step's
 header sub-block (§5.1) — the same `header`/`expect` block, headers first by convention but not
@@ -1830,6 +1900,51 @@ tflw will never grow a JavaScript-style shorthand-key form — `{stock}` meaning
 permanently spoken for by interpolation. This is what lets `expect body.stock equals {stock}` and
 `expect body matches subset {id: 1}` sit on consecutive lines and each mean the obvious thing.
 
+**Time units — one vocabulary, two spellings (M147d, `A3-13`, D638).** Every position that takes an
+amount of time takes any of eight units:
+
+| written | means |
+|---|---|
+| `ms` `s` `m` | milliseconds, seconds, minutes — **abbreviations, which must touch the number** |
+| `seconds` `minutes` `hours` `days` `weeks` | the same scale spelled out — **words, which need not** |
+
+```
+pause 2 seconds                 timeout step 2m
+timeout wait 90 seconds         expect duration is less than 500ms
+today + 3 days                  today - 10s
+expect duration is less than 2 seconds
+```
+
+`250 ms` is still `TF023: a duration unit must touch its number` — the adjacency rule applies to an
+abbreviation, which is what makes a stray space a mistake worth teaching, and not to a word, which
+date arithmetic has always accepted spaced. There is no `h` and no `milliseconds`: the rule makes the
+spellings tflw *has* work everywhere, and does not invent the two it lacks.
+
+Before D638 the three positions had three vocabularies, and the cost was not only that `pause 2
+seconds` was refused. `expect duration is less than 2 seconds` passed `tflw check` and failed every
+run as a type error, and `random date between today and today - 10s` escaped the reversed-bounds rule
+(§7.3) that catches `today - 10 seconds`.
+
+**Trailing commas, and the one rule that decides where they are legal (M147d, `A3-18`, D637).**
+A comma-separated list that is **closed by a bracket** accepts a trailing comma; one that ends at
+the **end of the line** does not:
+
+```
+api POST /orders body { id: 1, }        # legal — closed by `}`
+let ids = [1, 2,]                       # legal — closed by `]`
+let token = sign("payload",)            # legal — closed by `)`
+action make id(prefix,)                 # legal — closed by `)`
+
+require env ADMIN_EMAIL, ADMIN_PW,      # not legal — the list ends at the line
+let choice = random of "a", "b",        # not legal — same
+```
+
+The line is not drawn on taste. A bracket gives the parser a token to stop at, so the trailing comma
+is unambiguous and local; a line-terminated list has only the newline, and a comma in front of it
+reads as a continuation that this grammar does not have. `require env`'s version of that once hung
+the config parser outright (`require-env-trailing-comma-continuation` in the parser fixtures, found
+dogfooding on 2026-07-18), which is why the nine line-terminated lists keep refusing it and say so.
+
 A variable named `get`, `post`, `put`, `delete`, or `patch` (any case) followed by `/` lexes as
 division, not an HTTP path — `let ratio = get / 2` parses fine, since PATH-start requires the
 preceding ident to actually sit in HTTP-method grammatical position (right after `api`, optionally
@@ -2172,6 +2287,14 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
 
 wait until text "Error" is hidden for 2s  # must hold *continuously* for 2s, not merely be true on
                                           # one poll — the only way to assert a sustained condition
+
+wait until list "Results" has count 50 timeout wait 5m
+                                          # this step polls for five minutes; every other wait in
+                                          # the suite keeps the env's `timeout wait` (M147d, D640)
+
+wait until page has no critical a11y violations
+wait until request to "/api/cart" was made        # three subjects beyond a locator, and the rule
+wait until status of request to "/api/cart" equals 200   # that picks them is below (M147d, D641)
 ```
 
 - **`within frame <locator>`** — the container locator must resolve to exactly one `<iframe>`
@@ -2190,10 +2313,60 @@ wait until text "Error" is hidden for 2s  # must hold *continuously* for 2s, not
   actions — they only work against a page that actually listens for `dragstart`/`dragover`/`drop`
   the way a real drag-and-drop UI does (a fixture/app with no such listeners simply won't react,
   same as a real user dragging over it wouldn't do anything either).
-- **`wait until <locator> [is] [not] <matcher> [for <duration>]`** is the UI sibling of `wait until
-  api` (§5.5): same "budget, not a moment" framing, but for a UI condition — no separate request to
-  re-issue, so it's a single line rather than a block. `has count` keeps its ambiguity exception
-  from §9.4.
+- **`wait until <subject> [is] [not] <matcher> [for <duration>]`** is the UI sibling of `wait until
+  api` (§5.5): same "budget, not a moment" framing, but for a browser condition — no separate
+  request to re-issue, so it's a single line rather than a block. `has count` keeps its ambiguity
+  exception from §9.4.
+- **Which subjects may be polled** (`M147d`, `A3-11`, D641). The rule is a property, not a list: **a
+  subject may follow `wait until` exactly when re-reading it between two polls can produce a
+  different answer.** Four of §6.2's subject forms qualify, and they are the four the runtime
+  already re-observes on a retry loop of its own — a **UI locator**, **`page`**, **`request to
+  "…"`**, and any value subject carrying an **`of request to "…"`** clause. For all four, `wait
+  until <X> <matcher>` means exactly `expect <X> <matcher>` on the wait budget rather than the
+  expect budget, plus the optional `for` hold. There are no new evaluation semantics.
+
+  Everything else in subject position reads the **response scope** — `status`, `duration`, `header
+  "…"`, `body …`, `response`, `request` — which exactly one `api` step writes, and between two polls
+  of a `wait until` nothing runs. Such a step could only pass on its first attempt or spin to its
+  deadline blaming an endpoint it never consulted twice, so it is `TF010` with a message naming the
+  scope. A `{variable}` subject is refused by the same argument one step over, and `TF041` already
+  states that argument in those words for a value subject inside `wait until api`.
+
+  **This is the disposition of `A3-11`, whose own example is in the second group.** The row asked
+  for `wait until body.state equals "done"` — polling the last API response — and read the refusal
+  as a missing capability. The capability it wanted exists and re-issues the request (`wait until
+  api GET /orders/1` with the assertion in its block, §5.5); what the row was right about is that
+  the guard was a test for one subject type, so three genuinely pollable browser subjects were being
+  turned away alongside the five that cannot be.
+
+  **`matches snapshot` is the matcher half of the same rule, and its only member.** A snapshot is
+  captured once and compared against a committed baseline rather than re-read as the page settles
+  (§9.9), so `wait until <locator> matches snapshot "s"` was a wait that could not wait. Refused at
+  the same code. Settle the page first, then write the comparison as its own `expect`.
+- **`timeout wait <duration>`** (`M147d`, `A3-10`, D640) gives one `wait until` step its own poll
+  budget in place of the active env's. Available on **both** forms, and written last on the line:
+  `wait until <locator> [is] [not] <matcher> [for <dur>] [timeout wait <dur>]`.
+
+  **Why the spelling names the config key it overrides.** `A3-10` observed that `wait until api …
+  timeout 30s` parses while the locator form's `timeout 30s` is `TF010`, and read the difference as
+  a capability. It is not one: on the api form that `timeout` is the request line's own and bounds
+  **one poll's HTTP request** (§5.5), which the wait deadline then clamps — it cannot extend the
+  wait at all. The locator form has no request for that clause to bound, and the budget the row was
+  really asking for was un-overridable on *both* forms. So a bare `timeout` here would have meant
+  the request budget on one sibling and the step budget on the other inside a single statement.
+  Naming the key keeps them separable and lets a poll state both at once.
+
+  A bare `timeout` on a locator wait therefore remains `TF010`. Its hint now names this clause.
+
+  **`TF055`'s tier is now an open question, and is deliberately unchanged.** That warning compares a
+  `for` hold against `timeout wait`, and D147 made it a warning rather than an error because the
+  second operand came from `tflw.config`, so the checker was *predicting* what a given env would do.
+  When the budget is written on the step, both operands are in the file: the checker observes, and
+  the pass now runs even with no env resolved. By the standard `TF071` was allocated under, that
+  case is an error. It stayed a warning here because making one code mean *error from one source,
+  warning from another* is a larger change than it looks — every consumer that partitions
+  diagnostics by severity would begin seeing `TF055` in both halves. Condition for revisiting: a
+  second diagnostic in this language needs a severity that depends on where its operand came from.
 - **`for <duration>`** (FS-05) requires the condition to hold *continuously* for that long instead
   of passing on the first poll that satisfies it. Without it a negative is unassertable: `wait until
   text "Error" is hidden` passes immediately, because the toast has not rendered *yet*, and would
@@ -2275,7 +2448,7 @@ expect text "gateway down" is visible
   last-`api`-step-response behavior). No matching request yet retries the same way `was made` does;
   a genuinely non-JSON response still needs `body text` instead of `body.<path>`, exactly as §5.3
   already requires.
-- **`stub <METHOD> "<url-pattern>" respond status <code> [body {...}]`** — route-level response
+- **`stub <METHOD> "<url-pattern>" respond status <code> [body {...} | body [...]]`** — route-level response
   mocking for the active page (Playwright's `page.route()`), registered for the rest of the test. A
   bare path like `/api/payments/**` is auto-prefixed with Playwright's own `**` glob wildcard so it
   matches regardless of origin; an already-absolute URL or an already-wildcarded pattern passes
@@ -3486,7 +3659,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF039` | Checker (M87/A4-16, `FU-12`): an `expect`/`check` on a response-backed subject (`status`/`duration`/`header`/`body …`/`request`), or any `capture`, appears before the first `api`/`wait until api` step **in its own response scope**. The scope is exactly one `execSteps` frame in the interpreter, which is narrower than it looks: a `test`/`action`/hook body is one, and so is each nested `within` / `switch to new tab` / `download` body. An `action` gets its own — calling one never publishes its response to the caller (that is `FU-12`) — and a `before` hook's response is likewise invisible to the test body. UI subjects (a locator, `page`) and `request to "…"` network observations are excluded: the interpreter routes those away from the response path entirely, so they never needed one. A `{variable}` subject (M96) is excluded for the same reason — it reads a `let`/`capture` binding, and an *unbound* one is already `TF030`. | `expect status equals 200` as a test's first step → `` no response yet — an `api` step must run before this assertion/capture `` |
 | `TF040` | Checker (M87, found while fixing `A4-03`): a call is written somewhere its value is never computed. The interpreter evaluates a `CallExpr` in exactly two places — a bare call step, and the *whole* right-hand side of a `let` — because running one is asynchronous and `evalValue` (which computes every other value) is synchronous by design. A call anywhere else parses, checks, and then silently yields nothing: `body { id: create thing() }` drops the field and sends `{}`, `[create thing()]` sends `[null]`, and `give create thing()` returns nothing — each at a green `✓`, testing a request nobody wrote. Reported alone for such a call: `TF037`/`TF038` are suppressed there, since the position is the thing to fix first. | `api POST /orders body { id: create thing() }` → `` bind it first — `let result = create thing(…)` — then use `{result}` here `` |
 | `TF041` | Checker (M96, `FU-11`): a `{variable}` subject stands somewhere a value cannot. Two cases. **A live-handle matcher** — `is visible`/`hidden`/`enabled`/`disabled`/`checked`, `has value`, `matches snapshot`, `has no … a11y violations`, `connects`/`fails`, `was made` — needs a browser element, a page, a connection attempt or an observed request; a bound value has no such state to observe, whatever its type. The *type*-constrained matchers (`equals`, `contains`, `matches "<regex>"`/`subset`/`schema`/`file`, `is greater/less than`, `has count`) are deliberately **not** checked here: a mismatch there is a runtime error for `body.<path>` today, and a captured value must not be stricter than the response it came from. **Inside `wait until api`** — that block re-issues its request and re-evaluates its expects each poll, and a value subject cannot change between polls, so the assertion either passes on the first attempt or times out blaming an endpoint that never controlled it. Distinct from `TF014` (an *unrecognised* matcher): `is visible` is recognised, just misplaced. | `expect {orderId} is visible` → `` `is visible` needs a live browser element, page, or request — not a value `` |
-| `TF042` | Checker (M97b, `A4-11`/`A4-15`): a matcher used where its subject cannot be read, or an `any`/`all` quantifier on a matcher that cannot be applied element by element. The rule is over the subject's **kind** — a value, a UI locator, `page`, `request`, `request to "…"` — and is read straight off SPEC §6.2's own table, so the checker and the reference are one statement. **Shape is deliberately not checked**: `contains` documents "strings, arrays", but whether `body.msg` is either is not knowable until the response arrives, so that stays a runtime error. The quantifier half covers the two matchers that fetch an external document (`matches schema`, `matches file`); `matches file` in particular used to fail with a message about UI matchers, and under `any` was swallowed into "none of N elements matched". Distinct from `TF041`, which is this same rule for a `{variable}` subject and says so in that case's own words. Was a documented gap in §1 until M97b closed it. | `api GET /a` then `expect status is visible` → `` `is visible/hidden/enabled/disabled/checked` can't be used on a value ``; `api GET /a` then `expect any body.items matches schema "W" from "/o.json"` → `` `any` can't be combined with `matches schema "Name" from "src"` `` |
+| `TF042` | Checker (M97b, `A4-11`/`A4-15`): a matcher used where its subject cannot be read, or an `any`/`all` quantifier on a matcher that cannot be applied element by element. The rule is over the subject's **kind** — a value, a UI locator, `page`, `request`, `request to "…"` — and is read straight off SPEC §6.2's own table, so the checker and the reference are one statement. **Shape is deliberately not checked**: `contains` documents "strings, arrays", but whether `body.msg` is either is not knowable until the response arrives, so that stays a runtime error. The quantifier half covers the two matchers that fetch an external document (`matches schema`, `matches file`); `matches file` in particular used to fail with a message about UI matchers, and under `any` was swallowed into "none of N elements matched". Distinct from `TF041`, which is this same rule for a `{variable}` subject and says so in that case's own words. Was a documented gap in §1 until M97b closed it. **Reaches `wait until <subject> <matcher>` since D641** (`M147d`, `A3-11`): that pair was the last matcher position in the language this pass could not see, so `wait until button "Go" has no critical a11y violations` checked clean and failed mid-run from the runtime's own matcher switch — verbatim the scenario §1 cited as this code's reason to exist, still live in the one construct M97b did not reach. | `api GET /a` then `expect status is visible` → `` `is visible/hidden/enabled/disabled/checked` can't be used on a value ``; `api GET /a` then `expect any body.items matches schema "W" from "/o.json"` → `` `any` can't be combined with `matches schema "Name" from "src"` `` |
 | `TF043` | Checker (M97c, `A4-07`): a path literal names a file that is not there. Covers every syntax that opens one — `import`, `use`, `with each from`, `body from`, `upload`, `matches file`, `drop file` — resolved exactly as the runtime resolves it, against the directory of the file that names it. **Only statically-known paths**: `upload "./fixtures/{name}.png"` names no file until the run picks a `name`, so it is skipped rather than guessed at. **Two severities (M97e, D147).** `import`/`use` are an **error**: `tflw check` opens them itself, so a missing one degrades the check that is running. The other five are a **warning** — the checker only `stat`s them on behalf of a step that has not run yet, and an earlier step, a hook, a `use`d JS action or a fixture build between `check` and `run` may create the file first. As an error that was a D137 clause 1 violation: `matches file "./x.bin"`, where an earlier step writes `x.bin`, is a valid suite that ran for eleven milestones and that M97c made unrunnable with no override. SPEC §4.3 has claimed this check since M2.5 and it did not exist; the row concluded the checker "could not" do it because it does no I/O, which mistook a `@tflw/lang` package invariant for a `tflw check` command one — the CLI has read imported files at check time since M87. The cost of not having it was the whole console output of a failed run being `✗ t.tflw (crashed) (0 ms)`, `--verbose` included. **`cert`/`key` in `tflw.config` are not covered** (config dialect, filed separately), and neither is CSV *column* existence, which needs the file's contents rather than a `stat`. | `import "./nowhere.tflw"` then `test "t"` then `api GET /a` → `` `import` names a file that does not exist: "./nowhere.tflw" `` |
 | `TF044` | Checker (M97d, `A4-13`): an `action` that can reach itself, directly (`a → a`) or through others (`a → b → a`). Sound to reject because **tflw has no conditionals** — no `IfStmt`, no branching keyword — so a cycle is not *potentially* infinite but unconditionally so, and the only way such a run can end is by failing. **Not gated on a closed world**: a same-file name can never be shadowed (`buildRegistry` throws on a duplicate and `TF035` reports it), so the check still applies to a suite that `use`s a JS helper. **Across `import`s too (M109, `M97d-01`)**: the graph is the one a run would build — this file's actions, then each import's, first declaration winning as `buildRegistry` has it — which is decidable precisely because calls bind late against the entry file's registry. Two limits, both by construction: with the imports unread (`importedActions` `undefined`) only local edges are seen, and a cycle whose every call site sits inside imported files is left to that file's own check, there being no span here to underline. The runtime guard stays the backstop for both, naming the same path in the same arrow notation; it used to be a raw V8 `RangeError` plus a 14,505-character single-line error. Only *evaluated* calls are edges: `let x = f() + "y"` never runs `f`. One diagnostic per cycle, not one per member. | `action a()` calling `b()`, `action b()` calling `a()` → `` this call completes a cycle: `a → b → a` `` |
 | `TF045` | Lexer (M98b, `A1-10`/`A1-20`): bracket accounting does not balance — a `{`/`[` that is never closed, or a `}`/`]` that closes nothing. Both directions carry this one code because they are the same fact seen from either side. The unclosed case is reported **at the opening bracket**, and only for the innermost one: while a bracket is open the lexer emits no `newline`/`indent`/`dedent` at all, so a single stray `{` absorbs every following line into the same logical line, and the outer entries are consequences of the same typo rather than separate mistakes. Before this the lexer tracked only a *count*, which is enough to decide continuation and leaves nothing to point at, so the failure surfaced as `TF010: expected a field name, found a dedent` — carets on a synthesized dedent at line 3 of a 2-line file, underlining nothing. | `api POST /o body {` → `` this `{` is never closed ``; a stray `}` → `` `}` closes a bracket that was never opened `` |
@@ -3499,7 +3672,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF052` | Checker (M116, `M97a-05`): `mask <locator>` written against a matcher other than `matches snapshot "…"`. A mask blanks a region *of a snapshot* before comparing it, so against any other matcher there is nothing for it to blank and the clause is silently doing nothing — which is the failure mode worth a diagnostic, since the author plainly believed it was masking something. The parser accepts a mask after any matcher **by design** (`parseSnapshotMasks`): rejecting it there would produce a parse error pointing at the wrong token, where this points at the mask itself. One diagnostic per mask rather than per statement, because each mask is a separate thing the author wrote and expected to do something. | `api GET /a` then `expect status equals 200 mask field "Email"` → `` only applies alongside `matches snapshot `` |
 | `TF053` | Checker (M116, `M97a-11`–`M97a-14`): `capture` against a subject that can be *asserted about* but not bound to a name — `page`, `request`, a UI locator, or an observed `request to "…"`. One code for what the runtime throws from five sites, because all five say the same sentence, and the hint names the operation each subject actually supports. **The `of request to "…"` case is the one that is easy to get wrong**: `status`/`header`/`body`/`body text` are ordinary value subjects, and `capture status as n` is perfectly legal — it is the `of` modifier that makes them uncapturable, since an observed network request is read from the browser's network log rather than from the last api step's response. So the rule tests the modifier before the subject kind; a kind-only rule looks complete and passes `capture status of request to "/x" as n` straight through. | `api GET /a` then `capture request as r` → `` does not support `request` ``; `api GET /a` then `capture status of request to "/a" as s` → `` does not support a `request to `` |
 | `TF054` | Checker (M124, `M97a-02`/`M97a-03`/`M97a-16`): an operand **written in the file** that the step will reject the moment it evaluates — `random number 5 to 1` (an empty range), `random password 2` (no room for the four character classes it guarantees), `hex`/`base64`/`url` `decode("…")` over a literal that will not decode, or a `matches`/`fails matching` pattern that is not a valid regular expression. Seven runtime `throw`s, one sentence, one code. **The rule fires on literals only, and that is the point rather than a limitation**: `random number {lo} to {hi}` is ordinary, legal and unknowable until the run binds those names, so an interpolated operand stays the runtime's. The decode tests are *imported* from the same module `eval.ts` uses (`literalValidity.ts`) rather than restated — "valid hex" has a length clause and "valid base64" excludes the URL-safe alphabet, and a second copy that drifted would report an error on a program that runs fine. | `let bad = random number 5 to 1` → `` `to` must be ≥ `from` ``; `let x = hex decode("not-hex!")` → `is not valid hex`; `api GET /a` then `expect body.name matches "("` → `invalid regex in matcher` |
-| `TF055` | Checker (M124, `M97a-06`): `wait until <locator> … for <duration>` whose hold window is at least as long as `timeout wait`. The window asks the condition to stay true for longer than the step is allowed to run, so it can never close — the step can only end by timing out, reporting a slow app, which is the one thing that was not wrong. **A warning, not an error, and the tier is the whole decision.** The second operand comes from `tflw.config` and differs per env, so the checker is *predicting* what this run will do rather than observing something settled: a suite whose CI env raises `timeout wait` to 120s is correct, and an error would make it unrunnable with no override. That is D147, filed after `A4-05` shipped exactly this mistake inside the milestone whose thesis forbade it. Skipped entirely when the caller resolved no env — `undefined` means nobody looked, not "the budget is zero". | `open "/x"` then `wait until button "Hidden" is hidden for 60s` → `can never be satisfied` |
+| `TF055` | Checker (M124, `M97a-06`): `wait until <locator> … for <duration>` whose hold window is at least as long as `timeout wait`. The window asks the condition to stay true for longer than the step is allowed to run, so it can never close — the step can only end by timing out, reporting a slow app, which is the one thing that was not wrong. **A warning, not an error, and the tier is the whole decision.** The second operand comes from `tflw.config` and differs per env, so the checker is *predicting* what this run will do rather than observing something settled: a suite whose CI env raises `timeout wait` to 120s is correct, and an error would make it unrunnable with no override. That is D147, filed after `A4-05` shipped exactly this mistake inside the milestone whose thesis forbade it. Skipped entirely when the caller resolved no env — `undefined` means nobody looked, not "the budget is zero". **Since `M147d`/D640 that skip is per-step, not per-file**: a step carrying its own `timeout wait <duration>` (§9.5) supplies the second operand itself, so it is compared with no env resolved at all, and where it *is* resolved the step's own budget wins over the env's — without which the widened grammar would have produced a false positive on its first use. The tier did not move with the reach; §9.5 records why, and the condition on revisiting it. | `open "/x"` then `wait until button "Hidden" is hidden for 60s` → `can never be satisfied` |
 | `TF056` | Checker (M124, `M97a-01`): `with each from "…"` naming a file whose extension is neither `.csv` nor `.json`. The loader reads rows from CSV (a header row) or JSON (an array of row objects) and picks between them by extension, so anything else is refused — but only *after* the file is opened, which means the run gets far enough to read a path whose problem was legible in the source all along. **Its own code rather than `TF043`**: `TF043` is `MISSING_FILE`, and here the file is very likely present — being present is what leaves the extension as the only thing wrong. They also sit on opposite sides of D147, since a missing file may be created by an earlier step (a prediction, warning) while an extension cannot change between check and run (an observation, error). Interpolated paths are skipped, like every other M124 rule. | `with each from "./rows.txt"` then `test "t"` then `api GET /health` → `` must be `.csv` or `.json` `` |
 | `TF057` | Checker (M125b1, `FU-18`, D245): an `api`/`wait until api`/`open` step whose target is written as an absolute URL rather than a path under the active env's base. Absolute URLs became legal in M125b1 — before it, `api GET https://x/y` was a parse error and `open "https://x/y"` was *silently concatenated* onto the `web` base, opening `http://localhost:5173/https://x/y`, which loads on any SPA with a catch-all route and fails later on an unrelated assertion. This warning is the cost of making it legal: the step is fixed wherever it points, so `--env staging` moves every other request in the suite and not this one. **Not phrased as a mistake, because it frequently is not one** — a one-off request to a second host is the case the row was filed about, and the warning exists so that "this step ignores the env" is something the file says out loud rather than something a reader has to notice. Emitted when the caller resolved no config at all (nothing can be predicted about a refusal) or when an allowlist exists; when a config *was* resolved and declares none, `TF058` is emitted instead, because a step that is going to be refused does not also need to be told it is unportable. | `api GET https://api.example.com/orders` → `` `--env` will not move it ``; `open "https://example.com/checkout"` → `absolute URL` |
 | `TF058` | Checker (M125b1, `FU-18`, D246): an absolute URL in a suite whose resolved env declares no `allow hosts` — the run will refuse to send it. **This is the one place in the language where the *absence* of an allowlist means enforcement rather than the lack of it**, and that inversion is the rule: `allow hosts` is opt-in and unset means every host is permitted (`allowHosts.ts:30`), which is the right default for a suite written entirely against its env's base URL, because that base *is* the declaration of where it talks. An absolute URL is the one form that can reach a host `tflw.config` never mentions, so writing one opts the suite into declaring where it may reach. **A warning here and a refusal at run time, and the split is D147**: `allow hosts` is read from `tflw.config` and differs per env, so the checker is predicting what *this* run would do — a suite whose CI env declares an allowlist is correct, and an error would make it unrunnable with no override — while the runtime has resolved the config and is looking at the URL it is about to fetch, so it observes and may refuse outright. Requires the caller to distinguish "a config was resolved and declares none" from "no config was resolved": the first is this rule, the second is `TF057`. | `api GET https://api.example.com/orders` → `the run will refuse to send it` |

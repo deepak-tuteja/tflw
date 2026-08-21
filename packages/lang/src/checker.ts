@@ -36,6 +36,7 @@ import type {
   TestDecl,
   TransformExpr,
   Value,
+  WaitUntilUiStmt,
 } from './ast.js';
 import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
@@ -56,6 +57,11 @@ import { parseStringParts } from './parser.js';
 export interface ProgramCheckOptions {
   readonly knownServices?: readonly string[];
   readonly knownSessions?: readonly string[];
+  /** `M147d`/`M137f-02` (D642) — the sessions this config declares that the active env does *not*
+   * get, so `TF028` can say "scoped to another env" instead of "no such session". Rides alongside
+   * `knownSessions` and is read only when that is present: the two are the same question answered
+   * about two disjoint sets of names, and a caller holding one always holds the other. */
+  readonly outOfScopeSessions?: OutOfScopeSessions;
   /**
    * The subset of `knownSessions` declared `privileged` (M130b, D307) — principals `has no
    * authorization violations` leaves out of its probe set because they are *meant* to reach other
@@ -121,8 +127,13 @@ export interface ProgramCheckOptions {
    * The fifth field to carry the same `undefined` rule, and the one where getting it backwards is
    * cheapest to do and most embarrassing to ship: a default of `{ wait: 0 }` would make *every*
    * `for` clause in the language "longer than the budget", so a file the CLI was handed without a
-   * config would light up entirely. `undefined` means nobody resolved an env, and the pass is
+   * config would light up entirely. `undefined` means nobody resolved an env, and the comparison is
    * skipped rather than guessed at.
+   *
+   * **`M147d`/D640 made that skip per-step rather than per-file.** A `wait until` step may now carry
+   * its own `timeout wait <duration>`, which supplies the second operand itself — so `TF055` reaches
+   * those steps with this field `undefined`, and only the steps that still depend on the env are
+   * skipped. The doctrine is unchanged; what changed is how many steps it applies to.
    */
   readonly envTimeouts?: EnvTimeouts;
   /**
@@ -289,7 +300,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
   return byPosition([
     ...(opts.knownServices ? checkServices(program, opts.knownServices) : []),
     ...checkDataTables(program),
-    ...(opts.knownSessions ? checkSessions(program, opts.knownSessions) : []),
+    ...(opts.knownSessions ? checkSessions(program, opts.knownSessions, opts.outOfScopeSessions) : []),
     ...checkActionDecls(program, opts),
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
@@ -539,6 +550,29 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
       });
     }
     seenSessions.add(session.name);
+    // M147d (`M137f-02`, D642) — the env scope clause's own names, checked against the `env` blocks
+    // this same file declares. Purely local: both halves are in `ConfigFile`, so unlike `TF026`'s
+    // service names this needs no resolved env and fires in the editor on the config alone.
+    //
+    // One diagnostic per unknown name, anchored on the name — the rule `checkSessions` states for
+    // its own comma list, and the reason `SessionDecl.envs` carries `EnvScopeRef` nodes instead of
+    // strings. `suggest()` is what makes the common case one keystroke: the mistakes this catches
+    // are overwhelmingly typos of an env that is right there in the file.
+    for (const ref of session.envs ?? []) {
+      if (seen.has(ref.name)) continue;
+      const hint = suggest(ref.name, [...seen]);
+      diags.push({
+        code: Codes.CONFIG_UNKNOWN_ENV,
+        severity: 'error',
+        message: `unknown env "${ref.name}"`,
+        span: ref.span,
+        hint: hint
+          ? `did you mean \`${hint}\`?`
+          : seen.size
+            ? `\`for env\` names \`env\` blocks in this file, and this one declares: ${[...seen].join(', ')}`
+            : 'this config declares no `env` blocks, so there is no env for a session to be scoped to — drop the `for env` clause and the session belongs to every env',
+      });
+    }
   }
 
   return diags;
@@ -646,6 +680,16 @@ function literalHostname(lit: StringLit): string | null {
   }
 }
 
+/** The sessions a config declares that the *active* env does not get (`M147d`/`M137f-02`, D642) —
+ * `declaredElsewhere` maps such a name to the envs its `for env` clause does name. Optional for the
+ * same reason every resolved-config option in this file is: a caller that resolved no env has not
+ * got an answer to give, and inventing one would turn the docs-site editor demo's every `as admin`
+ * into a scoping error. */
+export interface OutOfScopeSessions {
+  readonly envName: string;
+  readonly declaredElsewhere: ReadonlyMap<string, readonly string[]>;
+}
+
 /**
  * Validate `test "…" as <session>[, <session>...]` references against the sessions declared in
  * `tflw.config` (SPEC §3.3, P#42). Called by the CLI once the config is parsed — like
@@ -654,11 +698,27 @@ function literalHostname(lit: StringLit): string | null {
  * `test "..." as admin, gohst` (one typo among several valid names) still points precisely at the
  * bad one instead of a single-message-lists-everything wall of text.
  */
-export function checkSessions(program: Program, knownSessions: readonly string[]): Diagnostic[] {
+export function checkSessions(program: Program, knownSessions: readonly string[], outOfScope?: OutOfScopeSessions): Diagnostic[] {
   const diags: Diagnostic[] = [];
   const check = (sessions: readonly string[], span: Span): void => {
     for (const session of sessions) {
       if (knownSessions.includes(session)) continue;
+      // M147d (`M137f-02`, D642) — the name *is* declared, just not for the env this run resolved.
+      // Same code, because it is the same fact about this file (no session by that name is available
+      // here) and a second code would split one question across two numbers. What changes is the
+      // hint, and it has to: `known sessions: shopper, peer` in front of an author looking straight
+      // at `session console` in their config is a diagnostic that reads as a bug in the checker.
+      const scopedTo = outOfScope && outOfScope.declaredElsewhere.get(session);
+      if (outOfScope && scopedTo) {
+        diags.push({
+          code: Codes.UNKNOWN_SESSION,
+          severity: 'error',
+          message: `unknown session "${session}" in env "${outOfScope.envName}"`,
+          span,
+          hint: `\`session ${session}\` is declared \`for env ${scopedTo.join(', ')}\`, and this run resolved env "${outOfScope.envName}" — add "${outOfScope.envName}" to that clause, or run this file under an env the session is scoped to (SPEC §3.3)`,
+        });
+        continue;
+      }
       const hint = suggest(session, knownSessions);
       diags.push({
         code: Codes.UNKNOWN_SESSION,
@@ -1810,15 +1870,54 @@ const MATCHER_ROWS = new Map(MATCHERS.map((m) => [m.id, m]));
 export function checkMatcherSubjects(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
   forEachExpect(program, (expect) => checkOneMatcherSubject(expect, diags));
+  forEachWaitUntilUi(program, (step) => checkOneMatcherSubject(step, diags));
   return diags;
 }
 
 /** One body's expects (M97b, D142) — a `session` asserts too, and got none of this. */
 function checkMatcherSubjectsInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
   forEachExpectInSteps(steps, (expect) => checkOneMatcherSubject(expect, diags));
+  forEachWaitUntilUiInSteps(steps, (step) => checkOneMatcherSubject(step, diags));
 }
 
-function checkOneMatcherSubject(expect: ExpectStmt, diags: Diagnostic[]): void {
+/**
+ * `M147d`/`A3-11` — `wait until <subject> <matcher>` is a subject/matcher pair like any other, and
+ * until D641 it was the only one in the language this pass could not see. `expect button "Go" has
+ * no critical a11y violations` was `TF042`; the identical mistake one keyword over checked clean and
+ * failed mid-run from `uiMatcher.ts`'s `default:` throw — which is the exact scenario SPEC §1 cited
+ * as `TF042`'s reason to exist, still live in the one construct M97b did not reach.
+ *
+ * **Deliberately a second traversal rather than a case added to `forEachExpectInSteps`.** That walk
+ * is read by four passes, two of which are D21 safety layers (`checkAuthorizedTargets`,
+ * `checkPublicTargets`); teaching it to yield a step that is not an `ExpectStmt` would silently
+ * change what those two judge, in a commit about matcher tables. One pass wanted this, so one pass
+ * gets it.
+ */
+function forEachWaitUntilUi(program: Program, visit: (step: WaitUntilUiStmt) => void): void {
+  for (const test of program.tests) forEachWaitUntilUiInSteps(test.body, visit);
+  for (const action of program.actions) forEachWaitUntilUiInSteps(action.body, visit);
+  for (const hook of program.hooks) forEachWaitUntilUiInSteps(hook.body, visit);
+  // A crawl body cannot contain one (M137c restricts it to three matchers), but the omission would
+  // be invisible the day that changes — same reasoning that put the line in `forEachExpect`.
+  for (const crawl of program.crawls ?? []) forEachWaitUntilUiInSteps(crawl.body, visit);
+}
+
+function forEachWaitUntilUiInSteps(steps0: readonly Step[], visit: (step: WaitUntilUiStmt) => void): void {
+  const walk = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      if (step.type === 'WaitUntilUiStmt') visit(step);
+      else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') walk(step.body);
+    }
+  };
+  walk(steps0);
+}
+
+/** The pair this pass judges: an `expect`/`check`, or (since D641) a `wait until` UI condition.
+ * Only `subject`, `matcher`, `span` and the optional `quantifier` are read, and a `wait until` has
+ * no quantifier — so it is admitted by having none rather than by a second code path. */
+type MatcherSite = Pick<ExpectStmt, 'subject' | 'matcher' | 'span'> & { readonly quantifier?: ExpectStmt['quantifier'] };
+
+function checkOneMatcherSubject(expect: MatcherSite, diags: Diagnostic[]): void {
   {
     const row = MATCHER_ROWS.get(MATCHER_ROW_BY_NAME[expect.matcher.name] ?? '');
     if (!row) return;
@@ -2519,7 +2618,7 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         break;
       case 'StubStmt':
         checkStringLit(step.urlPattern, bound, diags);
-        if (step.body) for (const field of step.body.fields) checkValue(field.value, bound, diags);
+        if (step.body) checkValue(step.body, bound, diags);
         break;
       case 'PauseStmt':
         // `minMs`/`maxMs` are plain numbers (parser-level, ast.ts) — no `{var}` interpolation to check.
@@ -2587,7 +2686,9 @@ function checkApiRequestSpec(spec: ApiRequestSpec, bound: Set<string>, diags: Di
 function checkApiBody(body: ApiBody, bound: Set<string>, diags: Diagnostic[]): void {
   switch (body.type) {
     case 'InlineBody':
-      for (const field of body.object.fields) checkValue(field.value, bound, diags);
+      // `checkValue` already walks both `ObjectLit` and `ArrayLit`, so D639's widening needed no
+      // new arm here — only the loop that assumed fields had to go.
+      checkValue(body.value, bound, diags);
       break;
     case 'FileBody':
       checkStringLit(body.path, bound, diags);
@@ -3582,17 +3683,25 @@ const DATE_OFFSET_MS: Readonly<Record<DateOffsetUnit, number>> = {
  *  operand nobody has bound and returns `null`, which is the whole rule. */
 function literalDateBound(value: Value): { anchor: 'today' | 'now'; ms: number; text: string } | null {
   if (value.type === 'DateAtom') return { anchor: value.which, ms: 0, text: value.which };
-  if (
-    value.type === 'BinaryExpr' &&
-    (value.op === '+' || value.op === '-') &&
-    value.left.type === 'DateAtom' &&
-    value.right.type === 'DateOffsetLit'
-  ) {
-    const magnitude = DATE_OFFSET_MS[value.right.unit] * value.right.amount;
+  if (value.type === 'BinaryExpr' && (value.op === '+' || value.op === '-') && value.left.type === 'DateAtom') {
+    // Both spellings of an offset, and the second one is why this reads two node types rather than
+    // one (`M147d`, `A3-13`, D638). `today - 10 seconds` parses to a `DateOffsetLit` and `today -
+    // 10s` to a `DurationLit`, because the value path builds an adjacent abbreviation as a duration
+    // — so before this, the identical program was judged under one spelling and waved through under
+    // the other. Measured: `random date between today and today - 10 seconds` raised `TF054` and
+    // `... today - 10s` reached `no problems found`, hours after `M147c` shipped that rule.
+    const offset = value.right;
+    const measured =
+      offset.type === 'DateOffsetLit'
+        ? { ms: DATE_OFFSET_MS[offset.unit] * offset.amount, text: `${offset.amount} ${offset.unit}` }
+        : offset.type === 'DurationLit'
+          ? { ms: offset.ms, text: offset.raw }
+          : null;
+    if (measured === null) return null;
     return {
       anchor: value.left.which,
-      ms: value.op === '-' ? -magnitude : magnitude,
-      text: `${value.left.which} ${value.op} ${value.right.amount} ${value.right.unit}`,
+      ms: value.op === '-' ? -measured.ms : measured.ms,
+      text: `${value.left.which} ${value.op} ${measured.text}`,
     };
   }
   return null;
@@ -3670,11 +3779,23 @@ function literalText(value: Value): string | null {
  * mistake once (`A4-05`) inside the milestone whose thesis forbade it, which is why the tier is
  * written down twice — here and in `spec-data.ts`.
  *
- * Skipped entirely without `opts.envTimeouts`: see `ProgramCheckOptions`.
+ * **Since D640 the pass is no longer skipped without `opts.envTimeouts`** — only the steps that
+ * still need one are. A step carrying its own `timeout wait <duration>` (`M147d`, `A3-10`) puts
+ * *both* operands in the file, so the comparison is settled by reading the program and holds under
+ * every env. That is a strictly wider reach on the same rule: before, `wait until x is hidden for
+ * 60s timeout wait 30s` could not be diagnosed by an editor that had resolved no config, even
+ * though nothing outside the file was in question.
+ *
+ * The **tier deliberately did not change with it.** D147 made this a warning because the second
+ * operand came from `tflw.config` and the checker was therefore predicting; for an in-file budget
+ * that reason is simply absent, and by the standard `TF071` was allocated under it would be an
+ * error. Making one code mean *error here, warning there* is a bigger change than it looks — every
+ * consumer that partitions diagnostics by severity would start seeing `TF055` in both halves — so
+ * it is recorded as open in SPEC §9.5 rather than settled in passing. Condition for revisiting: a
+ * second diagnostic in this language needs a severity that depends on where its operand came from.
  */
 export function checkHoldWindows(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
   const diags: Diagnostic[] = [];
-  if (!opts.envTimeouts) return diags;
   for (const test of program.tests) checkHoldWindowsInSteps(test.body, opts.envTimeouts, diags);
   for (const action of program.actions) checkHoldWindowsInSteps(action.body, opts.envTimeouts, diags);
   for (const hook of program.hooks) checkHoldWindowsInSteps(hook.body, opts.envTimeouts, diags);
@@ -3683,7 +3804,7 @@ export function checkHoldWindows(program: Program, opts: ProgramCheckOptions = {
 
 /** One body's `wait until` steps (D152) — reachable in a `session`, which may well wait for a login
  *  redirect to settle before capturing the token. */
-function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts, diags: Diagnostic[]): void {
+function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts | undefined, diags: Diagnostic[]): void {
   const seen = new Set<object>();
   const visit = (value: unknown): void => {
     if (value === null || typeof value !== 'object') return;
@@ -3696,16 +3817,31 @@ function checkHoldWindowsInSteps(steps: readonly Step[], env: EnvTimeouts, diags
     const node = value as Record<string, unknown>;
     if (node['type'] === 'WaitUntilUiStmt') {
       const hold = node['holdMs'];
+      // D640. The step's own `timeout wait` wins over the env's, exactly as the runtime resolves it
+      // — without this the widened grammar would produce a false positive on its very first use:
+      // `for 60s timeout wait 2m` is a perfectly satisfiable program that the old comparison reads
+      // against the env's 30s default and calls impossible.
+      const own = node['waitMs'];
+      const budget = typeof own === 'number' ? own : env?.wait;
       // `>=`, not `>`, and the runtime's test is the same one: a window exactly as long as the
       // budget still cannot close, because the condition would have to survive past the deadline
-      // that ends the step.
-      if (typeof hold === 'number' && hold >= env.wait) {
+      // that ends the step. `budget === undefined` is the env-derived case with no resolved env —
+      // still skipped, still not defaulted, for the reason `ProgramCheckOptions` gives.
+      if (typeof hold === 'number' && budget !== undefined && hold >= budget) {
+        // Naming the env is what makes the env-derived form actionable, and is a lie about the
+        // in-file form — the budget is on the line the caret already points at, and no env supplied
+        // it. So the sentence ends differently rather than naming an env that had no say.
+        const detail =
+          typeof own === 'number' ? `\`timeout wait ${budget}ms\` on this step` : `\`timeout wait\` (${budget}ms in env "${env!.envName}")`;
         diags.push({
           code: Codes.HOLD_EXCEEDS_WAIT_TIMEOUT,
           severity: 'warning',
-          message: `\`for ${hold}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${env.wait}ms in env "${env.envName}")`,
+          message: `\`for ${hold}ms\` can never be satisfied — the whole step is bounded by ${detail}`,
           span: (node as unknown as { span: Span }).span,
-          hint: `the hold window has to be shorter than the budget the step runs inside — raise \`timeout wait\` in \`tflw.config\`, or shorten the hold (SPEC §9.5)`,
+          hint:
+            typeof own === 'number'
+              ? `the hold window has to be shorter than the budget the step runs inside — raise this step's \`timeout wait\`, or shorten the hold (SPEC §9.5)`
+              : `the hold window has to be shorter than the budget the step runs inside — raise \`timeout wait\` in \`tflw.config\`, or shorten the hold (SPEC §9.5)`,
         });
       }
     }

@@ -44,6 +44,7 @@ import type {
   DurationLit,
   EnvBlock,
   EnvRef,
+  EnvScopeRef,
   EvidenceDecl,
   EvidenceLevel,
   ExcludeDecl,
@@ -154,7 +155,7 @@ import type {
   Workload,
   WorkersDecl,
 } from './ast.js';
-import { quantifiable } from './ast.js';
+import { pollable, quantifiable } from './ast.js';
 import { type ConfigDirective, listConfigDirectives } from './spec-data.js';
 
 export interface ParseResult {
@@ -569,6 +570,46 @@ const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
 export const DURATION_UNITS = ['ms', 's', 'm'] as const;
 export const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
 
+/** **One time vocabulary** (`M147d`, `A3-13`, D638). Every unit the language has, abbreviations and
+ * words alike, in milliseconds — and the single table both duration positions and date arithmetic
+ * resolve through.
+ *
+ * The two arrays above stay because they still name a real distinction, but it is a distinction of
+ * *spelling*, not of meaning: **an abbreviation must touch its number, a word need not.** That rule
+ * was already true in the two positions that accepted both spellings (`today + 3s` parses, `today +
+ * 3 s` is `TF023: a duration unit must touch its number`, `today + 3 seconds` and `today +
+ * 3seconds` both parse); it simply had nowhere to be written down, because the third position —
+ * `parseDuration`, which `pause`/`timeout`/`for`/`over`/`within` all use — accepted no word at all.
+ *
+ * What that cost was measured before this table existed, and it was more than `pause 2 seconds`
+ * being refused:
+ *
+ *  - `expect duration is less than 2 seconds` reached `no problems found` and then failed every run
+ *    with ``\`is less than\` expects a number, got object`` — the value path built a
+ *    `DateOffsetLit`, which no numeric matcher had ever been taught to read.
+ *  - `random date between today and today - 10s` escaped `TF054`'s reversed-bounds rule entirely,
+ *    while `today - 10 seconds` was caught. Same program, two spellings, one judged.
+ *
+ * So the vocabulary split was not an ergonomic complaint. It halved the reach of a checker rule and
+ * left a statically decidable type error to be discovered at run time.
+ *
+ * There is no `h` and no `milliseconds` on purpose. The union makes the spellings the language
+ * *has* work in every position; inventing the two it lacks is a separate decision with no row
+ * behind it, and `B5-10` is the record of what a fourth unit nobody implemented costs. */
+export const TIME_UNIT_MS: Readonly<Record<string, number>> = {
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  seconds: 1_000,
+  minutes: 60_000,
+  hours: 3_600_000,
+  days: 86_400_000,
+  weeks: 7 * 86_400_000,
+};
+
+/** The `expected …` half of every unknown-unit hint, so the eight spellings are listed once. */
+const TIME_UNITS_HELP = 'expected `ms`, `s`, `m`, `seconds`, `minutes`, `hours`, `days`, or `weeks`';
+
 type DurationUnit = (typeof DURATION_UNITS)[number];
 
 /** Spellings that can only have been meant as one of tflw's three time units, mapped to the one
@@ -876,6 +917,7 @@ class Parser {
         params.push(p.value);
         if (this.check('comma')) {
           this.advance();
+          if (this.check('rparen')) break; // trailing comma — D637
           continue;
         }
         break;
@@ -1423,6 +1465,7 @@ class Parser {
     this.advance(); // `session`
     const name = this.expect('ident', 'a session name, e.g. `session admin`');
     if (!name) return null;
+    const envs = this.parseSessionEnvScope();
     // `session <name> privileged oauth2` — one order is legal (below) and this is the other one.
     // Reported here, before anything else reads the header, and then *recovered from by reading
     // the header the way it was plainly meant*: left to `endLine()` it produced one honest error
@@ -1443,15 +1486,80 @@ class Parser {
     if (this.isKw(this.peek(), 'oauth2')) {
       this.advance(); // `oauth2`
       const privileged = this.parsePrivilegedModifier() || misordered;
+      this.lateEnvScope(name.value, envs);
       this.endLine();
       const oauth2 = this.parseOauth2SessionConfig(start);
       if (!oauth2) return null;
-      return { type: 'SessionDecl', name: name.value, oauth2, body: [], privileged, span: this.spanFrom(start) };
+      return { type: 'SessionDecl', name: name.value, envs, oauth2, body: [], privileged, span: this.spanFrom(start) };
     }
     const privileged = this.parsePrivilegedModifier();
+    this.lateEnvScope(name.value, envs);
     this.endLine();
     const body = this.parseSessionBlock();
-    return { type: 'SessionDecl', name: name.value, oauth2: null, body, privileged, span: this.spanFrom(start) };
+    return { type: 'SessionDecl', name: name.value, envs, oauth2: null, body, privileged, span: this.spanFrom(start) };
+  }
+
+  /** `session <name> for env <a>[, <b>...]` — the env scope clause (`M147d`/`M137f-02`, D642).
+   *
+   * **Read immediately after the name, ahead of both modifiers.** The two modifiers already have a
+   * settled order that a third clause must not disturb: D307/D310 fixed `oauth2 privileged` as the
+   * one spelling and spends a diagnostic on the other one, and `oauth2` introduces an indented sugar
+   * block. Dropping a comma list between them would put a multi-token clause inside the pair that
+   * decision was about. After the name is also where `env <name> default`'s qualifier sits, so the
+   * shape "declare a thing, then say which slice of the config it belongs to" reads the same in
+   * both directions.
+   *
+   * `for` is the language's existing scoping preposition — `header "X" is "Y" for <service>` scopes
+   * a header to a service, and this scopes a session to an env. `env` is the noun because that is
+   * what the block is called and what `--env` selects.
+   *
+   * **The word `env` is already overloaded and this deliberately sides with the majority.** `require
+   * env USER_A_EMAIL` means an *operating-system* environment variable, not a block in this file —
+   * an older use, and the outlier: `env <name>`, `--env <name>` and `TFLW_ENV` all mean the block.
+   * A new clause could not avoid the collision without inventing a second word for the thing every
+   * other surface already calls an env, so it joins the three rather than the one. */
+  private parseSessionEnvScope(): EnvScopeRef[] | null {
+    if (!this.isKw(this.peek(), 'for')) return null;
+    this.advance(); // `for`
+    if (!this.isKw(this.peek(), 'env')) {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`for` on a `session` header introduces an env scope, so it is followed by `env`',
+        this.peek().span,
+        'write `for env <name>` — e.g. `session console for env plaintext`. Unlike `header "X" is "Y" for <service>`, a session is scoped to the env it belongs to rather than to a service',
+      );
+      return null;
+    }
+    this.advance(); // `env`
+    const envs: EnvScopeRef[] = [];
+    for (;;) {
+      const tok = this.expect('ident', 'an env name after `for env`');
+      if (!tok) return envs.length > 0 ? envs : null;
+      envs.push({ type: 'EnvScopeRef', name: tok.value, span: tok.span });
+      // Line-terminated, so no trailing comma — D637's rule, which turns on what closes the list and
+      // not on what it holds. Same shape as `require env` and `allow hosts` two directives over.
+      if (!this.check('comma')) break;
+      this.advance();
+    }
+    return envs;
+  }
+
+  /** `session admin privileged for env local` — the clause in the one position it is not read from
+   * (`M147d`, D642), reported the way D310 reports its own misordering: one diagnostic naming the
+   * spelling that works, rather than an `endLine()` failure followed by the body being parsed as
+   * something else. Recovery consumes the clause so the block below still parses. */
+  private lateEnvScope(sessionName: string, already: EnvScopeRef[] | null): void {
+    if (!this.isKw(this.peek(), 'for')) return;
+    const at = this.peek().span;
+    const late = this.parseSessionEnvScope();
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      '`for env` comes before `oauth2`/`privileged` on a `session` header',
+      at,
+      already
+        ? `this header already carries a \`for env\` clause — write every env in one clause: \`session ${sessionName} for env ${[...already, ...(late ?? [])].map((e) => e.name).join(', ')}\``
+        : `write \`session ${sessionName} for env ${(late ?? []).map((e) => e.name).join(', ') || '<name>'} privileged\` — the env scope is read first so that \`oauth2 privileged\` stays the one spelling D310 settled`,
+    );
   }
 
   /** The optional trailing `privileged` on a `session` header (M130b, D307/D310) — read after
@@ -1813,7 +1921,7 @@ class Parser {
     if (!num) return null;
     const unitTok = this.peek();
     if (unitTok.type !== 'ident') {
-      this.error(Codes.UNKNOWN_DURATION_UNIT, `expected a time unit (ms/s/m) after ${num.value}, found ${describeToken(unitTok)}`, unitTok.span);
+      this.error(Codes.UNKNOWN_DURATION_UNIT, `expected a time unit (ms/s/m or seconds/minutes/hours/days/weeks) after ${num.value}, found ${describeToken(unitTok)}`, unitTok.span);
       return null;
     }
     const n = Number(num.value);
@@ -1827,28 +1935,28 @@ class Parser {
     // that premise was never measured. It is now: **66 closed-up durations in the corpus, 0 spaced
     // ones.** The single grep hit for a spaced duration is inside a comment. There are no programs
     // to break, so the narrowing costs nothing and the two positions stop disagreeing.
+    //
+    // D638 widens the adjacency test rather than removing it: it applies to an **abbreviation**,
+    // which is what makes `250 ms` a mistake worth teaching, and not to a **word**, which the other
+    // two positions have always accepted with a space (`today + 3 days`). Asking it of words would
+    // have made `pause 2 seconds` legal only as `pause 2seconds`, which is the union arriving with
+    // a new rule attached.
     const adjacent = num.span.end.offset === unitTok.span.start.offset;
-    if (!adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;
-    switch (unitTok.value) {
-      case 'ms':
-        this.advance();
-        return n;
-      case 's':
-        this.advance();
-        return n * 1000;
-      case 'm':
-        this.advance();
-        return n * 60_000;
-      default:
-        // D160: shared with the value path, so `pause 2sec` and `expect duration is less than 2sec`
-        // give the same answer. `reportBadDurationUnit` returns false only for a word that was never
-        // reaching for a unit, which in *this* position — a duration is the only thing the grammar
-        // allows — is still a wrong unit, so the old message stays as the fallback.
-        if (!this.reportBadDurationUnit(num, unitTok, adjacent)) {
-          this.error(Codes.UNKNOWN_DURATION_UNIT, `unknown time unit \`${unitTok.value}\``, unitTok.span, 'expected `ms`, `s`, or `m`');
-        }
-        return null;
+    const spelledOut = (DATE_OFFSET_UNITS as readonly string[]).includes(unitTok.value);
+    if (!spelledOut && !adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;
+    const perUnit = TIME_UNIT_MS[unitTok.value];
+    if (perUnit !== undefined) {
+      this.advance();
+      return n * perUnit;
     }
+    // D160: shared with the value path, so `pause 2sec` and `expect duration is less than 2sec`
+    // give the same answer. `reportBadDurationUnit` returns false only for a word that was never
+    // reaching for a unit, which in *this* position — a duration is the only thing the grammar
+    // allows — is still a wrong unit, so the old message stays as the fallback.
+    if (!this.reportBadDurationUnit(num, unitTok, adjacent)) {
+      this.error(Codes.UNKNOWN_DURATION_UNIT, `unknown time unit \`${unitTok.value}\``, unitTok.span, TIME_UNITS_HELP);
+    }
+    return null;
   }
 
   /**
@@ -1894,7 +2002,7 @@ class Parser {
     const why =
       unitTok.value.toLowerCase() === canonical
         ? 'time units are lowercase'
-        : `tflw's time units are \`ms\`, \`s\` and \`m\``;
+        : `tflw's abbreviated time units are \`ms\`, \`s\` and \`m\``;
     this.error(
       Codes.UNKNOWN_DURATION_UNIT,
       `unknown time unit \`${unitTok.value}\``,
@@ -3116,8 +3224,13 @@ class Parser {
       if (!body) return null;
     }
 
+    // `!this.atWaitBudget()` is the whole of D640's disambiguation, and it is deliberately read
+    // from *this* side rather than only from the clause it protects: the per-request `timeout` must
+    // decline precisely what the per-step wait budget takes, and one predicate consulted by both
+    // makes that an invariant instead of a coincidence. A plain `api` step has no wait budget, so
+    // `api GET /x timeout wait 5m` falls through to `endLine()` — see `trailingHint`.
     let timeoutMs: number | null = null;
-    if (this.isKw(this.peek(), 'timeout')) {
+    if (this.isKw(this.peek(), 'timeout') && !this.atWaitBudget()) {
       this.advance();
       timeoutMs = this.parseDuration();
       if (timeoutMs === null) return null;
@@ -3152,9 +3265,37 @@ class Parser {
       if (!value) return null;
       return { type: 'TextBody', value, span: this.spanFrom(start) };
     }
-    const object = this.parseObject();
-    if (!object) return null;
-    return { type: 'InlineBody', object, span: this.spanFrom(start) };
+    const value = this.parseJsonDocument('the request body');
+    if (!value) return null;
+    return { type: 'InlineBody', value, span: this.spanFrom(start) };
+  }
+
+  /** **A `body` is a JSON document, not specifically an object** (`M147d`, `A3-12`, D639).
+   *
+   *  The dispatch is on the opening bracket, because that is the only thing that distinguishes the
+   *  two, and both sub-parsers already existed and were already reachable from every other value
+   *  position — an array body was refused by one `expect('lbrace', …)` and by nothing else.
+   *
+   *  **What this deliberately does not widen** is the set of things a `body` may be. A top-level
+   *  scalar — `body 5`, `body "text"` — is still refused, because `body text "…"` is the form for a
+   *  payload that is not a JSON document and it already exists; accepting a bare string here would
+   *  give the language two spellings for one thing, which is the defect `D638` had just finished
+   *  removing from the time units one slice earlier.
+   *
+   *  The refusal is raised here rather than inside `parseObject`. That helper is shared with nested
+   *  values, `with each` rows and `stub`'s pre-D639 callers, and every one of those really does want
+   *  an object — widening its message would make it lie at five sites to tell the truth at two. */
+  private parseJsonDocument(what: string): ObjectLit | ArrayLit | null {
+    if (this.check('lbracket')) return this.parseArray();
+    if (this.check('lbrace')) return this.parseObject();
+    const tok = this.peek();
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      `expected \`{\` or \`[\` to start ${what}, found ${describeToken(tok)}`,
+      tok.span,
+      'a `body` is a JSON object or array — for anything else, use `body text "…"`',
+    );
+    return null;
   }
 
   private parseFormBody(): FormBody | null {
@@ -3311,6 +3452,47 @@ class Parser {
 
   // -- wait until api / wait until <ui> ---------------------------------------
 
+  /** True at the two-token opener of a per-step wait budget, `timeout wait <duration>` (`M147d`,
+   * `A3-10`, D640).
+   *
+   * Exists as a predicate rather than as an inline test because it is read from **both** sides of
+   * the ambiguity it resolves: `parseApiRequestLine` must decline exactly what `parseWaitBudget`
+   * takes, or `wait until api GET /jobs timeout wait 5m` loses its first token to the per-request
+   * clause and dies on ``expected a duration … found `wait` ``. Two copies of that test would agree
+   * until one of them was edited. */
+  private atWaitBudget(): boolean {
+    return this.isKw(this.peek(), 'timeout') && this.isKw(this.peek(1), 'wait');
+  }
+
+  /** `timeout wait <duration>` — how long *this* `wait until` may poll, overriding the active env's
+   * `timeout wait` for one step (`M147d`, `A3-10`, D640). Shared by both forms; absent means the
+   * config value, exactly as before.
+   *
+   * **Why this spelling and not the bare `timeout` the row asked for.** `A3-10` observed that `wait
+   * until api … timeout 30s` parses while the locator form's `timeout 30s` is `TF010`, and read the
+   * difference as a capability. It is not: on the api form `timeout` sets *one poll's request*
+   * timeout, which decision 67 then clamps to what remains of the wait deadline — it cannot extend
+   * the wait at all. The locator form has no request for that clause to bound, and the budget the
+   * row's author actually wanted was un-overridable on **both** forms. So copying the bare spelling
+   * across would have made one word mean the request budget on one sibling and the step budget on
+   * the other, inside a single statement. Naming the config key it overrides keeps them separable,
+   * and lets a poll state both at once:
+   *
+   *     wait until api GET /jobs timeout 5s timeout wait 5m
+   *
+   * — no single poll may hang past 5s, and the whole step gives up after five minutes.
+   *
+   * Returns `{ ok: false }` when the duration itself was malformed; `parseDuration` has already
+   * reported, and the caller aborts the step the way every other clause here does. */
+  private parseWaitBudget(): { ok: boolean; ms: number | null } {
+    if (!this.atWaitBudget()) return { ok: true, ms: null };
+    this.advance(); // `timeout`
+    this.advance(); // `wait`
+    const ms = this.parseDuration();
+    if (ms === null) return { ok: false, ms: null };
+    return { ok: true, ms };
+  }
+
   /** `wait until …` — dispatches on what follows `until`: `api …` re-issues a request until its
    * nested `expect`s pass or wait times out (SPEC §5.5, P#15); anything else is parsed as a UI
    * locator condition (SPEC §9.5, M3b). Caller has not yet consumed `wait`. */
@@ -3326,6 +3508,8 @@ class Parser {
     this.advance(); // `api`
     const request = this.parseApiRequestLine();
     if (!request) return null;
+    const budget = this.parseWaitBudget();
+    if (!budget.ok) return null;
     // FS-05 scoped `for <duration>` to the UI form, where the measured gap was ("the error toast
     // never appears"). Someone who learned it there will try it here, so say what it costs rather
     // than letting `endLine()` report a bare unexpected `for`: sustaining an API condition means
@@ -3346,14 +3530,16 @@ class Parser {
       type: 'WaitUntilApiStmt',
       request: headers.length ? { ...request, headers } : request,
       expects,
+      waitMs: budget.ms,
       span: this.spanFrom(start),
     };
   }
 
-  /** `wait until <locator> [is] [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` added by
-   * FS-05) — a single line, the UI sibling of `wait until api`'s block form: no separate request to
-   * re-issue, so the whole condition is just an ordinary subject+matcher pair, polled against
-   * `timeout wait` instead of `timeout expect`.
+  /** `wait until <pollable subject> [is] [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for`
+   * added by FS-05, the subject set widened past a locator by `M147d`/`A3-11`, D641) — a single
+   * line, the UI sibling of `wait until api`'s block form: no separate request to re-issue, so the
+   * whole condition is just an ordinary subject+matcher pair, polled against `timeout wait` instead
+   * of `timeout expect`.
    *
    * The optional `for <duration>` asks for the condition to hold *continuously* for that long
    * instead of passing on the first poll that satisfies it — the only way to write a sustained
@@ -3362,25 +3548,54 @@ class Parser {
   private parseWaitUntilUiRest(start: Position): Step | null {
     const subject = this.parseSubject();
     if (!subject) return null;
-    if (subject.type !== 'LocatorSubject') {
+    // D641 (`M147d`, `A3-11`). The old test here was `subject.type !== 'LocatorSubject'`, which
+    // refused eight distinct subject shapes with one sentence — and the sentence named the one
+    // spelling none of the eight was reaching for. Five of them genuinely cannot be polled and now
+    // get told which of the two reasons applies to them; the other three are live browser
+    // observations that `expect` has always re-read on a retry loop of its own, and were being
+    // turned away by a guard that had simply never been widened past the form it was written for.
+    if (!pollable(subject)) {
+      const isBoundValue = subject.type === 'ValueSubject';
       this.error(
         Codes.UNEXPECTED_TOKEN,
-        '`wait until` expects either `api ...` or a UI locator condition',
+        isBoundValue
+          ? '`wait until` needs a condition that can change between polls, and a bound value cannot'
+          : '`wait until` needs a condition that can change between polls, and this one reads the last `api` response',
         subject.span,
-        'e.g. `wait until button "Submit" is enabled`',
+        isBoundValue
+          ? 'a `{value}` holds whatever `let`/`capture` put in it and nothing between two polls rebinds it, so the step would pass on the first attempt or spin to its deadline — the same rule `TF041` states for a value subject inside `wait until api`'
+          : 'a response is written once, by the `api` step that fetched it, so re-reading it cannot change the answer. To poll an endpoint until it agrees, re-issue the request — `wait until api GET /orders/1` with this assertion in its block. To poll the browser, the subjects that change on their own are a UI locator, `page`, and `request to "…"` (SPEC §9.5)',
       );
       return null;
     }
     const matcher = this.parseMatcher();
     if (!matcher) return null;
+    // The subject half of D641 has a matcher half, and it has exactly one member. `matches
+    // snapshot` is the one matcher in the language whose evaluation documents itself as never
+    // retrying (`execSnapshotExpect`) — a screenshot is one point-in-time capture compared against
+    // a committed baseline, not a condition that becomes true as the page settles. On a locator it
+    // therefore parsed, and produced a `wait` that could not wait: the first poll either matched
+    // the baseline or the step spent its whole budget re-comparing an image against a file, neither
+    // of which the word `until` promises.
+    if (matcher.name === 'matchesSnapshot') {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`matches snapshot "…"` cannot be polled, so it is not a `wait until` condition',
+        matcher.span,
+        'a snapshot is compared once against a committed baseline rather than re-read as the page settles, so waiting on it cannot change the outcome — settle the page first (`wait until <locator> is visible`, or a `for <duration>` hold) and then write the comparison as its own `expect` (SPEC §9.9)',
+      );
+      return null;
+    }
     let holdMs: number | null = null;
     if (this.isKw(this.peek(), 'for')) {
       this.advance();
       holdMs = this.parseDuration();
       if (holdMs === null) return null;
     }
+    const budget = this.parseWaitBudget();
+    if (!budget.ok) return null;
     this.endLine();
-    const stmt: WaitUntilUiStmt = { type: 'WaitUntilUiStmt', subject, matcher, holdMs, span: this.spanFrom(start) };
+    const stmt: WaitUntilUiStmt = { type: 'WaitUntilUiStmt', subject, matcher, holdMs, waitMs: budget.ms, span: this.spanFrom(start) };
     return stmt;
   }
 
@@ -4286,10 +4501,13 @@ class Parser {
     const statusTok = this.expect('number', 'a status code, e.g. `respond status 200`');
     if (!statusTok) return null;
     const status: NumberLit = { type: 'NumberLit', value: Number(statusTok.value), raw: statusTok.raw, span: statusTok.span };
-    let body: ObjectLit | null = null;
+    // D639 reaches `stub` as well as `api`, and this is the site where the narrowness bit hardest:
+    // a list endpoint answers with a top-level array, so `stub GET "/api/orders" respond status 200
+    // body [ … ]` is the ordinary case rather than an exotic one, and it was unwritable.
+    let body: ObjectLit | ArrayLit | null = null;
     if (this.isKw(this.peek(), 'body')) {
       this.advance();
-      body = this.parseObject();
+      body = this.parseJsonDocument('the stubbed response body');
       if (!body) return null;
     }
     this.endLine();
@@ -4458,7 +4676,7 @@ class Parser {
         if (unitTok.type === 'ident' && unitTok.span.start.offset === tok.span.end.offset && (DURATION_UNITS as readonly string[]).includes(unitTok.value)) {
           this.advance();
           const ms = toMs(Number(tok.value), unitTok.value as (typeof DURATION_UNITS)[number]);
-          const lit: DurationLit = { type: 'DurationLit', ms, span: { start: tok.span.start, end: unitTok.span.end } };
+          const lit: DurationLit = { type: 'DurationLit', ms, raw: `${tok.raw}${unitTok.value}`, span: { start: tok.span.start, end: unitTok.span.end } };
           return lit;
         }
         // A number followed (whitespace allowed) by a spelled-out unit is a date offset, e.g.
@@ -4482,7 +4700,7 @@ class Parser {
             const canonical = nearestDurationUnit(unitTok.value);
             const span = { start: tok.span.start, end: unitTok.span.end };
             if (canonical !== null && unitTok.value === canonical) {
-              const lit: DurationLit = { type: 'DurationLit', ms: toMs(Number(tok.value), canonical), span };
+              const lit: DurationLit = { type: 'DurationLit', ms: toMs(Number(tok.value), canonical), raw: `${tok.raw}${canonical}`, span };
               return lit;
             }
             return { type: 'NumberLit', value: Number(tok.value), raw: tok.raw, span };
@@ -4552,6 +4770,7 @@ class Parser {
           args.push(arg);
           if (this.check('comma')) {
             this.advance();
+            if (this.check('rparen')) break; // trailing comma — D637
             continue;
           }
           break;
@@ -5009,7 +5228,11 @@ class Parser {
       case 'within':
         return '`within` opens a block, it is not an inline suffix — put `within <locator>` on its own line and indent the steps it scopes';
       case 'timeout':
-        return 'a per-step `timeout` is only accepted on `api` requests — elsewhere set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
+        // Two mistakes share this token since D640, and the second one is only distinguishable by
+        // looking at the token after it — which is the same two-token test the grammar itself uses.
+        return this.atWaitBudget()
+          ? '`timeout wait <duration>` sets the poll budget of one `wait until` step — no other step has one. To bound a single request write `timeout <duration>`; to change the whole run set `timeout wait` in `tflw.config`'
+          : 'a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, or set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
       case 'and':
         return 'one assertion per `expect` — put the second one on its own `expect` line';
       case 'ms':
@@ -5159,15 +5382,8 @@ class Parser {
   }
 }
 
-function toMs(n: number, unit: 'ms' | 's' | 'm'): number {
-  switch (unit) {
-    case 'ms':
-      return n;
-    case 's':
-      return n * 1000;
-    case 'm':
-      return n * 60_000;
-  }
+function toMs(n: number, unit: string): number {
+  return n * (TIME_UNIT_MS[unit] ?? NaN);
 }
 
 /** Split a decoded string value into literal text and `{ref}` interpolation holes. */

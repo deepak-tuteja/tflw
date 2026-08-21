@@ -27,7 +27,8 @@ on every attempt (same per-test seed) — see
 
 For state that becomes true asynchronously (a job finishes, an order ships), re-issues the
 request until its `expect`-only block passes or the wait timeout elapses (default 30s,
-`timeout wait <duration>` in config to override):
+`timeout wait <duration>` in config to override — or on the step itself, for one slow poll; see
+[browser advanced](/guide/browser-advanced)):
 
 ```tflw
 test "order eventually ships"
@@ -38,6 +39,14 @@ test "order eventually ships"
   wait until api GET /products/{id}
     expect body.status equals "shipped"
 ```
+
+Note that the request is written out again inside the `wait until`. That is not boilerplate — it is
+the whole mechanism. `wait until body.status equals "shipped"` on its own is refused, because the
+response the last `api` step fetched is written once and nothing between two polls can change it; the
+step would pass on its first attempt or spin until its deadline blaming an endpoint it never asked
+twice. Re-issuing the request is what makes the condition able to become true. See
+[what a `wait until` can wait for](/guide/browser-advanced) for the rule and the browser subjects it
+also admits.
 
 ## `retry honoring "Retry-After" up to N` — one step, not the whole test
 

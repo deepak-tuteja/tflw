@@ -53,9 +53,15 @@ test('A3-09: a per-step `timeout` on a UI wait is told where per-step timeouts a
   const { hint } = only('test "a"\n  open "/x"\n  wait until button "Go" is enabled timeout 30s\n');
   assert.match(hint, /only accepted on `api` requests/);
   assert.match(hint, /timeout wait/, 'the hint must name the config key that does cover this case');
+  // `M147d`/D640 gave this exact mistake a same-line answer, and the hint has to lead with it —
+  // before D640 the only advice available was "go edit `tflw.config`", which changes every other
+  // wait in the suite to fix one step.
+  assert.match(hint, /write `timeout wait <duration>`/, 'the hint must name the per-step clause, not only the config key');
   // The half of the hint that is a promise about the language: `timeout` *is* legal on an api
-  // request, and the three config targets it names are all real.
+  // request, the per-step clause it now recommends really parses on the step that was refused, and
+  // the three config targets it names are all real.
   clean('test "a"\n  api GET /jobs timeout 30s\n  expect status equals 200\n', '`timeout` on an api request must parse');
+  clean('test "a"\n  open "/x"\n  wait until button "Go" is enabled timeout wait 30s\n', 'the spelling the hint recommends must parse on the step it was given for');
   const cfg = parseConfigSource('defaults\n  timeout step 5s\n  timeout wait 30s\n  timeout expect 3s\n');
   assert.deepEqual(cfg.diagnostics.map((d) => d.message), [], 'all three timeout targets the hint names must be legal');
 });

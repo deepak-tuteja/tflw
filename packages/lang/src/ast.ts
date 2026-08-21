@@ -630,6 +630,15 @@ export interface WaitUntilApiStmt extends Node {
   readonly type: 'WaitUntilApiStmt';
   readonly request: ApiRequestSpec;
   readonly expects: readonly ExpectStmt[];
+  /** `timeout wait <duration>` (`M147d`, `A3-10`, D640) — this step's own poll budget in ms, or
+   *  null for the active env's `timeout wait`.
+   *
+   *  **Not `request.timeoutMs`, and the difference is the whole row.** `wait until api GET /jobs
+   *  timeout 30s` has always parsed, and sets how long *one poll's HTTP request* may take — then
+   *  decision 67 clamps even that to whatever is left of the wait deadline. It does not lengthen the
+   *  wait by a millisecond. `A3-10` read that acceptance as a capability the locator form lacked;
+   *  on the quantity actually at issue the two forms were equally narrow, so this widens both. */
+  readonly waitMs: number | null;
 }
 
 /** `wait until <locator> [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` added by FS-05) —
@@ -640,7 +649,9 @@ export interface WaitUntilApiStmt extends Node {
  * soft/`check` form. */
 export interface WaitUntilUiStmt extends Node {
   readonly type: 'WaitUntilUiStmt';
-  readonly subject: LocatorSubject;
+  /** Widened from `LocatorSubject` by `M147d`/`A3-11` (D641) — see `pollable()` for the rule and
+   * for why this type is deliberately *wider* than the predicate that admits it. */
+  readonly subject: PollableSubject;
   readonly matcher: Matcher;
   /** `for <duration>` (FS-05) — how long the condition must hold *continuously* before the step
    * passes, in ms; `null` is the original semantics, "pass the first poll it is true".
@@ -652,6 +663,16 @@ export interface WaitUntilUiStmt extends Node {
    * clock restarts from zero whenever the condition goes false, so the step passes only on an
    * uninterrupted window, and the whole thing stays bounded by `timeout wait`. */
   readonly holdMs: number | null;
+  /** `timeout wait <duration>` (`M147d`, `A3-10`, D640) — this step's own poll budget in ms, or
+   *  null for the active env's `timeout wait`. Identical in meaning to the api form's field of the
+   *  same name; the two clauses are one production read from both rests.
+   *
+   *  It is also the second operand `TF055` compares `holdMs` against. Written here, both operands
+   *  are in the file and the check no longer needs a resolved env to run at all — D147's reason for
+   *  keeping that code a *warning* is exactly the env dependency this clause removes. The tier did
+   *  not change in `M147d`; see SPEC §9.5 for why that is now an open question rather than a
+   *  settled one. */
+  readonly waitMs: number | null;
 }
 
 export interface ApiHeader extends Node {
@@ -672,7 +693,14 @@ export type ApiBody = InlineBody | FileBody | FormBody | TextBody | UploadBody;
 
 export interface InlineBody extends Node {
   readonly type: 'InlineBody';
-  readonly object: ObjectLit;
+  /** The JSON document being sent — an object or a **top-level array** (`M147d`, `A3-12`, D639).
+   *
+   *  Named `value` rather than `object` because it is no longer always an object. Three of the four
+   *  surfaces that read a top-level JSON document already accepted an array before D639 — `body from`
+   *  reads any JSON the file contains, `expect body equals [1, 2]` matches one, and `body { items: [1,
+   *  2] }` nests one a single level down — so the inline request body was the odd one out, and D627's
+   *  rider resolves an asymmetry by widening the narrower side. */
+  readonly value: ObjectLit | ArrayLit;
 }
 
 /** `body from "./payloads/x.json"` — file is a template; `{vars}` interpolate at send time. */
@@ -762,6 +790,48 @@ export interface ValueSubject extends Node {
  * at run time — two statements of one rule that M96 would otherwise have widened independently. */
 export function quantifiable(subject: Subject): subject is BodySubject | BodyCsvSubject | ValueSubject {
   return subject.type === 'BodySubject' || subject.type === 'BodyCsvSubject' || subject.type === 'ValueSubject';
+}
+
+/** Which subjects `wait until <subject> <matcher>` may stand in front of (`M147d`, `A3-11`, D641).
+ *
+ * The rule is not a list, it is a property: **a subject is pollable exactly when re-reading it
+ * between two polls can produce a different answer.** Everything the language can name divides
+ * cleanly on that, and the division is one the runtime had already made for its own reasons —
+ * `execSteps`' `ExpectStmt` case routes a locator to `execUiExpect`, `page` to `execA11yExpect`
+ * and `request to "…"`/`… of request to "…"` to `execNetworkExpect`, and all three re-observe the
+ * browser on every iteration of their own retry loop. Every other subject reads the *response
+ * scope*, which exactly one `api` step writes; between two polls of a `wait until` nothing runs, so
+ * `status`, `duration`, `header "…"`, `body …`, `response` and `request` hold the same value they
+ * held on the first poll and always will. Such a step either passes immediately or spins to its
+ * deadline blaming an endpoint that was never consulted a second time.
+ *
+ * `A3-11` asked for the opposite of this — `wait until body.state equals "done"`, polling the last
+ * API response — and it is the one subject shape the rule can prove is never worth admitting. The
+ * capability it wanted already has a spelling that re-issues the request (`wait until api …`); what
+ * the row was right about is that *three* live-browser shapes were being refused alongside it by a
+ * guard that tested for `LocatorSubject` and nothing else.
+ *
+ * `ValueSubject` is excluded by the same argument one step over, and does not even need this
+ * function to say so: `TF041` already refuses a `{variable}` inside `wait until api` because a
+ * bound value cannot change between polls. D641 is that sentence generalised from one construct
+ * and one subject to both constructs and all of them.
+ *
+ * **The type is wider than the predicate, deliberately.** The four `of request to "…"`-bearing
+ * subjects are pollable only when that clause is actually present, which is a value test TypeScript
+ * cannot carry in a union member; `StatusSubject` with `of === null` therefore satisfies
+ * `PollableSubject` and fails `pollable()`. Same asymmetry `quantifiable()` above lives with, and
+ * handled the same way — the predicate is the rule, the type is what a consumer may hold — and the
+ * interpreter re-asserts it rather than assuming the parser ran (`execWaitUntilUi`'s final
+ * `throw`). */
+export type PollableSubject = LocatorSubject | PageSubject | NetworkRequestSubject | StatusSubject | HeaderSubject | BodySubject | BodyTextSubject;
+
+export function pollable(subject: Subject): subject is PollableSubject {
+  if (subject.type === 'LocatorSubject' || subject.type === 'PageSubject' || subject.type === 'NetworkRequestSubject') return true;
+  // The `of request to "…"` clause moves the read off the response scope and onto the browser's
+  // observed traffic, which grows while the page is live — so it is the clause, not the subject
+  // keyword, that decides here. Tested by presence rather than by listing the four types that carry
+  // it, so a fifth one gains this for free on the day it gains an `of`.
+  return 'of' in subject && (subject as { of?: unknown }).of != null;
 }
 
 /** A UI locator used as an `expect`/`check` subject (`expect button "Add to cart" is visible`,
@@ -1030,7 +1100,10 @@ export interface StubStmt extends Node {
   readonly method: HttpMethod;
   readonly urlPattern: StringLit;
   readonly status: NumberLit;
-  readonly body: ObjectLit | null;
+  /** The stubbed response document — an object or a **top-level array** (`M147d`, `A3-12`, D639).
+   *  A list endpoint answers with an array, so this was the narrower of the two `body` positions in
+   *  practice even though `A3-12` named the other one. */
+  readonly body: ObjectLit | ArrayLit | null;
 }
 
 export type ClickKind = 'single' | 'double' | 'right';
@@ -1268,6 +1341,11 @@ export interface CallExpr extends Node {
 export interface DurationLit extends Node {
   readonly type: 'DurationLit';
   readonly ms: number;
+  /** The literal as written — `500ms`, `10s`. Kept for the same reason `NumberLit` and
+   *  `ReportDecl.dir` keep theirs (`A2-12`): `ms` alone cannot be quoted back to the author, and
+   *  `M147d` needed exactly that when `today - 10s` became a bound `TF054` can read — a hint saying
+   *  ``write `random date between today - 10000 and today` `` names a program nobody wrote. */
+  readonly raw: string;
 }
 
 // ---- Value expressions: arithmetic + date math (P#25, SPEC §7.5) ----------
@@ -1507,6 +1585,18 @@ export interface ConfigFile extends Node {
 export interface SessionDecl extends Node {
   readonly type: 'SessionDecl';
   readonly name: string;
+  /** `session <name> for env <a>[, <b>...]` (`M147d`/`M137f-02`, D642) — the envs this session is
+   * declared for, or `null` for a session written without the clause.
+   *
+   * **`null` means every env, and that is what keeps this additive.** A `session` was env-independent
+   * from P#20 until here, so every session that already exists parses to `null` and resolves exactly
+   * as it did. The clause only ever *narrows*.
+   *
+   * Refs rather than bare strings, unlike `RequireDecl.names`: `checkSessions`' rule is one
+   * diagnostic per unknown name rather than one aggregated per site, and that rule needs a span per
+   * name to point at. It is also the preference `ReportDecl.dir` states for its own field (`A2-12`)
+   * — keep the position, flatten at the point of use. */
+  readonly envs: readonly EnvScopeRef[] | null;
   readonly oauth2: Oauth2SessionConfig | null;
   readonly body: readonly Step[];
   /** `session <name> [oauth2] privileged` (M130b, D307/D310) — this principal is *supposed* to be
@@ -1518,6 +1608,20 @@ export interface SessionDecl extends Node {
    * authz assertion fast would otherwise be to declare away the thing it measures. The lever for
    * cost is fewer assertion sites. */
   readonly privileged: boolean;
+}
+
+/** One env-block name from a `session ... for env` clause (`M147d`, D642). A node rather than a
+ * string so the unknown-env diagnostic can underline the name that is wrong instead of the whole
+ * declaration — a `session` span runs to the end of its indented body, which for a five-step login
+ * is a diagnostic pointing at a paragraph to complain about a word.
+ *
+ * **`EnvScopeRef` and not `EnvRef`, because `EnvRef` is already this file's name for `env(NAME)`** —
+ * an *operating-system* environment variable, and a `Value`. That collision is the clearest evidence
+ * for the note on `SessionDecl.envs`: the two meanings of the word predate this clause and had
+ * already reached the type names. This one is the block `env <name>` declares and `--env` selects. */
+export interface EnvScopeRef extends Node {
+  readonly type: 'EnvScopeRef';
+  readonly name: string;
 }
 
 /** `session <name> oauth2 / token url … / client id … / client secret … / scope …` — OAuth2

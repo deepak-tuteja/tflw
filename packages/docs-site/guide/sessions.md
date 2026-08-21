@@ -92,5 +92,52 @@ It goes **after** `oauth2` when both are present (`session svc oauth2 privileged
 claim about authority rather than a way to make an assertion cheaper: marking every session
 privileged is refused (`TF063`).
 
+## `for env` — a session that belongs to some envs and not others
+
+```tflw-config
+env plaintext default
+  api "http://localhost:4001"
+  api adminConsole "http://localhost:8091"
+
+env staging
+  api "https://stg.example.com"
+  api adminConsole "https://console.stg.example.com"
+
+env offeringTls
+  api "https://localhost:8445"
+
+session console for env plaintext, staging
+  api adminConsole POST /login form email=env(ADMIN_EMAIL), password=env(ADMIN_PW)
+```
+
+A whole config rather than a fragment, because the clause is only meaningful against the envs it
+names — and `offeringTls` is the point of the example: it declares no `adminConsole`, and before this
+clause existed it would have had to, purely so the session below it could resolve.
+
+Without the clause a session belongs to **every** env, which is what every session on this page
+does. The clause only narrows.
+
+Reach for it when a session authenticates against an origin only some of your envs have. A session
+body names services (`api adminConsole …`) and services are declared per env, so a session with no
+scope has to resolve under every env you declare — including the ones that never touch that origin.
+Before this clause existed the only way through was to copy the service into every `env` block, and
+because declaring a service brings `allow hosts` and `authorized target` along with it, a
+single-origin login could pull three declarations into four envs.
+
+Under an env the session is not scoped to it simply does not exist: nothing in its body is checked
+against that env's services, it joins no authorization probe set, and a test that opts into it with
+`as console` is refused with a message naming the envs where it does exist. An env name your config
+does not declare is refused too (`TF074`) — a `for env` clause with a typo in it would otherwise
+scope the session to nothing at all, which reads as a suite that is quietly one identity short
+rather than as a mistake.
+
+When a session carries modifiers as well, the scope comes first: `session admin for env local oauth2
+privileged`.
+
+::: tip `env` here means an `env` block
+Not the operating-system variable that `require env` and `env(NAME)` read. tflw uses the word for
+both, and this clause follows `env <name>`, `--env` and `TFLW_ENV`.
+:::
+
 Full reference: [SPEC.md §3.3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#33-session-blocks--the-single-auth-concept-p20-p31-),
 [§3.6 (mTLS)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#36-client-certificates--mtls-plan-decision-99b-).

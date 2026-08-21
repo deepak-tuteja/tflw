@@ -216,6 +216,12 @@ const DURATION_SITES: readonly (readonly [string, string])[] = [
   ['per-step timeout', 'test "t"\n  api GET /health timeout 250 UNIT\n  expect status equals 200\n'],
   ['workload ramp … over', 'test "t"\n  ramp to 5 users over 250 UNIT\n  threshold error rate is less than 1%\n  api GET /health\n  expect status equals 200\n'],
   ['workload hold … for', 'test "t"\n  hold 5 users for 250 UNIT\n  threshold error rate is less than 1%\n  api GET /health\n  expect status equals 200\n'],
+  // The 12th call site, added by `M147d`/D640 (`A3-10`). It is **one** `parseDuration()` call read
+  // from two productions, and both are listed because the guard above counts call sites while this
+  // list is about syntaxes an author can write — a shared helper that only one of its callers ever
+  // reached would pass the count and still be half-covered.
+  ['per-step wait budget (locator form)', 'test "t"\n  wait until button "Go" is enabled timeout wait 250 UNIT\n'],
+  ['per-step wait budget (api form)', 'test "t"\n  wait until api GET /health timeout wait 250 UNIT\n    expect status equals 200\n'],
 ];
 
 for (const [label, template] of DURATION_SITES) {
@@ -257,7 +263,7 @@ test('the duration rule is shared, so a new caller cannot be written without it'
   const callSites = [...source.matchAll(/this\.parseDuration\(\)/g)].length;
   assert.equal(
     callSites,
-    11,
+    12,
     'the number of `parseDuration` call sites changed — every one inherits the adjacency rule from ' +
       'inside `parseDuration`, so confirm the new site does too and add it to DURATION_SITES above.',
   );

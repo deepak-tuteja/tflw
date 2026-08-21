@@ -279,6 +279,28 @@ test('collectSymbols: `{var}` inside a `stub` body object resolves', () => {
   assert.deepEqual(ref!.defSpan, def!.span);
 });
 
+// M147d (`A3-12`, D639): both `body` positions accept a top-level array now, and both walkers read
+// them by handing the whole document to `walkValue` instead of iterating `.fields` — which an array
+// does not have. Without that, a `{var}` inside an array element is invisible to hover, go-to-def
+// and rename: not a diagnostic, just a name the editor silently declines to know about.
+test('collectSymbols (M147d): `{var}` inside a top-level array body resolves, at both body positions', () => {
+  const apiSource = `test "ok"\n  let token = unique("tok")\n  api POST /session body [{ token: "{token}" }]\n`;
+  const { program: apiProgram } = parseSource(apiSource);
+  const apiTable = collectSymbols(apiProgram, apiSource);
+  const apiDef = apiTable.defs.find((d) => d.kind === 'variable' && d.name === 'token');
+  const apiRef = apiTable.refs.find((r) => r.kind === 'variable' && r.name === 'token');
+  assert.ok(apiDef && apiRef, 'expected `token` def + ref inside the array body');
+  assert.deepEqual(apiRef!.defSpan, apiDef!.span);
+
+  const stubSource = `test "ok"\n  let token = unique("tok")\n  stub GET "/api/session" respond status 200 body [{ token: "{token}" }]\n`;
+  const { program: stubProgram } = parseSource(stubSource);
+  const stubTable = collectSymbols(stubProgram, stubSource);
+  const stubDef = stubTable.defs.find((d) => d.kind === 'variable' && d.name === 'token');
+  const stubRef = stubTable.refs.find((r) => r.kind === 'variable' && r.name === 'token');
+  assert.ok(stubDef && stubRef, 'expected `token` def + ref inside the stubbed array body');
+  assert.deepEqual(stubRef!.defSpan, stubDef!.span);
+});
+
 test('collectSymbols: `{var}` inside `request to "..."` (NetworkRequestSubject) and `of request to "..."` both resolve', () => {
   const source = `test "ok"\n  let orderId = unique("ord")\n  api GET /health\n  expect request to "/orders/{orderId}" was made\n  expect status of request to "/orders/{orderId}" equals 200\n`;
   const { program } = parseSource(source);

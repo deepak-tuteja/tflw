@@ -167,7 +167,7 @@ const SUITE_SECONDS = {
 const DURATION_BRANCH = `        if (unitTok.type === 'ident' && unitTok.span.start.offset === tok.span.end.offset && (DURATION_UNITS as readonly string[]).includes(unitTok.value)) {
           this.advance();
           const ms = toMs(Number(tok.value), unitTok.value as (typeof DURATION_UNITS)[number]);
-          const lit: DurationLit = { type: 'DurationLit', ms, span: { start: tok.span.start, end: unitTok.span.end } };
+          const lit: DurationLit = { type: 'DurationLit', ms, raw: \`\${tok.raw}\${unitTok.value}\`, span: { start: tok.span.start, end: unitTok.span.end } };
           return lit;
         }
 `;
@@ -342,6 +342,16 @@ const REGISTRY = [
     // adjacent duration (`30s`) is not a date word. Probed on all four shapes with identical output.
     // Left in the registry rather than deleted: if the tables ever stop being disjoint this becomes
     // a real mutation, and it will report itself as mislabelled rather than quietly pass.
+    //
+    // **It reported itself, and the report was right about the file and wrong about the premise**
+    // (`M147d`, D638). `DurationLit` gained a `raw` field, `DURATION_BRANCH`'s quoted text moved,
+    // and `mutate.test.mjs` failed this entry as stale in the same milestone that folded the three
+    // unit vocabularies into one — which reads exactly like the condition above coming true. It is
+    // not: D638's union lives in `TIME_UNIT_MS` and in `parseDuration`, and the two arrays this
+    // branch pair tests against are still **disjoint**, because in *value* position the split is
+    // what distinguishes `500ms` (a duration) from `3 days` (a date offset). So the entry stays
+    // `equivalent`, and the thing worth keeping is that a comment written eight milestones ago
+    // named its own falsification condition precisely enough to be checked when it nearly fired.
     equivalent: true,
   },
   {
@@ -874,9 +884,9 @@ const REGISTRY = [
     // Scoped to the `wait until` call site alone: `assertion-diagnosis-never-fires` guts the shared
     // helper and would be killed by the `expect` tests whether or not `wait until` was ever wired
     // up. Only this one fails if the third call site is missing.
-    what: '`wait until` alone loses the diagnosis — the half of the fix that a test suite covering only `expect`/`check` would never notice was missing',
-    find: '      const message = held + (await diagnoseIfNothingMatched(scope, subject.locator, name, count));',
-    replace: '      const message = held;',
+    what: '`wait until` alone loses the diagnosis — the half of the fix that a test suite covering only `expect`/`check` would never notice was missing. **Repointed by `M147d-5`** (`A3-11`, D641): the line it used to quote was inside the poll loop, and the loop stopped being locator-specific when the subject set widened. The claim did not move, so the mutation follows it to the locator arm of `waitUntilReader`, which is now the only `wait until`-only wiring of the diagnosis — the other two arms have nothing to diagnose',
+    find: '      return { outcome, diagnose: () => diagnoseIfNothingMatched(scope, locator, name, count) };',
+    replace: '      return { outcome };',
   },
   {
     id: 'saturation-lag-arm-never-fires',
@@ -1335,9 +1345,9 @@ const REGISTRY = [
     milestone: 'm124',
     pkg: '@tflw/lang',
     file: 'packages/lang/src/checker.ts',
-    what: '`checkHoldWindows` falls back to the documented 30s default when the caller resolved no env, reading `undefined` as an answer — the `undefined`-vs-present doctrine inverted, and *usually right*, which is what would let it ship: it only misreports in a workspace whose config raises `timeout wait`',
-    find: '  if (!opts.envTimeouts) return diags;',
-    replace: "  const env = opts.envTimeouts ?? { envName: 'local', wait: 30_000 };\n  if (!env) return diags;",
+    what: '`checkHoldWindows` falls back to the documented 30s default when the caller resolved no env, reading `undefined` as an answer — the `undefined`-vs-present doctrine inverted, and *usually right*, which is what would let it ship: it only misreports in a workspace whose config raises `timeout wait`. **Repointed by `M147d`/D640**, which deleted the whole-pass early return this used to quote: the skip is per-step now, because a step carrying its own `timeout wait` supplies the second operand itself. The claim is unchanged and so is the mutant behaviour — only the line that expresses it moved',
+    find: "      if (typeof hold === 'number' && budget !== undefined && hold >= budget) {",
+    replace: "      if (typeof hold === 'number' && hold >= (budget ?? 30_000)) {",
   },
   {
     id: 'hold-window-is-an-error',
@@ -2388,6 +2398,401 @@ const REGISTRY = [
     what: "the second victim's fix over-applied: *any* malformed head makes the scope's bindings unknown, not just the three that bind a name (`let`, `capture`, `download … as`). `TF030` then stops being reported after a malformed `click` or `fill`, which is a real diagnostic suppressed by an unrelated typo — the mirror of the bug being fixed, and the reason the two suppressions in this pass are kept independent with a negative control each way",
     find: '        if (step.head === \'let\' || step.head === \'capture\' || step.head === \'download\') bindings.unknown = true;',
     replace: '        bindings.unknown = true;',
+  },
+
+  // -- M147d --------------------------------------------------------------------------------
+  //
+  // Cluster 4's additive widenings (D627's rider: resolve an asymmetry by widening the narrower
+  // side). Every entry here breaks a rule the language *gained*, so a survivor means the widening
+  // is unasserted rather than that a guard rotted — the failure mode D636 added this milestone for.
+
+  {
+    id: 'call-argument-trailing-comma-refused',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "`A3-18` restored on the call side: `sign(\"x\",)` goes back to ``TF010: expected a value, found `)` `` while `{ a: 1, }` two lines away stays clean. The row named this one site; the rule that resolves it (D637 — a bracket-closed list takes a trailing comma, a line-terminated one does not) names two, and this is the half a reader meets first",
+    find: "            if (this.check('rparen')) break; // trailing comma — D637\n            continue;\n          }\n          break;\n        }\n      }\n      if (!this.expect('rparen', '`)` to close the call')) return null;",
+    replace: "            continue;\n          }\n          break;\n        }\n      }\n      if (!this.expect('rparen', '`)` to close the call')) return null;",
+  },
+  {
+    id: 'action-parameter-trailing-comma-refused',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "the same widening on the declaration side: `action make id(prefix,)` back to an error. Kept as a separate entry from the call site on purpose — they are two independent `if`s in two productions, and one registry entry covering both would let either be deleted with the sweep still green, which is exactly the coverage claim `verify-shards.mjs` exists to keep honest",
+    find: "          if (this.check('rparen')) break; // trailing comma — D637\n          continue;\n        }\n        break;\n      }\n    }\n    if (!this.expect('rparen', '`)` to close the parameter list')) return null;",
+    replace: "          continue;\n        }\n        break;\n      }\n    }\n    if (!this.expect('rparen', '`)` to close the parameter list')) return null;",
+  },
+  {
+    id: 'spelled-out-unit-refused-as-duration',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "`A3-13`'s own clause restored: `seconds` leaves the one time table, so `timeout wait 90 seconds` and `pause 2 seconds` are `TF023` again while `today + 3 seconds` two lines away stays clean. Targeted at the table rather than at `parseDuration`, because the date-offset path resolves through `DATE_OFFSET_UNITS` and its own `DATE_OFFSET_MS`/`offsetToMs` — so this breaks exactly the position the row is about and leaves the position it compared against alone",
+    find: '  seconds: 1_000,\n',
+    replace: '',
+  },
+  {
+    id: 'adjacency-dropped-with-the-union',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "the union taken too far — the adjacency test removed outright instead of narrowed to abbreviations, so `timeout wait 2 s` and `expect duration is less than 250 ms` become legal again and D170 is undone. This is the failure the union invites, since the easy way to accept `2 seconds` is to stop asking where the unit sits",
+    find: '    if (!spelledOut && !adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;\n',
+    replace: '',
+  },
+  {
+    id: 'spelled-out-unit-must-touch-its-number',
+    milestone: 'm147d',
+    file: PARSER,
+    equivalent: true,
+    what: "adjacency asked of a **word** as well as an abbreviation — the plausible wrong version of D638, where `pause 2 seconds` is legal only as `pause 2seconds`",
+    // Surviving is correct, and finding that out is why this entry exists. `reportBadDurationUnit`
+    // reports nothing unless `nearestDurationUnit` can name the unit the word was reaching for, and
+    // that lookup consults `DURATION_UNITS` and `UNIT_SPELLINGS` — neither of which contains any of
+    // the five spelled-out words. So dropping `!spelledOut` changes no program today: the guard is a
+    // fence around a collision that does not yet exist.
+    //
+    // Kept rather than deleted, on `date-check-before-duration`'s precedent and for its reason: the
+    // day a plural joins `UNIT_SPELLINGS` — `minutes` is one edit from `minute`, which is already
+    // there — this becomes a real mutation and reports itself as mislabelled rather than quietly
+    // passing. That entry's identical comment was written eight milestones ago and was worth having
+    // this week, which is the whole argument.
+    find: '    if (!spelledOut && !adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;',
+    replace: '    if (!adjacent && this.reportBadDurationUnit(num, unitTok, adjacent)) return null;',
+  },
+  {
+    id: 'abbreviated-date-bound-invisible-to-tf054',
+    milestone: 'm147d',
+    file: CHECKER,
+    what: "the state `M147c` shipped in and this milestone found: `random date between today and today - 10s` reaches `no problems found` while `today - 10 seconds` raises `TF054`. One rule, two spellings, one of them judged — and the survivor is a *silence*, so nothing but a negative-facing test can catch it",
+    find: '        : offset.type === \'DurationLit\'\n          ? { ms: offset.ms, text: offset.raw }\n          : null;',
+    replace: '        : null;',
+  },
+  {
+    id: 'spelled-out-duration-not-a-number',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/matcher.ts',
+    what: "the second consequence restored: `expect duration is less than 2 seconds` checks clean and fails every run with ``\`is less than\` expects a number, got object``, while `2s` on the next line passes. Registered against `matcher.ts` rather than `eval.ts` because this is the guard `B3-04` hardened — the mutation has to prove the unwrap is a named exception to that guard and not a re-loosening of it",
+    find: '  const offset = dateOffsetMs(value);\n  if (offset !== null) return offset;\n  if (typeof value !== \'number\' || Number.isNaN(value)) {',
+    replace: '  if (typeof value !== \'number\' || Number.isNaN(value)) {',
+  },
+  {
+    id: 'api-body-must-be-an-object',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "`A3-12` restored at the site the row named: `api POST /o body [1, 2]` back to ``TF010: expected `{` to start an object, found `[` ``, while the same array one level down (`body { items: [1, 2] }`), in a file body and in `expect body equals [1, 2]` all stay clean — which is the asymmetry the row was about, seen from the other side",
+    find: "    const value = this.parseJsonDocument('the request body');",
+    replace: '    const value = this.parseObject();',
+  },
+  {
+    id: 'stub-body-must-be-an-object',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "the same restoration at the site the row did **not** name — `stub GET \"/api/orders\" respond status 200 body [1, 2]` refused, so a list endpoint cannot be stubbed. A separate entry from the `api` one on purpose: they are two calls in two productions, and one entry covering both would let either be reverted with the sweep still green",
+    find: "      body = this.parseJsonDocument('the stubbed response body');",
+    replace: '      body = this.parseObject();',
+  },
+  {
+    id: 'body-refusal-forgets-the-array',
+    milestone: 'm147d',
+    file: PARSER,
+    what: "the widening shipped but not told: `body 5` is still refused — correctly — with the pre-D639 sentence, which names one opener and offers ``expected `{` `` as the whole of its help. A user reading it learns neither that an array is now legal nor that `body text` is the form they want. The mutation is invisible to every positive test in the milestone, which is why the negatives assert the message verbatim rather than only the code",
+    find: "      `expected \\`{\\` or \\`[\\` to start ${what}, found ${describeToken(tok)}`,\n      tok.span,\n      'a `body` is a JSON object or array — for anything else, use `body text \"…\"`',",
+    replace: "      `expected \\`{\\` to start an object, found ${describeToken(tok)}`,\n      tok.span,\n      'expected `{`',",
+  },
+  {
+    id: 'array-body-unwalked-by-the-checker',
+    milestone: 'm147d',
+    file: CHECKER,
+    what: "the half-done widening: the parser accepts an array body and the checker keeps its `.fields` loop, so `body [{ id: {nope} }]` reports nothing at all and a typo'd variable reaches the runtime. The survivor is a **silence** — `check` says `no problems found` on a file it cannot read — so only a test that asserts a diagnostic *appears* can catch it",
+    find: '      // `checkValue` already walks both `ObjectLit` and `ArrayLit`, so D639\'s widening needed no\n      // new arm here — only the loop that assumed fields had to go.\n      checkValue(body.value, bound, diags);',
+    replace: "      if (body.value.type === 'ObjectLit') for (const field of body.value.fields) checkValue(field.value, bound, diags);",
+  },
+  {
+    id: 'stub-array-body-unwalked-by-the-checker',
+    milestone: 'm147d',
+    file: CHECKER,
+    what: 'the same silence at the `stub` site, which travels a different `case` in the same walker. Registered separately for the same reason the two parser entries are separate',
+    find: '        if (step.body) checkValue(step.body, bound, diags);',
+    replace: "        if (step.body && step.body.type === 'ObjectLit') for (const field of step.body.fields) checkValue(field.value, bound, diags);",
+  },
+  {
+    id: 'array-body-not-navigable',
+    milestone: 'm147d',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/resolution/findNodeAtOffset.ts',
+    what: "the editor half: the walker stops at `InlineBody` for an array, so hover, go-to-definition and rename all decline to know about anything inside `body [ … ]`. No diagnostic changes and no `@tflw/lang` test moves — the failure is that the editor does nothing, which `M106`'s rows are the standing reminder to assert deliberately",
+    find: "      return inline.type === 'ObjectLit' ? inline.fields : inline.elements;",
+    replace: "      return inline.type === 'ObjectLit' ? inline.fields : [];",
+  },
+  {
+    id: 'array-body-flattened-to-an-object',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "the pre-D639 mental model applied to a post-D639 AST: `InlineBody` meant *fields*, so an array gets spread into an object and `[{\"name\":\"Widget\"}]` leaves as `{\"0\":{\"name\":\"Widget\"}}`. **Invisible to every `@tflw/lang` test** — the file parses, checks and reports green, and the server receives a document nobody wrote. That is M109's stated bar for spending the runtime suite's 21s: the claim is about a join no cheaper subject can see",
+    find: '      const text = JSON.stringify(evalValue(body.value, ctx));',
+    replace: '      const text = JSON.stringify({ ...(evalValue(body.value, ctx) as object) });',
+  },
+
+  // ---- M147d-4 (`A3-10`, D640): the per-step wait budget ----------------------------------------
+  {
+    id: 'wait-budget-parsed-then-discarded',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the clause is consumed but its duration is thrown away, so every `timeout wait <dur>` silently takes the env budget instead. The nastiest shape this widening can fail in: the file parses, `check` is clean, and the only symptom is a step that gives up at a moment nobody wrote',
+    find: '    return { ok: true, ms };',
+    replace: '    return { ok: true, ms: null };',
+  },
+  {
+    id: 'request-timeout-eats-the-wait-budget',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: "the per-request `timeout` stops declining the two-token clause, so `wait until api GET /jobs timeout wait 5m` loses `timeout` to `parseApiRequestLine` and dies on ``expected a duration … found `wait` ``. This is the half of D640 that is easy not to notice needing a change at all, because the locator form works perfectly without it",
+    find: "    if (this.isKw(this.peek(), 'timeout') && !this.atWaitBudget()) {",
+    replace: "    if (this.isKw(this.peek(), 'timeout')) {",
+  },
+  {
+    id: 'wait-budget-not-taught-at-end-of-step',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: "M84's hint table stops distinguishing the two `timeout` mistakes, so a plain `api` step's `timeout wait 5m` is answered with advice about `api` requests — the exact shape of unhelpfulness M84 exists to remove, reintroduced one token later",
+    find: '        return this.atWaitBudget()',
+    replace: '        return false',
+  },
+  {
+    id: 'tf055-reads-the-env-over-the-step',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the hold-window check goes back to the env budget alone, which makes `for 60s timeout wait 2m` — a perfectly satisfiable program — a warning against a 30s default. A false positive on the new grammar\'s very first use, and the reason widening this operand was not optional',
+    find: "      const budget = typeof own === 'number' ? own : env?.wait;",
+    replace: '      const budget = env?.wait;',
+  },
+  {
+    id: 'tf055-reach-not-widened',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the whole pass is skipped again whenever no env was resolved, including for the steps that supplied both operands themselves. Restores exactly the line D640 removed, so an editor with no config goes back to saying nothing about a program written entirely in front of it',
+    find: '  const diags: Diagnostic[] = [];\n  for (const test of program.tests) checkHoldWindowsInSteps(test.body, opts.envTimeouts, diags);',
+    replace: '  const diags: Diagnostic[] = [];\n  if (!opts.envTimeouts) return diags;\n  for (const test of program.tests) checkHoldWindowsInSteps(test.body, opts.envTimeouts, diags);',
+  },
+  {
+    id: 'tf055-stops-naming-the-env',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'every `TF055` claims the budget is "on this step", including the env-derived ones where it is not — sending the reader to edit a line that does not exist. The mirror of the in-file case, and the reason the sentence forks rather than being written once',
+    find: "          typeof own === 'number' ? `\\`timeout wait ${budget}ms\\` on this step`",
+    replace: "          true ? `\\`timeout wait ${budget}ms\\` on this step`",
+  },
+  {
+    id: 'ui-wait-ignores-its-own-budget',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the locator form parses `timeout wait` and then polls the env budget anyway. Invisible to `@tflw/lang` — the AST is right, the checker agrees with it, and only a real poll loop shows the step giving up at the wrong moment. Kills the FS-05 backstop pair, which is why those two tests are written against "can never be satisfied" rather than against elapsed time',
+    find: '  // there is no path on which the number a failure reports is not the number that bounded it.\n  const waitBudget = step.waitMs ?? config.timeouts.wait;',
+    replace: '  // there is no path on which the number a failure reports is not the number that bounded it.\n  const waitBudget = config.timeouts.wait;',
+  },
+  {
+    id: 'api-wait-ignores-its-own-budget',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the same drop on the poll-loop side. Both halves are registered separately because they are two independent lines that happen to read alike — a widening that reached only one form would be exactly the asymmetry `A3-10` was filed about, one level down',
+    find: '  // clause could never have served as the poll budget the row asked the locator form to gain.\n  const waitBudget = step.waitMs ?? config.timeouts.wait;',
+    replace: '  // clause could never have served as the poll budget the row asked the locator form to gain.\n  const waitBudget = config.timeouts.wait;',
+  },
+
+  // ---- M147d-5 (`A3-11`, D641): which subjects a `wait until` may poll ----
+  {
+    id: 'wait-until-admits-anything',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the guard stops refusing anything at all, so `wait until body.state equals "done"` — the row\'s own program — parses and becomes a step that reads a value nothing between polls can change',
+    find: '    if (!pollable(subject)) {',
+    replace: '    if (false && !pollable(subject)) {',
+  },
+  {
+    id: 'pollable-ignores-the-of-clause',
+    milestone: 'm147d',
+    file: 'packages/lang/src/ast.ts',
+    what: 'the `of request to "…"` arm goes away, so a value subject is judged by its keyword instead of by the clause that moves its read onto the browser\'s observed traffic. `status of request to "/x"` becomes `TF010` while a bare `page` still passes — the half of D641 that is easiest to write and easiest to leave out',
+    find: "  return 'of' in subject && (subject as { of?: unknown }).of != null;",
+    replace: '  return false;',
+  },
+  {
+    id: 'pollable-admits-the-response-scope',
+    milestone: 'm147d',
+    file: 'packages/lang/src/ast.ts',
+    what: 'the predicate says yes to everything, which is the widening done without the rule. Every refusal in the slice disappears at once, including the one `A3-11` filed',
+    find: "  if (subject.type === 'LocatorSubject' || subject.type === 'PageSubject' || subject.type === 'NetworkRequestSubject') return true;",
+    replace: '  return true;',
+  },
+  {
+    id: 'one-refusal-for-two-mistakes',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'a `{variable}` subject is told it reads the last `api` response, which it does not. The fork exists because the two shapes fail for different reasons and need different repairs — collapsing it restores the one-sentence-for-eight-mistakes defect the row was really about',
+    find: "      const isBoundValue = subject.type === 'ValueSubject';",
+    replace: '      const isBoundValue = false;',
+  },
+  {
+    id: 'snapshot-can-be-waited-on',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the matcher half of D641 stops being enforced, so `wait until <locator> matches snapshot "s"` parses again — a wait whose condition is compared once against a file and can never become true by waiting',
+    find: "    if (matcher.name === 'matchesSnapshot') {",
+    replace: "    if (matcher.name === 'never-a-matcher-name') {",
+  },
+  {
+    id: 'tf042-still-cannot-see-a-wait',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the second traversal is dropped, restoring the state D641 found: `expect button "Go" has no critical a11y violations` is `TF042` and the identical mistake one keyword over checks clean and fails mid-run. Registered separately from the subject-set entries because the widening and the check that covers it are independently forgettable',
+    find: '  forEachWaitUntilUi(program, (step) => checkOneMatcherSubject(step, diags));',
+    replace: '',
+  },
+  {
+    id: 'tf042-misses-a-nested-wait',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the new traversal stops descending into `within`/`switch to new tab`/`download` bodies, so the check covers a `wait until` only at the top level of a body — the exact partial coverage that makes a gate read green while half the corpus is unvisited',
+    find: "      else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') walk(step.body);",
+    replace: '',
+  },
+  {
+    id: 'wait-reader-picks-the-subject-over-the-ref',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the network ref is consulted *after* the subject type, so `wait until status of request to "/x"` falls through to the response-scope throw instead of polling observed traffic. `execSteps` orders these two the same way for the same reason; a run is the only thing that can tell them apart',
+    find: '  const ref = subjectNetworkRef(subject);\n  if (ref) {',
+    replace: "  const ref = subject.type === 'NetworkRequestSubject' ? subjectNetworkRef(subject) : null;\n  if (ref) {",
+  },
+  {
+    id: 'wait-page-arm-never-rescans',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the a11y arm scans once, before the loop, and every later poll re-judges the same stale result. The step then cannot observe a page fixing itself — which is the only thing that distinguishes `wait until page …` from the `expect` it was already able to write',
+    find: '    return async () => ({ outcome: describeA11yOutcome(step.matcher.negated, floor, filterBySeverity(await runA11yScan(page), floor)) });',
+    replace: '    const once = filterBySeverity(await runA11yScan(page), floor);\n    return async () => ({ outcome: describeA11yOutcome(step.matcher.negated, floor, once) });',
+  },
+  {
+    id: 'wait-network-arm-never-rereads',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the same freeze one arm over: the observed-request log is read once instead of on every poll, so traffic the page issues after the step begins is never seen. Both arms are registered because they fail identically and are fixed in different places',
+    find: '      const matched = findLastMatchingRequest(browser.page.networkRequestsSoFar(), urlPattern, method);',
+    replace: '      const matched = findLastMatchingRequest([], urlPattern, method);',
+  },
+
+  // --- `M147d-6` / `M137f-02` (D642) — the env-scoped `session` -------------------------------
+  //
+  // The product half of this slice is one filter in `resolve.ts` and one argument in `cli.ts`, and
+  // the two are registered separately on purpose: the filter decides what a session *is* under an
+  // env, and the argument decides whether the checker was told. Reverting either one alone reopens
+  // the row, and only the second one reopens it the way it was originally filed.
+  {
+    id: 'session-scope-never-narrows',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the scope clause parses, is checked, is documented — and resolves to nothing, because every session is in scope for every env again. The row reopens with the grammar in place, which is the worst of the available failures: a config that says `for env one` and behaves as though it did not',
+    find: 's.envs === null || s.envs.some((e) => e.name === env.name)',
+    replace: 'true',
+  },
+  {
+    id: 'session-scope-drops-the-unscoped',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: '`envs === null` stops meaning *every env* and starts meaning *no env*, so every session written before D642 resolves nowhere. This is the mutation that would turn an additive clause into a breaking change, and it is one character of the filter away at all times',
+    find: 's.envs === null ||',
+    replace: 's.envs !== null &&',
+  },
+  {
+    id: 'out-of-scope-map-always-empty',
+    milestone: 'm147d',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the roster is still filtered correctly and the record of *why* is dropped, so `TF028` falls back to `known sessions: ...` in front of an author looking straight at the `session` block it says does not exist. The scoping works and the diagnostic lies about it',
+    find: 'config.sessions.filter((s) => !sessions.has(s.name))',
+    replace: 'config.sessions.filter(() => false)',
+  },
+  {
+    id: 'check-session-body-sees-every-session',
+    milestone: 'm147d',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`M137f-02` verbatim: the config-stage check goes back to reading every declared session against the active env\'s service map, so a session scoped to another env is `TF026` at its own line before a single assertion runs. This is the pre-D642 line, restored',
+    find: '...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services), envBaseUrls, envTimeouts),',
+    replace: '...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),',
+  },
+  {
+    id: 'tf074-never-fires',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'a `for env` clause naming an env that does not exist is accepted, which scopes the session to nothing at all. Every `as <name>` opting into it becomes a `TF028` pointing at a test file, and the suite quietly runs one identity short of the probe set it thinks it has',
+    find: '      if (seen.has(ref.name)) continue;',
+    replace: '      if (seen.has(ref.name) || true) continue;',
+  },
+  {
+    id: 'tf074-underlines-the-declaration',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the diagnostic anchors on the `session` instead of on the name, and a session span runs to the end of its indented body — so a five-step login gets a caret under the whole paragraph to complain about one word. The reason `SessionDecl.envs` carries nodes rather than strings, deleted',
+    find: '        span: ref.span,',
+    replace: '        span: session.span,',
+  },
+  {
+    id: 'tf028-forgets-the-scoping-hint',
+    milestone: 'm147d',
+    file: 'packages/lang/src/checker.ts',
+    what: 'the out-of-scope branch never runs, so `as console` under the wrong env reports `known sessions: shopper, peer` — true, useless, and the exact reading that sends an author looking for a typo in a name they spelled correctly',
+    find: '      if (outOfScope && scopedTo) {',
+    replace: '      if (false && outOfScope && scopedTo) {',
+  },
+  {
+    id: 'env-scope-clause-never-parsed',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the clause stops being read at all. `session console for env one` then reaches `endLine()` with three tokens left over, so the fix is unreachable from the grammar',
+    find: "    if (!this.isKw(this.peek(), 'for')) return null;",
+    replace: '    return null;',
+  },
+  {
+    id: 'env-scope-takes-only-one-name',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the comma loop stops after the first name, so `for env plaintext, staging` silently scopes to `plaintext` alone and the second env loses the session. Silently, because the leftover `, staging` is what `endLine()` then complains about — a diagnostic about a comma, for a bug about an identity',
+    find: '      if (!this.check(\'comma\')) break;',
+    replace: '      break;',
+  },
+  {
+    id: 'late-env-scope-silent',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: '`session admin privileged for env local` loses its named diagnostic and falls through to `endLine()`, which is the cascade D310 spent a message to avoid: one honest complaint about `for`, then the indented body parsed as something it is not',
+    find: "    if (!this.isKw(this.peek(), 'for')) return;",
+    replace: '    return;',
+  },
+  {
+    id: 'lsp-session-check-ignores-env-scope',
+    milestone: 'm147d',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lsp-server/src/workspace/configResolution.ts',
+    what: '`M137f-02` survives in the editor after the CLI is fixed: the language server checks every declared session against whichever env the workspace resolved, so a session scoped elsewhere is `TF026` in VS Code on a config `tflw check` calls clean. The CLI and the LSP disagreeing about what is legal, which is the one failure neither is allowed to have',
+    find: '      ...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services)),',
+    replace: '      ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services)),',
+  },
+  {
+    id: 'for-without-env-unnamed',
+    milestone: 'm147d',
+    file: 'packages/lang/src/parser.ts',
+    what: '`session admin for local` stops being told which of the language\'s two `for`s it wrote — the other being `header "X" is "Y" for <service>`, which is exactly what an author reaching for a scope clause is likely to have had in mind. It becomes an anonymous unexpected token instead',
+    find: "    if (!this.isKw(this.peek(), 'env')) {",
+    replace: '    if (false) {',
   },
 
 ];

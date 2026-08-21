@@ -264,7 +264,7 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
         body === null
           ? null
           : body.type === 'InlineBody'
-            ? { t: 'InlineBody', fields: body.object.fields.map((f) => ({ key: f.key, value: maskValue(f.value, literals, f.key) })) }
+            ? { t: 'InlineBody', value: maskValue(body.value, literals, 'body') }
             : body.type === 'FormBody'
               ? { t: 'FormBody', fields: body.fields.map((f) => ({ key: f.key, value: maskValue(f.value, literals, f.key) })) }
               : body.type === 'FileBody'
@@ -373,7 +373,7 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
           method: step.method,
           urlPattern: step.urlPattern.value,
           status: step.status.value,
-          body: step.body ? step.body.fields.map((f) => ({ key: f.key, value: maskValue(f.value, literals, f.key) })) : null,
+          body: step.body ? maskValue(step.body, literals, 'body') : null,
         },
         literals,
       };

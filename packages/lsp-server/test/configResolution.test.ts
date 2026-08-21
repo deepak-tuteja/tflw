@@ -72,3 +72,38 @@ test('resolutionErrorDiagnostic: null when the config resolved cleanly', async (
     assert.equal(resolutionErrorDiagnostic(project), null);
   });
 });
+
+test('`M147d`/`M137f-02`: a session scoped to another env is not squiggled in this one (D642)', async () => {
+  // The row, in the editor. `loadProjectConfig` resolves an env and then checks session bodies
+  // against it — so handing it every declared session reported `TF026` on a config `tflw check`
+  // calls clean, which is the CLI and the language server disagreeing about what is legal. The
+  // fix is the same one-line swap the CLI got, and this file's own comments already promised the
+  // behaviour: *the editor squiggles the env this workspace actually resolves to*.
+  const config =
+    'env one default\n  api adminConsole "https://console.example.com"\n  api shared "https://shared.example.com"\n\n' +
+    'env two\n  api shared "https://shared.example.com"\n\n' +
+    'session console for env one\n  api adminConsole GET /login\n';
+
+  await withTmpProject(config, async (dir) => {
+    // The env that has the console: resolves, and its body is still checked — the scope clause must
+    // not buy silence for the env it names.
+    const one = await loadProjectConfig(dir, 'one');
+    assert.deepEqual(one.diagnostics, []);
+
+    // The env that does not: the session is simply not this env's to check.
+    const two = await loadProjectConfig(dir, 'two');
+    assert.deepEqual(two.diagnostics, []);
+  });
+});
+
+test('`M147d`: the scope clause does not silence a real error in the env it names', async () => {
+  // The control for the test above. If `checkSessionBody` were handed an empty roster instead of a
+  // filtered one, both assertions there would pass for the wrong reason.
+  const config =
+    'env one default\n  api shared "https://shared.example.com"\n\n' +
+    'session console for env one\n  api adminConsole GET /login\n';
+  await withTmpProject(config, async (dir) => {
+    const project = await loadProjectConfig(dir, 'one');
+    assert.equal(project.diagnostics[0]!.code, 'TF026');
+  });
+});

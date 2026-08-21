@@ -190,6 +190,38 @@ const A11Y_DYNAMIC_HTML = `<!doctype html>
 </body>
 </html>`;
 
+// `M147d`/`A3-11` (D641): two fixtures whose whole job is to put a real browser observation
+// *outside* `timeout expect` and *inside* `timeout wait`. That gap is the only difference between
+// `expect <X>` and `wait until <X>` for these subjects — both poll, and they poll the same way — so
+// it is the one discriminator that can tell the two apart without timing anything. The delays are
+// deliberately long relative to the 300ms `timeout expect` the tests set: a contended box can make
+// an axe scan or a page load slow, and a fixture that heals at 400ms could be healed before the
+// first scan even finishes, which would turn a real assertion into a coin flip.
+const A11Y_SLOW_HTML = `<!doctype html>
+<html lang="en">
+<head><title>Slow page</title></head>
+<body>
+  <main>
+    <h1>Slow page</h1>
+    <input id="field" type="text" />
+  </main>
+  <script>
+    setTimeout(function () { document.getElementById('field').setAttribute('aria-label', 'Name'); }, 2500);
+  </script>
+</body>
+</html>`;
+
+const LATE_FETCH_HTML = `<!doctype html>
+<html lang="en">
+<head><title>Late fetch</title></head>
+<body>
+  <main><h1>Late fetch</h1></main>
+  <script>
+    setTimeout(function () { fetch('/api/orders'); }, 1200);
+  </script>
+</body>
+</html>`;
+
 // M3c: served on the *first* request only (a real deterministic "fails once, then passes" fixture
 // — same closure-counter technique M2.65's session-retry test used against a real HTTP handler,
 // not a mock) — the button `retry`'s two attempts are looking for isn't there until the second
@@ -248,6 +280,9 @@ before(async () => {
     '/a11y-clean': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_CLEAN_HTML),
     '/a11y-bad': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_BAD_HTML),
     '/a11y-dynamic': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_DYNAMIC_HTML),
+    // `M147d`/`A3-11`: same two subjects, observed late enough that `timeout expect` cannot reach them.
+    '/a11y-slow': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_SLOW_HTML),
+    '/late-fetch': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(LATE_FETCH_HTML),
     // M4b: two real renders of the same layout — a `#fixed` box that never changes, plus a
     // `#dynamic` box whose color differs between them (simulating a timestamp/avatar) — so masking
     // it is what genuinely determines pass/fail, not a coincidence. `SNAP_HTML`'s own `dynamicColor`
@@ -757,6 +792,125 @@ test('FS-05: a condition interrupted mid-window fails, and reports the longest u
   // reader the condition was nearly met rather than never met — a 1.9s-of-2s flake and a
   // never-true condition are otherwise the same report line.
   assert.match(report.tests[0]!.error ?? '', /longest unbroken hold \d+ms of 600ms/);
+});
+
+// ---- M147d (`A3-10`, D640): the per-step wait budget ------------------------
+//
+// `timeout wait <duration>` on a `wait until` step overrides the env's for that step alone. Both
+// tests here are written against the FS-05 backstop rather than against elapsed time, because the
+// two outcomes it produces are *qualitatively* different — "can never be satisfied" or a pass — so
+// neither assertion can be satisfied by a slow machine or a lucky poll.
+
+test('M147d: the step budget lengthens the window a hold has to fit inside', async () => {
+  // Under the env's 500ms alone this program is refused by name: a 600ms hold cannot close inside
+  // it. With the step's own 2s it is an ordinary, satisfiable wait — so a `waitMs` that parsed and
+  // was then dropped fails this test loudly rather than subtly.
+  const shortWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 500 } };
+  const { program, diagnostics } = parseSource(`test "own budget"
+  open "/"
+  wait until button "Hidden button" is hidden for 600ms timeout wait 2s
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.match(report.tests[0]!.steps[1]!.detail ?? '', /held for 600ms/);
+});
+
+test('M147d: the step budget shortens it too, and the refusal names the step number rather than the env one', async () => {
+  // The mirror, and the half that proves which operand the backstop read: the env says 3s, so the
+  // old comparison called a 600ms hold perfectly fine. It is the step's own 500ms that makes it
+  // impossible, and it is 500ms the message has to quote — a report naming 3000ms would send the
+  // reader to edit a config line that was not the problem.
+  const longWaitConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, wait: 3000 } };
+  const { program, diagnostics } = parseSource(`test "own budget, shorter"
+  open "/"
+  wait until button "Hidden button" is hidden for 600ms timeout wait 500ms
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, longWaitConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /can never be satisfied/);
+  assert.match(error, /\(500ms\)/);
+  assert.doesNotMatch(error, /3000ms/);
+  // And the remedy names the line the reader is looking at, not `tflw.config`.
+  assert.match(error, /Raise this step's `timeout wait`/);
+});
+
+// ---- M147d (`A3-11`, D641): the subjects a `wait until` may poll ------------
+//
+// `wait until <X>` for a live browser subject is `expect <X>` on the wait budget, and nothing else:
+// `execUiExpect`, `execA11yExpect` and `execNetworkExpect` were all already retry loops. So each
+// pair below runs the *same condition* against the *same fixture* twice, changing only the keyword,
+// with the observation timed to land between `timeout expect` and `timeout wait`. The `expect` half
+// is not scaffolding — it is what proves the wait did something, because a `wait until` that
+// silently ran on the expect budget would fail it in exactly the same way.
+
+test('M147d: `wait until page has no … a11y violations` reaches a fix the `expect` budget cannot', async () => {
+  const budgets: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300, wait: 10_000 } };
+  const source = (keyword: string) => `test "a11y late"\n  open "/a11y-slow"\n  ${keyword} page has no critical a11y violations\n`;
+
+  const asExpect = parseSource(source('expect'));
+  assert.deepEqual(asExpect.diagnostics, []);
+  const { report: expectReport } = await runProgram(asExpect.program, budgets, { source: 'x', browserManager });
+  assert.equal(expectReport.ok, false, 'the 300ms expect budget cannot outlast a 2.5s fix — if this passes the fixture is not slow enough to discriminate');
+
+  const asWait = parseSource(source('wait until'));
+  assert.deepEqual(asWait.diagnostics, [], 'D641 admits `page` here; a diagnostic means the parser guard was not widened');
+  const { report: waitReport } = await runProgram(asWait.program, budgets, { source: 'x', browserManager });
+  assert.equal(waitReport.ok, true, JSON.stringify(waitReport.tests[0], null, 2));
+});
+
+test('M147d: `wait until request to "…" was made` reaches traffic the `expect` budget cannot', async () => {
+  const budgets: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300, wait: 10_000 } };
+  const source = (keyword: string) => `test "fetch late"\n  open "/late-fetch"\n  ${keyword} request to "/api/orders" was made\n`;
+
+  const asExpect = parseSource(source('expect'));
+  const { report: expectReport } = await runProgram(asExpect.program, budgets, { source: 'x', browserManager });
+  assert.equal(expectReport.ok, false, 'the fetch fires at 1200ms, well past the 300ms expect budget');
+
+  const asWait = parseSource(source('wait until'));
+  assert.deepEqual(asWait.diagnostics, []);
+  const { report: waitReport } = await runProgram(asWait.program, budgets, { source: 'x', browserManager });
+  assert.equal(waitReport.ok, true, JSON.stringify(waitReport.tests[0], null, 2));
+});
+
+test('M147d: an `of request to "…"` subject polls the observed traffic, not the last `api` response', async () => {
+  // The clause, not the keyword, is what makes `status` pollable here (`pollable()` tests for the
+  // `of`, and `waitUntilReader` checks the network ref before the subject type). A run that read
+  // the response scope instead would find no response at all in a browser-only test and throw.
+  const budgets: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300, wait: 10_000 } };
+  const { program, diagnostics } = parseSource(`test "of-request late"
+  open "/late-fetch"
+  wait until status of request to "/api/orders" equals 200
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, budgets, { source: 'x', browserManager });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('M147d: `for <duration>` composes with a widened subject — the hold is over the condition, not over the locator', async () => {
+  const { program, diagnostics } = parseSource(`test "sustained a11y"
+  open "/a11y-clean"
+  wait until page has no critical a11y violations for 300ms
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, config, { source: 'x', browserManager });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.match(report.tests[0]!.steps[1]!.detail ?? '', /held for 300ms/);
+});
+
+test('M147d: the runtime re-asserts D641 rather than assuming the parser ran', async () => {
+  // `tflw run` is not obliged to have passed `tflw check` first, so `waitUntilReader`'s final throw
+  // is the runtime's half of the contract, not dead code — the same reasoning that keeps the throw
+  // in `evaluateNetworkExpect`. Unreachable through the grammar by construction, so the only honest
+  // way to exercise it is to hand the interpreter the node the parser would have refused.
+  const { program } = parseSource('test "contract"\n  open "/"\n  wait until page has no critical a11y violations\n');
+  const step = program.tests[0]!.body[1] as { subject: unknown };
+  step.subject = { type: 'StatusSubject', of: null, span: (step as unknown as { span: unknown }).span };
+  const { report } = await runProgram(program, config, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  assert.match(report.tests[0]!.error ?? '', /reads the last `api` response, which cannot change between polls/);
 });
 
 test('FS-05: a hold window at least as long as `timeout wait` is refused by name — it could never pass, and would otherwise surface as an ordinary timeout that explains nothing', async () => {

@@ -233,17 +233,37 @@ PauseStmt   := 'pause' Duration ('to' Duration)? NEWLINE
 
 ```
 ApiStep         := 'api' ApiRequestLine NEWLINE (INDENT (HeaderLine | RetryAfterClause)* DEDENT)?
-WaitUntilApiStep:= 'wait' 'until' 'api' ApiRequestLine NEWLINE
+WaitUntilApiStep:= 'wait' 'until' 'api' ApiRequestLine WaitBudget? NEWLINE
                     INDENT (HeaderLine* ExpectStmt+) DEDENT      # (§5.5) — expect-only body, no
                                                                   # `retry honoring` clause here;
                                                                   # `wait until` has its own
                                                                   # poll-until-passes retry semantics
 
+WaitBudget      := 'timeout' 'wait' Duration                     # M147d/D640 (`A3-10`) — how long
+                                                                  # THIS `wait until` may poll,
+                                                                  # overriding the env's
+                                                                  # `timeout wait`. Distinct from
+                                                                  # ApiRequestLine's own `timeout`,
+                                                                  # which bounds ONE poll's request
+                                                                  # and is clamped to what remains
+                                                                  # of this budget (decision 67); a
+                                                                  # poll may carry both. Read by
+                                                                  # both `wait until` forms and by
+                                                                  # nothing else — no other step has
+                                                                  # a poll budget to override
+
 ApiRequestLine  := IDENT? METHOD PATH BodyForm? ('timeout' Duration)? ('without' 'redirects')?
+                                                                 # the `timeout` here declines the
+                                                                 # two-token `timeout wait` above,
+                                                                 # so the two clauses can stand on
+                                                                 # one line in either combination
 METHOD          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'
 IDENT?                                                           # an optional named service prefix (§3.2)
 
-BodyForm        := 'body' Object                                 # inline JSON
+BodyForm        := 'body' JsonDoc                                # inline JSON (M147d/D639 — an
+                                                                    # object or a top-level array;
+                                                                    # a scalar is refused, `body text`
+                                                                    # is the form for one)
                  | 'body' 'from' STRING                          # file-backed JSON
                  | 'body' 'text' STRING                          # raw payload, any content-type
                  | 'form' FormField (',' FormField)*              # application/x-www-form-urlencoded
@@ -406,6 +426,7 @@ Atom        := STRING | NUMBER | 'true' | 'false' | 'null'
              | IDENT                                              # variable/capture reference
 
 Interp      := '{' IDENT ('.' IDENT | '[' NUMBER ']')* '}'
+JsonDoc     := Object | Array                                    # what a `body` may be (M147d/D639)
 Object      := '{' (Field (',' Field)* ','?)? '}'
 Field       := (IDENT | STRING) ':' Value
 Array       := '[' (Value (',' Value)* ','?)? ']'
@@ -487,7 +508,8 @@ DownloadBlock   := 'download' 'as' IDENT NEWLINE Block                # M3b — 
 DragStmt        := 'drag' Locator 'to' Locator                        # M3b
 DropFileStmt    := 'drop' 'file' STRING 'onto' Locator                 # M3b
 
-WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)?    # M3b — the UI sibling of
+WaitUntilUiStmt := 'wait' 'until' PollableSubject Matcher ('for' Duration)? WaitBudget?
+                                                                       # M3b — the UI sibling of
                                                                        # WaitUntilApiStep (§5.5);
                                                                        # polls `timeout wait`, not
                                                                        # `timeout expect`; always
@@ -500,15 +522,41 @@ WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)?    # M3b —
                                                                        # — the only way to assert a
                                                                        # negative (§9.5). UI-only:
                                                                        # `wait until api … for` is
-                                                                       # refused by name
+                                                                       # refused by name.
+                                                                       # `Matcher` excludes
+                                                                       # `matches snapshot` here —
+                                                                       # see PollableSubject below
+
+PollableSubject := Locator | 'page' | NetworkRequestSubject | Subject 'of' NetworkRequestRef
+                                                                       # M147d/D641 (`A3-11`) — the
+                                                                       # subjects `wait until` may
+                                                                       # poll, and the rule is a
+                                                                       # property rather than a list:
+                                                                       # re-reading it between two
+                                                                       # polls must be able to give a
+                                                                       # different answer. These four
+                                                                       # are exactly the ones the
+                                                                       # runtime already re-observes
+                                                                       # on a retry loop. Every other
+                                                                       # Subject reads the response
+                                                                       # scope, which one `api` step
+                                                                       # writes and nothing between
+                                                                       # polls can change → TF010.
+                                                                       # `matches snapshot` is the
+                                                                       # matcher half of the same
+                                                                       # rule and its only member:
+                                                                       # compared once against a
+                                                                       # baseline, never re-read
 
 ScreenshotStmt  := 'screenshot' STRING                                 # M3c — captures the active
                                                                         # page unconditionally
 
-StubStmt        := 'stub' Method STRING 'respond' 'status' NUMBER Object?   # M3d, §9.7 — route-level
-                                                                              # response mocking; Object
-                                                                              # is the same {...} literal
-                                                                              # `body {...}` (§5.2) uses
+StubStmt        := 'stub' Method STRING 'respond' 'status' NUMBER JsonDoc?  # M3d, §9.7 — route-level
+                                                                              # response mocking; JsonDoc
+                                                                              # is the same document
+                                                                              # `body` (§5.2) takes — a
+                                                                              # list endpoint answers with
+                                                                              # an array (M147d/D639)
 Method          := 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'   # same method-
                                                                                         # word recognition
                                                                                         # as ApiStep (§5.1)
@@ -618,14 +666,35 @@ ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height
                                                                    # `report`; omitted = Playwright's
                                                                    # own default (1280×720)
 
-SessionDecl     := 'session' IDENT ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
-                                    | 'privileged'? NEWLINE Block)
+SessionDecl     := 'session' IDENT EnvScope? ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
+                                              | 'privileged'? NEWLINE Block)
                                                                   # `privileged` (§3.3, M130b, D307) — this
                                                                   #   principal is meant to reach other
                                                                   #   principals' resources, so `has no …
                                                                   #   authorization violations` leaves it out
                                                                   #   of the probe set. A whole config of
                                                                   #   privileged sessions is a checker error
+EnvScope        := 'for' 'env' IDENT (',' IDENT)*
+                                                                  # (§3.3, M147d/`M137f-02`, D642) — the
+                                                                  #   `env` blocks this session belongs to.
+                                                                  #   Absent means *every* env, which is
+                                                                  #   what makes the clause additive: the
+                                                                  #   clause only ever narrows, and a name
+                                                                  #   matching no `env` block narrows it to
+                                                                  #   nothing and is `TF074`.
+                                                                  #   Read *before* both modifiers, so
+                                                                  #   `oauth2 privileged` stays the adjacent
+                                                                  #   pair D307/D310 settled rather than
+                                                                  #   having a comma list dropped into it.
+                                                                  #   Line-terminated, so no trailing comma
+                                                                  #   (D637) — same as `require env` and
+                                                                  #   `allow hosts`.
+                                                                  #   `env` is the *block*, not the OS
+                                                                  #   variable `require env`/`env(NAME)`
+                                                                  #   name; the AST says so too, where
+                                                                  #   `EnvRef` was already taken by
+                                                                  #   `env(NAME)` and this one is
+                                                                  #   `EnvScopeRef`
 Oauth2Config    := 'token' 'url' Value NEWLINE
                     'client' 'id' Value NEWLINE
                     'client' 'secret' Value NEWLINE

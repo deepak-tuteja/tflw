@@ -302,10 +302,17 @@ test('`wait until <locator> <matcher>` parses a WaitUntilUiStmt (not the api for
   assert.equal(step.matcher.name, 'enabled');
 });
 
-test('`wait until` against a non-locator, non-`api` subject is a diagnosed error', () => {
+test('`wait until` against a subject that cannot change between polls is a diagnosed error', () => {
+  // Renamed by `M147d`/`A3-11` (D641), and the rename is the point: "non-locator" was the rule this
+  // test was written against, and it is no longer the rule. `page`, `request to "…"` and a value
+  // `of request to "…"` are all non-locator subjects that a `wait until` now polls — the property
+  // that decides is whether re-reading between polls can give a different answer. `status` reads
+  // the last `api` response, so it still fails, and this test still covers M3b's dispatch; what it
+  // must no longer claim is that *being a locator* is what earned admission. The widened set has
+  // its own file (`pollableSubjects.test.ts`).
   const { diagnostics } = parseSource('test "ok"\n  wait until status equals 200\n');
   assert.ok(diagnostics.length > 0, 'expected a diagnostic');
-  assert.ok(diagnostics[0]!.message.includes('expects either'), diagnostics[0]!.message);
+  assert.ok(diagnostics[0]!.message.includes('can change between polls'), diagnostics[0]!.message);
 });
 
 test('`wait until api …` still parses as WaitUntilApiStmt (unaffected by the `wait until <ui>` dispatch)', () => {

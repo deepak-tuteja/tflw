@@ -22,6 +22,7 @@ import type {
   LetStmt,
   Locator as LocatorAst,
   LogStmt,
+  Matcher as AstMatcher,
   NetworkRequestRef,
   Oauth2SessionConfig,
   PathSegment,
@@ -3510,7 +3511,9 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'StubStmt': {
           const urlPattern = String(evalValue(step.urlPattern, ctx));
           const status = step.status.value;
-          const body = step.body ? Object.fromEntries(step.body.fields.map((f) => [f.key, evalValue(f.value, ctx)])) : null;
+          // Was `Object.fromEntries(step.body.fields.map(…))`, which is what `evalValue` does to an
+          // `ObjectLit` — identical for the object form, and the only shape that reads an array too.
+          const body = step.body ? evalValue(step.body, ctx) : null;
           const page = await ensurePageForStep(ctx);
           await performStub(page, step.method, urlPattern, status, body);
           result = mkStep('stub', src, step.span, true, stepStart, `stub ${step.method} ${JSON.stringify(urlPattern)} → ${status}`);
@@ -3911,7 +3914,7 @@ interface PreparedBody {
 async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promise<PreparedBody> {
   switch (body.type) {
     case 'InlineBody': {
-      const text = JSON.stringify(evalValue(body.object, ctx));
+      const text = JSON.stringify(evalValue(body.value, ctx));
       return { sendBody: text, traceText: text, contentType: 'application/json' };
     }
     case 'TextBody': {
@@ -4045,12 +4048,82 @@ async function execSnapshotExpect(step: ExpectStmt, ctx: EvalCtx, src: string, s
   return outcome.diff ? { ...result, snapshotDiff: outcome.diff } : result;
 }
 
-/** `wait until <locator> [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` from FS-05) — the
- * UI sibling of `execUiExpect`: same resolve-fresh-every-poll / `hasCount`-exception logic, but
- * polling `timeout wait` (default 30s, the same clock `wait until api` uses) instead of `timeout
- * expect` (default 5s), for a UI condition that can legitimately take longer to settle than the
- * ordinary UI-expect budget. Always hard-fails on exhaustion — there is no soft/`check` form for
- * `wait until`.
+/** One poll of a `wait until` condition: the judgement, plus (locators only) the extra sentence
+ * that explains a failure caused by nothing having matched at all. */
+interface WaitUntilPoll {
+  readonly outcome: MatchOutcome;
+  readonly diagnose?: () => Promise<string>;
+}
+
+/**
+ * Which live observation this `wait until` re-reads each poll (`M147d`, `A3-11`, D641).
+ *
+ * The three arms are the three the `ExpectStmt` dispatch in `execSteps` already routes to — and
+ * every one of them was *already* a retry loop before this existed (`execUiExpect`,
+ * `execA11yExpect`, `execNetworkExpect` each poll to `timeout expect`). That is the whole finding
+ * behind D641: `wait until <X>` is not a new capability for these subjects, it is `expect <X>` on
+ * the wait budget with an optional `for` hold, and the only thing that had ever stopped it being
+ * written was a parser guard testing for `LocatorSubject`.
+ *
+ * Resolved **once, before the loop**, so the per-poll cost is the observation and not the decision.
+ *
+ * The network arm is checked first for the same reason `execSteps` checks it first: an `of request
+ * to "…"` clause rides on subjects whose own type is an ordinary response subject, so testing the
+ * type first would send `status of request to "/x"` down a path that reads the last `api` response
+ * instead of the browser's traffic — the precise confusion `A3-11` was filed about, one level down.
+ */
+function waitUntilReader(
+  step: WaitUntilUiStmt,
+  subject: WaitUntilUiStmt['subject'],
+  browser: BrowserAttemptContext,
+  scope: LocatorScope,
+  page: PWPage,
+  ctx: EvalCtx,
+): () => Promise<WaitUntilPoll> {
+  const ref = subjectNetworkRef(subject);
+  if (ref) {
+    const urlPattern = String(evalValue(ref.urlPattern, ctx));
+    const method = ref.method ? String(evalValue(ref.method, ctx)).toUpperCase() : null;
+    return async () => {
+      const matched = findLastMatchingRequest(browser.page.networkRequestsSoFar(), urlPattern, method);
+      return { outcome: evaluateNetworkExpect(subject, step.matcher, matched, urlPattern, ctx) };
+    };
+  }
+  if (subject.type === 'PageSubject') {
+    if (step.matcher.name !== 'hasNoA11yViolations') {
+      throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`page\` — only \`has no [<severity>] a11y violations\` (SPEC §9.8)`);
+    }
+    const floor = step.matcher.severityFloor ?? null;
+    return async () => ({ outcome: describeA11yOutcome(step.matcher.negated, floor, filterBySeverity(await runA11yScan(page), floor)) });
+  }
+  if (subject.type === 'LocatorSubject') {
+    const locator = subject.locator;
+    const name = String(evalValue(locator.value, ctx));
+    return async () => {
+      const { pwLocator, via, count } = await resolveLocatorSnapshot(scope, locator, ctx);
+      if (step.matcher.name !== 'hasCount') await requireSingleMatch(locator, name, { pwLocator, via }, count);
+      const outcome = await evalUiMatcherOnce(locatorDetail(locator, name, via), pwLocator, step.matcher, ctx, count);
+      return { outcome, diagnose: () => diagnoseIfNothingMatched(scope, locator, name, count) };
+    };
+  }
+  // `PollableSubject` is wider than `pollable()` on purpose — the four `of request to "…"`-bearing
+  // types belong to the union whether or not the clause is present, and only the predicate can tell
+  // (`ast.ts`). Reaching here means a subject the parser would have refused, so this is the runtime
+  // half of that contract rather than dead code: `tflw run` is not obliged to have passed `tflw
+  // check`, and the same reasoning keeps the throw in `evaluateNetworkExpect`.
+  throw new RuntimeError(
+    `\`${subject.type}\` reads the last \`api\` response, which cannot change between polls — \`wait until\` needs a UI locator, \`page\`, or \`request to "…"\` (SPEC §9.5)`,
+  );
+}
+
+/** `wait until <pollable subject> [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` from
+ * FS-05; the subject set widened past a locator by `M147d`/`A3-11`, D641) — the browser sibling of
+ * `execUiExpect`/`execA11yExpect`/`execNetworkExpect`, and *only* the loop: which of those three
+ * observations to re-read is decided once by `waitUntilReader`, and the judgement per poll is the
+ * same function each of them already calls. What this adds over its `expect` counterpart is the
+ * budget — `timeout wait` (default 30s, the same clock `wait until api` uses) instead of `timeout
+ * expect` (default 5s) — and the `for` hold. Always hard-fails on exhaustion; there is no
+ * soft/`check` form for `wait until`.
  *
  * With `for <duration>` the condition must hold *continuously* for that long. The hold clock is
  * reset to `null` the moment a poll comes back false, so only an uninterrupted window passes — a
@@ -4058,12 +4131,15 @@ async function execSnapshotExpect(step: ExpectStmt, ctx: EvalCtx, src: string, s
  * away. `timeout wait` still bounds the whole step, so a sustained condition that never gets a
  * clean window fails with the elapsed budget rather than hanging. */
 async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
-  const subject = step.subject;
   const browser = requireBrowserCtx(ctx);
   const page = await browser.page.ensurePage(browser.manager);
   const scope = browser.scope ?? page;
-  const name = String(evalValue(subject.locator.value, ctx));
+  const readOnce = waitUntilReader(step, step.subject, browser, scope, page, ctx);
   const holdMs = step.holdMs;
+  // D640 (`M147d`, `A3-10`) — the step's own `timeout wait <duration>` when it wrote one, otherwise
+  // the env's. Resolved once and used for the deadline, the backstop below and every message, so
+  // there is no path on which the number a failure reports is not the number that bounded it.
+  const waitBudget = step.waitMs ?? config.timeouts.wait;
   // A hold window at least as long as the poll budget can never pass — the condition would have to
   // stay true past the deadline that ends the step. That is a written-wrong test, not a slow app,
   // and it would otherwise surface as an ordinary timeout that says nothing about the real cause.
@@ -4072,19 +4148,17 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
   // built for `TF051`; this throw is the backstop for a run whose config the checker was never
   // given. It is a warning there and a hard error here on purpose (D147): the checker predicts
   // against one env, and a suite whose CI env raises `timeout wait` is correct.
-  if (holdMs !== null && holdMs >= config.timeouts.wait) {
+  if (holdMs !== null && holdMs >= waitBudget) {
+    const raise = step.waitMs === null ? 'Raise `timeout wait` in tflw.config' : "Raise this step's `timeout wait`";
     throw new RuntimeError(
-      `\`for ${holdMs}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${config.timeouts.wait}ms), so the hold window has to be shorter than it. Raise \`timeout wait\` in tflw.config, or shorten the hold.`,
+      `\`for ${holdMs}ms\` can never be satisfied — the whole step is bounded by \`timeout wait\` (${waitBudget}ms), so the hold window has to be shorter than it. ${raise}, or shorten the hold.`,
     );
   }
-  const deadline = performance.now() + config.timeouts.wait;
+  const deadline = performance.now() + waitBudget;
   let heldSince: number | null = null;
   let longestHoldMs = 0;
   for (;;) {
-    const { pwLocator, via, count } = await resolveLocatorSnapshot(scope, subject.locator, ctx);
-    if (step.matcher.name !== 'hasCount') await requireSingleMatch(subject.locator, name, { pwLocator, via }, count);
-    const label = locatorDetail(subject.locator, name, via);
-    const outcome = await evalUiMatcherOnce(label, pwLocator, step.matcher, ctx, count);
+    const { outcome, diagnose } = await readOnce();
     const now = performance.now();
     if (outcome.ok) {
       if (heldSince === null) heldSince = now;
@@ -4103,7 +4177,7 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
       // required 2s and one that was never true for a single poll produce the same report line.
       const detail = longestHoldMs > 0 ? `longest unbroken hold ${Math.round(longestHoldMs)}ms of ${holdMs}ms` : `never held for ${holdMs}ms`;
       const held = holdMs === null ? outcome.message : `${outcome.message} (${detail})`;
-      const message = held + (await diagnoseIfNothingMatched(scope, subject.locator, name, count));
+      const message = held + (diagnose ? await diagnose() : '');
       return mkStep('wait', src, step.span, false, start, ctx.redactor.redact(message));
     }
     await sleep(WAIT_POLL_INTERVAL_MS);
@@ -4129,7 +4203,7 @@ async function execNetworkExpect(step: ExpectStmt, ref: NetworkRequestRef, ctx: 
   const deadline = performance.now() + config.timeouts.expect;
   for (;;) {
     const matched = findLastMatchingRequest(browser.page.networkRequestsSoFar(), urlPattern, method);
-    const outcome = evaluateNetworkExpect(step, matched, urlPattern, ctx);
+    const outcome = evaluateNetworkExpect(step.subject, step.matcher, matched, urlPattern, ctx);
     if (outcome.ok || performance.now() >= deadline) {
       return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
     }
@@ -4152,8 +4226,10 @@ function findLastMatchingRequest(log: readonly CapturedNetworkRequest[], urlPatt
   return undefined;
 }
 
-function evaluateNetworkExpect(step: ExpectStmt, matched: CapturedNetworkRequest | undefined, urlPattern: string, ctx: EvalCtx): MatchOutcome {
-  const subject = step.subject;
+/** Shared by `execNetworkExpect` and, since D641, by a `wait until` whose subject is an observed
+ * request — the two differ only in which budget their loop runs on, so the judgement lives here
+ * rather than being written twice with two chances to drift. */
+function evaluateNetworkExpect(subject: Subject, matcher: AstMatcher, matched: CapturedNetworkRequest | undefined, urlPattern: string, ctx: EvalCtx): MatchOutcome {
   const label = networkSubjectLabel(subject, urlPattern, ctx);
   if (subject.type === 'NetworkRequestSubject') {
     // Existence-only; `wasMade` is the only matcher meaningful here. As of M97b the checker rejects
@@ -4161,21 +4237,21 @@ function evaluateNetworkExpect(step: ExpectStmt, matched: CapturedNetworkRequest
     // cite SPEC §1's "stays a runtime concern", which was true when written and is no longer. The
     // throw stays: `checkMatcherSubjects` is the checker's half of one rule, and the runtime does
     // not assume it ran (a `tflw run` on a suite is not obliged to have passed `tflw check` first).
-    if (step.matcher.name !== 'wasMade') {
-      throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`request to "…"\` — only \`was made\` (SPEC §9.7)`);
+    if (matcher.name !== 'wasMade') {
+      throw new RuntimeError(`\`${matcher.name}\` isn't valid against \`request to "…"\` — only \`was made\` (SPEC §9.7)`);
     }
     const made = matched !== undefined;
-    const ok = step.matcher.negated ? !made : made;
+    const ok = matcher.negated ? !made : made;
     const verb = made ? 'was made' : 'was not made';
     return ok
       ? { ok: true, message: `${label} ${verb} (as expected)` }
-      : { ok: false, message: `expected ${label} to ${step.matcher.negated ? 'not have been made' : 'have been made'}, but it ${made ? 'was' : "wasn't"}` };
+      : { ok: false, message: `expected ${label} to ${matcher.negated ? 'not have been made' : 'have been made'}, but it ${made ? 'was' : "wasn't"}` };
   }
   if (!matched) {
     return { ok: false, message: `expected ${label}, but no matching request has been observed yet` };
   }
   const { value } = resolveNetworkSubjectValue(subject, matched, ctx);
-  return evalMatcher(label, value, step.matcher, ctx);
+  return evalMatcher(label, value, matcher, ctx);
 }
 
 function resolveNetworkSubjectValue(subject: Subject, matched: CapturedNetworkRequest, ctx: EvalCtx): { value: unknown; label: string } {
@@ -4249,7 +4325,7 @@ async function execA11yExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start
   const deadline = performance.now() + config.timeouts.expect;
   for (;;) {
     const violations = filterBySeverity(await runA11yScan(page), floor);
-    const outcome = describeA11yOutcome(step, floor, violations);
+    const outcome = describeA11yOutcome(step.matcher.negated, floor, violations);
     if (outcome.ok || performance.now() >= deadline) {
       return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
     }
@@ -4262,9 +4338,8 @@ async function execA11yExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start
  * point is "here's enough to start fixing", not a full audit dump); the full axe-core result isn't
  * surfaced anywhere else, unlike a response body, so this is the only place worth being generous
  * with detail per item shown. */
-function describeA11yOutcome(step: ExpectStmt, floor: FindingSeverity | null, violations: readonly Finding[]): MatchOutcome {
+function describeA11yOutcome(negated: boolean, floor: FindingSeverity | null, violations: readonly Finding[]): MatchOutcome {
   const kind = floor ? `${floor} a11y violation` : 'a11y violation';
-  const negated = step.matcher.negated;
   const noneFound = violations.length === 0;
   const ok = negated ? !noneFound : noneFound;
   if (ok) {
@@ -5602,7 +5677,12 @@ async function execWaitUntilApi(
   start: number,
   pinnedAgents?: KeepAliveAgents,
 ): Promise<{ result: StepResult; response: ResponseTrace | null; request: RequestTrace | null }> {
-  const deadline = performance.now() + config.timeouts.wait;
+  // D640 (`M147d`, `A3-10`) — this step's own `timeout wait <duration>`, else the env's. Distinct
+  // from `step.request.timeoutMs`, which is one *poll's* request timeout and is clamped to whatever
+  // is left of this deadline a few lines down; that clamp is decision 67 and is why the per-request
+  // clause could never have served as the poll budget the row asked the locator form to gain.
+  const waitBudget = step.waitMs ?? config.timeouts.wait;
+  const deadline = performance.now() + waitBudget;
   let attempt = 0;
   let last: { redacted: ApiExec['redacted']; response: ResponseTrace; request: RequestTrace; message: string } | null = null;
   for (;;) {
@@ -5612,7 +5692,7 @@ async function execWaitUntilApi(
     const remainingMs = deadline - performance.now();
     if (remainingMs <= 0 && last) {
       const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
-      const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${last.message}`;
+      const detail = `timed out after ${waitBudget}ms (${attempts}): ${last.message}`;
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last.redacted.request, last.redacted.response),
         response: last.response,
@@ -5647,7 +5727,7 @@ async function execWaitUntilApi(
       // it says, and still surfaces unchanged. Only the clamp's own firing is re-attributed.
       if (!(err instanceof RequestTimeoutError) || !clampedByWait) throw err;
       const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
-      const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${last ? last.message : 'no poll completed before the deadline'}`;
+      const detail = `timed out after ${waitBudget}ms (${attempts}): ${last ? last.message : 'no poll completed before the deadline'}`;
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last?.redacted.request, last?.redacted.response),
         response: last?.response ?? null,
@@ -5672,7 +5752,7 @@ async function execWaitUntilApi(
     const lastMessage = outcomes.find((o) => !o.ok)!.message;
     last = { redacted, response: trace.response, request: trace.request, message: lastMessage };
     if (performance.now() >= deadline) {
-      const detail = `timed out after ${config.timeouts.wait}ms (${attempts}): ${lastMessage}`;
+      const detail = `timed out after ${waitBudget}ms (${attempts}): ${lastMessage}`;
       return {
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), redacted.request, redacted.response),
         response: trace.response,

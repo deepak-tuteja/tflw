@@ -52,7 +52,12 @@ export async function loadProjectConfig(root: string, envSetting: string | undef
     const envBlock = selectEnv(parsed.config, { flag: undefined, envVar: envSetting ?? process.env.TFLW_ENV });
     resolved = resolveConfig(parsed.config, envBlock);
     sessionServiceDiags = [
-      ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services)),
+      // `M147d`/`M137f-02` (D642) — the **env-filtered** roster, for the reason the next comment
+      // already gives: this file squiggles the env the workspace resolves to. Passing every declared
+      // session here would report a session scoped to another env against *this* env's service map,
+      // which is `TF026` in the editor for a config `tflw check` calls clean — the CLI and the LSP
+      // disagreeing about what is legal, which is the one thing neither may do.
+      ...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services)),
       // `TF036` (M85) is env-scoped for the same reason every check here is: the editor squiggles
       // the env this workspace actually resolves to (`tflw.env`), not every env in the file.
       ...checkAllowHostsCoversBaseUrls(parsed.config, envBlock),

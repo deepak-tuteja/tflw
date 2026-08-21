@@ -4952,3 +4952,58 @@ test('a test that dies before its first step prints its reason live, not just it
     }
   });
 });
+
+test('`M147d`/`M137f-02`: a session scoped to one env stops being every other env\'s problem', async () => {
+  // **The row, end to end, through the surface it was filed against.** `session console` is
+  // top-level and `api adminConsole` is per-env, so before D642 this config was `TF026: unknown api
+  // service "adminConsole"` under `--env two` — reported at the *session* line, before a single
+  // assertion, in an env that runs nothing needing the console. The repair the corpus actually
+  // shipped was to copy the service into every env block, which then pulled `TF060`'s affirmation
+  // and `TF065`'s `allow hosts` entry along with it.
+  //
+  // This lives in the e2e suite rather than in `@tflw/lang` because the fix is a *wiring* decision:
+  // `checkSessionBody` is now handed `resolved.sessions` instead of `parsedConfig.config.sessions`,
+  // and that swap is only observable from outside the library.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-session-env-scope-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'env one default',
+        '  api adminConsole "https://console.example.com"',
+        '  api shared "https://shared.example.com"',
+        '',
+        'env two',
+        '  api shared "https://shared.example.com"',
+        '',
+        'session console for env one',
+        '  api adminConsole GET /login',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(join(dir, 'plain.tflw'), 'test "t"\n  api shared GET /health\n  expect status equals 200\n');
+    await writeFile(join(dir, 'uses.tflw'), 'test "t" as console\n  api shared GET /health\n  expect status equals 200\n');
+
+    // The env that has the console: everything resolves, as it always did.
+    const one = await execFileAsync('node', [cliEntry, 'check', '--no-color', 'plain.tflw', '--env', 'one'], { cwd: dir });
+    assert.match(one.stdout, /no problems found/);
+
+    // The env that does not: clean, with no console declarations anywhere in its block. This is the
+    // assertion the row is about — it failed with `TF026` before D642.
+    const two = await execFileAsync('node', [cliEntry, 'check', '--no-color', 'plain.tflw', '--env', 'two'], { cwd: dir });
+    assert.match(two.stdout, /no problems found/);
+
+    // And a file that really does want the session under that env is told where the session lives,
+    // rather than that no such session exists while the author looks straight at one.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'check', '--no-color', 'uses.tflw', '--env', 'two'], { cwd: dir }),
+      (e: unknown) => {
+        const out = (e as { stdout: string; stderr: string }).stdout + (e as { stderr: string }).stderr;
+        return /TF028/.test(out) && /in env "two"/.test(out) && /`for env one`/.test(out);
+      },
+      '`as console` under an env the session is not scoped to must name the envs it is scoped to',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

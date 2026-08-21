@@ -152,7 +152,20 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
 
   const requiredEnv = config.requires.flatMap((r) => r.names);
   const exclude = config.excludes.flatMap((e) => e.paths.map((p) => p.value));
-  const sessions = new Map(config.sessions.map((s) => [s.name, s] as const));
+  // `M147d`/`M137f-02` (D642) — the env scope clause, applied in the one place that decides what a
+  // session *is* under an env. Everything downstream already reads `resolved.sessions`: the roster
+  // `TF028` checks, the `privileged` subset `TF063` reasons about, and all five of the runtime's
+  // establishment paths (`test`/`crawl`/`scenario`/`probePrincipalFor`). So env-scoping is this
+  // filter and nothing else, and no consumer can disagree with another about which sessions exist.
+  //
+  // `envs === null` is a session written without the clause, which belongs to every env — the
+  // pre-D642 behaviour, kept for every session already written.
+  const inScope = config.sessions.filter((s) => s.envs === null || s.envs.some((e) => e.name === env.name));
+  const sessions = new Map(inScope.map((s) => [s.name, s] as const));
+  /** Declared, but not here (`M137f-02`) — what `TF028` needs to name the envs it *is* scoped to. */
+  const sessionsOutOfScope = new Map(
+    config.sessions.filter((s) => !sessions.has(s.name)).map((s) => [s.name, (s.envs ?? []).map((e) => e.name)] as const),
+  );
 
   return {
     envName: env.name,
@@ -167,6 +180,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     requiredEnv,
     exclude,
     sessions,
+    sessionsOutOfScope,
     mtls,
     allowHosts,
     authorizedTargets,

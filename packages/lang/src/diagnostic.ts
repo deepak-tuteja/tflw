@@ -316,6 +316,24 @@ export const Codes = {
   // directly there; this exists for the run that checks one entry file, which is the shape a
   // `tflw check` in CI usually has.
   IMPORT_PARSE_ERRORS: 'TF073',
+  // M147d (`M137f-02`, D642) — **a `session ... for env <name>` naming an env this config does not
+  // declare.** The clause narrows a session to a set of envs, so a name that matches no `env` block
+  // narrows it to nothing: the session exists in no env, every `as <name>` that opts into it becomes
+  // `TF028`, and each of those points at a *test file* to complain about one word in `tflw.config`.
+  //
+  // **The failure it prevents is a deletion, not a typo.** A `session` is not only a login — it is a
+  // member of every Tier 2 probe set (D306), so a session that silently exists nowhere removes an
+  // identity from the differential oracle across the whole suite while every assertion stays green.
+  // That is `M130-01`'s shape, and it is the reason `checkSessions` already spends a paragraph on
+  // why a crawl's `as` list is validated by name.
+  //
+  // **Its own code rather than `TF024`.** That one is `CONFIG_ENV_CONFLICT` — two envs with one name,
+  // two envs marked `default` — a claim about envs that contradicts another claim. This is a
+  // reference to an env that is not there, which is the shape `TF026` (unknown service) and `TF028`
+  // (unknown session) already have codes of their own for. Every *unknown name* in this language is
+  // its own code, and reusing a conflict code for a resolution failure would put the wrong word in
+  // front of the reader.
+  CONFIG_UNKNOWN_ENV: 'TF074',
 } as const;
 
 // ---------------------------------------------------------------------------

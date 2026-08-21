@@ -111,7 +111,10 @@ export class DocumentStore {
           ...diagnostics,
           // M116/D152 — the same env this block already resolved, so a `session` body gets `TF051`
           // in the editor exactly as it does from `tflw check`.
-          ...checkSessionBody(parsed.config.sessions, Object.keys(resolved.services), {
+          // `M147d`/`M137f-02` (D642) — env-filtered, like `configResolution.ts`'s copy and for the
+          // same reason the comment above already states: *exactly as it does from `tflw check`*. A
+          // session scoped to another env is not this env's to check.
+          ...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services), {
             envName: resolved.envName,
             api: resolved.apiBaseUrl !== null,
             web: resolved.webBaseUrl !== null,

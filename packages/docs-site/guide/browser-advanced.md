@@ -32,6 +32,9 @@ wait until button "Submit" is enabled    # like `expect`, but polls `timeout wai
                                           # that can legitimately outlast the ordinary UI-expect
                                           # budget. Always hard-fails; no soft/`check` form.
 wait until text "Error" is not visible for 2s   # must hold *continuously* for 2s
+wait until list "Results" has count 50 timeout wait 5m
+                                          # this step polls for five minutes; every other wait
+                                          # in the suite keeps the configured `timeout wait`
 ```
 
 `switch to new tab`'s popup listener starts *before* its block runs, so a fast-opening tab can't
@@ -59,6 +62,75 @@ rejected outright rather than burning 30s to report a mystery timeout.
 `for` is UI-only. Sustaining an *API* condition would mean re-issuing the request for the whole
 window, which is load testing rather than waiting — `wait until api … for` is refused by name and
 points you at [load testing](/guide/load-testing).
+
+## What a `wait until` can wait for
+
+A `wait until` polls. That is a real constraint on what may follow it, and the rule is one sentence:
+**re-reading the condition between two polls has to be able to give a different answer.**
+
+Four things qualify, and they are the four the browser can change while your test is standing still:
+
+```tflw fragment
+wait until button "Submit" is enabled                     # a UI locator
+wait until page has no critical a11y violations           # the page's own accessibility state
+wait until request to "/api/cart" was made                # traffic the page issues on its own
+wait until status of request to "/api/cart" equals 200    # …and the response it got back
+```
+
+For all four, `wait until <X>` is exactly `expect <X>` on the longer budget, plus the optional `for`
+hold — `expect` already retries every one of them, just against `timeout expect`.
+
+What does **not** qualify is anything that reads the last API response:
+
+```tflw
+test "polling a job"
+  api GET /jobs/1
+  expect body.state equals "queued"
+```
+
+`wait until body.state equals "done"` looks like the obvious next line, and it is refused. A
+response is written once, by the `api` step that fetched it; nothing between two polls of a
+`wait until` can change it, so the step could only pass on its first attempt or spin until its
+deadline blaming an endpoint it never asked twice. What you want is to **re-issue the request**,
+and that is what the block form is for:
+
+```tflw fragment
+wait until api GET /jobs/1
+  expect body.state equals "done"
+```
+
+The same argument rules out a `{variable}` subject — `let`/`capture` bound it, and nothing between
+polls rebinds it — and `matches snapshot`, which is compared once against a committed baseline
+rather than re-read as the page settles. Settle the page first, then take the snapshot in its own
+`expect`.
+
+## One slow wait: `timeout wait <duration>` on the step
+
+Most suites have one wait that is nothing like the others — an import job, a report build, a queue
+that drains in its own time. Raising `timeout wait` in config to accommodate it slows down every
+*failure* in the suite, because every other wait now takes the same long budget to give up.
+
+Write the budget on the step instead. It is available on both forms of `wait until`, and goes last
+on the line:
+
+```tflw fragment
+wait until text "Import complete" is visible timeout wait 10m
+```
+
+Don't confuse it with the `timeout` an `api` request takes. That one bounds a **single HTTP
+request**; on a poll it bounds one poll, and it is clamped to whatever is left of the wait budget
+anyway. They are different quantities and a poll may carry both:
+
+```tflw fragment
+wait until api GET /jobs/latest timeout 5s timeout wait 5m
+  expect body.status equals "done"
+```
+
+No single poll may hang past 5s; the whole step gives up after five minutes.
+
+A `for` hold has to fit inside whichever budget applies, and `tflw check` compares them for you —
+against the step's own when it wrote one, which means it can now answer without resolving an env at
+all.
 
 ## Evidence: screenshots & Playwright trace
 
@@ -101,7 +173,7 @@ a substring (e.g. a checkout `POST` followed by a confirmation-page `GET` to a r
 `status`/`header`/`body[.path]`/`body text` `of request to "<url>"` reads that request's real
 response instead of the last `api` step's.
 
-`stub <METHOD> "<url-pattern>" respond status <code> [body {...}]` mocks a route for the rest of
+`stub <METHOD> "<url-pattern>" respond status <code> [body {...} | body [...]]` mocks a route for the rest of
 the test — reach for it when the real dependency is unreliable or out of scope (a flaky payment
 sandbox, a webhook this suite doesn't own), not as a general substitute for a real fixture: tflw's
 own dogfood suites never mock the API they're testing.
