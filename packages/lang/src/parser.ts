@@ -709,6 +709,17 @@ class Parser {
    * `program` otherwise (ordinary `parse()`/`parseConfig()` never sets this). */
   private completionMode = false;
   private completionResult: CompletionContext | null = null;
+  /**
+   * What `endLine()` calls the thing it just finished reading (`M147e`/`A2-13`).
+   *
+   * `endLine()` is shared by all three dialects and said `at end of step` in every one of them, so
+   * `web "http://x" oops` in a `tflw.config` — a file with no steps in it anywhere — was told about
+   * the end of a step. The default stays `'step'` deliberately: the two loops below re-establish
+   * their own noun on every iteration, so a production this field never reaches keeps exactly the
+   * wording it shipped with, and the change is a narrowing of the two dialects that were wrong
+   * rather than a reclassification of the one that was right.
+   */
+  private lineNoun: 'step' | 'directive' | 'declaration' = 'step';
 
   constructor(private readonly tokens: readonly Token[]) {}
 
@@ -786,6 +797,9 @@ class Parser {
       }
       const before = this.pos;
       const tok = this.peek();
+      // Re-established per iteration rather than once before the loop, because a `test` body sets it
+      // to `'step'` and never puts it back — the next declaration reclaims it here.
+      this.lineNoun = 'declaration';
       if (this.check('tag') || this.isKw(tok, 'with') || this.isKw(tok, 'test') || this.isKw(tok, 'crawl')) {
         // A tag line is shared prefix: `@vuln` can introduce either a `test` or a `crawl` (D450), and
         // which one is only knowable past the tags. So the tag-led branch peeks rather than committing,
@@ -1418,6 +1432,8 @@ class Parser {
     while (!this.atEof()) {
       const before = this.pos;
       const tok = this.peek();
+      // Same reclamation as `parse()`'s loop: a `session` body parses steps, which claims the noun.
+      this.lineNoun = 'directive';
       // `M137a`/D444. Declaration position, which the *test* dialect deliberately does not answer
       // at (D278: a blank line at the left margin is not one of the instrumented productions, and
       // answering there would be inventing a result). The asymmetry is intended: here the left
@@ -1823,6 +1839,7 @@ class Parser {
   }
 
   private parseConfigEntry(block: ConfigBlockKind): ConfigEntry[] | null {
+    this.lineNoun = 'directive';
     // `M137a`/D444 — the block decides the candidate list, so it decides the kind (see
     // `CompletionKind`). Guarded here rather than in `parseConfigEntries`' loop for the reason every
     // other guard sits at a production entry point: this is the function whose job is "read one
@@ -3086,6 +3103,7 @@ class Parser {
   }
 
   private parseStep(): Step | null {
+    this.lineNoun = 'step';
     if (this.completionMode && this.atCompletionPoint()) {
       this.completionResult = { kind: 'step', prefix: this.completionPrefix() };
       return null;
@@ -5232,7 +5250,7 @@ class Parser {
     }
     if (this.atEof() || this.check('dedent')) return;
     const tok = this.peek();
-    this.error(Codes.UNEXPECTED_TOKEN, `unexpected ${describeToken(tok)} at end of step`, tok.span, this.trailingHint(tok) ?? 'expected end of line');
+    this.error(Codes.UNEXPECTED_TOKEN, `unexpected ${describeToken(tok)} at end of ${this.lineNoun}`, tok.span, this.trailingHint(tok) ?? 'expected end of line');
     this.synchronize();
   }
 
@@ -5251,21 +5269,32 @@ class Parser {
    * still falls back to the generic hint — this is a lookup table of known mistakes, not a claim to
    * understand every one. */
   private trailingHint(tok: Token): string | null {
+    // `M147e`/`A2-13` — the table below is a table of *step* mistakes, and three of its entries say
+    // so in words: they name `expect`, `api` requests and inline suffixes. Offered against a
+    // `tflw.config` line they answer a question about a dialect the file is not written in, which is
+    // the same defect as the noun and would survive the noun's fix. The duration-unit entry is not
+    // gated because adjacency is a lexical rule and holds in all three dialects, and the tag entry
+    // is gated only against the config dialect, which has no `test` header for a tag to sit on.
     if (tok.type === 'tag') {
-      return `tags go on their own line above \`test\`, not on the header — put \`@${tok.value}\` on the line before it`;
+      return this.lineNoun === 'directive'
+        ? null
+        : `tags go on their own line above \`test\`, not on the header — put \`@${tok.value}\` on the line before it`;
     }
     if (tok.type !== 'ident') return null;
     switch (tok.value) {
       case 'within':
-        return '`within` opens a block, it is not an inline suffix — put `within <locator>` on its own line and indent the steps it scopes';
+        return this.lineNoun !== 'step'
+          ? null
+          : '`within` opens a block, it is not an inline suffix — put `within <locator>` on its own line and indent the steps it scopes';
       case 'timeout':
+        if (this.lineNoun !== 'step') return null;
         // Two mistakes share this token since D640, and the second one is only distinguishable by
         // looking at the token after it — which is the same two-token test the grammar itself uses.
         return this.atWaitBudget()
           ? '`timeout wait <duration>` sets the poll budget of one `wait until` step — no other step has one. To bound a single request write `timeout <duration>`; to change the whole run set `timeout wait` in `tflw.config`'
           : 'a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, or set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
       case 'and':
-        return 'one assertion per `expect` — put the second one on its own `expect` line';
+        return this.lineNoun !== 'step' ? null : 'one assertion per `expect` — put the second one on its own `expect` line';
       case 'ms':
       case 's':
       case 'm': {

@@ -1,0 +1,7 @@
+error[TF010]: unexpected `5` at end of directive
+ --> tflw.config:2:16
+  |
+2 |   report "./r" 5
+  |                ^
+  |
+  = help: expected end of line

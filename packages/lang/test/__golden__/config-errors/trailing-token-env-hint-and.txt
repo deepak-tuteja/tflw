@@ -1,0 +1,7 @@
+error[TF010]: unexpected `and` at end of directive
+ --> tflw.config:2:31
+  |
+2 |   api "http://localhost:3001" and
+  |                               ^^^
+  |
+  = help: expected end of line

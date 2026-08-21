@@ -781,6 +781,56 @@ session svc privileged oauth2
   client secret env(CLIENT_SECRET)
 `,
   },
+  // `M147e`/`A2-13` — the two config-dialect shapes the row names. A `tflw.config` has no steps in
+  // it anywhere, so the noun `endLine()` reaches for has to follow the dialect. `web "…" oops` is
+  // an env directive, `report "…" 5` a `defaults` entry: one per config block kind, because the
+  // noun is set by two different loops.
+  {
+    name: 'trailing-token-env-directive',
+    source: `env local default
+  api "http://localhost:3001"
+  web "http://localhost:3000" oops
+`,
+  },
+  {
+    name: 'trailing-token-defaults-directive',
+    source: `defaults
+  report "./r" 5
+
+env local default
+  api "http://localhost:3001"
+`,
+  },
+  // The other half of `A2-13`: the noun can be right while the hint under it is still answering for
+  // a dialect the file is not written in. `timeout` and `and` are the two worth pinning — `timeout`
+  // because it is a real `defaults` key, so an author who wrote it in the wrong position was being
+  // told it "is only accepted on `api` requests" inside the very file that accepts it; `and`
+  // because its hint names `expect`, which the config dialect does not have at all.
+  {
+    name: 'trailing-token-defaults-hint-timeout',
+    source: `defaults
+  report "./r" timeout
+
+env local default
+  api "http://localhost:3001"
+`,
+  },
+  {
+    name: 'trailing-token-env-hint-and',
+    source: `env local default
+  api "http://localhost:3001" and
+`,
+  },
+  // A trailing token on the *header* of a config block rather than on a key inside one. Two loops
+  // set the noun in this dialect and every fixture above reaches only the inner one, so without
+  // this the outer assignment is dead weight no test can tell from load-bearing — which is exactly
+  // what the `config-loop-never-claims-directive` mutation found when it survived.
+  {
+    name: 'trailing-token-env-header',
+    source: `env local default oops
+  api "http://localhost:3001"
+`,
+  },
 ];
 
 export const INVALID: readonly Fixture[] = [
@@ -943,6 +993,24 @@ test "invite {role}"
     source: `test "forgot the regex"
   api GET /health
   expect request fails matching
+`,
+  },
+  // `M147e`/`A2-13`, the other two shapes. Both sit at a `.tflw` file's top level, where the thing
+  // that just ended is a declaration and not a step. The `import` fixture is followed by a `test`
+  // so the golden also pins that the noun goes *back* to `'step'` for the body and then back to
+  // `'declaration'` — the two loops reclaiming it per iteration is the whole mechanism, and a
+  // single-declaration fixture would not exercise it.
+  {
+    name: 'trailing-token-import-decl',
+    source: `import "./a.tflw" extra
+
+test "and a step after it"
+  api GET /health oops
+`,
+  },
+  {
+    name: 'trailing-token-use-decl',
+    source: `use "./b.ts" 5
 `,
   },
 ];

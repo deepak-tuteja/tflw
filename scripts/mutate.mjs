@@ -2819,6 +2819,53 @@ const REGISTRY = [
     replace: '        true',
   },
 
+  // --- `M147e-2` (`A2-13`) — the trailing-token noun follows the dialect ------------------------
+  //
+  // Three mutations, one per way the fix can be undone, because the noun and the hints are separate
+  // mechanisms and the two loops that reclaim the noun are separate again. The last one is the
+  // subtlest: nothing about `parse()`'s loop looks load-bearing, and dropping it leaves every
+  // *first* declaration in a file correct.
+  {
+    id: 'endline-noun-always-step',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A2-13` verbatim: `web "http://x" oops` in a `tflw.config` is told about the end of a step, in a dialect that has no steps. The noun goes back to being a constant',
+    find: 'unexpected ${describeToken(tok)} at end of ${this.lineNoun}',
+    replace: 'unexpected ${describeToken(tok)} at end of step',
+  },
+  {
+    id: 'config-loop-never-claims-directive',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the config dialect stops naming itself, so the noun is whatever the constructor left — `'step'` — for every directive outside a `defaults`/`env` block. Half the row reopens, and it is the half whose fixture is a `session`-adjacent line rather than a block entry",
+    find: "      // Same reclamation as `parse()`'s loop: a `session` body parses steps, which claims the noun.\n      this.lineNoun = 'directive';",
+    replace: "      // Same reclamation as `parse()`'s loop: a `session` body parses steps, which claims the noun.",
+  },
+  {
+    id: 'top-level-loop-never-reclaims',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the noun is claimed by `parseStep()` and never given back, so a file's *first* declaration reports correctly and every declaration after a `test` body says `at end of step` again. The failure only appears in a file with two declarations, which is why the `import` fixture has a `test` under it",
+    find: "      this.lineNoun = 'declaration';",
+    replace: '',
+  },
+  {
+    id: 'step-hints-offered-in-every-dialect',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the noun is right and the hint under it is not: a `tflw.config` line ending in `and` is told `one assertion per `expect`` — advice about a keyword the config dialect does not have. This is the half of `A2-13` that survives a noun-only fix",
+    find: "        return this.lineNoun !== 'step' ? null : 'one assertion per `expect` — put the second one on its own `expect` line';",
+    replace: "        return 'one assertion per `expect` — put the second one on its own `expect` line';",
+  },
+  {
+    id: 'timeout-hint-offered-in-config',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`timeout` is a real `defaults` key, so writing it in the wrong position inside `tflw.config` was answered with "a per-step `timeout` … is only accepted on `api` requests" — in the file that accepts it. The most confusing single line the ungated table produced, because it is the one case where the hint is about the right word and the wrong dialect',
+    find: "        if (this.lineNoun !== 'step') return null;",
+    replace: '',
+  },
+
 ];
 
 /**

@@ -1,0 +1,7 @@
+error[TF010]: unexpected `oops` at end of directive
+ --> tflw.config:1:19
+  |
+1 | env local default oops
+  |                   ^^^^
+  |
+  = help: expected end of line
