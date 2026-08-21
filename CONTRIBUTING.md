@@ -98,8 +98,9 @@ npm run verify:ledger                  # § never runs in CI, by decision
   lower it to make a red run green** — write the test the uncovered line is asking for. In CI it
   runs on the Node 22 leg only, since it is the same source under either runtime.
 - **`node scripts/mutate.mjs <milestone>`** — **‡ the CI form is different, deliberately.** CI runs
-  `--shard=i/12` across twelve machines, and a thirteenth job proves the shards' union is the whole
-  registry. Locally you run the milestone you just wrote: `node scripts/mutate.mjs m98d`, or one
+  `--shard=i/18` across eighteen machines, and a nineteenth job proves the shards' union is the whole
+  registry — and, since `M148`, that the cost model those shards were packed by still describes what
+  they actually cost. Locally you run the milestone you just wrote: `node scripts/mutate.mjs m98d`, or one
   mutation by id. A bare `npm run verify:mutations` runs the **entire** registry and takes tens of
   minutes. `--scope` is not a flag.
 - **`npm run verify:ledger`** — **§ it never runs in CI, and that is a decision.** Its corpus,
