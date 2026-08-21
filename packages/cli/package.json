@@ -37,7 +37,8 @@
     "pretest": "npm run docs:gen",
     "dev": "node --import tsx src/cli.ts",
     "predev": "npm run docs:gen",
-    "docs:gen": "npm run docs:gen --prefix ../lang && node scripts/gen-docs.mjs",
+    "_docs:gen note": "`M147e`/`M147-10`: this chains lang's docs:CHECK, not its docs:gen. SPEC.md is committed, so the right thing to do about a mismatch is fail; `docs-data.generated.ts` is gitignored, so the right thing to do about it is write it. Two outputs, two verbs. Fix a failure with `npm run docs:gen -w @tflw/lang`.",
+    "docs:gen": "npm run docs:check --prefix ../lang && node scripts/gen-docs.mjs",
     "bundle": "npm run docs:gen && node scripts/bundle.mjs",
     "prepack": "npm run build --prefix ../.. -w @tflw/lang -w @tflw/runtime -w @tflw/reporter -w @tflw/lsp-server && npm run build"
   },

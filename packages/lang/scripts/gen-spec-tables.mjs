@@ -80,17 +80,69 @@ function replaceMarkerRegion(text, name, replacement) {
   return `${before}\n${replacement}\n${after}`;
 }
 
-function main() {
-  const specPath = fileURLToPath(new URL('../../../SPEC.md', import.meta.url));
-  let text = readFileSync(specPath, 'utf8');
+/** Every generated region, applied to `text` in one place so `main` and `--check` can never differ
+ * about which regions exist — the drift `M147-10` found was in one of four and the other three were
+ * clean, which is exactly the shape a second, hand-maintained list produces. */
+export function regenerate(text) {
   text = replaceMarkerRegion(text, 'matchers', renderMatcherTable(MATCHERS));
   text = replaceMarkerRegion(text, 'generators', renderGeneratorTable(GENERATORS));
   text = replaceMarkerRegion(text, 'diagnostics', renderDiagnosticsTable(DIAGNOSTICS));
   text = replaceMarkerRegion(text, 'step-keywords', renderStepKeywordTable(STEP_KEYWORDS));
-  writeFileSync(specPath, text, 'utf8');
-  // Counts every region it wrote, not most of them: a generator whose report omits one of its
-  // outputs is a report you cannot use to tell whether that output ran.
-  console.log(`gen-spec-tables: wrote ${MATCHERS.length} matcher rows + ${GENERATORS.length} generator rows + ${DIAGNOSTICS.length} diagnostic rows + ${STEP_KEYWORDS.length} step keyword rows to SPEC.md`);
+  return text;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+const SUMMARY = () =>
+  `${MATCHERS.length} matcher rows + ${GENERATORS.length} generator rows + ${DIAGNOSTICS.length} diagnostic rows + ${STEP_KEYWORDS.length} step keyword rows`;
+
+/**
+ * `--check` — assert SPEC.md's generated regions are what this generator produces (`M147e`,
+ * `M147-10`).
+ *
+ * **Generating a file is not the same as keeping it generated, and for six milestones nothing said
+ * so.** `docs:gen` runs as a `pre` hook of build and typecheck, so it rewrites SPEC.md on every
+ * developer machine — and then leaves the result in the working tree for someone to commit or not.
+ * Nothing in `scripts/`, in this file, or in `.github/workflows/*.yml` compared the committed
+ * output against the source, and nothing failed CI on a dirty tree. Measured at `M147e`: `main`'s
+ * §17 table had **63** rows where the manifest produces **65**, and it had drifted in *both*
+ * directions — `TF074` and `TF023`'s D638 rewording never reached the output, while `TF042`'s D641
+ * sentence and `TF055`'s D640 sentence had been written **into the generated block by hand** and
+ * would have vanished on the next legitimate run. All fifteen checks on the PR that shipped them
+ * were green.
+ *
+ * This is the exposure `M144a-2` closed for `diagnostics.md`, still open for SPEC.md, and it is a
+ * `--check` mode rather than a new CI job on purpose: `CONTRIBUTING.md` holds the gate set to
+ * `ci.yml`, and a mode on a script the build already runs adds an assertion without adding a gate.
+ */
+function check(specPath) {
+  const text = readFileSync(specPath, 'utf8');
+  const want = regenerate(text);
+  if (want === text) {
+    console.log(`gen-spec-tables --check: SPEC.md matches the manifest (${SUMMARY()})`);
+    return 0;
+  }
+  const wantLines = want.split('\n');
+  const haveLines = text.split('\n');
+  const first = haveLines.findIndex((l, i) => l !== wantLines[i]);
+  console.error(
+    `✗ SPEC.md's generated regions are not what \`spec-data.ts\` produces — first difference at line ${first + 1}.\n` +
+      `    committed: ${JSON.stringify((haveLines[first] ?? '').slice(0, 120))}\n` +
+      `    generated: ${JSON.stringify((wantLines[first] ?? '').slice(0, 120))}\n\n` +
+      `  A generated block is not a place to edit. Either the manifest changed and SPEC.md was not\n` +
+      `  regenerated, or SPEC.md was edited by hand inside the markers and the edit is about to be\n` +
+      `  overwritten. Run \`npm run docs:gen -w @tflw/lang\` and commit the result; if the change you\n` +
+      `  want is prose, it belongs in \`packages/lang/src/spec-data.ts\`, which is what renders it.`,
+  );
+  return 1;
+}
+
+function main() {
+  const specPath = fileURLToPath(new URL('../../../SPEC.md', import.meta.url));
+  if (process.argv.includes('--check')) return check(specPath);
+  writeFileSync(specPath, regenerate(readFileSync(specPath, 'utf8')), 'utf8');
+  // Counts every region it wrote, not most of them: a generator whose report omits one of its
+  // outputs is a report you cannot use to tell whether that output ran.
+  console.log(`gen-spec-tables: wrote ${SUMMARY()} to SPEC.md`);
+  return 0;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) process.exit(main());
