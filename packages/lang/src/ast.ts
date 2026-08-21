@@ -649,7 +649,9 @@ export interface WaitUntilApiStmt extends Node {
  * soft/`check` form. */
 export interface WaitUntilUiStmt extends Node {
   readonly type: 'WaitUntilUiStmt';
-  readonly subject: LocatorSubject;
+  /** Widened from `LocatorSubject` by `M147d`/`A3-11` (D641) — see `pollable()` for the rule and
+   * for why this type is deliberately *wider* than the predicate that admits it. */
+  readonly subject: PollableSubject;
   readonly matcher: Matcher;
   /** `for <duration>` (FS-05) — how long the condition must hold *continuously* before the step
    * passes, in ms; `null` is the original semantics, "pass the first poll it is true".
@@ -788,6 +790,48 @@ export interface ValueSubject extends Node {
  * at run time — two statements of one rule that M96 would otherwise have widened independently. */
 export function quantifiable(subject: Subject): subject is BodySubject | BodyCsvSubject | ValueSubject {
   return subject.type === 'BodySubject' || subject.type === 'BodyCsvSubject' || subject.type === 'ValueSubject';
+}
+
+/** Which subjects `wait until <subject> <matcher>` may stand in front of (`M147d`, `A3-11`, D641).
+ *
+ * The rule is not a list, it is a property: **a subject is pollable exactly when re-reading it
+ * between two polls can produce a different answer.** Everything the language can name divides
+ * cleanly on that, and the division is one the runtime had already made for its own reasons —
+ * `execSteps`' `ExpectStmt` case routes a locator to `execUiExpect`, `page` to `execA11yExpect`
+ * and `request to "…"`/`… of request to "…"` to `execNetworkExpect`, and all three re-observe the
+ * browser on every iteration of their own retry loop. Every other subject reads the *response
+ * scope*, which exactly one `api` step writes; between two polls of a `wait until` nothing runs, so
+ * `status`, `duration`, `header "…"`, `body …`, `response` and `request` hold the same value they
+ * held on the first poll and always will. Such a step either passes immediately or spins to its
+ * deadline blaming an endpoint that was never consulted a second time.
+ *
+ * `A3-11` asked for the opposite of this — `wait until body.state equals "done"`, polling the last
+ * API response — and it is the one subject shape the rule can prove is never worth admitting. The
+ * capability it wanted already has a spelling that re-issues the request (`wait until api …`); what
+ * the row was right about is that *three* live-browser shapes were being refused alongside it by a
+ * guard that tested for `LocatorSubject` and nothing else.
+ *
+ * `ValueSubject` is excluded by the same argument one step over, and does not even need this
+ * function to say so: `TF041` already refuses a `{variable}` inside `wait until api` because a
+ * bound value cannot change between polls. D641 is that sentence generalised from one construct
+ * and one subject to both constructs and all of them.
+ *
+ * **The type is wider than the predicate, deliberately.** The four `of request to "…"`-bearing
+ * subjects are pollable only when that clause is actually present, which is a value test TypeScript
+ * cannot carry in a union member; `StatusSubject` with `of === null` therefore satisfies
+ * `PollableSubject` and fails `pollable()`. Same asymmetry `quantifiable()` above lives with, and
+ * handled the same way — the predicate is the rule, the type is what a consumer may hold — and the
+ * interpreter re-asserts it rather than assuming the parser ran (`execWaitUntilUi`'s final
+ * `throw`). */
+export type PollableSubject = LocatorSubject | PageSubject | NetworkRequestSubject | StatusSubject | HeaderSubject | BodySubject | BodyTextSubject;
+
+export function pollable(subject: Subject): subject is PollableSubject {
+  if (subject.type === 'LocatorSubject' || subject.type === 'PageSubject' || subject.type === 'NetworkRequestSubject') return true;
+  // The `of request to "…"` clause moves the read off the response scope and onto the browser's
+  // observed traffic, which grows while the page is live — so it is the clause, not the subject
+  // keyword, that decides here. Tested by presence rather than by listing the four types that carry
+  // it, so a fifth one gains this for free on the day it gains an `of`.
+  return 'of' in subject && (subject as { of?: unknown }).of != null;
 }
 
 /** A UI locator used as an `expect`/`check` subject (`expect button "Add to cart" is visible`,

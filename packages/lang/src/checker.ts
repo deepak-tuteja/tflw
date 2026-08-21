@@ -36,6 +36,7 @@ import type {
   TestDecl,
   TransformExpr,
   Value,
+  WaitUntilUiStmt,
 } from './ast.js';
 import type { Span } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
@@ -1815,15 +1816,54 @@ const MATCHER_ROWS = new Map(MATCHERS.map((m) => [m.id, m]));
 export function checkMatcherSubjects(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
   forEachExpect(program, (expect) => checkOneMatcherSubject(expect, diags));
+  forEachWaitUntilUi(program, (step) => checkOneMatcherSubject(step, diags));
   return diags;
 }
 
 /** One body's expects (M97b, D142) — a `session` asserts too, and got none of this. */
 function checkMatcherSubjectsInSteps(steps: readonly Step[], diags: Diagnostic[]): void {
   forEachExpectInSteps(steps, (expect) => checkOneMatcherSubject(expect, diags));
+  forEachWaitUntilUiInSteps(steps, (step) => checkOneMatcherSubject(step, diags));
 }
 
-function checkOneMatcherSubject(expect: ExpectStmt, diags: Diagnostic[]): void {
+/**
+ * `M147d`/`A3-11` — `wait until <subject> <matcher>` is a subject/matcher pair like any other, and
+ * until D641 it was the only one in the language this pass could not see. `expect button "Go" has
+ * no critical a11y violations` was `TF042`; the identical mistake one keyword over checked clean and
+ * failed mid-run from `uiMatcher.ts`'s `default:` throw — which is the exact scenario SPEC §1 cited
+ * as `TF042`'s reason to exist, still live in the one construct M97b did not reach.
+ *
+ * **Deliberately a second traversal rather than a case added to `forEachExpectInSteps`.** That walk
+ * is read by four passes, two of which are D21 safety layers (`checkAuthorizedTargets`,
+ * `checkPublicTargets`); teaching it to yield a step that is not an `ExpectStmt` would silently
+ * change what those two judge, in a commit about matcher tables. One pass wanted this, so one pass
+ * gets it.
+ */
+function forEachWaitUntilUi(program: Program, visit: (step: WaitUntilUiStmt) => void): void {
+  for (const test of program.tests) forEachWaitUntilUiInSteps(test.body, visit);
+  for (const action of program.actions) forEachWaitUntilUiInSteps(action.body, visit);
+  for (const hook of program.hooks) forEachWaitUntilUiInSteps(hook.body, visit);
+  // A crawl body cannot contain one (M137c restricts it to three matchers), but the omission would
+  // be invisible the day that changes — same reasoning that put the line in `forEachExpect`.
+  for (const crawl of program.crawls ?? []) forEachWaitUntilUiInSteps(crawl.body, visit);
+}
+
+function forEachWaitUntilUiInSteps(steps0: readonly Step[], visit: (step: WaitUntilUiStmt) => void): void {
+  const walk = (steps: readonly Step[]): void => {
+    for (const step of steps) {
+      if (step.type === 'WaitUntilUiStmt') visit(step);
+      else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') walk(step.body);
+    }
+  };
+  walk(steps0);
+}
+
+/** The pair this pass judges: an `expect`/`check`, or (since D641) a `wait until` UI condition.
+ * Only `subject`, `matcher`, `span` and the optional `quantifier` are read, and a `wait until` has
+ * no quantifier — so it is admitted by having none rather than by a second code path. */
+type MatcherSite = Pick<ExpectStmt, 'subject' | 'matcher' | 'span'> & { readonly quantifier?: ExpectStmt['quantifier'] };
+
+function checkOneMatcherSubject(expect: MatcherSite, diags: Diagnostic[]): void {
   {
     const row = MATCHER_ROWS.get(MATCHER_ROW_BY_NAME[expect.matcher.name] ?? '');
     if (!row) return;

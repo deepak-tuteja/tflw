@@ -154,7 +154,7 @@ import type {
   Workload,
   WorkersDecl,
 } from './ast.js';
-import { quantifiable } from './ast.js';
+import { pollable, quantifiable } from './ast.js';
 import { type ConfigDirective, listConfigDirectives } from './spec-data.js';
 
 export interface ParseResult {
@@ -3468,10 +3468,11 @@ class Parser {
     };
   }
 
-  /** `wait until <locator> [is] [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for` added by
-   * FS-05) — a single line, the UI sibling of `wait until api`'s block form: no separate request to
-   * re-issue, so the whole condition is just an ordinary subject+matcher pair, polled against
-   * `timeout wait` instead of `timeout expect`.
+  /** `wait until <pollable subject> [is] [not] <matcher> [for <duration>]` (SPEC §9.5, M3b; `for`
+   * added by FS-05, the subject set widened past a locator by `M147d`/`A3-11`, D641) — a single
+   * line, the UI sibling of `wait until api`'s block form: no separate request to re-issue, so the
+   * whole condition is just an ordinary subject+matcher pair, polled against `timeout wait` instead
+   * of `timeout expect`.
    *
    * The optional `for <duration>` asks for the condition to hold *continuously* for that long
    * instead of passing on the first poll that satisfies it — the only way to write a sustained
@@ -3480,17 +3481,44 @@ class Parser {
   private parseWaitUntilUiRest(start: Position): Step | null {
     const subject = this.parseSubject();
     if (!subject) return null;
-    if (subject.type !== 'LocatorSubject') {
+    // D641 (`M147d`, `A3-11`). The old test here was `subject.type !== 'LocatorSubject'`, which
+    // refused eight distinct subject shapes with one sentence — and the sentence named the one
+    // spelling none of the eight was reaching for. Five of them genuinely cannot be polled and now
+    // get told which of the two reasons applies to them; the other three are live browser
+    // observations that `expect` has always re-read on a retry loop of its own, and were being
+    // turned away by a guard that had simply never been widened past the form it was written for.
+    if (!pollable(subject)) {
+      const isBoundValue = subject.type === 'ValueSubject';
       this.error(
         Codes.UNEXPECTED_TOKEN,
-        '`wait until` expects either `api ...` or a UI locator condition',
+        isBoundValue
+          ? '`wait until` needs a condition that can change between polls, and a bound value cannot'
+          : '`wait until` needs a condition that can change between polls, and this one reads the last `api` response',
         subject.span,
-        'e.g. `wait until button "Submit" is enabled`',
+        isBoundValue
+          ? 'a `{value}` holds whatever `let`/`capture` put in it and nothing between two polls rebinds it, so the step would pass on the first attempt or spin to its deadline — the same rule `TF041` states for a value subject inside `wait until api`'
+          : 'a response is written once, by the `api` step that fetched it, so re-reading it cannot change the answer. To poll an endpoint until it agrees, re-issue the request — `wait until api GET /orders/1` with this assertion in its block. To poll the browser, the subjects that change on their own are a UI locator, `page`, and `request to "…"` (SPEC §9.5)',
       );
       return null;
     }
     const matcher = this.parseMatcher();
     if (!matcher) return null;
+    // The subject half of D641 has a matcher half, and it has exactly one member. `matches
+    // snapshot` is the one matcher in the language whose evaluation documents itself as never
+    // retrying (`execSnapshotExpect`) — a screenshot is one point-in-time capture compared against
+    // a committed baseline, not a condition that becomes true as the page settles. On a locator it
+    // therefore parsed, and produced a `wait` that could not wait: the first poll either matched
+    // the baseline or the step spent its whole budget re-comparing an image against a file, neither
+    // of which the word `until` promises.
+    if (matcher.name === 'matchesSnapshot') {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`matches snapshot "…"` cannot be polled, so it is not a `wait until` condition',
+        matcher.span,
+        'a snapshot is compared once against a committed baseline rather than re-read as the page settles, so waiting on it cannot change the outcome — settle the page first (`wait until <locator> is visible`, or a `for <duration>` hold) and then write the comparison as its own `expect` (SPEC §9.9)',
+      );
+      return null;
+    }
     let holdMs: number | null = null;
     if (this.isKw(this.peek(), 'for')) {
       this.advance();

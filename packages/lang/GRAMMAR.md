@@ -508,7 +508,7 @@ DownloadBlock   := 'download' 'as' IDENT NEWLINE Block                # M3b — 
 DragStmt        := 'drag' Locator 'to' Locator                        # M3b
 DropFileStmt    := 'drop' 'file' STRING 'onto' Locator                 # M3b
 
-WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)? WaitBudget?
+WaitUntilUiStmt := 'wait' 'until' PollableSubject Matcher ('for' Duration)? WaitBudget?
                                                                        # M3b — the UI sibling of
                                                                        # WaitUntilApiStep (§5.5);
                                                                        # polls `timeout wait`, not
@@ -522,7 +522,31 @@ WaitUntilUiStmt := 'wait' 'until' Subject Matcher ('for' Duration)? WaitBudget?
                                                                        # — the only way to assert a
                                                                        # negative (§9.5). UI-only:
                                                                        # `wait until api … for` is
-                                                                       # refused by name
+                                                                       # refused by name.
+                                                                       # `Matcher` excludes
+                                                                       # `matches snapshot` here —
+                                                                       # see PollableSubject below
+
+PollableSubject := Locator | 'page' | NetworkRequestSubject | Subject 'of' NetworkRequestRef
+                                                                       # M147d/D641 (`A3-11`) — the
+                                                                       # subjects `wait until` may
+                                                                       # poll, and the rule is a
+                                                                       # property rather than a list:
+                                                                       # re-reading it between two
+                                                                       # polls must be able to give a
+                                                                       # different answer. These four
+                                                                       # are exactly the ones the
+                                                                       # runtime already re-observes
+                                                                       # on a retry loop. Every other
+                                                                       # Subject reads the response
+                                                                       # scope, which one `api` step
+                                                                       # writes and nothing between
+                                                                       # polls can change → TF010.
+                                                                       # `matches snapshot` is the
+                                                                       # matcher half of the same
+                                                                       # rule and its only member:
+                                                                       # compared once against a
+                                                                       # baseline, never re-read
 
 ScreenshotStmt  := 'screenshot' STRING                                 # M3c — captures the active
                                                                         # page unconditionally

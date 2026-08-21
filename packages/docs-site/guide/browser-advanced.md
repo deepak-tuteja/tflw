@@ -63,6 +63,47 @@ rejected outright rather than burning 30s to report a mystery timeout.
 window, which is load testing rather than waiting — `wait until api … for` is refused by name and
 points you at [load testing](/guide/load-testing).
 
+## What a `wait until` can wait for
+
+A `wait until` polls. That is a real constraint on what may follow it, and the rule is one sentence:
+**re-reading the condition between two polls has to be able to give a different answer.**
+
+Four things qualify, and they are the four the browser can change while your test is standing still:
+
+```tflw fragment
+wait until button "Submit" is enabled                     # a UI locator
+wait until page has no critical a11y violations           # the page's own accessibility state
+wait until request to "/api/cart" was made                # traffic the page issues on its own
+wait until status of request to "/api/cart" equals 200    # …and the response it got back
+```
+
+For all four, `wait until <X>` is exactly `expect <X>` on the longer budget, plus the optional `for`
+hold — `expect` already retries every one of them, just against `timeout expect`.
+
+What does **not** qualify is anything that reads the last API response:
+
+```tflw
+test "polling a job"
+  api GET /jobs/1
+  expect body.state equals "queued"
+```
+
+`wait until body.state equals "done"` looks like the obvious next line, and it is refused. A
+response is written once, by the `api` step that fetched it; nothing between two polls of a
+`wait until` can change it, so the step could only pass on its first attempt or spin until its
+deadline blaming an endpoint it never asked twice. What you want is to **re-issue the request**,
+and that is what the block form is for:
+
+```tflw fragment
+wait until api GET /jobs/1
+  expect body.state equals "done"
+```
+
+The same argument rules out a `{variable}` subject — `let`/`capture` bound it, and nothing between
+polls rebinds it — and `matches snapshot`, which is compared once against a committed baseline
+rather than re-read as the page settles. Settle the page first, then take the snapshot in its own
+`expect`.
+
 ## One slow wait: `timeout wait <duration>` on the step
 
 Most suites have one wait that is nothing like the others — an import job, a report build, a queue

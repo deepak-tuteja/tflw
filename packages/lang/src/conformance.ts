@@ -721,6 +721,14 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     note: 'matcher × subject kind. `TF031` covers two *other* request rules (inside `wait until api`, and combining with `connects`/`fails`) — not this one',
   },
   {
+    id: 'wait-until-subject-not-pollable',
+    file: 'interpreter.ts',
+    excerpt: 'reads the last \\`api\\` response, which cannot change between polls',
+    decidable: 'static',
+    checkerCode: 'TF010',
+    note: 'D641 (`M147d`, `A3-11`) — subject kind, so entirely decidable from the AST, and the parser does decide it: `pollable()` refuses this before the checker runs. The throw is the runtime half of one rule, kept for the reason `quantifiable`\'s is (`matcher-vs-quantifier-request` above) — `tflw run` is not obliged to have passed `tflw check` first. Unreachable through the grammar, and asserted as such by a test that hands the interpreter the node the parser would have refused',
+  },
+  {
     id: 'body-path-of-request-not-json',
     file: 'interpreter.ts',
     excerpt: 'a \\`body.<path> of request to',
@@ -738,9 +746,10 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'matcher-vs-page',
     file: 'interpreter.ts',
     excerpt: "isn't valid against \\`page\\`",
+    sites: 2,
     decidable: 'static',
     checkerCode: 'TF042',
-    note: 'matcher × subject kind; folded into D140’s pass in M97b',
+    note: 'matcher × subject kind; folded into D140’s pass in M97b. **Two sites since D641** (`M147d`, `A3-11`): `wait until page …` admits the same subject, and re-asserts the same rule at the same tier, because `waitUntilReader` resolves its per-poll read before the loop and the wrong matcher has to be refused there rather than once per poll. The checker reaches both — `checkMatcherSubjects` gained a `wait until` traversal in the same slice, and until it did, the `wait until` twin of a `TF042` was the last unchecked matcher position in the language',
   },
   {
     id: 'capture-found-nothing',
