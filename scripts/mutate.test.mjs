@@ -19,7 +19,9 @@ import {
   MUTATIONS,
   ROOT_SUITE,
   UNRECONSTRUCTED,
+  classifySuiteFailure,
   costProblem,
+  rebuildTargetFor,
   coverage,
   coverageProblem,
   elapsedLine,
@@ -654,6 +656,54 @@ test('a sweep reports its own clock, and is loud only when it crosses the budget
   assert.equal(formatElapsed(59_400), '59s');
   assert.equal(formatElapsed(60_000), '1m00s');
   assert.equal(formatElapsed(20 * 60_000 + 100), '20m00s');
+});
+
+test('a cross-workspace mutation rebuilds what it mutated', () => {
+  // `M147-09`. A workspace's own tests run from source, so a mutation and its suite normally need no
+  // build between them. Across workspaces they do: `@tflw/lsp-server` imports `@tflw/lang` by name
+  // and that package exports `./dist/index.js`, so a mutation to `packages/lang/src/parser.ts`
+  // scored against the lsp-server suite ran the *previous* build and came back `SURVIVED`.
+  //
+  // That is the worst verdict this file can print wrongly. A hang says it reached no verdict; a
+  // false survival reads as a measurement that the assertion is weak, and the honest response to
+  // that reading is to delete the test.
+  const nameOf = (dir) => ({ 'packages/lang': '@tflw/lang', 'packages/lsp-server': '@tflw/lsp-server' })[dir] ?? null;
+
+  // The broken case: mutate lang, score against lsp-server.
+  assert.equal(rebuildTargetFor('packages/lang/src/parser.ts', '@tflw/lsp-server', nameOf), '@tflw/lang');
+
+  // The common case, which must stay free: same workspace, no build.
+  assert.equal(rebuildTargetFor('packages/lang/src/parser.ts', '@tflw/lang', nameOf), null);
+
+  // Not under `packages/` at all — the root `scripts/` suite mutating its own file.
+  assert.equal(rebuildTargetFor('scripts/mutate.mjs', ROOT_SUITE, nameOf), null);
+
+  // A workspace with no manifest cannot be named, so nothing is built rather than something wrong
+  // being built: `npm run build -w <undefined>` would fail the whole mutation for a path shape the
+  // registry does not have.
+  assert.equal(rebuildTargetFor('packages/not-a-workspace/src/x.ts', '@tflw/lang', nameOf), null);
+});
+
+test('an output overflow is not a hang', () => {
+  // `M147e-01`. `execSync` kills on both a timeout and a `maxBuffer` overflow, and it uses the same
+  // signal for both, so the signal alone cannot tell them apart — reading it that way reported a
+  // suite that ran to completion as one that never started. Found by `M147e-4`'s demonstrated break:
+  // failing a 256-deep AST snapshot prints the diff, which took the run to 1 084 562 bytes.
+  //
+  // Both outcomes are still "no verdict", so this is not about correctness of the sweep's exit code.
+  // It is about the sentence the reader gets: `the suite hung` sends them looking for an infinite
+  // loop that is not there.
+  assert.deepEqual(classifySuiteFailure({ code: 'ENOBUFS', signal: 'SIGKILL' }), { timedOut: false, overflowed: true });
+  assert.deepEqual(classifySuiteFailure({ code: 'ETIMEDOUT', signal: 'SIGKILL' }), { timedOut: true, overflowed: false });
+
+  // A `SIGKILL` with neither code — the OOM killer, or a `kill -9` from outside — stays a hang. It
+  // is the one case where "we do not know why it stopped" is the honest answer, and the hang branch
+  // is the one that says so.
+  assert.deepEqual(classifySuiteFailure({ signal: 'SIGKILL' }), { timedOut: true, overflowed: false });
+
+  // An ordinary red suite: a non-zero exit, no signal. Neither branch may claim it, or every kill in
+  // the sweep would be reported as no-verdict.
+  assert.deepEqual(classifySuiteFailure({ status: 1 }), { timedOut: false, overflowed: false });
 });
 
 test('the budget warning is one a real run can be watched tripping', () => {

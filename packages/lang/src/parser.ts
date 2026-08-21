@@ -534,6 +534,25 @@ const PROBE_SUB_CLAUSE_FIELDS: Readonly<
 export type ProbeSubClauseField = (typeof PROBE_SUB_CLAUSE_FIELDS)[(typeof PROBE_SUB_CLAUSES)[number]];
 const PROBE_SUB_CLAUSE_HELP = `an \`authorized target\` takes ${PROBE_SUB_CLAUSES.map((w) => `\`probe ${w}\``).join(', ')}, each on its own indented line`;
 /**
+ * The three required `session … oauth2` lines, each with the value it is shown as. One list, because
+ * `A2-15`'s narrowed message and its worked example are both rendered from it: a fourth required
+ * field cannot be added to the wording and forgotten in the example.
+ */
+const OAUTH2_REQUIRED = [
+  { name: 'token url', example: '"https://api.example.com/oauth/token"' },
+  { name: 'client id', example: 'env(CLIENT_ID)' },
+  { name: 'client secret', example: 'env(CLIENT_SECRET)' },
+] as const;
+
+/** `` `a` ``, `` `a` and `b` ``, `` `a`, `b`, and `c` `` — the Oxford comma only once there are three
+ * to separate, which is what the shipped three-field message already reads as. */
+function listAnd(words: readonly string[]): string {
+  const quoted = words.map((w) => `\`${w}\``);
+  if (quoted.length === 1) return quoted[0]!;
+  if (quoted.length === 2) return `${quoted[0]} and ${quoted[1]}`;
+  return `${quoted.slice(0, -1).join(', ')}, and ${quoted[quoted.length - 1]}`;
+}
+/**
  * What a user writes after `evidence` (§13, PLAN decision 101c) — **bare keywords as of `M147b`**
  * (`A2-14`, `D623`), and two words rather than a hyphen (`D628`).
  *
@@ -690,6 +709,17 @@ class Parser {
    * `program` otherwise (ordinary `parse()`/`parseConfig()` never sets this). */
   private completionMode = false;
   private completionResult: CompletionContext | null = null;
+  /**
+   * What `endLine()` calls the thing it just finished reading (`M147e`/`A2-13`).
+   *
+   * `endLine()` is shared by all three dialects and said `at end of step` in every one of them, so
+   * `web "http://x" oops` in a `tflw.config` — a file with no steps in it anywhere — was told about
+   * the end of a step. The default stays `'step'` deliberately: the two loops below re-establish
+   * their own noun on every iteration, so a production this field never reaches keeps exactly the
+   * wording it shipped with, and the change is a narrowing of the two dialects that were wrong
+   * rather than a reclassification of the one that was right.
+   */
+  private lineNoun: 'step' | 'directive' | 'declaration' = 'step';
 
   constructor(private readonly tokens: readonly Token[]) {}
 
@@ -767,6 +797,9 @@ class Parser {
       }
       const before = this.pos;
       const tok = this.peek();
+      // Re-established per iteration rather than once before the loop, because a `test` body sets it
+      // to `'step'` and never puts it back — the next declaration reclaims it here.
+      this.lineNoun = 'declaration';
       if (this.check('tag') || this.isKw(tok, 'with') || this.isKw(tok, 'test') || this.isKw(tok, 'crawl')) {
         // A tag line is shared prefix: `@vuln` can introduce either a `test` or a `crawl` (D450), and
         // which one is only knowable past the tags. So the tag-led branch peeks rather than committing,
@@ -871,8 +904,9 @@ class Parser {
       this.advance();
       scope = 'file';
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock(scope === 'file' ? `${when} file` : when);
+    const body = this.parseBlock(scope === 'file' ? `${when} file` : when, headerSpan);
     return { type: 'HookDecl', when, scope, body, span: this.spanFrom(start) };
   }
 
@@ -924,8 +958,9 @@ class Parser {
       }
     }
     if (!this.expect('rparen', '`)` to close the parameter list')) return null;
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock('action');
+    const body = this.parseBlock('action', headerSpan);
     return { type: 'ActionDecl', name: nameParts.join(' '), params, body, span: this.spanFrom(start) };
   }
 
@@ -948,9 +983,9 @@ class Parser {
    * it an ordinary functional test rather than a load test, D94). Checker-enforced (D96): a
    * non-null workload can't coexist with `retry`/`with each` (`parseTest` reports those before
    * calling this). */
-  private parseTestBody(context: string): { workload: Workload | null; thresholds: ThresholdDecl[]; cleanup: boolean; body: Step[] } {
+  private parseTestBody(context: string, headerSpan: Span): { workload: Workload | null; thresholds: ThresholdDecl[]; cleanup: boolean; body: Step[] } {
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, this.peek().span, `indent at least one step under the \`${context}\` line`);
+      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, headerSpan, `indent at least one step under the \`${context}\` line`);
       return { workload: null, thresholds: [], cleanup: false, body: [] };
     }
     this.advance(); // indent
@@ -1123,9 +1158,7 @@ class Parser {
       this.error(Codes.UNEXPECTED_TOKEN, `expected \`users\` or \`rps\`, found ${describeToken(unitTok)}`, unitTok.span);
       return null;
     }
-    // Captured before `endLine()` so a diagnostic about the block as a whole can point at the line
-    // that opened it, rather than wherever the cursor happens to be once the block is consumed.
-    const headerSpan: Span = { start, end: this.previous().span.end };
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     const stages = this.parseStageBlock(headKind, unit, headerSpan);
     if (!stages) return null;
@@ -1399,6 +1432,8 @@ class Parser {
     while (!this.atEof()) {
       const before = this.pos;
       const tok = this.peek();
+      // Same reclamation as `parse()`'s loop: a `session` body parses steps, which claims the noun.
+      this.lineNoun = 'directive';
       // `M137a`/D444. Declaration position, which the *test* dialect deliberately does not answer
       // at (D278: a blank line at the left margin is not one of the instrumented productions, and
       // answering there would be inventing a result). The asymmetry is intended: here the left
@@ -1487,15 +1522,17 @@ class Parser {
       this.advance(); // `oauth2`
       const privileged = this.parsePrivilegedModifier() || misordered;
       this.lateEnvScope(name.value, envs);
+      const headerSpan = this.headerSpanFrom(start);
       this.endLine();
-      const oauth2 = this.parseOauth2SessionConfig(start);
+      const oauth2 = this.parseOauth2SessionConfig(start, headerSpan);
       if (!oauth2) return null;
       return { type: 'SessionDecl', name: name.value, envs, oauth2, body: [], privileged, span: this.spanFrom(start) };
     }
     const privileged = this.parsePrivilegedModifier();
     this.lateEnvScope(name.value, envs);
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseSessionBlock();
+    const body = this.parseSessionBlock(headerSpan);
     return { type: 'SessionDecl', name: name.value, envs, oauth2: null, body, privileged, span: this.spanFrom(start) };
   }
 
@@ -1577,12 +1614,12 @@ class Parser {
   /** `session <name> oauth2` body — a fixed sugar shape, not ordinary steps (SPEC §3.3, decision
    * 3c): `token url`, `client id`, `client secret` are required; `scope` is optional. Each is a
    * full `Value` (so `env(...)`/interpolation work, matching every other config value). */
-  private parseOauth2SessionConfig(start: Position): Oauth2SessionConfig | null {
+  private parseOauth2SessionConfig(start: Position, headerSpan: Span): Oauth2SessionConfig | null {
     if (!this.check('indent')) {
       this.error(
         Codes.EMPTY_BLOCK,
         'this `session … oauth2` has no config',
-        this.peek().span,
+        headerSpan,
         'indent `token url`, `client id`, and `client secret` under the `session … oauth2` line',
       );
       return null;
@@ -1647,12 +1684,24 @@ class Parser {
       if (this.pos === before) this.advance(); // guarantee progress
     }
     if (this.check('dedent')) this.advance();
+    // `M147e`/`A2-15` — the loop above has already bound whichever of the three were written, so
+    // this names what is *missing* rather than restating the whole requirement. Naming all three
+    // when two are present is `A3-19`'s defect in miniature: an answer to a question the author did
+    // not ask. When all three really are absent the wording still reads as the requirement and the
+    // worked example is unchanged, so this is a narrowing and nothing else.
+    // The condition is the shipped one and not `missing.length > 0`, so the three locals stay
+    // narrowed for the `return` below — a `filter` result carries no control-flow information.
     if (!tokenUrl || !clientId || !clientSecret) {
+      const bound: Readonly<Record<string, Value | null>> = { 'token url': tokenUrl, 'client id': clientId, 'client secret': clientSecret };
+      const missing = OAUTH2_REQUIRED.filter((f) => !bound[f.name]);
+      const example = missing.map((f) => `    ${f.name} ${f.example}`).join('\n');
       this.error(
         Codes.CONFIG_UNEXPECTED,
-        'an oauth2 session needs `token url`, `client id`, and `client secret`',
+        `an oauth2 session needs ${listAnd(missing.map((f) => f.name))}`,
         this.spanFrom(start),
-        'e.g.\n  session admin oauth2\n    token url "https://api.example.com/oauth/token"\n    client id env(CLIENT_ID)\n    client secret env(CLIENT_SECRET)',
+        missing.length === OAUTH2_REQUIRED.length
+          ? `e.g.\n  session admin oauth2\n${example}`
+          : `indent ${missing.length === 1 ? 'it' : 'them'} under the \`session … oauth2\` line, e.g.\n${example}`,
       );
       return null;
     }
@@ -1661,9 +1710,9 @@ class Parser {
 
   /** Like `parseBlock`, but also accepts a bare `header "…" is …` line (only valid inside a
    * session — SPEC §3.3). */
-  private parseSessionBlock(): Step[] {
+  private parseSessionBlock(headerSpan: Span): Step[] {
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `session` has no steps', this.peek().span, 'indent at least one step under the `session` line');
+      this.error(Codes.EMPTY_BLOCK, 'this `session` has no steps', headerSpan, 'indent at least one step under the `session` line');
       return [];
     }
     this.advance(); // indent
@@ -1749,8 +1798,9 @@ class Parser {
   private parseDefaultsBlock(): DefaultsBlock | null {
     const start = this.peek().span.start;
     this.advance(); // `defaults`
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const entries = this.parseConfigEntries('defaults');
+    const entries = this.parseConfigEntries('defaults', headerSpan);
     return { type: 'DefaultsBlock', entries, span: this.spanFrom(start) };
   }
 
@@ -1764,15 +1814,16 @@ class Parser {
       this.advance();
       isDefault = true;
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const entries = this.parseConfigEntries('env');
+    const entries = this.parseConfigEntries('env', headerSpan);
     return { type: 'EnvBlock', name: name.value, isDefault, entries, span: this.spanFrom(start) };
   }
 
-  private parseConfigEntries(block: ConfigBlockKind): ConfigEntry[] {
+  private parseConfigEntries(block: ConfigBlockKind, headerSpan: Span): ConfigEntry[] {
     const entries: ConfigEntry[] = [];
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this block has no entries', this.peek().span, 'indent at least one entry under the block header');
+      this.error(Codes.EMPTY_BLOCK, `this \`${block}\` block has no entries`, headerSpan, 'indent at least one entry under the block header');
       return entries;
     }
     this.advance(); // indent
@@ -1792,6 +1843,7 @@ class Parser {
   }
 
   private parseConfigEntry(block: ConfigBlockKind): ConfigEntry[] | null {
+    this.lineNoun = 'directive';
     // `M137a`/D444 — the block decides the candidate list, so it decides the kind (see
     // `CompletionKind`). Guarded here rather than in `parseConfigEntries`' loop for the reason every
     // other guard sits at a production entry point: this is the function whose job is "read one
@@ -2670,11 +2722,12 @@ class Parser {
       }
       break;
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     // D96 (`retry`/`with each` vs. a workload clause) is checker-enforced, not parser-enforced —
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
-    const { workload, thresholds, cleanup, body } = this.parseTestBody('test');
+    const { workload, thresholds, cleanup, body } = this.parseTestBody('test', headerSpan);
     return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
   }
 
@@ -2744,8 +2797,9 @@ class Parser {
         if (s && !duplicate) sessions.push(s.value);
       }
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const { seeds, excludes, body } = this.parseCrawlBody();
+    const { seeds, excludes, body } = this.parseCrawlBody(headerSpan);
     return { type: 'CrawlDecl', name, tags, sessions, seeds, excludes, body, span: this.spanFrom(start) };
   }
 
@@ -2753,12 +2807,12 @@ class Parser {
    * `parseTestBody` uses for `workload`/`threshold`/`cleanup`. The steps are **not** restricted here —
    * a crawl body holding an `api GET /orders` line is a semantic error about a fully-formed node, so
    * the checker owns it, the same layering `D96` and `D19` already use. */
-  private parseCrawlBody(): { seeds: CrawlSeed[]; excludes: StringLit[]; body: Step[] } {
+  private parseCrawlBody(headerSpan: Span): { seeds: CrawlSeed[]; excludes: StringLit[]; body: Step[] } {
     const seeds: CrawlSeed[] = [];
     const excludes: StringLit[] = [];
     const body: Step[] = [];
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `crawl` has no body', this.peek().span, 'indent at least one `seed` line and one `expect` under the `crawl` line');
+      this.error(Codes.EMPTY_BLOCK, 'this `crawl` has no body', headerSpan, 'indent at least one `seed` line and one `expect` under the `crawl` line');
       return { seeds, excludes, body };
     }
     this.advance(); // indent
@@ -2919,9 +2973,10 @@ class Parser {
       this.endLine();
       return { type: 'FileDataTable', path, span: this.spanFrom(start) };
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `with each` table has no rows', this.peek().span, 'indent a header row and at least one data row, e.g. `| col | … |`');
+      this.error(Codes.EMPTY_BLOCK, 'this `with each` table has no rows', headerSpan, 'indent a header row and at least one data row, e.g. `| col | … |`');
       return null;
     }
     this.advance(); // indent
@@ -3028,9 +3083,9 @@ class Parser {
     return cells;
   }
 
-  private parseBlock(context = 'test'): Step[] {
+  private parseBlock(context: string, headerSpan: Span): Step[] {
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, this.peek().span, `indent at least one step under the \`${context}\` line`);
+      this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, headerSpan, `indent at least one step under the \`${context}\` line`);
       return [];
     }
     this.advance(); // indent
@@ -3055,6 +3110,7 @@ class Parser {
   }
 
   private parseStep(): Step | null {
+    this.lineNoun = 'step';
     if (this.completionMode && this.atCompletionPoint()) {
       this.completionResult = { kind: 'step', prefix: this.completionPrefix() };
       return null;
@@ -3131,6 +3187,31 @@ class Parser {
         default: {
           if (this.looksLikeCallStart()) return this.parseCallStmt(tok);
           const hint = suggest(tok.value, SUGGESTABLE_STATEMENT_KEYWORDS);
+          // `M147e`/`A3-19`. `let x = create order` has been told ``multi-word calls need parens``
+          // since D168; `create order` as a *step* was told `unknown step` and handed the whole
+          // keyword list. Same mistake, same file, two answers — and the statement position, which
+          // is where a bare call is actually written, got the worse one. D168's mechanism cannot
+          // reach here: it fires from `parseIdentOrCall`'s back-off against a following
+          // `UNEXPECTED_TOKEN`, and this branch never calls into the value grammar at all. So the
+          // shape is recognised directly.
+          //
+          // `suggest` wins when it has an answer, because a near-miss keyword is the likelier
+          // reading of a word run that starts with one: `expct status equals 200` is a typo, not a
+          // call. Only a run this parser can offer nothing else about is read as a missing `(`.
+          //
+          // The code stays `TF011`. `create order` *is* an unknown statement — the message now says
+          // why rather than listing what else it could have been — so reusing it makes nothing
+          // false (§6). The value position keeps `TF010` because that is the code its enclosing
+          // production raised; the two positions have always differed there.
+          if (!hint && this.looksLikeBareWordRun()) {
+            this.error(
+              Codes.UNKNOWN_STATEMENT,
+              `\`${tok.value}\` looks like the start of a call but never reaches \`(\``,
+              tok.span,
+              'multi-word calls need parens, e.g. `create order(...)`',
+            );
+            return null;
+          }
           this.error(
             Codes.UNKNOWN_STATEMENT,
             `unknown step \`${tok.value}\``,
@@ -3153,6 +3234,19 @@ class Parser {
     let k = 0;
     while (this.peek(k).type === 'ident') k++;
     return k > 0 && this.peek(k).type === 'lparen';
+  }
+
+  /** `looksLikeCallStart`'s near miss (`M147e`, `A3-19`): a run of two or more words that fills the
+   * whole line and reaches no `(`. Two is the floor because one word is just an unknown keyword and
+   * has nothing call-shaped about it. The run must reach the end of the line — `expct status equals
+   * 200` stops at a number, and a line with an argument on it is a mis-spelled step far more often
+   * than a call missing its parens. */
+  private looksLikeBareWordRun(): boolean {
+    let k = 0;
+    while (this.peek(k).type === 'ident') k++;
+    if (k < 2) return false;
+    const end = this.peek(k).type;
+    return end === 'newline' || end === 'dedent' || end === 'eof';
   }
 
   /** `login("alice", "secret1")` — a call statement (M6). Only reached once `looksLikeCallStart`
@@ -3524,8 +3618,9 @@ class Parser {
       );
       return null;
     }
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const { headers, expects } = this.parseWaitUntilBody();
+    const { headers, expects } = this.parseWaitUntilBody(headerSpan);
     return {
       type: 'WaitUntilApiStmt',
       request: headers.length ? { ...request, headers } : request,
@@ -3602,11 +3697,11 @@ class Parser {
   /** The indented block under `wait until api …`: optional `header "…" is …` lines (SPEC §5.5,
    * gap #4 — mirrors an `api` step's own header sub-block so a poll can carry per-step auth,
    * namespace, or idempotency-key headers) followed by the required `expect` lines. */
-  private parseWaitUntilBody(): { headers: ApiHeader[]; expects: ExpectStmt[] } {
+  private parseWaitUntilBody(headerSpan: Span): { headers: ApiHeader[]; expects: ExpectStmt[] } {
     const headers: ApiHeader[] = [];
     const expects: ExpectStmt[] = [];
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');
+      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', headerSpan, 'indent at least one `expect` under the request line');
       return { headers, expects };
     }
     this.advance(); // indent
@@ -3631,7 +3726,10 @@ class Parser {
     }
     if (this.check('dedent')) this.advance();
     if (expects.length === 0) {
-      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');
+      // The dedent is consumed by here, so `peek()` is the token *after* the whole block — a caret
+      // two lines past the construct the sentence names. `M106-02` verbatim, and the reason this
+      // rule needed the header span twice rather than once.
+      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', headerSpan, 'indent at least one `expect` under the request line');
     }
     return { headers, expects };
   }
@@ -4216,16 +4314,17 @@ class Parser {
 
   private parseFillFormStep(start: Position): Step | null {
     this.advance(); // `form`
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     if (!this.check('indent')) {
-      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.peek().span, 'indent at least one `| "Field" | value |` row');
+      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', headerSpan, 'indent at least one `| "Field" | value |` row');
       return null;
     }
     this.advance(); // indent
     const rows = this.parseFillFormRows();
     if (this.check('dedent')) this.advance();
     if (rows.length === 0) {
-      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.spanFrom(start), 'add at least one `| "Field" | value |` row');
+      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', headerSpan, 'add at least one `| "Field" | value |` row');
       return null;
     }
     return { type: 'FillFormStmt', rows, span: this.spanFrom(start) };
@@ -4380,8 +4479,9 @@ class Parser {
     }
     const locator = this.parseLocator();
     if (!locator) return null;
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock(frame ? 'within frame' : 'within');
+    const body = this.parseBlock(frame ? 'within frame' : 'within', headerSpan);
     return { type: 'WithinBlock', locator, frame, body, span: this.spanFrom(start) };
   }
 
@@ -4406,8 +4506,9 @@ class Parser {
     if (this.isKw(this.peek(), 'new')) {
       this.advance(); // `new`
       if (!this.expectKw('tab')) return null;
+    const headerSpan = this.headerSpanFrom(start);
       this.endLine();
-      const body = this.parseBlock('switch to new tab');
+      const body = this.parseBlock('switch to new tab', headerSpan);
       const stmt: SwitchToNewTabBlock = { type: 'SwitchToNewTabBlock', body, span: this.spanFrom(start) };
       return stmt;
     }
@@ -4435,8 +4536,9 @@ class Parser {
     if (!this.expectKw('as')) return null;
     const name = this.expect('ident', 'a variable name after `as`, e.g. `download as file`');
     if (!name) return null;
+    const headerSpan = this.headerSpanFrom(start);
     this.endLine();
-    const body = this.parseBlock('download');
+    const body = this.parseBlock('download', headerSpan);
     const stmt: DownloadBlock = { type: 'DownloadBlock', name: name.value, body, span: this.spanFrom(start) };
     return stmt;
   }
@@ -4621,6 +4723,18 @@ class Parser {
     return this.parseAddSub();
   }
 
+  /**
+   * `M147e`/`A3-14`, D643. How many nested unary minuses `parseAtom` will descend through before it
+   * refuses. 256 rather than something nearer the measured cliff (the throw appears between 3 200
+   * and 6 400 on fedora-box) because the stack that matters is not this machine's: the same parser
+   * runs in the LSP worker and in whatever container someone puts `tflw check` in, and a limit
+   * tuned to the roomiest stack is a limit that still crashes on the smallest. Nothing written by
+   * hand comes within two orders of magnitude of it.
+   */
+  private static readonly MAX_UNARY_DEPTH = 256;
+
+  private unaryDepth = 0;
+
   private parseAddSub(): Value | null {
     let left = this.parseMulDiv();
     if (!left) return null;
@@ -4654,11 +4768,35 @@ class Parser {
   private parseAtom(): Value | null {
     const tok = this.peek();
     if (tok.type === 'minus') {
+      // `M147e`/`A3-14`, D643. This is the one production in the grammar that recurses once per
+      // token instead of looping, so it is the one that can exhaust the stack — and it did, as a
+      // raw `RangeError` out of a function documented as never throwing for a syntax error. The
+      // refusal is a diagnostic like any other, which is the whole point: `parseSource`'s contract
+      // is that a file is either parsed or explained, never neither.
+      if (this.unaryDepth >= Parser.MAX_UNARY_DEPTH) {
+        // Consumed before the refusal, so the guard always makes progress. Returning `null` without
+        // advancing is safe in *this* parser — reaching the limit means 256 minuses were consumed on
+        // the way down, so the cursor has moved — but it is safe by an argument two frames away from
+        // the code, and a production that can decline without consuming is one edit from a spin. The
+        // `unary-depth-never-unwinds` mutation is what showed it: with the counter leaking across
+        // expressions the guard fires at the *first* minus in a line, and the suite hung instead of
+        // failing. A mutation that hangs is a mutation with no verdict.
+        this.advance();
+        this.error(
+          Codes.NESTING_TOO_DEEP,
+          `too many nested \`-\` signs — this expression nests more than ${Parser.MAX_UNARY_DEPTH} deep`,
+          tok.span,
+          'tflw stops descending here so the parser cannot run out of stack. Nothing written by hand reaches this depth, so if a generator produced this line, fold the sign into the value it applies to',
+        );
+        return null;
+      }
       // Unary minus is sugar for `0 - operand` — the operand can be anything that might evaluate
       // to a number at runtime (a literal, `{var}`, a generator, …); whether it actually does is a
       // runtime type check like every other arithmetic mismatch (P#25), not a parse-time one.
       this.advance();
+      this.unaryDepth++;
       const operand = this.parseAtom();
+      this.unaryDepth--;
       if (!operand) return null;
       const zero: NumberLit = { type: 'NumberLit', value: 0, raw: '0', span: tok.span };
       const expr: BinaryExpr = { type: 'BinaryExpr', op: '-', left: zero, right: operand, span: { start: tok.span.start, end: operand.span.end } };
@@ -5201,7 +5339,7 @@ class Parser {
     }
     if (this.atEof() || this.check('dedent')) return;
     const tok = this.peek();
-    this.error(Codes.UNEXPECTED_TOKEN, `unexpected ${describeToken(tok)} at end of step`, tok.span, this.trailingHint(tok) ?? 'expected end of line');
+    this.error(Codes.UNEXPECTED_TOKEN, `unexpected ${describeToken(tok)} at end of ${this.lineNoun}`, tok.span, this.trailingHint(tok) ?? 'expected end of line');
     this.synchronize();
   }
 
@@ -5220,27 +5358,50 @@ class Parser {
    * still falls back to the generic hint — this is a lookup table of known mistakes, not a claim to
    * understand every one. */
   private trailingHint(tok: Token): string | null {
+    // `M147e`/`A2-13` — the table below is a table of *step* mistakes, and three of its entries say
+    // so in words: they name `expect`, `api` requests and inline suffixes. Offered against a
+    // `tflw.config` line they answer a question about a dialect the file is not written in, which is
+    // the same defect as the noun and would survive the noun's fix. The duration-unit entry is not
+    // gated because adjacency is a lexical rule and holds in all three dialects, and the tag entry
+    // is gated only against the config dialect, which has no `test` header for a tag to sit on.
     if (tok.type === 'tag') {
-      return `tags go on their own line above \`test\`, not on the header — put \`@${tok.value}\` on the line before it`;
+      return this.lineNoun === 'directive'
+        ? null
+        : `tags go on their own line above \`test\`, not on the header — put \`@${tok.value}\` on the line before it`;
     }
     if (tok.type !== 'ident') return null;
     switch (tok.value) {
       case 'within':
-        return '`within` opens a block, it is not an inline suffix — put `within <locator>` on its own line and indent the steps it scopes';
+        return this.lineNoun !== 'step'
+          ? null
+          : '`within` opens a block, it is not an inline suffix — put `within <locator>` on its own line and indent the steps it scopes';
       case 'timeout':
+        if (this.lineNoun !== 'step') return null;
         // Two mistakes share this token since D640, and the second one is only distinguishable by
         // looking at the token after it — which is the same two-token test the grammar itself uses.
         return this.atWaitBudget()
           ? '`timeout wait <duration>` sets the poll budget of one `wait until` step — no other step has one. To bound a single request write `timeout <duration>`; to change the whole run set `timeout wait` in `tflw.config`'
           : 'a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, or set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
       case 'and':
-        return 'one assertion per `expect` — put the second one on its own `expect` line';
+        return this.lineNoun !== 'step' ? null : 'one assertion per `expect` — put the second one on its own `expect` line';
       case 'ms':
       case 's':
       case 'm': {
-        // The adjacency rule (`A3-13`): inside an expression a unit must touch its number, though
-        // after `think`/`timeout` it need not. `previous()` is that number, so the fix can be shown
-        // rather than described.
+        // The adjacency rule, corrected (`M147e`/`M140-02`). This comment used to read *"inside an
+        // expression a unit must touch its number, though after `think`/`timeout` it need not"*, and
+        // by the time `M140` re-measured it neither half was true: `pause 2 s` and `timeout step 10 s`
+        // raise `TF023` exactly as `500 ms` does, so the rule is uniform — which is what `A3-13` was
+        // asking for, and `M147d-2` closed it. `think` had been renamed to `pause` by `M67` two arcs
+        // earlier, so the comment also named a keyword the parser answers with a deprecation.
+        //
+        // What holds now (D638): adjacency is asked of an **abbreviation** and not of a word.
+        // `250 ms` is a mistake worth teaching in every position; `today + 3 days` has always taken
+        // the space, because a spelled-out unit cannot be run together with its number and still be
+        // read. `previous()` is the number, so the fix can be shown rather than described.
+        //
+        // Worth the paragraph rather than a silent edit because the old text cited a ledger row by
+        // id — one of the few places the corpus and the source are cross-linked — so a reader who
+        // trusted it concluded an open row where the measurement says closed.
         const num = this.previous();
         return num.type === 'number'
           ? `a duration unit must touch its number here — write \`${num.value}${tok.value}\`, not \`${num.value} ${tok.value}\``
@@ -5262,6 +5423,27 @@ class Parser {
 
   private spanFrom(start: Position): Span {
     return { start, end: this.previous().span.end };
+  }
+
+  /**
+   * The span of a block's **header line**, captured by its production before `endLine()` runs.
+   *
+   * Every "this X has no Y" rule in this file is raised *after* the header has been read, and most
+   * of them used to anchor on `this.peek()` — which by then is the first token of whatever comes
+   * next. `M106` measured the result and `M106-02` named it: the caret lands on the line after the
+   * construct, or, where the rule fires past a consumed `dedent`, on the line after the whole
+   * block. Right file, right block, adjacent line, wrong token — and `M106` could not fix it,
+   * because a renderer holding a `Diagnostic` and a string cannot know which token the sentence is
+   * about. Only the production knows, so only the production can say (D191's rejected option, taken
+   * here for the eleven rules where the subject is named in the message and is always a real token).
+   *
+   * `previous()` rather than `peek()` is the whole trick: called before `endLine()`, the last token
+   * consumed is the last token *of the header*, so `start … previous().end` is exactly the line the
+   * author would point at. `parseStepOrSpikeWorkload` has done this since `A2-04` and its comment
+   * gave the reason; this is that one fix generalised.
+   */
+  private headerSpanFrom(start: Position): Span {
+    return this.spanFrom(start);
   }
 
   /**

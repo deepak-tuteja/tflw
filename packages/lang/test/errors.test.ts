@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, renderDiagnostics, renderDiagnostic, displayAnchor } from '../src/index.js';
+import { parseSource, parseConfigSource, renderDiagnostics, renderDiagnostic, displayAnchor } from '../src/index.js';
 import { INVALID } from './fixtures.js';
 import { assertGolden } from './helpers.js';
 
@@ -190,23 +190,144 @@ test('M106/M98c-01: a trailing newline stops changing where the diagnostic point
   }
 });
 
+// ---------------------------------------------------------------------------
+// `M147e`/`M106-02` — the four tests below used to be driven through the parser, and are not any
+// more. `M106` shipped a renderer-side walk-back because the *producers* of the "this X has no Y"
+// rules anchored on `this.peek()`, which by then is whatever follows the block; `M106-02` said the
+// real fix was producer-side and this milestone made it, so those rules now carry their construct's
+// header span and there is nothing left for the walk-back to move.
+//
+// Measured over `M106`'s own corpus shape — every `.tflw` in testFlow-tests plus every
+// line-boundary truncation, 11 710 parses, 1 748 diagnostics — immediately before and after the
+// producer change:
+//
+// | | before | after |
+// |---|---|---|
+// | zero-extent spans | 1 569 | 451 |
+// | re-anchored by `displayAnchor` | **410** | **0** |
+//
+// and all 410 were `TF015`. So the walk-back's entire subject was these rules. It is kept, not
+// deleted — the guard is cheap and the next end-of-source anchor to be written will want it — but
+// it is now a backstop with no caller, and a test that reaches it through the parser would be
+// asserting a shape the parser cannot produce. They are driven through `displayAnchor` directly
+// instead, exactly as `M106/D196` already was for its own unreachable case, and the property that
+// the corpus no longer reaches it is asserted in its own right below.
+// ---------------------------------------------------------------------------
+
+/** The end-of-source zero-extent span these rules used to be given, built rather than parsed for.
+ * Same construction the lexer's `posAt(n)` performs: one line per `\n`, column one past the last
+ * character of the final line. */
+function eofSpan(source: string) {
+  const lines = source.split('\n');
+  const pos = { offset: source.length, line: lines.length, column: lines[lines.length - 1]!.length + 1 };
+  return { start: pos, end: pos };
+}
+
 test('M106/D194: the caret lands past the last non-whitespace character of the anchor line', () => {
   // `test "x"` is 8 characters, so the position after it is column 9 — where `newline` already sits
   // when there is no trailing byte to push the anchor past (D159's placement, matched deliberately).
   // Before M106 this read `2:1`, on a line that is not in the file.
-  assert.equal(locatorOf('test "x"\n', 'TF015'), '--> x.tflw:1:9');
+  const source = 'test "x"\n';
+  assert.deepEqual(displayAnchor(eofSpan(source), source), { line: 1, column: 9 });
 });
 
 test('M106/D193: the walk-back steps over a comment-only line', () => {
   // The 156-in-957 case. `  # TODO: add the steps` is the last line with any content in the file,
   // and anchoring to it would put the caret past the end of a sentence the author wrote as a note —
   // D159's defect in a new place. The anchor is `test "x"`, column 9, exactly as above.
-  assert.equal(locatorOf('test "x"\n  # TODO: add the steps\n', 'TF015'), '--> x.tflw:1:9');
+  const source = 'test "x"\n  # TODO: add the steps\n';
+  assert.deepEqual(displayAnchor(eofSpan(source), source), { line: 1, column: 9 });
 });
 
 test('M106/D193: it steps over a run of blank and comment lines together', () => {
   // Blank, comment, blank, comment — none of them a line the author can be pointed at.
-  assert.equal(locatorOf('test "x"\n\n  # one\n\n# two\n\n', 'TF015'), '--> x.tflw:1:9');
+  const source = 'test "x"\n\n  # one\n\n# two\n\n';
+  assert.deepEqual(displayAnchor(eofSpan(source), source), { line: 1, column: 9 });
+});
+
+test('M147e/M106-02: the empty-block rules point at the construct, not past the block', () => {
+  // The property the walk-back existed to approximate, now asserted directly against the producer.
+  // `wait until` is the row's own example and the hardest of the eleven: its second raise fires
+  // *after* the dedent is consumed, so `peek()` was the first token beyond the whole block — the
+  // caret landed on the `header` line that ends it, two lines below the construct the sentence
+  // names.
+  assert.equal(locatorOf('test "x"\n', 'TF015'), '--> x.tflw:1:1');
+  assert.equal(
+    locatorOf('test "x"\n  wait until api GET /jobs/1\n    header "A" is "b"\n', 'TF015'),
+    '--> x.tflw:2:3',
+  );
+
+  // And the caret has extent now, which is the visible difference: it underlines the header line
+  // rather than sitting one cell past something.
+  const source = 'test "x"\n';
+  const diag = parseSource(source).diagnostics.find((d) => d.code === 'TF015')!;
+  assert.equal(diag.span.start.offset, 0);
+  assert.notEqual(diag.span.start.offset, diag.span.end.offset, 'a header span has extent, so `displayAnchor` may not move it');
+});
+
+test('M147e/M106-02: an empty-block anchor is one line, and the CLI cannot see the difference', () => {
+  // The property the *rendered* tests above cannot state. `renderDiagnostic` draws `span.start.line`
+  // and clamps the caret to that line's width, so a span running from the header to the end of the
+  // whole consumed block prints exactly the same characters as one stopping at the header. Measured
+  // by the `fill-form-header-span-spans-the-block` mutation, which survived a golden corpus of
+  // twelve empty-block fixtures for that reason alone.
+  //
+  // It is not cosmetic. The LSP publishes `d.span` verbatim as the diagnostic's `range`, so the same
+  // two spans are a squiggle under one line and a squiggle under a whole block — the CLI and the
+  // editor disagreeing about the extent of an error while agreeing about its position, which is
+  // `M106-01`'s question in its second form. Asserted on the span so both consumers are covered.
+  for (const [source, parse] of [
+    ['test "x"\n', parseSource],
+    ['crawl "site"\n\ntest "u"\n  api GET /health\n', parseSource],
+    ['action create widget(name)\n\ntest "u"\n  api GET /health\n', parseSource],
+    ['test "x"\n  within css "#p"\n  click css "#s"\n', parseSource],
+    ['test "x"\n  fill form\n    not a row\n  click css "#s"\n', parseSource],
+    ['test "x"\n  download as r\n  click css "#s"\n', parseSource],
+    ['test "x"\n  switch to new tab\n  click css "#s"\n', parseSource],
+    ['test "x"\n  wait until api GET /jobs/1\n    header "A" is "b"\n', parseSource],
+    ['with each\ntest "u"\n  api GET /health\n', parseSource],
+    ['defaults\n\nenv local default\n  api "http://x"\n', parseConfigSource],
+    ['env local default\n\nenv staging\n  api "http://y"\n', parseConfigSource],
+    ['env local default\n  api "http://x"\n\nsession admin\n\nsession peer\n  api POST /login\n', parseConfigSource],
+    ['env local default\n  api "http://x"\n\nsession admin oauth2\n\nsession peer\n  api POST /login\n', parseConfigSource],
+  ] as const) {
+    const empties = parse(source).diagnostics.filter((d) => d.code === 'TF015');
+    assert.ok(empties.length > 0, `expected a TF015 for ${JSON.stringify(source)}`);
+    for (const d of empties) {
+      assert.equal(
+        d.span.end.line,
+        d.span.start.line,
+        `TF015 in ${JSON.stringify(source)} spans lines ${d.span.start.line}-${d.span.end.line}; an empty-block anchor is its construct's header line and nothing else`,
+      );
+    }
+  }
+});
+
+test('M147e/M106-02: no parser rule reaches the walk-back any more', () => {
+  // The census above, in miniature and in the suite. Every source here produced a re-anchored
+  // caret before the producer change; none may now. This is what makes the three tests above
+  // honest about being driven directly — if a rule ever anchors at end-of-source again, this fails
+  // and they stop being hypothetical.
+  for (const source of [
+    'test "x"\n',
+    'test "x"\n  # TODO: add the steps\n',
+    'test "x"\n\n  # one\n\n# two\n\n',
+    'test "x"   \n',
+    'session admin\n',
+    'crawl "c"\n',
+    'test "x"\n  wait until api GET /jobs/1\n    header "A" is "b"\n',
+    'test "x"\n  fill form\n',
+    'test "x"\n  within "#a"\n',
+  ]) {
+    for (const d of parseSource(source).diagnostics) {
+      const a = displayAnchor(d.span, source);
+      assert.deepEqual(
+        { line: a.line, column: a.column },
+        { line: d.span.start.line, column: d.span.start.column },
+        `${d.code} in ${JSON.stringify(source)} was re-anchored, so a producer is still pointing past its construct`,
+      );
+    }
+  }
 });
 
 test('M106/D196: with no code line to fall back to, the position is left alone', () => {
@@ -248,8 +369,9 @@ test('M106/D194b: trailing whitespace does not carry the caret past the end of t
   // into the spaces — while the same file with a final newline re-anchors and trims them, so the two
   // forms disagreed even after the walk-back existed. Both are column 9 now: `test "x"` is 8
   // characters and the code ends there whatever follows it.
-  assert.equal(locatorOf('test "x"   \n', 'TF015'), '--> x.tflw:1:9');
-  assert.equal(locatorOf('test "x"   ', 'TF015'), '--> x.tflw:1:9');
+  for (const source of ['test "x"   \n', 'test "x"   ']) {
+    assert.deepEqual(displayAnchor(eofSpan(source), source), { line: 1, column: 9 });
+  }
 });
 
 test('M106: a re-anchored caret is exactly one cell wide', () => {
@@ -264,8 +386,12 @@ test('M106: a re-anchored caret is exactly one cell wide', () => {
   // trims them out of the column but leaves them in the line), and they are invisible in an editor,
   // so this is a file shape a user reaches without knowing it. Caught by `anchor-caret-width`
   // surviving the first version.
+  //
+  // Built rather than parsed for, since `M147e`/`M106-02` — see the block above. The span is the
+  // one `TF015` used to carry for this file: zero-extent, at end of source, on a line that is only
+  // a comment.
   const source = 'test "x"' + ' '.repeat(30) + '\n  # a comment that is long';
-  const diag = parseSource(source).diagnostics.find((d) => d.code === 'TF015')!;
+  const diag = { code: 'TF015', severity: 'error' as const, message: 'this `test` has no steps', span: eofSpan(source) };
   const rendered = renderDiagnostic(diag, source, { filename: 'x.tflw' });
   const carets = rendered.split('\n').find((l) => l.includes('^'))!.match(/\^+/)![0];
   assert.equal(carets.length, 1, `expected a single caret, got:\n${rendered}`);

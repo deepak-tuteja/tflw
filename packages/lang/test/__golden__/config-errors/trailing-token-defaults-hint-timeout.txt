@@ -1,0 +1,7 @@
+error[TF010]: unexpected `timeout` at end of directive
+ --> tflw.config:2:16
+  |
+2 |   report "./r" timeout
+  |                ^^^^^^^
+  |
+  = help: expected end of line

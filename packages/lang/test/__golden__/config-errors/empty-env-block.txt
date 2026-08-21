@@ -1,0 +1,7 @@
+error[TF015]: this `env` block has no entries
+ --> tflw.config:1:1
+  |
+1 | env local default
+  | ^^^^^^^^^^^^^^^^^
+  |
+  = help: indent at least one entry under the block header

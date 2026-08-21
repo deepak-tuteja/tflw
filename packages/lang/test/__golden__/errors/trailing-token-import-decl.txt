@@ -1,0 +1,15 @@
+error[TF010]: unexpected `extra` at end of declaration
+ --> trailing-token-import-decl.tflw:1:19
+  |
+1 | import "./a.tflw" extra
+  |                   ^^^^^
+  |
+  = help: expected end of line
+
+error[TF010]: unexpected `oops` at end of step
+ --> trailing-token-import-decl.tflw:4:19
+  |
+4 |   api GET /health oops
+  |                   ^^^^
+  |
+  = help: expected end of line

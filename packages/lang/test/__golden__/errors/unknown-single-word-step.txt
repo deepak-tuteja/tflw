@@ -1,0 +1,7 @@
+error[TF011]: unknown step `zzz`
+ --> unknown-single-word-step.tflw:2:3
+  |
+2 |   zzz
+  |   ^^^ not a known step keyword
+  |
+  = help: expected one of: api, expect, check, let, capture, log, wait, give, open, click, double, right, fill, select, tick, untick, press, hover, scroll, within, accept, dismiss, switch, close, download, drag, drop, screenshot, stub, pause

@@ -1,0 +1,7 @@
+error[TF015]: this `fill form` has no rows
+ --> empty-fill-form-block.tflw:2:3
+  |
+2 |   fill form
+  |   ^^^^^^^^^
+  |
+  = help: indent at least one `| "Field" | value |` row

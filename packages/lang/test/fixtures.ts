@@ -373,6 +373,19 @@ test "the mTLS listener rejects a client with no certificate, the plain one acce
   check request not fails
 `,
   },
+  // `M147e`/`A3-14`'s control. Exactly 256 unary minuses — the last depth the parser descends —
+  // parse and check clean, so `TF075` is a boundary and not a blanket ban on a legal operator.
+  // Built from the same `repeat` as its invalid sibling so the two cannot drift apart by a
+  // hand-counted character.
+  //
+  // **Two of them, and that is the point.** The depth counter is incremented on the way down and
+  // decremented on the way back up; drop the decrement and it stops measuring *this* expression and
+  // starts measuring the file. One 256-deep `let` would still pass — the second is what turns that
+  // leak into a false `TF075` on a line that is fine.
+  {
+    name: 'unary-minus-nested-at-the-limit',
+    source: `test "still fine"\n  let a = ${'-'.repeat(256)}1\n  let b = ${'-'.repeat(256)}2\n  api GET /health\n  expect status equals 200\n`,
+  },
 ];
 
 // Config-dialect fixtures (tflw.config). Valid ones parse + check clean; invalid ones each
@@ -607,6 +620,28 @@ session admin oauth2
 `,
   },
   {
+    // `M147e`/`A2-15` — the two siblings of the fixture above. With nothing indented the message is
+    // still the whole requirement (and keeps its worked example); with two absent it names two, so
+    // the goldens pin all three arities of the narrowed wording rather than just the one-missing
+    // case that gave the row its name.
+    name: 'oauth2-missing-all-three',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+  scope "read"
+`,
+  },
+  {
+    name: 'oauth2-missing-two',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+  token url "http://localhost:3001/oauth/token"
+`,
+  },
+  {
     name: 'oauth2-unknown-field',
     source: `env local default
   api "http://localhost:3001"
@@ -757,6 +792,98 @@ session svc privileged oauth2
   token url "http://localhost:3001/oauth/token"
   client id env(CLIENT_ID)
   client secret env(CLIENT_SECRET)
+`,
+  },
+  // `M147e`/`A2-13` — the two config-dialect shapes the row names. A `tflw.config` has no steps in
+  // it anywhere, so the noun `endLine()` reaches for has to follow the dialect. `web "…" oops` is
+  // an env directive, `report "…" 5` a `defaults` entry: one per config block kind, because the
+  // noun is set by two different loops.
+  {
+    name: 'trailing-token-env-directive',
+    source: `env local default
+  api "http://localhost:3001"
+  web "http://localhost:3000" oops
+`,
+  },
+  {
+    name: 'trailing-token-defaults-directive',
+    source: `defaults
+  report "./r" 5
+
+env local default
+  api "http://localhost:3001"
+`,
+  },
+  // The other half of `A2-13`: the noun can be right while the hint under it is still answering for
+  // a dialect the file is not written in. `timeout` and `and` are the two worth pinning — `timeout`
+  // because it is a real `defaults` key, so an author who wrote it in the wrong position was being
+  // told it "is only accepted on `api` requests" inside the very file that accepts it; `and`
+  // because its hint names `expect`, which the config dialect does not have at all.
+  {
+    name: 'trailing-token-defaults-hint-timeout',
+    source: `defaults
+  report "./r" timeout
+
+env local default
+  api "http://localhost:3001"
+`,
+  },
+  {
+    name: 'trailing-token-env-hint-and',
+    source: `env local default
+  api "http://localhost:3001" and
+`,
+  },
+  // A trailing token on the *header* of a config block rather than on a key inside one. Two loops
+  // set the noun in this dialect and every fixture above reaches only the inner one, so without
+  // this the outer assignment is dead weight no test can tell from load-bearing — which is exactly
+  // what the `config-loop-never-claims-directive` mutation found when it survived.
+  {
+    name: 'trailing-token-env-header',
+    source: `env local default oops
+  api "http://localhost:3001"
+`,
+  },
+  // `M147e`/`M106-02`, the config dialect's four empty-block rules. Each is written with something
+  // *after* it, because the defect the row names is only visible when there is a next construct for
+  // the caret to land on — an empty block at the end of a file pointed at nothing in particular,
+  // which reads as merely unhelpful rather than as wrong.
+  {
+    name: 'empty-defaults-block',
+    source: `defaults
+
+env local default
+  api "http://localhost:3001"
+`,
+  },
+  {
+    name: 'empty-env-block',
+    source: `env local default
+
+env staging
+  api "https://staging.example.com"
+`,
+  },
+  {
+    name: 'empty-session-block',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin
+
+session peer
+  api POST /login
+`,
+  },
+  {
+    name: 'empty-oauth2-config',
+    source: `env local default
+  api "http://localhost:3001"
+
+session admin oauth2
+
+session peer
+  api POST /login
 `,
   },
 ];
@@ -922,5 +1049,124 @@ test "invite {role}"
   api GET /health
   expect request fails matching
 `,
+  },
+  // `M147e`/`A2-13`, the other two shapes. Both sit at a `.tflw` file's top level, where the thing
+  // that just ended is a declaration and not a step. The `import` fixture is followed by a `test`
+  // so the golden also pins that the noun goes *back* to `'step'` for the body and then back to
+  // `'declaration'` — the two loops reclaiming it per iteration is the whole mechanism, and a
+  // single-declaration fixture would not exercise it.
+  {
+    name: 'trailing-token-import-decl',
+    source: `import "./a.tflw" extra
+
+test "and a step after it"
+  api GET /health oops
+`,
+  },
+  {
+    name: 'trailing-token-use-decl',
+    source: `use "./b.ts" 5
+`,
+  },
+  // `M147e`/`A3-19` — the row's own example and its own control, in one file so the golden shows
+  // both answers side by side. `let x = create order` has had the parens advice since D168;
+  // `create order` as a step got `unknown step` and the whole keyword list.
+  {
+    name: 'bare-multi-word-call-statement',
+    source: `test "a call without parens"
+  create order
+  let x = create order
+`,
+  },
+  // The two shapes that must *not* take the new branch. `expct status equals 200` has a near-miss
+  // keyword and an argument, so it stays a typo; `zzz` is one word, which is not call-shaped at
+  // all and still gets the enumeration.
+  {
+    name: 'unknown-step-keeps-its-suggestion',
+    source: `test "a typo, not a call"
+  expct status equals 200
+`,
+  },
+  {
+    name: 'unknown-single-word-step',
+    source: `test "no suggestion, one word"
+  zzz
+`,
+  },
+  // `M147e`/`A3-14` — 300 unary minuses, past the 256 limit and nowhere near the stack. The point
+  // of the fixture is not the number: it is that a file this shape produces a *diagnostic*, which
+  // is what `parseSource`'s "never throws for a syntax error" contract says and what a raw V8
+  // `RangeError` was not. The source is built rather than written out so the limit and the fixture
+  // cannot drift apart on a hand-counted string.
+  // `M147e`/`M106-02`, the test dialect's remaining empty-block rules. Same construction as the
+  // config four: a following construct in every one, so a caret that lands past the block lands
+  // somewhere identifiable and the golden records which. `hook-missing-block` is the shipped example
+  // of what that looked like — `this \`before file\` has no steps` with the caret under the word
+  // `test` on line 3, a declaration with nothing wrong with it.
+  {
+    name: 'empty-crawl-block',
+    source: `crawl "site"
+
+test "unaffected"
+  api GET /health
+`,
+  },
+  {
+    name: 'empty-action-block',
+    source: `action create widget(name)
+
+test "unaffected"
+  api GET /health
+`,
+  },
+  {
+    name: 'empty-within-block',
+    source: `test "x"
+  within css "#panel"
+  click css "#save"
+`,
+  },
+  {
+    name: 'empty-fill-form-block',
+    source: `test "x"
+  fill form
+  click css "#save"
+`,
+  },
+  // The *second* `fill form` raise: an indented block that yields no rows at all. It fires after
+  // the block has been consumed, which is the shape `M106-02` names — and the one a fix applied only
+  // to the `!check('indent')` arm above would miss, since that arm is never reached here.
+  {
+    name: 'fill-form-block-with-no-rows',
+    source: `test "x"
+  fill form
+    not a row
+  click css "#save"
+`,
+  },
+  {
+    name: 'empty-download-block',
+    source: `test "x"
+  download as report
+  click css "#save"
+`,
+  },
+  {
+    name: 'empty-switch-to-new-tab-block',
+    source: `test "x"
+  switch to new tab
+  click css "#save"
+`,
+  },
+  {
+    name: 'with-each-table-no-rows',
+    source: `with each
+test "unaffected"
+  api GET /health
+`,
+  },
+  {
+    name: 'unary-minus-nested-past-the-limit',
+    source: `test "generated, not written"\n  let a = ${'-'.repeat(300)}1\n`,
   },
 ];

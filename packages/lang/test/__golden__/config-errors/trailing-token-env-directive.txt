@@ -1,0 +1,7 @@
+error[TF010]: unexpected `oops` at end of directive
+ --> tflw.config:3:31
+  |
+3 |   web "http://localhost:3000" oops
+  |                               ^^^^
+  |
+  = help: expected end of line

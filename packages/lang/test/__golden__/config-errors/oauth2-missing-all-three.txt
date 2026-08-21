@@ -1,0 +1,11 @@
+error[TF022]: an oauth2 session needs `token url`, `client id`, and `client secret`
+ --> tflw.config:4:1
+  |
+4 | session admin oauth2
+  | ^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: e.g.
+  session admin oauth2
+    token url "https://api.example.com/oauth/token"
+    client id env(CLIENT_ID)
+    client secret env(CLIENT_SECRET)

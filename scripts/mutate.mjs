@@ -2830,6 +2830,186 @@ const REGISTRY = [
     replace: '    if (false) {',
   },
 
+  // --- `M147e-1` (`A2-15`) — an oauth2 session names only what is missing ------------------------
+  //
+  // The shipped message restated all three required fields whichever ones were written, so an author
+  // who forgot one read a paragraph about two they had. The narrowing is one `filter`, and both
+  // mutations below put the paragraph back — one through the field list, one through the help arity.
+  // The all-three golden is byte-identical to the old message, so it deliberately survives both:
+  // what these break is the *partial* case, which is the only case the row was ever about.
+  {
+    id: 'oauth2-names-all-three-regardless',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A2-15` verbatim: `session admin oauth2` with two of three fields present is told it `needs `token url`, `client id`, and `client secret`` — an answer to a question the author did not ask, and the reading that sends them checking two lines that are already correct',
+    find: '      const missing = OAUTH2_REQUIRED.filter((f) => !bound[f.name]);',
+    replace: '      const missing = OAUTH2_REQUIRED.slice();',
+  },
+  {
+    id: 'oauth2-help-always-restates-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the field list narrows but the help does not, so a config missing one line is shown a fresh three-line `session admin oauth2` block to write — next to the one it already has. The message and its worked example disagree about what is wrong, which is worse than either being wrong alone',
+    find: '        missing.length === OAUTH2_REQUIRED.length',
+    replace: '        true',
+  },
+
+  // --- `M147e-2` (`A2-13`) — the trailing-token noun follows the dialect ------------------------
+  //
+  // Three mutations, one per way the fix can be undone, because the noun and the hints are separate
+  // mechanisms and the two loops that reclaim the noun are separate again. The last one is the
+  // subtlest: nothing about `parse()`'s loop looks load-bearing, and dropping it leaves every
+  // *first* declaration in a file correct.
+  {
+    id: 'endline-noun-always-step',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A2-13` verbatim: `web "http://x" oops` in a `tflw.config` is told about the end of a step, in a dialect that has no steps. The noun goes back to being a constant',
+    find: 'unexpected ${describeToken(tok)} at end of ${this.lineNoun}',
+    replace: 'unexpected ${describeToken(tok)} at end of step',
+  },
+  {
+    id: 'config-loop-never-claims-directive',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the config dialect stops naming itself, so the noun is whatever the constructor left — `'step'` — for every directive outside a `defaults`/`env` block. Half the row reopens, and it is the half whose fixture is a `session`-adjacent line rather than a block entry",
+    find: "      // Same reclamation as `parse()`'s loop: a `session` body parses steps, which claims the noun.\n      this.lineNoun = 'directive';",
+    replace: "      // Same reclamation as `parse()`'s loop: a `session` body parses steps, which claims the noun.",
+  },
+  {
+    id: 'top-level-loop-never-reclaims',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the noun is claimed by `parseStep()` and never given back, so a file's *first* declaration reports correctly and every declaration after a `test` body says `at end of step` again. The failure only appears in a file with two declarations, which is why the `import` fixture has a `test` under it",
+    find: "      this.lineNoun = 'declaration';",
+    replace: '',
+  },
+  {
+    id: 'step-hints-offered-in-every-dialect',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the noun is right and the hint under it is not: a `tflw.config` line ending in `and` is told `one assertion per `expect`` — advice about a keyword the config dialect does not have. This is the half of `A2-13` that survives a noun-only fix",
+    find: "        return this.lineNoun !== 'step' ? null : 'one assertion per `expect` — put the second one on its own `expect` line';",
+    replace: "        return 'one assertion per `expect` — put the second one on its own `expect` line';",
+  },
+  {
+    id: 'timeout-hint-offered-in-config',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`timeout` is a real `defaults` key, so writing it in the wrong position inside `tflw.config` was answered with "a per-step `timeout` … is only accepted on `api` requests" — in the file that accepts it. The most confusing single line the ungated table produced, because it is the one case where the hint is about the right word and the wrong dialect',
+    find: "        if (this.lineNoun !== 'step') return null;",
+    replace: '',
+  },
+
+  // --- `M147e-3` (`A3-19`) — a bare word run is a call missing its parens -----------------------
+  //
+  // Three ways to lose this: the branch itself, the two-word floor, and the end-of-line test. The
+  // last two are the ones that matter, because both leave the branch present and working on the
+  // row's own example while quietly answering the wrong question everywhere else.
+  {
+    id: 'bare-word-run-gets-the-keyword-wall',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A3-19` verbatim: `create order` as a step goes back to `unknown step` plus all thirty step keywords, while `let x = create order` one line below still gets the parens advice. The same mistake answered two ways in the same file, and the worse answer at the position where a bare call is actually written',
+    find: '          if (!hint && this.looksLikeBareWordRun()) {',
+    replace: '          if (false) {',
+  },
+  {
+    id: 'one-word-is-a-call-shape',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the floor drops to one word, so every unrecognised single keyword with no near miss is told it looks like a call — `zzz` becomes paren advice instead of the list of what may go there. The enumeration stops being reachable at all, which is the failure mode of fixing a diagnostic by widening it",
+    find: '    if (k < 2) return false;',
+    replace: '    if (k < 1) return false;',
+  },
+  {
+    id: 'word-run-need-not-fill-the-line',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the end-of-line test goes away, so `expct status equals 200` is read as a call — a mis-spelled `expect` with three arguments after it, answered with advice about parentheses. Only reachable when `suggest` has nothing, so it looks harmless until a typo lands outside the edit-distance window",
+    find: "    const end = this.peek(k).type;\n    return end === 'newline' || end === 'dedent' || end === 'eof';",
+    replace: '    return true;',
+  },
+
+  // --- `M147e-4` (`A3-14`, D643) — the recursion depth limit -------------------------------------
+  //
+  // Two mutations, not three. The *bound* is deliberately not mutated: 256 against 257 is an
+  // arbitrary point on a scale whose only real constraint is "far below the stack and far above
+  // anything a person writes", and a test pinning the exact integer would assert a number rather
+  // than a property. What is load-bearing is that the limit exists and that it measures one
+  // expression rather than the file.
+  {
+    id: 'unary-depth-unbounded',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`A3-14` verbatim, and the worst failure in this milestone: `parseSource` throws a raw V8 `RangeError` out of a function documented as never throwing for a syntax error. The user sees `Maximum call stack size exceeded` with no filename, no line and no caret — not a bad diagnostic but none at all',
+    find: '      if (this.unaryDepth >= Parser.MAX_UNARY_DEPTH) {',
+    replace: '      if (false) {',
+  },
+  {
+    id: 'unary-depth-never-unwinds',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: 'the counter stops measuring the expression and starts measuring the file: every unary minus anywhere spends depth that is never returned, so the 257th one in a file — however shallow the expression it sits in — is refused. A limit against pathological input turned into a limit on how many times a legal operator may appear',
+    find: '      this.unaryDepth--;',
+    replace: '',
+  },
+
+  // --- `M147e-5` (`M106-02`) — the empty-block rules anchor on their own header -------------------
+  //
+  // Eleven rules, one mechanism, and the mutations go at the mechanism rather than at each rule:
+  // `headerSpanFrom` itself, the two rules whose span is hardest to get right, and the census
+  // property. `parseStepOrSpikeWorkload` is deliberately not mutated — it has anchored correctly
+  // since `A2-04` and this slice only moved it onto the shared helper.
+  {
+    id: 'header-span-taken-after-the-newline',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the header span loses its extent — captured before `endLine()`, `peek()` is the header's own terminating newline, so all eleven rules go back to a zero-width caret sitting one cell past the header instead of underlining it. Right line, no extent, which is the half of `M106-02` the CLI *could* see: sixteen goldens move. The half it could not see is `empty-block-anchors-past-the-block` below",
+    find: '  private headerSpanFrom(start: Position): Span {\n    return this.spanFrom(start);\n  }',
+    replace: '  private headerSpanFrom(_start: Position): Span {\n    return this.peek().span;\n  }',
+  },
+  {
+    id: 'wait-until-second-raise-anchors-past-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "the row's own example, and the half a one-line fix misses: `wait until` raises `TF015` twice, and the *second* raise fires after the dedent is consumed, so `peek()` is the first token beyond the whole block. Headers-but-no-`expect` is the shape that reaches it, and the caret lands two lines below the construct the sentence names",
+    find: "      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', headerSpan, 'indent at least one `expect` under the request line');\n    }\n    return { headers, expects };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, 'this `wait until` has no `expect` lines', this.peek().span, 'indent at least one `expect` under the request line');\n    }\n    return { headers, expects };",
+  },
+  {
+    id: 'fill-form-header-span-spans-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: '`fill form`\'s second raise takes `spanFrom(start)` instead of the header span — the shape this slice replaced, and the one that looks correct: it starts in the right place. It ends at the last token *consumed*, so the caret underlines the whole malformed block rather than the line that opened it, and `M106`\'s one-cell rule is the only reason that is visible at all',
+    find: "      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', headerSpan, 'add at least one `| \"Field\" | value |` row');",
+    replace: "      this.error(Codes.EMPTY_BLOCK, 'this `fill form` has no rows', this.spanFrom(start), 'add at least one `| \"Field\" | value |` row');",
+  },
+
+  // --- `M147e-6` (`M106-01`) — the CLI and the editor agree, and something holds them to it -------
+  //
+  // The same producer edit as `header-span-taken-after-the-newline`, aimed at the *other* suite.
+  // `M106-01` is an agreement between two surfaces, and a mutation that only runs `@tflw/lang`'s
+  // tests cannot see the editor half go wrong — which is precisely how the disagreement `M140-3`
+  // measured survived from `M106` to here without a red test anywhere.
+  {
+    id: 'empty-block-anchors-past-the-block',
+    milestone: 'm147e',
+    file: 'packages/lang/src/parser.ts',
+    what: "`M106-02` verbatim, at the rule rather than at the helper: the span is read at the *error site*, where `endLine()` has run and `peek()` is the first token of whatever comes next — the phantom last line for a file that ends there. This is the shape the helper exists to prevent, and mutating the helper does not reproduce it: called before `endLine()`, even `peek()` is still on the header line",
+    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+  },
+  {
+    id: 'lsp-loses-the-header-anchor',
+    milestone: 'm147e',
+    pkg: '@tflw/lsp-server',
+    file: 'packages/lang/src/parser.ts',
+    what: "`M106-01` reopened in the editor, and the reason this entry names a *different* suite than the identical edit above: the row is an agreement between two surfaces, so the failure only appears where both are read. With `test`'s empty-block rule anchoring past its construct again, the LSP publishes a range on the phantom last line while the CLI caret walks back to the header — `M140-3`'s measurement, which no test in either package could see",
+    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+  },
+
 ];
 
 /**
@@ -3331,6 +3511,21 @@ export function parseArgs(argv) {
 const SUITE_TIMEOUT_MS = Number(process.env.TFLW_MUTATE_TIMEOUT_MS ?? 10 * 60_000);
 const TIMEOUT_LABEL = SUITE_TIMEOUT_MS >= 60_000 ? `${SUITE_TIMEOUT_MS / 60_000}m` : `${SUITE_TIMEOUT_MS}ms`;
 
+// `M147e` (`M147e-01`) — and the bound above needs a *second* bound beside it, because `execSync`
+// has one of its own that nobody chose. Its default `maxBuffer` is 1 MB; a suite that prints more
+// than that is killed with `SIGKILL` and throws with `code: 'ENOBUFS'`. `runSuite` read the signal
+// alone, so an overflow arrived here as a hang — and `M147e-4`'s demonstrated break tripped it: a
+// mutation that fails a 256-deep AST snapshot prints the diff, the run reached 1 084 562 bytes, and
+// a mutation that had in fact been *killed* was reported as `TIMED OUT — the suite hung`, with no
+// verdict and the wrong cause named. Silent in the safe direction — it can never manufacture a
+// `killed` — but a control that cannot score its own success is not a control.
+//
+// 64 MB matches `no-nul-bytes.test.mjs` and `removed-commands.test.mjs`, the two places in this repo
+// that had already met the default. It is a buffer and not a budget: nothing is expected to approach
+// it, and if anything ever does, the `ENOBUFS` branch below now says so in those words instead of
+// blaming a clock.
+const SUITE_MAX_BUFFER = 64 * 1024 * 1024;
+
 // M143a (`M137g-03`, re-stated) — the sweep says how long it took, every time.
 //
 // `M137g-03` asked for exactly this, and gave a reason that turned out to be false: it read JOB
@@ -3419,6 +3614,38 @@ export function suiteCommand(pkg) {
 }
 
 /**
+ * Which workspace has to be **rebuilt** before a mutation's suite can see it (`M147e`, `M147-09`).
+ *
+ * A workspace's own tests run from source — `@tflw/lang` is `node --import tsx --test`, and the
+ * mutated `.ts` is what tsx compiles — so a mutation and its suite normally need no build between
+ * them. That stops being true the moment the two are in *different* workspaces. `@tflw/lsp-server`
+ * imports `@tflw/lang` by name, and `packages/lang/package.json` exports `./dist/index.js`, so a
+ * mutation to `packages/lang/src/parser.ts` scored against the lsp-server suite ran the *previous*
+ * build. Every such mutation therefore came back **`SURVIVED`**, which is the worst verdict this
+ * file can print wrongly: a hang is a no-verdict and says so, but a false survival reads as a
+ * measured statement that the assertion is weak, and the honest response to it is to weaken or
+ * delete the test.
+ *
+ * Found by `M147e-6`, whose whole subject is an agreement between two surfaces and therefore has to
+ * be scored against the *other* package's suite by construction. Confirmed by hand: the same edit,
+ * with `npm run build --workspaces` in front of it, takes the lsp-server suite from `# pass 171` to
+ * `# fail 1`, naming exactly the test written for the row.
+ *
+ * Returns `null` in the common case, so nothing is rebuilt for a mutation whose file and suite live
+ * together, and the sweep does not get slower for the sake of a case it does not have.
+ *
+ * `nameOf` is injected so this stays pure and testable against a fixture map rather than the tree.
+ */
+export function rebuildTargetFor(file, pkg, nameOf) {
+  const m = /^(packages\/[^/]+)\//.exec(file);
+  if (!m) return null;
+  const dir = m[1];
+  const name = nameOf(dir);
+  if (!name || name === pkg) return null;
+  return name;
+}
+
+/**
  * M123 (`M123-02`) — the environment a suite must NOT inherit.
  *
  * `NODE_TEST_CONTEXT` is how `node --test` tells a child test process to speak its internal
@@ -3446,24 +3673,67 @@ function suiteEnv() {
   return env;
 }
 
-function runSuite(pkg) {
+/** `packages/<dir>` -> the workspace's declared package name, or `null` if there is no manifest. */
+function workspaceName(dir) {
+  try {
+    return JSON.parse(readFileSync(path.join(ROOT, dir, 'package.json'), 'utf8')).name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function runSuite(pkg, mutatedFile) {
+  // `M147-09` — see `rebuildTargetFor`. Skipped entirely when the mutation and its suite share a
+  // workspace, which is every mutation in the registry but one.
+  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName) : null;
+  if (rebuild) {
+    try {
+      execSync(`npm run build -w ${rebuild} 2>&1`, { cwd: ROOT, encoding: 'utf8', env: suiteEnv(), timeout: SUITE_TIMEOUT_MS, maxBuffer: SUITE_MAX_BUFFER });
+    } catch (err) {
+      // A mutation that does not compile is a *stale* mutation, not a survivor — the registry entry
+      // is quoting a line the source no longer has in a form that type-checks. Reported as a red
+      // suite so it lands in the kill/stale reporting rather than being silently scored.
+      return { green: false, out: `building ${rebuild} for a cross-workspace mutation failed:\n${(err.stdout ?? '') + (err.stderr ?? '')}`, timedOut: false, overflowed: false };
+    }
+  }
   try {
     const out = execSync(suiteCommand(pkg), {
       cwd: ROOT,
       encoding: 'utf8',
       env: suiteEnv(),
       timeout: SUITE_TIMEOUT_MS,
+      maxBuffer: SUITE_MAX_BUFFER,
       killSignal: 'SIGKILL',
     });
-    return { green: true, out, timedOut: false };
+    return { green: true, out, timedOut: false, overflowed: false };
   } catch (err) {
     // A timeout is NOT a red suite, and the difference is load-bearing: the `else` below prints
     // `✓ killed … suite exited non-zero` for anything non-green, so without this flag a mutation
     // whose suite hung would be credited with killing it. That is the vacuous-control shape —
     // a control that passes because nothing ran — arrived at from the opposite direction.
-    const timedOut = err.code === 'ETIMEDOUT' || err.signal === 'SIGKILL';
-    return { green: false, out: (err.stdout ?? '') + (err.stderr ?? ''), timedOut };
+    return { green: false, out: (err.stdout ?? '') + (err.stderr ?? ''), ...classifySuiteFailure(err) };
   }
+}
+
+/**
+ * Why a non-green `execSync` came back — the three answers that are not "the suite went red".
+ *
+ * Pure and exported for the same reason `formatElapsed` and `tallyLine` are: the branch it decides
+ * can only be reached by a suite that actually blows up, and a branch reachable only by catastrophe
+ * is a branch nobody ever sees run. `scripts/mutate.test.mjs` calls it with the three error shapes
+ * directly.
+ *
+ * `ENOBUFS` is tested first and separately (`M147e-01`). An output overflow is *also* delivered as
+ * `SIGKILL`, so reading the signal alone folded it into the hang bucket and reported a suite that
+ * ran to completion as one that never started. Same no-verdict outcome either way, but the wrong
+ * cause named and the wrong fix implied — the reader goes looking for an infinite loop that is not
+ * there. Found by `M147e-4`, whose demonstrated break fails a 256-deep AST snapshot: printing that
+ * diff took the run to 1 084 562 bytes, eighty kilobytes past `execSync`'s 1 MB default.
+ */
+export function classifySuiteFailure(err) {
+  const overflowed = err.code === 'ENOBUFS';
+  const timedOut = !overflowed && (err.code === 'ETIMEDOUT' || err.signal === 'SIGKILL');
+  return { timedOut, overflowed };
 }
 
 // M123 (`M115-01`): the summary parse moved to `scripts/reporter-summary.mjs`, shared with
@@ -3614,8 +3884,14 @@ function sweep(selected, scope, shard) {
     if (!openJournal({ id: m.id, milestone: m.milestone, pid: process.pid, startedAt: new Date().toISOString(), files })) return 2;
     writeFileSync(full, mutated);
     try {
-      const result = runSuite(pkg);
-      if (result.timedOut) {
+      const result = runSuite(pkg, m.file);
+      if (result.overflowed) {
+        // Distinct from the hang below on purpose (`M147e-01`): this suite *finished*, and what
+        // stopped us reading its verdict was our own buffer. No verdict either way, but the reader
+        // is sent to the right place.
+        console.log(`✗ NO VERDICT ${m.id} (${m.milestone}) — ${pkg}'s output passed ${SUITE_MAX_BUFFER / (1024 * 1024)}MB and was truncated before a summary could be read; no verdict on: ${m.what}`);
+        survivors.push({ ...m, verdict: 'timeout' });
+      } else if (result.timedOut) {
         // Not a kill and not a survival — the suite never reached a verdict, so neither has this
         // mutation. Counted against the run so a hang can never leave the sweep exiting 0.
         console.log(`✗ TIMED OUT ${m.id} (${m.milestone}) — ${pkg}'s suite hung; no verdict on: ${m.what}`);

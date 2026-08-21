@@ -1,0 +1,7 @@
+error[TF010]: unexpected `5` at end of declaration
+ --> trailing-token-use-decl.tflw:1:14
+  |
+1 | use "./b.ts" 5
+  |              ^
+  |
+  = help: expected end of line

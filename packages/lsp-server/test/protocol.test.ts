@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { createMessageConnection, type MessageConnection } from 'vscode-jsonrpc/node';
 import { startServer } from '../src/server.js';
+import { parseSource, displayAnchor } from '@tflw/lang';
 
 interface LspPosition {
   readonly line: number;
@@ -216,12 +217,15 @@ const UNTITLED = 'untitled:Untitled-1';
  * The pending `setTimeout` holds the loop open long enough for the rejection to be *this* test's,
  * with a message that says what did not happen (`M119`: an instrument can be wrong in a direction
  * that looks like a result). */
-function nextDiagnostics(client: MessageConnection, whatFor: string): Promise<{ uri: string; diagnostics: { code: string }[] }> {
+function nextDiagnostics(
+  client: MessageConnection,
+  whatFor: string,
+): Promise<{ uri: string; diagnostics: { code: string; range: { start: LspPosition; end: LspPosition } }[] }> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`no publishDiagnostics arrived for ${whatFor} within 5s — the server never analyzed the document`)), 5_000);
     client.onNotification('textDocument/publishDiagnostics', (params) => {
       clearTimeout(timer);
-      resolve(params as { uri: string; diagnostics: { code: string }[] });
+      resolve(params as { uri: string; diagnostics: { code: string; range: { start: LspPosition; end: LspPosition } }[] });
     });
   });
 }
@@ -450,4 +454,60 @@ test('M136b/D427: semanticTokens/full colors config-only vocabulary in a `tflw.c
   // keywords and which `M142` had recorded as unreachable by any wordlist while it was a string.
   assert.equal(result!.data.length / 5, 6, 'expected `defaults`, the three config-only keywords, and both words of the level');
   client.dispose();
+});
+
+// ---------------------------------------------------------------------------------------------
+// `M147e-6` / `M106-01` — the CLI and the editor point at the same place.
+//
+// The row asked whether they are allowed to disagree about where an error *is*. `M140-3` measured
+// them over stdio and found them disagreeing on three of the four shapes it names: a bare `test`
+// with a trailing newline, one followed by a comment line, one followed by trailing whitespace, and
+// one with no trailing newline. The LSP published `d.span` verbatim — line 1 character 0, on the
+// phantom last line `split('\n')` manufactures — while the CLI published `displayAnchor`'s
+// re-anchored 1:9.
+//
+// **`D624` said the fix was for the LSP to adopt `displayAnchor`, and that is not what closed it.**
+// `M147e-5` moved the eleven "this X has no Y" rules onto their construct's header span, and the
+// re-anchoring those four shapes depended on went to zero across the whole corpus (410 → 0). All
+// four now agree, and none of them publishes a zero-width range any more — which also retires the
+// question `D197` parked the row on, what VS Code draws for a zero-width range past the last line,
+// because no rule produces one.
+//
+// Asserted here rather than left as a measurement, because agreement reached from the producer side
+// is agreement nothing is holding: a future rule that anchors past its construct reopens `M106-01`
+// silently in the editor, where nobody is looking. This is the test that notices.
+// ---------------------------------------------------------------------------------------------
+
+test('M147e/M106-01: the LSP range and the CLI caret agree on every end-of-source shape', { timeout: 15_000 }, async () => {
+  const shapes: readonly (readonly [string, string])[] = [
+    ['a trailing newline', 'test "x"\n'],
+    ['a comment line after it', 'test "x"\n  # TODO: add the steps\n'],
+    ['trailing whitespace', 'test "x"   \n'],
+    ['no trailing newline', 'test "x"'],
+    ['mid-file (the control)', 'test "x"\n  api GET\n'],
+  ];
+  for (const [what, text] of shapes) {
+    const { client, uri } = await connectServer();
+    const published = nextDiagnostics(client, what);
+    openDocument(client, uri, text);
+    const params = await published;
+    assert.ok(params.diagnostics.length > 0, `${what}: expected a diagnostic`);
+
+    const local = parseSource(text).diagnostics[0]!;
+    const cli = displayAnchor(local.span, text);
+    assert.deepEqual(
+      params.diagnostics[0]!.range.start,
+      { line: cli.line - 1, character: cli.column - 1 },
+      `${what}: the editor's squiggle starts where the CLI caret does not`,
+    );
+
+    // The line the range sits on must be a line the file actually has. This is the half `M106-01`
+    // was really about: a range on the phantom last line is not merely in the wrong column, it is
+    // outside the document, and what an editor does with that was never measured.
+    assert.ok(
+      params.diagnostics[0]!.range.end.line < text.split('\n').length,
+      `${what}: the range ends past the last line of the document`,
+    );
+    client.dispose();
+  }
 });

@@ -173,6 +173,24 @@ export const SELF_MUTATIONS = [
     find: '    if (shard.of > selected.length) {',
     replace: '    if (false) {',
   },
+  {
+    id: 'overflow-reported-as-a-hang',
+    milestone: 'm147e',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: "`M147e-01` restored: an output overflow is read off the signal alone and reported as `the suite hung`. The verdict is right by accident — no verdict either way — and the sentence is wrong in the one word that tells the reader where to look, so they go hunting an infinite loop in a suite that ran to completion. The instrument's own failure mode, which is why it is registered here rather than beside the product row that found it",
+    find: "  const overflowed = err.code === 'ENOBUFS';",
+    replace: '  const overflowed = false;',
+  },
+  {
+    id: 'cross-workspace-mutation-scored-stale',
+    milestone: 'm147e',
+    pkg: ROOT_SUITE,
+    file: SELF,
+    what: "`M147-09` restored: a mutation whose file is in one workspace and whose suite is in another is scored against the previous build, so it can only ever come back `SURVIVED`. A false survival, not a no-verdict — it reads as a measurement that the assertion is weak, and the response it invites is deleting the test that was right",
+    find: '  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName) : null;',
+    replace: '  const rebuild = null;',
+  },
 
   // --- M148 (`M147-11`) ---------------------------------------------------------------------
   //

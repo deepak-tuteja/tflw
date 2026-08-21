@@ -334,6 +334,27 @@ export const Codes = {
   // its own code, and reusing a conflict code for a resolution failure would put the wrong word in
   // front of the reader.
   CONFIG_UNKNOWN_ENV: 'TF074',
+  // M147e (`A3-14`, D643) — **the parser refusing input that would otherwise exhaust the call
+  // stack.** `parseSource` is documented as never throwing for a syntax error (`index.ts`), and a
+  // file of 30 000 unary minuses broke that contract outright: a raw V8 `RangeError`, exit 2, no
+  // filename, no line, no caret. Not a bad diagnostic — *no* diagnostic, and a stack trace where a
+  // caret should be. The one place in this grammar that recurses per token rather than looping is
+  // unary minus, and it is the only reachable path: `+`/`-`/`*`/`/` chains iterate, `within` nesting
+  // is bounded by the lexer's indent handling, and a JSON body is parsed by `JSON.parse` rather than
+  // by descent. Measured on fedora-box, the throw appears between 3 200 and 6 400 minuses; the limit
+  // is set an order of magnitude below the nearer of those, because the number that matters is not
+  // this machine's stack but the smallest one the parser might run on — the LSP worker, a different
+  // Node, a container with a smaller thread stack.
+  //
+  // **Its own code rather than `TF010`.** The `-` is legal exactly where it is written and the token
+  // is not unexpected in any sense the author could act on; calling it an unexpected token would put
+  // a false word in the only sentence they read. What is wrong is the *shape of the input*, which no
+  // shipped code names. This is also the one code `M147e` allocates — the milestone's budget, spent
+  // on the only row whose message could not be told the truth with an existing one.
+  //
+  // **The message names a limit and not a mistake.** Nothing a person types by hand reaches 256, so
+  // the reader is a generator, and what a generator's author needs is the number.
+  NESTING_TOO_DEEP: 'TF075',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -632,7 +653,21 @@ function isCodeLine(line: string): boolean {
  * would depend on lexer internals. Measurement says the two sets coincide exactly today.
  *
  * Total by construction (D196): a prefix that is entirely blank and comment lines has nothing to
- * fall back to, so the original position is returned. Measured 0 times in the corpus, and reachable. */
+ * fall back to, so the original position is returned. Measured 0 times in the corpus, and reachable.
+ *
+ * **`M147e`/`M106-02` took the walk-back's subject away, and it is kept anyway.** `M106-02` said the
+ * real fix for the eleven "this X has no Y" rules was producer-side — each carrying a span for the
+ * construct its sentence names — and this milestone made it. Re-measured over the same corpus shape
+ * `M106` used (every `.tflw` in testFlow-tests plus every line-boundary truncation, 11 710 parses,
+ * 1 748 diagnostics) immediately before and after: zero-extent spans **1 569 → 451**, re-anchored
+ * carets **410 → 0**, and all 410 of the originals were `TF015`. So this function's entire caseload
+ * was one code, and that code no longer reaches it.
+ *
+ * Kept because the alternative is worse than the dead branch: the guard is a few lines, the next
+ * rule anchored at end-of-source will want it, and deleting it would take D192's zero-extent test
+ * and D196's floor with it. What changed is its standing — a backstop rather than a working part —
+ * and `errors.test.ts` says so, drives its three walk-back tests through this function directly, and
+ * asserts in its own test that no parser rule reaches it. */
 export function displayAnchor(span: Span, source: string): { readonly line: number; readonly column: number } {
   const { start, end } = span;
   const here = { line: start.line, column: start.column };
