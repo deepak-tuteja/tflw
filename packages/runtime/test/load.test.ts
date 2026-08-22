@@ -879,6 +879,59 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
   assert.equal(merged.inconclusive, true);
 });
 
+test('`M146-01` (`M147f`): the two ungradability channels compose, and neither overwrites the other', () => {
+  // The freeze pass ruled that the repo's two answers to "this threshold cannot be graded" are not
+  // rivals: *no number at all* is in band (`actual: null, ok: false`, `D-M89-1`) and *a number whose
+  // provenance is doubtful* is out of band (`inconclusive`, R11). A split is only worth having if
+  // the channels are independent, so the case that decides it is the one where BOTH fire — a
+  // saturated generator on a run whose duration threshold also saw no successful iterations.
+  //
+  // Built through `mergeLoadShardReports` rather than a live run on purpose: saturation depends on
+  // how loaded the host is (this file's own header says so), and a case about a rule must not be
+  // decided by the machine it runs on.
+  const source =
+    'test "S"\n  ramp to 1 users over 1s\n  api GET /health\n  expect status equals 200\n  threshold p95 duration is less than 100ms\n';
+  const { program } = parseSource(source);
+  const h = new LatencyHistogram();
+  h.record(5);
+  const noneSucceeded: SerializedHistogram = { iterations: 0, sum: 0, min: 0, max: 0, histogram: new LatencyHistogram().toBuckets() };
+  const shard: LoadShardResult = {
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 1, sum: 5, min: 5, max: 5, histogram: h.toBuckets(), successful: noneSucceeded, timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
+  };
+  const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
+  const t = merged.scenarios[0]!.thresholds[0]!;
+  assert.equal(t.actual, null, 'no successful iterations: the in-band channel says there is no number to state');
+  assert.equal(t.ok, false, 'and a threshold whose question the run cannot answer is not a satisfied one');
+  assert.equal(merged.inconclusive, true, 'the out-of-band channel is independent and fires anyway');
+});
+
+test('`M146-01` (`M147f`): a saturated run does NOT flip a threshold it can grade', () => {
+  // The control that makes the case above mean something. Same saturated shard, but the histogram
+  // has a real percentile — so there IS a number, the in-band channel has nothing to say, and R11's
+  // rule stands: `inconclusive` marks the verdict untrustworthy without rewriting it. Without this,
+  // a change that failed every threshold on a saturated run would pass the composition test.
+  const source =
+    'test "S"\n  ramp to 1 users over 1s\n  api GET /health\n  expect status equals 200\n  threshold p95 duration is less than 100ms\n';
+  const { program } = parseSource(source);
+  const h = new LatencyHistogram();
+  h.record(5);
+  const shard: LoadShardResult = {
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
+  };
+  const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
+  const t = merged.scenarios[0]!.thresholds[0]!;
+  assert.notEqual(t.actual, null, 'there is a number here, so the in-band channel must stay out of it');
+  assert.equal(t.ok, true, 'R11: a saturated generator does not flip a passing threshold to failing');
+  // And at report level, which is where R11 actually lives: `ok` and `inconclusive` are two fields
+  // because they are two facts. Folding saturation into `ok` would make an unmeasurable run read as
+  // "system failed", which is a verdict about a system this run did not observe — the same error as
+  // reading it "system passed", and the one R11 was written to prevent.
+  assert.equal(merged.ok, true, 'saturation is reported, not scored');
+  assert.equal(merged.inconclusive, true);
+});
+
 test('an already-aborted signal runs zero iterations and flags aborted/abortedMessage', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => json(res, 200, { ok: true }) });
   const source = 'test "S"\n  ramp to 5 users over 5000ms\n  api GET /health\n  expect status equals 200\n';

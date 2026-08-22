@@ -158,6 +158,25 @@ test('the same rows are NOT flagged while the milestone is unshipped', () => {
   assert.equal(problems.filter((p) => /says M99 closes/.test(p)).length, 0, problems.join('\n'))
 })
 
+// `M147f` (`M131-03`) — the third state of `shipped`. Above it is a set that has the milestone or a
+// set that does not; `null` is "this machine cannot tell", which `exec.mjs` produces on every box
+// run by rsyncing the worktree without `.git`. The old code read `null` as *everything shipped*.
+test('a plan claim is NOT judged when `shipped` is null — the guard refuses instead of guessing', () => {
+  // Same ledger and same plan as the two cases above, so the only variable is the third state. The
+  // reported failure this reconstructs: writing `PLAN_M131_SAFETY_COMPLETION.md` was by itself
+  // enough to make the box assert that M131 was on main and `M130-09` should be closed.
+  const { problems, planClaimsChecked } = check(sound({ ledger: ledger({ rows: STALE_M99 }), shipped: null }))
+  assert.equal(planClaimsChecked, false)
+  assert.equal(problems.filter((p) => /says M99 closes/.test(p)).length, 0, problems.join('\n'))
+})
+
+test('`planClaimsChecked` is true whenever git could answer, shipped or not', () => {
+  // The control. If the flag were merely always-false the test above would pass while the check
+  // was dead on every machine, so both git-available states have to report that they ran.
+  assert.equal(check(sound({ ledger: ledger({ rows: STALE_M99 }) })).planClaimsChecked, true)
+  assert.equal(check(sound({ ledger: ledger({ rows: STALE_M99 }), shipped: new Set() })).planClaimsChecked, true)
+})
+
 test('a 🟨 partial named by a shipped plan is not flagged', () => {
   // `A4-07` is exactly this in the real ledger: `M97c` shipped and deliberately left a remainder.
   // Without this carve-out the guard cries wolf on every honest partial and gets switched off.
@@ -496,10 +515,13 @@ test('own repo wins over the sibling for the same relative path (D528)', async (
   }
 })
 
-test('where there is no git, the stale check says UNAVAILABLE and never `0 stale` (D527)', async () => {
-  // `exec.mjs` rsyncs the worktree without `.git`, which is why `verify:ledger` cannot run on the
-  // box at all (`M131-03`). The stale tier needs git per path and fails the same way. A check that
-  // reports zero when it could not look is the failure this whole file is about, so absence is
+test('where there is no git, every tier that needed it says UNAVAILABLE and none of them guesses', async () => {
+  // `exec.mjs` rsyncs the worktree without `.git`, so this is what every box run sees. Three tiers
+  // need git or a manifest, and each one announces its absence rather than rounding it to a pass:
+  // the stale citations (`D527`), the conformance pointers (`M147a`) and — since `M147f` closed
+  // `M131-03` — the plan claims. That last one is why the older wording here said `verify:ledger`
+  // "cannot run on the box at all": it could, and it answered, and the answer was invented. A check
+  // that reports zero when it could not look is the failure this whole file is about, so absence is
   // announced — asserted here on the process's real output, not on an internal count.
   const root = await mkdtemp(join(tmpdir(), 'tflw-nogit-'))
   try {
@@ -530,6 +552,13 @@ test('where there is no git, the stale check says UNAVAILABLE and never `0 stale
     // and a root without one must not read as a root whose pointers all check out.
     assert.match(r.stdout, /conformance pointers UNAVAILABLE — no manifest at/)
     assert.doesNotMatch(r.stdout, /every conformance pointer/)
+    // `M147f` (`M131-03`) — the third tier. The summary must not list `plan claims` among the
+    // things that agree, because nothing compared them; and the old `note:` that asserted the
+    // check was "running over every plan" must be gone, since running it over every plan is the
+    // defect, not a mode.
+    assert.match(r.stdout, /plan claims UNAVAILABLE — not a git checkout/)
+    assert.doesNotMatch(r.stdout, /plan claims, the published tally/)
+    assert.doesNotMatch(r.stdout, /running over every plan/)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

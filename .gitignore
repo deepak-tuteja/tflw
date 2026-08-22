@@ -49,3 +49,8 @@ REVIEW_*.md
 # registry from. Written at the end of a run, uploaded as an artifact, and meaningful only for the
 # revision that produced it — a committed one would be a stale claim about which mutations ran.
 shard-*.json
+
+# Per-milestone scratch: probes, fixtures and pulled artifacts from a slice in progress.
+# Never committed — `M147f` swept one into a commit and caught it in review. Untracked by
+# convention since `.m140-scratch/`; a pattern is cheaper than remembering.
+.m*-scratch/

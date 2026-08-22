@@ -1676,6 +1676,11 @@ export interface HeaderDecl extends Node {
   readonly value: Value;
   /** `… for <service>` scoping, or null for all services (P#29). */
   readonly service: string | null;
+  /** `M147f` (`M147-07`) — where `service` was written, or null when the clause is absent. A bare
+   *  string cannot be pointed at, which is the same reason `SessionDecl.envs` carries `EnvScopeRef`
+   *  nodes rather than names (`D642`): the scope clause is a place a typo lands, and a typo needs a
+   *  caret. `TF076` is the diagnostic that uses it. */
+  readonly serviceSpan: Span | null;
 }
 
 export type TimeoutTarget = 'step' | 'expect' | 'wait';

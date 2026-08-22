@@ -1922,13 +1922,17 @@ class Parser {
     const value = this.parseValue();
     if (!value) return null;
     let service: string | null = null;
+    let serviceSpan: Span | null = null;
     if (this.isKw(this.peek(), 'for')) {
       this.advance();
       const s = this.expect('ident', 'a service name after `for`');
-      if (s) service = s.value;
+      if (s) {
+        service = s.value;
+        serviceSpan = s.span;
+      }
     }
     this.endLine();
-    return { type: 'HeaderDecl', name, value, service, span: this.spanFrom(start) };
+    return { type: 'HeaderDecl', name, value, service, serviceSpan, span: this.spanFrom(start) };
   }
 
   private parseTimeoutDecls(): ConfigEntry[] | null {

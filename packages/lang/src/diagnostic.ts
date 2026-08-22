@@ -355,6 +355,28 @@ export const Codes = {
   // **The message names a limit and not a mistake.** Nothing a person types by hand reaches 256, so
   // the reader is a generator, and what a generator's author needs is the number.
   NESTING_TOO_DEEP: 'TF075',
+  // M147f (`M147-07`, D647) — **a `header … for <service>` naming a service no env declares.**
+  // `validateConfig` had never looked at a `HeaderDecl`'s scope clause. `resolveConfig` copies the
+  // name through verbatim and `interpreter.ts` sets a header only when the clause is absent or
+  // matches the step's own service, so an unmatched name means the header is attached to nothing
+  // and every request goes out without it — `tflw check` clean, exit 0, run green. That is exactly
+  // the failure `TF074` was spent on one row earlier, in a construct that had already shipped.
+  //
+  // **The rule is the union, and the under-approximation is deliberate.** A header declared in
+  // `defaults` may legitimately scope to a service only one `env` declares, so a per-env rule would
+  // reject a correct config; this checks the name against every service declared anywhere in the
+  // file, `defaults` and all envs. That catches every typo — a typo matches nothing anywhere — with
+  // no false positive, and it fires in the editor on the config alone, which is where the author is.
+  // What it does not catch is a header scoped to a service that exists only in an env the header
+  // never applies to. Naming that an error needs a decision this rule does not make (is it a
+  // mistake, or a config with one dormant header?), and `TF026`'s resolve-time position is where it
+  // would live. **Reopens if a config is found whose header is silently inert under the env it
+  // actually runs under** — a condition, not a milestone number (`M131`).
+  //
+  // **Its own code rather than `TF026`.** That one reads *not declared in the active env*, which is
+  // a claim about a resolution this check never performs. Reusing it would make the message say
+  // something false, which is the line `M147`'s allocation rule draws.
+  CONFIG_UNKNOWN_SERVICE: 'TF076',
 } as const;
 
 // ---------------------------------------------------------------------------

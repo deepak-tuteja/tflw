@@ -763,6 +763,40 @@ export interface LoadMetrics {
   };
 }
 
+/**
+ * ## When a threshold cannot be graded (`M146-01`, ruled by `M147f` — the freeze pass)
+ *
+ * The repo shipped two answers to that sentence and never wrote down which was which, so the third
+ * case (`B3-17`, a zero-assertion run) had nowhere to look and the row was deferred here on a named
+ * condition: *closes when the freeze pass rules which of the two states an ungradable threshold
+ * takes.* Read side by side, the two are **not** rival answers to one question. They answer two
+ * questions, and the rule is which question you are in:
+ *
+ * > **Is there a number?**
+ * >
+ * > **No — the metric is undefined for this run.** `actual` is `null` and `ok` is `false`, per
+ * > threshold, in band. A duration threshold over zero successful iterations has no percentile; the
+ * > threshold asked something the run cannot answer, and an unanswered question is not a satisfied
+ * > one. (`D-M89-1`, below.)
+ * >
+ * > **Yes, but its provenance is in doubt.** `actual` and `ok` stand exactly as computed, and the
+ * > doubt travels **out of band** on the report, where a consumer must read it before the verdict.
+ * > (`R11`'s `inconclusive` for a saturated generator; `aborted` for a run cut short.)
+ *
+ * The test is deliberately mechanical because the tempting axis — "how confident are we?" — is a
+ * slider, and a slider produces a new judgement call per case, which is how there came to be two
+ * answers. *Is there a number* is a fact about the histogram.
+ *
+ * **Why not one channel for both.** Collapsing the second case into the first throws away a
+ * measurement the consumer may want: a saturated run's p95 is a real number about a real process,
+ * just possibly about the wrong process. Collapsing the first into the second invents one —
+ * `actual: 0` reads as a passing 0 ms p95 that never happened, which is `B3-02` exactly.
+ *
+ * **They compose, and that is the check on the rule.** A saturated run whose duration threshold also
+ * saw no successful iterations gets `actual: null, ok: false` *and* `inconclusive: true`: this
+ * threshold had no data, and separately nothing this run measured should be trusted. Two facts, two
+ * channels, no contradiction — which is what a correct split looks like from the inside.
+ */
 export interface LoadThresholdResult {
   /** Human-readable label, e.g. `p95 duration` / `error rate`, for console/report display. */
   readonly label: string;
@@ -925,7 +959,12 @@ export interface SelfDiagnosis {
 export interface LoadReport {
   /** Every scenario's `ok` (vacuously `true` for a scenario with no `threshold`s). Independent of
    * `inconclusive` below — a saturated generator doesn't flip passing thresholds to failing, it
-   * just means this verdict shouldn't be trusted (R11: CI reads `inconclusive` first). */
+   * just means this verdict shouldn't be trusted (R11: CI reads `inconclusive` first).
+   *
+   * This is the **provenance** half of `LoadThresholdResult`'s ungradability rule (`M146-01`,
+   * `M147f`): the numbers exist and are kept, and the doubt about what they describe rides out of
+   * band. The other half — a metric with no value at all — is `actual: null, ok: false`, in band.
+   * The two compose rather than compete; the rule and the reason are written out over there. */
   readonly ok: boolean;
   /** One entry per `scenario` in the file, source order, all run concurrently (M30, D29). */
   readonly scenarios: readonly LoadScenarioReport[];

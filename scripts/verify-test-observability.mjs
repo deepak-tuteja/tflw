@@ -244,8 +244,35 @@ function findTests(src, code) {
   return tests.filter((t) => !tests.some((o) => o !== t && o.start > t.start && o.end < t.end));
 }
 
+/**
+ * `M147f` (`M147-06`) — what may legally sit between an arrow function's parameter list and its
+ * `=>`: nothing, or one return-type annotation.
+ *
+ * This replaced `arrow > closeParen + 20`, a character window. An annotation has no length limit —
+ * `(source: string, imported: KnownAction[]): ReturnType<typeof checkProgram> => {` puts 36
+ * characters there — so the window dropped the helper from the map entirely, and **both directions
+ * were wrong**. A test calling that helper *and* a shorter one resolved to the shorter one's stages
+ * alone and was reported `this assertion cannot fail`: nine such findings in
+ * `importedCalls.test.ts`, all nine false, and the obvious way to silence a false `✗` is to delete
+ * the code name from the test — the tool degrading the assertions it exists to protect. The quiet
+ * direction is worse: a test whose *only* harness is such a helper resolves to no stage at all and
+ * lands in the `reached no known pipeline entry point (not analysed)` list, which is printed and
+ * does not fail. That list stood at 29 when this was found.
+ *
+ * Deliberately conservative rather than a parser. `;`, `{`, `}` and `=` cannot appear in a return
+ * annotation but can appear in the statements a bad match would swallow, so their absence is the
+ * cheap discriminator. An object-literal return type (`(): { a: number } =>`) is therefore skipped
+ * — a known, silent under-match, and it is the same class of miss this replaces, just far rarer.
+ * The `not analysed` list is where any such helper still surfaces.
+ */
+export function isReturnAnnotation(between) {
+  const t = between.trim();
+  if (t === '') return true;
+  return t.startsWith(':') && !/[;{}=]/.test(t);
+}
+
 /** Local helper functions/arrow consts in a test file, name → body extent. */
-function findLocalHelpers(code) {
+export function findLocalHelpers(code) {
   const helpers = new Map();
   for (const m of code.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/g)) {
     const open = code.indexOf('(', m.index + m[0].length - 1 - 1);
@@ -264,7 +291,7 @@ function findLocalHelpers(code) {
     const open = code.indexOf('(', m.index + m[0].length - 1 - 1);
     const closeParen = matchParen(code, open);
     const arrow = code.indexOf('=>', closeParen);
-    if (arrow === -1 || arrow > closeParen + 20) continue;
+    if (arrow === -1 || !isReturnAnnotation(code.slice(closeParen + 1, arrow))) continue;
     // Body is either a braced block or a single expression to end of statement.
     const brace = code.slice(arrow, arrow + 10).indexOf('{');
     if (brace !== -1) {
@@ -386,74 +413,54 @@ function commentAbove(bodySrc, bodyCode, at) {
 // 4. The scan.
 // ---------------------------------------------------------------------------
 
-const codesByName = readCodes();
-const { stagesByCode, unmapped } = readEmitters(codesByName);
-const entryPoints = readEntryPoints();
+// `M147f` (`M147-06`) — the scan is a function with a main-guard now, and `findLocalHelpers` /
+// `isReturnAnnotation` are exported, so `verify-test-observability.test.mjs` can drive them without
+// running a full pass over every test file in the repo. Until this milestone the tool had no tests
+// of its own — unlike `verify-ledger.mjs`, which is the neighbour it is most often compared to —
+// and its resolver had been quietly dropping helpers for nine milestones.
+export function main() {
+  const codesByName = readCodes();
+  const { stagesByCode, unmapped } = readEmitters(codesByName);
+  const entryPoints = readEntryPoints();
 
-const findings = [];
-let testsSeen = 0;
-let testsWithCodes = 0;
-let testsAnalysed = 0;
-const unresolved = [];
+  const findings = [];
+  let testsSeen = 0;
+  let testsWithCodes = 0;
+  let testsAnalysed = 0;
+  const unresolved = [];
 
-const testFiles = walk(path.join(ROOT, 'packages')).filter((f) => f.endsWith('.test.ts'));
+  const testFiles = walk(path.join(ROOT, 'packages')).filter((f) => f.endsWith('.test.ts'));
 
-const ALL_STAGES = new Set(Object.values(FILE_STAGE));
+  const ALL_STAGES = new Set(Object.values(FILE_STAGE));
 
-for (const file of testFiles) {
-  const src = read(file);
-  const code = blankLiterals(src);
-  const strings = blankLiterals(src, true); // comments gone, string and regex bodies kept
-  const helpers = findLocalHelpers(code);
-  const rel = path.relative(ROOT, file);
+  for (const file of testFiles) {
+    const src = read(file);
+    const code = blankLiterals(src);
+    const strings = blankLiterals(src, true); // comments gone, string and regex bodies kept
+    const helpers = findLocalHelpers(code);
+    const rel = path.relative(ROOT, file);
 
-  for (const t of findTests(src, code)) {
-    testsSeen++;
-    const bodyStrings = strings.slice(t.start, t.end + 1);
-    const bodyCode = code.slice(t.start, t.end + 1);
+    for (const t of findTests(src, code)) {
+      testsSeen++;
+      const bodyStrings = strings.slice(t.start, t.end + 1);
+      const bodyCode = code.slice(t.start, t.end + 1);
 
-    const named = assertedCodes(bodyStrings, bodyCode, codesByName, t.titleSpan);
-    if (named.size === 0) continue;
-    testsWithCodes++;
+      const named = assertedCodes(bodyStrings, bodyCode, codesByName, t.titleSpan);
+      if (named.size === 0) continue;
+      testsWithCodes++;
 
-    const stages = SUBPROCESS_CALLS.test(bodyCode)
-      ? new Set(ALL_STAGES)
-      : observedStages(bodyCode, helpers, entryPoints);
-    if (stages.size === 0) {
-      unresolved.push(`${rel} — ${t.name}`);
-      continue;
-    }
-    testsAnalysed++;
+      const stages = SUBPROCESS_CALLS.test(bodyCode)
+        ? new Set(ALL_STAGES)
+        : observedStages(bodyCode, helpers, entryPoints);
+      if (stages.size === 0) {
+        unresolved.push(`${rel} — ${t.name}`);
+        continue;
+      }
+      testsAnalysed++;
 
-    for (const c of [...named].sort()) {
-      const emitters = stagesByCode.get(c);
-      if (!emitters) continue; // an unassigned code named in prose; diagnosticsCoverage owns that
-      if ([...emitters].some((s) => stages.has(s))) continue;
-      findings.push({
-        file: rel,
-        test: t.name,
-        code: c,
-        emittedBy: [...emitters].sort().join(', '),
-        observes: [...stages].sort().join(', '),
-        shape: 'the code is named in the assertion',
-      });
-    }
-  }
-
-  // Shape 2 — per emptiness assertion, not per test.
-  for (const t of findTests(src, code)) {
-    const bodySrc = src.slice(t.start, t.end + 1);
-    const bodyCode = code.slice(t.start, t.end + 1);
-    if (SUBPROCESS_CALLS.test(bodyCode)) continue;
-
-    for (const a of emptinessAsserts(bodyCode)) {
-      const stages = observedStages(a.subject, helpers, entryPoints);
-      if (stages.size === 0) continue;
-      const prose = commentAbove(bodySrc, bodyCode, a.at);
-      const claimed = new Set([...prose.matchAll(/\bTF(\d{3})\b/g)].map((m) => `TF${m[1]}`));
-      for (const c of [...claimed].sort()) {
+      for (const c of [...named].sort()) {
         const emitters = stagesByCode.get(c);
-        if (!emitters) continue;
+        if (!emitters) continue; // an unassigned code named in prose; diagnosticsCoverage owns that
         if ([...emitters].some((s) => stages.has(s))) continue;
         findings.push({
           file: rel,
@@ -461,46 +468,78 @@ for (const file of testFiles) {
           code: c,
           emittedBy: [...emitters].sort().join(', '),
           observes: [...stages].sort().join(', '),
-          shape: 'the assertion excludes nothing — the code it was written against is named only in the comment above it',
+          shape: 'the code is named in the assertion',
         });
       }
     }
+
+    // Shape 2 — per emptiness assertion, not per test.
+    for (const t of findTests(src, code)) {
+      const bodySrc = src.slice(t.start, t.end + 1);
+      const bodyCode = code.slice(t.start, t.end + 1);
+      if (SUBPROCESS_CALLS.test(bodyCode)) continue;
+
+      for (const a of emptinessAsserts(bodyCode)) {
+        const stages = observedStages(a.subject, helpers, entryPoints);
+        if (stages.size === 0) continue;
+        const prose = commentAbove(bodySrc, bodyCode, a.at);
+        const claimed = new Set([...prose.matchAll(/\bTF(\d{3})\b/g)].map((m) => `TF${m[1]}`));
+        for (const c of [...claimed].sort()) {
+          const emitters = stagesByCode.get(c);
+          if (!emitters) continue;
+          if ([...emitters].some((s) => stages.has(s))) continue;
+          findings.push({
+            file: rel,
+            test: t.name,
+            code: c,
+            emittedBy: [...emitters].sort().join(', '),
+            observes: [...stages].sort().join(', '),
+            shape: 'the assertion excludes nothing — the code it was written against is named only in the comment above it',
+          });
+        }
+      }
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // 5. Report.
+  // ---------------------------------------------------------------------------
+
+  if (unmapped.length > 0) {
+    console.error('✗ a file in packages/lang/src emits diagnostics but has no stage in FILE_STAGE:');
+    for (const u of unmapped) console.error(`    ${u}`);
+    console.error('  Without a stage it contributes nothing, so every harness silently looks wider than it is.\n');
+  }
+
+  for (const f of findings) {
+    console.error(`✗ ${f.file}`);
+    console.error(`    test:      ${f.test}`);
+    console.error(`    names:     ${f.code}, emitted only by the ${f.emittedBy} stage`);
+    console.error(`    observes:  ${f.observes}`);
+    console.error(`    shape:     ${f.shape}`);
+    console.error(`    → this assertion cannot fail: the harness never produces ${f.code} in any state of the code.\n`);
+  }
+
+  console.log(
+    `Scanned ${testFiles.length} test files, ${testsSeen} tests; ` +
+      `${testsWithCodes} name a TF code, ${testsAnalysed} of those resolve to a harness.`,
+  );
+  if (unresolved.length > 0) {
+    // Reported, not swallowed: these are tests naming a code where no known entry point was reached,
+    // so the scan has nothing to compare against. Usually a renderer or manifest test.
+    console.log(`${unresolved.length} named a code but reached no known pipeline entry point (not analysed):`);
+    for (const u of unresolved) console.log(`    ${u}`);
+  }
+
+  if (findings.length > 0 || unmapped.length > 0) {
+    console.error(`\n${findings.length} vacuous code assertion(s).`);
+    return 1;
+  }
+
+  console.log('\nEvery TF code named in a test is reachable from the pipeline that test invokes.');
+  return 0;
 }
 
-// ---------------------------------------------------------------------------
-// 5. Report.
-// ---------------------------------------------------------------------------
-
-if (unmapped.length > 0) {
-  console.error('✗ a file in packages/lang/src emits diagnostics but has no stage in FILE_STAGE:');
-  for (const u of unmapped) console.error(`    ${u}`);
-  console.error('  Without a stage it contributes nothing, so every harness silently looks wider than it is.\n');
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exit(main());
 }
-
-for (const f of findings) {
-  console.error(`✗ ${f.file}`);
-  console.error(`    test:      ${f.test}`);
-  console.error(`    names:     ${f.code}, emitted only by the ${f.emittedBy} stage`);
-  console.error(`    observes:  ${f.observes}`);
-  console.error(`    shape:     ${f.shape}`);
-  console.error(`    → this assertion cannot fail: the harness never produces ${f.code} in any state of the code.\n`);
-}
-
-console.log(
-  `Scanned ${testFiles.length} test files, ${testsSeen} tests; ` +
-    `${testsWithCodes} name a TF code, ${testsAnalysed} of those resolve to a harness.`,
-);
-if (unresolved.length > 0) {
-  // Reported, not swallowed: these are tests naming a code where no known entry point was reached,
-  // so the scan has nothing to compare against. Usually a renderer or manifest test.
-  console.log(`${unresolved.length} named a code but reached no known pipeline entry point (not analysed):`);
-  for (const u of unresolved) console.log(`    ${u}`);
-}
-
-if (findings.length > 0 || unmapped.length > 0) {
-  console.error(`\n${findings.length} vacuous code assertion(s).`);
-  process.exit(1);
-}
-
-console.log('\nEvery TF code named in a test is reachable from the pipeline that test invokes.');

@@ -390,12 +390,29 @@ export function check({ ledger, plans, shipped, resolve = () => true, manifests 
   }
 
   const byId = new Map(rows.map((r) => [r.id, r]))
+  // `M147f` (`M131-03`) — this check needs `git log main`, and it is the one check here that used
+  // to *guess* when it could not have it. `shipped === null` means "not a git checkout", which
+  // `exec.mjs` produces on every box run because it rsyncs the worktree without `.git`; the old
+  // `shipped &&` made that falsy, skipped the `continue`, and ran the check over **every** plan as
+  // though all of them had merged. So writing `PLAN_M131_SAFETY_COMPLETION.md` was enough to make
+  // the box assert `` M131 says it closes `M130-09` and M131 is on main `` — with nothing built,
+  // nothing committed and nothing merged.
+  //
+  // The false red is not the danger; its **wording** is. It states a merge as fact, names a row and
+  // a line, and the cheapest way to make it pass is to mark that row closed — which is the exact
+  // corruption §6 exists to prevent, reached by obeying the guard.
+  //
+  // This file already had the rule and applied it twice — `D527` refuses to print `0 stale` when it
+  // could not look, and the summary line drops its conformance-pointer clause when no manifest was
+  // read. The idea was never missing here; this was the one check that inverted it.
+  const planClaimsChecked = shipped !== null
   for (const { file, milestone, closesAt, ids } of plans) {
+    if (!planClaimsChecked) break
     // A staged plan is finished by its last stage, not its first. Without `closesAt` this asks
     // "has anything called M125 shipped?", which `M125b1` answers yes to while `M125c`/`d`/`e` are
     // still unwritten — so every row those stages owe reads as stale the day the first stage merges.
     const gate = closesAt ?? milestone
-    if (shipped && !shipped.has(gate)) continue
+    if (!shipped.has(gate)) continue
     for (const id of ids) {
       const row = byId.get(id)
       if (!row) continue // the plan cites a row from another corpus, or a typo — not this check's business
@@ -461,7 +478,7 @@ export function check({ ledger, plans, shipped, resolve = () => true, manifests 
           `the tally published for ${published.milestone} says ${k}=${published[k]}; the status column says ${k}=${derived[k]}`,
         )
 
-  return { problems, derived, published, rows }
+  return { problems, derived, published, rows, planClaimsChecked }
 }
 
 /**
@@ -617,8 +634,7 @@ function main() {
     else missing.push(rel)
   }
   const shipped = shippedMilestones()
-  if (shipped === null) console.error('note: not a git checkout — the plan↔ledger check is running over every plan\n')
-  const { problems, derived, rows } = check({
+  const { problems, derived, rows, planClaimsChecked } = check({
     ledger,
     plans: loadPlans(ROOT),
     shipped,
@@ -637,10 +653,19 @@ function main() {
     `✓ ledger: ${derived.total} rows — ${derived.open} open (S2 ${derived.s2} · S3 ${derived.s3} · S4 ${derived.s4}), ` +
       `${derived.closed} closed, ${derived.deferred} deferred, ${derived.withdrawn} withdrawn; ` +
       // The summary names only what was actually read. Claiming the pointers agree when no manifest
-      // was found would be this file's own subject, one layer out.
-      `vocabulary, plan claims, the published tally${manifests.length ? ', every conformance pointer' : ''} ` +
+      // was found would be this file's own subject, one layer out. `M147f` (`M131-03`) puts the
+      // plan claims under the same rule: off a git checkout they are not checked, so they are not
+      // claimed.
+      `vocabulary, ${planClaimsChecked ? 'plan claims, ' : ''}the published tally` +
+      `${manifests.length ? ', every conformance pointer' : ''} ` +
       "and every open row's stamp all agree",
   )
+
+  if (!planClaimsChecked)
+    console.log(
+      '  plan claims UNAVAILABLE — not a git checkout, so `git log main` cannot say which plans have merged.\n' +
+        '  Not run, and therefore not reported as passing (`M131-03`). Run this on a machine with `.git`.',
+    )
 
   for (const rel of missing) console.log(`  conformance pointers UNAVAILABLE — no manifest at ${rel}`)
 
