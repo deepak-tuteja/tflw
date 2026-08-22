@@ -1952,12 +1952,12 @@ const REGISTRY = [
     pkg: ROOT_SUITE,
     file: '.github/workflows/ci.yml',
     what: "`D449`'s own near-miss, frozen as a control. The reassembly job's `--of=` falls behind the `shard:` matrix — which is what actually happened during this milestone's re-shard, and it cost a full CI round trip: twelve shards each green about themselves, and a failure three jobs away from the two integers that disagreed. `verify-shards.mjs` still catches it at runtime and is still the only thing that can see a shard that never reported; this kills it in a second instead",
-    // M148 moved this with the 12 → 18 widen. The `find:` has to quote the live workflow, and the
-    // `replace:` is deliberately the *previous* count rather than a nonsense one: the failure being
-    // controlled is a re-shard that updates two of the four copies, so the mutant should look
-    // exactly like a half-finished widen.
-    find: 'verify-shards.mjs shards --of=18',
-    replace: 'verify-shards.mjs shards --of=12',
+    // M148 moved this with the 12 → 18 widen and `M151` with 18 → 20. The `find:` has to quote the
+    // live workflow, and the `replace:` is deliberately the *previous* count rather than a nonsense
+    // one: the failure being controlled is a re-shard that updates two of the four copies, so the
+    // mutant should look exactly like a half-finished widen.
+    find: 'verify-shards.mjs shards --of=20',
+    replace: 'verify-shards.mjs shards --of=18',
   },
 
   // -- M137b (D433/D434/D457): the CSRF clause and the derived principal ----------------------------
