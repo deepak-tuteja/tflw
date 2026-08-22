@@ -3010,6 +3010,48 @@ const REGISTRY = [
     replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
   },
 
+  // --- M147f (`M146-01`) ---------------------------------------------------------------------
+  //
+  // The freeze pass ruled that the two shipped answers to "this threshold cannot be graded" are two
+  // channels, not two answers: no number at all is in band, a number of doubtful provenance is out
+  // of band. Both of these collapse the split, one from each side — which is the change the ruling
+  // exists to stop, and neither could be caught before `M147f` wrote the case that composes them.
+  {
+    id: 'ungradable-threshold-passes',
+    milestone: 'm147f',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: "a duration threshold with no successful iterations PASSES. `LatencyHistogram.percentile` returns 0 on an empty histogram, so this makes \"every single request failed\" the cheapest way to satisfy a latency threshold — `B3-02`'s trap reintroduced at exactly the boundary `D-M89-1` was written to hold",
+    find: "    const ok = actual === null ? false : t.op === 'lessThan' ? actual < t.value : actual > t.value;",
+    replace: "    const ok = actual === null ? true : t.op === 'lessThan' ? actual < t.value : actual > t.value;",
+  },
+  {
+    id: 'saturation-flips-a-gradable-threshold',
+    milestone: 'm147f',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the other side of the same collapse: a saturated generator now fails every threshold in the run, including the ones it measured perfectly well. R11 chose the opposite deliberately — an unmeasurable run must not read as "system passed", and it must not read as "system failed" either, because both are verdicts about a system this run did not observe. The doubt belongs in `inconclusive`, which CI reads first',
+    find: '    ok: scenarioReports.every((s) => s.ok),',
+    replace: '    ok: !selfDiagnosis.saturated && scenarioReports.every((s) => s.ok),',
+  },
+
+  // --- M147f (`M147-07`) --------------------------------------------------------------------
+  {
+    id: 'header-scope-clause-unchecked',
+    milestone: 'm147f',
+    file: 'packages/lang/src/checker.ts',
+    what: "`M147-07` verbatim, restored: a `header ... for <service>` naming nothing is accepted again. The header attaches to no request at all, `tflw check` prints no problems found, exit 0, and the run is green with every request missing a header the config says it carries — the silent-narrowing shape `TF074` was spent on one row earlier",
+    find: '      if (declaredServices.has(entry.service)) continue;',
+    replace: '      continue;',
+  },
+  {
+    id: 'header-scope-checked-per-env-instead-of-the-union',
+    milestone: 'm147f',
+    file: 'packages/lang/src/checker.ts',
+    what: 'only the FIRST env is swept for services, which is the rule this one was chosen over wearing its cheapest disguise. Every case written before this mutation ran happened to declare its service in the first env, so all eleven passed against it. What it rejects is a CORRECT config — a header naming a service the second env declares — and the false positive lands on the exact arrangement the language is built for: shared defaults, per-env services. A check that fires on the normal case is a check that gets switched off',
+    find: '  for (const env of config.envs) {\n    for (const entry of env.entries) {\n      if (entry.type === \'ApiServiceDecl\' && entry.service !== null) declaredServices.add(entry.service);\n    }\n  }',
+    replace: '  for (const entry of config.envs[0]?.entries ?? []) {\n    if (entry.type === \'ApiServiceDecl\' && entry.service !== null) declaredServices.add(entry.service);\n  }',
+  },
 ];
 
 /**

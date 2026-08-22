@@ -103,6 +103,29 @@ npm run verify:ledger                  # § never runs in CI, by decision
   they actually cost. Locally you run the milestone you just wrote: `node scripts/mutate.mjs m98d`, or one
   mutation by id. A bare `npm run verify:mutations` runs the **entire** registry and takes tens of
   minutes. `--scope` is not a flag.
+
+  **A demonstrated break for a product assertion means a registry entry, not a scratch sweep**
+  (`M147-05`, `M147f`). `D537` says every new assertion ships with a demonstrated break, and until
+  this was written it was satisfied equally by an entry here and by an ad-hoc mutation run under
+  `.mNNN-scratch/` and then deleted. Those are not the same grade of evidence: a scratch sweep proves
+  an assertion *could* fail once, on the day it was written, while a registry entry keeps proving it
+  on every pull request under `verify:shards`' guarantee that each entry runs. Measured when the rule
+  was written: **eleven consecutive milestones — `M138` through `M147b` — shipped assertions and
+  added no entry**, and nothing anywhere said so. The backlog is deliberately *not* being
+  reconstructed: re-deriving eleven milestones' breaks from their plans is a milestone of its own,
+  and the rule earns its keep going forward. The one thing that is not optional is an instrument:
+  `verify-ledger.mjs` had shipped three milestones of new checks before `M147f` aimed the first
+  mutation in this repo at it.
+
+  **A mutation's `pkg` is the suite that judges it, and it defaults to `@tflw/lang` whatever file the
+  mutation names.** A mutation of `packages/runtime/src/interpreter.ts` with no `pkg:` is scored by
+  the lang suite, which never runs the runtime, so it can only ever come back `SURVIVED` — and a
+  false survival reads as *your assertion is weak*, which invites deleting a test that was right.
+  This is `M147-09`'s shape one level out: that row was a mutation scored against the wrong *build*,
+  this is one scored by the wrong *suite*. There is no gate, and deliberately so — one shipped entry
+  names a different package than its file on purpose (`M147e`'s LSP anchor, where the row is an
+  agreement between two surfaces and only the LSP suite reads both), so "file inside pkg" is not an
+  invariant. Check it by hand when a `SURVIVED` surprises you.
 - **`npm run verify:ledger`** — **§ it never runs in CI, and that is a decision.** Its corpus,
   `REVIEW_FINDINGS.md`, is gitignored on purpose, so in CI its input is simply absent — and a check
   that skips when its input is missing is green about nothing, which is the exact failure it was

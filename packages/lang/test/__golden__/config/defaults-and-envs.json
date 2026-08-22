@@ -25,7 +25,8 @@
             }
           ]
         },
-        "service": null
+        "service": null,
+        "serviceSpan": null
       },
       {
         "type": "TimeoutDecl",

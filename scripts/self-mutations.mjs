@@ -216,4 +216,36 @@ export const SELF_MUTATIONS = [
     find: 'export const RESHARD_AT = 2 / 3;',
     replace: 'export const RESHARD_AT = 1;',
   },
+  // --- M147f (`M131-03`) ------------------------------------------------------------------------
+  //
+  // The first mutation in this repo aimed at `verify-ledger.mjs`, which is worth stating plainly:
+  // `M140` built the stamp guard there, `M145` rewrote two of its checks and `M147a` added a third,
+  // and until now nothing had ever demonstrated that its tests can fail. That is `M147-05` with a
+  // name — the registry's newest entries are the ones somebody happened to write, not the ones the
+  // most-relied-on instrument owed.
+  //
+  // This restores the pre-fix code exactly, rather than breaking it in some new way, so what it
+  // proves is the reported defect and not a neighbour of it: with `shipped === null` the loop used
+  // to run over **every** plan, and a plan that had merely been written was read as merged.
+  {
+    id: 'plan-claims-guessed-when-git-is-absent',
+    milestone: 'm147f',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-ledger.mjs',
+    what: "off a git checkout the plan↔ledger check goes back to treating every plan as shipped. It does not fail quietly: it names a row and a line and asserts the milestone is on `main`, and the cheapest way to make it green is to close a row that is still open — the guard talking a reader into the corruption it exists to catch",
+    edits: [
+      ['    if (!planClaimsChecked) break\n', ''],
+      ['    if (!shipped.has(gate)) continue', '    if (shipped && !shipped.has(gate)) continue'],
+    ],
+  },
+  // --- M147f (`M147-06`) --------------------------------------------------------------------
+  {
+    id: 'helper-resolution-back-to-a-character-window',
+    milestone: 'm147f',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-test-observability.mjs',
+    what: "the resolver goes back to giving up on any arrow helper whose return-type annotation puts the `=>` more than twenty characters past the parameter list. The loud direction reports nine true assertions as vacuous, and the obvious way to silence a false `✗` is to delete the code name from the test — the tool degrading what it exists to protect. The quiet direction is worse: a test whose only harness is such a helper resolves to no stage at all and joins the `not analysed` list, which is printed and does not fail",
+    find: '    if (arrow === -1 || !isReturnAnnotation(code.slice(closeParen + 1, arrow))) continue;',
+    replace: '    if (arrow === -1 || arrow > closeParen + 20) continue;',
+  },
 ];

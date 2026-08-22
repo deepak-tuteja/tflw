@@ -524,6 +524,50 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
     }
   }
 
+  // M147f (`M147-07`, D647) — a `header … for <service>` naming a service no env declares.
+  //
+  // The failure is total and silent: `interpreter.ts` sets a header only when the clause is absent
+  // or matches the step's own service, so an unmatched name attaches the header to nothing and every
+  // request goes out without it, with `check` clean and the run green. `TF074` was spent on exactly
+  // this shape for `session … for env` one row earlier; this construct had already shipped.
+  //
+  // **Checked against the union, not the active env, and that is a choice with a cost.** Services
+  // are per-env while a `header` may sit in `defaults`, so a per-env rule would reject the correct
+  // config where a defaults header scopes to a service one env declares. The union catches every
+  // typo — a typo matches nothing anywhere — at zero false positives, and it answers in the editor
+  // on the config alone, which is what `D642` gave as the reason for putting `for env` here rather
+  // than at `TF026`'s resolve-time position. The cost is written out at `TF076` in `diagnostic.ts`,
+  // with the condition that reopens it.
+  //
+  // The two loops read different sets, and that asymmetry is the rule rather than an oversight:
+  // `ApiServiceDecl` is `ENV_ONLY`, so a service can only ever be declared inside an `env`, while a
+  // `header` is legal in `defaults` and in an `env` alike. Sweeping `defaults` for services would be
+  // dead code — measured, by a test asserting it that could not pass.
+  const declaredServices = new Set<string>();
+  for (const env of config.envs) {
+    for (const entry of env.entries) {
+      if (entry.type === 'ApiServiceDecl' && entry.service !== null) declaredServices.add(entry.service);
+    }
+  }
+  for (const block of [config.defaults, ...config.envs]) {
+    for (const entry of block?.entries ?? []) {
+      if (entry.type !== 'HeaderDecl' || entry.service === null || entry.serviceSpan === null) continue;
+      if (declaredServices.has(entry.service)) continue;
+      const hint = suggest(entry.service, [...declaredServices]);
+      diags.push({
+        code: Codes.CONFIG_UNKNOWN_SERVICE,
+        severity: 'error',
+        message: `unknown service "${entry.service}"`,
+        span: entry.serviceSpan,
+        hint: hint
+          ? `did you mean \`${hint}\`?`
+          : declaredServices.size
+            ? `\`for\` names an \`api <service>\` declared in this file, and it declares: ${[...declaredServices].sort().join(', ')}`
+            : 'this config declares no named `api` services, so there is nothing for a header to be scoped to — drop the `for` clause and the header applies to every request',
+      });
+    }
+  }
+
   const seenSessions = new Set<string>();
   for (const session of config.sessions) {
     if (seenSessions.has(session.name)) {
