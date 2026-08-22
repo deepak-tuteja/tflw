@@ -46,9 +46,15 @@
 // …and one thing that is deliberately **not** a check but a **report**: whether a stamp has gone
 // stale, i.e. whether the path it cites has changed since the commit it was taken at (`D525`). A
 // stale stamp is a suspicion, not a known gap, and a gate that reddens whenever someone edits a hot
-// file is a gate that gets routed around. It needs git, so where git is absent it says
-// `stale check UNAVAILABLE — no git here` and never `0 stale` (`D527`) — a check reporting zero when
-// it could not look is the whole failure class this file is about.
+// file is a gate that gets routed around. It needs git, so where it cannot read a citation it says
+// so and never `0 stale` (`D527`) — a check reporting zero when it could not look is the whole
+// failure class this file is about.
+//
+// That tier has **three** states and shipped with two (`M147-15`). "Nothing to check" and "could not
+// check" both arrive as zero citations read, and reading the second onto both is `D527` with its
+// sign flipped: an unavailability nobody established. The drawdown reaching zero open rows produced
+// the first state for the first time in this repo's history, and the run announced git was missing
+// while the plan-claims tier — which needs `git log main` — answered in the same breath.
 //
 // **This is deliberately not a CI step.** `REVIEW_FINDINGS.md` is gitignored (the pre-1.0
 // launch-review corpus is local-only), so in CI the file is simply absent — and a guard that skips
@@ -563,23 +569,32 @@ function changedSince({ dir, rel, sibling }, { commit, date }) {
  * and informs, because a gate that reddens every time somebody edits a hot file is a gate people
  * learn to run with `|| true`. Age is not the measure either — a ten-milestone-old stamp against
  * untouched code is current, and a week-old stamp against a file edited yesterday is not.
+ *
+ * Returns the workload as well as the finding, because the caller cannot otherwise tell an empty
+ * report from an unread one (`M147-15`): `openRows` is how many rows were walked, `cited` how many
+ * citations they carry, `checked` how many git actually answered for, and `unread` the rest.
  */
 export function staleReport(rows, root) {
   const lines = []
+  let openRows = 0
+  let cited = 0
   let checked = 0
-  let unavailable = 0
   for (const r of rows) {
     if (classify(r.status) !== 'open') continue
+    openRows++
     const stamp = parseStamp(r.status)
     if (!stamp) continue
     for (const path of stamp.paths) {
+      // Counted here, before anything can drop it, and `unread` is derived by subtraction rather
+      // than incremented in the branches. The old counter sat inside ONE of the two `continue`s, so
+      // a citation naming a path that is not in this checkout left both the numerator and the
+      // denominator — dropped without trace by a report whose entire job is to say what it could
+      // not see. A complement cannot be forgotten by whoever adds the third `continue`.
+      cited++
       const at = locate(path, root)
       if (!at) continue
       const moved = changedSince(at, stamp)
-      if (moved === null) {
-        unavailable++
-        continue
-      }
+      if (moved === null) continue
       checked++
       if (moved)
         lines.push(
@@ -588,7 +603,7 @@ export function staleReport(rows, root) {
         )
     }
   }
-  return { lines, checked, unavailable }
+  return { lines, openRows, cited, checked, unread: cited - checked }
 }
 
 /** Collect the shipped plans from the repo root. */
@@ -670,16 +685,39 @@ function main() {
   for (const rel of missing) console.log(`  conformance pointers UNAVAILABLE — no manifest at ${rel}`)
 
   // `D527`: this must never print `0 stale` when it could not look. The stale check needs git per
-  // cited path, and `exec.mjs` rsyncs the worktree without `.git` — the same reason `verify:ledger`
-  // cannot run on the box at all (`M131-03`). So absence is announced, not rounded down to zero.
-  const { lines, checked, unavailable } = staleReport(rows, ROOT)
-  if (checked === 0) {
-    console.log(`  stale check UNAVAILABLE — no git here (${unavailable} citation${unavailable === 1 ? '' : 's'} unread)`)
+  // cited path, and `exec.mjs` rsyncs the worktree without `.git`, which is also why a box run
+  // cannot answer the plan-claims tier (`M131-03`). It *does* run there — the older wording here
+  // said `verify:ledger` "cannot run on the box at all", and `M147f` established that it can, and
+  // that the answer it used to give was invented. So absence is announced, not rounded to zero.
+  //
+  // `M147-15`: three states, and this branched on two. `checked === 0` was read as "could not look",
+  // which is true where git is absent and false where there was simply nothing to look at — the
+  // state the ledger reached at `03f6793`, when the last open row closed and this line announced
+  // `no git here` in a checkout that had just answered a `git log main`. What is asked now is
+  // whether there was a workload at all, and only then whether it could be read.
+  //
+  // The second message no longer names a cause, either. `changedSince` returns `null` for two
+  // reasons — no git, and a stamped sha that is not a ref here — and its own comment has said so
+  // since `M143-07` while the line reporting it said only the first. A rebase that rewrites a
+  // stamped commit out of history is enough to make `no git here` false in a perfectly good
+  // checkout, which is a smaller instance of exactly the defect above.
+  const { lines, checked, unread, cited, openRows } = staleReport(rows, ROOT)
+  if (cited === 0) {
+    console.log(
+      openRows === 0
+        ? '  stale check: nothing to check — no open rows, so there is no stamp that could have gone stale.'
+        : `  stale check: nothing to check — ${openRows} open row${openRows === 1 ? '' : 's'}, none of them citing a path.`,
+    )
+  } else if (checked === 0) {
+    console.log(
+      `  stale check UNAVAILABLE — none of the ${cited} citation${cited === 1 ? '' : 's'} could be read here ` +
+        '(no git, or the stamped commits are not in this checkout)',
+    )
   } else {
     // Partial blindness gets said too, not just total blindness: a citation whose commit is not in
     // this checkout (another branch, a rewritten history) is one git could not answer for, and
     // rolling it into "none moved" is the same lie as `0 stale`, only smaller.
-    const blind = unavailable ? ` — ${unavailable} more could not be read here` : ''
+    const blind = unread ? ` — ${unread} more could not be read here` : ''
     if (lines.length) {
       console.log(`  ${lines.length} stamp${lines.length === 1 ? '' : 's'} may be stale — the cited path has moved since:`)
       for (const l of lines) console.log(l)

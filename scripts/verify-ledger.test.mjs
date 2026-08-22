@@ -421,6 +421,16 @@ test('the same row passes once the cited path resolves — the flag is resolutio
 // true for free — a check that runs, passes and cannot see anything, which is precisely the class
 // this file exists to attack. So the tier is proven against a repo built to have moved.
 
+/** Drive the real script over a fixture root and capture its output whether it exits 0 or not. */
+async function runOn(root) {
+  return execFileAsync(process.execPath, [SCRIPT], {
+    env: { ...process.env, TFLW_LEDGER_ROOT: root, NO_COLOR: '1' },
+  }).then(
+    (o) => ({ code: 0, stdout: o.stdout }),
+    (e) => ({ code: e.code ?? 1, stdout: e.stdout ?? '' }),
+  )
+}
+
 /** A throwaway git repo with one file, committed twice. Returns the first commit's sha. */
 async function twoCommitRepo(root, relPath) {
   const git = (...a) => execFileAsync('git', ['-C', root, ...a])
@@ -444,9 +454,9 @@ test('a stamp whose cited path has moved since its commit is reported', async ()
   try {
     const sha = await twoCommitRepo(root, 'src/thing.ts')
     const rows = [{ id: 'B3-04', status: `open — **rv 2026-08-19 @${sha} reproduces** · \`src/thing.ts:1\` · e`, line: 1 }]
-    const { lines, checked, unavailable } = staleReport(rows, root)
+    const { lines, checked, unread } = staleReport(rows, root)
     assert.equal(checked, 1)
-    assert.equal(unavailable, 0)
+    assert.equal(unread, 0)
     assert.equal(lines.length, 1, lines.join('\n'))
     assert.match(lines[0], /`B3-04`.*`src\/thing\.ts` has changed since/)
   } finally {
@@ -539,15 +549,13 @@ test('where there is no git, every tier that needed it says UNAVAILABLE and none
       ].join('\n'),
     )
     await writeFile(join(root, 'p.md'), 'x\n')
-    const r = await execFileAsync(process.execPath, [SCRIPT], {
-      env: { ...process.env, TFLW_LEDGER_ROOT: root, NO_COLOR: '1' },
-    }).then(
-      (o) => ({ code: 0, stdout: o.stdout }),
-      (e) => ({ code: e.code ?? 1, stdout: e.stdout ?? '' }),
-    )
+    const r = await runOn(root)
     assert.equal(r.code, 0, r.stdout)
-    assert.match(r.stdout, /stale check UNAVAILABLE — no git here/)
+    assert.match(r.stdout, /stale check UNAVAILABLE — none of the 1 citation could be read here/)
     assert.doesNotMatch(r.stdout, /0 citations checked|none moved/)
+    // `M147-15` — and it must not report an empty workload either. There IS one citation here; the
+    // reason nothing came back is the missing `.git`, not the missing rows.
+    assert.doesNotMatch(r.stdout, /nothing to check/)
     // `M147a` — the same rule for the manifest tier. This fixture root has no `conformance.ts`,
     // and a root without one must not read as a root whose pointers all check out.
     assert.match(r.stdout, /conformance pointers UNAVAILABLE — no manifest at/)
@@ -562,6 +570,104 @@ test('where there is no git, every tier that needed it says UNAVAILABLE and none
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+// ---- 5b. three states, where the branch had two (`M147-15`) ------------------------------------
+//
+// `checked === 0` was the entire condition for printing UNAVAILABLE, and it is reached from two
+// places that mean opposite things: git could not answer, and there was nothing to ask. Closing the
+// last open row produced the second for the first time in this repo's history, at `03f6793`, and
+// the run announced `no git here` — in a checkout whose plan-claims tier had just run `git log
+// main` and answered. `D527` forbids reporting a coverage you did not have; that reported an
+// unavailability it did not have, inside the line written to enforce `D527`.
+//
+// The two process cases below are a pair and only mean something together: same script, same zero
+// citations read, and the output must differ. The no-git case above is the third leg — it is the
+// one that still has to say UNAVAILABLE, and it asserts it does.
+
+test('an empty workload reads as empty, not as an unavailability (`M147-15`)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tflw-noopen-'))
+  try {
+    await writeFile(
+      join(root, 'REVIEW_FINDINGS.md'),
+      [
+        '**Ledger after `M99`: 0 open — S2 0 · S3 0 · S4 0 — 1 closed, 0 deferred, 0 withdrawn, 1 total.**',
+        '<!-- tally:current -->',
+        '',
+        '## 6. Full index',
+        '',
+        '| id | sev | claim | status |',
+        '|---|---|---|---|',
+        '| `B3-04` | S2 | a claim | ✅ M99 |',
+      ].join('\n'),
+    )
+    const r = await runOn(root)
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /stale check: nothing to check — no open rows/)
+    assert.doesNotMatch(r.stdout, /stale check UNAVAILABLE/)
+    // …and it must not fall the other way into `0 stale`, which is the thing `D527` forbids. There
+    // is no coverage to claim here either: zero of zero is not "none moved", it is nothing asked.
+    assert.doesNotMatch(r.stdout, /citations checked|none moved/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a stamped sha that is not a ref is an unavailability, and the message does not blame git', async () => {
+  // The second conflation in the same line. `changedSince` returns `null` for two reasons and says
+  // so in its own comment — no git, *or* the stamped commit is not in this checkout — while the
+  // report named only the first. One rebase past a stamped commit is enough to make `no git here`
+  // false in a perfectly healthy repo, which is `M147-15`'s defect at smaller scale.
+  const root = await mkdtemp(join(tmpdir(), 'tflw-noref-'))
+  try {
+    await twoCommitRepo(root, 'p.md')
+    await writeFile(
+      join(root, 'REVIEW_FINDINGS.md'),
+      [
+        '**Ledger after `M99`: 1 open — S2 1 · S3 0 · S4 0 — 0 closed, 0 deferred, 0 withdrawn, 1 total.**',
+        '<!-- tally:current -->',
+        '',
+        '## 6. Full index',
+        '',
+        '| id | sev | claim | status |',
+        '|---|---|---|---|',
+        '| `B3-04` | S2 | a claim | open — **rv 2026-08-19 @deadbeef reproduces** · `p.md:1` · e |',
+      ].join('\n'),
+    )
+    const r = await runOn(root)
+    assert.equal(r.code, 0, r.stdout)
+    assert.match(r.stdout, /stale check UNAVAILABLE — none of the 1 citation could be read here/)
+    assert.doesNotMatch(r.stdout, /no git here/)
+    // The control that this repo really does have git: the plan-claims tier needs `git log main`,
+    // and it must not be announcing an absence of its own here. Without this the case would pass
+    // against a fixture that was simply not a git checkout — the wrong reason entirely.
+    assert.doesNotMatch(r.stdout, /plan claims UNAVAILABLE/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('the counters over a ledger with nothing open', () => {
+  const rows = [
+    { id: 'A1-01', status: '✅ M99 · `src/a.ts`', line: 1 },
+    { id: 'A1-02', status: '⏸ deferred against a condition · `src/b.ts`', line: 2 },
+    { id: 'A1-03', status: '🚫 withdrawn · `src/c.ts`', line: 3 },
+  ]
+  assert.deepEqual(staleReport(rows, '/nonexistent'), { lines: [], openRows: 0, cited: 0, checked: 0, unread: 0 })
+})
+
+test('a cited path that is not in this checkout is counted unread, not dropped', () => {
+  // The silent drop underneath the reported one. The old counter lived inside the `moved === null`
+  // branch, so a citation that never got as far as git — because `locate` could not find the path —
+  // left the numerator AND the denominator, and the report said `0 citations unread`. A stamp may
+  // cite several paths and `check()` only requires that ONE of them resolve, so this is reachable
+  // with the gate fully green.
+  const rows = [{ id: 'B3-04', status: 'open — **rv 2026-08-19 @cfb256a reproduces** · `nope/gone.ts:1` · e', line: 1 }]
+  const r = staleReport(rows, '/nonexistent')
+  assert.equal(r.openRows, 1)
+  assert.equal(r.cited, 1)
+  assert.equal(r.checked, 0)
+  assert.equal(r.unread, 1)
 })
 
 // ---- 6. instrument precision: the two `M143` rows against this file (`M145`) -------------------
@@ -640,9 +746,9 @@ test('a path whose history moved but whose content did not is NOT reported (M143
   try {
     const sha = await revertedRepo(root, 'src/thing.ts')
     const rows = [{ id: 'B3-04', status: `open — **rv 2026-08-19 @${sha} reproduces** · \`src/thing.ts:1\` · e`, line: 1 }]
-    const { lines, checked, unavailable } = staleReport(rows, root)
+    const { lines, checked, unread } = staleReport(rows, root)
     assert.equal(checked, 1, 'the citation must still be CHECKED — going quiet by not looking is the D527 failure')
-    assert.equal(unavailable, 0)
+    assert.equal(unread, 0)
     assert.deepEqual(lines, [], lines.join('\n'))
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -659,9 +765,9 @@ test('a cited path that git cannot resolve at HEAD still gets the history answer
     await mkdir(join(root, 'scripts'), { recursive: true })
     await writeFile(join(root, 'scripts', 'exec.mjs'), 'untracked\n')
     const rows = [{ id: 'M143-06', status: `open — **rv 2026-08-19 @${sha} reproduces** · \`scripts/exec.mjs:630\` · e`, line: 1 }]
-    const { lines, checked, unavailable } = staleReport(rows, root)
+    const { lines, checked, unread } = staleReport(rows, root)
     assert.equal(checked, 1)
-    assert.equal(unavailable, 0)
+    assert.equal(unread, 0)
     assert.deepEqual(lines, [], lines.join('\n'))
   } finally {
     await rm(root, { recursive: true, force: true })
