@@ -285,22 +285,31 @@ jobs:
   # mutations at ten minutes and dealt them into one bin that owed thirty-four. Seven of the eight
   # entries had drifted; only the direction saved the rest.
   #
-  # MEASURED, with the constants re-measured off run 32504021628's own shard logs and modelled
-  # against the post-`M147e` registry of 290 — max shard, then total CPU across all shards:
+  # RE-SHARDED AGAIN at `M151` (`M150-01`), 18 → 20, and the interesting part is how little time
+  # passed. `M148` widened to 18 against a registry of **290** and wrote, two paragraphs down, that
+  # the list was "due for a widen on the next milestone that adds mutations". `M147f` was that
+  # milestone — the registry is **298** — and it did not widen. The guard `M148` built is what
+  # caught it, on `main` at `03f6793`: shard 18/18 took **20m35s** against the 20m00s trigger, with
+  # every mutation killed and every shard green about itself. Working as designed, one milestone
+  # after being designed.
   #
-  #   n=12 19m / — · n=14 19m / — · n=16 18m / 233m · n=18 **14m** / 233m · n=20 13m / 226m
+  # MEASURED against the current registry of 298 — max shard, then total CPU across all shards:
   #
-  # 18 is the knee and it is free: 16 → 18 drops the longest shard from 18m to 14m for **identical**
-  # total CPU, because what those two extra bins buy is a cut in the root-suite chunk rather than
-  # extra baselines. 20 buys one more minute. Headroom **2.1×** against the limit and 1.4× under the
-  # trigger — the same targets M137a chose 12 by.
+  #   n=16 **18m40s** / 239m · n=18 **18m40s** / 242m · n=20 **12m36s** / 243m · n=22 12m36s / 244m
   #
-  # And the model is now honest, which it was not before. At n=12 it predicts a 19m longest shard;
-  # the longest shard that actually finished on that run took **19m31s**. M137a's note that "the
-  # model reads 1.32× light against reality" was never a property of the model — it was the
-  # constants, and correcting them removed the correction factor with them.
+  # 16 and 18 are the same number, which is the whole finding: the longest shard is one indivisible
+  # root-suite chunk, so bins added on either side of it buy nothing at all until there are enough
+  # to split the chunk itself. That happens at 20. 22 buys nothing further, so 20 is the knee and
+  # the cheapest point that is one. Headroom **2.38×** against the limit and **1.59×** under the
+  # trigger, against M137a's targets of 2.1× and 1.4×.
+  #
+  # The model still reads light, and by a knowable amount now: it predicted 18m40s for the shard
+  # that took 20m35s, i.e. **1.10×**. `M148` retired M137a's 1.32× correction factor on the grounds
+  # that it was the constants and not the model, which was true at the time; a residue of it is
+  # back, smaller, and is the reason 20 was chosen over the first count that merely clears the
+  # trigger on paper. At 1.10× the n=20 shard lands near 13m50s — still 1.45× under the trigger.
   mutations:
-    name: mutation controls (shard ${{ matrix.shard }}/18)
+    name: mutation controls (shard ${{ matrix.shard }}/20)
     runs-on: ubuntu-latest
     # Mirrored by `SHARD_BUDGET_SECONDS` in `scripts/mutate.mjs`, and asserted equal by
     # `verify-workflow.test.mjs`. Two numbers in two files describing one limit is exactly the drift
@@ -312,7 +321,7 @@ jobs:
       # turn a precise "these mutations survived" into "the sweep did not cover the registry".
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     steps:
       - uses: actions/checkout@v4
 
@@ -345,11 +354,11 @@ jobs:
       # stayed invisible — a merged registry entry left one mutation not merely surviving but
       # *absent*, and every scoped run was green about a mutation that no longer existed.
       #
-      # A shard is not a scope. `--shard=i/18` is a slice of the *whole* registry — the union of the
+      # A shard is not a scope. `--shard=i/20` is a slice of the *whole* registry — the union of the
       # eighteen is the registry, and `mutation controls` below is what proves that rather than
       # assumes it. `mutate.mjs` refuses `--shard` combined with a scope for exactly this reason.
       - name: Mutation controls
-        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/18 --manifest=shard-${{ matrix.shard }}.json
+        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/20 --manifest=shard-${{ matrix.shard }}.json
 
       # `always()` because a shard that found a survivor still has to say what it ran. Otherwise a
       # red shard and a shard that never started are the same missing file, and the job below cannot
@@ -367,12 +376,12 @@ jobs:
   #
   # Each shard above is green about itself and cannot be green about the others. The number of
   # shards is written FIVE times, and nothing in YAML holds any of them together: delete `4` from
-  # the matrix and seventeen jobs run, all seventeen pass, and an eighteenth of the registry is
-  # never applied. Every one of those jobs is telling the truth.
+  # the matrix and nineteen jobs run, all nineteen pass, and a twentieth of the registry is never
+  # applied. Every one of those jobs is telling the truth.
   #
   #   1. `shard:` — the matrix
-  #   2. `--shard=i/18` — what each job actually runs
-  #   3. `--of=18` — this job's reassembly
+  #   2. `--shard=i/20` — what each job actually runs
+  #   3. `--of=20` — this job's reassembly
   #   4. the shard job's `name:` — the only copy a reader sees, in the checks list
   #   5. `verify-contributing.test.mjs`'s CLASSIFIED entry, which quotes the command verbatim
   #
@@ -384,6 +393,12 @@ jobs:
   # them. A comment whose whole job is counting the copies has now undercounted them twice running,
   # which is why 4 and 5 are held by `verify-shards.test.mjs` rather than by this list. Keep the
   # list accurate anyway; it is what tells the next person where to look.
+  #
+  # `M151`'s 18 → 20 is the first re-shard where the list was already right, and both guards still
+  # earned their place: `verify-shards.test.mjs` holds 1–4, and copy 5 came back from a *different*
+  # gate — `verify-contributing.test.mjs`, in both directions at once, an unclassified step for the
+  # new command text and a fossil entry for the old. Four lines of YAML, two red checks, no round
+  # trip to CI to find out.
   #
   # So this reassembles the registry from what the shards wrote down. It keeps the old job's name on
   # purpose: `mutation controls` is the check that has always meant "every mutation ran and none
@@ -418,4 +433,4 @@ jobs:
 
       # And then coverage, which is the half no individual shard can attest to.
       - name: Every mutation was run by some shard
-        run: node scripts/verify-shards.mjs shards --of=18
+        run: node scripts/verify-shards.mjs shards --of=20
