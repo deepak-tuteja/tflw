@@ -34,6 +34,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretypecheck": "npm run docs:gen",
     "test": "node --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "_test note": "`--test-concurrency=1` is load-bearing, not a tuning knob. Four files here (e2e, watch, pick, lsp) each run `npm run build` at the REPO ROOT; run two at once and the root builds race on `.vitepress/.temp` and on each other's `dist/`, which surfaces as ERR_MODULE_NOT_FOUND here and as deep-equal/undefined failures in @tflw/runtime and @tflw/lsp-server importing a `dist/` mid-rewrite. Measured 2026-08-22: 307 phantom failures. See CONTRIBUTING.md, 'Run the suite with `npm test`, not package by package'.",
     "pretest": "npm run docs:gen",
     "dev": "node --import tsx src/cli.ts",
     "predev": "npm run docs:gen",
