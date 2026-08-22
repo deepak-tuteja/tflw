@@ -133,6 +133,39 @@ npm run verify:ledger                  # § never runs in CI, by decision
   the *suite that verifies the guard* (fixture ledgers carrying known defects), folded into
   `npm test` above.
 
+## Run the suite with `npm test`, not package by package
+
+**Four of `packages/cli`'s test files — `e2e`, `watch`, `pick` and `lsp` — each shell out to
+`npm run build` at the repo root.** Not a workspace build: the whole seven-workspace one, vitepress
+included. They have to, because what they assert is a property of the shipped
+`packages/cli/dist/cli.cjs`, and building it is how it comes to exist.
+
+The only thing stopping those four from doing it *simultaneously* is `--test-concurrency=1` in that
+package's `test` script. It is load-bearing and it does not look it, so:
+
+- **Do not drop it** when narrowing an invocation. Filtering the file list is fine —
+  `npm run test -w tflw -- --test-name-pattern=...` keeps the script's own flags. Retyping the
+  `node --import tsx --test` line by hand does not.
+- **Do not run the workspace suites concurrently.** `npm test` and `npm run test --workspaces` are
+  both sequential on purpose.
+
+**What it looks like when this goes wrong**, because it has: concurrent root builds race on the
+shared `.vitepress/.temp` directory and each other's `dist/`. You get `ERR_MODULE_NOT_FOUND` on
+`.vitepress/.temp/guide_*.md.js`, and — the expensive part — `@tflw/runtime` and `@tflw/lsp-server`
+start failing with deep-equal diffs and reads of `undefined`, because they are importing a `dist/`
+that is being rewritten underneath them. Those read exactly like product defects and are not.
+
+Measured on 2026-08-22 at `03f6793`: a hand-rolled per-package run reported **307 failures** across
+`tflw`, `@tflw/runtime` and `@tflw/lsp-server`. Those same three suites, re-run on the same machine
+and the same Node through their own `npm run test -w <pkg>` scripts, reported **1582 tests and zero
+failures** — and the full `npm test` reported **3574 and zero**. Nothing was fixed in between.
+
+**The headcount is the tell, and it is cheap to read.** `scripts/verify-test-counts.mjs` knows how
+many tests each suite contains, so a run that skipped or aborted one cannot hide it. That run
+claimed 191 CLI tests against an expected 196, and never reached `@tflw/docs-site` (48) or the root
+`scripts/` suite (162) at all. Before diagnosing a failure you did not expect, reproduce it under
+`npm test` — a suite that never reported is not a suite that passed.
+
 ## The cross-repo pair
 
 **A tflw milestone that assigns a `TF0xx` code is not done until its companion PR in
