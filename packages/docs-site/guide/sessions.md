@@ -1,4 +1,4 @@
-# 3. Sessions & auth
+# Sessions & auth
 
 `session <name>` is tflw's single auth concept — there's no separate "auth preset". A session's
 steps run **once per run per worker**, cached, and a test opts in to reuse the result.
@@ -84,9 +84,9 @@ session admin privileged
 ```
 
 One keyword, read by one feature: `expect response has no authorization violations`
-([chapter 15](/guide/authorization-testing)) leaves a `privileged` session out of its probe set,
-because an admin reading somebody else's order is the system working. It changes nothing else — a
-`privileged` session establishes, caches and applies its headers exactly as any other does.
+([authorization testing](/guide/authorization-testing)) leaves a `privileged` session out of its
+probe set, because an admin reading somebody else's order is the system working. It changes nothing
+else — a `privileged` session establishes, caches and applies its headers exactly as any other does.
 
 It goes **after** `oauth2` when both are present (`session svc oauth2 privileged`), and it is a
 claim about authority rather than a way to make an assertion cheaper: marking every session

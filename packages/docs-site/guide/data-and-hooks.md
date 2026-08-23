@@ -1,4 +1,4 @@
-# 9. Data-driven tests & hooks
+# Data-driven tests & hooks
 
 ## Hooks
 

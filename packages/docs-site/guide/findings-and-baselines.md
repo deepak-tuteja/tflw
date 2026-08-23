@@ -1,6 +1,6 @@
-# 17. Findings, baselines & the gate
+# Findings, baselines & the gate
 
-The previous three chapters are about *finding* things. This one is about what happens next.
+The other chapters in this pillar are about *finding* things. This one is about what happens next.
 
 A scanner that goes red on its first run against an existing codebase gets turned off. That is not a
 hypothetical failure mode, it is the normal one: you point a new tool at a real application, it finds
@@ -10,7 +10,9 @@ and never lose sight of what you deferred.
 
 Everything here applies identically to all three scans ([security
 hygiene](/guide/security-scanning), [authorization](/guide/authorization-testing) and
-[input-handling](/guide/input-handling)). One contract, not three.
+[input-handling](/guide/input-handling)) — including the responses a
+[crawl](/guide/crawling) issues, which run those same three and carry how they were reached as
+provenance rather than as a fourth kind. One contract, not three.
 
 ## Every finding has a fingerprint
 

@@ -1,4 +1,4 @@
-# 13. Load testing: scenarios & thresholds
+# Load testing: scenarios & thresholds
 
 Everything so far — `test`, `action`, hooks — has been the **functional** execution model: one
 pass through a body, pass or fail. Load testing needs a second, genuinely different model: many

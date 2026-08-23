@@ -1,4 +1,4 @@
-# 5. Variables, generators & expressions
+# Variables, generators & expressions
 
 `let` declares a variable; `{name}` interpolates it anywhere a value goes — request bodies, table
 cells, expect values:

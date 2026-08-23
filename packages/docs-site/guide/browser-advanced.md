@@ -1,4 +1,4 @@
-# 8. Browser testing: advanced scenarios
+# Browser testing: advanced scenarios
 
 Builds on [Browser testing: interacting with a UI](/guide/browser-basics) — frames, tabs,
 downloads, drag-drop, evidence capture, network mocking, accessibility, and visual regression.

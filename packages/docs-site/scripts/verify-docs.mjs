@@ -1,6 +1,6 @@
 // Doc truth (M62, review finding OBS-01) — the guard that keeps the documentation honest.
 //
-// Three properties, in the order they matter:
+// Four properties, in the order they matter:
 //
 //  1. **Nothing is silently skipped.** Every fenced block on the site is classified; an unlabelled
 //     or unknown one fails the run. The predecessor of this script recognised two tags and dropped
@@ -11,18 +11,22 @@
 //  3. **Checked against the shipped CLI**, `packages/cli/dist/cli.cjs`, not the workspace `@tflw/lang`.
 //     A guard verifying the docs against a different build than the reader will run is verifying the
 //     wrong artifact — the exact seam M60 found drifted three ways.
+//  4. **A forward-looking claim is declared or it fails** (`M149b`/`D657`). The other three checks
+//     all ask whether a sample still *works*. This one asks whether a sentence is still *true*, for
+//     the one class that reliably stops being true without anyone touching the page: a statement
+//     about what tflw will do next. It had shipped twice.
 //
 // Plus: every `tflw …` invocation the docs show is validated against the real flag registry.
 // See PLAN_DOC_TRUTH.md for the decisions (DT-01 … DT-09).
 
 import { execFile } from 'node:child_process';
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { census, findMarkdownFiles, DECLARED_UNCHECKED } from './doc-blocks.mjs';
+import { census, findMarkdownFiles, scanRoadmapClaims, DECLARED_ROADMAP, DECLARED_UNCHECKED, ROADMAP_PHRASES } from './doc-blocks.mjs';
 import { CLI_FLAGS } from '@tflw/lang';
 
 const execFileAsync = promisify(execFile);
@@ -380,6 +384,45 @@ function checkFlagProse() {
   return references;
 }
 
+// ---------------------------------------------------------------------------
+// Roadmap truth — a forward-looking claim is declared, or it fails (`D657`/`D658`).
+// ---------------------------------------------------------------------------
+
+/**
+ * The file set, explicit because the obvious one is wrong in two ways (`D658`).
+ *
+ * Every other check here walks `findMarkdownFiles(ROOT)` and nothing else, and for this check that
+ * would place the guard where the class has *never* been fully visible:
+ *
+ *  - **`README.md` is unreachable** from `ROOT`. It sits at the repo root and is `srcExclude`d from
+ *    the site. `M135b` — the precedent proving this class recurs — fired *in `README.md`*, and so
+ *    did two of the five occurrences `M149a` swept. A guard placed where the class last fired that
+ *    cannot see the file it fired in is a guard against the wrong thing.
+ *  - **`CHANGELOG.md` is unreachable** too, and for a subtler reason: `changelog.md` on disk is a
+ *    header plus `<!--@include: ../../CHANGELOG.md-->`. The body arrives at VitePress build time,
+ *    so a scanner reading markdown files sees a 233-byte stub and reports the page as clean.
+ *
+ * Both are therefore added by hand, located relative to `ROOT` rather than to this script, so a
+ * scratch corpus gets its own two files or none at all instead of silently borrowing the repo's.
+ */
+function roadmapFiles() {
+  const files = findMarkdownFiles(ROOT).map((path) => ({ key: path.slice(ROOT.length + 1), path }));
+  for (const name of ['README.md', 'CHANGELOG.md']) {
+    const path = join(ROOT, '..', '..', name);
+    if (existsSync(path)) files.push({ key: name, path });
+  }
+  return files.map(({ key, path }) => ({ key, text: readFileSync(path, 'utf8') }));
+}
+
+function checkRoadmapClaims() {
+  // `DT-08`'s scratch corpora name their page `index.md`, which is a real page here — so the
+  // staleness half of the allowlist is real-corpus only. Reported below rather than dropped.
+  const checkStale = process.env.TFLW_DOCS_ROOT === undefined;
+  const { problems: found, claims, files } = scanRoadmapClaims(roadmapFiles(), { checkStale });
+  for (const p of found) fail(p.where, p.message, p.detail);
+  return { claims, files, checkStale };
+}
+
 /**
  * The strings on a page a reader would actually copy and run: a line inside a `sh` fence, and the
  * contents of any inline code span. Prose is deliberately excluded — `index.md` says "what tflw
@@ -433,6 +476,7 @@ else {
   covered = await checkCommandCoverage(commands);
 }
 const flagReferences = checkFlagProse();
+const roadmap = checkRoadmapClaims();
 
 const count = (kind) => blocks.filter((b) => b.kind === kind).length;
 const files = new Set(blocks.map((b) => b.file)).size;
@@ -453,6 +497,12 @@ const report = [
     : `${covered} shipped subcommands, each with a reference/cli.md section and a SPEC §12 shipped row`,
   `${flagReferences} flag references inside CLI_FLAGS' own descriptions checked — names, not effects:`,
   `    a description that names a flag correctly and describes the wrong behaviour still passes (B5-04).`,
+  `${roadmap.claims} forward-looking claims found across ${roadmap.files} files (${ROADMAP_PHRASES.length} idioms,`,
+  `    raw text including frontmatter, plus the repo root's README.md and CHANGELOG.md) — each one`,
+  `    declared in DECLARED_ROADMAP with the reason it is legitimately future.`,
+  roadmap.checkStale
+    ? `    ${[...DECLARED_ROADMAP.values()].flat().length} declared exemptions, each still matching a line it names.`
+    : '    stale-exemption check skipped — this corpus is a scratch one, not the site.',
 ];
 
 if (problems.length > 0) {

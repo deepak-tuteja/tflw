@@ -1,4 +1,4 @@
-# 4. Assertions in depth
+# Assertions in depth
 
 One form covers every assertion:
 

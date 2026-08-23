@@ -1,4 +1,4 @@
-# 15. Authorization testing
+# Authorization testing
 
 The previous chapter reads what a response *says about itself*. This one asks a harder question:
 can somebody else fetch it?

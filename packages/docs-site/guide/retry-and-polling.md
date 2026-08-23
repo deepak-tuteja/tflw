@@ -1,4 +1,4 @@
-# 10. Retry, polling & flaky handling
+# Retry, polling & flaky handling
 
 Three different mechanisms cover three different kinds of instability — don't reach for the wrong
 one.

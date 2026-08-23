@@ -1,40 +1,83 @@
 import { defineConfig } from 'vitepress';
 import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type: 'json' };
 
-// Decision 16.3 (PLAN_ENTERPRISE.md): Home · Getting Started · Guide (12 sub-topics, 2 added for
-// the browser arc — see PLAN.md decision 112) · Reference · Grammar · Changelog. `appearance` is
-// intentionally left unset — VitePress's default (`true`)
-// already shows a light/dark toggle that respects the reader's OS preference (decision 16.12);
-// overriding it would be the wrong direction.
+// The top nav is Home · Guide · Reference · Grammar · Editor · Playground · Changelog. `appearance`
+// is intentionally left unset — VitePress's default (`true`) already shows a light/dark toggle that
+// respects the reader's OS preference; overriding it would be the wrong direction.
+//
+// The nav names *surfaces*, not chapters. The guide's own shape lives in `GUIDE_SIDEBAR` below,
+// which is the only place the reading order is written down.
 
 /** The guide rail, hoisted to a `const` so the two sidebar keys that need it (`/guide/` and
- * `/getting-started`, `M125e`/`FU-30`) name one array instead of holding two copies of it. */
+ * `/getting-started`, `M125e`/`FU-30`) name one array instead of holding two copies of it.
+ *
+ * Grouped by pillar (`M149b`/`D649`/`D650`), not numbered. Two properties here are deliberate and
+ * are the kind that get undone by accident:
+ *
+ *  - **Every URL stays flat.** A pillar is a sidebar group, never a path segment —
+ *    `/guide/assertions` does not become `/guide/functional/assertions`. Grouping delivers the whole
+ *    navigational benefit at zero link breakage, and nesting would charge every external link to
+ *    eighteen pages, forever, to fix a left rail. That is the trade `M125e`/`D282` already made for
+ *    `getting-started.md` and rejected, and nothing about it is weaker for eighteen pages.
+ *  - **No label carries a number.** A number in a heading is a fact that goes wrong on every
+ *    insertion: nine chapters were added to this guide after the old numbering was set, and the
+ *    browser arc's two insertions renumbered eight pages. Sequence is carried by the order of this
+ *    array and nowhere else, so a page can be inserted without renaming its neighbours.
+ *
+ * Browser testing sits under *Functional*, not in a pillar of its own: a browser test is a
+ * functional test whose subject is a UI, and the site's thesis is that the two share one grammar.
+ * Giving UI its own top-level pillar would argue the opposite in the navigation.
+ */
 const GUIDE_SIDEBAR = [
   {
-    text: 'Getting started',
-    items: [{ text: 'Install & quickstart', link: '/getting-started' }],
+    text: 'Start here',
+    items: [
+      { text: 'Install & quickstart', link: '/getting-started' },
+      { text: 'Writing your first test', link: '/guide/first-test' },
+      { text: 'Config & environments', link: '/guide/config' },
+      { text: 'Sessions & auth', link: '/guide/sessions' },
+    ],
   },
   {
-    text: 'Guide',
+    text: 'Functional testing',
     items: [
-      { text: '1. Writing your first test', link: '/guide/first-test' },
-      { text: '2. Config & environments', link: '/guide/config' },
-      { text: '3. Sessions & auth', link: '/guide/sessions' },
-      { text: '4. Assertions in depth', link: '/guide/assertions' },
-      { text: '5. Variables, generators & expressions', link: '/guide/variables' },
-      { text: '6. Actions, imports & the JS escape hatch', link: '/guide/actions' },
-      { text: '7. Browser testing: interacting with a UI', link: '/guide/browser-basics' },
-      { text: '8. Browser testing: advanced scenarios', link: '/guide/browser-advanced' },
-      { text: '9. Data-driven tests & hooks', link: '/guide/data-and-hooks' },
-      { text: '10. Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
-      { text: '11. CI, reporting & safety', link: '/guide/ci-and-reporting' },
-      { text: '12. Running & debugging tests', link: '/guide/debugging' },
-      { text: '13. Load testing: scenarios & thresholds', link: '/guide/load-testing' },
-      { text: '14. Security hygiene scanning', link: '/guide/security-scanning' },
-      { text: '15. Authorization testing', link: '/guide/authorization-testing' },
-      { text: '16. Input-handling testing', link: '/guide/input-handling' },
-      { text: '17. Findings, baselines & the gate', link: '/guide/findings-and-baselines' },
-      { text: '18. Crawling an undocumented surface', link: '/guide/crawling' },
+      { text: 'Assertions in depth', link: '/guide/assertions' },
+      { text: 'Variables, generators & expressions', link: '/guide/variables' },
+      { text: 'Data-driven tests & hooks', link: '/guide/data-and-hooks' },
+      { text: 'Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
+      // "JS/TS", matching the page's own H1. The sidebar said "JS escape hatch" and the H1 said
+      // "JS/TS escape hatch" for eleven milestones — two names for one thing, which is the drift
+      // `D650` exists to remove rather than carry through a rename.
+      { text: 'Actions, imports & the JS/TS escape hatch', link: '/guide/actions' },
+      { text: 'Browser testing: interacting with a UI', link: '/guide/browser-basics' },
+      { text: 'Browser testing: advanced scenarios', link: '/guide/browser-advanced' },
+    ],
+  },
+  {
+    // One entry until `D655` splits the page at the workload/threshold seam. The label is the
+    // page's current title rather than the post-split "Workloads & scenarios": a rail that
+    // promised workloads and delivered thresholds too would be this milestone shipping a false
+    // claim in the act of removing four of them.
+    text: 'Performance testing',
+    items: [{ text: 'Load testing: scenarios & thresholds', link: '/guide/load-testing' }],
+  },
+  {
+    // Findings & baselines goes last, not first: it is the machinery for what you do with what the
+    // four scans find, and it reads as procedure before there is anything to apply it to.
+    text: 'Security & vulnerability testing',
+    items: [
+      { text: 'Hygiene scanning', link: '/guide/security-scanning' },
+      { text: 'Authorization testing', link: '/guide/authorization-testing' },
+      { text: 'Input-handling testing', link: '/guide/input-handling' },
+      { text: 'Crawling an undocumented surface', link: '/guide/crawling' },
+      { text: 'Findings, baselines & the gate', link: '/guide/findings-and-baselines' },
+    ],
+  },
+  {
+    text: 'Running & reporting',
+    items: [
+      { text: 'Running & debugging tests', link: '/guide/debugging' },
+      { text: 'CI, reporting & safety', link: '/guide/ci-and-reporting' },
     ],
   },
 ];
@@ -96,7 +139,7 @@ export default defineConfig({
       // `M125e`/`FU-30`/D282. `getting-started.md` lives at `/getting-started`, not under
       // `/guide/`, so before this it matched no key but the `/` fallback and the page the home
       // page's primary CTA points at rendered the *More* rail — Grammar, Playground, Changelog —
-      // instead of the thirteen-step guide it is the entrance to.
+      // instead of the guide it is the entrance to.
       //
       // Two keys naming ONE array, not two copies. VitePress resolves the longest matching path
       // prefix, so `/getting-started` beats `/` with no effect on any other page. Moving the file

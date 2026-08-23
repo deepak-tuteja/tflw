@@ -1,4 +1,4 @@
-# 16. Input-handling testing
+# Input-handling testing
 
 The previous two chapters ask what a response says about itself, and whether somebody else can fetch
 it. This one asks the third question: **what happens when the input is not what your app expected?**

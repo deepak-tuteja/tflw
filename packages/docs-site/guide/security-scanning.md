@@ -1,4 +1,4 @@
-# 14. Security hygiene scanning
+# Security hygiene scanning
 
 Every response your API sends says something about itself: whether its cookies can be read by
 JavaScript, whether a shared proxy may cache it, whether a browser is allowed to frame it. Those
@@ -67,7 +67,7 @@ Ten rules, with fixed severities you filter rather than re-grade:
 | `sec/server-version-disclosure` | minor | always |
 
 A severity word is a **floor**, not an exact match, the same as the a11y scan in
-[chapter 8](/guide/browser-advanced):
+[the a11y scan](/guide/browser-advanced):
 
 ```tflw fragment
 expect response has no serious security violations   # serious and critical
@@ -201,7 +201,7 @@ claims is a line somebody can read in the file that claims it.
 
 - **No authorization testing — in *this* matcher.** The pack reads what a response *says about
   itself*. Whether user A can fetch user B's order is a different question, and a much more
-  valuable one: it is [chapter 15](/guide/authorization-testing)'s `has no authorization
+  valuable one: it is [authorization testing](/guide/authorization-testing)'s `has no authorization
   violations`, a **separate** matcher on the same `response` subject. Deliberately separate — folding
   it in here would have made every assertion on this page start sending cross-identity traffic the
   moment its author upgraded.
