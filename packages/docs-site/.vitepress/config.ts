@@ -39,7 +39,11 @@ const GUIDE_SIDEBAR = [
     ],
   },
   {
+    // `D654`. A pillar's overview is the group's own `text` link, not a first item inside it. The
+    // two renderings differ in what they say about the page: an item is a sibling of the chapters,
+    // a linked group title is the thing the chapters are under — which is what an overview is.
     text: 'Functional testing',
+    link: '/guide/functional',
     items: [
       { text: 'Assertions in depth', link: '/guide/assertions' },
       { text: 'Variables, generators & expressions', link: '/guide/variables' },
@@ -59,12 +63,14 @@ const GUIDE_SIDEBAR = [
     // promised workloads and delivered thresholds too would be this milestone shipping a false
     // claim in the act of removing four of them.
     text: 'Performance testing',
+    link: '/guide/performance',
     items: [{ text: 'Load testing: scenarios & thresholds', link: '/guide/load-testing' }],
   },
   {
     // Findings & baselines goes last, not first: it is the machinery for what you do with what the
     // four scans find, and it reads as procedure before there is anything to apply it to.
     text: 'Security & vulnerability testing',
+    link: '/guide/security',
     items: [
       { text: 'Hygiene scanning', link: '/guide/security-scanning' },
       { text: 'Authorization testing', link: '/guide/authorization-testing' },

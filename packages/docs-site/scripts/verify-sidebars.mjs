@@ -44,6 +44,29 @@ const EXPECTED = [
   { page: 'guide/first-test.html', shows: 'Start here', hides: 'More' },
 ];
 
+/** Each pillar overview is reachable from the rail, and it is the group's own title that reaches it.
+ *
+ * `D654`/`M149c`. An overview page nothing links to is the failure `FU-30` above is about, arrived
+ * at from the other direction: there the rail was wrong, here the rail would be silently missing an
+ * entry. Three pages are one config key away from being reachable only by the pager.
+ *
+ * Asserted against the built HTML for the same reason the rows above are: whether a sidebar group
+ * carrying both `link` and `items` renders its title as an anchor at all is VitePress's decision,
+ * not the config's. It does in 1.6.4 — `<a class="link" href="…"><h2 class="text">…</h2></a>` — and
+ * a major upgrade that changed it would leave a config that still reads correctly.
+ *
+ * The href is matched by suffix, including the closing quote, so the check does not hardcode
+ * `base` and `/guide/security"` cannot be satisfied by `/guide/security-scanning"`.
+ */
+const PILLAR_OVERVIEWS = [
+  { page: 'guide/assertions.html', link: '/guide/functional', group: 'Functional testing' },
+  { page: 'guide/load-testing.html', link: '/guide/performance', group: 'Performance testing' },
+  // A bare `&`, not `&amp;`: VitePress renders a sidebar label through `v-html`, so the config's
+  // text reaches the HTML unescaped. Written `&amp;` first, and the demonstrated break for the row
+  // above caught it — this row failed while nothing was wrong with the rail.
+  { page: 'guide/crawling.html', link: '/guide/security', group: 'Security & vulnerability testing' },
+];
+
 /**
  * The rendered `<aside class="VPSidebar">` alone.
  *
@@ -86,8 +109,36 @@ for (const { page, shows, hides } of EXPECTED) {
   }
 }
 
+for (const { page, link, group } of PILLAR_OVERVIEWS) {
+  let html;
+  try {
+    html = await readFile(join(DIST, page), 'utf8');
+  } catch {
+    console.error(`✗ ${page} — not found in ${DIST}. Run \`npm run build -w @tflw/docs-site\` first.`);
+    failures++;
+    continue;
+  }
+  const sidebar = sidebarOf(html);
+  const at = sidebar.indexOf(`${link}"`);
+  if (at === -1) {
+    console.error(`✗ ${page} — the rail has no link to the ${group} overview (${link})`);
+    failures++;
+  } else if (!sidebar.slice(at, at + 300).includes(`>${group}<`)) {
+    // The link exists but something other than the group title carries it — an overview demoted to
+    // an ordinary item beside the chapters it introduces, which is the other way `D654` can be
+    // lost without breaking a link.
+    console.error(`✗ ${page} — ${link} is in the rail, but not as the "${group}" group title`);
+    failures++;
+  } else {
+    console.log(`✓ ${page} — ${group} → ${link}`);
+  }
+}
+
 if (failures > 0) {
-  console.error(`\n${failures} page(s) render the wrong sidebar.`);
+  console.error(`\n${failures} sidebar assertion(s) failed.`);
   process.exit(1);
 }
-console.log(`\n${EXPECTED.length}/${EXPECTED.length} pages render the sidebar they belong to.`);
+console.log(
+  `\n${EXPECTED.length}/${EXPECTED.length} pages render the sidebar they belong to; ` +
+    `${PILLAR_OVERVIEWS.length}/${PILLAR_OVERVIEWS.length} pillar overviews are reachable from it.`,
+);

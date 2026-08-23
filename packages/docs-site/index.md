@@ -19,12 +19,20 @@ hero:
 features:
   - title: Reporting-first runtime
     details: Every step is an event by construction — a self-contained report.html (full request/response detail), junit.xml, and results.json all fall out of the same event stream tflw run already emits, secrets redacted everywhere automatically.
+    link: /guide/ci-and-reporting
+    linkText: Reporting & CI
   - title: Teaching-quality diagnostics
     details: Source line + caret + "did you mean", stable TF0xx codes, a conservative unknown-variable checker pass — errors read like a compiler's, not a stack trace.
+    link: /guide/debugging
+    linkText: Running & debugging tests
   - title: One language for API, browser, load & security testing
-    details: UI steps share the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing two tools together. Load testing (ramp/hold/step/spike, thresholds) is validated within a few percent of k6 on real contended workloads — <a href="/tflw/guide/load-testing#validated-against-k6-and-artillery">see the numbers</a>. Security scanning runs inside the same test — hygiene, authorization, input handling and an active crawl — each behind a written authorized target declaration.
+    details: UI steps share the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing two tools together. <a href="/tflw/guide/performance">Load testing</a> (ramp/hold/step/spike, thresholds) is validated within a few percent of k6 on real contended workloads — <a href="/tflw/guide/load-testing#validated-against-k6-and-artillery">see the numbers</a>. <a href="/tflw/guide/security">Security scanning</a> runs inside the same test — hygiene, authorization, input handling and an active crawl — each behind a written authorized target declaration.
+    link: /guide/functional
+    linkText: Start with functional testing
   - title: Real editor support
     details: A real Language Server Protocol implementation (tflw lsp) powers the VS Code extension — diagnostics, hover, go-to-definition, autocomplete, rename, signature help, and semantic highlighting, live as you type.
+    link: /editor
+    linkText: Editor support
 ---
 
 ## Why tflw
