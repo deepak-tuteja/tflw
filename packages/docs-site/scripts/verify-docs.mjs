@@ -15,6 +15,10 @@
 //     all ask whether a sample still *works*. This one asks whether a sentence is still *true*, for
 //     the one class that reliably stops being true without anyone touching the page: a statement
 //     about what tflw will do next. It had shipped twice.
+//  5. **A shipped construct is documented or declared** (`M149f`/`D659`). (4) is a denylist and
+//     catches the sentence that went wrong; this is its positive dual and catches the sentence that
+//     was never written — the larger half. Three constructs fully specified in `SPEC.md` appeared on
+//     no page at all, and no phrase list could have found them: an absent page matches no grep.
 //
 // Plus: every `tflw …` invocation the docs show is validated against the real flag registry.
 // See PLAN_DOC_TRUTH.md for the decisions (DT-01 … DT-09).
@@ -23,11 +27,15 @@ import { execFile } from 'node:child_process';
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { census, findMarkdownFiles, scanRoadmapClaims, DECLARED_ROADMAP, DECLARED_UNCHECKED, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { census, findMarkdownFiles, scanRoadmapClaims, scanConstructCoverage, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, ROADMAP_PHRASES } from './doc-blocks.mjs';
 import { CLI_FLAGS } from '@tflw/lang';
+// The whole namespace, because the *page* decides which manifest it renders: `constructCorpus`
+// reads each page's own `import { … } from '…spec-data.ts'` and matches it against a `v-for`. Naming
+// a subset here would silently drop a table — `reference/diagnostics.md` was the one it dropped.
+import * as manifests from '@tflw/lang';
 
 const execFileAsync = promisify(execFile);
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -414,6 +422,35 @@ function roadmapFiles() {
   return files.map(({ key, path }) => ({ key, text: readFileSync(path, 'utf8') }));
 }
 
+/**
+ * `D659`. The manifests come from `@tflw/lang` and the grammar from the file `grammarCoverage.test.ts`
+ * holds to the parser, so nothing here is a wordlist this script maintains — see
+ * `scanConstructCoverage`.
+ *
+ * **Skipped for a scratch corpus, and said out loud** — the third check here to need that and the
+ * clearest case for it. The manifests and the grammar describe *this* language; a `DT-08` fixture
+ * documents an invented one, so every construct in the real language would be missing from it and
+ * the guard's own tests could never be green. The break this check has to demonstrate is asserted
+ * against `scanConstructCoverage` directly in `doc-blocks.test.mjs`, where the corpus and the
+ * grammar are supplied together and a fixture can be genuinely incomplete.
+ */
+function checkConstructCoverage() {
+  if (process.env.TFLW_DOCS_ROOT !== undefined) return null;
+  const files = findMarkdownFiles(ROOT).map((path) => ({ key: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
+  const grammarPath = join(here, '../../lang/GRAMMAR.md');
+  if (!existsSync(grammarPath)) {
+    fail('GRAMMAR.md', 'the grammar is not readable, so construct coverage cannot be checked', `expected ${grammarPath}`);
+    return { constructs: 0, corpus: 0, onlyGenerated: [] };
+  }
+  const result = scanConstructCoverage({
+    files,
+    grammarText: readFileSync(grammarPath, 'utf8'),
+    manifests,
+  });
+  for (const p of result.problems) fail(p.where, p.message, p.detail);
+  return result;
+}
+
 function checkRoadmapClaims() {
   // `DT-08`'s scratch corpora name their page `index.md`, which is a real page here — so the
   // staleness half of the allowlist is real-corpus only. Reported below rather than dropped.
@@ -477,6 +514,7 @@ else {
 }
 const flagReferences = checkFlagProse();
 const roadmap = checkRoadmapClaims();
+const coverage = checkConstructCoverage();
 
 const count = (kind) => blocks.filter((b) => b.kind === kind).length;
 const files = new Set(blocks.map((b) => b.file)).size;
@@ -503,6 +541,17 @@ const report = [
   roadmap.checkStale
     ? `    ${[...DECLARED_ROADMAP.values()].flat().length} declared exemptions, each still matching a line it names.`
     : '    stale-exemption check skipped — this corpus is a scratch one, not the site.',
+  ...(coverage === null
+    ? ['construct coverage skipped — this corpus is a scratch one, documenting an invented language']
+    : [
+        `${coverage.constructs} shipped constructs checked against ${coverage.corpus} code strings on the site`,
+        `    (spec-data.ts's manifests + GRAMMAR.md's multi-word productions, both held to parser.ts),`,
+        `    ${DECLARED_UNDOCUMENTED.size} declared deliberately undocumented.`,
+        coverage.onlyGenerated.length === 0
+          ? '    every one of them is named in prose or a sample.'
+          : `    ${coverage.onlyGenerated.length} appear only in a generated reference table — listed, not explained:`,
+        ...(coverage.onlyGenerated.length === 0 ? [] : [`      ${coverage.onlyGenerated.join(', ')}`]),
+      ]),
 ];
 
 if (problems.length > 0) {

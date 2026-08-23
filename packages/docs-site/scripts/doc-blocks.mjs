@@ -314,3 +314,222 @@ export function scanRoadmapClaims(files, { allowlist = DECLARED_ROADMAP, phrases
 
   return { problems, claims, files: seenFiles.size };
 }
+
+// ---------------------------------------------------------------------------
+// Construct coverage (`M149f`, `D659`) — the positive dual of the roadmap denylist.
+// ---------------------------------------------------------------------------
+
+/**
+ * Shipped constructs that are deliberately not described anywhere on the site, each with the reason
+ * that is not a gap — `DECLARED_UNCHECKED`'s shape, for `DECLARED_UNCHECKED`'s reason: an undeclared
+ * absence is a failure, never a skip.
+ *
+ * **Empty, and that is the state to preserve.** It is empty because `M149c`–`M149e` closed the six
+ * absences this gate was built from; an entry added here is a decision that a reader may not learn
+ * about a construct from the documentation, which is a large thing to assert quietly. The reverse
+ * check below deletes an entry that stops being true, the same way `DECLARED_ROADMAP`'s does.
+ */
+export const DECLARED_UNDOCUMENTED = new Map();
+
+/**
+ * Every multi-word construct the grammar spells out, read from `packages/lang/GRAMMAR.md`.
+ *
+ * The source matters more than the extraction. `GRAMMAR.md` is not prose that happens to list the
+ * language — `grammarCoverage.test.ts` holds it to the parser: every keyword literal `parser.ts`
+ * dispatches on must appear in a production there, or be exempted by name with a reason. So a
+ * clause family cannot enter the language without passing through this file, which is what makes it
+ * a manifest rather than a fifth hand-maintained wordlist (`B5-09`, four arcs running).
+ *
+ * This reads the **leading run of quoted literals** on a production's right-hand side — `'seed'
+ * 'spider'`, `'csrf' 'from'`, `'probe' 'ciphers'` — and keeps the ones two words or longer. The
+ * single-word half is covered by `spec-data.ts`'s own manifests, which carry a summary per entry;
+ * the multi-word half has no manifest anywhere else, and it is where every construct `M149a`'s
+ * truth pass found had been hiding. Measured against the pre-`M149c` site, this list alone names
+ * four of the six absences that pass found by hand.
+ *
+ * A production whose leading literals are optional or alternated is read as far as the literals run
+ * and no further; the phrase is a *search key*, not a re-statement of the grammar. Being wrong in
+ * that direction costs a phrase that is trivially present, never a false failure.
+ */
+export function grammarPhrases(grammarText) {
+  const phrases = new Set();
+  for (const raw of grammarText.split('\n')) {
+    const production = /^(?:[A-Za-z]\w*\s*:=|\|)\s*(.*)$/.exec(raw.trim());
+    if (!production) continue;
+    const lead = /^((?:'[a-z][a-z0-9]*'\s*)+)/.exec(production[1].split('#')[0]);
+    if (!lead) continue;
+    const words = [...lead[1].matchAll(/'([a-z][a-z0-9]*)'/g)].map((m) => m[1]);
+    if (words.length >= 2) phrases.add(words.join(' '));
+  }
+  return [...phrases].sort();
+}
+
+/**
+ * The strings on a page a reader would read *as tflw*: every line of every `tflw`/`tflw-config`
+ * fence, every inline code span, and the rows a page renders through Vue.
+ *
+ * Three details, each of which was wrong in a draft of this function and none of which announces
+ * itself:
+ *
+ *  - **Fenced regions are blanked before inline spans are scanned.** A fence's own three backticks
+ *    shift the pairing of every span after it in the file, which silently turns prose into code
+ *    strings and code strings into prose. It reported `body csv` as absent from a page that shows it.
+ *  - **An inline span may cross a line break.** `input-handling.md` writes ``a `body\nfrom` file``
+ *    and `ci-and-reporting.md` breaks `log destination …` across two lines; a per-line scanner reads
+ *    neither, and both look like undocumented constructs.
+ *  - **A `v-for` row exists at runtime and in no markdown file.** `reference/matchers.md`,
+ *    `generators.md`, `cli.md` and `diagnostics.md` render `spec-data.ts` manifests directly, so the
+ *    strings a reader sees there are in no `.md` source. They are added from the manifest the page
+ *    imports, and marked `generated` so the caller can tell "documented" from "tabulated".
+ */
+export function constructCorpus(files, manifests = {}) {
+  const corpus = [];
+  for (const { key, text } of files) {
+    for (const block of extractBlocks(text)) {
+      const kind = classify(block).kind;
+      if (kind === 'file' || kind === 'fragment' || kind === 'config' || kind === 'config-fragment') {
+        for (const line of block.source.split('\n')) corpus.push({ key, text: line.trim(), generated: false });
+      }
+    }
+
+    for (const m of text.matchAll(/import\s*\{([^}]+)\}\s*from\s*'[^']*spec-data\.ts'/g)) {
+      for (const name of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+        if (!new RegExp(`v-for="[^"]+ in ${name}"`).test(text)) continue;
+        for (const row of manifests[name] ?? []) {
+          for (const value of Object.values(row)) {
+            if (typeof value === 'string') corpus.push({ key, text: value, generated: true });
+          }
+        }
+      }
+    }
+
+    let inFence = false;
+    const prose = text
+      .split('\n')
+      .map((line) => {
+        if (/^\s*`{3,}/.test(line)) {
+          inFence = !inFence;
+          return '';
+        }
+        return inFence ? '' : line;
+      })
+      .join('\n');
+    for (const m of prose.matchAll(/`([^`]+)`/gs)) {
+      corpus.push({ key, text: m[1].replace(/\s+/g, ' ').trim(), generated: false });
+    }
+  }
+  return corpus;
+}
+
+const leadingWord = (text) => (/^([a-z]+)\b/.exec(text) ?? [])[1];
+
+/**
+ * Every shipped construct is mentioned somewhere on the site, or declared as deliberately absent.
+ *
+ * `D657`'s roadmap scan is a denylist: it catches the sentence that went wrong and has nothing to
+ * say about the sentence that was never written — which is the larger half of the class. Three
+ * constructs (`probe ciphers`, `csrf from … send as header`, `seed spider`) were fully specified in
+ * `SPEC.md` and appeared on no page at all, and no phrase list could ever have found them, because
+ * an absent page matches no grep.
+ *
+ * Two manifests, because one construct set does not exist in one place:
+ *
+ *  - **`spec-data.ts`'s curated tables** — `STEP_KEYWORDS`, `CONFIG_KEYWORDS`, `WORKLOAD_DIRECTIVES`
+ *    — held to `parser.ts` by `stepKeywords.test.ts`'s two-way parity. Single words, matched as the
+ *    leading word of a code string. The weak half: `close`, `select`, `run` and `log` are ordinary
+ *    English, so a code span that merely contains one satisfies the check. That is why the second
+ *    manifest exists and is the sharper of the two.
+ *  - **`GRAMMAR.md`'s multi-word productions** (see `grammarPhrases`) — held to `parser.ts` by
+ *    `grammarCoverage.test.ts`. No word here is ordinary English by accident: a phrase is two or
+ *    more keyword literals in sequence.
+ *
+ * `onlyGenerated` is reported rather than failed, and the distinction is the point. A construct that
+ * appears solely in a `v-for` reference table **is** on the site — `D659`'s bar is met and failing it
+ * would be a bar nobody agreed to — but a table row is a listing, not an explanation. Against the
+ * pre-`M149c` site that line named `body bytes` and `matches file`, the two constructs `M149d` went
+ * on to write prose for, so it is the next prose pass's worklist and it is printed on every run.
+ */
+export function scanConstructCoverage({
+  files,
+  grammarText,
+  manifests = {},
+  allowlist = DECLARED_UNDOCUMENTED,
+  checkStale = true,
+}) {
+  const corpus = constructCorpus(files, manifests);
+  const byLeadingWord = new Map();
+  for (const entry of corpus) {
+    const word = leadingWord(entry.text);
+    if (!word) continue;
+    if (!byLeadingWord.has(word)) byLeadingWord.set(word, []);
+    byLeadingWord.get(word).push(entry);
+  }
+
+  const constructs = [];
+  for (const entry of manifests.STEP_KEYWORDS ?? []) {
+    constructs.push({ id: entry.id, manifest: 'STEP_KEYWORDS', hits: byLeadingWord.get(entry.id) ?? [] });
+  }
+  for (const entry of manifests.CONFIG_KEYWORDS ?? []) {
+    // A `probe` sub-clause is never the leading word of anything — it is the second word of
+    // `probe ciphers`, under an `authorized target`. Matched as the phrase a reader would type.
+    const id = entry.slot === 'probe' ? `probe ${entry.id}` : entry.id;
+    const hits = entry.slot === 'probe'
+      ? corpus.filter((c) => c.text.includes(id))
+      : (byLeadingWord.get(entry.id) ?? []);
+    constructs.push({ id, manifest: `CONFIG_KEYWORDS (${entry.slot})`, hits });
+  }
+  for (const directive of manifests.WORKLOAD_DIRECTIVES ?? []) {
+    constructs.push({ id: directive, manifest: 'WORKLOAD_DIRECTIVES', hits: byLeadingWord.get(directive) ?? [] });
+  }
+  for (const phrase of grammarPhrases(grammarText)) {
+    constructs.push({ id: phrase, manifest: 'GRAMMAR.md', hits: corpus.filter((c) => c.text.includes(phrase)) });
+  }
+
+  // One construct, one problem. `probe ciphers` is in `CONFIG_KEYWORDS` *and* in `GRAMMAR.md`, and
+  // two manifests agreeing it is absent is one absence — reporting it twice reads as two repairs.
+  const byId = new Map();
+  for (const construct of constructs) {
+    const seen = byId.get(construct.id);
+    if (seen) {
+      seen.manifests.push(construct.manifest);
+      seen.hits.push(...construct.hits);
+    } else {
+      byId.set(construct.id, { id: construct.id, manifests: [construct.manifest], hits: [...construct.hits] });
+    }
+  }
+
+  const problems = [];
+  const declared = new Set();
+  const onlyGenerated = [];
+  for (const construct of byId.values()) {
+    if (construct.hits.length === 0) {
+      const exemption = allowlist.get(construct.id);
+      if (exemption) {
+        declared.add(construct.id);
+        continue;
+      }
+      problems.push({
+        where: `${construct.manifests.join(' + ')} \`${construct.id}\``,
+        message: `a shipped construct that appears on no page: \`${construct.id}\``,
+        detail:
+          'A reader cannot learn a construct that is documented nowhere, and no phrase list can find\n' +
+          'this — an absent page matches no grep. Write it into the chapter that owns its subject, or,\n' +
+          'if it is deliberately undocumented, add it to DECLARED_UNDOCUMENTED in scripts/doc-blocks.mjs\n' +
+          'with the reason that is not a gap.',
+      });
+      continue;
+    }
+    if (construct.hits.every((hit) => hit.generated)) onlyGenerated.push(construct.id);
+  }
+
+  for (const [id, why] of checkStale ? allowlist : []) {
+    if (declared.has(id)) continue;
+    problems.push({
+      where: `DECLARED_UNDOCUMENTED \`${id}\``,
+      message: `\`${id}\` is documented now, or is no longer a construct`,
+      detail: `the exemption reads: ${why}\nDelete the entry — an exemption that exempts nothing is a claim nobody is checking.`,
+    });
+  }
+
+  return { problems, constructs: byId.size, corpus: corpus.length, onlyGenerated: [...new Set(onlyGenerated)].sort() };
+}

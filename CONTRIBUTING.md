@@ -210,6 +210,31 @@ Two traps it is worth writing down, both of which have cost a real debugging ses
 The box is shared with other work and takes a whole-machine lock; a busy box is waited on, never
 worked around.
 
+## Writing a docs page
+
+> **Not guarded, deliberately** — it is authoring advice, not a gate. What *is* guarded is the
+> result: `npm test -w @tflw/docs-site` and `npm run test:links -w @tflw/docs-site` fail on every
+> mistake below, which is why these are traps rather than rules.
+
+- **Read a heading id out of the built HTML. Never derive it from the heading text.** VitePress's
+  slugifier is not the one you would write: it **keeps `—`** and **drops `…`**, so
+  `## Scaling across processes — \`--workers N\`` becomes `#scaling-across-processes-—-workers-n`,
+  and `## \`csrf from … send as header\` — a token that travels with the credential` drops the
+  ellipsis and keeps the dash. Deriving one by eye failed **four times across `M149c`–`M149e`**,
+  every time in the same confident direction. `npm run build -w @tflw/docs-site` then
+  `grep -o 'id="[^"]*"' .vitepress/dist/guide/<page>.html` answers it in one command.
+- **A shipped construct needs a page.** `verify-docs.mjs` takes the set difference between
+  `spec-data.ts`'s manifests plus `GRAMMAR.md`'s multi-word productions and every code string on the
+  site, and fails on a construct that appears nowhere (`M149f`/`D659`). If something is deliberately
+  undocumented, say so in `DECLARED_UNDOCUMENTED` with the reason; if it is legitimately future, that
+  is `DECLARED_ROADMAP` and a different guard.
+- **A `tflw-config fragment` is completed with a fixture env, so it has to nest.** `authorized
+  target` at the top level of a fragment is `TF022` — put it under `defaults` (or an `env`), the way
+  a real config carries it.
+- **Fence tags are a taxonomy, not decoration.** An untagged or unknown fence fails the run rather
+  than being skipped (`DT-01`). `tflw` is a whole file, `tflw fragment` is steps to wrap in a test,
+  and `binds=a,b` declares the variables a fragment interpolates but never captures.
+
 ## Before parking a claim on "this needs a real editor"
 
 > **This section is not guarded either**, and it is deliberately outside the gate region above.

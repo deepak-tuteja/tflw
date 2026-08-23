@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, extractBlocks, parseInfoString, scanRoadmapClaims, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { classify, extractBlocks, parseInfoString, scanRoadmapClaims, scanConstructCoverage, grammarPhrases, ROADMAP_PHRASES } from './doc-blocks.mjs';
 
 const one = (md) => {
   const blocks = extractBlocks(md);
@@ -138,4 +138,100 @@ test('`will be` is deliberately not an idiom — `D663`, pinned so it is not add
   // list that grows with sentences nobody is worried about is how a guard gets deleted.
   assert.ok(!ROADMAP_PHRASES.includes('will be'));
   assert.deepEqual(scan('# x\n\nThe report will be written to `report/report.html`.\n').problems, []);
+});
+
+// ---------------------------------------------------------------------------
+// Construct coverage (`M149f`, `D659`) — the positive dual, and the break it has to demonstrate.
+// ---------------------------------------------------------------------------
+
+const GRAMMAR = [
+  '```',
+  "CrawlSeed := 'seed' 'openapi' STRING NEWLINE   # the documented surface",
+  "           | 'seed' 'spider' STRING NEWLINE",
+  "CsrfStmt  := 'csrf' 'from' Subject 'send' 'as' 'header' STRING NEWLINE",
+  "Step      := 'api' METHOD Target NEWLINE",
+  '```',
+].join('\n');
+
+const cover = (pages, opts = {}) =>
+  scanConstructCoverage({
+    files: Object.entries(pages).map(([key, text]) => ({ key, text })),
+    grammarText: GRAMMAR,
+    ...opts,
+  });
+
+test('a construct on no page fails — the half a denylist cannot see', () => {
+  // `seed spider` shipped in `M137f` and appeared nowhere on the site for two milestones. No phrase
+  // list could have found it: an absent page matches no grep, which is why this check is a set
+  // difference against a manifest rather than a scan of the prose.
+  const page = '# Crawling\n\n```tflw\ncrawl "x"\n  seed openapi "/openapi.json"\n```\n\nSessions carry a `csrf from body.t send as header "X"` clause.\n';
+  const { problems } = cover({ 'guide/crawling.md': page });
+  assert.deepEqual(problems.map((p) => p.message), ['a shipped construct that appears on no page: `seed spider`']);
+});
+
+test('only the leading run of literals becomes a phrase — a search key, not a re-statement', () => {
+  // `'csrf' 'from'` then a `Subject`: the words after the non-literal are not part of the key, so a
+  // page writing `csrf from body.token send as header "X"` matches and a stricter key would not.
+  assert.deepEqual(grammarPhrases(GRAMMAR), ['csrf from', 'seed openapi', 'seed spider']);
+});
+
+test('a fence blanks before inline spans are scanned — otherwise its backticks re-pair the page', () => {
+  // Three backticks are an odd number, so every span after a fence pairs with the wrong neighbour.
+  // The symptom is a construct the page plainly shows being reported as documented nowhere.
+  const page = '# P\n\n```console\n✓ ok\n```\n\nUse `seed spider "/admin"` and `seed openapi "/o.json"` for a crawl.\n\n```console\n✓ ok\n```\n\nAnd `csrf from body.t send as header "X"`.\n';
+  assert.deepEqual(cover({ 'guide/crawling.md': page }).problems, []);
+});
+
+test('an inline span may cross a line break — two real pages write one', () => {
+  // ``a `body\nfrom` file`` in `input-handling.md`, and `log destination …` split across two lines
+  // in `ci-and-reporting.md`. A per-line scanner reads neither and calls both undocumented.
+  const page = '# P\n\n```tflw\napi GET /x\n```\n\nA `seed\nopenapi` document, a `seed spider "/admin"` walk, and `csrf\nfrom body.t`.\n';
+  assert.deepEqual(cover({ 'guide/crawling.md': page }).problems, []);
+});
+
+test('a `v-for` row counts as on the page — and is reported as tabulated, not explained', () => {
+  // `reference/matchers.md` and its three siblings render `spec-data.ts` straight through Vue, so
+  // those strings are on the page at runtime and in no `.md` source. Counting them is `D659`'s bar
+  // met; saying they are only tabulated is the next prose pass's worklist.
+  const page = [
+    '<script setup>',
+    "import { SEEDS } from '../../lang/src/spec-data.ts';",
+    '</script>',
+    '',
+    '<tr v-for="s in SEEDS" :key="s.id"><td>{{ s.syntax }}</td></tr>',
+    '',
+    'A crawl can `seed openapi "/o.json"`.',
+  ].join('\n');
+  const manifests = { SEEDS: [{ id: 'spider', syntax: 'seed spider "/admin"' }, { id: 'csrf', syntax: 'csrf from body.t' }] };
+  const result = cover({ 'reference/seeds.md': page }, { manifests });
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.onlyGenerated, ['csrf from', 'seed spider']);
+});
+
+test('an undocumented construct may be declared, with the reason it is not a gap', () => {
+  const allowlist = new Map([['seed spider', 'deliberately withheld while the walk is behind a flag']]);
+  const page = '# P\n\nA crawl can `seed openapi "/o.json"` and `csrf from body.t`.\n';
+  assert.deepEqual(cover({ 'guide/crawling.md': page }, { allowlist }).problems, []);
+});
+
+test('a declaration that is documented now fails — an exemption that exempts nothing', () => {
+  // The reverse direction, and the half that keeps the map from becoming a list of old beliefs.
+  const allowlist = new Map([['seed spider', 'deliberately withheld while the walk is behind a flag']]);
+  const page = '# P\n\nA crawl can `seed openapi "/o.json"`, `seed spider "/admin"` and `csrf from body.t`.\n';
+  const { problems } = cover({ 'guide/crawling.md': page }, { allowlist });
+  assert.deepEqual(problems.map((p) => p.message), ['`seed spider` is documented now, or is no longer a construct']);
+});
+
+test('two manifests naming one absent construct report one problem, not two', () => {
+  // `probe ciphers` is in `CONFIG_KEYWORDS` and in `GRAMMAR.md`. Two manifests agreeing it is
+  // missing is one absence; reporting it twice reads as two repairs.
+  const grammarText = ["```", "Probe := 'probe' 'ciphers' NEWLINE", '```'].join('\n');
+  const manifests = { CONFIG_KEYWORDS: [{ id: 'ciphers', slot: 'probe', summary: 'x' }] };
+  const { problems } = scanConstructCoverage({
+    files: [{ key: 'guide/config.md', text: '# Config\n' }],
+    grammarText,
+    manifests,
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].where, /CONFIG_KEYWORDS \(probe\) \+ GRAMMAR\.md `probe ciphers`/);
 });
