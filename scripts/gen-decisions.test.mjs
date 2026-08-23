@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CITATION,
+  collectAnchors,
   RANGE,
   byId,
   collectCitations,
@@ -145,6 +146,102 @@ test('the entry is the record\'s own bytes, and a heading yields its statement r
   assert.match(text, /one publishable package, no runtime dependencies/, 'P#43 is lifted from PLAN.md verbatim');
   assert.match(text, /\*\*M7 — sessions carry their own cookie jar\*\*/, 'the heading is demoted to bold so the index keeps one outline');
   assert.doesNotMatch(text, /Everything after the first paragraph/, 'a heading entry takes the statement, not the whole section (D670)');
+});
+
+// --- where a block ends, which is the whole of whether an entry is readable ------------------------
+
+test('a fenced statement is closed, and the sentence it illustrates comes with it', () => {
+  // Found by proofing: two entries published an opening ``` and nothing that closed it, because the
+  // scan ended at the first blank line and a fence is full of them. In a generated file that is not
+  // one bad entry — every entry after it renders as code. The second half is the same defect one
+  // step on: a fence is an illustration, so an entry that is only a fence says nothing.
+  const record = [
+    '### D330 — `probe mutating` is an optional indented sub-clause',
+    '',
+    '```',
+    'authorized target "http://localhost:4001"',
+    '',
+    'authorized target "https://staging.example.com"',
+    '```',
+    '',
+    'The config dialect already nests this way, so this is an existing shape on one more node.',
+    '',
+    'How the work went, which is not the decision.',
+    '',
+  ].join('\n');
+  const body = extractBlock(record, { line: 1, kind: 'heading', headingLevel: 3 });
+  assert.equal((body.match(/```/g) ?? []).length, 2, 'the fence is closed');
+  assert.match(body, /staging\.example\.com/, 'the blank line inside the fence is content, not a terminator');
+  assert.match(body, /an existing shape on one more node/, 'the sentence the fence illustrates is part of the statement');
+  assert.doesNotMatch(body, /How the work went/, 'and it stops there — one sentence, not the section (D670)');
+});
+
+test('a heading that names an id outranks a table cell that only lists it', () => {
+  // Found the moment this milestone's own proofing list was written: an index table naming 100+
+  // identifiers made every one of them a candidate, and a cell in it beat the heading that took the
+  // decision — `D5`, `D6`, `D9`, `D14` and 30 more resolved to a row of the list of their own
+  // defects. A cell names; a heading is the section about the thing.
+  const plan = ['## 1.1 Driver boundary (D5)', '', 'The real decision.', ''].join('\n');
+  const index = ['| entry | note |', '|---|---|', '| `D5` | listed here, defined elsewhere |', ''].join('\n');
+  const anchors = collectAnchors([{ path: 'PLAN_ARC.md', text: plan }, { path: 'PLAN_INDEX.md', text: index }]);
+  assert.equal(pickAnchor('D5', anchors.get('D5')).file, 'PLAN_ARC.md');
+
+  // But not above `PROGRESS.md`'s commit log, which IS the milestone's own account of what it
+  // shipped (`D670`). Ranking the heading over that moved `M69` to a plan heading mentioning it in
+  // passing, and `M77` to a review cluster's title.
+  const log = ['| commit | what |', '|---|---|', '| `7d996ad` | **M69** — the strict half |', ''].join('\n');
+  const mention = ['### Landed — step 2 and step 3 (`M69`, on a branch)', '', 'Prose about it.', ''].join('\n');
+  const both = collectAnchors([{ path: 'PROGRESS.md', text: log }, { path: 'PLAN_MILESTONE_B.md', text: mention }]);
+  assert.equal(pickAnchor('M69', both.get('M69')).file, 'PROGRESS.md');
+});
+
+test('a table row is published with the header it is a row of', () => {
+  // 45 entries are one row of `PROGRESS.md`'s milestone table or of a plan's scope table. A lone
+  // `| a | b |` line is not a table to any renderer — with no delimiter row it renders as literal
+  // pipes — so those entries published a milestone as `| M18 — … | ✅ | 2026-07-23 | 2026-07-23 |`,
+  // four unlabelled cells and a wall of punctuation.
+  const record = [
+    '| Milestone | Status | Started | Finished |',
+    '|---|---|---|---|',
+    '| M17 — CI ergonomics | ✅ | 2026-07-20 | 2026-07-20 |',
+    '| M18 — gap #9 backfill | ✅ | 2026-07-23 | 2026-07-23 |',
+    '',
+  ].join('\n');
+  const body = extractBlock(record, { line: 4, kind: 'progressTable', headingLevel: 0 });
+  assert.match(body, /^\| Milestone \| Status \| Started \| Finished \|/, 'the header comes with the row');
+  assert.match(body, /\n\|---\|/, 'and so does the delimiter, without which it is not a table');
+  assert.match(body, /M18 — gap #9 backfill/);
+  assert.doesNotMatch(body, /M17/, 'but not the neighbouring rows');
+});
+
+test('emphasis inside a heading is dropped, because bold does not nest', () => {
+  // 38 headings emphasise a word against the rest of their title. Demoting the heading by wrapping
+  // it in `**` produced `**a — **b** c**`, which renders as bold "a — ", plain "b", and a literal
+  // `c**` — a uniform defect, one per affected entry, in a document whose whole claim is fidelity.
+  const record = ['### D300 — a rule blocked by a **failed instrument** is announced', '', 'The statement.', ''].join('\n');
+  const body = extractBlock(record, { line: 1, kind: 'heading', headingLevel: 3 });
+  assert.equal(body.split('\n')[0], '**D300 — a rule blocked by a failed instrument is announced**');
+});
+
+test('a section heading ends the numbered item above it', () => {
+  // `PLAN.md`'s founding list is interrupted by `### Round N` headings naming the sessions the
+  // decisions were taken in. Spans that ran to the *next numbered item* carried the heading along,
+  // and because the index renders each entry under its own `###`, five dates ended up in the
+  // published outline looking like entries with no body.
+  const plan = [
+    '# Plan',
+    '',
+    '12. **Stack** — TypeScript/Node monorepo.',
+    '',
+    '### Round 2 (2026-07-05) — assertions, maintainability, structure',
+    '',
+    '13. **Assertion vocabulary** — one uniform form.',
+    '',
+  ].join('\n');
+  const items = collectLegacy(plan);
+  assert.doesNotMatch(items.get('12'), /Round 2/, 'the heading belongs to neither item');
+  assert.match(items.get('12'), /TypeScript\/Node monorepo/);
+  assert.match(items.get('13'), /one uniform form/, 'and the item after the heading still resolves');
 });
 
 // --- D686, the provenance line and the report it gave its detail to ---------------------------------
@@ -381,9 +478,12 @@ test('DECISIONS.md is not a citation surface for itself', () => {
 // --- reading the published file back ---------------------------------------------------------------
 
 test('publishedIds reads entry headings and ignores headings inside a lifted block', () => {
-  // Live case, not hypothetical: five `### Round N (2026-07-05) — …` headings arrive inside blocks
-  // lifted from `PLAN_PUBLISH.md`. A looser reader would count them as entries and then report them
-  // as orphans, failing the gate over the index's own correct output.
+  // This was a live case and is no longer one, which is worth saying rather than leaving the comment
+  // to imply otherwise: five `### Round N (2026-07-05) — …` headings from `PLAN.md` used to arrive
+  // inside lifted blocks, and a looser reader would have counted them as entries and reported them
+  // as orphans — failing the gate over the index's own output. The extractor stopped emitting them
+  // ('a section heading ends the numbered item above it'), so what this now defends is the general
+  // property: a `###` line inside a block is not an identifier, whatever put it there.
   const text = [
     '<!-- GENERATED:decisions:start -->', '',
     '### P#43', '', 'body', '',

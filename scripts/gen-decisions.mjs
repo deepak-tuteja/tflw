@@ -160,9 +160,22 @@ const ANCHORS = [
   // of what a milestone shipped, written when it shipped — which is the shape `D670` wants, found
   // rather than reconstructed.
   { kind: 'progressTable', re: /^\|\s*`?[0-9a-f]{6,10}`?\s*\|\s*\*{0,2}`?(M\d{1,3}[a-z]?\d?)`?\*{0,2}\s*[—-]/ },
+  // A heading naming an id parenthetically — `### 1.1 Driver boundary (D5)` — is the section that
+  // *takes* the decision under `PLAN_BROWSER_PERF_SECURITY.md`'s own numbering, and it outranks the
+  // two generic table kinds: a cell in a scope or index table only *names* an id, and letting a name
+  // beat a definition sent `D5`, `D6`, `D9`, `D14` and 30 others to a row of this milestone's own
+  // proofing list the moment that list was written.
+  //
+  // It stays **below** `progressTable`, and that boundary was measured rather than guessed:
+  // `progressTable` requires a commit sha in the first cell, so it is `PROGRESS.md` recording what
+  // shipped — a written statement, which is what `D670` wants. Ranking the heading above it moved
+  // `M69` to a *plan* heading mentioning it in passing and `M77` to a review cluster's title, both
+  // of which are about the milestone rather than the milestone's own account of itself. And it stays
+  // below `boldLead`, which is what keeps `M50`'s `### M50 shipped … (D127, …)` from resolving
+  // `D127` to the milestone that cites it.
+  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?[),`]/ },
   { kind: 'tableLead', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\*{0,2}\s*[—:-]\s/ },
   { kind: 'tableRow', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\*{0,2}\s*\|/ },
-  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?[),`]/ },
 ];
 const RANK = Object.fromEntries(ANCHORS.map((a, i) => [a.kind, i]));
 
@@ -230,6 +243,52 @@ export function pickAnchor(id, anchors) {
 // ---------------------------------------------------------------------------------------------
 
 /**
+ * One block from `start`: everything up to the next blank line or heading, except that blank lines
+ * inside a fenced code block are content. Ending a block at the first blank line inside a fence cut
+ * the fence open, and an unterminated fence in a generated file renders every entry after it as
+ * code (`D314`, `D330`).
+ *
+ * @param {string[]} lines @param {number} start @returns {number} the line after the block
+ */
+function takeBlock(lines, start) {
+  let j = start;
+  let fence = null;
+  while (j < lines.length) {
+    const f = /^\s*(```+|~~~+)/.exec(lines[j]);
+    if (fence) {
+      if (f && f[1].startsWith(fence)) fence = null;
+      j++;
+      continue;
+    }
+    if (f) { fence = f[1]; j++; continue; }
+    if (lines[j].trim() === '' || /^#{1,6}\s/.test(lines[j])) break;
+    j++;
+  }
+  return j;
+}
+
+/**
+ * The statement. One block, except where the first block is a fenced code sample: a fence is an
+ * illustration and never a statement on its own, so the sentence after it is taken too.
+ *
+ * A paragraph ending in a colon is incomplete the same way, and is deliberately **not** handled
+ * here. Extending across a colon was tried and reverted: the block a colon introduces is often a
+ * list with no blank line in it, so `M54` grew to 3.6 KB of progress log — `D670`'s mistake exactly,
+ * arriving through a repair for something else. A colon-ended block is a statement that does not
+ * stand alone, and `D669` puts that repair in the record, not in the extractor.
+ *
+ * @param {string[]} lines @param {number} i @returns {number} the line after the statement
+ */
+function takeStatement(lines, i) {
+  const j = takeBlock(lines, i);
+  if (!/^\s*(```+|~~~+)/.test(lines[i] ?? '')) return j;
+  let k = j;
+  while (k < lines.length && lines[k].trim() === '') k++;
+  if (k >= lines.length || /^#{1,6}\s/.test(lines[k])) return j;
+  return takeBlock(lines, k);
+}
+
+/**
  * The block an anchor names. A heading takes everything down to the next heading of the same or a
  * higher level; every other form takes its own paragraph. Nothing is reflowed, reworded or joined:
  * the output is the record's own bytes, which is the property that makes the index trustworthy
@@ -247,16 +306,35 @@ export function extractBlock(text, anchor) {
     // names for milestones, arriving through decisions instead. Take the heading and the paragraph
     // under it: the heading carries the title, the first paragraph carries what was decided, and
     // everything after it is how the work went.
+    //
+    // "The paragraph under it" is `takeStatement`'s job, not a blank-line scan's: a fence and a
+    // colon both end a block mid-thought.
     let i = start + 1;
     while (i < lines.length && lines[i].trim() === '') i++;
-    let j = i;
-    while (j < lines.length && lines[j].trim() !== '' && !/^#{1,6}\s/.test(lines[j])) j++;
+    const j = takeStatement(lines, i);
     // The heading line is demoted to bold: the identifier is already this entry's own heading, and
     // a second `#` inside an entry would put fake structure in the published document's outline.
-    const title = lines[start].replace(/^#{1,6}\s+/, '').replace(/\s*[✅🔧🔮⏸]+\s*$/u, '').trim();
+    //
+    // Emphasis *inside* the heading is dropped rather than carried, because bold does not nest: 38
+    // headings emphasise a word against the rest of the title, and wrapping one produced
+    // `**a — **b** c**`, which renders as bold "a — ", plain "b", and a literal `c**`. The contrast
+    // that emphasis drew has no meaning once the whole line is bold anyway.
+    const title = lines[start]
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/\s*[✅🔧🔮⏸]+\s*$/u, '')
+      .replace(/\*\*/g, '')
+      .trim();
     body = [`**${title}**`, '', ...lines.slice(i, j)].join('\n');
   } else if (anchor.kind === 'progressTable' || anchor.kind === 'tableRow' || anchor.kind === 'tableLead') {
-    body = lines[start];
+    // A row, with the header it is a row of. On its own a `| a | b |` line is not a table to any
+    // markdown renderer — no delimiter row, so it renders as literal pipes, which is how 45 entries
+    // published a milestone as `| M18 — … | ✅ | 2026-07-23 | 2026-07-23 |`. Walking up to the
+    // delimiter and taking the header above it costs two lines of the record's own bytes and makes
+    // the row render as what it is, with its columns named instead of guessed at.
+    let head = start;
+    while (head > 0 && /^\s*\|/.test(lines[head - 1])) head--;
+    const delim = lines.slice(head, start).findIndex((ln) => /^\s*\|[\s|:-]+\|\s*$/.test(ln));
+    body = delim >= 0 ? [...lines.slice(head, head + delim + 1), lines[start]].join('\n') : lines[start];
   } else if (/^\s*[-*]\s/.test(lines[start])) {
     // A list item ends at its next sibling, not at the next blank line. `PLAN.md`'s milestone
     // roadmap is one unbroken list, so a blank-line rule read `M1`'s entry as everything from the
@@ -272,9 +350,9 @@ export function extractBlock(text, anchor) {
     }
     body = lines.slice(start, j).join('\n');
   } else {
-    let j = start + 1;
-    while (j < lines.length && lines[j].trim() !== '') j++;
-    body = lines.slice(start, j).join('\n');
+    // A bold lead or a numbered roadmap item: its own block, and the sentence after it when that
+    // block is a fence.
+    body = lines.slice(start, takeStatement(lines, start)).join('\n');
   }
   return body.replace(/\s+$/, '');
 }
@@ -300,6 +378,15 @@ export function collectLegacy(planText) {
   const spans = new Map();
   let open = null;
   lines.forEach((ln, i) => {
+    // A section heading ends the item above it. The list is interrupted by `### Round N` headings
+    // marking the sessions the decisions were taken in, and a span that ran only to the *next
+    // numbered item* carried the heading along with it — putting five headings named after dates
+    // into the published outline, each looking like an entry with no body.
+    if (/^#{1,6}\s/.test(ln)) {
+      if (open) spans.get(open).end = i;
+      open = null;
+      return;
+    }
     const m = /^(\d{1,3})\.\s+\S/.exec(ln);
     if (!m) return;
     if (open) spans.get(open).end = i;

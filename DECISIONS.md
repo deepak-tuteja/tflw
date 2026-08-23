@@ -129,8 +129,6 @@ itself, at whatever length it was taken.
 12. **Stack** — TypeScript/Node monorepo; hand-rolled lexer + recursive-descent parser (full
     ownership of diagnostics and error recovery — a pillar, so no parser generator, no tree-sitter).
 
-### Round 2 (2026-07-05) — assertions, maintainability, structure
-
 ### P#13
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
@@ -212,8 +210,6 @@ itself, at whatever length it was taken.
     dedicated tests. **Rejected:** context-per-file (ordering coupling — dependsOn's poison
     through the back door).
 
-### Round 3 (2026-07-05) — test-data generation & readability
-
 ### P#21
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
@@ -276,8 +272,6 @@ itself, at whatever length it was taken.
     with the same tiered locator resolution as `fill field`. **Rejected:** fill-and-remember
     auto-verify (`expect form matches filled`) — hidden state, breaks on server-side
     normalization; explicit `check` lines already express the audit.
-
-### Round 4 (2026-07-05) — config in depth, API completeness, spec & ordering
 
 ### P#27
 
@@ -363,8 +357,6 @@ itself, at whatever length it was taken.
     builds before the browser half. **Rejected:** formal EBNF/spec-suite before the parser exists
     (two grammars would drift; extract EBNF from the parser later).
 
-### Round 5 (2026-07-05) — shipping & distribution
-
 ### P#35
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
@@ -419,8 +411,6 @@ itself, at whatever length it was taken.
     green **API** test in <5 min (no browser download in the funnel — API-first pays off here),
     SPEC.md as the reference, `examples/` lifted from the always-passing dogfood suite.
     **Parking lot:** Docker image, official GitHub Action, docs site — until someone asks.
-
-### Round 6 (2026-07-05) — v0.1 API-only re-scope
 
 ### P#41
 
@@ -788,7 +778,7 @@ resolution is reported.**
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.6 Sessions & identity (D10) — **no bridge****
+**1.6 Sessions & identity (D10) — no bridge**
 
 - SPEC §3.3 already allows browser steps in a `session` (produce storage state) and api steps
   (produce a cookie jar). **The two representations are never converted into each other.**
@@ -844,7 +834,7 @@ resolution is reported.**
 
 <sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.10 Extended UI capabilities — **all four in scope** (D14)**
+**1.10 Extended UI capabilities — all four in scope (D14)**
 
 Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
@@ -1495,7 +1485,7 @@ Four sites, all reading `.value`, all on a `StringLit` the checker passes to `ch
 
 <sub>cited from SPEC.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
-**D178 — the unit is one **word**, not one string**
+**D178 — the unit is one word, not one string**
 
 The decision the whole rule stands on. A `.tflw` string is not an identifier; it is prose, and prose
 is legitimately multilingual.
@@ -1669,7 +1659,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
-**D285 — zero applicable rules is a **failure**, not a pass**
+**D285 — zero applicable rules is a failure, not a pass**
 
 If no rule in the pack applied, `expect response has no security violations` fails with a dedicated
 diagnostic: *the assertion had no power to fail.*
@@ -1728,7 +1718,7 @@ one word covers both scan kinds.
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
-**D291 — D21's declaration half lands now, and Tier 1 **requires** it**
+**D291 — D21's declaration half lands now, and Tier 1 requires it**
 
 In scope for `M128b`:
 
@@ -1798,7 +1788,7 @@ observation.
 
 <sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
-**D298 — the probe offers a TLS 1.0 floor, and does **not** widen ciphers**
+**D298 — the probe offers a TLS 1.0 floor, and does not widen ciphers**
 
 *Decided during `M128c`, from measurement rather than argument.* `tls.DEFAULT_MIN_VERSION` is
 `TLSv1.2`. With Node's default client parameters, a host speaking nothing but TLS 1.0 simply refuses
@@ -1819,7 +1809,7 @@ both of which the rules state in their own failure text rather than leaving to t
 
 <sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
-**D300 — a rule blocked by a **failed instrument** is announced; one blocked by its precondition is not**
+**D300 — a rule blocked by a failed instrument is announced; one blocked by its precondition is not**
 
 *Decided during `M128c`, from a test that failed.* The `because` reason for a failed probe was
 reaching only D285's not-applicable listing — which prints when *nothing* applied. On an ordinary
@@ -1838,7 +1828,7 @@ A second matcher on the existing `response` subject, in the exact shape D290 cho
 
 <sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
-**D305 — the oracle is differential on **resource identity****
+**D305 — the oracle is differential on resource identity**
 
 A violation is: **a resource id from the owner's response appears in a probe's response.**
 
@@ -1862,6 +1852,9 @@ session admin privileged
   …
 ```
 
+One word, declared once, beside the credential it describes. `SessionDecl` grows one boolean;
+the grammar is `session <name> [oauth2] [privileged]`.
+
 ### D308
 
 <sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
@@ -1877,6 +1870,10 @@ test "…" as shopper
                   principal's
     ‖ move the identity into a `session` block and opt in with `as`
 ```
+
+§0(b) is the reason: the probe would send the owner's own token and report its own `200` as a leak.
+The header literal is right there in the AST, so this is decidable at check time — and refusing is
+strictly better than answering wrongly, which is the same argument D291 made for an undeclared host.
 
 ### D309
 
@@ -1907,6 +1904,9 @@ authorized target "http://localhost:4001" reason "self-hosted test fixture"
   probe mutating
 ```
 
+`GET`/`HEAD`/`OPTIONS` are probed by default. `POST`/`PUT`/`PATCH`/`DELETE` are probed only under
+this opt-in, and unprobed mutating endpoints are **named in the counts**, never silently skipped.
+
 ### D312
 
 <sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
@@ -1933,6 +1933,19 @@ collection, or a shared public resource — is **not** a finding. The invariant 
 
 ```
 report/authz-repro-orders-id-peer.tflw
+
+# emitted by tflw M130 — sec/authz-object-leak
+# GET /orders/{id} served `shopper`'s order to `peer`
+test "peer must not read shopper's order" as peer
+  api GET /orders/a1e3…
+  expect status equals 403
+```
+
+D22's *"every finding emits a runnable `.tflw` repro — a finding is a failing test you re-run, never
+a mystery flag"*, landing in the tier where it is cheapest rather than the tier where it is hardest.
+A BOLA repro is one test with `as <principal>` and an expected `403`; a fuzzer's repro is a mutated
+body and an invariant, which is why D292 deferred the artifact machinery to Tier 3 without deferring
+this.
 
 ### D315
 
@@ -2101,6 +2114,15 @@ that boundary deliberately (*"a frame whose registry is knowable: a `test` or ho
 authorized target "http://localhost:4001" reason "self-hosted test fixture"
   probe mutating
 
+authorized target "https://staging.example.com" reason "contracted pentest window, ticket SEC-441"
+  # no `probe mutating` — safe methods only against staging
+```
+
+The config dialect already nests this way for `session`, `defaults` and `env`, so this is an existing
+shape applied to one more node rather than a new one. It reads as a property of *that host*, which is
+D311's whole argument for attaching it there, and Tier 3's further per-class opt-ins land as sibling
+lines instead of needing a second grammar.
+
 ### D331
 
 <sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
@@ -2137,7 +2159,7 @@ name would either shadow it or be shadowed by it, and both are silent.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
-**D338 — address classification is **literal**; `getaddrinfo` is never called**
+**D338 — address classification is literal; `getaddrinfo` is never called**
 
 A target's address class is judged from the URL's host **as written**. No DNS resolution, ever,
 in either the checker or the runtime.
@@ -2152,11 +2174,26 @@ in either the checker or the runtime.
 tflw run --allow-public-target https://staging.example.com
 ```
 
+- **Origin-valued, not boolean.** A bare boolean affirms a *category*, so it survives any later
+  change of target: CI's existing flag would silently authorize whatever new host someone edits into
+  the config, leaving config with sole say over *which* public host gets scanned — most of what
+  §3.2(3) was trying to take away from it. Naming the origin makes the two halves have to agree.
+  This is `TF061`'s argument, reused: nobody can affirm the scope of a target they have not named.
+- **Must match an `authorized target` this run would use**, compared by origin (scheme + host + port),
+  the same comparison `TF060` already performs. A flag naming an origin the run does not scan is an
+  error, not a no-op — see D344's `TF066`.
+- **Repeatable.** D343 widens the gate to service origins, so a run can legitimately scan more than
+  one public origin. Each occurrence names exactly one origin; there is no comma-separated form and
+  no wildcard, for `TF061`'s reason.
+- **No `--reason` on the CLI.** D291 already puts the reason in config, where it travels with the
+  report artifact. A second reason on the command line either duplicates it or contradicts it, and
+  a contradiction has no defined winner.
+
 ### D341
 
 <sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
-**D341 — the flag follows the **packet**, not the matcher**
+**D341 — the flag follows the packet, not the matcher**
 
 `--allow-public-target` gates only scans that **originate** traffic. Today that is
 `authorization violations`. Tier 3's fuzzer and Tier 4's crawler will inherit it.
@@ -2175,7 +2212,7 @@ different resolutions.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
-**D343 — `TF060` widens from "the default `api` base" to **every scannable origin****
+**D343 — `TF060` widens from "the default `api` base" to every scannable origin**
 
 Today `checkAuthorizedTargets` looks only at the env's default `api` base. A step naming a service
 (`api @billing GET /invoices`) reaches a different origin, and a scan there is **completely
@@ -2219,6 +2256,11 @@ expect response has no input-handling violations
 expect response has no serious input-handling violations
 ```
 
+Spec id `has-no-input-handling-violations`, the third scan subject alongside
+`has-no-security-violations` (Tier 1) and `has-no-authorization-violations` (Tier 2). Severity floors
+compose exactly as the other two do — `FindingSeverity` is unchanged (`minor` | `moderate` |
+`serious` | `critical`), and the floor is a floor, not an exact match.
+
 ### D367
 
 <sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
@@ -2234,7 +2276,7 @@ tiers; the namespace does not. Tier 3 follows: `sec/error-detail-disclosure`,
 
 <sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D368 — the corpus is **fixed and enumerable**; "fuzzing" is the wrong word for what ships**
+**D368 — the corpus is fixed and enumerable; "fuzzing" is the wrong word for what ships**
 
 Tier 3's default engine applies **every payload in a curated corpus to every mutable input**, in a
 defined order, with no sampling and no RNG. The same suite against the same target produces
@@ -2244,7 +2286,7 @@ byte-identical findings.
 
 <sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D369 — a seeded extension exists, is opt-in, and **never gates****
+**D369 — a seeded extension exists, is opt-in, and never gates**
 
 `packages/runtime/src/seed.ts` already ships `mulberry32`/`subSeed`/`resolveRunSeed`, so generated
 payloads are cheap to add and genuinely find things nobody wrote a payload for. It is available as an
@@ -2254,7 +2296,7 @@ opt-in layer on top of the corpus.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D370 — the surface is the **observed request only**. No OpenAPI seed.**
+**D370 — the surface is the observed request only. No OpenAPI seed.**
 
 D22 says the surface is *"OpenAPI seed **+** captured-traffic seed."* The OpenAPI half is dropped
 here and left to Tier 4's crawler.
@@ -2288,7 +2330,7 @@ rather than reopening the layer.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D373 — the invariants, and the 5xx bar: **disclosure, not status****
+**D373 — the invariants, and the 5xx bar: disclosure, not status**
 
 Tier 1 shipped at zero false positives and that bar is **not renegotiated here.**
 
@@ -2307,7 +2349,7 @@ and a probe response).
 
 <sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D375 — `M130-01` is **not** promoted by this milestone, and this is why**
+**D375 — `M130-01` is not promoted by this milestone, and this is why**
 
 `M130-01` (S4, open) is the CSRF false-negative: a cookie-borne probe of a mutating endpoint is
 refused for CSRF *before* authorization is consulted, and a differential oracle reads the refusal as
@@ -2350,7 +2392,7 @@ the emitter already builds a runnable `.tflw` from a `ProbeResult`.
 
 <sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D379 — the plants: `V10`–`V13`, and the D363 trap checked **before** designing them**
+**D379 — the plants: `V10`–`V13`, and the D363 trap checked before designing them**
 
 **D363's trap, checked first, as it instructs.** `M132b` discovered at build time that the acceptance
 corpus had **zero principals able to make a mutating probe** — three correct exclusions composing
@@ -2371,7 +2413,7 @@ quiet against a correct application, and tells us whether D377's gate is urgent 
 
 <sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D381 — the pace bound holds; `probe rate` does **not** come due**
+**D381 — the pace bound holds; `probe rate` does not come due**
 
 D21 layer 5 shipped as an **asserted bound rather than a declared pace**: probes are strictly
 sequential, one in flight per assertion, and a test holds that property. `probe rate` was deferred on
@@ -2401,7 +2443,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 <sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D385 — findings ride the report for **all three scans**, not only Tier 3**
+**D385 — findings ride the report for all three scans, not only Tier 3**
 
 D376 says findings ride `RunReport` as a `findings[]` array. It does not say *whose*. Measured: Tier 1
 (`securityRules.ts`), Tier 2 (`authzRules.ts`) and Tier 3 (`inputRules.ts`) all already produce
@@ -2413,7 +2455,7 @@ D332's repro emitter needed facts rather than a rendered sentence.
 
 <sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**D386 — the gate can only **relax**, never tighten, and relaxation is never silent**
+**D386 — the gate can only relax, never tighten, and relaxation is never silent**
 
 The obvious-looking design is a run-level gate that decides `ok` from findings. It is wrong here, and
 the reason is structural: `run-verdict.ts` is emphatic that `finalizeVerdict` is **the one derivation
@@ -2485,7 +2527,7 @@ last piece and states the consequence plainly, since D360 forbids editing the cl
 
 <sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
-**D404 — `findings.sarif` is written **only when the run scanned****
+**D404 — `findings.sarif` is written only when the run scanned**
 
 Written to `report/findings.sarif` when the run evaluated at least one `security` /
 `authorization` / `input-handling` assertion — that is, when D389's census is non-empty. Otherwise no
@@ -2503,6 +2545,12 @@ result.locations[0].physicalLocation.region.startLine      = the assertion's lin
 result.locations[0].logicalLocations[0].fullyQualifiedName = "GET /orders/{orderId}"
 result.locations[0].logicalLocations[0].kind               = "resource"
 ```
+
+SARIF is a static-analysis format and a `result` is anchored to a file and a line. A tflw finding is
+about a **running application's endpoint**, whose source is usually not in the repository being
+scanned and may not be in any repository at all. The `.tflw` file is the one artifact that genuinely
+exists in the scanned tree, `ScanFinding` already carries `file` and `line`, and `endpoint` is
+already normalized to `METHOD /templated/path` for the fingerprint.
 
 ### D406
 
@@ -2527,11 +2575,15 @@ result.locations[0].logicalLocations[0].kind               = "resource"
 "properties": { "tags": ["security", "external/cwe/cwe-79"], "security-severity": "5.0" }
 ```
 
+The convention CodeQL emits and the one GitHub's UI filters and groups on, so a tflw finding sits
+beside native alerts instead of in a bucket of its own. The KB's OWASP and CWE URLs also render as
+links inside `help.markdown`, so a human reading one alert has them without a taxonomy walk.
+
 ### D408
 
 <sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
-**D408 — the KB carries remediation and references. It does **not** carry severity.**
+**D408 — the KB carries remediation and references. It does not carry severity.**
 
 R9 says severity is KB-authored. **That clause is corrected here**, on `M134b`'s precedent that an
 overclaim found in the file you are already reading gets rewritten rather than stepped over.
@@ -2540,7 +2592,7 @@ overclaim found in the file you are already reading gets rewritten rather than s
 
 <sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
-**D409 — a rule with no KB entry is a **compile error****
+**D409 — a rule with no KB entry is a compile error**
 
 Each rule module exports its ids as a `const` tuple; their union types the KB as
 `Record<RuleId, KbEntry>`. A nineteenth rule that ships without an entry fails `tsc`.
@@ -2570,12 +2622,14 @@ that makes it un-baselinable and non-gating: a rule can be forgotten, a missing 
 
 <sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
-**D412 — `rules[]` declares what **applied**; what stood down goes in `run.properties`**
+**D412 — `rules[]` declares what applied; what stood down goes in `run.properties`**
 
 ```
 tool.driver.rules[]                       = every rule this run applied (D389's census)
 run.properties["tflw/notApplicable"][]    = { rule, because } for every rule that stood down
 ```
+
+This is the three-state coverage model expressed in SARIF's own vocabulary:
 
 ### D413
 
@@ -2668,7 +2722,7 @@ fires. The remedy does not follow.
 
 <sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D433` — CSRF token **capture** lives on `session`. It is a session feature the scanner needs, not a scanner feature**
+**`D433` — CSRF token capture lives on `session`. It is a session feature the scanner needs, not a scanner feature**
 
 `D423` establishes that capturing a token the app itself issued is not synthesis — *"it is what a
 browser does"* — and that `tests/api/identity/sessions.tflw:54` already captures `body.csrfToken` by
@@ -2678,7 +2732,7 @@ hand for exactly this reason, and has since `M22`.
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D435` — the API surface is **enumerated and disclosed**; only the spider is capped**
+**`D435` — the API surface is enumerated and disclosed; only the spider is capped**
 
 `M134` risk 1 already fixed half of this: *"If it comes back untenable the answer is a cap or a
 narrowing (`D381`), **never concurrency**."* This plan does not overturn it. The crawl stays strictly
@@ -2689,7 +2743,7 @@ stays deferred with its condition unmet** (`D448`).
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D442` — the browser spider **fetches and parses**. It does not render**
+**`D442` — the browser spider fetches and parses. It does not render**
 
 Both halves ship, browser last and separable. The spider is HTML-fetching and link/form extraction —
 **no browser engine**.
@@ -2708,7 +2762,7 @@ repair.
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D450` — the `crawl` declaration's shape is derived from existing idioms, and it adds **no fourth matcher family****
+**`D450` — the `crawl` declaration's shape is derived from existing idioms, and it adds no fourth matcher family**
 
 `D432` settled that a crawl is a top-level declaration. It did not say what one looks like, and a
 construct's syntax is the half users actually meet. Every element below is taken from something the
@@ -2718,7 +2772,7 @@ language already does; nothing here is invented where a precedent existed.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D456` — `TF069` is **withdrawn**. `csrf from` inherits `TF039`, and the path-miss carries no code**
+**`D456` — `TF069` is withdrawn. `csrf from` inherits `TF039`, and the path-miss carries no code**
 
 **`M137b` mints no diagnostic code.** `TF068` stays next-free for `D432`'s `crawl`, and §1.4's
 statement about it stays true.
@@ -2727,7 +2781,7 @@ statement about it stays true.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D463` — `TF069` is skipped **permanently**, and the crawl-body rule is `TF070`**
+**`D463` — `TF069` is skipped permanently, and the crawl-body rule is `TF070`**
 
 `M137c` was scoped to mint one code. Building `TF068` surfaced a second rule that needs one: the crawl
 body restriction, which `ast.ts` already documents as the checker's job rather than the grammar's.
@@ -2738,7 +2792,7 @@ table.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D480` — a crawl resolves the document's paths against **the document's own server**, never against the `api` base's path**
+**`D480` — a crawl resolves the document's paths against the document's own server, never against the `api` base's path**
 
 Found by `M137e`'s scoping, before a line of `M137e` was written, and it is `D478` again one layer up —
 in the sibling component, hidden by the same blind spot, with the same failure direction.
@@ -2747,7 +2801,7 @@ in the sibling component, hidden by the same blind spot, with the same failure d
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D481` — a crawl that sent requests and reached none **fails**, and it is `TF068`, not a new code**
+**`D481` — a crawl that sent requests and reached none fails, and it is `TF068`, not a new code**
 
 `D480`'s defect was green. That is the part worth fixing permanently: the engine had every number it
 needed to know it had judged nothing — `sent 31`, `reached 0` — printed them, and returned success.
@@ -2756,7 +2810,7 @@ needed to know it had judged nothing — `sent 31`, `reached 0` — printed them
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D482` — a resource the **public** receives has no owner, so it has no boundary to cross**
+**`D482` — a resource the public receives has no owner, so it has no boundary to cross**
 
 The second defect the crawler found by existing, and the first one that changes *shape* under it
 rather than merely appearing more often.
@@ -2765,7 +2819,7 @@ rather than merely appearing more often.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D483` — a spider **walks before it probes**, so disclosure bounds two phases rather than one**
+**`D483` — a spider walks before it probes, so disclosure bounds two phases rather than one**
 
 `M137f`'s first real design question, and it is not about HTML parsing. It is that **the browser seed
 is the first seed whose enumeration is itself traffic**, and two properties this arc has already paid
@@ -2775,7 +2829,7 @@ for are written against the assumption that it never is.
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D485` — enumeration is gated by **`probe ciphers`, a fourth `authorized target` sub-clause**, and `sec/tls-weak-cipher` is genuinely widened rather than forked**
+**`D485` — enumeration is gated by `probe ciphers`, a fourth `authorized target` sub-clause, and `sec/tls-weak-cipher` is genuinely widened rather than forked**
 
 The item line for `M137g` says *"widened from negotiated-suite to offered-suite"*, and the first
 reading of that is impossible. `sec/tls-weak-cipher` is evaluated **per response** by the matcher, so
@@ -2788,7 +2842,7 @@ handshakes for one unchanging answer."*
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
-**`D486` — the enumeration handshake reads **one bit and is forbidden the rest**, which is what answers `D298`'s refusal**
+**`D486` — the enumeration handshake reads one bit and is forbidden the rest, which is what answers `D298`'s refusal**
 
 `D298` declined to widen the probe's cipher list, and its reasoning is still correct as written:
 reaching a legacy-cipher peer needs `@SECLEVEL=0`, *"and OpenSSL's security level is not a cipher
@@ -3303,54 +3357,72 @@ exact mechanism D15 was asking for.
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M18 — gap #9 backfill: spec-data/LSP/docs-site/VS Code for `base64`/`hex`/`url` (enterprise arc cluster 8 kickoff) | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M19
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M19 — gap #10: `upload ... type "..."` Content-Type (enterprise arc cluster 8) | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M20
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M20 — test-coverage audit follow-up: VS Code extension activation test | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M21
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M21 — test-coverage audit follow-up: root `c8` coverage tooling | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M22
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M22 — test-coverage audit follow-up: docs-site `.tflw` sample verification | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M23
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M23 — gap #16: `HEAD`/`OPTIONS` HTTP methods | ✅ | 2026-07-25 | 2026-07-25 |
 
 ### M24
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M24 — gap #17: binary-safe body assertion (`body bytes` + `matches file`) | ✅ | 2026-07-25 | 2026-07-25 |
 
 ### M25
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M25 — gap #19: content-aware body parsing (`body csv` + `body pdf text`) | ✅ | 2026-07-25 | 2026-07-25 |
 
 ### M26
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| Milestone | Status | Started | Finished |
+|---|---|---|---|
 | M26 — gap #15: `redact` now masks `capture`/`expect` step-detail text, not just the trace | ✅ | 2026-07-26 | 2026-07-26 |
 
 ### M27
@@ -3497,6 +3569,8 @@ pure acceptance-testing pass.
 
 <sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
+| ID | Scope |
+|---|---|
 | **M35** | Load-engine hardening (D32) — close the tflw-vs-k6 gap M34 found and root-caused but did not fix; re-run M34's own acceptance comparison unchanged once fixed, to see whether D31's numeric half now holds. **M35a/M35a-2/M35b done 2026-07-31 (root cause found: an unconditional `undici` npm import in `http.ts` cripples Node's built-in global `fetch()` — see §2.7/FINDINGS_M35B_ROOT_CAUSE.md). M35c done 2026-07-31 (mTLS dispatch isolated into a dedicated child process; ~12.8x throughput improvement on the isolated 1-VU harness, all 372 runtime + 106 CLI tests green). M35d done 2026-07-31 — real, mixed result: the fix is verified and worth keeping, but does NOT close the gap on M34's real contended acceptance target (tflw still ~173-191/s vs k6's 620/s, same ~3.2-3.4x as before); back-off-dominated real latency swamps the ~1.4ms/call the fix saves. D33a's ~10% tolerance is not met — see acceptance/README.md's "M35d — re-measured" section. M35 complete; residual gap left open, not chased further per D33c/D35/D38.** |
 
 ### M36
@@ -3637,6 +3711,8 @@ only, so `sendRequest`'s `fetch()` path for `tflw run` is provably untouched, mi
 
 <sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
+| ID | Scope |
+|---|---|
 | **M46** | Depends on M45 (shipped, kept). Root-caused M45's residual checkout-scoped p95 gap (4.9%/3.6%) by comparing tflw's actual measurement *logic* against k6's, not just its numbers (D76-D80). Landed the Nagle fix (`req.setNoDelay(true)` in `httpPinned.ts`) and quantified the percentile-algorithm bias (0.00% at this sample size, `percentile()` left unchanged). Effect was asymmetric: closed `dogfood-post-uncontended`'s gap (3.6% → 2.90%, under the <3% bar) but did not move `checkout-burst`'s (4.9% → 5.86%, within noise); a bounded D80 follow-up ruled out server-side Nagle (nginx fronts the client connection and already defaults `tcp_nodelay on`); a second, user-requested pass ruled out event-loop/GC jitter too (checkout-burst's readings were indistinguishable from an uncontended control). **Shipped 2026-08-01 — checkout-burst's 5.86% residual accepted as the practical ceiling per D79.** Full design + result in §2.17. |
 
 ### M47
@@ -3836,6 +3912,8 @@ boundary they had no reason to stop at.
 
 <sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
+| milestone | commit | closes |
+|---|---|---|
 | **M61** | `c0c7f81` | **cluster C7 closed** — `A3-02` S2, `A3-20` S2, `A4-08` S2, `A3-15` S3, `A3-16` S3, `OBS-04` S3, plus `B6-04` S2 and `B6-11`'s flag half (C5) |
 
 ### M62
@@ -3881,90 +3959,129 @@ The second of the three verticals `FS-10` scheduled ("A + C now, B after batches
 
 <sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
+| commit | what |
+|---|---|
 | `04b3143` | **M66** — `FS-08` optional copula, `FS-06` keyword lookahead, `FS-07` one value parser, `FS-04` additive half |
 
 ### M67
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | what |
+|---|---|
 | `601f0ff` | **M67** — `FS-05`: `think` → `pause`, `wait until … for <dur>`, honest `TF033` |
 
 ### M68
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | what |
+|---|---|
 | `12e90ed` | **M68** — the doc sweep: SPEC + `GRAMMAR.md` + docs-site, once, per D24b |
 
 ### M69
 
 <sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
+| commit | what |
+|---|---|
 | `7d996ad` | **M69** — `FS-04` strict half. **On branch `b1-step3-check-strict`, deliberately not on `main`** |
 
 ### M70
 
 <sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `56d7cc3` | **M70** — `B6-01` (**S1**) | an empty `--tag`/`--only` was indistinguishable from omitting the flag, so a *narrowing* flag ran the whole suite at exit 0. Refused now, in both spellings, for every value-taking flag — same rule shape as M63's `flagValue` |
 
 ### M71
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `b017c9b` | **M71** — `A4-12` ≡ `B6-07` | `check --format json` was a flat `Diagnostic[]` with no file attribution. Now one `{ file, diagnostics }` entry per file checked, clean files included |
 
 ### M72
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `deb7b1c` | **M72** — `A2-06` | the `as`/`retry`/`parallel` header modifiers had a fixed, undocumented order; they are order-independent now, each at most once |
 
 ### M73
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `64b0981` | **M73** — `B6-10` | `exclude "b.tflw"` was a silent no-op — the equality test lived inside the `isDirectory()` branch. Files match now, and paths are separator-normalised |
 
 ### M74
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `9bb73f0` | **M74** — `A2-12` | `ReportDecl.dir` discarded its `StringLit`, freezing `dir: string` into exported public API. It keeps the literal now, at parity with every sibling path directive |
 
 ### M75
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `4821fdc` | **M75** — `B4-07` | SPEC §3.3 claimed a `session` applies browser storage state; §10 says D10 never bridges them. §3.3 and the sessions guide now say what actually happens |
 
 ### M76
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `e00c6c2` | **M76** — `B5-05` | `tflw migrate` cannot act (no rule emits a deprecation) and `--help`/`CLI_FLAGS` presented a working tool. Documented, not demoted |
 
 ### M77
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PROGRESS.md`</sub>
 
+| commit | row | what |
+|---|---|---|
 | `b82a5b4` | **M77** — cluster `C4` | the ndjson stream had no contract: unpaired `test:start`, a `run:start.total` that disagreed with `run:end`, and a crashed file emitting **nothing**. SPEC §13 states three guarantees, each with a test |
 
 ### M78
 
 <sub>cited from packages/lang/GRAMMAR.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
-| **M78** | `69d6007` | **cluster C13 closed** — `FU-05` S2, `V4-07` S2, `V4-08`≡`A2-OS-01` S2, `V4-09` S2, `V4-13` S3, `B6-12` S3, `FU-26` S4, plus `B5-04` S2 (`FU-05`'s root) and `V4-OS-04` |
+**C13 · Doc/artifact drift about what is shipped — `FU-05`, `FU-26`, `V4-07`, `V4-08`, `V4-09`, `V4-13`, `B6-12`, `A2-OS-01` → ✅ CLOSED (`M78`)**
+
+Swept 2026-08-06: this heading and `V4-13`'s row still read `open` while §4 has recorded the whole
+cluster closed by `M78` since it shipped — the same stale-`open` bookkeeping this file warns about
+three separate times. `FU-26` and `B6-12` were re-verified and back-annotated 2026-08-05; `V4-13`
+was the last one left. No code was owed, and none was written.
+Both READMEs and the shipped npm README say performance and security testing "are next" — the perf
+arc shipped as `0.3.0` (`V4-13`, `B6-12`); `README.md:104` still names `tflw load` and `scenario`
+blocks, both removed (`V4-07`); `GRAMMAR.md` claims currency "through M3e" and is ~7 milestones
+stale, documenting a production the parser rejects (`V4-08`, `A2-OS-01`); the npm `description`
+undersells by two whole arcs (`FU-26`). One sweep, mechanically checkable now that M62's guard
+exists.
 
 ### M80
 
 <sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
+| milestone | commit | closes |
+|---|---|---|
 | **M80** | `4dcd98e` | `B4-01` **S1** — the pinned client stops leaking credentials across an origin change (C2's S1); `B4-13` S3, found while fixing it |
 
 ### M81
 
 <sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
+| milestone | commit | closes |
+|---|---|---|
 | **M81** | `3e6bbc7` | `B5-01` **S1** — `tflw refactor apply` stops proposing extractions the checker rejects. **The last open S1** |
 
 ### M85
@@ -4040,11 +4157,16 @@ type LoadWorkloadReport =
   | { shape: 'iterations'; iterations: number; vus: number; perVu: boolean }
 ```
 
+Report-side blast radius is exactly two files — `cli-summary.ts:84-85` and `html.ts:203/220`.
+Everything else that greps as `.workload` is the **AST** `test.workload`, untouched.
+`LoadShardScenarioResult.workload` is typed as `LoadScenarioReport['workload']`, so the IPC payload
+follows for free. `junit.ts` mentions `workload.overMs` only in prose.
+
 ### M89c
 
 <sub>cited from SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
-**M89c — `TF033` requires a meaningful threshold · **two-repo****
+**M89c — `TF033` requires a meaningful threshold · two-repo**
 
 One new arm in `checkWorkloadTests`. **Breaks exactly one dogfood file**:
 `tflw-acceptance/perf/tflw/generator-saturation-demo.tflw`, which declares `ramp to 8 users over 3s`
@@ -4089,6 +4211,8 @@ of its own decisions corrected by probing. Shipped as three commits: **M91a** (`
 
 <sub>cited from SPEC.md · lifted from `PLAN_M92_SHIP_SURFACE.md`</sub>
 
+| milestone | closes | shape |
+|---|---|---|
 | **M92b** | `B6-09` S3 | `install-browsers` resolves playwright from the consumer's project via its manifest `bin`, no `npx`, no download on failure; optional peers ship on `tflw`; e2e guard + negative control |
 
 ### M93
@@ -4449,7 +4573,7 @@ Closes `M97a-01`, `M97a-02`, `M97a-03`, `M97a-06`, `M97a-16`. **Withdraws `M97a-
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
-**`M125b1` — reach ✅ **DONE 2026-08-10****
+**`M125b1` — reach ✅ DONE 2026-08-10**
 
 `FU-18`, alone, because it is the only grammar change in the arc (D264). All six steps below shipped
 as written. Three things the plan did not predict, each recorded where it was found:
@@ -4659,7 +4783,7 @@ what Tier 3 *is*, after Tier 1 (`M128a`–`M128c`), Tier 2 (`M130a`–`M130c`), 
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-| **`M134a`** | tflw | `inputCorpus.ts` + `inputProbe.ts` + `inputRules.ts`, the `has no input-handling violations` matcher, the two `probe` sibling lines, checker + docs-site + reporter (D24b's non-negotiable three) | **yes** | **yes** — back-to-back with its fixture companion |
+**6. `M134a`'s coverage repair (2026-08-14 addendum, D392)**
 
 ### M134b
 
@@ -4685,24 +4809,32 @@ made before any of `M134b` was written.
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
+| | repo | contents | new codes | coupled |
+|---|---|---|---|---|
 | **`M135a`** | tflw | R7's 18-entry KB (D408) + the `Record<RuleId, KbEntry>` union (D409) + D406's severity table; wired into the `report.html` findings block as "possible fixes" | no | no |
 
 ### M135b
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
+| | repo | contents | new codes | coupled |
+|---|---|---|---|---|
 | **`M135b`** | tflw | the SARIF exporter (D403–D407, D410–D413), `report/findings.sarif` write condition (D404), `report/repros/`, `@types/sarif` + `ajv` + schema test (D414), docs-site + SPEC corrections | no | no |
 
 ### M136a
 
 <sub>cited from CHANGELOG.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M136a`** | tflw | `D418a`, `D421`, `D424`, `D425a`, `D429` — the input tier's blind spot reaching the report, both tiers' reaching SARIF, `authzBlindSpot` → `scanBlindSpot`, two bundle e2e scans, `ci.yml`'s re-measurement (the narrowing measured away), the stylesheet | no | no |
 
 ### M136b
 
 <sub>cited from CHANGELOG.md, CONTRIBUTING.md, packages/vscode/test/MANUAL.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M136b`** | tflw | `D427`, `D428` — the `tflw-config` language id, both wordlists, the three wiring sites, the config-buffer diagnostic test | no | no |
 
 ### M137
@@ -4718,42 +4850,56 @@ made before any of `M134b` was written.
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M137b`** | tflw | `D433` session CSRF capture, `D434` derived credential + `sec/csrf-not-enforced`, `TF069` | **yes** | **yes** — back-to-back with its fixture companion |
 
 ### M137c
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M137c`** | tflw | `D432` the `crawl` declaration, `D435` enumerate-and-disclose, `D436` synthesis + reachability, `D437` seed discriminator, `TF068` | **yes** | **yes** |
 
 ### M137c1
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M137c1`** | tflw | `D480` path resolution against the document's `servers`, `D481` `TF068`'s fourth runtime cause, a base-path-bearing fixture server | no | **blocks `M137e`** |
 
 ### M137c2
 
 <sub>cited from CHANGELOG.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M137c2`** | tflw | `D482` a public resource has no owner, so no leak rule fires against it; the repro emitter follows the rule's findings instead of the raw probe outcomes | no | **blocks `M137e`'s grading** |
 
 ### M137d
 
 <sub>cited from CHANGELOG.md, CONTRIBUTING.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M137d`** | tflw | `D440` repro generalization to Tiers 2/3/4 | no | no |
 
 ### M137f
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M137f`** | both | `D442` the browser spider, the SPA blind-spot entry, a client-side plant | no | **sequenced** |
 
 ### M137g
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
 | **`M137g`** | tflw | `D441` TLS cipher enumeration | no | no |
 
 ### M138
@@ -4832,31 +4978,52 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 <sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +1 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
+| part | subject | rows |
+|---|---|---|
 | `M147b` | the vocabulary of refusal: one table the three parser sites read from, plus D623's **three** directive moves (see §9's D628 correction) | `A2-14` `M142-01` `M142-02` |
 
 ### M147c
 
 <sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
+| part | subject | rows |
+|---|---|---|
 | `M147c` | the checker↔runtime contract — largest, entirely additive | `A2-09` `A2-11` `A4-18` `A4-21` `M118-01` `M124-01` `M124-02` `M140-01` `M140-03` `M140-05` |
 
 ### M147d
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
-| `M147d` | Cluster 4 under D627 — six additive widenings | `A3-10` `A3-11` `A3-12` `A3-13` `A3-17` `A3-18` `A1-19` `M97c-02` `M137f-02` |
+**9.2b The six decisions `M147d` has taken, stated**
+
+Their findings are §9.3; these are the rulings themselves, in one line each, so a reader grepping a
+number lands on a statement rather than on a story.
 
 ### M147e
 
 <sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
-| `M147e` | producer-side spans and D624's LSP anchor | `A2-13` `A2-15` `A3-14` `A3-19` `M106-01` `M106-02` `M140-02` `M144-02` |
+**9.2c The two decisions `M147e` has taken, stated**
+
+- **D643** — *the parser bounds its own recursion, and refuses past the bound with a diagnostic
+  rather than a stack overflow.* `parseSource` is documented as never throwing for a syntax error and
+  a file of 30 000 unary minuses broke that outright. Unary minus is the only production in this
+  grammar that recurses per token, so one guard closes it; the limit is **256**, set two orders of
+  magnitude below anything written by hand and an order below the measured cliff, because the stack
+  that binds is the smallest the parser might run on and not the machine it was measured on. Its own
+  code, `TF075`, because the `-` is legal exactly where it is written and `TF010` would put a false
+  word in the only sentence the reader gets. This is the milestone's one code, spent under §6's rule
+  on the only row whose message could not be told the truth with an existing one.
 
 ### M147f
 
 <sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
-| `M147f` | dispositions — clusters 5, 6 and 7, plus the rows this milestone filed while running | `M146-01` `M146-02` `M124-03` `M130-02` `M131-03` `M137e-03` `M143-01` `M143-02` `M144-03` `M146-03` `M105-01` `B6-15` `B3-09` `M125e-01` `M140-04` `M147-04` `M147-05` `M147-06` |
+**9.2f `M147f` — the last part, and what the finish line actually cost**
+
+Order 6's terminal part. Its subject was the twenty rows still open, and `D622` allowed most of them
+to be closed by ruling. Five closed by build instead, three of the five because the row's own
+disposition turned out to be cheaper than it read.
 
 ### M148
 
