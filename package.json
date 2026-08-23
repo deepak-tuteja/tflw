@@ -33,7 +33,8 @@
     "verify:mutations": "node scripts/mutate.mjs",
     "verify:ledger": "node scripts/verify-ledger.mjs",
     "verify:decisions": "node scripts/gen-decisions.mjs --check",
-    "docs:decisions": "node scripts/gen-decisions.mjs"
+    "docs:decisions": "node scripts/gen-decisions.mjs",
+    "docs:provenance": "node scripts/gen-decisions.mjs --provenance"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

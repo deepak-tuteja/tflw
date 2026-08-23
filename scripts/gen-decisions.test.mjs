@@ -147,6 +147,51 @@ test('the entry is the record\'s own bytes, and a heading yields its statement r
   assert.doesNotMatch(text, /Everything after the first paragraph/, 'a heading entry takes the statement, not the whole section (D670)');
 });
 
+// --- D686, the provenance line and the report it gave its detail to ---------------------------------
+
+test('no published provenance line carries a line number', () => {
+  const dir = fixture();
+  run(dir);
+  const subs = decisions(dir).split('\n').filter((ln) => ln.startsWith('<sub>cited from'));
+  assert.ok(subs.length >= 3, 'the fixture publishes three entries, each with a provenance line');
+  for (const ln of subs) {
+    assert.doesNotMatch(ln, /\.md:\d/, `provenance must name files, not lines (D686): ${ln}`);
+  }
+});
+
+test('--provenance names the anchor that was picked and the ones that lost', () => {
+  const dir = fixture();
+  // A second record anchors D7 as well. Nothing separates them — neither filename names a `D`,
+  // both anchors are bold-led — so the ranking falls all the way through to its last tiebreak and
+  // picks the alphabetically earlier file, which here is the *later* account. That is not a bug
+  // and it is not right either; it is the arbitrary residue `D682`'s proofing pass exists to catch,
+  // and it is only catchable because the report names the anchor that lost.
+  writeFileSync(join(dir, 'PLAN_LATER.md'), [
+    '# Later',
+    '',
+    '**`D7` — a second, later account of the same decision.** Kept deliberately different, so a',
+    'wrong pick would be legible in the published text rather than invisible.',
+    '',
+  ].join('\n'), 'utf8');
+
+  const report = run(dir, ['--provenance']);
+  assert.equal(report.code, 0, `--provenance failed:\n${report.stderr}`);
+  assert.match(report.stdout, /^D7\tPLAN_LATER\.md:\d+ \(boldLead\)$/m, 'the pick is named with its line and form');
+  assert.match(report.stdout, /not picked {2}PLAN_M7_SESSIONS\.md:\d+ \(boldLead\)/, 'the losing anchor is named too');
+  assert.match(report.stdout, /cited at {4}SPEC\.md:\d+/, 'and the citing sites keep the lines the published file dropped');
+
+  // The report is a report: it must not have written anything.
+  const check = run(dir, ['--check']);
+  assert.equal(check.code, 1, '--provenance must not regenerate, so the new rival leaves the tree stale');
+});
+
+test('--provenance refuses where the records are absent, like generation does', () => {
+  const dir = fixture({ withRecords: false });
+  const report = run(dir, ['--provenance']);
+  assert.equal(report.code, 1, 'a runner with no records cannot report on picks it cannot see');
+  assert.match(report.stderr, /cannot report on DECISIONS\.md/);
+});
+
 // --- D675, both directions, shown failing ---------------------------------------------------------
 
 test('deleting an entry fails the gate', () => {

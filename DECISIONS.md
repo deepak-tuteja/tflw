@@ -35,7 +35,7 @@ itself, at whatever length it was taken.
 
 ### P#1
 
-<sub>cited from SPEC.md:42, SPEC.md:2465, SPEC.md:3498 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 1. **Language depth** — external DSL on a runtime. Own grammar/parser/checker/semantics; browser
    automation is Playwright-as-a-library, HTTP is fetch. Not an embedded TS DSL, not a
@@ -43,7 +43,7 @@ itself, at whatever length it was taken.
 
 ### P#2
 
-<sub>cited from SPEC.md:53, SPEC.md:2009, SPEC.md:2079 +6 more · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 2. **Reuse as a compiler pass** — the compiler detects similar step sequences across tests and
    reports them as diagnostics with a fully prepared extraction (proposed `action` name, params,
@@ -52,14 +52,14 @@ itself, at whatever length it was taken.
 
 ### P#3
 
-<sub>cited from SPEC.md:1131, SPEC.md:3595 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 3. **v1 scope** — browser E2E + HTTP API, freely interleaved in one test (seed via API → drive UI →
    assert backend state). Out of v1: mobile, unit, perf, DB assertions, OpenAPI/contract.
 
 ### P#4
 
-<sub>cited from SPEC.md:42, SPEC.md:3264 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 4. **Execution model** — interpreter walking the AST. Every step emits events (`step:start`/`step:end`
    with timing, screenshot, HTTP trace); the report is the primary consumer of the runtime by
@@ -67,7 +67,7 @@ itself, at whatever length it was taken.
 
 ### P#5
 
-<sub>cited from SPEC.md:42 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 5. **Reporting (the centerpiece)** — one self-contained `report.html` per run: step timeline
    mirroring the source, screenshot per browser step, full req/res per API step, failures as
@@ -77,7 +77,7 @@ itself, at whatever length it was taken.
 
 ### P#6
 
-<sub>cited from SPEC.md:49, SPEC.md:3598, packages/lang/GRAMMAR.md:727 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
 
 6. **Coding UX v1** — three pillars: (a) teaching-quality compiler errors (source line, caret,
    "did you mean", like Rust/Elm); (b) `tflw watch` — save → affected test re-runs headed, browser
@@ -87,7 +87,7 @@ itself, at whatever length it was taken.
 
 ### P#7
 
-<sub>cited from SPEC.md:1131, SPEC.md:1313 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 7. **API vocabulary** — full request spec (method, path relative to per-env base URL, headers,
    query, JSON body, auth presets); response assertions on status, headers, and path-addressed
@@ -96,7 +96,7 @@ itself, at whatever length it was taken.
 
 ### P#8
 
-<sub>cited from SPEC.md:2107, SPEC.md:2179 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 8. **Selectors & waiting** — semantic-first: role + visible text (`click button "Add to cart"`,
    `fill field "Email"`) via Playwright getByRole/getByLabel. Documented resolution tier:
@@ -106,7 +106,7 @@ itself, at whatever length it was taken.
 
 ### P#10
 
-<sub>cited from SPEC.md:828, SPEC.md:843, SPEC.md:871 +2 more · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 10. **Orchestration (the TestNG absorption)** — v1: `@tags` + `tflw run --tag`, inline data tables
     (`with each <table>`, each row a reported case), `before/after` hooks at file and test level,
@@ -116,7 +116,7 @@ itself, at whatever length it was taken.
 
 ### P#11
 
-<sub>cited from SPEC.md:3189 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 11. **Escape hatch** — plain JS/TS files exporting async functions, imported via
     `use "./helpers/sign.ts"` and called like native actions (test context in, values out).
@@ -124,7 +124,7 @@ itself, at whatever length it was taken.
 
 ### P#12
 
-<sub>cited from SPEC.md:3498, SPEC.md:3527 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 12. **Stack** — TypeScript/Node monorepo; hand-rolled lexer + recursive-descent parser (full
     ownership of diagnostics and error recovery — a pillar, so no parser generator, no tree-sitter).
@@ -133,7 +133,7 @@ itself, at whatever length it was taken.
 
 ### P#13
 
-<sub>cited from SPEC.md:327, SPEC.md:1392, SPEC.md:1402 +3 more · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 13. **Assertion vocabulary (closed matcher grammar)** — one uniform form:
     `expect <subject> <matcher> [value]`. Fixed, checker-known matcher set: `equals`, `contains`,
@@ -145,7 +145,7 @@ itself, at whatever length it was taken.
 
 ### P#14
 
-<sub>cited from SPEC.md:1641, SPEC.md:1652, SPEC.md:1689 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 14. **JSON body assertions** — path-addressed values plus two array quantifiers:
     `expect any body.items.name equals "Widget"` / `expect all body.items.status equals "active"`,
@@ -154,7 +154,7 @@ itself, at whatever length it was taken.
 
 ### P#15
 
-<sub>cited from SPEC.md:131, SPEC.md:1349, SPEC.md:1475 +2 more · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 15. **Retry semantics split by subject** — UI expects auto-retry to timeout (web-first). API
     expects on a received response evaluate **once** and fail fast (retrying frozen JSON is a slow
@@ -163,7 +163,7 @@ itself, at whatever length it was taken.
 
 ### P#16
 
-<sub>cited from SPEC.md:1568, SPEC.md:1674 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 16. **Soft assertions** — `expect` hard-fails the test immediately (trustworthy artifacts).
     `check` is its soft twin: identical grammar/matchers, records pass/fail in the report and
@@ -172,7 +172,7 @@ itself, at whatever length it was taken.
 
 ### P#17
 
-<sub>cited from SPEC.md:2009, SPEC.md:2036 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 17. **Actions (the reuse unit, fully specified)** — `action name(param, …)` containing ordinary
     steps; `give <expr>` returns values so actions compose with chaining
@@ -183,7 +183,7 @@ itself, at whatever length it was taken.
 
 ### P#18
 
-<sub>cited from SPEC.md:2078 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 18. **Element aliases (selector centralization)** — `element <name> = <locator>`, file-scoped and
     importable exactly like actions. House rule + checker lint: `css`/`xpath` escapes SHOULD live
@@ -193,7 +193,7 @@ itself, at whatever length it was taken.
 
 ### P#19
 
-<sub>cited from SPEC.md:843, SPEC.md:853, SPEC.md:1708 +1 more · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 19. **Test data** — builtin `unique(…)` generator family (`unique("prefix")`, `unique email`,
     `unique number`), seeded per run/worker so parallel tests never collide, usable anywhere a
@@ -203,7 +203,7 @@ itself, at whatever length it was taken.
 
 ### P#20
 
-<sub>cited from SPEC.md:216, SPEC.md:841, SPEC.md:3174 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 20. **Isolation & sessions** — every test gets a fresh browser context (no leakage,
     parallel-safe by construction). Auth cost solved declaratively: named `session` blocks in
@@ -216,7 +216,7 @@ itself, at whatever length it was taken.
 
 ### P#21
 
-<sub>cited from SPEC.md:1708, SPEC.md:1754, SPEC.md:1775 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 21. **`random` vs `unique` — two keywords, distinct contracts.** `unique` = collision-safe
     identity data (run/worker-seeded, guaranteed distinct — for fields/bodies with uniqueness
@@ -227,7 +227,7 @@ itself, at whatever length it was taken.
 
 ### P#22
 
-<sub>cited from SPEC.md:1801, SPEC.md:3598 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 22. **Generator breadth — lean core + pattern templates.** `random number A to B` (+ `decimal`),
     `random date in past / in future / between A and B`, `random of <list>`, `random string N`,
@@ -238,7 +238,7 @@ itself, at whatever length it was taken.
 
 ### P#23
 
-<sub>cited from SPEC.md:1855, SPEC.md:3264 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 23. **Reproducibility — run seed + `--seed` replay.** All `random` values derive from one seed
     per run (per-test sub-seeds so parallel order doesn't shift values). Seed stamped in CLI
@@ -248,7 +248,7 @@ itself, at whatever length it was taken.
 
 ### P#24
 
-<sub>cited from SPEC.md:871, SPEC.md:3599 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 24. **Tables: generator cells + file-backed rows.** Table cells accept any expression including
     generators (evaluated per row at case start — "same shape, fresh identity").
@@ -259,7 +259,7 @@ itself, at whatever length it was taken.
 
 ### P#25
 
-<sub>cited from SPEC.md:46, SPEC.md:1876 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 25. **Value expressions — arithmetic + keyword date math, hard fence.** Closed grammar: `+ - * /`
     on numbers, string interpolation, and `today` / `now` with `today + 3 days`-style offsets
@@ -269,7 +269,7 @@ itself, at whatever length it was taken.
 
 ### P#26
 
-<sub>cited from SPEC.md:2107, SPEC.md:2166 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 26. **`fill form` block (UI-side data sugar).** Reuses table syntax for label → value pairs
     (values may be generators/expressions); each row executes and reports as its own sub-step
@@ -281,7 +281,7 @@ itself, at whatever length it was taken.
 
 ### P#27
 
-<sub>cited from SPEC.md:100 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 27. **Config is a tflw dialect.** `tflw.config` is parsed by the same lexer/parser as tests — a
     declaration-only dialect (`env`/`defaults`/`session`/`require` blocks; `test` not allowed).
@@ -292,7 +292,7 @@ itself, at whatever length it was taken.
 
 ### P#28
 
-<sub>cited from SPEC.md:105 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 28. **Env model — `defaults` + env override, 3-tier selection.** A top-level `defaults` block
     holds shareables (headers, timeouts for step/expect/wait-until, workers, report dir); each
@@ -303,7 +303,7 @@ itself, at whatever length it was taken.
 
 ### P#29
 
-<sub>cited from SPEC.md:202, SPEC.md:1131 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 29. **Named API services.** An env may declare extra baseUrls: `api billing "https://…"`.
     Steps address them by name (`api billing GET /invoices/{id}`); bare `api` hits the default
@@ -313,7 +313,7 @@ itself, at whatever length it was taken.
 
 ### P#30
 
-<sub>cited from SPEC.md:422, SPEC.md:3264 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 30. **Secrets — `require env` + `.env` + taint redaction.** Config declares
     `require env ADMIN_USER, ADMIN_PW`; validated at startup with one error listing *all* missing
@@ -325,7 +325,7 @@ itself, at whatever length it was taken.
 
 ### P#31
 
-<sub>cited from SPEC.md:216, SPEC.md:3174 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 31. **Sessions are the auth presets.** No second auth concept: a `session` block's captured
     headers apply to api steps of tests running `as <session>`; its storage state applies to
@@ -333,7 +333,7 @@ itself, at whatever length it was taken.
 
 ### P#32
 
-<sub>cited from SPEC.md:1131, SPEC.md:1216, SPEC.md:1226 +1 more · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 32. **Request bodies — four forms.** Inline `body { … }` (interpolation + generators inside, for
     small payloads); `body from "./payloads/x.json"` for big ones (file is a template — `{vars}`
@@ -343,7 +343,7 @@ itself, at whatever length it was taken.
 
 ### P#33
 
-<sub>cited from SPEC.md:282, SPEC.md:1131, SPEC.md:1280 +4 more · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 33. **Response-side breadth.** `expect duration is less than 500ms` (regression tripwire, not
     perf testing); `body text` subject for non-JSON responses (JSON-path expects on non-JSON give
@@ -353,7 +353,7 @@ itself, at whatever length it was taken.
 
 ### P#34
 
-<sub>cited from SPEC.md:3531 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 34. **SPEC.md + API-first build order.** [SPEC.md](SPEC.md) is the comprehensive language/
     implementation reference, organized by surface **API before UI** (config → api steps →
@@ -367,7 +367,7 @@ itself, at whatever length it was taken.
 
 ### P#35
 
-<sub>cited from SPEC.md:3535 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 35. **Ambition — build public-grade, publish when proven.** Public GitHub repo and
     npm-publishable layout from day one (README/docs written for a stranger, semver discipline),
@@ -377,7 +377,7 @@ itself, at whatever length it was taken.
 
 ### P#36
 
-<sub>cited from SPEC.md:3222, SPEC.md:3575, SPEC.md:3602 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 36. **Install — per-project npm dep + lazy browsers.** `npm i -D tflw`, run via `npx tflw`;
     `tflw init` scaffolds config/sample test/`.env.example`/`.gitignore`. Playwright **browsers**
@@ -388,7 +388,7 @@ itself, at whatever length it was taken.
 
 ### P#37
 
-<sub>cited from SPEC.md:3571, SPEC.md:3576 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 37. **Package shape — one `tflw` on npm + separate Marketplace extension.** cli bundles
     lang/runtime/reporter; internal workspace packages stay `private: true` (refactor freely,
@@ -399,7 +399,7 @@ itself, at whatever length it was taken.
 
 ### P#38
 
-<sub>cited from SPEC.md:3226, SPEC.md:3583 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 38. **Language versioning — deprecate → migrate → remove, freeze at 1.0.** One semver for the
     tool. Pre-1.0 grammar changes are allowed at minors but never silent: removed/renamed syntax
@@ -411,7 +411,7 @@ itself, at whatever length it was taken.
 
 ### P#39
 
-<sub>cited from SPEC.md:3591 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 39. **CI & onboarding — npx + README/SPEC/examples.** CI is plain `npx tflw run` in any runner
     (exit codes + junit.xml already decided); README carries a copy-paste GitHub Actions snippet
@@ -424,7 +424,7 @@ itself, at whatever length it was taken.
 
 ### P#41
 
-<sub>cited from SPEC.md:3535, SPEC.md:3545 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 41. **Publish gate re-scoped to an API-only acceptance (amends #35).** The M7 verdict
     (side-by-side vs raw *Playwright*) is inherently a browser-era comparison and now gates
@@ -440,7 +440,7 @@ itself, at whatever length it was taken.
 
 ### P#43
 
-<sub>cited from CONTRIBUTING.md:94, SPEC.md:564, SPEC.md:566 +4 more · lifted from `PLAN.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN.md`</sub>
 
 43. **Packaging mechanism + runtime slimming.** `tflw` becomes one publishable package via an
     **esbuild bundle at prepack** (cli+lang+runtime+reporter into `dist/`; `@tflw/*` stay
@@ -459,7 +459,7 @@ itself, at whatever length it was taken.
 
 ### P#44
 
-<sub>cited from SPEC.md:3575 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 44. **Playwright arrives in the browser release as an optional peer (amends #37's "regular
     dependency").** v0.2 loads `playwright` via dynamic import at the first browser step;
@@ -471,7 +471,7 @@ itself, at whatever length it was taken.
 
 ### P#45
 
-<sub>cited from SPEC.md:3578, SPEC.md:3580 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 45. **Stability promise at publish (amends #38).** The shipped API grammar is declared
     **frozen additive-only** from the first npm release — the browser half adds statement
@@ -484,7 +484,7 @@ itself, at whatever length it was taken.
 
 ### P#48
 
-<sub>cited from SPEC.md:3541 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 48. **Repo & license.** `git init` in `testFlow/`, push to a new **public GitHub repo** named
     after the npm package, **MIT** license, GitHub Actions CI (build+typecheck+tests on Node
@@ -496,7 +496,7 @@ itself, at whatever length it was taken.
 
 ### P#60
 
-<sub>cited from packages/lang/GRAMMAR.md:88 · lifted from `PLAN.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
 
 60. **Lexer: identifiers named after an HTTP verb break arithmetic division (critical, novel bug).**
     `canStartPath()` (`lexer.ts` :272–275) decides a `/` starts a PATH token purely from the
@@ -515,7 +515,7 @@ itself, at whatever length it was taken.
 
 ### P#74
 
-<sub>cited from SPEC.md:3219, SPEC.md:3544, SPEC.md:3587 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 74. **Mechanical publish blockers (all found in-repo, all M2.8).** (a) `packages/cli/package.json`
     still has `"private": true` — `npm publish` refuses outright; the publish tail as currently
@@ -533,7 +533,7 @@ itself, at whatever length it was taken.
 
 ### P#75
 
-<sub>cited from SPEC.md:147, SPEC.md:3218, SPEC.md:3604 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 75. **`tflw check` ships in 0.1, text-only.** Validate-only command: parse + the full checker
     pipeline (exactly what `run` already executes before running) over given or discovered files,
@@ -545,7 +545,7 @@ itself, at whatever length it was taken.
 
 ### P#76
 
-<sub>cited from SPEC.md:3552, SPEC.md:3554 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 76. **Editor support at launch: highlight-only VS Code extension.** TextMate grammar + language
     registration for `.tflw`/`tflw.config`, published to the Marketplace on its own cadence
@@ -560,7 +560,7 @@ itself, at whatever length it was taken.
 
 ### P#77
 
-<sub>cited from SPEC.md:3585, SPEC.md:3614 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 77. **TF0xx diagnostic codes are public API: index + stability rule.** The codes print on every
     error but appear **zero** times in SPEC.md. Once published they leak into CI grep filters,
@@ -572,7 +572,7 @@ itself, at whatever length it was taken.
 
 ### P#79
 
-<sub>cited from SPEC.md:3551, SPEC.md:3605 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 79. **Platform bar: Linux/macOS, documented; no Windows CI for 0.1.** README states "tested on
     Linux/macOS; Windows via WSL". Deliberately chosen over the recommended
@@ -584,7 +584,7 @@ itself, at whatever length it was taken.
 
 ### P#80
 
-<sub>cited from SPEC.md:3551, SPEC.md:3607 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 80. **Repo posture: public, contributions closed initially.** No CONTRIBUTING.md / SECURITY.md /
     issue templates at 0.1 — public source is an npm-trust requirement, a community is not. One
@@ -597,7 +597,7 @@ itself, at whatever length it was taken.
 
 ### P#83
 
-<sub>cited from SPEC.md:3602 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 83. **`tflw fmt` explicitly parked.** A canonical formatter is standard modern-DSL kit
     (gofmt/rustfmt precedent), but the offside-rule grammar already constrains layout and there
@@ -607,7 +607,7 @@ itself, at whatever length it was taken.
 
 ### P#99
 
-<sub>cited from SPEC.md:3569 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 99. **M9 — Auth: session refresh-on-401 + TTL, `oauth2` session sugar, mTLS client certs** —
     cluster 1 of the enterprise-readiness arc (`PLAN_ENTERPRISE.md`, a `/grill-me` session,
@@ -699,7 +699,7 @@ itself, at whatever length it was taken.
 
 ### P#99b
 
-<sub>cited from SPEC.md:3561 · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
     **(b) mTLS client certs (enterprise decision 3b).** Per-`env` `cert "…"` / `key "…"` config
     keys (new `CertDecl`/`KeyDecl` AST nodes, mirroring `WebDecl`'s `parseString`-based shape) —
@@ -725,7 +725,7 @@ itself, at whatever length it was taken.
 
 ### D1
 
-<sub>cited from SPEC.md:3596 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:23`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D1 — One language, three execution modes.** tflw grows `tflw load` and `tflw scan`
   alongside `tflw run`. Browser steps, a load `scenario` construct, and a security `scan`
@@ -735,7 +735,7 @@ itself, at whatever length it was taken.
 
 ### D5
 
-<sub>cited from SPEC.md:2122, SPEC.md:2249, SPEC.md:2496 +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:131`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.1 Driver boundary (D5)**
 
@@ -750,7 +750,7 @@ itself, at whatever length it was taken.
 
 ### D6
 
-<sub>cited from SPEC.md:2181, SPEC.md:2526, SPEC.md:3223 +2 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:142`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.2 Selector model (D6) — resolves the SPEC §11 contradiction**
 
@@ -760,7 +760,7 @@ resolution is reported.**
 
 ### D7
 
-<sub>cited from SPEC.md:2142, SPEC.md:2190, SPEC.md:2526 +2 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:156`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.3 Ambiguity & scoping (D7)**
 
@@ -774,7 +774,7 @@ resolution is reported.**
 
 ### D9
 
-<sub>cited from SPEC.md:2247 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:183`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.5 Escape hatch (D9)**
 
@@ -786,7 +786,7 @@ resolution is reported.**
 
 ### D10
 
-<sub>cited from SPEC.md:255, SPEC.md:3184 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:191`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.6 Sessions & identity (D10) — **no bridge****
 
@@ -800,7 +800,7 @@ resolution is reported.**
 
 ### D11
 
-<sub>cited from SPEC.md:140, SPEC.md:2412, SPEC.md:3217 +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:201`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.7 Browser matrix (D11)**
 
@@ -812,7 +812,7 @@ resolution is reported.**
 
 ### D12
 
-<sub>cited from SPEC.md:2380, SPEC.md:2404, SPEC.md:2559 +2 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:209`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.8 Artifacts & report (D12) — report becomes a directory**
 
@@ -828,7 +828,7 @@ resolution is reported.**
 
 ### D13
 
-<sub>cited from SPEC.md:3177 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:221`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.9 Concurrency (D13)**
 
@@ -842,7 +842,7 @@ resolution is reported.**
 
 ### D14
 
-<sub>cited from CONTRIBUTING.md:214, SPEC.md:2419, SPEC.md:2478 +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:231`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.10 Extended UI capabilities — **all four in scope** (D14)**
 
@@ -850,7 +850,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D15
 
-<sub>cited from SPEC.md:2514, packages/lang/GRAMMAR.md:325 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:245`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **1.11 Visual-regression baselines (D15)**
 
@@ -866,7 +866,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D16
 
-<sub>cited from SPEC.md:929, SPEC.md:3596 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:277`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **2.1 Execution model (D16) — dedicated `scenario` blocks (k6-style)**
 
@@ -881,7 +881,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D17
 
-<sub>cited from SPEC.md:947, SPEC.md:963 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:288`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **2.2 Workload model (D17) — both, arrival-rate taught as default**
 
@@ -895,7 +895,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D18
 
-<sub>cited from SPEC.md:3653 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:298`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **2.3 Language semantics under load (D18)**
 
@@ -911,7 +911,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D19
 
-<sub>cited from SPEC.md:929, SPEC.md:3653, SPEC.md:3689 +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:310`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **2.4 Generator architecture (D19)**
 
@@ -928,7 +928,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D20
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md:1949`</sub>
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **3.1 Scope (D20) — full active scanner**
 
@@ -939,7 +939,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D21
 
-<sub>cited from CHANGELOG.md:239, SPEC.md:235, SPEC.md:703 +13 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:1970`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **3.2 Safety / authorization (D21) — layered default-deny**
 
@@ -965,7 +965,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D22
 
-<sub>cited from SPEC.md:3596 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:1994`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **3.3 Attack surface + oracle (D22)**
 
@@ -983,7 +983,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D24a
 
-<sub>cited from SPEC.md:929 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:323`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **2.5 Thresholds & output (D24a)**
 
@@ -998,7 +998,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D26
 
-<sub>cited from SPEC.md:929, SPEC.md:1026, packages/lang/GRAMMAR.md:130 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:65`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D26 — Perf: after-hook-under-load policy (2026-07-30, resolves §5's flagged open item).**
   A scenario's `after` hook is **skipped by default per iteration** under `tflw load` — running it
@@ -1010,7 +1010,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D29
 
-<sub>cited from SPEC.md:1046, SPEC.md:3653 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:86`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D29 — Perf: multi-scenario concurrency is in v1 scope (2026-07-30, amends D16/D17).** A
   single `tflw load` invocation can run multiple `scenario` blocks concurrently (mixed workload
@@ -1021,7 +1021,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D30
 
-<sub>cited from SPEC.md:3216 · lifted from `PLAN_BROWSER_PERF_SECURITY.md:92`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D30 — Perf: `tflw init --load` scaffold placement (2026-07-30).** Bundled into the first
   grammar milestone rather than deferred — it only needs the `scenario`/`threshold` grammar that
@@ -1030,7 +1030,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D70
 
-<sub>cited from SPEC.md:929, SPEC.md:987, SPEC.md:3654 +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:1372`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **D70 — scoped thresholds ship this milestone.** New grammar: `threshold p95 duration for "checkout"
 is less than 250ms` — the `for "label"` clause matches either an explicit tag or an automatically-
@@ -1040,7 +1040,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D93
 
-<sub>cited from SPEC.md:929, SPEC.md:932, SPEC.md:3653 +1 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:54`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D93 — single DSL keyword.** `scenario` and its mandatory `as load` clause are removed entirely.
   Every top-level block is `test "name" { ... }`. Breaking change, no deprecation period (project is
@@ -1048,7 +1048,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D94
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:57`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D94 — kind inferred from workload presence.** A `test` block containing a workload clause (any
   of D97's new keywords) is a performance test; one without is a functional test, exactly like
@@ -1056,7 +1056,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D95
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:60`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D95 — one AST node type.** `TestDecl`/`ScenarioDecl` collapse into a single `TestDecl` with
   nullable `workload`/`thresholds`/`cleanup` fields. `Program.scenarios` is removed; `Program.tests:
@@ -1064,7 +1064,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D96
 
-<sub>cited from SPEC.md:932, SPEC.md:1037, SPEC.md:3653 +5 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:63`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D96 — field exclusivity, checker-enforced.** `retry N` or `with each` together with a workload
   clause in the same block is a hard checker error (extends the existing D19 pattern — browser
@@ -1072,7 +1072,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D97
 
-<sub>cited from SPEC.md:946, packages/lang/GRAMMAR.md:192, packages/lang/GRAMMAR.md:195 +1 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:66`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D97 — distinct named keywords per workload shape**, not a generalized stage-sequence construct.
   Five workload kinds total, each its own top-level keyword inside a `test` body:
@@ -1093,7 +1093,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D98
 
-<sub>cited from SPEC.md:946, packages/lang/GRAMMAR.md:195, packages/lang/GRAMMAR.md:198 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:82`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D98 — every new shape supports both closed (users) and open (rps) variants**, matching `ramp`'s
   existing dual support. Same closed-model back-off diagnostic (D17) applies uniformly to every
@@ -1101,7 +1101,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D99
 
-<sub>cited from packages/runtime/README.md:5 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:85`</sub>
+<sub>cited from packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D99 — `tflw load` is dropped entirely.** Since kind is inferred per-block rather than
   per-file/per-array, a dedicated load-only command loses its rationale. Its power-user tuning
@@ -1110,7 +1110,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D100
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:89`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D100 — `tflw run` executes every block in strict file declaration order**, interleaved across
   kinds, single process — not batched by kind. A workload-bearing block's full duration/iteration
@@ -1120,7 +1120,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D101
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:94`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D101 — unified single-file reporting.** One `report.html` (no `load-report.html`, no linking
   `index.html`) and one `junit.xml`, each with one entry per block in strict execution order,
@@ -1131,7 +1131,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D102
 
-<sub>cited from SPEC.md:967, packages/lang/GRAMMAR.md:203 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:100`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D102 — count-based workloads keep `think` pacing, drop the D17 diagnostic.** `think`
   (pending the separate rename, see `PLAN_THINK_TO_PAUSE.md`) remains legal inside a count-based
@@ -1141,7 +1141,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D103
 
-<sub>cited from SPEC.md:1047, SPEC.md:3634, SPEC.md:3653 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:105`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D103 — migration diagnostic for leftover `scenario`.** A `scenario` keyword found post-removal
   produces a specific, named error pointing at the new syntax (e.g. "`scenario` was removed — write
@@ -1150,7 +1150,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D104
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:109`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D104 — fixture migration order.** `testFlow/acceptance/perf/`'s 12 `scenario` files move to
   `testflow-tests/tflw-acceptance/` (per `PLAN_UNIFIED_RUN_DOGFOOD_REORG.md` Phase 2) BEFORE being
@@ -1160,7 +1160,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D105
 
-<sub>cited from SPEC.md:1030, packages/lang/GRAMMAR.md:113, packages/runtime/README.md:5 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:123`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D105 — generic scope, not workload-only.** `parallel`/`sequential` applies to *every* `test`,
   functional (API/UI) or workload-bearing alike — not just load tests. Confirmed feasible by reading
@@ -1171,7 +1171,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D106
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:129`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D106 — syntax: a bare header modifier**, same slot as today's `retry N`/`as <session>`:
   `test "name" parallel` / `test "name" sequential`. Fixed position in the existing header sequence
@@ -1180,7 +1180,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D107
 
-<sub>cited from packages/lang/GRAMMAR.md:113 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:133`</sub>
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D107 — both keywords are real, writable keywords.** `sequential` is legal and explicit (a no-op
   vs. omitting it), so an author can self-document intent next to a `parallel` neighbor. Confirmed
@@ -1188,7 +1188,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D108
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:136`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D108 — default is sequential, for every test kind, amending D100.** No keyword means sequential
   — this already matches `tflw run`'s existing functional-test loop (`runProgramInner`'s plain `for`
@@ -1202,7 +1202,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D109
 
-<sub>cited from SPEC.md:1033, packages/runtime/README.md:23, packages/runtime/README.md:81 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:145`</sub>
+<sub>cited from SPEC.md, packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D109 — grouping rule: consecutive-run batching.** Walking `program.tests` in file order, a
   maximal run of consecutive `parallel`-marked tests forms one batch that executes concurrently; a
@@ -1214,7 +1214,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D110
 
-<sub>cited from SPEC.md:3217 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:152`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D110 — `--skip-load` renamed `--skip-workload`.** Matches the new generic vocabulary now that
   `tflw load` no longer exists as a command; identical behavior otherwise (skip every workload-bearing
@@ -1222,7 +1222,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D111
 
-<sub>cited from SPEC.md:3217 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:155`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D111 — execution mechanism: reuse `runLoadCore`'s existing `Promise.all(scenarioTasks)` pattern,
   not the `--workers` fork/IPC mechanism.** Confirmed via code research
@@ -1249,7 +1249,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D112
 
-<sub>cited from SPEC.md:1034, packages/runtime/README.md:31, packages/runtime/README.md:115 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:177`</sub>
+<sub>cited from SPEC.md, packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D112 — report/console display order is declaration order, independent of completion order.**
   Extends D101's "one entry per block in strict execution order, reading top-to-bottom exactly like
@@ -1262,7 +1262,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D113
 
-<sub>cited from SPEC.md:3217 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:185`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D113 — `--workers` is explicitly scoped to workload-bearing tests only, enforced by a CLI check,
   not just a documentation note.** There's no legitimate use case for forking processes over a
@@ -1282,7 +1282,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D114
 
-<sub>cited from packages/runtime/README.md:31 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:200`</sub>
+<sub>cited from packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D114 — live console output for a `parallel` batch buffers per test, flushing atomically on
   completion.** D112 only settled the *final* report/summary order (declaration order); it left open
@@ -1308,7 +1308,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D115
 
-<sub>cited from packages/runtime/README.md:5, packages/runtime/README.md:81 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:221`</sub>
+<sub>cited from packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D115 — report.html marks a test that ran in a `parallel` batch with a small inline badge, next
   to its name.** D101/D112 settled *ordering* (one entry per test, declaration order) but not
@@ -1328,7 +1328,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D116
 
-<sub>cited from SPEC.md:1054 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:484`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D116 — discriminated `ReportEntry` union.** `TestResult` gains a required `readonly kind:
   'functional'` (breaking, pre-1.0 precedent per D99's `tflw load` removal). New
@@ -1339,7 +1339,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D117
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:490`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D117 — `RunReport` absorbs the load envelope, no more standalone `LoadReport` artifact.**
   `selfDiagnosis?`/`inconclusive?`/`aborted?`/`abortedMessage?` become optional top-level
@@ -1352,7 +1352,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D118
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:498`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D118 — multi-file merge falls out for free.** `RunReport.tests` already merges across files
   (functional case, `cli.ts`'s `mergeReports`) — once workload entries just live in that same
@@ -1364,7 +1364,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D119
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:505`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D119 — junit.xml.** One `<testsuite>`, one `<testcase>` per `ReportEntry`. Functional: today's
   `renderTestCase` unchanged. Workload: one `<testcase>` per declared `threshold` (today's
@@ -1375,7 +1375,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D120
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:511`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D120 — report.html.** `renderTest` dispatches on `entry.kind`. Workload path reuses
   `load-html.ts`'s existing `renderMetricsSection`/`renderThresholdsTable`/`renderEndpointsSection`
@@ -1387,7 +1387,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D121
 
-<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:518`</sub>
+<sub>cited inside a range only · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D121 — removed.** `load-html.ts`, `load-junit.ts`, `writeLoadReport`/`writeLoadJunitXml`/
   `writeLoadResultsJson` (reporter/index.ts), `cli.ts`'s separate `renderLoadSummary` console block
@@ -1396,7 +1396,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D122
 
-<sub>cited from SPEC.md:929, SPEC.md:1054 · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md:522`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D122 — console summary.** `renderCliSummary` (reporter package) gains a workload-entry branch
   — name, ok/fail mark, then its threshold lines (`renderLoadSummary`'s old tick-mark format) —
@@ -1407,7 +1407,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D127
 
-<sub>cited from SPEC.md:681, packages/lang/GRAMMAR.md:597 · lifted from `PLAN_DISCOVERY_EXCLUDE.md:28`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_DISCOVERY_EXCLUDE.md`</sub>
 
 **`D127` — bare discovery gets an `exclude` list, and a path that matches nothing is a no-op.**
 `tflw.config` gains a top-level `exclude "<path>"[, "<path>"…]` directive, relative to the config's
@@ -1418,7 +1418,7 @@ for a pattern matching nothing. Shipped at `M58`. The six clauses below are this
 
 ### D137
 
-<sub>cited from SPEC.md:3663 · lifted from `PLAN_M97_CHECKER_CONTRACT.md:67`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **D137 — the checker's contract is two-way conformance with the runtime**
 
@@ -1427,7 +1427,7 @@ completion condition. Three clauses:
 
 ### D147
 
-<sub>cited from SPEC.md:890, SPEC.md:1221, SPEC.md:2362 +5 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md:778`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **D147 — `TF043` has two severities, and the split is D137 clause 1**
 
@@ -1436,7 +1436,7 @@ four regression groups, 21 of 30 phases, one root cause.
 
 ### D165
 
-<sub>cited from SPEC.md:3669 · lifted from `PLAN_M98_LEXER_POSITIONS.md:478`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **D165. Flag them as errors, not warnings.** For a general-purpose language a lint is the norm; for a
 testing DSL it is not. A reviewed `.tflw` in a pull request can render as asserting one thing and
@@ -1447,7 +1447,7 @@ tool's own security in scope; the `0.4.0` pentest arc will make `.tflw` a securi
 
 ### D166
 
-<sub>cited from SPEC.md:3667, SPEC.md:3669 · lifted from `PLAN_M98_LEXER_POSITIONS.md:490`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **D166. `TF049` is not implementable without an escape hatch, and the hatch is `\u{…}`.** This is the
 dependency worth not re-deriving: after **D157** an unknown escape is an error, and tflw has no
@@ -1457,7 +1457,7 @@ capability.
 
 ### D168
 
-<sub>cited from SPEC.md:3634 · lifted from `PLAN_M99_VALUE_TERMINATION.md:98`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M99_VALUE_TERMINATION.md`</sub>
 
 **D168. `TF010`'s teaching moves to where the mistake is actually visible**
 
@@ -1466,7 +1466,7 @@ production says today when handed a token it cannot use:
 
 ### D174
 
-<sub>cited from SPEC.md:1610 · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md:27`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
 
 **D174 — `matches file`'s path goes through `evalValue`, and SPEC changes rather than being corrected**
 
@@ -1476,7 +1476,7 @@ footnoted.
 
 ### D176
 
-<sub>cited from SPEC.md:1171 · lifted from `PLAN_M102_INTERPOLATION_CONFORMANCE.md:18`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M102_INTERPOLATION_CONFORMANCE.md`</sub>
 
 **D176 — a header name is a value**
 
@@ -1484,7 +1484,7 @@ Four sites, all reading `.value`, all on a `StringLit` the checker passes to `ch
 
 ### D177
 
-<sub>cited from SPEC.md:1795 · lifted from `PLAN_M102_INTERPOLATION_CONFORMANCE.md:55`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M102_INTERPOLATION_CONFORMANCE.md`</sub>
 
 **D177 — a generator pattern is a value, and interpolating it is additive**
 
@@ -1493,7 +1493,7 @@ Four sites, all reading `.value`, all on a `StringLit` the checker passes to `ch
 
 ### D178
 
-<sub>cited from SPEC.md:3670 · lifted from `PLAN_M103_CONFUSABLE_WORDS.md:37`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D178 — the unit is one **word**, not one string**
 
@@ -1502,7 +1502,7 @@ is legitimately multilingual.
 
 ### D179
 
-<sub>cited from SPEC.md:3670 · lifted from `PLAN_M103_CONFUSABLE_WORDS.md:53`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D179 — only scripts that have Latin lookalikes**
 
@@ -1511,7 +1511,7 @@ Cyrillic, Greek, Cherokee or Armenian.
 
 ### D180
 
-<sub>cited from SPEC.md:3670 · lifted from `PLAN_M103_CONFUSABLE_WORDS.md:74`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D180 — strings only; comments are out of scope**
 
@@ -1520,7 +1520,7 @@ no way to comply is a capability removed, not a lint.**
 
 ### D198
 
-<sub>cited from SPEC.md:143 · lifted from `PLAN_M118_FIRST_RUN.md:63`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **D198 — the quickstart gets a real target: tflw ships a demo service**
 
@@ -1531,7 +1531,7 @@ rather than a blank.
 
 ### D199
 
-<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md:81`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **D199 — spelled `api "tflw://demo"`**
 
@@ -1542,7 +1542,7 @@ lexer, parser, checker, LSP, completion and docs changes for a scaffold default.
 
 ### D200
 
-<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md:91`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **D200 — the demo runs as a child process, not in-process**
 
@@ -1552,7 +1552,7 @@ service instead of measuring the generator and the service contending for one ev
 
 ### D201
 
-<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md:101`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **D201 — one endpoint, `GET /health`**
 
@@ -1563,7 +1563,7 @@ product and a real maintenance surface.
 
 ### D202
 
-<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md:108`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **D202 — a demo run says so, everywhere a run says anything**
 
@@ -1574,7 +1574,7 @@ obviously itself.
 
 ### D203
 
-<sub>cited from SPEC.md:143 · lifted from `PLAN_M118_FIRST_RUN.md:115`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **D203 — only `run` starts it; `check` never does**
 
@@ -1584,7 +1584,7 @@ gets it for free — it calls `runCommand` (`cli.ts:651`).
 
 ### D204
 
-<sub>cited from SPEC.md:3222 · lifted from `PLAN_M118_FIRST_RUN.md:125`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **D204 — `install-browsers` brackets Playwright rather than replacing it**
 
@@ -1595,7 +1595,7 @@ mirror, disk space).
 
 ### D206
 
-<sub>cited from SPEC.md:968 · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md:97`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **D206 — the open model sends over `node:http`, not `fetch`**
 
@@ -1606,7 +1606,7 @@ same lesson arriving a second time, at a path `M45` explicitly declined to cover
 
 ### D245
 
-<sub>cited from SPEC.md:3677 · lifted from `PLAN_M125_FIRST_USE.md:115`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D245 — an absolute URL is legal in `api` and `open`, and `allow hosts` governs it**
 
@@ -1615,7 +1615,7 @@ convenience; the allowlist becomes the boundary, which is what M85 built it to b
 
 ### D246
 
-<sub>cited from SPEC.md:3678 · lifted from `PLAN_M125_FIRST_USE.md:130`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D246 — no allowlist plus an absolute URL: the runtime refuses, the checker warns**
 
@@ -1624,7 +1624,7 @@ configured the runtime refuses the step; the checker warns.
 
 ### D266
 
-<sub>cited from SPEC.md:3679 · lifted from `PLAN_M125_FIRST_USE.md:479`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D266 — `FU-21`: one query, and the caller's count is kept only to name the race**
 
@@ -1636,7 +1636,7 @@ more" is unconstructible rather than merely unobserved.
 
 ### D277
 
-<sub>cited from SPEC.md:1076 · lifted from `PLAN_M125_FIRST_USE.md:624`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D277 — the manifest is held to `parser.ts`, not to SPEC prose**
 
@@ -1648,7 +1648,7 @@ the parser actually dispatches on.
 
 ### D283
 
-<sub>cited from SPEC.md:2571, SPEC.md:2725, SPEC.md:2725 · lifted from `PLAN_M128_PENTEST_TIER1.md:80`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D283 — Tier 1 is a scan-and-assert over a rule pack, not a set of discrete subjects**
 
@@ -1658,7 +1658,7 @@ existing `filterBySeverity` floor.
 
 ### D284
 
-<sub>cited from SPEC.md:2591 · lifted from `PLAN_M128_PENTEST_TIER1.md:96`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D284 — a rule declares a precondition; "not applicable" is a third state**
 
@@ -1667,7 +1667,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 ### D285
 
-<sub>cited from SPEC.md:2614, SPEC.md:3687, SPEC.md:3688 +2 more · lifted from `PLAN_M128_PENTEST_TIER1.md:123`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D285 — zero applicable rules is a **failure**, not a pass**
 
@@ -1676,7 +1676,7 @@ diagnostic: *the assertion had no power to fail.*
 
 ### D286
 
-<sub>cited from SPEC.md:2700, SPEC.md:2704, SPEC.md:2709 · lifted from `PLAN_M128_PENTEST_TIER1.md:137`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D286 — asserted explicitly per step; the hook is a documented idiom, not a mechanism**
 
@@ -1686,7 +1686,7 @@ no new config surface**.
 
 ### D287
 
-<sub>cited from SPEC.md:2691 · lifted from `PLAN_M128_PENTEST_TIER1.md:159`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D287 — cookie rules see this response's `Set-Cookie`, plus session establishment**
 
@@ -1696,7 +1696,7 @@ session by name.
 
 ### D288
 
-<sub>cited from SPEC.md:2632, SPEC.md:2722 · lifted from `PLAN_M128_PENTEST_TIER1.md:174`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D288 — TLS facts come from an out-of-band stdlib `tls.connect()` probe**
 
@@ -1706,7 +1706,7 @@ fires per response must not open a handshake per response.
 
 ### D289
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:191`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D289 — the v1 pack is ten rules: six browser-shaped, four API-shaped**
 
@@ -1717,7 +1717,7 @@ this tool is actually pointed:
 
 ### D290
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:215`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D290 — `response has no [<severity>] security violations`**
 
@@ -1726,7 +1726,7 @@ one word covers both scan kinds.
 
 ### D291
 
-<sub>cited from SPEC.md:703, SPEC.md:2919, SPEC.md:3680 +3 more · lifted from `PLAN_M128_PENTEST_TIER1.md:244`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D291 — D21's declaration half lands now, and Tier 1 **requires** it**
 
@@ -1734,7 +1734,7 @@ In scope for `M128b`:
 
 ### D292
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:292`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D292 — output is the run report; no SARIF and no `ScanReport` in this milestone**
 
@@ -1746,7 +1746,7 @@ standalone scan artifact, at Tier 3/4.
 
 ### D293
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:307`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D293 — target: reuse `M22`'s 8443 sidecar, add `env secureLocal` and a hygiene-only `vuln/` slice**
 
@@ -1755,7 +1755,7 @@ That applies here, but §0(a) makes it cheap — the listener exists. `M128a` is
 
 ### D294
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:496`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D294 — three milestones**
 
@@ -1767,7 +1767,7 @@ That applies here, but §0(a) makes it cheap — the listener exists. `M128a` is
 
 ### D295
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:511`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D295 — acceptance: a positive, a negative, and a not-applicable case for every rule**
 
@@ -1775,7 +1775,7 @@ Each rule in the pack must be demonstrated three ways against the real target:
 
 ### D296
 
-<sub>cited from SPEC.md:2618, SPEC.md:2725 · lifted from `PLAN_M128_PENTEST_TIER1.md:341`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D296 — the severity floor narrows the pack *before* applicability, not the findings after**
 
@@ -1785,7 +1785,7 @@ not all ten, filtered down afterwards.
 
 ### D297
 
-<sub>cited from SPEC.md:2687, SPEC.md:2726 · lifted from `PLAN_M128_PENTEST_TIER1.md:359`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D297 — the TLS rules are response-scoped; the session channel stays cookie-shaped**
 
@@ -1796,7 +1796,7 @@ observation.
 
 ### D298
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:380`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D298 — the probe offers a TLS 1.0 floor, and does **not** widen ciphers**
 
@@ -1808,7 +1808,7 @@ probe therefore sets `minVersion: 'TLSv1'`.
 
 ### D299
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md:410`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D299 — both TLS rules answer "what does this host give a current client?", not "what does it offer?"**
 
@@ -1817,7 +1817,7 @@ both of which the rules state in their own failure text rather than leaving to t
 
 ### D300
 
-<sub>cited from SPEC.md:2571, SPEC.md:2628, SPEC.md:2660 +2 more · lifted from `PLAN_M128_PENTEST_TIER1.md:472`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D300 — a rule blocked by a **failed instrument** is announced; one blocked by its precondition is not**
 
@@ -1828,7 +1828,7 @@ security violations` printed a clean green line whose TLS rules had never run.
 
 ### D304
 
-<sub>cited from SPEC.md:2728, packages/lang/GRAMMAR.md:353 · lifted from `PLAN_M130_PENTEST_TIER2.md:160`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D304 — the surface is a per-step assertion: `response has no [<severity>] authorization violations`**
 
@@ -1836,7 +1836,7 @@ A second matcher on the existing `response` subject, in the exact shape D290 cho
 
 ### D305
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:197`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D305 — the oracle is differential on **resource identity****
 
@@ -1844,7 +1844,7 @@ A violation is: **a resource id from the owner's response appears in a probe's r
 
 ### D306
 
-<sub>cited from SPEC.md:3693 · lifted from `PLAN_M130_PENTEST_TIER2.md:238`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D306 — `anonymous` is a built-in principal, always probed**
 
@@ -1852,7 +1852,7 @@ The no-credentials probe needs no declaration and is in every probe set.
 
 ### D307
 
-<sub>cited from SPEC.md:245, SPEC.md:2830, SPEC.md:3683 +2 more · lifted from `PLAN_M130_PENTEST_TIER2.md:256`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D307 — `privileged` marks a session exempt from probing**
 
@@ -1864,7 +1864,7 @@ session admin privileged
 
 ### D308
 
-<sub>cited from SPEC.md:2748 · lifted from `PLAN_M130_PENTEST_TIER2.md:289`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D308 — a step that names its own credential is a checker error (`TF062`)**
 
@@ -1880,7 +1880,7 @@ test "…" as shopper
 
 ### D309
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:315`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D309 — the assertion requires an owner, so its test must declare one (`TF063`)**
 
@@ -1889,7 +1889,7 @@ error. There is no owner to be non-owning *of*.
 
 ### D310
 
-<sub>cited from SPEC.md:245, SPEC.md:2830, packages/lang/GRAMMAR.md:687 · lifted from `PLAN_M130_PENTEST_TIER2.md:329`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D310 — the probes fire inline, at the assertion**
 
@@ -1898,7 +1898,7 @@ test's lifetime.
 
 ### D311
 
-<sub>cited from SPEC.md:2836 · lifted from `PLAN_M130_PENTEST_TIER2.md:346`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D311 — safe methods by default; `probe mutating` opts in, per authorized target**
 
@@ -1909,7 +1909,7 @@ authorized target "http://localhost:4001" reason "self-hosted test fixture"
 
 ### D312
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:380`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D312 — probe principals establish lazily, and a failed establishment is announced**
 
@@ -1918,7 +1918,7 @@ it, cached from then on like any other (SPEC §3.3: once per run per worker).
 
 ### D313
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:406`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D313 — a probe served *different* content is clean, and counted**
 
@@ -1927,7 +1927,7 @@ collection, or a shared public resource — is **not** a finding. The invariant 
 
 ### D314
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:427`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D314 — every finding emits a runnable `.tflw` repro**
 
@@ -1936,7 +1936,7 @@ report/authz-repro-orders-id-peer.tflw
 
 ### D315
 
-<sub>cited from SPEC.md:3653, SPEC.md:3684 · lifted from `PLAN_M130_PENTEST_TIER2.md:459`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D315 — applicability, and what "not applicable" means here**
 
@@ -1945,7 +1945,7 @@ about a response the owner did not receive.
 
 ### D316
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:478`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D316 — the counts name the principals, and the blind spot is one of the counts**
 
@@ -1954,7 +1954,7 @@ report names what it could not judge:
 
 ### D317
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:494`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D317 — the target: one peer session, three planted routes, and the control stays**
 
@@ -1963,7 +1963,7 @@ yet consuming it):
 
 ### D318
 
-<sub>cited from CONTRIBUTING.md:94, SPEC.md:2757 · lifted from `PLAN_M130_PENTEST_TIER2.md:530`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D318 — three milestones, and the config lines land on the far side of the tflw merge**
 
@@ -1975,7 +1975,7 @@ yet consuming it):
 
 ### D319
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md:554`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D319 — acceptance: precision, recall, and agreement with the hand-written control**
 
@@ -1983,7 +1983,7 @@ Three instruments, failing differently:
 
 ### D320
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:71`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D320 — a rule evaluates one bundle, and its applicability is gated on the owner's body shape**
 
@@ -1994,7 +1994,7 @@ a bundle.
 
 ### D321
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:131`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D321 — resource-id extraction reaches the bare shapes only, and says so out loud**
 
@@ -2002,7 +2002,7 @@ From the owner's response body:
 
 ### D322
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:168`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D322 — containment is a scalar-leaf walk with exact equality, at any depth**
 
@@ -2012,7 +2012,7 @@ envelope the owner's own response did not use, is still a leak.
 
 ### D323
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:199`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D323 — `authzProbe.ts` is the only file that sends a probe, and it rebuilds rather than re-runs**
 
@@ -2022,7 +2022,7 @@ fifth request path.
 
 ### D324
 
-<sub>cited from SPEC.md:2790 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:232`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D324 — five probe outcomes, and `clean` has to be earned**
 
@@ -2036,7 +2036,7 @@ fifth request path.
 
 ### D325
 
-<sub>cited from SPEC.md:2826 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:262`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D325 — a cookie-borne principal refused on a mutating method is `inconclusive` (`M130-01`)**
 
@@ -2048,7 +2048,7 @@ oracle scores that refusal clean.
 
 ### D326
 
-<sub>cited from SPEC.md:2827 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:296`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D326 — probes are sequential, in a fixed order**
 
@@ -2056,7 +2056,7 @@ Declared-session order from `tflw.config`, then `anonymous` last.
 
 ### D327
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:312`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D327 — every session a test names is an owner**
 
@@ -2067,7 +2067,7 @@ request then carries admin's `Authorization` **and** shopper's `Cookie` simultan
 
 ### D328
 
-<sub>cited from SPEC.md:3682, SPEC.md:3682 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:341`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D328 — `TF062` is a lexical refusal plus an exact runtime guard**
 
@@ -2079,7 +2079,7 @@ that boundary deliberately (*"a frame whose registry is knowable: a `test` or ho
 
 ### D329
 
-<sub>cited from SPEC.md:3683 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:370`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D329 — `TF063` uses the same split, and `before file` hooks are refused**
 
@@ -2093,7 +2093,7 @@ that boundary deliberately (*"a frame whose registry is knowable: a `test` or ho
 
 ### D330
 
-<sub>cited from SPEC.md:733, SPEC.md:2836, packages/lang/GRAMMAR.md:626 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:389`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D330 — `probe mutating` is an optional indented sub-clause**
 
@@ -2103,7 +2103,7 @@ authorized target "http://localhost:4001" reason "self-hosted test fixture"
 
 ### D331
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:419`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D331 — the blind spot is two numbers, and one of them is a checker census**
 
@@ -2113,7 +2113,7 @@ specified would always be zero. The intent survives the correction, in two parts
 
 ### D332
 
-<sub>cited from SPEC.md:2728, SPEC.md:2845 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:448`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D332 — repro templates are per-rule, and mirror the hand-written control**
 
@@ -2124,7 +2124,7 @@ after they succeed.
 
 ### D333
 
-<sub>cited from SPEC.md:3649 · lifted from `PLAN_M130B_AUTHZ_ENGINE.md:493`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D333 — `anonymous` is a reserved principal name**
 
@@ -2135,7 +2135,7 @@ name would either shadow it or be shadowed by it, and both are silent.
 
 ### D338
 
-<sub>cited from SPEC.md:3685 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:65`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D338 — address classification is **literal**; `getaddrinfo` is never called**
 
@@ -2144,7 +2144,7 @@ in either the checker or the runtime.
 
 ### D340
 
-<sub>cited from SPEC.md:751, SPEC.md:3685, SPEC.md:3686 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:109`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D340 — the flag is origin-valued, must match a declaration, and repeats**
 
@@ -2154,7 +2154,7 @@ tflw run --allow-public-target https://staging.example.com
 
 ### D341
 
-<sub>cited from SPEC.md:3685 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:130`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D341 — the flag follows the **packet**, not the matcher**
 
@@ -2163,7 +2163,7 @@ tflw run --allow-public-target https://staging.example.com
 
 ### D342
 
-<sub>cited from SPEC.md:3685 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:149`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D342 — two doors: the checker refuses what it can prove, the runtime refuses what is true**
 
@@ -2173,7 +2173,7 @@ different resolutions.
 
 ### D343
 
-<sub>cited from SPEC.md:746, SPEC.md:3680 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:169`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D343 — `TF060` widens from "the default `api` base" to **every scannable origin****
 
@@ -2183,7 +2183,7 @@ ungated** — no `authorized target` required, and under a naive reading of D340
 
 ### D344
 
-<sub>cited from SPEC.md:3685, SPEC.md:3686 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:187`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D344 — two new codes, one repair each; the runtime twin reuses the checker's code**
 
@@ -2191,7 +2191,7 @@ Following `M130b2`'s rule that **a diagnostic code is a repair, not a topic**:
 
 ### D364
 
-<sub>cited from SPEC.md:3095, packages/lang/GRAMMAR.md:168 · lifted from `PLAN_M134_PENTEST_TIER3.md:36`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D364 — Tier 3 is an assertion inside `tflw run`. D1's "three execution modes" is corrected to one.**
 
@@ -2199,7 +2199,7 @@ Following `M130b2`'s rule that **a diagnostic code is a repair, not a topic**:
 
 ### D365
 
-<sub>cited from SPEC.md:2719 · lifted from `PLAN_M134_PENTEST_TIER3.md:81`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D365 — `tflw scan` is deferred, not cancelled, and D299's orphan is its first named tenant**
 
@@ -2210,7 +2210,7 @@ orphaned it.
 
 ### D366
 
-<sub>cited from SPEC.md:2875, SPEC.md:2894, SPEC.md:3349 +1 more · lifted from `PLAN_M134_PENTEST_TIER3.md:98`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D366 — the matcher is `has no input-handling violations`**
 
@@ -2221,7 +2221,7 @@ expect response has no serious input-handling violations
 
 ### D367
 
-<sub>cited from SPEC.md:2905 · lifted from `PLAN_M134_PENTEST_TIER3.md:142`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D367 — rule ids stay in the `sec/` namespace**
 
@@ -2232,7 +2232,7 @@ tiers; the namespace does not. Tier 3 follows: `sec/error-detail-disclosure`,
 
 ### D368
 
-<sub>cited from SPEC.md:2916 · lifted from `PLAN_M134_PENTEST_TIER3.md:152`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D368 — the corpus is **fixed and enumerable**; "fuzzing" is the wrong word for what ships**
 
@@ -2242,7 +2242,7 @@ byte-identical findings.
 
 ### D369
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:171`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D369 — a seeded extension exists, is opt-in, and **never gates****
 
@@ -2252,7 +2252,7 @@ opt-in layer on top of the corpus.
 
 ### D370
 
-<sub>cited from SPEC.md:2899 · lifted from `PLAN_M134_PENTEST_TIER3.md:204`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D370 — the surface is the **observed request only**. No OpenAPI seed.**
 
@@ -2261,7 +2261,7 @@ here and left to Tier 4's crawler.
 
 ### D371
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:225`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D371 — the mutable inputs are path params, query params and body leaf scalars. Headers are deferred.**
 
@@ -2275,7 +2275,7 @@ here and left to Tier 4's crawler.
 
 ### D372
 
-<sub>cited from SPEC.md:733, SPEC.md:2944, packages/lang/GRAMMAR.md:633 +1 more · lifted from `PLAN_M134_PENTEST_TIER3.md:244`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D372 — the four classes, and their per-class safety opt-in as sibling lines**
 
@@ -2286,7 +2286,7 @@ rather than reopening the layer.
 
 ### D373
 
-<sub>cited from SPEC.md:2920 · lifted from `PLAN_M134_PENTEST_TIER3.md:278`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D373 — the invariants, and the 5xx bar: **disclosure, not status****
 
@@ -2294,7 +2294,7 @@ Tier 1 shipped at zero false positives and that bar is **not renegotiated here.*
 
 ### D374
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:302`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D374 — module layout follows the seam `tlsProbe.ts`/`authzProbe.ts` established**
 
@@ -2305,7 +2305,7 @@ and a probe response).
 
 ### D375
 
-<sub>cited from SPEC.md:2899 · lifted from `PLAN_M134_PENTEST_TIER3.md:312`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D375 — `M130-01` is **not** promoted by this milestone, and this is why**
 
@@ -2316,7 +2316,7 @@ a pass. Its S4 severity rests on *"no shipped tflw has this defect… it can bit
 
 ### D376
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:328`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D376 — R8's fingerprints, re-attached to `RunReport`**
 
@@ -2328,7 +2328,7 @@ distinct.
 
 ### D377
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:345`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D377 — the gate: `--fail-on` and `--baseline`**
 
@@ -2338,7 +2338,7 @@ the build.
 
 ### D378
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:359`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D378 — D332's repro emitter generalises without changing shape**
 
@@ -2348,7 +2348,7 @@ the emitter already builds a runnable `.tflw` from a `ProbeResult`.
 
 ### D379
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:374`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D379 — the plants: `V10`–`V13`, and the D363 trap checked **before** designing them**
 
@@ -2359,7 +2359,7 @@ is *what*, not *who*, and the measurement is worse:
 
 ### D380
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:413`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D380 — the negatives are the real app, untouched**
 
@@ -2369,7 +2369,7 @@ quiet against a correct application, and tells us whether D377's gate is urgent 
 
 ### D381
 
-<sub>cited from SPEC.md:2953 · lifted from `PLAN_M134_PENTEST_TIER3.md:447`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D381 — the pace bound holds; `probe rate` does **not** come due**
 
@@ -2379,7 +2379,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 ### D382
 
-<sub>cited from SPEC.md:2938, SPEC.md:3684, SPEC.md:3687 · lifted from `PLAN_M134_PENTEST_TIER3.md:466`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D382 — diagnostic codes, and the coupling**
 
@@ -2387,7 +2387,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 ### D383
 
-<sub>cited from SPEC.md:2875 · lifted from `PLAN_M134_PENTEST_TIER3.md:490`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D383 — three milestones, and Tier 4 is not scoped here**
 
@@ -2399,7 +2399,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 ### D385
 
-<sub>cited from SPEC.md:2972 · lifted from `PLAN_M134_PENTEST_TIER3.md:642`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D385 — findings ride the report for **all three scans**, not only Tier 3**
 
@@ -2411,7 +2411,7 @@ D332's repro emitter needed facts rather than a rendered sentence.
 
 ### D386
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:658`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D386 — the gate can only **relax**, never tighten, and relaxation is never silent**
 
@@ -2422,7 +2422,7 @@ that produced it. A second gate axis would mean two sources of truth for the sam
 
 ### D387
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:679`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D387 — `--baseline` reads, `--baseline-write` produces, and stale entries are named**
 
@@ -2442,7 +2442,7 @@ that produced it. A second gate axis would mean two sources of truth for the sam
 
 ### D388
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md:695`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D388 — the seeded layer is a run flag, and it grants nothing**
 
@@ -2454,7 +2454,7 @@ not a new one.
 
 ### D389
 
-<sub>cited from SPEC.md:2972 · lifted from `PLAN_M134_PENTEST_TIER3.md:706`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D389 — `M128-01` is fixed here, and this is the milestone that can**
 
@@ -2463,7 +2463,7 @@ call is **fix it**, on three measurements rather than on the row's age:
 
 ### D402
 
-<sub>cited from SPEC.md:3034 · lifted from `PLAN_M135_SARIF.md:50`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D402 — `M135` is R7 + R8 + R9. R10's `--unsafe-evidence` is deferred.**
 
@@ -2474,7 +2474,7 @@ live consumer at `authzRules.ts:309` and D376 reused it unchanged — so what is
 
 ### D403
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:70`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D403 — SARIF re-attaches to `RunReport`, and R1/R2's `ScanReport` container is formally dead**
 
@@ -2483,7 +2483,7 @@ last piece and states the consequence plainly, since D360 forbids editing the cl
 
 ### D404
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:87`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D404 — `findings.sarif` is written **only when the run scanned****
 
@@ -2493,7 +2493,7 @@ file is written at all.
 
 ### D405
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:110`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D405 — a result points at the `.tflw` assertion, and names the endpoint logically**
 
@@ -2506,7 +2506,7 @@ result.locations[0].logicalLocations[0].kind               = "resource"
 
 ### D406
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:145`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D406 — four levels into three, plus the numeric GitHub actually ranks on**
 
@@ -2519,7 +2519,7 @@ result.locations[0].logicalLocations[0].kind               = "resource"
 
 ### D407
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:174`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D407 — CWE rides in `rule.properties.tags`**
 
@@ -2529,7 +2529,7 @@ result.locations[0].logicalLocations[0].kind               = "resource"
 
 ### D408
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:192`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D408 — the KB carries remediation and references. It does **not** carry severity.**
 
@@ -2538,7 +2538,7 @@ overclaim found in the file you are already reading gets rewritten rather than s
 
 ### D409
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:215`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D409 — a rule with no KB entry is a **compile error****
 
@@ -2547,7 +2547,7 @@ Each rule module exports its ids as a `const` tuple; their union types the KB as
 
 ### D410
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:235`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D410 — `baseline` suppresses; `--fail-on` does not**
 
@@ -2559,7 +2559,7 @@ Each rule module exports its ids as a `const` tuple; their union types the KB as
 
 ### D411
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:257`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D411 — seeded findings are excluded from the SARIF entirely**
 
@@ -2568,7 +2568,7 @@ that makes it un-baselinable and non-gating: a rule can be forgotten, a missing 
 
 ### D412
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:278`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D412 — `rules[]` declares what **applied**; what stood down goes in `run.properties`**
 
@@ -2579,7 +2579,7 @@ run.properties["tflw/notApplicable"][]    = { rule, because } for every rule tha
 
 ### D413
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:306`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D413 — repros: wire what exists, defer the generalization behind a condition**
 
@@ -2589,7 +2589,7 @@ full; on the other 16 rules the property is simply absent.
 
 ### D414
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:329`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D414 — `@types/sarif` + `ajv`, validated against the bundled 2.1.0 schema**
 
@@ -2600,7 +2600,7 @@ artifact, and `@types/sarif` has no runtime at all.
 
 ### D415
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:351`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D415 — the dogfood asserts the document; it does not upload it**
 
@@ -2612,7 +2612,7 @@ plain CI artifact.
 
 ### D416
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md:372`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D416 — R10's `--unsafe-evidence` revives on a failed triage, not on a milestone**
 
@@ -2621,7 +2621,7 @@ enough for a maintainer to confirm it is real.*
 
 ### D417
 
-<sub>cited from SPEC.md:3034 · lifted from `PLAN_M135_SARIF.md:389`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D417 — three milestones, all decoupled**
 
@@ -2633,7 +2633,7 @@ enough for a maintainer to confirm it is real.*
 
 ### D427
 
-<sub>cited from packages/vscode/test/MANUAL.md:66 · lifted from `PLAN_M136_ARC_DEBT.md:419`</sub>
+<sub>cited from packages/vscode/test/MANUAL.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 **D427 — the config dialect gets its own language id, and the selector moves with it**
 
@@ -2646,7 +2646,7 @@ enough for a maintainer to confirm it is real.*
 
 ### D427a
 
-<sub>cited from packages/vscode/test/MANUAL.md:49 · lifted from `PLAN_M136_ARC_DEBT.md:455`</sub>
+<sub>cited from packages/vscode/test/MANUAL.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 **D427a — the row's nine words are eighteen, and its three wiring sites are five**
 
@@ -2657,7 +2657,7 @@ row happened to enumerate — answers a wider question than the row asked, in bo
 
 ### D432
 
-<sub>cited from SPEC.md:2719, SPEC.md:3069, packages/lang/GRAMMAR.md:168 · lifted from `PLAN_M137_PENTEST_TIER4.md:130`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D432` — the crawl is a top-level `crawl` declaration. `D365` is closed by a different shape, not by reviving the mode**
 
@@ -2666,7 +2666,7 @@ fires. The remedy does not follow.
 
 ### D433
 
-<sub>cited from packages/lang/GRAMMAR.md:704 · lifted from `PLAN_M137_PENTEST_TIER4.md:177`</sub>
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D433` — CSRF token **capture** lives on `session`. It is a session feature the scanner needs, not a scanner feature**
 
@@ -2676,7 +2676,7 @@ hand for exactly this reason, and has since `M22`.
 
 ### D435
 
-<sub>cited from SPEC.md:3153, packages/lang/GRAMMAR.md:158 · lifted from `PLAN_M137_PENTEST_TIER4.md:250`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D435` — the API surface is **enumerated and disclosed**; only the spider is capped**
 
@@ -2687,7 +2687,7 @@ stays deferred with its condition unmet** (`D448`).
 
 ### D442
 
-<sub>cited from SPEC.md:3140, packages/lang/GRAMMAR.md:154 · lifted from `PLAN_M137_PENTEST_TIER4.md:438`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D442` — the browser spider **fetches and parses**. It does not render**
 
@@ -2696,7 +2696,7 @@ Both halves ship, browser last and separable. The spider is HTML-fetching and li
 
 ### D443
 
-<sub>cited from SPEC.md:3069, SPEC.md:3688, SPEC.md:3689 +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md:472`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D443` — two new codes: `TF068` and `TF069`**
 
@@ -2706,7 +2706,7 @@ repair.
 
 ### D450
 
-<sub>cited from SPEC.md:3069, SPEC.md:3689, packages/lang/GRAMMAR.md:161 +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md:740`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D450` — the `crawl` declaration's shape is derived from existing idioms, and it adds **no fourth matcher family****
 
@@ -2716,7 +2716,7 @@ language already does; nothing here is invented where a precedent existed.
 
 ### D456
 
-<sub>cited from SPEC.md:3172, SPEC.md:3688, SPEC.md:3689 · lifted from `PLAN_M137_PENTEST_TIER4.md:979`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D456` — `TF069` is **withdrawn**. `csrf from` inherits `TF039`, and the path-miss carries no code**
 
@@ -2725,7 +2725,7 @@ statement about it stays true.
 
 ### D463
 
-<sub>cited from SPEC.md:3689 · lifted from `PLAN_M137_PENTEST_TIER4.md:1341`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D463` — `TF069` is skipped **permanently**, and the crawl-body rule is `TF070`**
 
@@ -2736,7 +2736,7 @@ table.
 
 ### D480
 
-<sub>cited from SPEC.md:3133 · lifted from `PLAN_M137_PENTEST_TIER4.md:1766`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D480` — a crawl resolves the document's paths against **the document's own server**, never against the `api` base's path**
 
@@ -2745,7 +2745,7 @@ in the sibling component, hidden by the same blind spot, with the same failure d
 
 ### D481
 
-<sub>cited from SPEC.md:3170, SPEC.md:3688 · lifted from `PLAN_M137_PENTEST_TIER4.md:1823`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D481` — a crawl that sent requests and reached none **fails**, and it is `TF068`, not a new code**
 
@@ -2754,7 +2754,7 @@ needed to know it had judged nothing — `sent 31`, `reached 0` — printed them
 
 ### D482
 
-<sub>cited from SPEC.md:2806 · lifted from `PLAN_M137_PENTEST_TIER4.md:1867`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D482` — a resource the **public** receives has no owner, so it has no boundary to cross**
 
@@ -2763,7 +2763,7 @@ rather than merely appearing more often.
 
 ### D483
 
-<sub>cited from SPEC.md:3148 · lifted from `PLAN_M137_PENTEST_TIER4.md:1947`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D483` — a spider **walks before it probes**, so disclosure bounds two phases rather than one**
 
@@ -2773,7 +2773,7 @@ for are written against the assumption that it never is.
 
 ### D485
 
-<sub>cited from SPEC.md:733, SPEC.md:809, SPEC.md:2648 +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md:2055`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D485` — enumeration is gated by **`probe ciphers`, a fourth `authorized target` sub-clause**, and `sec/tls-weak-cipher` is genuinely widened rather than forked**
 
@@ -2786,7 +2786,7 @@ handshakes for one unchanging answer."*
 
 ### D486
 
-<sub>cited from SPEC.md:2667, SPEC.md:2671 · lifted from `PLAN_M137_PENTEST_TIER4.md:2106`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D486` — the enumeration handshake reads **one bit and is forbidden the rest**, which is what answers `D298`'s refusal**
 
@@ -2797,7 +2797,7 @@ trusting keys and signatures it currently rejects."*
 
 ### D537
 
-<sub>cited from CONTRIBUTING.md:125 · lifted from `PLAN_M141_VACUOUS_CHECKS.md:268`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **D537 — every assertion this milestone writes ships with a demonstrated break**
 
@@ -2807,7 +2807,7 @@ precisely because a same-commit branch made all 70 citations vacuous):
 
 ### D623
 
-<sub>cited from SPEC.md:671, SPEC.md:3347, SPEC.md:3582 +2 more · lifted from `PLAN_M147_LAST_ORDER.md:329`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **D623 — config directives take one spelling each, and two of them move.** Closed set → bare
 keyword; boolean or open string → literal. `evidence` and `log level` are backwards today and both
@@ -2817,7 +2817,7 @@ vocabulary has to be one thing first.
 
 ### D628
 
-<sub>cited from SPEC.md:3347, packages/lang/GRAMMAR.md:91, packages/lang/GRAMMAR.md:654 · lifted from `PLAN_M147_LAST_ORDER.md:387`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **D628 — a closed-set value that cannot be spelled as one bare keyword is spelled as two, and the
 CLI keeps the hyphen.** Taken during `M147b`, because `D623` is unbuildable without it: `evidence`'s
@@ -2833,7 +2833,7 @@ spelling.**
 
 ### D629
 
-<sub>cited from SPEC.md:1806 · lifted from `PLAN_M147_LAST_ORDER.md:418`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D629 — `random string 0` is legal and returns the empty string.** `M124-02` asked which of two
   behaviours was deliberate and the answer is *both*, for different reasons: the empty string **is**
@@ -2845,7 +2845,7 @@ spelling.**
 
 ### D630
 
-<sub>cited from SPEC.md:1806 · lifted from `PLAN_M147_LAST_ORDER.md:425`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D630 — a reversed `random date between` is refused where the ordering is decidable without a
   clock, and only there.** Two bounds measured from the same anchor are ordered at check time; `now`
@@ -2856,14 +2856,14 @@ spelling.**
 
 ### D631
 
-<sub>cited from SPEC.md:153, SPEC.md:3690 · lifted from `PLAN_M147_LAST_ORDER.md:431`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D631 — the setting-value rule lives in the parser for the five numeric slots.** The range of a
   number is a fact about its shape and the production reading it already holds everything needed.
 
 ### D632
 
-<sub>cited from SPEC.md:153, SPEC.md:3690 · lifted from `PLAN_M147_LAST_ORDER.md:433`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D632 — `M118-01` reuses `TF071` and is decided in the checker.** What a scheme reserves is a
   fact about the language's semantics, not about a token's shape. The row predicted a new code and
@@ -2871,7 +2871,7 @@ spelling.**
 
 ### D633
 
-<sub>cited from SPEC.md:3691 · lifted from `PLAN_M147_LAST_ORDER.md:436`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D633 — a duplicate `with each` column is `TF072`, refused in the production that reads the
   header, and the duplicated name is kept.** New code because `TF027` means *a `{col}` the table
@@ -2884,7 +2884,7 @@ spelling.**
 
 ### D634
 
-<sub>cited from SPEC.md:3692 · lifted from `PLAN_M147_LAST_ORDER.md:445`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D634 — the imported-file rules: `TF073` for an import that does not parse, `TF037` reused for a
   call inside an imported body, and `import` does not recurse.** Three answers, one boundary.
@@ -2907,28 +2907,28 @@ spelling.**
 
 ### D637
 
-<sub>cited from SPEC.md:1928, packages/lang/GRAMMAR.md:690 · lifted from `PLAN_M147_LAST_ORDER.md:623`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D637** — *a comma list closed by a bracket takes a trailing comma; one terminated by the end of
   the line does not.* The joint is what closes the list, not whether it is a literal.
 
 ### D638
 
-<sub>cited from SPEC.md:1903, SPEC.md:1923, SPEC.md:3643 · lifted from `PLAN_M147_LAST_ORDER.md:625`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D638** — *one time vocabulary across every construct that takes a duration, as the union.* An
   abbreviation must touch its number; a spelled-out word need not.
 
 ### D639
 
-<sub>cited from SPEC.md:1220, SPEC.md:1236, packages/lang/GRAMMAR.md:263 +2 more · lifted from `PLAN_M147_LAST_ORDER.md:627`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D639** — *a `body` is a JSON document — object or top-level array — at both `body` positions.*
   A top-level scalar is still refused: a document, not any value.
 
 ### D640
 
-<sub>cited from SPEC.md:133, SPEC.md:1364, SPEC.md:2293 +3 more · lifted from `PLAN_M147_LAST_ORDER.md:629`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D640** — *a `wait until` step may set its own poll budget, spelled `timeout wait <duration>`, on
   both forms.* It is the only per-step override of `timeout wait` in the language, and it is
@@ -2938,7 +2938,7 @@ spelling.**
 
 ### D641
 
-<sub>cited from SPEC.md:2297, SPEC.md:2320, SPEC.md:3662 +1 more · lifted from `PLAN_M147_LAST_ORDER.md:634`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D641** — *a subject may follow `wait until` exactly when re-reading it between two polls can
   produce a different answer.* A property, not a list, and it selects the four the runtime already
@@ -2949,7 +2949,7 @@ spelling.**
 
 ### D642
 
-<sub>cited from SPEC.md:227, SPEC.md:3693, packages/lang/GRAMMAR.md:678 · lifted from `PLAN_M147_LAST_ORDER.md:640`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D642** — *a `session` may be scoped to named envs, spelled `for env <a>[, <b>...]`, and a session
   written without the clause belongs to every env.* The clause only ever narrows, which is what makes
@@ -2961,7 +2961,7 @@ spelling.**
 
 ### D643
 
-<sub>cited from SPEC.md:3694 · lifted from `PLAN_M147_LAST_ORDER.md:650`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D643** — *the parser bounds its own recursion, and refuses past the bound with a diagnostic
   rather than a stack overflow.* `parseSource` is documented as never throwing for a syntax error and
@@ -2975,7 +2975,7 @@ spelling.**
 
 ### D647
 
-<sub>cited from SPEC.md:3695 · lifted from `PLAN_M147_LAST_ORDER.md:1061`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **Decisions taken:** `D647` — a `header … for <service>` is checked against the union of every service
 the file declares rather than the active env, `TF076`, with the under-approximation named and
@@ -2985,7 +2985,7 @@ reconstructed, and the rule stands going forward.
 
 ### D659
 
-<sub>cited from CONTRIBUTING.md:245 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:276`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **D659 — a completeness gate beside the denylist: a shipped construct must be mentioned somewhere**
 
@@ -2996,9 +2996,19 @@ with its critical `sec/csrf-not-enforced`, and `seed spider`) appear **nowhere**
 three fully specified in `SPEC.md`. No phrase list could ever have found them, because an absent page
 matches no grep.
 
+### D686
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D686` — the provenance line names files; the line numbers move to a report**
+
+`D682` had the generator print the record and **line** each block was lifted from, and `renderEntry`
+printed the citing sites the same way. Both were line numbers in a **tracked** file pointing into
+files that mostly are not.
+
 ### M0
 
-<sub>cited from CHANGELOG.md:735, SPEC.md:3531, packages/lang/GRAMMAR.md:13 +1 more · lifted from `PLAN.md:2146`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
 
 - **M0 — skeleton + parser.** npm workspace, `lang/` with lexer + recursive-descent parser +
   diagnostics for a minimal **API-flavored** grammar (`test`, `api GET/POST`, `expect
@@ -3007,7 +3017,7 @@ matches no grep.
 
 ### M1
 
-<sub>cited from SPEC.md:3509 · lifted from `PLAN.md:2150`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 - **M1 — API vertical slice.** Interpreter executes an API-only test via fetch; config dialect
   (envs, `defaults`, 3-tier selection, `require env` + `.env`); core matcher set on
@@ -3017,7 +3027,7 @@ matches no grep.
 
 ### M2
 
-<sub>cited from SPEC.md:9, SPEC.md:13, SPEC.md:21 +18 more · lifted from `PLAN.md:2155`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 - **M2 — API breadth.** `any`/`all` quantifiers, fail-fast semantics + `wait until api`, named
   services, all four body forms (+ `body text`), `duration`/per-step `timeout`/`without
@@ -3027,7 +3037,7 @@ matches no grep.
 
 ### M3
 
-<sub>cited from SPEC.md:30, SPEC.md:2109 · lifted from `PLAN.md:2227`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 - **M3 — browser half (v0.2.0 public).** Playwright binding: `open/click/fill` + `fill form`,
   tiered selector resolution + `css`/`xpath` escapes + `element` aliases, auto-retrying UI
@@ -3039,7 +3049,7 @@ matches no grep.
 
 ### M3a
 
-<sub>cited from SPEC.md:31, SPEC.md:128, SPEC.md:130 +12 more · lifted from `PROGRESS.md:1725`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M3a — browser core: Playwright peer, interaction steps, selector model, UI expects, dialogs**
 
@@ -3052,7 +3062,7 @@ catch-up (M4a), and visual regression (M4b) all follow separately.
 
 ### M3b
 
-<sub>cited from SPEC.md:129, SPEC.md:2111, SPEC.md:2256 +8 more · lifted from `PROGRESS.md:1781`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M3b — frames/tabs/windows/downloads, drag-drop, `wait until <ui>`**
 
@@ -3062,7 +3072,7 @@ architecture changes, only additions.
 
 ### M3c
 
-<sub>cited from SPEC.md:140, SPEC.md:2113, SPEC.md:2310 +11 more · lifted from `PROGRESS.md:1860`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M3c — `report/` directory, failure screenshots + trace, `--browser`/`--headed`/viewport**
 
@@ -3074,7 +3084,7 @@ additions: `report/` was already a directory in practice (`report.html`/`junit.x
 
 ### M3d
 
-<sub>cited from SPEC.md:2114, SPEC.md:2419, SPEC.md:2470 +9 more · lifted from `PROGRESS.md:1931`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M3d — network observation + `intercept`/`stub`**
 
@@ -3086,7 +3096,7 @@ reads as shorthand for one feature area, not two overlapping constructs — `stu
 
 ### M3e
 
-<sub>cited from SPEC.md:2116, SPEC.md:2117, SPEC.md:2478 +8 more · lifted from `PROGRESS.md:1998`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M3e — accessibility subject (axe-core)**
 
@@ -3124,7 +3134,7 @@ reads as shorthand for one feature area, not two overlapping constructs — `stu
 
 ### M4
 
-<sub>cited from SPEC.md:3525 · lifted from `PLAN.md:2234`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 - **M4 — browser-era polish.** Trimmed twice (decisions 40, 47): tags/hooks/retry/check/tables/
   junit went to M2.5, parallel workers to M2.6. What remains: full report polish once M3 lands
@@ -3134,7 +3144,7 @@ reads as shorthand for one feature area, not two overlapping constructs — `stu
 
 ### M4a
 
-<sub>cited from SPEC.md:2116 · lifted from `PROGRESS.md:2054`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M4a — browser-arc LSP + VS Code catch-up**
 
@@ -3143,7 +3153,7 @@ gracefully mid-arc, and the per-construct multiplier isn't worth paying three ti
 
 ### M4b
 
-<sub>cited from SPEC.md:31, SPEC.md:2117, SPEC.md:2514 +4 more · lifted from `PROGRESS.md:2120`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M4b — visual regression**
 
@@ -3155,7 +3165,7 @@ exact mechanism D15 was asking for.
 
 ### M5
 
-<sub>cited from SPEC.md:2118, SPEC.md:2205, SPEC.md:3223 +3 more · lifted from `PLAN.md:2239`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 - **M5 — coding UX.** `tflw watch` (headed re-run, browser stays open, reuses the last failing
   seed), tiered-resolution failure diagnosis with near-match suggestions, `tflw pick`, VS Code
@@ -3163,7 +3173,7 @@ exact mechanism D15 was asking for.
 
 ### M6
 
-<sub>cited from SPEC.md:31, SPEC.md:2012, SPEC.md:2014 +5 more · lifted from `PLAN.md:2242`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 - **M6 — reuse pass.** Similarity detection across the suite → diagnostics with prepared
   extraction → `tflw refactor apply`. Tested on deliberately duplicated tests in testFlow-tests
@@ -3171,7 +3181,7 @@ exact mechanism D15 was asking for.
 
 ### M7
 
-<sub>cited from SPEC.md:31, SPEC.md:2484, SPEC.md:3531 · lifted from `PLAN.md:2245`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
 - **M7 — acceptance (the browser arc's own gate, `0.2.0`-equivalent — decision 112 amends the
   original "1.0 gate" framing below).** Build out the 10-test dogfood suite (testFlow-tests) + its
@@ -3184,7 +3194,7 @@ exact mechanism D15 was asking for.
 
 ### M9
 
-<sub>cited from CHANGELOG.md:17 · lifted from `PLAN.md:2353`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN.md`</sub>
 
 - **M9 — Auth (enterprise arc cluster 1 of 6).** Added by `PLAN_ENTERPRISE.md` (decisions 1–3, 13,
   14; see decision 99 for the full writeup) — the first cluster of the enterprise-readiness arc,
@@ -3197,7 +3207,7 @@ exact mechanism D15 was asking for.
 
 ### M10
 
-<sub>cited inside a range only · lifted from `PLAN.md:2361`</sub>
+<sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 - **M10 — Safety/redaction (enterprise arc cluster 2 of 6).** Added by `PLAN_ENTERPRISE.md`
   (decisions 5/9/14; see decision 101 for the full writeup) — immediately follows cluster 1 (M9).
@@ -3212,7 +3222,7 @@ exact mechanism D15 was asking for.
 
 ### M11
 
-<sub>cited from packages/lang/GRAMMAR.md:13 · lifted from `PLAN.md:2371`</sub>
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
 
 - **M11 — Contract + Retry-After (enterprise arc cluster 3 of 6).** Added by `PLAN_ENTERPRISE.md`
   (decisions 5/6/14; see decision 102 for the full writeup) — immediately follows cluster 2 (M10),
@@ -3226,7 +3236,7 @@ exact mechanism D15 was asking for.
 
 ### M12
 
-<sub>cited inside a range only · lifted from `PLAN.md:1332`</sub>
+<sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 103. **M12 — Documentation site** — cluster 4 of the (now 8-cluster) enterprise-readiness arc
     (`PLAN_ENTERPRISE.md` decision 16, a `/grill-me` session 2026-07-19), immediately following
@@ -3236,13 +3246,13 @@ exact mechanism D15 was asking for.
 
 ### M13
 
-<sub>cited from SPEC.md:3221, SPEC.md:3514, SPEC.md:3528 +1 more · lifted from `PLAN_M13_LSP.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M13_LSP.md`</sub>
 
 **M13 — LSP (enterprise arc cluster 5 of 8)**
 
 ### M14
 
-<sub>cited inside a range only · lifted from `PLAN.md:1679`</sub>
+<sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 108. **M14 — Connection-failure assertions: `request connects`/`fails`** — cluster 5.5 of the
     enterprise-readiness arc (`PLAN_ENTERPRISE.md` decisions 18–19, a third `/grill-me` session
@@ -3254,7 +3264,7 @@ exact mechanism D15 was asking for.
 
 ### M15
 
-<sub>cited inside a range only · lifted from `PLAN.md:1763`</sub>
+<sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 109. **M15 — Docs site polish: diagnostic codes reference + home page "Why tflw"** — cluster 9 of
     the enterprise-readiness arc (`PLAN_ENTERPRISE.md` decision 20, a fourth `/grill-me` session
@@ -3264,7 +3274,7 @@ exact mechanism D15 was asking for.
 
 ### M16
 
-<sub>cited inside a range only · lifted from `PLAN.md:1844`</sub>
+<sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 110. **M16 — Docs site: running & debugging tests guide + getting-started prerequisites** — a
     direct follow-up to M15/decision 109 (cluster 9), user-reported this session (not a `/grill-me`
@@ -3278,7 +3288,7 @@ exact mechanism D15 was asking for.
 
 ### M17
 
-<sub>cited inside a range only · lifted from `PLAN.md:1891`</sub>
+<sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 111. **M17 — CI ergonomics + console/log output** — enterprise arc cluster 6
     (`PLAN_ENTERPRISE.md` decision 21, a fifth `/grill-me` session 2026-07-20). Decision 7's
@@ -3291,61 +3301,61 @@ exact mechanism D15 was asking for.
 
 ### M18
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:46`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M18 — gap #9 backfill: spec-data/LSP/docs-site/VS Code for `base64`/`hex`/`url` (enterprise arc cluster 8 kickoff) | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M19
 
-<sub>cited from SPEC.md:1223, SPEC.md:1228, SPEC.md:1231 +2 more · lifted from `PROGRESS.md:47`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 | M19 — gap #10: `upload ... type "..."` Content-Type (enterprise arc cluster 8) | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M20
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:48`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M20 — test-coverage audit follow-up: VS Code extension activation test | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M21
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:49`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M21 — test-coverage audit follow-up: root `c8` coverage tooling | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M22
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:50`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M22 — test-coverage audit follow-up: docs-site `.tflw` sample verification | ✅ | 2026-07-23 | 2026-07-23 |
 
 ### M23
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:51`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M23 — gap #16: `HEAD`/`OPTIONS` HTTP methods | ✅ | 2026-07-25 | 2026-07-25 |
 
 ### M24
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:52`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M24 — gap #17: binary-safe body assertion (`body bytes` + `matches file`) | ✅ | 2026-07-25 | 2026-07-25 |
 
 ### M25
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:53`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M25 — gap #19: content-aware body parsing (`body csv` + `body pdf text`) | ✅ | 2026-07-25 | 2026-07-25 |
 
 ### M26
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:54`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | M26 — gap #15: `redact` now masks `capture`/`expect` step-detail text, not just the trace | ✅ | 2026-07-26 | 2026-07-26 |
 
 ### M27
 
-<sub>cited from SPEC.md:651, SPEC.md:1981, SPEC.md:3217 +3 more · lifted from `PLAN.md:2055`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
 
 113. **M27 — User-defined logging: the `log` statement.** A `/grill-me` session (2026-07-29,
      `PLAN_LOG.md`) found tflw had no `log`/`print`/`note` statement anywhere — the closest
@@ -3373,7 +3383,7 @@ exact mechanism D15 was asking for.
 
 ### M28
 
-<sub>cited from CHANGELOG.md:17 · lifted from `PLAN.md:2079`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN.md`</sub>
 
 114. **M28 — `log` catches up to editor tooling (LSP + VS Code).** M27 added `log` to
      `STATEMENT_KEYWORDS` but never touched `packages/lsp-server`/`packages/vscode`, per
@@ -3400,7 +3410,7 @@ exact mechanism D15 was asking for.
 
 ### M29
 
-<sub>cited from CHANGELOG.md:75, SPEC.md:194, SPEC.md:929 +4 more · lifted from `PROGRESS.md:3821`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M29 — perf arc: `scenario`/`threshold` grammar + single-scenario load engine**
 
@@ -3414,7 +3424,7 @@ stub.
 
 ### M30
 
-<sub>cited from SPEC.md:929, SPEC.md:932, SPEC.md:1046 +2 more · lifted from `PROGRESS.md:3937`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M30 — perf arc: concurrent multi-scenario runs**
 
@@ -3426,7 +3436,7 @@ since a multi-scenario report is meaningless without it.
 
 ### M31
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:4020`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M31 — perf arc: multi-process generator + self-diagnosis**
 
@@ -3440,7 +3450,7 @@ self-diagnoses its own event-loop lag/CPU and warns when tflw's own generator wa
 
 ### M32
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:4140`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M32 — perf arc: full `LoadReport` design**
 
@@ -3452,7 +3462,7 @@ the actual report the plan designed on top of it, without touching the engine's 
 
 ### M33
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:4294`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M33 — perf-arc LSP + VS Code catch-up**
 
@@ -3473,7 +3483,7 @@ to share with a `test`.
 
 ### M34
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:4406`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M34 — perf arc acceptance**
 
@@ -3485,13 +3495,13 @@ pure acceptance-testing pass.
 
 ### M35
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md:352`</sub>
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 | **M35** | Load-engine hardening (D32) — close the tflw-vs-k6 gap M34 found and root-caused but did not fix; re-run M34's own acceptance comparison unchanged once fixed, to see whether D31's numeric half now holds. **M35a/M35a-2/M35b done 2026-07-31 (root cause found: an unconditional `undici` npm import in `http.ts` cripples Node's built-in global `fetch()` — see §2.7/FINDINGS_M35B_ROOT_CAUSE.md). M35c done 2026-07-31 (mTLS dispatch isolated into a dedicated child process; ~12.8x throughput improvement on the isolated 1-VU harness, all 372 runtime + 106 CLI tests green). M35d done 2026-07-31 — real, mixed result: the fix is verified and worth keeping, but does NOT close the gap on M34's real contended acceptance target (tflw still ~173-191/s vs k6's 620/s, same ~3.2-3.4x as before); back-off-dominated real latency swamps the ~1.4ms/call the fix saves. D33a's ~10% tolerance is not met — see acceptance/README.md's "M35d — re-measured" section. M35 complete; residual gap left open, not chased further per D33c/D35/D38.** |
 
 ### M36
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md:619`</sub>
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **M36 — continued investigation: client-side concurrency ceiling**
 
@@ -3502,7 +3512,7 @@ intentional user override, not a process lapse.
 
 ### M37
 
-<sub>cited from CHANGELOG.md:92 · lifted from `PROGRESS.md:4761`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
 **M37 — fix D43's bug (design recorded, not yet implemented)**
 
@@ -3511,7 +3521,7 @@ three open branches resolved with the user before any code was written:
 
 ### M38
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:4843`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M38 — re-measured (2026-08-01)**
 
@@ -3519,7 +3529,7 @@ Picked up immediately after M37 in the same session. Mirrors M35d's own procedur
 
 ### M39
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:4892`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M39 — confirm the residual gap is real (design recorded, not yet started)**
 
@@ -3542,7 +3552,7 @@ reflects a fully-scoped, user-reviewed plan ready to pick up.
 
 ### M40
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:4952`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M40 — root-cause the p95-under-contention mechanism (design recorded, not yet started)**
 
@@ -3568,7 +3578,7 @@ this entry exists so the tracker reflects a fully-scoped, user-reviewed plan rea
 
 ### M41
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5021`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M41 — reopening the tolerance amendment, closed (2026-08-01)**
 
@@ -3579,7 +3589,7 @@ explicit override of D55's re-scope-and-stop resolution, before any `/grill-me` 
 
 ### M42
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5088`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M42 — pinned-per-VU connections, scoped (2026-08-01, design recorded, not yet implemented)**
 
@@ -3590,7 +3600,7 @@ stopping point, this time with an ask to ground the scoping in web research.
 
 ### M43
 
-<sub>cited from SPEC.md:987, SPEC.md:3654, packages/lang/GRAMMAR.md:213 · lifted from `PROGRESS.md:5181`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M43-M46 — the reporter bug, and a corrected close to the arc (scoped 2026-08-01; M43 shipped 2026-08-01)**
 
@@ -3602,7 +3612,7 @@ this one found the actual missing thing, and it wasn't in Node's HTTP stack at a
 
 ### M44
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5370`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M44 shipped (2026-08-01)**
 
@@ -3610,7 +3620,7 @@ Pure measurement + decision, no source changes beyond M43's own fixture retaggin
 
 ### M45
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5410`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M45 shipped (2026-08-01)**
 
@@ -3625,13 +3635,13 @@ only, so `sendRequest`'s `fetch()` path for `tflw run` is provably untouched, mi
 
 ### M46
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md:363`</sub>
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 | **M46** | Depends on M45 (shipped, kept). Root-caused M45's residual checkout-scoped p95 gap (4.9%/3.6%) by comparing tflw's actual measurement *logic* against k6's, not just its numbers (D76-D80). Landed the Nagle fix (`req.setNoDelay(true)` in `httpPinned.ts`) and quantified the percentile-algorithm bias (0.00% at this sample size, `percentile()` left unchanged). Effect was asymmetric: closed `dogfood-post-uncontended`'s gap (3.6% → 2.90%, under the <3% bar) but did not move `checkout-burst`'s (4.9% → 5.86%, within noise); a bounded D80 follow-up ruled out server-side Nagle (nginx fronts the client connection and already defaults `tcp_nodelay on`); a second, user-requested pass ruled out event-loop/GC jitter too (checkout-burst's readings were indistinguishable from an uncontended control). **Shipped 2026-08-01 — checkout-burst's 5.86% residual accepted as the practical ceiling per D79.** Full design + result in §2.17. |
 
 ### M47
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5590`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M47 shipped 2026-08-01, extended to a three-way (tflw/k6/Artillery) ladder at the user's request**
 
@@ -3646,7 +3656,7 @@ rest of the ladder.
 
 ### M48
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5644`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M48 shipped 2026-08-02 — acceptance-suite breadth (two new rungs) + p50/p99**
 
@@ -3657,7 +3667,7 @@ metric. Full design + results in `PLAN_BROWSER_PERF_SECURITY.md` §2.20 (D82-D85
 
 ### M49
 
-<sub>cited from CHANGELOG.md:75 · lifted from `PROGRESS.md:5680`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
 **M49 shipped 2026-08-02 — root-caused M48's p50/p99 widening: AbortSignal.timeout() tail cost**
 
@@ -3668,7 +3678,7 @@ remaining untested candidate (`AbortSignal.timeout()` per-request overhead in `h
 
 ### M50
 
-<sub>cited from CHANGELOG.md:97, SPEC.md:929, SPEC.md:932 +2 more · lifted from `PROGRESS.md:5717`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M50 shipped 2026-08-02 — collapse `scenario` into `test`, kind inferred from a workload clause**
 
@@ -3689,7 +3699,7 @@ untouched); `report.html`/`load-report.html` remain two separate pairs (D101 unt
 
 ### M51
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5784`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M51 shipped 2026-08-02 — 4 new workload keywords: `hold`/`step`/`spike`/`run … iterations …`**
 
@@ -3701,7 +3711,7 @@ implemented yet" usage error instead of a crash if someone points `tflw load` at
 
 ### M52
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:5850`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M52 shipped 2026-08-02 — `hold`/`step`/`spike`/`run … iterations …` actually execute now**
 
@@ -3716,7 +3726,7 @@ milestone — only *which kinds* it can execute changed.
 
 ### M53
 
-<sub>cited from SPEC.md:3217, packages/cli/README.md:231, packages/docs-site/reference/cli.md:50 +2 more · lifted from `PROGRESS.md:5909`</sub>
+<sub>cited from SPEC.md, packages/cli/README.md, packages/docs-site/reference/cli.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M53 shipped 2026-08-02 — `parallel`/`sequential` keyword + `tflw load` folded into `tflw run`**
 
@@ -3731,7 +3741,7 @@ implements that full redesign, not the original D100.
 
 ### M54
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6014`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M54 shipped 2026-08-02 — fix a real 0-iteration bug found while documenting M53's concurrency model**
 
@@ -3743,7 +3753,7 @@ unit tests hadn't covered (no test exercised two *sequential* workload tests in 
 
 ### M55
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6066`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M55 shipped 2026-08-02 — regression test for `with each` × `parallel`/`sequential`**
 
@@ -3757,7 +3767,7 @@ no way to make one test's own rows race each other today. The keyword only ever 
 
 ### M56
 
-<sub>cited from CHANGELOG.md:441, SPEC.md:929, SPEC.md:1054 +1 more · lifted from `PROGRESS.md:6104`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/docs-site/reference/cli.md · lifted from `PROGRESS.md`</sub>
 
 **M56 shipped 2026-08-02 — reporter unification (`PLAN_UNIFIED_TEST_WORKLOAD.md` Phase 3, D116-D122)**
 
@@ -3774,7 +3784,7 @@ but are no longer an outward-facing artifact.
 
 ### M57
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6145`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M57 shipped 2026-08-03 — docs (`PLAN_UNIFIED_TEST_WORKLOAD.md` Phase 4, D123-D126)**
 
@@ -3788,7 +3798,7 @@ grammar anywhere (only §17's `TF033`/`TF034` diagnostic rows mentioned it) and 
 
 ### M58
 
-<sub>cited from CHANGELOG.md:97 · lifted from `PROGRESS.md:6188`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
 **M58 shipped 2026-08-03 — `exclude` config directive (D127, PLAN_DISCOVERY_EXCLUDE.md)**
 
@@ -3804,7 +3814,7 @@ workaround.
 
 ### M59
 
-<sub>cited from CHANGELOG.md:547, SPEC.md:3669, packages/lang/GRAMMAR.md:49 · lifted from `PROGRESS.md:6311`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M59 shipped 2026-08-03 — 3 lexer S1s from the launch review's A1 pass (`REVIEW_FINDINGS_A1.md`)**
 
@@ -3814,7 +3824,7 @@ adjacent defect; all four are here, the rest of batch 1's 132 rows are recorded 
 
 ### M60
 
-<sub>cited from SPEC.md:1005, SPEC.md:1010, SPEC.md:1043 +9 more · lifted from `PROGRESS.md:6340`</sub>
+<sub>cited from SPEC.md, packages/docs-site/guide/load-testing.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M60 shipped 2026-08-03 — checker parity + the A4/A2 checker findings (`REVIEW_FINDINGS_A4.md`, `REVIEW_FINDINGS_A2.md`)**
 
@@ -3824,13 +3834,13 @@ boundary they had no reason to stop at.
 
 ### M61
 
-<sub>cited from SPEC.md:1480, SPEC.md:3247 · lifted from `REVIEW_FINDINGS.md:5039`</sub>
+<sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 | **M61** | `c0c7f81` | **cluster C7 closed** — `A3-02` S2, `A3-20` S2, `A4-08` S2, `A3-15` S3, `A3-16` S3, `OBS-04` S3, plus `B6-04` S2 and `B6-11`'s flag half (C5) |
 
 ### M62
 
-<sub>cited inside a range only · lifted from `PLAN_DOC_TRUTH.md:1`</sub>
+<sub>cited inside a range only · lifted from `PLAN_DOC_TRUTH.md`</sub>
 
 **M62 — doc truth**
 
@@ -3839,7 +3849,7 @@ deferred here. Review baseline `c6409d1`; this milestone's own baseline is `9324
 
 ### M63
 
-<sub>cited from SPEC.md:442, SPEC.md:1517, SPEC.md:3230 · lifted from `PROGRESS.md:6402`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M63 shipped 2026-08-03 — the four batch-2 findings that needed no decision (`REVIEW_FINDINGS_B2.md`)**
 
@@ -3850,7 +3860,7 @@ the four are one edit.
 
 ### M64
 
-<sub>cited from packages/lang/GRAMMAR.md:24, packages/lang/GRAMMAR.md:657 · lifted from `PROGRESS.md:6473`</sub>
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M64 shipped 2026-08-03 — milestone A, the artifact security model (`PLAN_FREEZE_SURFACE.md` FS-01/FS-02/FS-03)**
 
@@ -3860,7 +3870,7 @@ unblocked** — `V2-01` and `redact`'s inability to name a header were its two b
 
 ### M65
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6582`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M65 shipped 2026-08-03 — milestone C, `junit.xml`'s document shape (`PLAN_FREEZE_SURFACE.md` FS-09)**
 
@@ -3869,97 +3879,97 @@ The second of the three verticals `FS-10` scheduled ("A + C now, B after batches
 
 ### M66
 
-<sub>cited from CHANGELOG.md:533 · lifted from `PROGRESS.md:6816`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
 | `04b3143` | **M66** — `FS-08` optional copula, `FS-06` keyword lookahead, `FS-07` one value parser, `FS-04` additive half |
 
 ### M67
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6817`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `601f0ff` | **M67** — `FS-05`: `think` → `pause`, `wait until … for <dur>`, honest `TF033` |
 
 ### M68
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6818`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `12e90ed` | **M68** — the doc sweep: SPEC + `GRAMMAR.md` + docs-site, once, per D24b |
 
 ### M69
 
-<sub>cited from CHANGELOG.md:533 · lifted from `PROGRESS.md:6819`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
 | `7d996ad` | **M69** — `FS-04` strict half. **On branch `b1-step3-check-strict`, deliberately not on `main`** |
 
 ### M70
 
-<sub>cited from SPEC.md:3218, SPEC.md:3236 · lifted from `PROGRESS.md:6846`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 | `56d7cc3` | **M70** — `B6-01` (**S1**) | an empty `--tag`/`--only` was indistinguishable from omitting the flag, so a *narrowing* flag ran the whole suite at exit 0. Refused now, in both spellings, for every value-taking flag — same rule shape as M63's `flagValue` |
 
 ### M71
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6847`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `b017c9b` | **M71** — `A4-12` ≡ `B6-07` | `check --format json` was a flat `Diagnostic[]` with no file attribution. Now one `{ file, diagnostics }` entry per file checked, clean files included |
 
 ### M72
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6848`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `deb7b1c` | **M72** — `A2-06` | the `as`/`retry`/`parallel` header modifiers had a fixed, undocumented order; they are order-independent now, each at most once |
 
 ### M73
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6849`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `64b0981` | **M73** — `B6-10` | `exclude "b.tflw"` was a silent no-op — the equality test lived inside the `isDirectory()` branch. Files match now, and paths are separator-normalised |
 
 ### M74
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6850`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `9bb73f0` | **M74** — `A2-12` | `ReportDecl.dir` discarded its `StringLit`, freezing `dir: string` into exported public API. It keeps the literal now, at parity with every sibling path directive |
 
 ### M75
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6851`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `4821fdc` | **M75** — `B4-07` | SPEC §3.3 claimed a `session` applies browser storage state; §10 says D10 never bridges them. §3.3 and the sessions guide now say what actually happens |
 
 ### M76
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:6852`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 | `e00c6c2` | **M76** — `B5-05` | `tflw migrate` cannot act (no rule emits a deprecation) and `--help`/`CLI_FLAGS` presented a working tool. Documented, not demoted |
 
 ### M77
 
-<sub>cited from CHANGELOG.md:547, SPEC.md:3460 · lifted from `PROGRESS.md:6853`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PROGRESS.md`</sub>
 
 | `b82a5b4` | **M77** — cluster `C4` | the ndjson stream had no contract: unpaired `test:start`, a `run:start.total` that disagreed with `run:end`, and a crashed file emitting **nothing**. SPEC §13 states three guarantees, each with a test |
 
 ### M78
 
-<sub>cited from packages/lang/GRAMMAR.md:3, packages/lang/GRAMMAR.md:18 · lifted from `REVIEW_FINDINGS.md:5035`</sub>
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 | **M78** | `69d6007` | **cluster C13 closed** — `FU-05` S2, `V4-07` S2, `V4-08`≡`A2-OS-01` S2, `V4-09` S2, `V4-13` S3, `B6-12` S3, `FU-26` S4, plus `B5-04` S2 (`FU-05`'s root) and `V4-OS-04` |
 
 ### M80
 
-<sub>cited from SPEC.md:1185 · lifted from `REVIEW_FINDINGS.md:5037`</sub>
+<sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 | **M80** | `4dcd98e` | `B4-01` **S1** — the pinned client stops leaking credentials across an origin change (C2's S1); `B4-13` S3, found while fixing it |
 
 ### M81
 
-<sub>cited from SPEC.md:2097 · lifted from `REVIEW_FINDINGS.md:5038`</sub>
+<sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 | **M81** | `3e6bbc7` | `B5-01` **S1** — `tflw refactor apply` stops proposing extractions the checker rejects. **The last open S1** |
 
 ### M85
 
-<sub>cited from SPEC.md:624, SPEC.md:3656 · lifted from `PROGRESS.md:7610`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M85 — `allow hosts` covers what it claims (cluster C1: `B4-02`, `B4-03`, `A4-10`)**
 
@@ -3967,7 +3977,7 @@ The second of the three verticals `FS-10` scheduled ("A + C now, B after batches
 
 ### M87
 
-<sub>cited from SPEC.md:3657, SPEC.md:3658, SPEC.md:3659 +2 more · lifted from `PROGRESS.md:7919`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M87 — the checker resolves names (cluster C6: `A4-03`, `FU-08`, `A4-16`, `FU-12`)**
 
@@ -3976,7 +3986,7 @@ Four `tflw check` "no problems found"s over files that cannot run. The root caus
 
 ### M88a
 
-<sub>cited from SPEC.md:647, SPEC.md:1190 · lifted from `PLAN_M88_CLIENT_CONTRACT.md:178`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M88_CLIENT_CONTRACT.md`</sub>
 
 **M88a — the redirect cap (`B4-09`, `B4-10`, `B4-14`). ✅ shipped 2026-08-05** (see `PROGRESS.md`;
 1,520 tests, negative control fails 4/5 with the defect verbatim, end-to-end parity confirmed
@@ -3988,7 +3998,7 @@ equality shape `M85` already established.
 
 ### M88d
 
-<sub>cited from SPEC.md:3460 · lifted from `PLAN_M88_CLIENT_CONTRACT.md:235`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M88_CLIENT_CONTRACT.md`</sub>
 
 **M88d — the stream and the hint (`B3-11`, `FU-09`).** ✅ **Shipped 2026-08-05.** Unrelated to C2 and
 to each other; grouped because both are small and neither is worth its own milestone. `B3-11` also
@@ -3996,7 +4006,7 @@ gets `SPEC` ~~§16.1~~ **§13** restated, which means `docs-data.generated.ts` r
 
 ### M89
 
-<sub>cited from CHANGELOG.md:567, SPEC.md:989, SPEC.md:1000 +3 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md:14`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **`M89` — workload results are made to describe the run that actually happened.** Cluster C3: a
 workload's reported population included iterations that never completed, so percentiles, error
@@ -4006,7 +4016,7 @@ and one consequence for the perf arc's own acceptance benchmark. Shipped as `M89
 
 ### M89a
 
-<sub>cited from SPEC.md:989, SPEC.md:1000 · lifted from `PLAN_M89_WORKLOAD_TRUTH.md:153`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89a — the truthful population (`B3-02`, §3.2, §3.3) · single-repo**
 
@@ -4017,7 +4027,7 @@ that expression silently becomes `failures / successes` — 960/40 = **2400 %**.
 
 ### M89b
 
-<sub>cited from SPEC.md:1060 · lifted from `PLAN_M89_WORKLOAD_TRUTH.md:179`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89b — the workload describes itself (`B3-03`) · single-repo, breaking to `results.json`**
 
@@ -4032,7 +4042,7 @@ type LoadWorkloadReport =
 
 ### M89c
 
-<sub>cited from SPEC.md:1009, SPEC.md:3653 · lifted from `PLAN_M89_WORKLOAD_TRUTH.md:199`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89c — `TF033` requires a meaningful threshold · **two-repo****
 
@@ -4042,7 +4052,7 @@ and only `threshold p95 duration is less than 100000ms`. One line to add.
 
 ### M90
 
-<sub>cited from SPEC.md:3226 · lifted from `PROGRESS.md:8891`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M90 — `tflw migrate` becomes a tool that does something · 2026-08-05**
 
@@ -4053,7 +4063,7 @@ still emitted nothing.
 
 ### M91
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:9017`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M91 — the tests that counted without proving · 2026-08-05**
 
@@ -4063,7 +4073,7 @@ of its own decisions corrected by probing. Shipped as three commits: **M91a** (`
 
 ### M92
 
-<sub>cited from SPEC.md:3684 · lifted from `PLAN_M92_SHIP_SURFACE.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M92_SHIP_SURFACE.md`</sub>
 
 **M92 — the ship surface tells the truth about what it ships (cluster C15)**
 
@@ -4077,13 +4087,13 @@ of its own decisions corrected by probing. Shipped as three commits: **M91a** (`
 
 ### M92b
 
-<sub>cited from SPEC.md:3222, SPEC.md:3574 · lifted from `PLAN_M92_SHIP_SURFACE.md:309`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M92_SHIP_SURFACE.md`</sub>
 
 | **M92b** | `B6-09` S3 | `install-browsers` resolves playwright from the consumer's project via its manifest `bin`, no `npx`, no download on failure; optional peers ship on `tflw`; e2e guard + negative control |
 
 ### M93
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:9210`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M93 — two security decisions the tool made silently · 2026-08-06**
 
@@ -4092,7 +4102,7 @@ of its own decisions corrected by probing. Shipped as three commits: **M91a** (`
 
 ### M94
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:9320`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M94 — the ledger was lying about how much work was left · 2026-08-06**
 
@@ -4102,7 +4112,7 @@ didn't.
 
 ### M95
 
-<sub>cited inside a range only · lifted from `PROGRESS.md:9366`</sub>
+<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
 **M95 — `capture` was the one statement whose subject nothing checked · 2026-08-06**
 
@@ -4111,7 +4121,7 @@ pass, in the same family as the S1s.
 
 ### M96
 
-<sub>cited from SPEC.md:1404, SPEC.md:1894, SPEC.md:3659 +1 more · lifted from `PLAN_M96_VALUE_SUBJECT.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M96_VALUE_SUBJECT.md`</sub>
 
 **PLAN — M96: the value subject (`FU-11`)**
 
@@ -4121,7 +4131,7 @@ never as a subject.*
 
 ### M97
 
-<sub>cited inside a range only · lifted from `PLAN_M97_CHECKER_CONTRACT.md:1`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **M97 — the checker contract**
 
@@ -4135,7 +4145,7 @@ not started.
 
 ### M97a
 
-<sub>cited from SPEC.md:3671, SPEC.md:3671, SPEC.md:3672 +8 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md:438`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **8. `M97a` — shipped 2026-08-06**
 
@@ -4144,7 +4154,7 @@ not started.
 
 ### M97b
 
-<sub>cited from SPEC.md:63, SPEC.md:70, SPEC.md:868 +6 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md:514`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **9. `M97b` — shipped 2026-08-06**
 
@@ -4153,7 +4163,7 @@ not started.
 
 ### M97c
 
-<sub>cited from SPEC.md:889, SPEC.md:1221, SPEC.md:3663 +1 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md:601`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **10. `M97c` — shipped 2026-08-06**
 
@@ -4162,7 +4172,7 @@ D144 and D143 halves 2–3. One new code, **`TF043`**. Closes `B5-02` (all three
 
 ### M97d
 
-<sub>cited from SPEC.md:2057, SPEC.md:3664, SPEC.md:3664 · lifted from `PLAN_M97_CHECKER_CONTRACT.md:696`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **11. `M97d` — shipped 2026-08-06 · the cluster is closed**
 
@@ -4170,7 +4180,7 @@ D141, review row `A4-13`. New code **`TF044`**. Branch `m97d-cycles-and-depth`.
 
 ### M97e
 
-<sub>cited from CHANGELOG.md:567, SPEC.md:890, SPEC.md:1221 +1 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md:774`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **M97e — the severity of a prediction (D147, 2026-08-07)**
 
@@ -4178,7 +4188,7 @@ A follow-on milestone, opened after the stack landed on `main`, because the gate
 
 ### M98
 
-<sub>cited from CHANGELOG.md:567 · lifted from `PLAN_M98_LEXER_POSITIONS.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98 — the lexer's coordinate model and the diagnostics it withholds**
 
@@ -4189,7 +4199,7 @@ statements *about* those files.
 
 ### M98b
 
-<sub>cited from SPEC.md:3630, SPEC.md:3665, SPEC.md:3666 +3 more · lifted from `PLAN_M98_LEXER_POSITIONS.md:133`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **3. M98b — the facts the lexer withholds**
 
@@ -4198,13 +4208,13 @@ statements *about* those files.
 
 ### M98c
 
-<sub>cited from SPEC.md:3632, SPEC.md:3643, SPEC.md:3667 +2 more · lifted from `PLAN_M98_LEXER_POSITIONS.md:249`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **4. M98c — the diagnostics that fire and teach nothing**
 
 ### M98d
 
-<sub>cited from SPEC.md:3667, SPEC.md:3669, SPEC.md:3670 +2 more · lifted from `PLAN_M98_LEXER_POSITIONS.md:412`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **5. M98d — Trojan Source, and the escape hatch it requires**
 
@@ -4264,7 +4274,7 @@ statements *about* those files.
 
 ### M99
 
-<sub>cited from CHANGELOG.md:655 · lifted from `PLAN_M99_VALUE_TERMINATION.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M99_VALUE_TERMINATION.md`</sub>
 
 **M99 — what ends a value**
 
@@ -4274,7 +4284,7 @@ milestones **M99a–b**. **No new diagnostic codes** — next free code stays `T
 
 ### M99a
 
-<sub>cited from SPEC.md:1715, SPEC.md:1719 · lifted from `PLAN_M99_VALUE_TERMINATION.md:132`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M99_VALUE_TERMINATION.md`</sub>
 
 **2. M99a — the widening**
 
@@ -4282,7 +4292,7 @@ milestones **M99a–b**. **No new diagnostic codes** — next free code stays `T
 
 ### M99b
 
-<sub>cited from SPEC.md:1789 · lifted from `PLAN_M99_VALUE_TERMINATION.md:171`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M99_VALUE_TERMINATION.md`</sub>
 
 **3. M99b — the two narrowings**
 
@@ -4292,7 +4302,7 @@ radius of **0 across 169 files**, and both therefore stand or fall on the same e
 
 ### M100
 
-<sub>cited from CHANGELOG.md:567, CHANGELOG.md:572 · lifted from `PLAN_M100_PDF_STREAM_LENGTH.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M100_PDF_STREAM_LENGTH.md`</sub>
 
 **M100 — a PDF stream's extent is its `/Length`**
 
@@ -4302,7 +4312,7 @@ radius of **0 across 169 files**, and both therefore stand or fall on the same e
 
 ### M101
 
-<sub>cited from SPEC.md:1610 · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
 
 **M101 — `matches file` interpolates its path (`A4-OS-09`)**
 
@@ -4312,7 +4322,7 @@ head of the unscoped queue.
 
 ### M102
 
-<sub>cited from SPEC.md:1171, SPEC.md:1795 · lifted from `PLAN_M102_INTERPOLATION_CONFORMANCE.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M102_INTERPOLATION_CONFORMANCE.md`</sub>
 
 **M102 — the checker and the runtime agree on which strings interpolate**
 
@@ -4321,7 +4331,7 @@ Closes `A4-OS-11` (S2) and `A4-OS-13` (S4), the two rows the M101 audit turned u
 
 ### M103
 
-<sub>cited from SPEC.md:3670, packages/lang/GRAMMAR.md:64 · lifted from `PLAN_M103_CONFUSABLE_WORDS.md:1`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **M103 — the characters that are visible and lie**
 
@@ -4329,7 +4339,7 @@ Closes `M98d-02` (S3 as filed; **re-graded S2 here**, see "What raised the sever
 
 ### M106
 
-<sub>cited from CONTRIBUTING.md:263, SPEC.md:3638, SPEC.md:3638 +1 more · lifted from `PLAN_M106_ZERO_EXTENT_CARET.md:1`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M106_ZERO_EXTENT_CARET.md`</sub>
 
 **M106 — a caret with nothing under it**
 
@@ -4339,7 +4349,7 @@ folding a layout decision into a wording change would have buried it.
 
 ### M107
 
-<sub>cited from SPEC.md:973 · lifted from `PROGRESS.md:10051`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M107 — the flaky control that was telling the truth (2026-08-08)**
 
@@ -4348,7 +4358,7 @@ job failing only at `Coverage` — one assertion out of 1,853:
 
 ### M109
 
-<sub>cited from SPEC.md:2057, SPEC.md:3664 · lifted from `PROGRESS.md:10289`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M109 — the cycle that left the file (`M97d-01`), 2026-08-08**
 
@@ -4359,7 +4369,7 @@ arity and a source path, but not a body — and the row filed it as a *when*, no
 
 ### M110
 
-<sub>cited from SPEC.md:3221, SPEC.md:3557, SPEC.md:3642 +2 more · lifted from `PROGRESS.md:10375`</sub>
+<sub>cited from SPEC.md, packages/docs-site/reference/cli.md · lifted from `PROGRESS.md`</sub>
 
 **M110 — doc truth, part 2 (`V4-02`…`V4-06`), 2026-08-08**
 
@@ -4368,13 +4378,13 @@ arity and a source path, but not a body — and the row filed it as a *when*, no
 
 ### M110b
 
-<sub>cited from SPEC.md:3620, packages/docs-site/reference/cli.md:8, packages/docs-site/reference/diagnostics.md:8 +2 more · lifted from `PROGRESS.md:10761`</sub>
+<sub>cited from SPEC.md, packages/docs-site/reference/cli.md, packages/docs-site/reference/diagnostics.md +2 more · lifted from `PROGRESS.md`</sub>
 
 **`M110b` — every example in `SPEC.md`'s diagnostics table is executed.** The `Example` cell stopped being prose: it is generated from source that `packages/lang/test/diagnosticExamples.test.ts` runs through the same checker pass list `tflw check` runs, asserting both the code it emits and any output quoted after `→`. Four rows were wrong before it, `TF003` among them. `M110b-02` — the four docs-site CLI tables collapsing into one shared module — was filed here and closed later.
 
 ### M114
 
-<sub>cited from SPEC.md:3408, SPEC.md:3425 · lifted from `REVIEW_FINDINGS.md:5784`</sub>
+<sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **6.10 Filed by `M114` (2026-08-09)**
 
@@ -4387,7 +4397,7 @@ those two exclusive steps cost, which is the real finding and a different one.
 
 ### M116
 
-<sub>cited from SPEC.md:3671, SPEC.md:3672, SPEC.md:3673 · lifted from `PLAN_M97_CHECKER_CONTRACT.md:890`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **M116 — the five open rows this cluster left behind (D148–D152, 2026-08-09)**
 
@@ -4397,7 +4407,7 @@ milestone takes all 8, because they collapse into **three new rules and one exte
 
 ### M118
 
-<sub>cited from CHANGELOG.md:639, SPEC.md:143, SPEC.md:3216 +4 more · lifted from `PLAN_M118_FIRST_RUN.md:1`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **M118 — the first two minutes**
 
@@ -4408,7 +4418,7 @@ stays `TF054`.
 
 ### M119
 
-<sub>cited from CHANGELOG.md:612, SPEC.md:2196, SPEC.md:2211 · lifted from `REVIEW_FINDINGS.md:5769`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **6.13 Filed by `M119` (2026-08-09)**
 
@@ -4420,7 +4430,7 @@ itself.
 
 ### M121
 
-<sub>cited from CHANGELOG.md:594, SPEC.md:968, SPEC.md:970 · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md:1`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **M121 — the open model's client**
 
@@ -4428,7 +4438,7 @@ Closes `M118-02` (S2). Scoped 2026-08-10, not started.
 
 ### M124
 
-<sub>cited from SPEC.md:3674, SPEC.md:3675, SPEC.md:3676 +2 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
 
 **`M124` — a literal the run will reject is a checker sentence**
 
@@ -4437,7 +4447,7 @@ Closes `M97a-01`, `M97a-02`, `M97a-03`, `M97a-06`, `M97a-16`. **Withdraws `M97a-
 
 ### M125b1
 
-<sub>cited from SPEC.md:1141, SPEC.md:3677, SPEC.md:3677 +3 more · lifted from `PLAN_M125_FIRST_USE.md:839`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **`M125b1` — reach ✅ **DONE 2026-08-10****
 
@@ -4446,7 +4456,7 @@ as written. Three things the plan did not predict, each recorded where it was fo
 
 ### M125b2
 
-<sub>cited from SPEC.md:3204, SPEC.md:3216 · lifted from `PLAN_M125_FIRST_USE.md:875`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **`M125b2` — guardrails & message quality**
 
@@ -4454,7 +4464,7 @@ as written. Three things the plan did not predict, each recorded where it was fo
 
 ### M125c
 
-<sub>cited from SPEC.md:2193, SPEC.md:2224, SPEC.md:2231 · lifted from `PLAN_M125_FIRST_USE.md:886`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **`M125c` — browser diagnosis**
 
@@ -4463,7 +4473,7 @@ line. Both live in `browser.ts`; neither changes what passes.
 
 ### M125d
 
-<sub>cited from SPEC.md:922, SPEC.md:926, SPEC.md:3303 +2 more · lifted from `PLAN_M125_FIRST_USE.md:891`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **`M125d` — report & console**
 
@@ -4473,7 +4483,7 @@ same command**, because four of its scripts assert on `report.html`.
 
 ### M125e
 
-<sub>cited from SPEC.md:1076 · lifted from `PLAN_M125_FIRST_USE.md:897`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **`M125e` — learning surfaces**
 
@@ -4482,7 +4492,7 @@ same command**, because four of its scripts assert on `report.html`.
 
 ### M126
 
-<sub>cited from SPEC.md:2623 · lifted from `REVIEW_FINDINGS.md:5557`</sub>
+<sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **6.19 Filed by `M126` (2026-08-11)**
 
@@ -4491,13 +4501,13 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M127
 
-<sub>cited from SPEC.md:2616 · lifted from `PROGRESS.md:10763`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **`M127` — a shard that produces no coverage fails the run instead of shrinking the denominator.** CI's coverage reassembly job checks that every shard's artifact arrived. A missing one used to reassemble quietly into a smaller total, so a shard that died reported as better coverage; it now goes red for the true reason. With `upload-artifact`'s `if-no-files-found: error` this is the only reason a lost shard is visible at all (`M143`). `ci.yml:175`'s shard-count value dates from here.
 
 ### M128
 
-<sub>cited from CHANGELOG.md:111 · lifted from `PLAN_M128_PENTEST_TIER1.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128` — pentest arc Tier 1: hygiene findings, and the safety declaration that gates them**
 
@@ -4505,7 +4515,7 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M128a
 
-<sub>cited from CHANGELOG.md:454 · lifted from `PLAN_M128_PENTEST_TIER1.md:554`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128a` — testFlow-tests** *(no tflw changes; nothing consumes this yet)*
 1. `env secureLocal` → 8443, `insecure true`, `allow hosts "localhost"`.
@@ -4519,7 +4529,7 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M128b
 
-<sub>cited from SPEC.md:703, SPEC.md:2571, SPEC.md:3680 +5 more · lifted from `PLAN_M128_PENTEST_TIER1.md:564`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128b` — tflw** *(the grammar milestone)*
 6. `securityRules.ts` — the eight non-TLS rules as pure `(response, request) → applicability +
@@ -4537,7 +4547,7 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M128c
 
-<sub>cited from SPEC.md:2571, SPEC.md:2650, SPEC.md:2721 · lifted from `PLAN_M128_PENTEST_TIER1.md:578`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128c` — tflw** *(the probe, and the arc's first acceptance)*
 13. `tlsProbe.ts` — `tls.connect()`, per-`host:port` cache, `allow hosts` + D291 enforced, timeout
@@ -4547,7 +4557,7 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M130
 
-<sub>cited from CHANGELOG.md:159 · lifted from `PLAN_M130_PENTEST_TIER2.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **`M130` — pentest arc Tier 2: the generated authorization matrix**
 
@@ -4555,13 +4565,13 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M130b
 
-<sub>cited from CHANGELOG.md:377, CHANGELOG.md:461, CHANGELOG.md:482 +13 more · lifted from `PLAN_M130_PENTEST_TIER2.md:598`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **`M130b` — tflw** *(the grammar and the engine)*
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md:149 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:1`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -4575,7 +4585,7 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
 
 ### M131a
 
-<sub>cited from SPEC.md:746, SPEC.md:751, SPEC.md:3680 +2 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md:315`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131a` — tflw**
 
@@ -4603,7 +4613,7 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
 
 ### M132b
 
-<sub>cited from SPEC.md:2724 · lifted from `PLAN_M132_TIER2_DEBT.md:388`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
 
 **`M132b` — testFlow-tests**
 
@@ -4631,13 +4641,13 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
 
 ### M133
 
-<sub>cited from SPEC.md:2723 · lifted from `PLAN_M135_SARIF.md:400`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **`M133-01` stays at eleven words** — this milestone adds nothing to the D24b editor catch-up.
 
 ### M134
 
-<sub>cited from CHANGELOG.md:205 · lifted from `PLAN_M134_PENTEST_TIER3.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **tflw — `M134`, pentest arc Tier 3: request mutation + the input-handling oracle — plan**
 
@@ -4647,13 +4657,13 @@ what Tier 3 *is*, after Tier 1 (`M128a`–`M128c`), Tier 2 (`M130a`–`M130c`), 
 
 ### M134a
 
-<sub>cited from CHANGELOG.md:509, SPEC.md:732, SPEC.md:2875 +8 more · lifted from `PLAN_M134_PENTEST_TIER3.md:494`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 | **`M134a`** | tflw | `inputCorpus.ts` + `inputProbe.ts` + `inputRules.ts`, the `has no input-handling violations` matcher, the two `probe` sibling lines, checker + docs-site + reporter (D24b's non-negotiable three) | **yes** | **yes** — back-to-back with its fixture companion |
 
 ### M134b
 
-<sub>cited from CHANGELOG.md:258, SPEC.md:2972, SPEC.md:3217 · lifted from `PLAN_M134_PENTEST_TIER3.md:634`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **5. `M134b` — the gate contract (2026-08-14 addendum, D385–D391)**
 
@@ -4665,7 +4675,7 @@ made before any of `M134b` was written.
 
 ### M135
 
-<sub>cited from SPEC.md:3034 · lifted from `PLAN_M135_SARIF.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **tflw — `M135`, pentest arc: the SARIF reporter + the remediation KB — plan**
 
@@ -4673,31 +4683,31 @@ made before any of `M134b` was written.
 
 ### M135a
 
-<sub>cited from CHANGELOG.md:305, SPEC.md:2718 · lifted from `PLAN_M135_SARIF.md:393`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 | **`M135a`** | tflw | R7's 18-entry KB (D408) + the `Record<RuleId, KbEntry>` union (D409) + D406's severity table; wired into the `report.html` findings block as "possible fixes" | no | no |
 
 ### M135b
 
-<sub>cited from CHANGELOG.md:322, CHANGELOG.md:325, CHANGELOG.md:366 +1 more · lifted from `PLAN_M135_SARIF.md:394`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 | **`M135b`** | tflw | the SARIF exporter (D403–D407, D410–D413), `report/findings.sarif` write condition (D404), `report/repros/`, `@types/sarif` + `ajv` + schema test (D414), docs-site + SPEC corrections | no | no |
 
 ### M136a
 
-<sub>cited from CHANGELOG.md:372, CHANGELOG.md:524 · lifted from `PLAN_M136_ARC_DEBT.md:575`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 | **`M136a`** | tflw | `D418a`, `D421`, `D424`, `D425a`, `D429` — the input tier's blind spot reaching the report, both tiers' reaching SARIF, `authzBlindSpot` → `scanBlindSpot`, two bundle e2e scans, `ci.yml`'s re-measurement (the narrowing measured away), the stylesheet | no | no |
 
 ### M136b
 
-<sub>cited from CHANGELOG.md:352, CONTRIBUTING.md:279, packages/vscode/test/MANUAL.md:49 +3 more · lifted from `PLAN_M136_ARC_DEBT.md:576`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, packages/vscode/test/MANUAL.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 | **`M136b`** | tflw | `D427`, `D428` — the `tflw-config` language id, both wordlists, the three wiring sites, the config-buffer diagnostic test | no | no |
 
 ### M137
 
-<sub>cited from CHANGELOG.md:391 · lifted from `PLAN_M137_PENTEST_TIER4.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **tflw `M137` — Tier 4: active crawl + probe**
 
@@ -4706,49 +4716,49 @@ made before any of `M134b` was written.
 
 ### M137b
 
-<sub>cited from SPEC.md:388, SPEC.md:2776, packages/lang/GRAMMAR.md:703 · lifted from `PLAN_M137_PENTEST_TIER4.md:561`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | **`M137b`** | tflw | `D433` session CSRF capture, `D434` derived credential + `sec/csrf-not-enforced`, `TF069` | **yes** | **yes** — back-to-back with its fixture companion |
 
 ### M137c
 
-<sub>cited from SPEC.md:3069, SPEC.md:3073, SPEC.md:3688 +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md:562`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | **`M137c`** | tflw | `D432` the `crawl` declaration, `D435` enumerate-and-disclose, `D436` synthesis + reachability, `D437` seed discriminator, `TF068` | **yes** | **yes** |
 
 ### M137c1
 
-<sub>cited from CHANGELOG.md:464, SPEC.md:3133, SPEC.md:3688 · lifted from `PLAN_M137_PENTEST_TIER4.md:564`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | **`M137c1`** | tflw | `D480` path resolution against the document's `servers`, `D481` `TF068`'s fourth runtime cause, a base-path-bearing fixture server | no | **blocks `M137e`** |
 
 ### M137c2
 
-<sub>cited from CHANGELOG.md:464 · lifted from `PLAN_M137_PENTEST_TIER4.md:565`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | **`M137c2`** | tflw | `D482` a public resource has no owner, so no leak rule fires against it; the repro emitter follows the rule's findings instead of the raw probe outcomes | no | **blocks `M137e`'s grading** |
 
 ### M137d
 
-<sub>cited from CHANGELOG.md:464, CONTRIBUTING.md:94 · lifted from `PLAN_M137_PENTEST_TIER4.md:563`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | **`M137d`** | tflw | `D440` repro generalization to Tiers 2/3/4 | no | no |
 
 ### M137f
 
-<sub>cited from CHANGELOG.md:464, SPEC.md:3073, SPEC.md:3140 +3 more · lifted from `PLAN_M137_PENTEST_TIER4.md:567`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | **`M137f`** | both | `D442` the browser spider, the SPA blind-spot entry, a client-side plant | no | **sequenced** |
 
 ### M137g
 
-<sub>cited from SPEC.md:732, SPEC.md:809, SPEC.md:2648 +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md:568`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | **`M137g`** | tflw | `D441` TLS cipher enumeration | no | no |
 
 ### M138
 
-<sub>cited from CONTRIBUTING.md:130 · lifted from `PLAN_M138_CONTRIBUTING.md:1`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **M138 — `CONTRIBUTING.md`: giving the gate set a home**
 
@@ -4761,7 +4771,7 @@ question.
 
 ### M140
 
-<sub>cited from SPEC.md:2055, SPEC.md:3692 · lifted from `PLAN_M140_REVERIFICATION.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M140_REVERIFICATION.md`</sub>
 
 **M140 — the re-verification sweep, and the guard that keeps it true**
 
@@ -4770,7 +4780,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M142
 
-<sub>cited from CHANGELOG.md:521 · lifted from `PLAN_M142_VOCABULARY_GUARD.md:1`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M142_VOCABULARY_GUARD.md`</sub>
 
 **M142 — one parser-derived vocabulary guard (Order 3)**
 
@@ -4779,13 +4789,13 @@ Order 3 of the ledger drawdown.
 
 ### M143a
 
-<sub>cited from CONTRIBUTING.md:38 · lifted from `PLAN_M143_SWEEP_RELIABILITY.md:292`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
 
 **8. Amendments made while building `M143a` (2026-08-19)**
 
 ### M144
 
-<sub>cited from SPEC.md:52, SPEC.md:79 · lifted from `PLAN_M144_DOC_HONESTY.md:1`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M144_DOC_HONESTY.md`</sub>
 
 **M144 — documentation that asserts false things (Order 4)**
 
@@ -4794,7 +4804,7 @@ Order 3 of the ledger drawdown.
 
 ### M144b
 
-<sub>cited from SPEC.md:52, SPEC.md:79 · lifted from `PLAN_M144_DOC_HONESTY.md:161`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M144_DOC_HONESTY.md`</sub>
 
 **`M144b` — corrections and bookkeeping**
 
@@ -4810,7 +4820,7 @@ Order 3 of the ledger drawdown.
 
 ### M147
 
-<sub>cited from CONTRIBUTING.md:125, CONTRIBUTING.md:141, SPEC.md:3695 · lifted from `PLAN_M147_LAST_ORDER.md:1`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **Plan: M147 — the last order**
 
@@ -4820,37 +4830,37 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 ### M147b
 
-<sub>cited from CHANGELOG.md:500, CONTRIBUTING.md:130, SPEC.md:671 +6 more · lifted from `PLAN_M147_LAST_ORDER.md:968`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +1 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 | `M147b` | the vocabulary of refusal: one table the three parser sites read from, plus D623's **three** directive moves (see §9's D628 correction) | `A2-14` `M142-01` `M142-02` |
 
 ### M147c
 
-<sub>cited from SPEC.md:153, SPEC.md:156, SPEC.md:884 +8 more · lifted from `PLAN_M147_LAST_ORDER.md:969`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 | `M147c` | the checker↔runtime contract — largest, entirely additive | `A2-09` `A2-11` `A4-18` `A4-21` `M118-01` `M124-01` `M124-02` `M140-01` `M140-03` `M140-05` |
 
 ### M147d
 
-<sub>cited from SPEC.md:133, SPEC.md:226, SPEC.md:1220 +18 more · lifted from `PLAN_M147_LAST_ORDER.md:970`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 | `M147d` | Cluster 4 under D627 — six additive widenings | `A3-10` `A3-11` `A3-12` `A3-13` `A3-17` `A3-18` `A1-19` `M97c-02` `M137f-02` |
 
 ### M147e
 
-<sub>cited from CONTRIBUTING.md:143, SPEC.md:3633, SPEC.md:3634 +3 more · lifted from `PLAN_M147_LAST_ORDER.md:971`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 | `M147e` | producer-side spans and D624's LSP anchor | `A2-13` `A2-15` `A3-14` `A3-19` `M106-01` `M106-02` `M140-02` `M144-02` |
 
 ### M147f
 
-<sub>cited from CONTRIBUTING.md:125, CONTRIBUTING.md:134, SPEC.md:3695 · lifted from `PLAN_M147_LAST_ORDER.md:972`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 | `M147f` | dispositions — clusters 5, 6 and 7, plus the rows this milestone filed while running | `M146-01` `M146-02` `M124-03` `M130-02` `M131-03` `M137e-03` `M143-01` `M143-02` `M144-03` `M146-03` `M105-01` `B6-15` `B3-09` `M125e-01` `M140-04` `M147-04` `M147-05` `M147-06` |
 
 ### M148
 
-<sub>cited from CONTRIBUTING.md:119 · lifted from `PLAN_M147_LAST_ORDER.md:915`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2e `M148` — the excursion between `M147e` and `M147f`, and why it is not Order 6**
 
@@ -4863,7 +4873,7 @@ instrument that measures the language. Order 6's row set is unchanged.
 
 ### M149c
 
-<sub>cited from CONTRIBUTING.md:240 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:516`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **M149c — the three pillar overviews**
 
@@ -4873,7 +4883,7 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 
 ### M149e
 
-<sub>cited from CONTRIBUTING.md:240 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:569`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **M149e — performance and security rounding**
 
@@ -4892,7 +4902,7 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 
 ### M149f
 
-<sub>cited from CONTRIBUTING.md:245 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:656`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **M149f — the guard, the gates and the PR**
 
