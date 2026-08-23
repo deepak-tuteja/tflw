@@ -319,8 +319,15 @@ export function extractBlock(text, anchor) {
     // headings emphasise a word against the rest of the title, and wrapping one produced
     // `**a — **b** c**`, which renders as bold "a — ", plain "b", and a literal `c**`. The contrast
     // that emphasis drew has no meaning once the whole line is bold anyway.
+    //
+    // The section number goes with it, for the same reason. 33 headings open with the record's own
+    // numbering — `### 1.1 Driver boundary (D5)`, `## 3. M98b — …` — which addresses a table of
+    // contents the reader of this file does not have. It is not even unique across the corpus:
+    // `M98b` is section 3 of one plan and `M99b` is section 3 of another, so published side by side
+    // the numbers read as a contradiction rather than as a location.
     const title = lines[start]
       .replace(/^#{1,6}\s+/, '')
+      .replace(/^\d+(?:\.\d+)*\.?\s+/, '')
       .replace(/\s*[✅🔧🔮⏸]+\s*$/u, '')
       .replace(/\*\*/g, '')
       .trim();

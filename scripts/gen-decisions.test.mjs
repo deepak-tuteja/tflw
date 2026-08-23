@@ -223,6 +223,23 @@ test('emphasis inside a heading is dropped, because bold does not nest', () => {
   assert.equal(body.split('\n')[0], '**D300 — a rule blocked by a failed instrument is announced**');
 });
 
+test("a heading's own section number is dropped, because it addresses a contents page the reader lacks", () => {
+  // 33 headings open with the record's internal numbering. It is not a location a reader of the
+  // index can use, and it is not even unique across the corpus: `M98b` is section 3 of one plan and
+  // `M99b` is section 3 of another, so published side by side the two numbers read as a
+  // contradiction rather than as an address.
+  const record = ['### 1.10 Extended UI capabilities (D14)', '', 'The statement.', ''].join('\n');
+  assert.equal(
+    extractBlock(record, { line: 1, kind: 'heading', headingLevel: 3 }).split('\n')[0],
+    '**Extended UI capabilities (D14)**',
+  );
+  const numbered = ['## 3. M98b — the facts the lexer withholds', '', 'The statement.', ''].join('\n');
+  assert.equal(
+    extractBlock(numbered, { line: 1, kind: 'heading', headingLevel: 2 }).split('\n')[0],
+    '**M98b — the facts the lexer withholds**',
+  );
+});
+
 test('a section heading ends the numbered item above it', () => {
   // `PLAN.md`'s founding list is interrupted by `### Round N` headings naming the sessions the
   // decisions were taken in. Spans that ran to the *next numbered item* carried the heading along,

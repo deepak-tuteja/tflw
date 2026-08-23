@@ -683,9 +683,7 @@ itself, at whatever length it was taken.
     in `sessions.test.ts`, 7 in the new `oauth2-session.test.ts`, 6 in the new `mtls.test.ts`, plus
     supporting fixture/support-file updates), **12/12 reporter** (unchanged), **52/52 cli** (+1 —
     the esbuild-format regression surfaced and fixed the CLI's own `dist/cli.cjs` rename), **12/12
-    vscode** (unchanged) — 407 total, 0 regressions. `PLAN_ENTERPRISE.md` itself is still untracked
-    scratch from the grill-me session — committing it (and everything else in this milestone) is
-    left to the user, per this workspace's standing git-push/commit confirmation rule.
+    vscode** (unchanged) — 407 total, 0 regressions.
 
 ### P#99b
 
@@ -727,7 +725,7 @@ itself, at whatever length it was taken.
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.1 Driver boundary (D5)**
+**Driver boundary (D5)**
 
 - Peer stays **`playwright` core** (not `@playwright/test`), optional, dynamic-imported at first
   browser step, installed via `tflw install-browsers` (decision 44 unchanged).
@@ -742,7 +740,7 @@ itself, at whatever length it was taken.
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.2 Selector model (D6) — resolves the SPEC §11 contradiction**
+**Selector model (D6) — resolves the SPEC §11 contradiction**
 
 SPEC currently promises both a global cascade (§11:1032) and "never silent fallback" (decision 9)
 — incompatible. Resolution: **the noun picks the strategy; only `field` cascades; any non-tier-1
@@ -752,7 +750,7 @@ resolution is reported.**
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.3 Ambiguity & scoping (D7)**
+**Ambiguity & scoping (D7)**
 
 - **Strict: N>1 matches is an error**, never "take the first". The error renders as a diagnosis:
   all N candidates, enclosing context, paste-ready disambiguation.
@@ -766,7 +764,7 @@ resolution is reported.**
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.5 Escape hatch (D9)**
+**Escape hatch (D9)**
 
 - **No browser access in JS helpers.** Helpers stay context-in/values-out (decision 11). Keeps the
   peer genuinely optional, avoids a permanent Playwright-`Page` compat obligation, and forces
@@ -778,7 +776,7 @@ resolution is reported.**
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.6 Sessions & identity (D10) — no bridge**
+**Sessions & identity (D10) — no bridge**
 
 - SPEC §3.3 already allows browser steps in a `session` (produce storage state) and api steps
   (produce a cookie jar). **The two representations are never converted into each other.**
@@ -792,7 +790,7 @@ resolution is reported.**
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.7 Browser matrix (D11)**
+**Browser matrix (D11)**
 
 - **Chromium default; `--browser firefox|webkit` switches the whole run; no in-run matrix.** Engine
   is a run-level property in the report header → the one-result-per-test model (report.html,
@@ -804,7 +802,7 @@ resolution is reported.**
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.8 Artifacts & report (D12) — report becomes a directory**
+**Artifacts & report (D12) — report becomes a directory**
 
 - Today `report.html` is a single self-contained file (`packages/reporter/src/html.ts` inlines
   style+script). Browser runs break this.
@@ -820,7 +818,7 @@ resolution is reported.**
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.9 Concurrency (D13)**
+**Concurrency (D13)**
 
 - **One browser process per run · one fresh context per test · existing in-process file-level
   concurrency unchanged.** Contexts are cheap (~tens of MB, ~ms); the browser process is the
@@ -834,7 +832,7 @@ resolution is reported.**
 
 <sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.10 Extended UI capabilities — all four in scope (D14)**
+**Extended UI capabilities — all four in scope (D14)**
 
 Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
@@ -842,7 +840,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**1.11 Visual-regression baselines (D15)**
+**Visual-regression baselines (D15)**
 
 - **Committed to repo** at `snapshots/<file>/<test>/<name>.png` (diffable in code review).
 - **Platform-key pinned** (OS + browser + engine version in a sidecar). Comparing across a
@@ -858,7 +856,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**2.1 Execution model (D16) — dedicated `scenario` blocks (k6-style)**
+**Execution model (D16) — dedicated `scenario` blocks (k6-style)**
 
 - A **new top-level `scenario` construct** with a per-VU lifecycle (think time, pacing) — *not*
   riding on `run`. This is a genuinely second execution model.
@@ -873,7 +871,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**2.2 Workload model (D17) — both, arrival-rate taught as default**
+**Workload model (D17) — both, arrival-rate taught as default**
 
 - `ramp to N users over 30s` (**closed** — VUs loop; back off when the system slows → coordinated
   omission → optimistic latency).
@@ -887,7 +885,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**2.3 Language semantics under load (D18)**
+**Language semantics under load (D18)**
 
 - **`think 2s` / `think 1s to 3s`** legal **only inside `scenario`**; the checker rejects it inside
   `test`. Named `think` (not `sleep`) so decision 8's `sleep` ban survives where it was aimed
@@ -903,7 +901,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**2.4 Generator architecture (D19)**
+**Generator architecture (D19)**
 
 - **Multi-process load generator; API-only scenarios.** Load generation is CPU-bound (TLS / JSON
   parse / ajv / redaction scanning) → one Node process caps at one core; k6 is Go for this reason.
@@ -920,7 +918,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 <sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**3.1 Scope (D20) — full active scanner**
+**Scope (D20) — full active scanner**
 
 tflw crawls and actively probes for OWASP Top 10 including exploitation attempts. Acknowledged as
 the largest and most speculative build of the three; the guardrail + oracle design below is what
@@ -931,7 +929,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**3.2 Safety / authorization (D21) — layered default-deny**
+**Safety / authorization (D21) — layered default-deny**
 
 1. **`allow hosts` mandatory for scans** — an un-allowlisted host is a hard error (existing
    machinery/tests/docs).
@@ -957,7 +955,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**3.3 Attack surface + oracle (D22)**
+**Attack surface + oracle (D22)**
 
 - **Surface = OpenAPI seed + captured-traffic seed.** Consume apiV2's `/openapi.json` for the
   endpoint/param/type surface; *also* seed from requests the functional suite actually made (real
@@ -975,7 +973,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**2.5 Thresholds & output (D24a)**
+**Thresholds & output (D24a)**
 
 - `threshold p95 duration < 800ms` / `threshold error rate < 1%` — aggregate assertions over the
   run.
@@ -3588,7 +3586,7 @@ intentional user override, not a process lapse.
 
 <sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
 
-**M37 — fix D43's bug (design recorded, not yet implemented)**
+**M37 — fix D43's bug (scoped 2026-08-01)**
 
 Scoped 2026-08-01 via a `/grill-me`-style round (D44-D46, `PLAN_BROWSER_PERF_SECURITY.md` §2.8) —
 three open branches resolved with the user before any code was written:
@@ -3605,7 +3603,7 @@ Picked up immediately after M37 in the same session. Mirrors M35d's own procedur
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
-**M39 — confirm the residual gap is real (design recorded, not yet started)**
+**M39 — confirm the residual gap is real (scoped 2026-08-01)**
 
 Scoped 2026-08-01 via `/grill-me`, at the user's explicit request following M38 ("plan out a
 series of tests with tflw and k6 to confirm this gap is real"). Rebuilds M34's original
@@ -3621,14 +3619,14 @@ every dogfood run. Investigation + write-up only, no fix this milestone — mirr
 precedent of stopping to check in before touching the hot-path interpreter code a fix would need.
 If the ladder is inconclusive, the fallback is to re-scope D33a's tolerance and close the thread
 (same as D38's fallback for M35b), not open an M40. Full design: `PLAN_BROWSER_PERF_SECURITY.md`
-§2.10 (decisions D47-D52). **Nothing has been implemented yet** — this entry exists so the tracker
-reflects a fully-scoped, user-reviewed plan ready to pick up.
+§2.10 (decisions D47-D52). This block is the scoping, written before any of it ran; M39 was
+implemented the same day and its results are in *M39 — findings* below.
 
 ### M40
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
-**M40 — root-cause the p95-under-contention mechanism (design recorded, not yet started)**
+**M40 — root-cause the p95-under-contention mechanism (scoped 2026-08-01)**
 
 Scoped 2026-08-01 via `/grill-me`, at the user's explicit request following M39 ("lets scope out a
 plan for a dedicated hardening milestone") — pursuing the fix, not the re-scope-and-stop fallback.
@@ -3647,8 +3645,9 @@ auto-proceed); if it stays flat, that refutes the hypothesis and falls back to r
 tolerance for contended-tail-latency specifically and closing the thread — same fallback D38/D52
 already used once each (D55). M40 (and M41, if it happens) still finish before the pentest arc
 starts — the third time that ordering line gets pushed out (D56). Full design:
-`PLAN_BROWSER_PERF_SECURITY.md` §2.11 (decisions D53-D56). **Nothing has been implemented yet** —
-this entry exists so the tracker reflects a fully-scoped, user-reviewed plan ready to pick up.
+`PLAN_BROWSER_PERF_SECURITY.md` §2.11 (decisions D53-D56). This block is the scoping, written
+before any of it ran; M40 was implemented the same day and its results are in *M40 — findings*
+below.
 
 ### M41
 
@@ -3656,21 +3655,20 @@ this entry exists so the tracker reflects a fully-scoped, user-reviewed plan rea
 
 **M41 — reopening the tolerance amendment, closed (2026-08-01)**
 
-M40's tolerance amendment lasted exactly one turn. User: "run the isolated tests again - what else
-could be the reason for this gap ... we can not proceed with pen test arc until we close the gap and
-have tflw performance test behave if not identical but very closely ~1-2 percent to k6 tests" — an
-explicit override of D55's re-scope-and-stop resolution, before any `/grill-me` round.
+M40's tolerance amendment lasted exactly one turn. The user overrode D55's re-scope-and-stop
+resolution outright, before any `/grill-me` round: re-run the isolated tests and keep hunting for a
+cause, because the pentest arc does not start until the gap closes and tflw's load numbers sit
+within ~1-2% of k6's.
 
 ### M42
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
 
-**M42 — pinned-per-VU connections, scoped (2026-08-01, design recorded, not yet implemented)**
+**M42 — pinned-per-VU connections, scoped and measured (2026-08-01)**
 
-M41's "no M42" close lasted the same day. User: "lets scope out a comprehensive plan for HTTP client
-level change - use grill-me skill to resolve questions - also I was wondering if websearch on related
-topics could lead to something useful" — explicitly reopening M41's own investigation-complete
-stopping point, this time with an ask to ground the scoping in web research.
+M41's "no M42" close lasted the same day. The user reopened M41's own investigation-complete
+stopping point and asked for a comprehensive plan for an HTTP-client-level change, scoped through
+`/grill-me` — this time with an explicit ask to ground the scoping in web research.
 
 ### M43
 
@@ -3678,11 +3676,10 @@ stopping point, this time with an ask to ground the scoping in web research.
 
 **M43-M46 — the reporter bug, and a corrected close to the arc (scoped 2026-08-01; M43 shipped 2026-08-01)**
 
-User: "1-2 percent acceptant bar stays - we need to close this gap, lets dig a bit deeper in node
-http client vs go implementation used by k6 - maybe do more web searches on relevant topics - it can
-not be that its a node's limit and go simply performs better in this case- we are definitely missing
-something - so lets investigate." A real investigation, not a repeat of M42's own websearch pass —
-this one found the actual missing thing, and it wasn't in Node's HTTP stack at all.
+The user held the ~1-2% bar and refused "Node is simply slower than Go" as the answer: dig into
+Node's HTTP client against the Go implementation k6 uses, search wider, and keep going, because
+something was being missed. A real investigation, not a repeat of M42's own websearch pass — this
+one found the actual missing thing, and it wasn't in Node's HTTP stack at all.
 
 ### M44
 
@@ -4090,7 +4087,8 @@ exists.
 
 **M85 — `allow hosts` covers what it claims (cluster C1: `B4-02`, `B4-03`, `A4-10`)**
 
-**Commit `f4a546a`.** Closes cluster `C1`. Committed locally, **not yet pushed** — as is `M84` before it.
+**Commit `f4a546a`.** Closes cluster `C1`. Landed together with `M84`, which was held back for the
+same push.
 
 ### M87
 
@@ -4204,8 +4202,8 @@ of its own decisions corrected by probing. Shipped as three commits: **M91a** (`
 §7's projected counts, and `D-M92-6`'s guard design (§3), which was vacuous as specified.
 **Cluster:** C15 · Ship-surface metadata — `B6-06` S2, `B6-09` S3, `B6-12` S3, `FU-17` S3,
 `FU-27` S4, `FU-28` S4.
-**Predecessor:** M91 (cluster C14) — PR #5, open.
-**Branch:** `m92-ship-surface`, off `m91-test-truth` (M91 is not on `main` yet).
+**Predecessor:** M91 (cluster C14), which was still in review when this was written — PR #5, merged
+2026-08-05. M92 was branched off it rather than off `main`.
 
 ### M92b
 
@@ -4271,7 +4269,7 @@ not started.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
-**8. `M97a` — shipped 2026-08-06**
+**`M97a` — shipped 2026-08-06**
 
 `packages/lang/src/conformance.ts` (`RUNTIME_RULES`, 90 rows) + `packages/lang/test/conformance.test.ts`
 (7 assertions). No behaviour change, exactly as D145 specified. `lang` suite 738/738, typecheck clean.
@@ -4280,7 +4278,7 @@ not started.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
-**9. `M97b` — shipped 2026-08-06**
+**`M97b` — shipped 2026-08-06**
 
 `lang` only, as D145 scoped it: D140's compatibility pass, D139's hook split, D142's
 `checkSessionBody`, D143 half 1, and the `A4-14` rider. **`TF042`** is the one new code.
@@ -4289,7 +4287,7 @@ not started.
 
 <sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
-**10. `M97c` — shipped 2026-08-06**
+**`M97c` — shipped 2026-08-06**
 
 D144 and D143 halves 2–3. One new code, **`TF043`**. Closes `B5-02` (all three halves) and splits
 `A4-07`; ledger 93 → 95 open, which is the right direction — see below.
@@ -4298,7 +4296,7 @@ D144 and D143 halves 2–3. One new code, **`TF043`**. Closes `B5-02` (all three
 
 <sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
-**11. `M97d` — shipped 2026-08-06 · the cluster is closed**
+**`M97d` — shipped 2026-08-06 · the cluster is closed**
 
 D141, review row `A4-13`. New code **`TF044`**. Branch `m97d-cycles-and-depth`.
 
@@ -4325,22 +4323,22 @@ statements *about* those files.
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
-**3. M98b — the facts the lexer withholds**
+**M98b — the facts the lexer withholds**
 
 **Rows:** `A1-05` (S2), `A1-10` (S2), `A1-11` (S3), `A1-18` (S3), `A1-20` (S4). **Package:** `lang`.
-**New codes:** `TF045`, `TF046`, `TF047`. **Branch:** `m98b-withheld-diagnostics`, based on M98a.
+**New codes:** `TF045`, `TF046`, `TF047`. Built on M98a, not on `main`.
 
 ### M98c
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
-**4. M98c — the diagnostics that fire and teach nothing**
+**M98c — the diagnostics that fire and teach nothing**
 
 ### M98d
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
-**5. M98d — Trojan Source, and the escape hatch it requires**
+**M98d — Trojan Source, and the escape hatch it requires**
 
 > **M98d — shipped, and what measuring first changed about it.**
 > `TF049` + `\u{…}`, closing `A1-17` and leaving the A1 pass with exactly one open row (`A1-19`, by
@@ -4410,7 +4408,7 @@ milestones **M99a–b**. **No new diagnostic codes** — next free code stays `T
 
 <sub>cited from SPEC.md · lifted from `PLAN_M99_VALUE_TERMINATION.md`</sub>
 
-**2. M99a — the widening**
+**M99a — the widening**
 
 `A3-05`. `packages/lang/src/parser.ts`, `parseIdentOrCall` at `:3588` and the parser's `error()`.
 
@@ -4418,7 +4416,7 @@ milestones **M99a–b**. **No new diagnostic codes** — next free code stays `T
 
 <sub>cited from SPEC.md · lifted from `PLAN_M99_VALUE_TERMINATION.md`</sub>
 
-**3. M99b — the two narrowings**
+**M99b — the two narrowings**
 
 `A3-08` and `M98c-03`. Both reject a spelling that is accepted today, both with a measured blast
 radius of **0 across 169 files**, and both therefore stand or fall on the same evidence standard
@@ -4510,7 +4508,7 @@ arity and a source path, but not a body — and the row filed it as a *when*, no
 
 <sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
-**6.10 Filed by `M114` (2026-08-09)**
+**Filed by `M114` (2026-08-09)**
 
 One row, and **it exists because the observation that prompted it was wrong.** `M114`'s merge run
 showed Node 22 at 31m04s against Node 24's 4m43s and that was read, out loud, as a six-fold
@@ -4544,7 +4542,7 @@ stays `TF054`.
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
-**6.13 Filed by `M119` (2026-08-09)**
+**Filed by `M119` (2026-08-09)**
 
 Two rows from closing `B4-08`, and neither is about where the diagnosis fires. The first is what
 the diagnosis *says* once it gets there — surfaced only because `B4-08` pointed the same code at a
@@ -4618,7 +4616,7 @@ same command**, because four of its scripts assert on `report.html`.
 
 <sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
-**6.19 Filed by `M126` (2026-08-11)**
+**Filed by `M126` (2026-08-11)**
 
 One row, and it is a number going stale rather than a defect — found by reading the gate output of
 the milestone this one was merging, which is where the last two rows of this kind also came from.
@@ -4783,13 +4781,13 @@ what Tier 3 *is*, after Tier 1 (`M128a`–`M128c`), Tier 2 (`M130a`–`M130c`), 
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**6. `M134a`'s coverage repair (2026-08-14 addendum, D392)**
+**`M134a`'s coverage repair (2026-08-14 addendum, D392)**
 
 ### M134b
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
-**5. `M134b` — the gate contract (2026-08-14 addendum, D385–D391)**
+**`M134b` — the gate contract (2026-08-14 addendum, D385–D391)**
 
 D383 gave the gate its own milestone because *"`--fail-on` and `--baseline` change what a green build
 means for every mode, and deciding that under build pressure inside the engine milestone is how a
@@ -4937,7 +4935,7 @@ Order 3 of the ledger drawdown.
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
 
-**8. Amendments made while building `M143a` (2026-08-19)**
+**Amendments made while building `M143a` (2026-08-19)**
 
 ### M144
 
