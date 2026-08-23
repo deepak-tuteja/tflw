@@ -248,4 +248,29 @@ export const SELF_MUTATIONS = [
     find: '    if (arrow === -1 || !isReturnAnnotation(code.slice(closeParen + 1, arrow))) continue;',
     replace: '    if (arrow === -1 || arrow > closeParen + 20) continue;',
   },
+  // --- M152a (`D675`, `D683`) -------------------------------------------------------------------
+  //
+  // Two mutations on the citation index's gate, aimed at its two ways of being wrong. Both restore
+  // a state the gate could plausibly have shipped in rather than inventing damage: the first is the
+  // one-directional conformance check anybody writes first, the second is the bare green that `D683`
+  // exists to forbid.
+  {
+    id: 'conformance-forgets-the-orphan-direction',
+    milestone: 'm152a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "the index stops noticing entries nothing cites. The missing direction is the one everybody writes, and on its own it looks complete — every citation resolves, so the gate is green and the reader is served. What it stops catching is the index GROWING: a block lifted from a private record, published, and referenced by no tracked prose is design-record text that reached a public commit without anyone reviewing it for publication, which is `D675`'s other half and the one with the irreversible failure",
+    find: '    orphan: [...publishedIds].filter((id) => !citedIds.has(id)).sort(byId),',
+    replace: '    orphan: [],',
+  },
+  {
+    id: 'the-ci-tier-prints-the-green-it-did-not-earn',
+    milestone: 'm152a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "a runner with no design records stops announcing the tier it could not run. Nothing goes red — the two tracked tiers really did pass — so the ONLY signal that extraction fidelity was never checked is that sentence, and this deletes exactly it. `D527`'s false-completeness class in its purest form: a tier that silently does not run is indistinguishable from a tier that passed, and splitting the check in two (`D683`) was worth nothing unless the difference says itself out loud",
+    edits: [
+      ["      `  NOT CHECKED HERE: that each entry still matches the record it was lifted from. The design\\n` +\n", ""],
+    ],
+  },
 ];

@@ -31,7 +31,9 @@
     "coverage": "node scripts/coverage.mjs",
     "verify:observability": "node scripts/verify-test-observability.mjs",
     "verify:mutations": "node scripts/mutate.mjs",
-    "verify:ledger": "node scripts/verify-ledger.mjs"
+    "verify:ledger": "node scripts/verify-ledger.mjs",
+    "verify:decisions": "node scripts/gen-decisions.mjs --check",
+    "docs:decisions": "node scripts/gen-decisions.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

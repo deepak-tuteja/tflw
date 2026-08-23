@@ -95,6 +95,15 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:decisions',
+    class: 'gate',
+    local: 'npm run verify:decisions',
+    note: '※',
+    why: 'the citation index (`M152`/`D666`). THE SAME COMMAND does different amounts of work in the two places, which is the interesting part: on a runner it checks conformance and scrub — both sides tracked — and PRINTS that it could not check extraction fidelity, because the records it would compare against are gitignored (`D683`). Locally it runs all three. So the `local` form is identical and the obligation is not: a contributor\'s run is the only one that can catch a block polished upstream and never regenerated',
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run test:links -w @tflw/docs-site',
     class: 'gate',
     local: 'npm run test:links -w @tflw/docs-site',

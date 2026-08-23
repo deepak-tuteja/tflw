@@ -440,7 +440,7 @@ itself, at whatever length it was taken.
 
 ### P#43
 
-<sub>cited from SPEC.md:564, SPEC.md:566, SPEC.md:3201 +3 more · lifted from `PLAN.md`</sub>
+<sub>cited from CONTRIBUTING.md:94, SPEC.md:564, SPEC.md:566 +4 more · lifted from `PLAN.md`</sub>
 
 43. **Packaging mechanism + runtime slimming.** `tflw` becomes one publishable package via an
     **esbuild bundle at prepack** (cli+lang+runtime+reporter into `dist/`; `@tflw/*` stay
@@ -842,7 +842,7 @@ resolution is reported.**
 
 ### D14
 
-<sub>cited from CONTRIBUTING.md:197, SPEC.md:2419, SPEC.md:2478 +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:231`</sub>
+<sub>cited from CONTRIBUTING.md:214, SPEC.md:2419, SPEC.md:2478 +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md:231`</sub>
 
 **1.10 Extended UI capabilities — **all four in scope** (D14)**
 
@@ -1963,7 +1963,7 @@ yet consuming it):
 
 ### D318
 
-<sub>cited from SPEC.md:2757 · lifted from `PLAN_M130_PENTEST_TIER2.md:530`</sub>
+<sub>cited from CONTRIBUTING.md:94, SPEC.md:2757 · lifted from `PLAN_M130_PENTEST_TIER2.md:530`</sub>
 
 **D318 — three milestones, and the config lines land on the far side of the tflw merge**
 
@@ -2797,7 +2797,7 @@ trusting keys and signatures it currently rejects."*
 
 ### D537
 
-<sub>cited from CONTRIBUTING.md:108 · lifted from `PLAN_M141_VACUOUS_CHECKS.md:268`</sub>
+<sub>cited from CONTRIBUTING.md:125 · lifted from `PLAN_M141_VACUOUS_CHECKS.md:268`</sub>
 
 **D537 — every assertion this milestone writes ships with a demonstrated break**
 
@@ -2985,7 +2985,7 @@ reconstructed, and the rule stands going forward.
 
 ### D659
 
-<sub>cited from CONTRIBUTING.md:228 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:276`</sub>
+<sub>cited from CONTRIBUTING.md:245 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:276`</sub>
 
 **D659 — a completeness gate beside the denylist: a shipped construct must be mentioned somewhere**
 
@@ -4329,7 +4329,7 @@ Closes `M98d-02` (S3 as filed; **re-graded S2 here**, see "What raised the sever
 
 ### M106
 
-<sub>cited from CONTRIBUTING.md:246, SPEC.md:3638, SPEC.md:3638 +1 more · lifted from `PLAN_M106_ZERO_EXTENT_CARET.md:1`</sub>
+<sub>cited from CONTRIBUTING.md:263, SPEC.md:3638, SPEC.md:3638 +1 more · lifted from `PLAN_M106_ZERO_EXTENT_CARET.md:1`</sub>
 
 **M106 — a caret with nothing under it**
 
@@ -4368,9 +4368,9 @@ arity and a source path, but not a body — and the row filed it as a *when*, no
 
 ### M110b
 
-<sub>cited from SPEC.md:3620, packages/docs-site/reference/cli.md:8, packages/docs-site/reference/diagnostics.md:8 +2 more · lifted from `PROGRESS.md:10756`</sub>
+<sub>cited from SPEC.md:3620, packages/docs-site/reference/cli.md:8, packages/docs-site/reference/diagnostics.md:8 +2 more · lifted from `PROGRESS.md:10761`</sub>
 
-| `M110b` — every example in `SPEC.md`'s diagnostics table is executed | The `Example` cell stopped being prose: it is generated from source that `packages/lang/test/diagnosticExamples.test.ts` runs through the same checker pass list `tflw check` runs, asserting both the code it emits and any output quoted after `→`. Four rows were wrong before it, `TF003` among them. `M110b-02` — the four docs-site CLI tables collapsing into one shared module — was filed here and closed later. |
+**`M110b` — every example in `SPEC.md`'s diagnostics table is executed.** The `Example` cell stopped being prose: it is generated from source that `packages/lang/test/diagnosticExamples.test.ts` runs through the same checker pass list `tflw check` runs, asserting both the code it emits and any output quoted after `→`. Four rows were wrong before it, `TF003` among them. `M110b-02` — the four docs-site CLI tables collapsing into one shared module — was filed here and closed later.
 
 ### M114
 
@@ -4491,9 +4491,9 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M127
 
-<sub>cited from SPEC.md:2616 · lifted from `PROGRESS.md:10757`</sub>
+<sub>cited from SPEC.md:2616 · lifted from `PROGRESS.md:10763`</sub>
 
-| `M127` — a shard that produces no coverage fails the run instead of shrinking the denominator | CI's coverage reassembly job checks that every shard's artifact arrived. A missing one used to reassemble quietly into a smaller total, so a shard that died reported as better coverage; it now goes red for the true reason. With `upload-artifact`'s `if-no-files-found: error` this is the only reason a lost shard is visible at all (`M143`). `ci.yml:175`'s shard-count value dates from here. |
+**`M127` — a shard that produces no coverage fails the run instead of shrinking the denominator.** CI's coverage reassembly job checks that every shard's artifact arrived. A missing one used to reassemble quietly into a smaller total, so a shard that died reported as better coverage; it now goes red for the true reason. With `upload-artifact`'s `if-no-files-found: error` this is the only reason a lost shard is visible at all (`M143`). `ci.yml:175`'s shard-count value dates from here.
 
 ### M128
 
@@ -4561,7 +4561,7 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md:132 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:1`</sub>
+<sub>cited from CONTRIBUTING.md:149 · lifted from `PLAN_M131_SAFETY_COMPLETION.md:1`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -4691,7 +4691,7 @@ made before any of `M134b` was written.
 
 ### M136b
 
-<sub>cited from CHANGELOG.md:352, CONTRIBUTING.md:262, packages/vscode/test/MANUAL.md:49 +3 more · lifted from `PLAN_M136_ARC_DEBT.md:576`</sub>
+<sub>cited from CHANGELOG.md:352, CONTRIBUTING.md:279, packages/vscode/test/MANUAL.md:49 +3 more · lifted from `PLAN_M136_ARC_DEBT.md:576`</sub>
 
 | **`M136b`** | tflw | `D427`, `D428` — the `tflw-config` language id, both wordlists, the three wiring sites, the config-buffer diagnostic test | no | no |
 
@@ -4730,7 +4730,7 @@ made before any of `M134b` was written.
 
 ### M137d
 
-<sub>cited from CHANGELOG.md:464 · lifted from `PLAN_M137_PENTEST_TIER4.md:563`</sub>
+<sub>cited from CHANGELOG.md:464, CONTRIBUTING.md:94 · lifted from `PLAN_M137_PENTEST_TIER4.md:563`</sub>
 
 | **`M137d`** | tflw | `D440` repro generalization to Tiers 2/3/4 | no | no |
 
@@ -4748,7 +4748,7 @@ made before any of `M134b` was written.
 
 ### M138
 
-<sub>cited from CONTRIBUTING.md:113 · lifted from `PLAN_M138_CONTRIBUTING.md:1`</sub>
+<sub>cited from CONTRIBUTING.md:130 · lifted from `PLAN_M138_CONTRIBUTING.md:1`</sub>
 
 **M138 — `CONTRIBUTING.md`: giving the gate set a home**
 
@@ -4810,7 +4810,7 @@ Order 3 of the ledger drawdown.
 
 ### M147
 
-<sub>cited from CONTRIBUTING.md:108, CONTRIBUTING.md:124, SPEC.md:3695 · lifted from `PLAN_M147_LAST_ORDER.md:1`</sub>
+<sub>cited from CONTRIBUTING.md:125, CONTRIBUTING.md:141, SPEC.md:3695 · lifted from `PLAN_M147_LAST_ORDER.md:1`</sub>
 
 **Plan: M147 — the last order**
 
@@ -4820,7 +4820,7 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 ### M147b
 
-<sub>cited from CHANGELOG.md:500, CONTRIBUTING.md:113, SPEC.md:671 +6 more · lifted from `PLAN_M147_LAST_ORDER.md:968`</sub>
+<sub>cited from CHANGELOG.md:500, CONTRIBUTING.md:130, SPEC.md:671 +6 more · lifted from `PLAN_M147_LAST_ORDER.md:968`</sub>
 
 | `M147b` | the vocabulary of refusal: one table the three parser sites read from, plus D623's **three** directive moves (see §9's D628 correction) | `A2-14` `M142-01` `M142-02` |
 
@@ -4838,19 +4838,19 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 ### M147e
 
-<sub>cited from CONTRIBUTING.md:126, SPEC.md:3633, SPEC.md:3634 +3 more · lifted from `PLAN_M147_LAST_ORDER.md:971`</sub>
+<sub>cited from CONTRIBUTING.md:143, SPEC.md:3633, SPEC.md:3634 +3 more · lifted from `PLAN_M147_LAST_ORDER.md:971`</sub>
 
 | `M147e` | producer-side spans and D624's LSP anchor | `A2-13` `A2-15` `A3-14` `A3-19` `M106-01` `M106-02` `M140-02` `M144-02` |
 
 ### M147f
 
-<sub>cited from CONTRIBUTING.md:108, CONTRIBUTING.md:117, SPEC.md:3695 · lifted from `PLAN_M147_LAST_ORDER.md:972`</sub>
+<sub>cited from CONTRIBUTING.md:125, CONTRIBUTING.md:134, SPEC.md:3695 · lifted from `PLAN_M147_LAST_ORDER.md:972`</sub>
 
 | `M147f` | dispositions — clusters 5, 6 and 7, plus the rows this milestone filed while running | `M146-01` `M146-02` `M124-03` `M130-02` `M131-03` `M137e-03` `M143-01` `M143-02` `M144-03` `M146-03` `M105-01` `B6-15` `B3-09` `M125e-01` `M140-04` `M147-04` `M147-05` `M147-06` |
 
 ### M148
 
-<sub>cited from CONTRIBUTING.md:102 · lifted from `PLAN_M147_LAST_ORDER.md:915`</sub>
+<sub>cited from CONTRIBUTING.md:119 · lifted from `PLAN_M147_LAST_ORDER.md:915`</sub>
 
 **9.2e `M148` — the excursion between `M147e` and `M147f`, and why it is not Order 6**
 
@@ -4863,7 +4863,7 @@ instrument that measures the language. Order 6's row set is unchanged.
 
 ### M149c
 
-<sub>cited from CONTRIBUTING.md:223 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:516`</sub>
+<sub>cited from CONTRIBUTING.md:240 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:516`</sub>
 
 **M149c — the three pillar overviews**
 
@@ -4873,7 +4873,7 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 
 ### M149e
 
-<sub>cited from CONTRIBUTING.md:223 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:569`</sub>
+<sub>cited from CONTRIBUTING.md:240 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:569`</sub>
 
 **M149e — performance and security rounding**
 
@@ -4892,7 +4892,7 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 
 ### M149f
 
-<sub>cited from CONTRIBUTING.md:228 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:656`</sub>
+<sub>cited from CONTRIBUTING.md:245 · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md:656`</sub>
 
 **M149f — the guard, the gates and the PR**
 

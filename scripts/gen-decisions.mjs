@@ -19,7 +19,7 @@
 // runner (D683). `--check` says which tier it ran. It never prints a bare green for a tier it
 // skipped, which is the whole reason this ledger's `D527` exists.
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join, dirname, basename } from 'node:path';
@@ -430,9 +430,32 @@ function readRecords(root) {
     .map((f) => ({ path: f, text: readFileSync(join(root, f), 'utf8') }));
 }
 
-/** @returns {{path: string, text: string}[]} */
+/**
+ * The tracked markdown, which is the question this index answers. Read through `git ls-files`
+ * rather than a directory walk, because "tracked" is the whole point: an untracked scratch file is
+ * not a surface anyone reads, and the records themselves are excluded precisely by being untracked.
+ *
+ * A tree with no `.git` therefore cannot be checked here at all, and this says so instead of
+ * dying in a stack trace. It is a real configuration: `scripts/exec.mjs` rsyncs this repo to the
+ * box **without** `.git/`, so the gate cannot run through the offload driver the way the suite and
+ * the typecheck can. It fails rather than skipping — a check that cannot see its input is not a
+ * check that passed (`M131-03`).
+ *
+ * @returns {{path: string, text: string}[]}
+ */
 function readTracked(root) {
-  const out = execFileSync('git', ['ls-files', '*.md'], { cwd: root, encoding: 'utf8' });
+  let out;
+  try {
+    out = execFileSync('git', ['ls-files', '*.md'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    const why = String(e.stderr ?? e.message).trim().split('\n')[0];
+    throw new Error(
+      `cannot list the tracked files: ${why}\n` +
+      `  This gate compares tracked prose against ${OUTPUT}, so it needs the index to know which\n` +
+      `  files are tracked. A tree with no \`.git\` cannot answer that — \`scripts/exec.mjs\` syncs\n` +
+      `  the box copy without it, so run this one here rather than through the offload driver.`,
+    );
+  }
   return out
     .split('\n')
     .filter(Boolean)
@@ -590,4 +613,28 @@ function main() {
   return 0;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exit(main());
+// Run only when invoked directly, and compare REALPATHS. `process.argv[1]` is the path as typed;
+// `import.meta.url` has already been resolved through every symlink. On macOS `/tmp` and
+// `/var/folders` are symlinks to `/private/...`, so a naive `===` between the two is false for any
+// invocation whose path traverses one — and this file's failure mode when the guard is false is to
+// exit 0 having done nothing at all. A `--check` that silently no-ops and reports success is the
+// exact false green `D527` exists to refuse, arriving in the milestone written to refuse it. Found
+// by `gen-decisions.test.mjs`, whose fixtures necessarily live under `/var/folders`.
+const invokedDirectly = () => {
+  if (!process.argv[1]) return false;
+  const self = fileURLToPath(import.meta.url);
+  try {
+    return realpathSync(process.argv[1]) === self;
+  } catch {
+    return process.argv[1] === self;
+  }
+};
+
+if (invokedDirectly()) {
+  try {
+    process.exit(main());
+  } catch (e) {
+    console.error(`✗ ${e.message}`);
+    process.exit(1);
+  }
+}
