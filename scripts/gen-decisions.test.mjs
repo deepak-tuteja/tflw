@@ -240,6 +240,42 @@ test("a heading's own section number is dropped, because it addresses a contents
   );
 });
 
+test("a ledger marker under a heading is stepped over, not published as the statement", () => {
+  // `plan:closes-at` is `verify-ledger.mjs`'s, read from anywhere in the file and by convention put
+  // directly under the title. It is a paragraph by every blank-line rule, so in four plans it won
+  // the statement slot and the entry published a marker addressed to a script instead of the
+  // opening paragraph sitting one blank line below it.
+  const record = [
+    '# `M128` — pentest arc Tier 1',
+    '',
+    '<!-- plan:closes-at M128c -->',
+    '',
+    'Opens the security arc, the last before `1.0.0`.',
+    '',
+  ].join('\n');
+  assert.equal(
+    extractBlock(record, { line: 1, kind: 'heading', headingLevel: 1 }),
+    '**`M128` — pentest arc Tier 1**\n\nOpens the security arc, the last before `1.0.0`.',
+  );
+
+  // Two markers with no blank line between them are one paragraph, and `M144` has exactly that.
+  const pair = [
+    '# M144 — documentation that asserts false things',
+    '',
+    '<!-- plan:closes V4-12, A2-16 -->',
+    '<!-- plan:closes-at M144b -->',
+    '',
+    '**Status: GRILLED 2026-08-19.** Order 4 of the ledger drawdown.',
+    '',
+  ].join('\n');
+  assert.match(extractBlock(pair, { line: 1, kind: 'heading', headingLevel: 1 }), /Order 4 of the ledger drawdown\.$/);
+
+  // Whole lines only. A comment that shares a line with prose is part of that prose's bytes, and
+  // `D668` does not let the extractor edit a line it publishes.
+  const inline = ['## M99', '', 'The statement. <!-- a note -->', ''].join('\n');
+  assert.match(extractBlock(inline, { line: 1, kind: 'heading', headingLevel: 2 }), /The statement\. <!-- a note -->/);
+});
+
 test('a section heading ends the numbered item above it', () => {
   // `PLAN.md`'s founding list is interrupted by `### Round N` headings naming the sessions the
   // decisions were taken in. Spans that ran to the *next numbered item* carried the heading along,
@@ -545,6 +581,24 @@ test('filename affinity outranks anchor form when two records define the same mi
     { file: 'PLAN_M137_PENTEST_TIER4.md', line: 900, kind: 'listBold', headingLevel: 0 },
   ]);
   assert.equal(chosen.file, 'PLAN_M137_PENTEST_TIER4.md', 'the plan that took the decision wins over a later mention');
+
+  // And the letter is part of the name, not decoration. `M130b` has its own record and a number-only
+  // affinity could not see it — after `PLAN_M130` comes `B`, not a separator — so the file scored as
+  // unrelated and `M130b` was lifted from a caption inside its *parent* plan, four numbered items it
+  // introduced published without them.
+  const suffixed = pickAnchor('M130b', [
+    { file: 'PLAN_M130_PENTEST_TIER2.md', line: 598, kind: 'boldLead', headingLevel: 0 },
+    { file: 'PLAN_M130B_AUTHZ_ENGINE.md', line: 1, kind: 'h1', headingLevel: 1 },
+  ]);
+  assert.equal(suffixed.file, 'PLAN_M130B_AUTHZ_ENGINE.md', "the suffixed record beats its parent's");
+
+  // The parent is still the second tier, not a tie with strangers: `M130` itself has no suffixed
+  // record and must still land in `PLAN_M130_*`.
+  const parent = pickAnchor('M130', [
+    { file: 'PLAN_M136_ARC_DEBT.md', line: 40, kind: 'heading', headingLevel: 3 },
+    { file: 'PLAN_M130_PENTEST_TIER2.md', line: 1, kind: 'h1', headingLevel: 1 },
+  ]);
+  assert.equal(parent.file, 'PLAN_M130_PENTEST_TIER2.md');
 });
 
 test('the legacy sequence indexes PLAN.md\'s ordered list, sub-items included', () => {

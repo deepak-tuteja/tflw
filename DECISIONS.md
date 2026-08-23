@@ -3302,6 +3302,11 @@ exact mechanism D15 was asking for.
 
 **M13 — LSP (enterprise arc cluster 5 of 8)**
 
+The full v1 language-server feature set — diagnostics, hover, go-to-definition, autocomplete,
+rename, signature help — in one milestone, behind a new `tflw lsp` subcommand serving a new
+`packages/lsp-server`. `packages/vscode` is rewritten as a thin `vscode-languageclient` shell over
+it, which is what turns a VS Code feature set into an editor-independent one.
+
 ### M14
 
 <sub>cited inside a range only · lifted from `PLAN.md`</sub>
@@ -4334,6 +4339,12 @@ statements *about* those files.
 
 **M98c — the diagnostics that fire and teach nothing**
 
+The third of §2's three kinds: a diagnostic that exists and fires, and then teaches the reader
+nothing — or teaches them about the lexer instead of about their source. Eleven rows (`A1-07`,
+`A1-09`, `A1-12`, `A1-13`, `A1-15`, `A1-16`, `A1-OS-01/02/05/06/07`), all in `lang`, plus one new
+code: `TF048` splits *tabs in indentation* out of `TF003`, which had been carrying two different
+conditions with two different fixes under one code while documenting only the other one.
+
 ### M98d
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
@@ -4633,7 +4644,9 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 **`M128` — pentest arc Tier 1: hygiene findings, and the safety declaration that gates them**
 
-<!-- plan:closes-at M128c -->
+Opens the **security / pen-test arc (`v0.4.0`)**, the last arc before `1.0.0` and the largest
+unclaimed thing on the board. Scopes `PLAN_BROWSER_PERF_SECURITY.md` §3's **Tier 1** (hygiene
+assertions) together with the declaration half of **D21** (the layered default-deny safety model).
 
 ### M128a
 
@@ -4683,13 +4696,20 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 **`M130` — pentest arc Tier 2: the generated authorization matrix**
 
-<!-- plan:closes-at M130c -->
+Scopes `PLAN_BROWSER_PERF_SECURITY.md` §3's **Tier 2** — the generated authorization matrix, the
+arc's stated differentiator and its answer to **OWASP API #1 (BOLA/IDOR)**. Second of the two tiers
+`PLAN_LAUNCH_REVIEW.md` R3 committed to (*"DECIDED 2026-08-03 (user) — build Tiers 1–2, defer the
+Tiers 3–4 call"*).
 
 ### M130b
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
-**`M130b` — tflw** *(the grammar and the engine)*
+**`M130b` — the authorization-violations engine**
+
+The tflw half of the pentest arc's Tier 2. Scoped 2026-08-13, by grilling, against
+`PLAN_M130_PENTEST_TIER2.md` §2 items 7–14 — eight one-line bullets turned into an implementable
+milestone.
 
 ### M131
 
@@ -4783,6 +4803,13 @@ what Tier 3 *is*, after Tier 1 (`M128a`–`M128c`), Tier 2 (`M130a`–`M130c`), 
 
 **`M134a`'s coverage repair (2026-08-14 addendum, D392)**
 
+`M134a` was pushed with every gate its author knew about green, and CI went red on the coverage
+floor. The uncovered functions were not an instrumentation artifact: the shipped binary's copy of
+the Tier 3 engine had never been executed by any test in this repo, because Tiers 2 and 3 run only
+from an explicit assertion and no CLI test wrote one. One test through `dist/cli.cjs` closes it.
+The lesson is `M130-04`'s in a new costume — the question before pushing is not *did my gates pass*
+but *is my gate set the one CI runs*.
+
 ### M134b
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
@@ -4801,7 +4828,10 @@ made before any of `M134b` was written.
 
 **tflw — `M135`, pentest arc: the SARIF reporter + the remediation KB — plan**
 
-<!-- plan:closes-at M135c -->
+Exports what tflw already finds as **SARIF**, so a run's security findings arrive in GitHub code
+scanning as alerts, and builds R7's remediation knowledge base behind `rule.help.markdown` so each
+alert carries the fix. It widens nothing: not one new rule, payload or probe, and the set of
+things reported is exactly the set `M134b` already computes.
 
 ### M135a
 
@@ -4937,14 +4967,22 @@ Order 3 of the ledger drawdown.
 
 **Amendments made while building `M143a` (2026-08-19)**
 
+Two decisions the build forced, both widening what was scoped. `D581` puts the mirror removal on
+**both** call sites rather than the `mutations` job alone, because the job that was supposed to
+serve as the control stalled 45.9 minutes in the identical step. `D582` sets the soft budget at 20
+minutes rather than `M137g-03`'s ~22, so that the instrument's number and `D574`'s re-shard
+condition are the same number rather than two to be correlated.
+
 ### M144
 
 <sub>cited from SPEC.md · lifted from `PLAN_M144_DOC_HONESTY.md`</sub>
 
 **M144 — documentation that asserts false things (Order 4)**
 
-<!-- plan:closes V4-12, V4-15, V4-16, A2-16, A4-19, M110b-02, A4-07, M144-01 -->
-<!-- plan:closes-at M144b -->
+Order 4 of the ledger drawdown: six rows where tracked prose asserts something that is not true.
+Four of them are one defect — documentation naming a thing that no longer exists — and the guard
+for that class comes out a **denylist** rather than a derivation, because the authority it would
+have derived from is gitignored.
 
 ### M144b
 

@@ -231,8 +231,18 @@ export function pickAnchor(id, anchors) {
     const forced = anchors.find((a) => basename(a.file) === PICK[id].file);
     if (forced) return forced;
   }
-  const stem = /^([DM])(\d{1,3})/.exec(id);
-  const affine = (a) => (stem && stem[1] === 'M' && new RegExp(`^PLAN_M${stem[2]}[_.]`).test(basename(a.file)) ? 0 : 1);
+  // Affinity is two-tier, because the letter is part of the milestone's name and not decoration.
+  // `M130b` has its own record, `PLAN_M130B_AUTHZ_ENGINE.md`, and a number-only rule could not see
+  // it: after `PLAN_M130` comes `B`, not a separator, so the file scored as unrelated and `M130b`
+  // was lifted from a caption inside its *parent* plan instead — a title over four numbered items,
+  // published without them. The suffixed filename is tried first and the number-only one second.
+  const stem = /^([DM])(\d{1,3})([a-z]?)/.exec(id);
+  const affine = (a) => {
+    if (!stem || stem[1] !== 'M') return 2;
+    const file = basename(a.file);
+    if (stem[3] && new RegExp(`^PLAN_M${stem[2]}${stem[3].toUpperCase()}[_.]`).test(file)) return 0;
+    return new RegExp(`^PLAN_M${stem[2]}[_.]`).test(file) ? 1 : 2;
+  };
   return [...anchors].sort(
     (x, y) => affine(x) - affine(y) || RANK[x.kind] - RANK[y.kind] || x.file.localeCompare(y.file) || x.line - y.line,
   )[0];
@@ -265,6 +275,23 @@ function takeBlock(lines, start) {
     j++;
   }
   return j;
+}
+
+/**
+ * Is the paragraph beginning at `i` nothing but HTML comments?
+ *
+ * `plan:closes` and `plan:closes-at` are `verify-ledger.mjs`'s markers (`D610`) and they live in the
+ * record because a script reads them there. They are addressed to that script and to nobody else, so
+ * they are stepped over when the statement is located rather than published as one.
+ *
+ * Whole lines only, and the whole paragraph: a comment that shares a line with prose is part of that
+ * prose's bytes, and `D668` does not let the extractor edit a line it publishes.
+ *
+ * @param {string[]} lines @param {number} i @returns {boolean}
+ */
+function isCommentOnly(lines, i) {
+  const block = lines.slice(i, takeBlock(lines, i));
+  return block.length > 0 && block.every((ln) => /^\s*<!--.*-->\s*$/.test(ln));
 }
 
 /**
@@ -309,8 +336,18 @@ export function extractBlock(text, anchor) {
     //
     // "The paragraph under it" is `takeStatement`'s job, not a blank-line scan's: a fence and a
     // colon both end a block mid-thought.
+    //
+    // A comment-only paragraph is stepped over rather than taken. Four plans open with
+    // `<!-- plan:closes-at M128c -->` directly under the title — `verify-ledger.mjs`'s marker, which
+    // it reads from anywhere in the file and which by convention sits at the top. It is a paragraph
+    // by every blank-line rule, so it was winning the statement slot and the four entries published
+    // a title, a marker addressed to a script, and none of the opening paragraph sitting right
+    // below it. The marker has to stay in the record; it just is not what anybody asked this file
+    // for.
     let i = start + 1;
-    while (i < lines.length && lines[i].trim() === '') i++;
+    while (i < lines.length && (lines[i].trim() === '' || isCommentOnly(lines, i))) {
+      i = lines[i].trim() === '' ? i + 1 : takeBlock(lines, i);
+    }
     const j = takeStatement(lines, i);
     // The heading line is demoted to bold: the identifier is already this entry's own heading, and
     // a second `#` inside an entry would put fake structure in the published document's outline.
