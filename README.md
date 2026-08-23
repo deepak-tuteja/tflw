@@ -5,11 +5,11 @@
 
 # testFlow (`tflw`)
 
-A testing-only DSL for API tests — reports first, syntax second. API testing, browser testing (real
-Playwright automation) and load testing (ramp/hold/step/spike, thresholds, validated against k6 on
-real contended workloads) are all built; security/pen-test testing is next — see
-[PLAN_BROWSER_PERF_SECURITY.md](PLAN_BROWSER_PERF_SECURITY.md). Pre-1.0, **not yet published to
-npm**.
+A testing-only DSL for API tests — reports first, syntax second. Four pillars are built and share
+one grammar: API testing, browser testing (real Playwright automation), load testing
+(ramp/hold/step/spike, thresholds, validated against k6 on real contended workloads) and security
+scanning (hygiene, authorization, input handling, and an active crawl). Pre-1.0, **not yet published
+to npm**.
 
 **Full docs: [the documentation site](https://deepak-tuteja.github.io/tflw/)** — a Guide, a
 generated Reference (matchers/generators/CLI flags), a formal [Grammar](packages/lang/GRAMMAR.md)
@@ -28,10 +28,10 @@ Three things tflw does that a general-purpose language + an HTTP client doesn't 
 - **Teaching-quality diagnostics.** Source line + caret + "did you mean", stable `TF0xx` codes
   (§17), a conservative unknown-variable checker pass — errors read like a compiler's, not a stack
   trace.
-- **One language for API, browser and load testing** (security testing is next)**.** UI steps share
-  the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test
-  stays one readable file instead of gluing two tools together — and a load test is the same `test`
-  block with a `ramp to …` line in it, not a separate tool with its own script format.
+- **One language for API, browser, load and security testing.** UI steps share the same grammar as
+  API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable
+  file instead of gluing two tools together — and a load test is the same `test` block with a
+  `ramp to …` line in it, not a separate tool with its own script format.
 
 Measured against raw `fetch` + `node:test` (the honest "no tool" baseline, [`tflw-acceptance/README.md`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tflw-acceptance/README.md)):
 **2.8× fewer lines** overall (4–8× on retry/polling/generated-data scenarios), a categorical report
@@ -61,11 +61,21 @@ See [CHANGELOG.md](CHANGELOG.md) for released versions.
 
 ## Install & quickstart (< 5 minutes, no browser install)
 
+tflw is **not published to npm yet**, so today you install it from a clone — build once, then point
+any project at the built CLI:
+
 ```sh
-npm i -D tflw
+git clone <this repo> && cd testFlow && npm install && npm run build
+cd your-project && npm install --no-save file:/path/to/testFlow/packages/cli
 ```
 
-In any project with an API you want to test:
+At 1.0 that becomes one line. It does **not** work yet:
+
+```sh
+npm i -D tflw   # not published — see the two commands above
+```
+
+Either way, in any project with an API you want to test:
 
 ```sh
 npx tflw init   # scaffolds tflw.config + example.tflw + .env.example + .gitignore
@@ -112,12 +122,10 @@ failed last time. See [CI, reporting & safety](https://deepak-tuteja.github.io/t
 for a worked GitHub Actions example and the redaction/evidence-level/host-allowlist safety
 features.
 
-## Status & roadmap
+## Status
 
-Built so far (internal milestones, not yet published — see
-[PLAN_BROWSER_PERF_SECURITY.md](PLAN_BROWSER_PERF_SECURITY.md) decision D25 / PLAN.md decision
-112 for the versioning story): config-as-tflw, sessions, capture-chaining, hooks/retry/tags/
-data-tables, actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, file-level
+Built so far (internal milestones, not yet published): config-as-tflw, sessions,
+capture-chaining, hooks/retry/tags/data-tables, actions + the JS/TS escape hatch, generators, teaching-quality diagnostics, file-level
 concurrency (`--parallel`), CI ergonomics (`--failed`/`--bail`/`--format ndjson`), a self-contained
 `report.html` + `junit.xml` + `results.json`; the full browser half (Playwright — interaction steps,
 tiered locators, frames/tabs/downloads/drag-drop, network mocking, accessibility assertions, visual
@@ -131,12 +139,14 @@ Security testing is **built and dogfooded, inside `tflw run` rather than as a mo
 response-hygiene, authorization (BOLA/IDOR) and input-handling assertions — `expect response has no
 security violations`, `… no authorization violations`, `… no input handling violations` — with a
 `--fail-on` severity gate, a `--baseline` file for staged adoption, per-finding remediation in
-`report.html`, and a `findings.sarif` for GitHub code scanning.
+`report.html`, and a `findings.sarif` for GitHub code scanning. The active tier is built too: a
+top-level `crawl` declaration that discovers routes from an OpenAPI document, from the run's own traffic, or by
+spidering a page; CSRF-token capture on a `session` and the `sec/csrf-not-enforced` probe derived
+from it; and a TLS cipher **offer** enumeration. The acceptance pass against the dogfood app's
+planted-vulnerability ledger is measured and gated in CI.
 
-**Next:** an active crawl/probe tier, and a final acceptance pass against the dogfood app's planted
-vulnerability ledger, before anything publishes. `tflw migrate` also ships but has nothing to do yet: no checker rule
-emits a deprecation, because the grammar has been additive-only since the first release, so it
-always reports `no deprecated syntax found`. See [SPEC.md](SPEC.md)'s per-section status badges for
+`tflw migrate` ships but has nothing to do yet: no checker rule emits a deprecation, because the
+grammar has been additive-only since the first release, so it always reports `no deprecated syntax found`. See [SPEC.md](SPEC.md)'s per-section status badges for
 the full shipped-vs-planned breakdown, and [CHANGELOG.md](CHANGELOG.md) for what's built and pending
 release.
 

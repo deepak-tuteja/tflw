@@ -4,9 +4,9 @@ The three scanning chapters before this one all judge a response your suite aske
 `api` step, the scan reads what came back. That means your security coverage is exactly as wide as
 your test suite — and a test suite is written around the routes people remember.
 
-A **crawl** is the other half. It finds the requests itself, from the surface your application
-documents and from the traffic your own tests already produced, and applies the same three assertion
-families to every response it gets back.
+A **crawl** is the other half. It finds the requests itself — from the surface your application
+documents, from the traffic your own tests already produced, and by walking a page's links — and
+applies the same three assertion families to every response it gets back.
 
 ```tflw
 crawl "the v1 API surface" as peer, shopper
@@ -39,12 +39,13 @@ differentiates against every *other* session your config declares.
 
 A crawl walks its surface **once**, not once per name in the list.
 
-## The two seeds find different things, and that is the point
+## The three seeds find different things, and that is the point
 
 | seed | finds | invents |
 | --- | --- | --- |
 | `seed openapi "<source>"` | every operation the document describes | path parameters, required query values, request bodies |
 | `seed traffic` | every distinct route this run's own tests touched | nothing |
+| `seed spider "<path>"` | every route reachable by following links and forms from a page | nothing |
 
 The OpenAPI seed reaches routes nobody wrote a test for — including the ones nobody remembered. It
 pays for that by having to make values up: a schema tells you an endpoint accepts a `status` field; it
@@ -55,7 +56,15 @@ The traffic seed is the opposite. It re-issues requests your suite really made, 
 and the code behind them runs — but it can only ever be as wide as the suite that ran before it. It
 deduplicates by route, so forty calls to `/products/{id}` are one thing to crawl, not forty.
 
-Use both. Each one's blind spot is the other's strength.
+The spider seed is the one for a surface with no document and no test coverage. It **fetches and
+parses; it does not render** — there is no browser engine, so a client-rendered SPA is reported as a
+stated gap rather than as a zero. It takes optional `max pages` and `max depth` sub-clauses, walks
+breadth-first, and stays same-origin: a link off-site is reported as a skip rather than followed.
+Because learning a route exists means fetching the page that links to it, the walk is its own phase
+and prints its cap before it starts — see [When a crawl finds nothing, it fails](#when-a-crawl-finds-nothing-it-fails)
+for how a capped walk is reported.
+
+Use all three. Each one's blind spot is another's strength.
 
 `seed openapi` follows the same convention as `expect body matches schema … from "…"`: an absolute
 `http(s)://` source is fetched as written, anything else resolves against your default `api` base URL
@@ -135,8 +144,8 @@ what another principal got; if the owner was turned away at the door, there is n
 against, and reading that refusal as *clean* is the single most common false negative in this kind of
 tool.
 
-Findings a crawl does produce carry **`via`** — `openapi` or `traffic` — so a report says how each one
-was reached. It is provenance, not identity: the same weakness found by both seeds is one finding with
+Findings a crawl does produce carry **`via`** — `openapi`, `traffic` or `spider` — so a report says
+how each one was reached. It is provenance, not identity: the same weakness found by both seeds is one finding with
 one fingerprint, so adding a seed never churns your baseline.
 
 ## Safety: the same gates, and one you should know about

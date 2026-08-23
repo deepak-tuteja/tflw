@@ -11,13 +11,33 @@ more, live as you type.
   recent Node for its `fetch`/TLS behavior.
 - **An API to point it at** — tflw sends real HTTP requests; there's no mocking layer. Have the
   service you're testing running and reachable (locally, or a staging URL) before you write a real
-  test. You don't need it for the two commands below: `tflw init` scaffolds against tflw's own demo
+  test. You don't need it for the quickstart below: `tflw init` scaffolds against tflw's own demo
   service, so the quickstart is green before you've wired anything up, and repointing it at your
   service is one line.
 
+## Using tflw from a checkout (no npm registry needed)
+
+tflw is pre-1.0 and **not published to npm yet**, so this is how you install it today. From a clone,
+`packages/cli/dist/cli.cjs` is the exact runnable artifact after `npm run build`:
+
 ```sh
-npm i -D tflw
+node /path/to/testFlow/packages/cli/dist/cli.cjs run    # or `init`
 ```
+
+Or install it into another project on the same machine, still with no registry involved:
+
+```sh
+cd your-project
+npm install --no-save file:/path/to/testFlow/packages/cli
+```
+
+At 1.0 that becomes one line. It does **not** work yet:
+
+```sh
+npm i -D tflw   # not published — see the two commands above
+```
+
+## Quickstart
 
 In any project with an API you want to test:
 
@@ -65,20 +85,3 @@ test "health check"
 That's the whole shape: `test "<name>"`, one or more `api` steps, one or more `expect`/`check`
 assertions. Continue to [Writing your first test](/guide/first-test) for the full walkthrough —
 sessions, capture-chaining, hooks, and everything else the language does.
-
-## Using tflw from a checkout (no npm registry needed)
-
-If you're working from a clone instead of a published package, `packages/cli/dist/cli.cjs` is the
-exact runnable artifact after `npm run build`:
-
-```sh
-node /path/to/testFlow/packages/cli/dist/cli.cjs run    # or `init`
-```
-
-Or install it into another project on the same machine, still with no registry involved:
-
-```sh
-cd your-project
-npm install --no-save file:/path/to/testFlow/packages/cli
-npx tflw run
-```

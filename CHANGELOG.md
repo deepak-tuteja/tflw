@@ -388,6 +388,115 @@ a different thing depending on which matcher a file happened to use.
   set of class names and no matching stylesheet rule, so the one section a reader scans by severity
   rendered as an unstyled browser table.
 
+### Added — pen-test arc, Tier 4: the crawl (`0.4` internal milestone, M137)
+
+The first three tiers judge a response the suite asked for. Tier 4 is the other half — it finds the
+requests itself.
+
+- **`crawl "<name>" [as <principals>]`, a top-level declaration, sibling to `test` and run by plain
+  `tflw run`.** Not a sixth workload kind (a workload kind is a scheduling policy over an unchanged
+  body; here the body is not what repeats — the surface is), and not a `tflw scan` subcommand, which
+  stays deleted. `--tag`, `--only` and `--failed` select a crawl the way they select a test.
+- **It adds a source of requests, not a kind of judgement.** A crawl body takes only the same three
+  `violations` assertions Tiers 1–3 define, applied per response the crawl issues. No fourth matcher
+  family and no new subject keyword — anything else in the body is `TF070`, because an `api` step
+  there would be a request nobody will send under a principal nobody chose, and `expect status
+  equals 200` names one response where a crawl has many.
+- **Three seeds, which find different things.** `seed openapi "<source>"` reads the documented
+  surface and invents path parameters, required query values and bodies for it; `seed traffic`
+  re-issues every distinct route the run's own tests touched and invents nothing; `seed spider
+  "<path>"` walks a page's links and forms, with `max pages` and `max depth` as optional indented
+  bounds. Findings carry **`via`** — `openapi`, `traffic` or `spider` — as provenance, not identity:
+  the same weakness reached by two seeds is one finding with one fingerprint, so adding a seed never
+  churns a baseline.
+- **`seed spider` fetches and parses; it does not render.** No browser engine, and that is a safety
+  statement before it is a scope one — `allow hosts`, the blocked-port list, `authorized target`,
+  the public-target refusal and the sequential pacing all live on the request path, so a spider
+  issuing ordinary requests inherits every one of them. A page's links are joined against the URL it
+  **finally** resolved to, so a console answering `/admin` with a redirect does not have its
+  relative links read against the wrong base. Same-origin: a link off-site is reported as a skip.
+- **It is the only seed whose enumeration is itself traffic**, so the walk is a phase of its own and
+  discloses its cap *before* it walks — two lines rather than one. `walked` and `walkCapped` are
+  reported **beside** `discovered = withheld + sent`, never inside it: a fetched page is not an
+  operation, and folding it in would break the identity. A walk stopped by a bound sets
+  `walkCapped`, so a truncated surface can never read as a complete one.
+- **Everything discovered is accounted for.** `discovered = withheld + sent` and `reached ≤ sent`
+  hold always, and every route in `discovered - reached` reaches `results.json`'s
+  `scanBlindSpot.declines` and `report.html`'s blind-spot block with the reason it is there. A
+  crawler that quietly dropped the routes it could not build would report a smaller denominator and
+  *look* like better coverage.
+- **A response that did not reach your code is not scored.** `2xx`/`3xx`/`5xx` are judged; `400`,
+  `422`, `404`, `405`, `410`, `401`, `403`, `415` and `429` are not. The `400` row is the important
+  one — a validator's refusal is indistinguishable from a hardened endpoint. The `401`/`403` row is
+  the subtle one: if the owner was turned away at the door there is nothing to compare against, and
+  reading that refusal as *clean* is the most common false negative this kind of tool produces.
+- **`TF068`** — a crawl with nothing to crawl. Refused at check time when no `seed` is declared, and
+  at run time when a seed came back empty *or* when a crawl sent requests and reached none of them.
+  One code with a branching hint rather than two rows, because a runtime-only diagnostic has no
+  check-time door for a gate to verify.
+- **`TF069` is withdrawn, not renumbered, and the number is skipped permanently.** It was allocated
+  and then withdrawn; by the time `TF070` was minted, six comments across three packages already
+  used `TF069` as a pointer to that withdrawal, so the number was spent without ever being
+  allocated. A shipped code is never reused.
+- **A third `ReportEntry` kind, declared loudly.** The union had exactly two members since `M56`, so
+  13 dispatch sites across 8 files could test it as a binary and be right by accident — `junit.ts`
+  alone had four, where a crawl entry would have been counted as one test case, timed as a
+  functional test and rendered as `<testcase>` with no consumer able to notice. `exhaustiveEntry`
+  now turns each of those into a type error at the moment a member is added.
+- **`session … csrf from <subject> send as header "<name>"`** — the token a credential is issued at
+  login, attached to every *mutating* request that credential later makes, probes and ordinary `api`
+  steps alike. It deliberately does **not** live in the session's ordinary header map: the token has
+  to stay distinguishable for `sec/csrf-not-enforced` (critical) to probe a principal defined as
+  *this credential minus its CSRF headers*. Merged into the header map it would be
+  indistinguishable from the `Authorization` header beside it, and withholding both would measure
+  authentication rather than CSRF.
+- **`probe ciphers`** — a fourth `authorized target` sub-clause, and the one whose purpose is many
+  connections to one host. `sec/tls-weak-cipher` has shipped since `M128a` but could only judge the
+  suite tflw's own client negotiated, so a server offering TLS 1.0 and RC4 while happily negotiating
+  1.3 with us read **clean**. It now enumerates the host's *offer*. One rule id, not two: what tflw's
+  client happened to negotiate is a fact about tflw's client, and the offered reading is the more
+  accurate measure with the negotiated one as its special case. Withheld, the rule says so rather
+  than passing quietly; absent is never rendered as an empty offer.
+- **A repro per originating scan.** Tier 3 input-handling findings now ship a runnable `.tflw` the
+  way Tier 2 authorization findings have since `M130b` — `report/input-repro/` beside
+  `report/authz-repro/`, and SARIF's `tflw/repro` join reaches both.
+
+### Fixed — pen-test arc, five defects that shipped green (M137c1, M137c2, M137d, M137f)
+
+Four of these predate Tier 4 and had shipped. The transferable lesson, and the reason they lasted:
+**this arc checked its artifacts for shape everywhere and for effect nowhere.** Twelve rendered
+repro files passing `tflw check` proves they parse. It does not prove any of them reaches the
+endpoint its finding names. All were found by *running* a repro or a crawl, not by reading one.
+
+- **A crawl resolved documented paths against the wrong base, and reported green.** Every synthesized
+  URL was built as the `api` base plus the document's path, so an app behind a global prefix was
+  dialled twice — `/v1/v1/health`. Measured against the live dogfood stack: `81 discovered · 50
+  withheld · 31 sent · 0 reached`, **exit 0, passed**. 31 requests, none of which touched the
+  application, reported green. This is spec-incorrect and not merely unlucky: under OpenAPI 3.0 an
+  absent `servers`, `[]` and `[{"url": "/"}]` all mean a server of url `/`, so a document's paths are
+  host-root-relative. A crawl now reads `servers[0]`, keeps the **origin** the `api` names and joins
+  the document's declared prefix — the path, never the host.
+- **A repro dialled a path that did not exist, and passed because of it.** The emitter wrote
+  `new URL(finding.url).pathname`, which against a base carrying `/v1` emits a path tflw then
+  resolves against that base a *second* time. The repro took a 404, found no leak in the body and
+  passed. Latent since `M130b` — seven milestones, in the one artifact whose entire purpose is to
+  fail until the bug is fixed, and SARIF's `tflw/repro` links pointed at those files. Nothing in the
+  suite could have caught it: every fixture server here is `http://127.0.0.1:<port>` with no path
+  prefix, where the buggy and the correct answer are byte-identical.
+- **A repro was green under an env that cannot reproduce its finding.** A base-relative path with no
+  way to pin an env is a silent false green by construction. Every repro now carries
+  `# re-run: tflw run --env <env> <file>`, and the env is a required field rather than an optional
+  one.
+- **tflw discovered tests inside its own output directory.** `discoverTests` walked `report/`, so
+  emitted repros were collected and run as part of the suite that emitted them. Also latent since
+  `M130b`; it surfaced only when the number of emitted files doubled.
+- **A resource the anonymous principal also receives is public, not leaked.** A route that hands the
+  built-in `anonymous` principal the same collection it hands everyone else has no owner and
+  therefore no boundary to cross, so neither leak rule has anything to say about it. Before this both
+  fired: a crawl of a public API produced **20 critical findings that were all false**.
+- **A followed redirect now carries the cookies the chain itself set** — a login answered with a
+  redirect was throwing away the session it had just been granted.
+
 ### Changed — config directive spelling (M147b)
 
 The rule the language never had, and the last breaking change before `1.0.0`: **a directive whose

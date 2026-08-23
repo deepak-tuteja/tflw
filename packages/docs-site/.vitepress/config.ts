@@ -89,7 +89,6 @@ export default defineConfig({
       { text: 'Grammar', link: '/grammar' },
       { text: 'Editor', link: '/editor' },
       { text: 'Playground', link: '/playground' },
-      { text: "What's new", link: '/whats-new' },
       { text: 'Changelog', link: '/changelog' },
     ],
 
@@ -117,7 +116,7 @@ export default defineConfig({
         },
       ],
       // Fallback for every standalone page with no more-specific key above (grammar.md,
-      // editor.md, playground/index.md, whats-new.md, changelog.md) — without this, those pages
+      // editor.md, playground/index.md, changelog.md) — without this, those pages
       // render with no left sidebar at all (`hasSidebar` false), which reads as inconsistent
       // chrome next to guide/reference's sidebar + "On this page" two-column layout. VitePress
       // resolves the longest matching path prefix, so this never overrides the more specific keys
@@ -129,7 +128,6 @@ export default defineConfig({
             { text: 'Grammar', link: '/grammar' },
             { text: 'Editor support', link: '/editor' },
             { text: 'Playground', link: '/playground' },
-            { text: "What's new", link: '/whats-new' },
             { text: 'Changelog', link: '/changelog' },
           ],
         },
