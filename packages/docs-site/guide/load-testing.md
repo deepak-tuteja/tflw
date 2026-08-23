@@ -426,6 +426,9 @@ near-zero latency, where tflw's own generator — not the target system — beco
 and the raw run logs: [`tflw-acceptance`
 README](https://github.com/deepak-tuteja/tflw-tests/blob/main/tflw-acceptance/README.md).
 
-## What's next
+## Where to go next
 
-The security/pentest arc is next; see the changelog for what's landed.
+A load test is one shape of the same `test` block the rest of the guide uses. For the security
+pillar — hygiene scanning, authorization (BOLA/IDOR), input handling and an active crawl — start at
+[Security hygiene scanning](/guide/security-scanning). For the version-by-version record, see the
+[changelog](/changelog).
