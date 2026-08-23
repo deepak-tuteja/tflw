@@ -17,8 +17,16 @@ import { fileURLToPath } from 'node:url';
 const execFileAsync = promisify(execFile);
 const SCRIPT = fileURLToPath(new URL('verify-docs.mjs', import.meta.url));
 
-/** Write `pages` into a scratch corpus and run the guard over it. */
-async function guard(pages) {
+/**
+ * Write `pages` into a scratch corpus and run the guard over it.
+ *
+ * `docsRoot` points `TFLW_DOCS_ROOT` at a *subdirectory* of the corpus instead of its top. Only the
+ * roadmap check needs it, and it needs it for the reason `D658` exists: two of the files that check
+ * reads — `README.md` and `CHANGELOG.md` — are not under the docs root at all, they are two levels
+ * above it. A corpus laid out flat cannot tell whether the guard reaches them, so the one test that
+ * makes that claim reproduces the real `packages/docs-site` layout instead of asserting around it.
+ */
+async function guard(pages, { docsRoot = '.' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'tflw-doc-truth-test-'));
   try {
     for (const [name, body] of Object.entries(pages)) {
@@ -26,7 +34,7 @@ async function guard(pages) {
       if (name.includes('/')) await mkdir(join(path, '..'), { recursive: true });
       await writeFile(path, body, 'utf8');
     }
-    const env = { ...process.env, TFLW_DOCS_ROOT: root, NO_COLOR: '1' };
+    const env = { ...process.env, TFLW_DOCS_ROOT: join(root, docsRoot), NO_COLOR: '1' };
     return await execFileAsync(process.execPath, [SCRIPT], { env })
       .then(({ stdout, stderr }) => ({ code: 0, stdout, stderr }))
       .catch((e) => ({ code: e.code ?? 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }));
@@ -182,4 +190,42 @@ test('a corpus with no CLI reference reports the check as skipped, not as passed
   const { code, stdout } = await guard({ 'index.md': '# x\n' });
   assert.equal(code, 0);
   assert.match(stdout, /command coverage skipped/);
+});
+
+// --- roadmap truth (M149b, `D657`/`D658`) ------------------------------------
+//
+// `doc-blocks.test.mjs` covers the matching rule against injected allowlists. These two cover the
+// wiring the pure function cannot see: that the guard fails the whole run on a stale claim, and
+// that its file set actually reaches the repo root.
+
+test('a forward-looking claim about tflw fails the run', async () => {
+  const { code, stderr } = await guard({ 'index.md': '# x\n\nSecurity testing is next.\n' });
+  assert.equal(code, 1);
+  assert.match(stderr, /undeclared forward-looking claim/);
+  assert.match(stderr, /index\.md:3/);
+});
+
+test("the repo root's README.md is scanned — `D658`, the file the class last fired in", async () => {
+  // `M135b` fixed this exact class *in README.md*, and README.md is `srcExclude`d from the site and
+  // sits two levels above the docs root. Every other check here walks the docs root and would
+  // therefore have been a guard that could not see the file it was written about.
+  const { code, stderr } = await guard(
+    {
+      'packages/docs-site/index.md': '# x\n',
+      'README.md': '# tflw\n\nAPI, browser and load testing — security testing is next.\n',
+    },
+    { docsRoot: 'packages/docs-site' },
+  );
+  assert.equal(code, 1, stderr);
+  assert.match(stderr, /README\.md:3/);
+  assert.match(stderr, /undeclared forward-looking claim/);
+});
+
+test('a corpus with no repo-root prose still reports what it scanned', async () => {
+  // NEGATIVE CONTROL for the two above: without it they would both pass against a guard that
+  // rejected every corpus, and the count line is what proves the check ran rather than no-opped.
+  const { code, stdout } = await guard({ 'index.md': '# x\n\nFour pillars, all shipped.\n' });
+  assert.equal(code, 0);
+  assert.match(stdout, /0 forward-looking claims found across 1 files/);
+  assert.match(stdout, /stale-exemption check skipped/);
 });

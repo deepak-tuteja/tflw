@@ -1,4 +1,4 @@
-# 1. Writing your first test
+# Writing your first test
 
 A `.tflw` file is a sequence of `test` blocks. A test is a name plus indented steps — no
 boilerplate imports, no test-runner ceremony. (Diagnostics, autocomplete, and more are live as you

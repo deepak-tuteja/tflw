@@ -1,4 +1,4 @@
-# 12. Running & debugging tests
+# Running & debugging tests
 
 ## What a run actually prints
 

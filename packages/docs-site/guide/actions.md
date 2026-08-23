@@ -1,4 +1,4 @@
-# 6. Actions, imports & the JS/TS escape hatch
+# Actions, imports & the JS/TS escape hatch
 
 Factor a repeated step sequence into an `action` and reuse it across files with `import`; drop
 into real JS/TS with `use` when a value needs computing (hashing, signing, formatting) rather than

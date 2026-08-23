@@ -1,4 +1,4 @@
-# 11. CI, reporting & safety
+# CI, reporting & safety
 
 ## Reports
 

@@ -1,4 +1,4 @@
-# 18. Crawling: scanning a surface you did not write down
+# Crawling: scanning a surface you did not write down
 
 The three scanning chapters before this one all judge a response your suite asked for. You write an
 `api` step, the scan reads what came back. That means your security coverage is exactly as wide as
@@ -23,8 +23,10 @@ Run it with `tflw run`, like everything else. There is no separate subcommand.
 ## It is a source of requests, not a new kind of judgement
 
 `crawl` is a top-level declaration, a sibling of `test`. What it adds to the language is *where
-requests come from*; the `expect` lines inside it are the same three matchers chapters 14–16 already
-covered, applying **per response the crawl issues** exactly as they apply per response inside a test.
+requests come from*; the `expect` lines inside it are the same three matchers the
+[hygiene](/guide/security-scanning), [authorization](/guide/authorization-testing) and
+[input-handling](/guide/input-handling) chapters already covered, applying **per response the crawl
+issues** exactly as they apply per response inside a test.
 
 There is no fourth matcher family and no new subject keyword to learn. A crawl body takes only those
 three assertions — anything else is `TF070`, because an `api` step inside a crawl would be a request
@@ -150,7 +152,8 @@ one fingerprint, so adding a seed never churns your baseline.
 
 ## Safety: the same gates, and one you should know about
 
-Everything chapter 11 and chapter 14 describe applies unchanged, and is checked before a crawl runs:
+Everything [CI, reporting & safety](/guide/ci-and-reporting) and [hygiene
+scanning](/guide/security-scanning) describe applies unchanged, and is checked before a crawl runs:
 
 - `authorized target` must name the origin (`TF060`).
 - `--allow-public-target` must affirm a public one (`TF065`).

@@ -1,4 +1,4 @@
-# 7. Browser testing: interacting with a UI
+# Browser testing: interacting with a UI
 
 Browser steps live in the same `.tflw` file as API steps — a login → seed-via-API → drive-UI →
 assert-backend-state test stays one readable file. `playwright` is an optional peer, dynamically

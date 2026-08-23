@@ -1,4 +1,4 @@
-# 2. Config & environments
+# Config & environments
 
 `tflw.config` is parsed by the same lexer/parser as your test files — it's the same DSL,
 declaration-only (`test` is a checker error here). Two tiers, `defaults` then the active `env`

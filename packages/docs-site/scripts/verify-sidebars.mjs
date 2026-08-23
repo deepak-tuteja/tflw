@@ -2,8 +2,8 @@
 //
 // `getting-started.md` lives at `/getting-started`, not under `/guide/`, so it matched no sidebar
 // key but the `/` fallback and rendered the *More* rail — Grammar, Playground, Changelog — on the
-// page the home page's primary CTA points at. The entrance to a thirteen-step guide showed
-// everything except the guide.
+// page the home page's primary CTA points at. The entrance to the guide showed everything except
+// the guide.
 //
 // Checked against the **built** HTML, not against `config.ts`. The bug was invisible in the config
 // — every key there is correct in isolation — and only appears once VitePress resolves a path
@@ -20,16 +20,28 @@ import { fileURLToPath } from 'node:url';
 const ROOT = process.env.TFLW_DOCS_ROOT ?? fileURLToPath(new URL('..', import.meta.url));
 const DIST = process.env.TFLW_DOCS_DIST ?? join(ROOT, '.vitepress/dist');
 
-/** `page` → the sidebar group heading it must show, and the one it must not. */
+/** `page` → the sidebar group heading it must show, and the one it must not.
+ *
+ * `M149b` regrouped the rail by pillar and the heading `Guide` ceased to exist, so two of these
+ * three rows named a string no page could render any more. They fail loudly rather than quietly —
+ * `shows` went false, which is a failure, not a pass — and that failure was the demonstrated break
+ * for the regrouping. Re-pointed at `Start here`, the group `getting-started` and `first-test` both
+ * now belong to.
+ *
+ * Both halves of each row still matter, and the `hides` half is the load-bearing one: `shows` alone
+ * would pass against a config that rendered every group on every page, which is the failure mode
+ * a rail with five groups makes easier to reach than one with two.
+ */
 const EXPECTED = [
-  // The funnel page. Both halves matter: `Guide` present is the fix, `More` absent is the proof it
-  // is not merely showing both rails stacked.
-  { page: 'getting-started.html', shows: 'Guide', hides: 'More' },
+  // The funnel page. `Start here` present is `FU-30`'s fix; `More` absent is the proof it is not
+  // merely showing both rails stacked.
+  { page: 'getting-started.html', shows: 'Start here', hides: 'More' },
   // A page that was already correct, so a change that gave every page the guide rail fails here.
-  { page: 'grammar.html', shows: 'More', hides: 'Guide' },
+  // Unaffected by the regrouping: the `/` fallback rail is the one thing `M149b` did not touch.
+  { page: 'grammar.html', shows: 'More', hides: 'Start here' },
   // The step the funnel page leads into — unchanged by `FU-30`, and the reference point its
   // markup was compared against when the bug was measured.
-  { page: 'guide/first-test.html', shows: 'Guide', hides: 'More' },
+  { page: 'guide/first-test.html', shows: 'Start here', hides: 'More' },
 ];
 
 /**
