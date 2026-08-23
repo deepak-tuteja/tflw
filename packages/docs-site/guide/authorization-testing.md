@@ -266,6 +266,13 @@ Probing rather than skipping is deliberate. The app most worth catching is the o
 and *no* CSRF defence at all — it answers `200`, leaks, and is caught. A pre-flight skip would
 decline to probe exactly that app.
 
+A bearer session is one way out of the `inconclusive`. The other is to give the cookie principal
+its token: [`csrf from … send as header`](/guide/sessions#csrf-from-send-as-header-—-a-token-that-travels-with-the-credential)
+in the session block attaches the token the application issued *that* credential to every mutating
+request it makes, so the probe reaches authorization instead of stopping at the guard in front of
+it. And once the engine can supply the token it can withhold it, which is what turns "does this app
+enforce CSRF at all" into a finding of its own.
+
 ## Mutating methods need permission per host
 
 `GET`, `HEAD` and `OPTIONS` are probed by default. Anything else — including a method tflw does not
@@ -399,6 +406,8 @@ Five more limits worth knowing:
 
 ## Related
 
+- [Security & vulnerability testing](/guide/security#what-a-green-scan-does-not-claim) — the bar all
+  four scans are held to, and why a state that is not an answer is never printed as clean
 - [Security hygiene scanning](/guide/security-scanning) — the sibling matcher, and where
   `authorized target` comes from
 - [Input-handling testing](/guide/input-handling) — the third scan: same request, different payload,

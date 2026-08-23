@@ -58,13 +58,16 @@ const GUIDE_SIDEBAR = [
     ],
   },
   {
-    // One entry until `D655` splits the page at the workload/threshold seam. The label is the
-    // page's current title rather than the post-split "Workloads & scenarios": a rail that
-    // promised workloads and delivered thresholds too would be this milestone shipping a false
-    // claim in the act of removing four of them.
+    // `D655` split the one 434-line page at the workload/threshold seam: the first chapter is how
+    // you generate load, the second is how you judge it. The labels are each page's own H1 — the
+    // rail promising workloads and delivering thresholds too was the reason the pre-split label
+    // could not be renamed ahead of the split.
     text: 'Performance testing',
     link: '/guide/performance',
-    items: [{ text: 'Load testing: scenarios & thresholds', link: '/guide/load-testing' }],
+    items: [
+      { text: 'Load testing: workloads & scenarios', link: '/guide/load-testing' },
+      { text: 'Thresholds, results & validation', link: '/guide/load-results' },
+    ],
   },
   {
     // Findings & baselines goes last, not first: it is the machinery for what you do with what the

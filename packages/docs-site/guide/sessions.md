@@ -92,6 +92,49 @@ It goes **after** `oauth2` when both are present (`session svc oauth2 privileged
 claim about authority rather than a way to make an assertion cheaper: marking every session
 privileged is refused (`TF063`).
 
+## `csrf from … send as header` — a token that travels with the credential
+
+An application that issues a CSRF token on login expects it back on every state-changing request.
+`header "X-CSRF-Token" is "{token}"` would be the obvious move and is the wrong one: a `header` step
+attaches unconditionally, including to the `GET`s a browser would never send a token on, and an
+application may reject a token that arrives where it should not. So the token gets its own channel:
+
+```tflw-config fragment
+session shopper
+  api POST /auth/login body { user: env(SHOPPER_USER), pass: env(SHOPPER_PW) }
+  csrf from body.csrfToken send as header "X-CSRF-Token"
+```
+
+The clause captures the token this credential was issued and attaches it to **every mutating
+request that credential later makes** — `POST`, `PUT`, `PATCH`, `DELETE`, and any method not on the
+safe list (`GET`/`HEAD`/`OPTIONS`). Ordinary `api` steps and security probes alike.
+
+The subject is whatever `capture` can read, so `body.csrfToken` and
+`response.headers["X-CSRF-Token"]` both work. It has to sit **after** the session's first `api`
+step — the establishment response must exist before anything can be read out of it, and placing it
+first is `TF039`, exactly as a premature `capture` is.
+
+**It is a property of the credential, not of the target.** One target has many principals with
+different tokens; one principal has one. That is the same reasoning that has `shopper` and
+`shopperBearer` declared as two sessions for one human.
+
+Three things it does deliberately loudly:
+
+- **If the path resolves to nothing, the session fails** — and every test naming it fails with it.
+  Binding nothing would attach the literal text `undefined` as the token, which an application
+  rejects for the right reason by accident: a broken clause that reads as a working CSRF defence.
+- **The token is redacted in report evidence unconditionally**, with no `redact` pattern needed. It
+  is a credential by construction, so there is no configuration under which printing it is wanted.
+- **It is config-only.** The clause has no meaning in a `.tflw` test body and is not part of that
+  dialect's grammar; written there it is an unknown step. It is also unavailable on an `oauth2`
+  session — that body is a fixed shape with no position for it, and a bearer credential sends no
+  cookie for a CSRF token to protect.
+
+It also unlocks a finding. Once the engine can *supply* the token it can also **withhold** it, so
+whether a mutating request still succeeds without one becomes `sec/csrf-not-enforced` rather than a
+blind spot — see [authorization testing](/guide/authorization-testing#cookie-sessions-and-csrf) for
+the probe that reads it.
+
 ## `for env` — a session that belongs to some envs and not others
 
 ```tflw-config

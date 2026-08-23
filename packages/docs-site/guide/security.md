@@ -47,6 +47,48 @@ Note the ordinary two-step setup above them. A scan is not pointed at a URL from
 judges a request your suite made, under an identity your suite chose, against a resource your suite
 knows the owner of. That is the whole reason these live in a test rather than in a scanner.
 
+## What a green scan does not claim
+
+Every scanner anyone has switched off was switched off for one of two reasons: it cried wolf, or it
+said "clean" about something it never looked at. The four scans in this pillar are built against
+both, and the way they get there is the same in all four — so it is stated once, here, rather than
+four times.
+
+**A finding is a difference this run caused, measured against a baseline this run observed.** Not
+a pattern seen somewhere in a response — several rules do read patterns, and on their own a pattern
+is not evidence of anything. What makes it a finding is that it was not there before the scan acted:
+the [input-handling](/guide/input-handling) rules subtract the control response's own hits, so an
+app that prints a stack trace on its happy path reports nothing; [authorization](/guide/authorization-testing)
+compares what the owner got against what a stranger got, rather than judging one response alone.
+And a rule whose precondition is unmet reports **not applicable** rather than guessing — which is
+why a scan's output is mostly arithmetic, and why those counts print on the **passing** line too.
+A green assertion that will not say how much it checked is a green assertion you cannot use.
+
+**And the states that are not answers are never rendered as clean.** Each scan has a small set of
+outcomes per thing it examined, and only some of them mean *judged*:
+
+- **not applicable** — the rule's precondition was not met. Nothing to say, and nothing claimed.
+- **not probed** — the scan was permitted to look and did not, most often because a
+  [`probe …` sub-clause](/guide/config) the target needed is absent. It counts as **not clean**.
+- **inconclusive** — the scan looked and the answer does not settle the question: a `429`, a
+  refusal that came from something in front of the code being asked about. Also **not clean**.
+
+What differs between the chapters is *which* outcomes exist and what falls into each — and the
+sharpest case is a `5xx`. To [input-handling testing](/guide/input-handling#three-outcomes-not-five)
+it is a first-class answer, because the application did process the payload, which is the thing
+being asked; to [authorization testing](/guide/authorization-testing#five-outcomes-and-clean-has-to-be-earned) it is
+inconclusive, because a crash tells you nothing about who may read what. Each chapter carries its
+own table, and reading it is the difference between using a number and believing one.
+
+**A crawl adds an identity on top of that**: `discovered = withheld + sent`, with every route in
+`discovered - reached` named in the report with the reason. A crawler that quietly dropped the
+routes it could not build would report a smaller denominator and *look* like better coverage —
+see [everything discovered is accounted
+for](/guide/crawling#everything-discovered-is-accounted-for).
+
+The through-line is that none of these are the scanner being modest. Each is a place where the
+comfortable output and the true one differ, and the true one ships.
+
 ## The order you adopt this in
 
 Each chapter is written to be read alone, so the sequence across them is easy to miss. It is four

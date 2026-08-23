@@ -147,18 +147,31 @@ directly above, it takes **no wildcards**: it is an affirmation that you may poi
 named host, and a pattern is not something anyone can affirm. The `reason` is required and is
 printed in the run summary and the report, so the claim travels with the findings.
 
-An optional indented `probe mutating` grants one further permission for *that host*: an
-authorization probe may re-issue a `POST`/`PUT`/`PATCH`/`DELETE` under another principal against it.
+**Four optional indented sub-clauses** grant further permissions for *that host*, each granting
+only itself. The one-line declaration above is unchanged; these are lines beneath it:
 
 ```tflw-config fragment
 defaults
   authorized target "http://localhost:4001" reason "self-hosted test fixture"
     probe mutating
+    probe oversized
+    probe traversal
+    probe ciphers
 ```
 
-Without it, an authorization assertion on a mutating step reports `not probed` rather than silently
-sending writes somewhere nobody said it could. It hangs off the target because staging may be safe
-to read as a stranger and not safe to write to.
+| sub-clause | grants | read by |
+| --- | --- | --- |
+| `probe mutating` | re-issuing a `POST`/`PUT`/`PATCH`/`DELETE` against this host | [authorization](/guide/authorization-testing), [input handling](/guide/input-handling), [crawling](/guide/crawling) |
+| `probe oversized` | sending a 64 KiB payload | [input handling](/guide/input-handling) |
+| `probe traversal` | sending `../` payloads | [input handling](/guide/input-handling) |
+| `probe ciphers` | one TLS handshake per candidate suite, to read this host's *offer* | [hygiene scanning](/guide/security-scanning#probe-ciphers-—-asking-what-the-host-offers) |
+
+Without the relevant one, the scan that needed it reports `not probed` rather than silently doing
+the thing nobody said it could — and `not probed` is [never counted as
+clean](/guide/security#what-a-green-scan-does-not-claim). They hang off the target because each is
+a property of *that host*: staging may be safe to read as a stranger and not safe to write to.
+Grants accumulate across declarations covering the same origin, and are never inherited from a
+neighbouring one.
 
 See [Security hygiene scanning](/guide/security-scanning) and
 [Authorization testing](/guide/authorization-testing).

@@ -229,6 +229,8 @@ alert on every reseed.
 
 ## Related
 
+- [Security & vulnerability testing](/guide/security#what-a-green-scan-does-not-claim) — the bar all
+  four scans are held to, and why a state that is not an answer is never printed as clean
 - [Security hygiene scanning](/guide/security-scanning) — the response-inspection scan
 - [Authorization testing](/guide/authorization-testing) — the cross-principal scan
 - [Input-handling testing](/guide/input-handling) — the mutation scan, and the corpus

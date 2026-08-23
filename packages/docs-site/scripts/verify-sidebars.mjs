@@ -61,6 +61,10 @@ const EXPECTED = [
 const PILLAR_OVERVIEWS = [
   { page: 'guide/assertions.html', link: '/guide/functional', group: 'Functional testing' },
   { page: 'guide/load-testing.html', link: '/guide/performance', group: 'Performance testing' },
+  // Both halves of `D655`'s split, not just the one that kept the URL. A new page added to an
+  // existing group is exactly the edit that silently lands in the wrong rail, and the pre-split
+  // row could not have caught it.
+  { page: 'guide/load-results.html', link: '/guide/performance', group: 'Performance testing' },
   // A bare `&`, not `&amp;`: VitePress renders a sidebar label through `v-html`, so the config's
   // text reaches the HTML unescaped. Written `&amp;` first, and the demonstrated break for the row
   // above caught it — this row failed while nothing was wrong with the rail.
