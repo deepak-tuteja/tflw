@@ -836,6 +836,16 @@ resolution is reported.**
 
 Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
+- **Network observation** (M3d) — `expect request to "/api/orders" was made` / assert its
+  status/body. Reuses the existing request model + redaction; catches optimistic-UI-lies bugs.
+- **Network mocking / route stubbing** (M3d) — `intercept`/`stub` grammar. **Requires a documented
+  house-style position** on when stubbing is legitimate (default: real fixtures; stub only
+  third-party/unavailable deps) or it silently becomes the way people avoid fixtures.
+- **Accessibility** (M3e) — axe-core as an assertable subject (`expect page has no critical a11y
+  violations`). **Must be built so the scan arc reuses it** (scan-and-assert machinery), not twice.
+- **Visual regression** (M4b) — its own milestone (baseline store + update/approval flow +
+  tolerance + diff viewer). Precondition already met by D12's `report/` directory. See D15.
+
 ### D15
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
@@ -1413,6 +1423,15 @@ for a pattern matching nothing. Shipped at `M58`. The six clauses below are this
 Not an absolute promise ("everything statically knowable"), which has no boundary and no
 completion condition. Three clauses:
 
+1. **Soundness.** If `tflw check` reports an error, `tflw run` would have failed on that rule.
+   `A4-05` is the sole violation and the most severe row here: `loadAndValidate` returns
+   `EXIT_USAGE` on any error-severity diagnostic, so a false positive does not merely mislint — it
+   makes a valid suite **unrunnable, with no override**.
+2. **Completeness where decidable.** If the runtime enforces a rule and it is decidable from the
+   AST, the checker decides it first.
+3. **The carve-out.** Rules needing I/O are excluded from the **`lang` package** — *not* from
+   `tflw check`. See D144; this clause was corrected mid-grill.
+
 ### D147
 
 <sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
@@ -1452,6 +1471,12 @@ capability.
 Backing off costs something, and the cost was measured rather than argued. What the enclosing
 production says today when handed a token it cannot use:
 
+| written | error today | error after back-off |
+|---|---|---|
+| `select {size} extra from field "Size"` | ``TF010: expected `from`, found `extra` `` | same — **sharper than `TF010`'s paren advice** |
+| `give create widget({id} extra)` | ``TF010: expected `)` to close the call`` | same — **sharper** |
+| `let a = {foo} order` | ``TF010: unexpected `order` at end of step`` / ``help: expected end of line`` | same — **worse than today's `TF010`** |
+
 ### D174
 
 <sub>cited from SPEC.md · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
@@ -1469,6 +1494,13 @@ footnoted.
 **D176 — a header name is a value**
 
 Four sites, all reading `.value`, all on a `StringLit` the checker passes to `checkStringLit`:
+
+| site | statement | what it did |
+|---|---|---|
+| `interpreter.ts` `applyHeaders` | `api … header "X-{t}" is "v"` | sent a header literally named `X-{t}` |
+| `interpreter.ts` `HeaderStmt` | a `header` line in a `session` block | same |
+| `interpreter.ts` `resolveSubject` | `expect header "X-{t}"` | looked up `x-{t}`, always `null` |
+| `interpreter.ts` `resolveNetworkSubjectValue` | `… of request to "…"` | same, on the network log |
 
 ### D177
 
@@ -1703,6 +1735,19 @@ and `x-frame-options` are never applicable, so the sketched pack would run three
 against the actual dogfood target. Four API-shaped rules are added so the pack is meaningful where
 this tool is actually pointed:
 
+| rule | severity | class |
+| --- | --- | --- |
+| `sec/cookie-not-httponly` | critical | browser |
+| `sec/cookie-not-secure` | critical | browser |
+| `sec/cors-wildcard-with-credentials` | critical | **api** |
+| `sec/hsts-missing` | serious | browser |
+| `sec/csp-missing` | serious | browser |
+| `sec/x-frame-options` | moderate | browser |
+| `sec/cookie-samesite-none` | moderate | browser |
+| `sec/nosniff-missing` | moderate | **api** |
+| `sec/authenticated-response-cacheable` | moderate | **api** |
+| `sec/server-version-disclosure` | minor | **api** |
+
 ### D290
 
 <sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
@@ -1719,6 +1764,10 @@ one word covers both scan kinds.
 **D291 — D21's declaration half lands now, and Tier 1 requires it**
 
 In scope for `M128b`:
+
+```
+authorized target "https://localhost:8443" reason "self-hosted test fixture"
+```
 
 ### D292
 
@@ -1741,6 +1790,25 @@ standalone scan artifact, at Tier 3/4.
 D2 and D27 both established *the dogfood target lands first, as its own testFlow-tests milestone*.
 That applies here, but §0(a) makes it cheap — the listener exists. `M128a` is therefore:
 
+1. **`env secureLocal`** in `testFlow-tests/tflw.config` → `https://localhost:8443/v1`,
+   `insecure true` (self-signed, SPEC §3.5), `allow hosts "localhost"`. Its own dedicated env, the
+   same blast-radius convention `mtlsSidecar`, `allowHostsBlocked` and `safetyRedaction` already
+   follow.
+2. **A hygiene-only `vuln/` slice**, env-gated behind `VULN_MODE=1`, off in every other run —
+   supplying only the five positives the clean app cannot produce (§0's table):
+
+   ```
+   GET  /vuln/cors-wildcard      Access-Control-Allow-Origin: *  +  Allow-Credentials: true
+   POST /vuln/weak-cookie        Set-Cookie: sid=…   (no HttpOnly, SameSite=None)
+   GET  /vuln/document           text/html, no CSP, no X-Frame-Options
+   ```
+
+   Mostly an nginx `location` block plus two small NestJS routes — **no application-logic
+   vulnerabilities**, which is what makes the full `vuln/` module expensive at Tier 2/3.
+3. **`VULNS.md`**, one row per planted flaw, from day one. This is the known-answer ledger the
+   acceptance bar reads; a planted flaw with no ledger row is how a target drifts out of sync with
+   the acceptance that depends on it.
+
 ### D294
 
 <sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
@@ -1760,6 +1828,11 @@ That applies here, but §0(a) makes it cheap — the listener exists. `M128a` is
 **D295 — acceptance: a positive, a negative, and a not-applicable case for every rule**
 
 Each rule in the pack must be demonstrated three ways against the real target:
+
+- **fires** against a response that genuinely violates it (clean apiV2 for five of ten; the `vuln/`
+  slice for the rest);
+- **stays silent** against a response that does not;
+- **reports not-applicable** where its precondition is unmet, for every rule that has one.
 
 ### D296
 
@@ -1802,6 +1875,11 @@ probe therefore sets `minVersion: 'TLSv1'`.
 
 *Decided during `M128c`.* The probe speaks with this run's own client parameters. Two consequences,
 both of which the rules state in their own failure text rather than leaving to the docs:
+
+1. **Not the asserted request.** D288 already said this; it is repeated in the message because a
+   reader who does not know it will read a finding as being about the request they wrote.
+2. **Not the server's whole offer.** A host supporting RC4 *alongside* AES-GCM negotiates AES-GCM
+   with a current client and is correctly silent — that is what its callers actually get.
 
 ### D300
 
@@ -1963,6 +2041,11 @@ about a response the owner did not receive.
 The pass line carries the three rule counts D292 established **plus** the principal counts, and the
 report names what it could not judge:
 
+```
+2 rules — 2 applicable, 0 not applicable, 0 violations
+3 principals probed — 2 refused, 1 served filtered content · 1 privileged (admin) · 1 anonymous
+```
+
 ### D317
 
 <sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
@@ -1971,6 +2054,25 @@ report names what it could not judge:
 
 **`M130a`, testFlow-tests, no tflw changes** (D2/D27: the dogfood target lands first, with nothing
 yet consuming it):
+
+1. **`session peer`** — `USER_B_EMAIL`/`USER_B_PW`, already in `.env` and already in `require env`,
+   declared nowhere. Cookie transport, mirroring `shopper`. Plain existing grammar, so it is safe
+   to land alone.
+2. **Three `vuln/` routes**, behind the existing `VULN_MODE=1` flag, matching the two leak shapes
+   and the mutating opt-in:
+
+   ```
+   GET    /v1/vuln/orders/:id   → any order, no ownership check   (byte-identical to the owner's)
+   GET    /v1/vuln/orders       → every user's orders, unfiltered (contains the owner's ids)
+   DELETE /v1/vuln/orders/:id   → deletes any order               (D311's opt-in has something to do)
+   ```
+
+3. **`VULNS.md` rows `V6`/`V7`/`V8`**, and `scripts/verify-security-target.mjs` extended to assert
+   them against the running stack, both halves of the no-route-without-a-row rule preserved.
+4. **`authz.tflw` is kept unchanged, as the control.** The generated matrix and the hand-written one
+   must agree; a disagreement means one of them is wrong, and *that* is the finding. Two instruments
+   that fail differently, which is the argument `M128c` already made for the corpus plus the grader.
+   It also keeps a live example of the inline-identity idiom D308 deliberately cannot reach.
 
 ### D318
 
@@ -1992,6 +2094,18 @@ yet consuming it):
 
 Three instruments, failing differently:
 
+1. **`tflw-acceptance/security/` grows an authz corpus** — each rule demonstrated **firing** (against
+   the plant), **staying silent** (against clean apiV2), and **reporting not applicable** (a `4xx`
+   owning response, which also demonstrates D285 through the applicability path). Plus the two
+   halves of D311: the default declines the mutating endpoint and *says so*; the opt-in probes it
+   and finds the leak.
+2. **`scripts/verify-security-acceptance.mjs` grows the authz rules**, comparing the exact set of
+   rule ids per response against its ledger copy, printing every gap on every run rather than
+   rounding it away — the `M128c` format, unchanged.
+3. **`authz-generated.tflw` must agree with `authz.tflw`.** The same four claims, one hand-written
+   with inline identities and one produced by the matrix. Agreement is the invariant; disagreement
+   is a finding about the generator.
+
 ### D320
 
 <sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
@@ -2010,6 +2124,10 @@ a bundle.
 **D321 — resource-id extraction reaches the bare shapes only, and says so out loud**
 
 From the owner's response body:
+
+- an **object** → its root `id`, if present;
+- an **array** → each element's root `id`;
+- **nothing else**. Nothing nested, no key aliases, no envelope unwrapping.
 
 ### D322
 
@@ -2129,7 +2247,9 @@ lines instead of needing a second grammar.
 
 D316 asks the run to count `api` steps it could not attribute to a principal, and names the
 `TF062`/`TF063` sites. Those are **errors**, so no run containing one ever executes; the count as
-specified would always be zero. The intent survives the correction, in two parts:
+specified would always be zero. The intent survives the correction in two parts — a suite
+identity census the checker computes and the run summary prints once, and the run's own
+declines aggregated beside it.
 
 ### D332
 
@@ -2223,6 +2343,11 @@ ungated** — no `authorized target` required, and under a naive reading of D340
 **D344 — two new codes, one repair each; the runtime twin reuses the checker's code**
 
 Following `M130b2`'s rule that **a diagnostic code is a repair, not a topic**:
+
+| code | fires when | the repair |
+| --- | --- | --- |
+| `TF065` | an originating scan would reach a public origin and no `--allow-public-target` names it | add the flag |
+| `TF066` | `--allow-public-target` names an origin this run does not scan, or one no `authorized target` declares | fix the flag's value |
 
 ### D364
 
@@ -2397,6 +2522,13 @@ corpus had **zero principals able to make a mutating probe** — three correct e
 until nobody could answer — so planting a positive would have "passed" on nothing. Tier 3's analogue
 is *what*, not *who*, and the measurement is worse:
 
+| route | mutable input |
+|---|---|
+| `V1`,`V2`,`V4`,`V5`,`V7` | none — bare `@Get` |
+| `V3` | none — bare `@Post` |
+| `V6`,`V8`,`V9` | `:id` behind **`ParseUUIDPipe`** |
+| `V9` | `@Body() { status?: string }` — added by `M132b`, 2026-08-14 |
+
 ### D380
 
 <sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
@@ -2424,6 +2556,11 @@ the condition *"the first change that permits two probes to be in flight simulta
 **D382 — diagnostic codes, and the coupling**
 
 `M134a` assigns **`TF067`+** (highest currently assigned: `TF066`). At minimum:
+
+- `probe oversized` / `probe traversal` named on a target with no `authorized target` — reuses the
+  existing unaffirmed-target codes rather than adding new ones.
+- **new:** the input-handling assertion on a step whose request had **no mutable input** — the
+  no-power-to-fail shape, which D285 and D373 both say must be speakable.
 
 ### D383
 
@@ -2501,6 +2638,16 @@ not a new one.
 D384 declined to commit in advance and left it as *"a scope call for `M134b`'s own planning"*. The
 call is **fix it**, on three measurements rather than on the row's age:
 
+1. `inputRules.ts` already carries `because` and `disabledClasses` **for this exact purpose** — its
+   own comment says the distinction is *"the one `M128-01` is filed about, and the one place this
+   milestone can afford to answer it."* The facts exist and are thrown away at the report boundary.
+2. The row's own stated fix is *"the rule ids in the JSON report regardless of what the terminal
+   prints — the grader reads the report, so the JSON half alone closes the acceptance gap."*
+   `M134b`'s entire subject is putting scan facts into the JSON report. The fix is a field on a
+   structure this milestone is already building.
+3. Deferring again makes it worse on a schedule: Tier 3 added four rules to the instrument, and risk
+   4 of §3 says so in advance.
+
 ### D402
 
 <sub>cited from SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
@@ -2520,6 +2667,13 @@ live consumer at `authzRules.ts:309` and D376 reused it unchanged — so what is
 
 D364 removed the mode; D376 moved the fingerprints; D377 moved the gate. This decision moves the
 last piece and states the consequence plainly, since D360 forbids editing the closed plan in place:
+
+| `PLAN_REPORTS_PERF_SECURITY.md` says | what is true after this milestone |
+|---|---|
+| R1 — "three fully independent report types" | **two**: `RunReport` and `LoadReport`. `ScanReport` never existed and never will |
+| R2 — `scan` writes `scan-report.html`, `scan-results.json`, `findings.sarif` | `run` writes `report.html`, `results.json`, `junit.xml` and — new here — `findings.sarif`. The scan HTML is the findings block `M134b` already added |
+| R8 — SARIF built by the `scan` writer | built by `@tflw/reporter` from `RunReport.findings[]` |
+| R11 — scan's own exit-code contract | shipped as `--fail-on`/`--baseline` inside `run`'s ladder (D386: the gate can only ever turn a red assertion green) |
 
 ### D404
 
@@ -2628,6 +2782,12 @@ run.properties["tflw/notApplicable"][]    = { rule, because } for every rule tha
 ```
 
 This is the three-state coverage model expressed in SARIF's own vocabulary:
+
+| state | how it reads in the document |
+|---|---|
+| **fires** | in `rules[]`, with results |
+| **silent** | in `rules[]`, **zero** results — a measured silence |
+| **not applicable** | absent from `rules[]`, present in `tflw/notApplicable` with its reason |
 
 ### D413
 
@@ -2856,6 +3016,14 @@ trusting keys and signatures it currently rejects."*
 The cluster is *checks that read the wrong answer*, and the repair is more checks. So, non-negotiable
 and itemised — this is the `M140-5` discipline (whose staleness tests built throwaway git repos
 precisely because a same-commit branch made all 70 citations vacuous):
+
+| new check | its demonstrated break |
+|---|---|
+| `tflw-bin.mjs` resolution + refusal | unit tests in `test:scripts`: `branch` against a vendored path must throw; a sha mismatch must throw; `released` must not |
+| the printed stamp | a test asserting the line is present and names a path that exists |
+| the migrated `D285` census read | a mutated report fixture with `notApplicable` emptied → the grader must `fail()`, run and recorded |
+| the `results` contract section | `sarif.test.ts`'s two-way walk (contract promises a key the emitter dropped, and vice versa) |
+| `verify-watch --expect-no-display` | it *is* the break; record the observed failure text |
 
 ### D623
 
@@ -3294,7 +3462,9 @@ exact mechanism D15 was asking for.
     (`PLAN_ENTERPRISE.md` decision 16, a `/grill-me` session 2026-07-19), immediately following
     cluster 3 (decision 102). Unlike clusters 1–3, this cluster adds no DSL grammar or runtime
     behavior, so it has **no testFlow-tests consumption milestone** — the cadence exception
-    decision 16 documents. Six lettered sub-parts:
+    decision 16 documents. Six lettered sub-parts, from a canonical `spec-data.ts` manifest
+    through a new VitePress `docs-site` workspace, a parse-and-check playground, a `GRAMMAR.md`
+    rewrite and a README trimmed to a landing page, to the workflow that publishes the site.
 
 ### M13
 
@@ -3317,7 +3487,8 @@ it, which is what turns a VS Code feature set into an editor-independent one.
     a request that fails *before* any HTTP response exists (a TLS handshake rejection, DNS
     failure, `ECONNREFUSED`, an `allow hosts` block) always crashed the whole test fail-fast, with
     no way to write a genuinely passing regression test proving a guardrail actually triggers.
-    Full fidelity across every package, same bar as clusters 1–3:
+    Full fidelity across every package — grammar, checker, runtime, language server, docs and
+    tests — the same bar as clusters 1–3.
 
 ### M15
 
@@ -3596,6 +3767,21 @@ intentional user override, not a process lapse.
 Scoped 2026-08-01 via a `/grill-me`-style round (D44-D46, `PLAN_BROWSER_PERF_SECURITY.md` §2.8) —
 three open branches resolved with the user before any code was written:
 
+- **D44 (fix strategy):** `runLoadCore`'s per-iteration session state stops cloning a frozen
+  `baseSessionHeaders`/`baseCookieJar` snapshot and instead calls `sessionCache.ensure(name, ...)`
+  fresh every iteration — cheap on a cache hit (the normal case), and it means any VU's reactive
+  401-triggered refresh becomes immediately visible to every other VU's next iteration, not just
+  its own. The upfront fail-fast session-establishment call before the VU loop starts is unchanged.
+- **D45 (relogin-storm guard, user opted to include it in this pass):** `refreshSessions` currently
+  invalidates the session cache unconditionally on a 401, even if another VU already refreshed it
+  moments earlier — `SessionCache` gains an opaque `currentRef`/guarded `reestablish` pair (same
+  identity-guard pattern its own TTL-eviction logic already uses) so a stale-triggered refresh never
+  clobbers a fresher one; `EvalCtx` gains an optional `sessionRefs` map, populated only at D44's new
+  load-path call site (the regular `tflw run` path is untouched, zero regression risk there).
+- **D46 (milestone scope):** fix + unit tests only. Re-measuring `checkout-burst.tflw` against k6
+  and updating `acceptance/README.md`'s verdict is a separate follow-up milestone (M38, reserved,
+  not yet scoped) — mirrors this arc's own M35b→M35c→M35d split.
+
 ### M38
 
 <sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
@@ -3603,6 +3789,14 @@ three open branches resolved with the user before any code was written:
 **M38 — re-measured (2026-08-01)**
 
 Picked up immediately after M37 in the same session. Mirrors M35d's own procedure after M35c:
+
+- Brought up testFlow-tests' Docker stack fresh (`node cli.mjs start` in that repo).
+- **Rebuilt tflw's CLI bundle first** (`npm run build`) — the checked-in `dist/cli.cjs` predated
+  the M37 commit by a couple hours, so the first sanity check would have silently re-measured the
+  *pre-fix* code. Caught by comparing the bundle's mtime against `git log -1`'s commit time before
+  running anything, not after getting a suspicious number.
+- Reset the load target (`POST /admin/load/reset`, bearer admin auth via `admin@example.com`) once
+  before each of three runs: tflw twice (noise check), k6 once — same methodology M35d used.
 
 ### M39
 
@@ -3625,7 +3819,7 @@ precedent of stopping to check in before touching the hot-path interpreter code 
 If the ladder is inconclusive, the fallback is to re-scope D33a's tolerance and close the thread
 (same as D38's fallback for M35b), not open an M40. Full design: `PLAN_BROWSER_PERF_SECURITY.md`
 §2.10 (decisions D47-D52). This block is the scoping, written before any of it ran; M39 was
-implemented the same day and its results are in *M39 — findings* below.
+implemented the same day and its results are recorded separately, as *M39 — findings*.
 
 ### M40
 
@@ -3651,8 +3845,8 @@ tolerance for contended-tail-latency specifically and closing the thread — sam
 already used once each (D55). M40 (and M41, if it happens) still finish before the pentest arc
 starts — the third time that ordering line gets pushed out (D56). Full design:
 `PLAN_BROWSER_PERF_SECURITY.md` §2.11 (decisions D53-D56). This block is the scoping, written
-before any of it ran; M40 was implemented the same day and its results are in *M40 — findings*
-below.
+before any of it ran; M40 was implemented the same day and its results are recorded separately,
+as *M40 — findings*.
 
 ### M41
 
@@ -3827,7 +4021,10 @@ Asked to write a README enumerating every functional/performance × `parallel`/`
 × `--workers`/`--parallel` combination and confirm each one "works as expected" — not just read the
 code, but build throwaway fixtures against a real build and watch them run. Two combinations that
 unit tests hadn't covered (no test exercised two *sequential* workload tests in one file, nor a
-`sequential` pair under `--workers N>1`) turned out to be genuinely broken:
+`sequential` pair under `--workers N>1`) turned out to be genuinely broken — a stale `runStart`
+reused across batches on the main-process path, and `runLoadCore` ignoring the DSL keyword entirely
+inside a forked `--workers` shard. Both are fixed here, with three new unit tests and the
+concurrency model itself finally written down in `packages/runtime/README.md`.
 
 ### M55
 
@@ -4104,6 +4301,12 @@ same push.
 Four `tflw check` "no problems found"s over files that cannot run. The root cause is three lines in
 `checkValue`:
 
+```ts
+case 'CallExpr':
+  for (const arg of value.args) checkValue(arg, bound, diags);
+  break;
+```
+
 ### M88a
 
 <sub>cited from SPEC.md · lifted from `PLAN_M88_CLIENT_CONTRACT.md`</sub>
@@ -4295,7 +4498,9 @@ not started.
 **`M97c` — shipped 2026-08-06**
 
 D144 and D143 halves 2–3. One new code, **`TF043`**. Closes `B5-02` (all three halves) and splits
-`A4-07`; ledger 93 → 95 open, which is the right direction — see below.
+`A4-07`; ledger 93 → 95 open, which is the right direction: the rise is `M97c-01`, `M97c-02` and
+`M97c-03`, three rows this milestone's own drift guard and coverage test found and filed where
+they were found.
 
 ### M97d
 
@@ -4489,6 +4694,12 @@ folding a layout decision into a wording change would have buried it.
 `M106` merged and left `main` **red**. Node 24 green, Node 22 green through every test step, and the
 job failing only at `Coverage` — one assertion out of 1,853:
 
+```
+not ok 334 - a uniformly fast server does not trigger a backOff warning
+  packages/runtime/test/load.test.ts:965
+  unexpected back-off warning against a healthy server, ratio 0.25492465234067296
+```
+
 ### M109
 
 <sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
@@ -4586,6 +4797,19 @@ Closes `M97a-01`, `M97a-02`, `M97a-03`, `M97a-06`, `M97a-16`. **Withdraws `M97a-
 
 `FU-18`, alone, because it is the only grammar change in the arc (D264). All six steps below shipped
 as written. Three things the plan did not predict, each recorded where it was found:
+
+- **`TF051` would have blocked programs that run.** Making absolute URLs legal turned an existing
+  *error* into a false positive — an absolute step resolves no base URL, and `TF051` demands one.
+  Not in any decision here, found by reading the passes that fire on *absence* after changing what
+  is legal. The general form is worth keeping: **a change that makes a new input legal changes the
+  meaning of every rule that already ran on the old ones.**
+- **`TF059` was not in the plan.** `api billing GET https://x/y` names a service *and* an absolute
+  URL; one of the two is dead text. Silently picking a winner is the exact failure class `FU-18` was
+  filed about, so it could not be left. D266.
+- **The first decision-60 control was a control of nothing** — `let ratio = get / 2` contains no
+  `://`, so the mutation that strips `canStartPath()` from the *new* branch sailed past it. The
+  scoped sweep caught it (1 survived, then 0). **A control has to exercise the branch it controls,
+  not the decision that branch is named after.**
 
 ### M125b2
 

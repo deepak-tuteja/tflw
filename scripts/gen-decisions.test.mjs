@@ -176,6 +176,72 @@ test('a fenced statement is closed, and the sentence it illustrates comes with i
   assert.doesNotMatch(body, /How the work went/, 'and it stops there — one sentence, not the section (D670)');
 });
 
+test('a colon takes the enumeration it introduces, and stops at a paragraph', () => {
+  // 29 entries published a sentence with its object removed — `Three clauses:` and no clauses. The
+  // object was in the record all along, one blank line down. Extending across a colon was tried once
+  // before and reverted, because the blanket form took whatever came next and `M54` grew to 3.6 KB of
+  // progress log. What survives the revert is grammatical, not dimensional: an enumeration is what
+  // the sentence promised, a paragraph is the next thought.
+  const list = [
+    '### D295 — acceptance: a positive, a negative, and a not-applicable case',
+    '',
+    'Each rule must be demonstrated three ways against the real target:',
+    '',
+    '- **fires** against a response that genuinely violates it;',
+    '- **stays silent** against a response that does not;',
+    '- **reports not-applicable** where its precondition is unmet.',
+    '',
+    'How the work went, which is not the decision.',
+    '',
+  ].join('\n');
+  const body = extractBlock(list, { line: 1, kind: 'heading', headingLevel: 3 });
+  assert.match(body, /reports not-applicable/, 'the list the colon promised comes with it');
+  assert.doesNotMatch(body, /How the work went/, 'and it stops there — the statement, not the section (D670)');
+
+  // A loose list puts a blank line between its items, and a blank-line rule stops at the first one.
+  // `D293` and `D317` are both loose, so that rule would have published item 1 and two lines of item
+  // 2, cut off at its own colon. A truncated list is worse than the teaser: it looks complete.
+  const loose = [
+    '### D293 — the target',
+    '',
+    '`M128a` is therefore:',
+    '',
+    '1. **`env secureLocal`**, its own dedicated env.',
+    '',
+    '2. **A hygiene-only `vuln/` slice**, supplying the positives the clean app cannot produce:',
+    '',
+    '   ```',
+    '   GET /vuln/cors-wildcard',
+    '   ```',
+    '',
+    '3. **`VULNS.md`**, one row per planted flaw.',
+    '',
+    'A later paragraph that is not part of the list.',
+    '',
+  ].join('\n');
+  const looseBody = extractBlock(loose, { line: 1, kind: 'heading', headingLevel: 3 });
+  assert.match(looseBody, /VULNS\.md/, 'the blank lines between items are content, not a terminator');
+  assert.equal((looseBody.match(/```/g) ?? []).length, 2, 'a fence nested in an item comes with the item');
+  assert.doesNotMatch(looseBody, /A later paragraph/, 'the list ends at the first unindented non-item');
+
+  // One step only. Item 2 above ends on a colon of its own; chaining would walk the section an item
+  // at a time. And a paragraph after a colon is the next thought, not the sentence's object — that is
+  // `M12`, whose colon introduced the first of six sub-parts and would have published one of them.
+  const para = [
+    '### M12 — Documentation site',
+    '',
+    'Six lettered sub-parts:',
+    '',
+    '**(a) a canonical structured manifest.**',
+    '',
+  ].join('\n');
+  assert.doesNotMatch(
+    extractBlock(para, { line: 1, kind: 'heading', headingLevel: 3 }),
+    /canonical structured manifest/,
+    'a paragraph after a colon is not taken',
+  );
+});
+
 test('a heading that names an id outranks a table cell that only lists it', () => {
   // Found the moment this milestone's own proofing list was written: an index table naming 100+
   // identifiers made every one of them a candidate, and a cell in it beat the heading that took the

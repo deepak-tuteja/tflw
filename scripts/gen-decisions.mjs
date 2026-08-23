@@ -295,24 +295,80 @@ function isCommentOnly(lines, i) {
 }
 
 /**
- * The statement. One block, except where the first block is a fenced code sample: a fence is an
- * illustration and never a statement on its own, so the sentence after it is taken too.
+ * A top-level list marker. Indented markers are continuations of the item above and are matched by
+ * the indent rule instead, so this is deliberately anchored at column zero.
+ */
+const LIST_ITEM = /^([-*+]|\d+[.)])\s/;
+
+/**
+ * The enumeration beginning at `k`, or `-1` if what begins there is not one.
  *
- * A paragraph ending in a colon is incomplete the same way, and is deliberately **not** handled
- * here. Extending across a colon was tried and reverted: the block a colon introduces is often a
- * list with no blank line in it, so `M54` grew to 3.6 KB of progress log — `D670`'s mistake exactly,
- * arriving through a repair for something else. A colon-ended block is a statement that does not
- * stand alone, and `D669` puts that repair in the record, not in the extractor.
+ * A table or a fence is one block. A **list is not**: a loose list puts a blank line between its
+ * items, and `takeBlock` stops at the first of them. `D293` and `D317` are both loose, so a
+ * blank-line rule would have published item 1 and the opening two lines of item 2, cut off at its
+ * own colon — a truncated list is worse than the teaser it replaced, because it looks complete. A
+ * list therefore runs until a line that is neither blank, nor a marker, nor indented under one.
+ *
+ * @param {string[]} lines @param {number} k @returns {number} the line after it, or -1
+ */
+function takeEnumeration(lines, k) {
+  const first = lines[k] ?? '';
+  if (/^\s*(```+|~~~+)/.test(first) || /^\s*\|/.test(first)) return takeBlock(lines, k);
+  if (!LIST_ITEM.test(first)) return -1;
+  let j = k;
+  let end = k;
+  while (j < lines.length) {
+    if (/^#{1,6}\s/.test(lines[j])) break;
+    if (lines[j].trim() === '') { j++; continue; }
+    if (!LIST_ITEM.test(lines[j]) && !/^\s/.test(lines[j])) break;
+    j = takeBlock(lines, j);
+    end = j;
+  }
+  return end;
+}
+
+/**
+ * The statement. One block, except in the two places where a block ends mid-thought.
+ *
+ * A **fence** is an illustration and never a statement on its own, so the sentence after it is
+ * taken too.
+ *
+ * A **colon** ends a sentence whose object is the block below it. `Three clauses:` with the three
+ * clauses withheld is not the statement, it is the statement with its object removed — and the
+ * object is already in the record, one blank line down, in the record's own bytes. So the
+ * enumeration a colon introduces is taken: a list, a table, or a fence.
+ *
+ * A **paragraph** after a colon is not taken, and that is the whole of the narrowing. Extending
+ * across a colon was tried once before and reverted, because the blanket form pulled in whatever
+ * came next and `M54` grew to 3.6 KB of progress log. The distinction that survives the revert is
+ * grammatical rather than dimensional: an enumeration is what the sentence promised, a paragraph is
+ * the next thought. Where an enumeration really is the section — `M54` again — the colon comes out
+ * of the record instead, which is where `D669` puts that repair.
+ *
+ * One step only. `D293`'s list ends on a colon of its own, introducing a fence nested inside it;
+ * chaining would walk the whole section an item at a time.
  *
  * @param {string[]} lines @param {number} i @returns {number} the line after the statement
  */
 function takeStatement(lines, i) {
-  const j = takeBlock(lines, i);
-  if (!/^\s*(```+|~~~+)/.test(lines[i] ?? '')) return j;
+  let j = takeBlock(lines, i);
+  if (/^\s*(```+|~~~+)/.test(lines[i] ?? '')) {
+    const k = skipBlank(lines, j);
+    if (k >= lines.length || /^#{1,6}\s/.test(lines[k])) return j;
+    j = takeBlock(lines, k);
+  }
+  if (!(lines[j - 1] ?? '').trimEnd().endsWith(':')) return j;
+  const k = skipBlank(lines, j);
+  if (k >= lines.length || /^#{1,6}\s/.test(lines[k])) return j;
+  const end = takeEnumeration(lines, k);
+  return end > k ? end : j;
+}
+
+/** @param {string[]} lines @param {number} j @returns {number} the next line that is not blank */
+function skipBlank(lines, j) {
   let k = j;
   while (k < lines.length && lines[k].trim() === '') k++;
-  if (k >= lines.length || /^#{1,6}\s/.test(lines[k])) return j;
-  return takeBlock(lines, k);
+  return k;
 }
 
 /**
