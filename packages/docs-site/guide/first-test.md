@@ -48,6 +48,52 @@ like it run **once per run**, cached — a test opts in with `as admin` and
 gets the session's captured headers auto-applied, no repeated login boilerplate. More on this in
 [Sessions & auth](/guide/sessions).
 
+### Chaining a captured value forward
+
+Most real tests are a chain: create something, keep its id, use it, then assert against what the
+server did with it. Each `capture` binds into the test's own scope, so a later step can interpolate
+it into a path, a body, or another assertion's expected value:
+
+```tflw
+test "an order carries the product it was created from"
+  api POST /products body { name: unique("Widget"), price: 9.99 }
+  expect status equals 201
+  capture body.id as productId
+
+  api POST /orders body { productId: {productId}, qty: 2 }
+  expect status equals 201
+  capture body.id as orderId
+
+  api GET /orders/{orderId}
+  expect status equals 200
+  expect body.productId equals {productId}
+  expect body.total equals 19.98
+```
+
+Two things worth noticing. The last assertion compares a server-computed total against a number the
+test worked out itself, which is the difference between checking that an endpoint answered and
+checking that it answered *correctly*. And `{productId}` is used twice — once to build a request,
+once as an expected value — because a captured name is an ordinary value and not a special
+request-building thing.
+
+## What a failure looks like
+
+Say the API returns the unit price where the test expects a line total. Only the failing step
+prints, and it prints the moment it fails:
+
+```console
+  ✗ an order carries the product it was created from (34 ms)
+    ✗ expect body.total equals 19.98
+      expected body.total to equal 19.98, but got 9.99
+
+FAIL 0/1 passed, 1 failed · env local · seed 868036364 · now 2026-08-23T09:12:44.180Z · 41 ms
+```
+
+The four assertions above it passed and stayed quiet — by default a run prints one line per test and
+expands only what broke. The test also **stopped** at that line: `expect` is hard, so the
+`capture`-and-assert chain never continued past a response it could not trust. Had that been a
+`check`, the run would have carried on and reported every other problem in the same pass.
+
 ## Data-driven cases
 
 `with each` runs one reported case per row of an inline table:
