@@ -71,7 +71,8 @@ CI run locally with `tflw run --seed <n>` straight from the dashboard. They're d
 JUnit only allows `<properties>` inside a `<testsuite>`, not at the root.
 
 A workload-bearing test contributes one `<testcase>` per declared `threshold` (see
-[Load testing](/guide/load-testing)); a run whose generator saturated marks them `<skipped>` rather
+[Load testing](/guide/load-testing)); a run whose [generator
+saturated](/guide/load-results#the-generator-diagnoses-itself) marks them `<skipped>` rather
 than passed or failed.
 
 ## Secrets are redacted automatically

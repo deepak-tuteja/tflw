@@ -26,7 +26,7 @@ features:
     link: /guide/debugging
     linkText: Running & debugging tests
   - title: One language for API, browser, load & security testing
-    details: UI steps share the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing two tools together. <a href="/tflw/guide/performance">Load testing</a> (ramp/hold/step/spike, thresholds) is validated within a few percent of k6 on real contended workloads — <a href="/tflw/guide/load-testing#validated-against-k6-and-artillery">see the numbers</a>. <a href="/tflw/guide/security">Security scanning</a> runs inside the same test — hygiene, authorization, input handling and an active crawl — each behind a written authorized target declaration.
+    details: UI steps share the same grammar as API steps, so a login → seed-via-API → drive-UI → assert-backend-state test stays one readable file instead of gluing two tools together. <a href="/tflw/guide/performance">Load testing</a> (ramp/hold/step/spike, thresholds) is validated within a few percent of k6 on real contended workloads — <a href="/tflw/guide/load-results#validated-against-k6-and-artillery">see the numbers</a>. <a href="/tflw/guide/security">Security scanning</a> runs inside the same test — hygiene, authorization, input handling and an active crawl — each behind a written authorized target declaration.
     link: /guide/functional
     linkText: Start with functional testing
   - title: Real editor support

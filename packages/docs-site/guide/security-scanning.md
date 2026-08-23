@@ -138,10 +138,11 @@ Three things follow, and they are worth knowing before you read a finding:
   configuration these are the same thing. Behind a load balancer whose nodes are configured
   differently, they need not be — and the failure message says so rather than leaving you to
   discover it.
-- **It reports what the host gives a *current* client, not everything the host would accept.** A
-  server that still supports RC4 but prefers AES-GCM will negotiate AES-GCM, and `tls-weak-cipher`
-  stays correctly silent — because that is what your callers get. Finding every suite a server would
-  accept takes one handshake per suite; that is a scanner's job, not an assertion's.
+- **By default it reports what the host gives a *current* client, not everything the host would
+  accept.** A server that still supports RC4 but prefers AES-GCM will negotiate AES-GCM, and
+  `tls-weak-cipher` stays correctly silent — because that is what your callers get. Asking the wider
+  question costs one handshake per candidate suite, so it is opt-in: [`probe
+  ciphers`](#probe-ciphers-—-asking-what-the-host-offers) below.
 - **If the handshake cannot be made, both rules are "not applicable" — never a failure.** A refused
   connection, a timeout, or a self-signed certificate on a run without `insecure true` gets you:
 
@@ -157,6 +158,45 @@ client will normally go. It has to. A server that speaks nothing but TLS 1.0 wou
 the handshake, and the rule whose entire job is to catch that server would report "could not tell".
 Offering an old floor never drags a healthy server down — the server still picks the newest version
 you both speak, so a TLS 1.3 host is still reported as TLS 1.3.
+
+## `probe ciphers` — asking what the host *offers*
+
+The default reading has a false negative it cannot see. A server that still offers RC4 alongside
+AES-GCM negotiates AES-GCM with tflw's own client, reads clean, and stays clean — while an older
+client on the same host gets RC4. Answering *what does this host offer?* rather than *what did it
+give me?* takes one handshake per candidate suite, and that is a fourth sub-clause on the
+authorized target:
+
+```tflw-config fragment
+defaults
+  authorized target "https://localhost:8443" reason "self-hosted test fixture"
+    probe ciphers
+```
+
+With it on, `sec/tls-weak-cipher` reports every suite the host **accepted**, not just the one it
+negotiated. It is opt-in per host for the reason the other three sub-clauses are: this is the one
+construct in the language whose purpose is many connections to one host, and a scan that opens many
+connections should be something you asked for on a host you named.
+
+Four things the widened rule is careful to say out loud, because a cipher enumerator that is quiet
+about its own limits is worse than one that never ran:
+
+- **Withheld is announced, not passed over.** Without the opt-in, the passing line carries `note:
+  sec/tls-weak-cipher judged only the suite this host gave tflw's own client …`. Silence would
+  recreate exactly the false negative the clause exists to remove — so the note prints on green
+  lines too.
+- **Unprobed is never rendered as clean.** A host with no `probe ciphers` is absent from the offer
+  report rather than present with an empty one.
+- **The ceiling is printed.** Enumeration can only offer what tflw's own OpenSSL will put in a
+  ClientHello, and on OpenSSL 3.x that is a smaller set than you would guess: **10 of the 18
+  candidates** — RC4, 3DES, single DES and the EXPORT families among them — cannot be offered at
+  all. Those come back as *unaskable*, reported separately from the ones the server actually
+  declined, because a suite nobody offered says nothing about the server.
+- **The enumerating connection does not verify the certificate**, and that is a decision rather
+  than an oversight. Reaching a legacy suite needs `@SECLEVEL=0`, which also lowers what counts as
+  an acceptable certificate. It is admissible only because that connection reads exactly one bit —
+  did this peer accept this suite — sends no credential, transfers no application data and reads no
+  body. `sec/tls-version-old` keeps reading the single verifying probe.
 
 ## Your session's login response is scanned too
 
@@ -212,6 +252,8 @@ claims is a line somebody can read in the file that claims it.
 
 ## Related
 
+- [Security & vulnerability testing](/guide/security#what-a-green-scan-does-not-claim) — the bar all
+  four scans are held to, and why a state that is not an answer is never printed as clean
 - [Assertions in depth](/guide/assertions) — the `expect`/`check` split and severity floors
 - [Config & environments](/guide/config) — where `authorized target` lives
 - [Browser testing: advanced scenarios](/guide/browser-advanced) — the a11y scan this shares its

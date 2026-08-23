@@ -58,13 +58,9 @@ The traffic seed is the opposite. It re-issues requests your suite really made, 
 and the code behind them runs — but it can only ever be as wide as the suite that ran before it. It
 deduplicates by route, so forty calls to `/products/{id}` are one thing to crawl, not forty.
 
-The spider seed is the one for a surface with no document and no test coverage. It **fetches and
-parses; it does not render** — there is no browser engine, so a client-rendered SPA is reported as a
-stated gap rather than as a zero. It takes optional `max pages` and `max depth` sub-clauses, walks
-breadth-first, and stays same-origin: a link off-site is reported as a skip rather than followed.
-Because learning a route exists means fetching the page that links to it, the walk is its own phase
-and prints its cap before it starts — see [When a crawl finds nothing, it fails](#when-a-crawl-finds-nothing-it-fails)
-for how a capped walk is reported.
+The spider seed is the one for a surface with no document and no test coverage — it gets [its own
+section](#seed-spider-—-walking-a-surface-nobody-wrote-down) below, because it is the only seed whose
+enumeration is itself traffic.
 
 Use all three. Each one's blind spot is another's strength.
 
@@ -101,6 +97,55 @@ A crawl that sends requests and reaches none of them **fails** (`TF068`) rather 
 run over responses it never judged. A wall of `404`s is nearly always an addressing disagreement —
 most often a document describing a prefix the host does not actually serve.
 :::
+
+## `seed spider` — walking a surface nobody wrote down
+
+No OpenAPI document, no test coverage, and a console somebody stood up in 2019. The spider seed
+starts at a path, fetches it, reads its links and forms, and follows them:
+
+```tflw
+crawl "the admin console" as peer
+  seed spider "/admin"
+    max pages 200
+    max depth 3
+
+  expect response has no critical security violations
+```
+
+`max pages` and `max depth` are the bound, and the surface is the one place in a crawl where volume
+is genuinely unknown in advance — a document has as many operations as it has, and traffic has as
+many routes as your suite touched, but a site links to whatever it links to. The walk is
+**breadth-first**, so `max depth` means distance from the starting page rather than position in
+some traversal order.
+
+**It fetches and parses; it does not render.** There is no browser engine here, and that is a
+safety statement before it is a scope one: every gate this arc built — `allow hosts`, the blocked-port
+list, `authorized target`/`TF060`, the sequential pacing — lives on the request path, so a spider
+issuing ordinary requests inherits all of them. A rendering crawl would have had to re-establish
+each of them at a different layer.
+
+Two consequences worth knowing before you read the output:
+
+- **The walk is a phase of its own, and it discloses before it walks.** `seed openapi` and `seed
+  traffic` resolve their surface without sending anything, so a crawl using only those prints one
+  bounding line — the probe total — before it probes. A spider cannot: the sole way to learn a route
+  exists is to fetch the page linking to it, so enumeration *is* traffic. It therefore prints **two**
+  lines, the walk's cap before it walks and the usual probe total before it probes. Neither phase
+  sends anything before a line that bounds it. A walk stopped by `max pages`/`max depth` is marked
+  capped, so a truncated surface can never read as a complete one, and the pages walked are reported
+  **beside** `discovered = withheld + sent` rather than inside it — a fetched page is not an
+  operation.
+- **An origin with no links is a stated gap, not a zero.** Pointed at a client-rendered SPA the
+  spider finds a shell it can fetch and nothing it can follow. That origin goes to
+  `scanBlindSpot.declines` as *needs rendering to crawl*, not into the discovered count as a nought.
+  A scan that saw nothing and a site that has nothing are different facts, and only one of them is a
+  limitation of the tool.
+
+Two smaller rules that only bite once. Links are resolved against the URL a page **finally**
+landed on, so a console answering `/admin` with a redirect does not have its relative links read
+against the wrong base. And the walk is **same-origin**: a link off-site is reported as a skip
+rather than followed, because a crawl is authorized per origin and an off-site link is a host
+nobody declared.
 
 ## Everything discovered is accounted for
 
@@ -224,3 +269,15 @@ A crawl runs **after every test in its file** and before any `after file` hook, 
 declaration. `seed traffic` is the traffic the run itself produced, so ordering by position would make
 what a crawl discovers depend on where you typed it. `--tag`, `--only` and `--failed` select a crawl
 by name exactly as they select a test.
+
+## Related
+
+- [Security & vulnerability testing](/guide/security#what-a-green-scan-does-not-claim) — the bar all
+  four scans are held to, and why a state that is not an answer is never printed as clean
+- [Hygiene scanning](/guide/security-scanning), [authorization
+  testing](/guide/authorization-testing) and [input-handling testing](/guide/input-handling) — the
+  three matchers a crawl applies to everything it discovers
+- [Findings, baselines & the gate](/guide/findings-and-baselines) — what happens to a finding a
+  crawl raises
+- [Config & environments](/guide/config) — `authorized target` and the `probe …` sub-clauses a
+  crawl reads
