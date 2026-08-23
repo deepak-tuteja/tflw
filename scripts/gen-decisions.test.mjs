@@ -679,3 +679,76 @@ test('the legacy sequence indexes PLAN.md\'s ordered list, sub-items included', 
   assert.match(legacy.get('99b'), /mTLS/);
   assert.doesNotMatch(legacy.get('99'), /The next item/);
 });
+
+test('a ledger row id is not an anchor for the milestone whose number it starts with', () => {
+  // `M133-01` is a row of the review ledger — the fourth citation namespace, which this index
+  // publishes mentions of and never content from. Every anchor pattern ended `[—.:-]`, and that
+  // trailing hyphen matched the row id's own, so `**\`M133-01\` stays at eleven words**` registered
+  // as a definition of `M133`. It won, and `M133` was published as a sentence from `M135`'s plan
+  // about what `M135` does *not* add. 56 anchors across 26 identifiers were this shape.
+  const anchors = collectAnchors([
+    {
+      path: 'PLAN_M135_SARIF.md',
+      text: [
+        '**`M133-01` stays at eleven words** — this milestone adds nothing to the D24b catch-up.',
+        '',
+        '- **`M97d-01`** (nine config-only keywords absent from both wordlists) — Tier 3 adds two.',
+      ].join('\n'),
+    },
+  ]);
+  assert.equal(anchors.get('M133'), undefined, 'a row id does not define the milestone it is filed by');
+  assert.equal(anchors.get('M97d'), undefined, 'nor does a lettered one');
+
+  // The guard is one character wide, so the ordinary forms have to be shown still working.
+  const real = collectAnchors([{ path: 'PLAN_M133_X.md', text: '**`M133` — the editor catch-up.**' }]);
+  assert.equal(real.get('M133')?.[0].kind, 'boldLead');
+});
+
+test('the plan that documents the index is not a source for the entries it tabulates', () => {
+  // `PLAN_M152_DECISION_PROVENANCE.md` has a proofing table with a row per entry, so 11 of its rows
+  // became anchor candidates for identifiers they only discuss — including the row recording that
+  // `M133` is published from the wrong record, which would then have been published *as* `M133`.
+  // It is still where `D666`-`D688` are taken, and those are written the way every plan writes a
+  // decision: the block's title is the identifier.
+  const anchors = collectAnchors([
+    {
+      path: 'PLAN_M152_DECISION_PROVENANCE.md',
+      text: [
+        '### `D687` — the index\'s own citations are `M152b`\'s',
+        '',
+        'The decision itself.',
+        '',
+        '| `M133` | *(not a member)* — publishes a sentence from the wrong record | `§8.3` |',
+      ].join('\n'),
+    },
+  ]);
+  assert.equal(anchors.get('D687')?.[0].kind, 'heading', 'its own decisions still anchor');
+  assert.equal(anchors.get('M133'), undefined, 'a row about an entry is not that entry');
+});
+
+test('an index table naming the id in its second column is the weakest anchor, and the only one M133 has', () => {
+  // `M133` is the corpus's one milestone with neither a plan of its own nor a `PROGRESS.md` entry.
+  // The single block that states it is a row of its arc's index, whose first column is the tier and
+  // whose second is the milestone — a shape no pattern reached, because every table rule required
+  // the id in the lead cell.
+  const record = [
+    '| | milestone | what |',
+    '|---|---|---|',
+    '| Tier 2 debt | `M132a`/`M132b` | D350-D363, the tier\'s own ledger cleared |',
+    '| editors | `M133` | D24b\'s LSP/VS Code catch-up, batched across Tier 1 **and** Tier 2 grammar |',
+  ].join('\n');
+  const anchors = collectAnchors([{ path: 'PLAN_BROWSER_PERF_SECURITY.md', text: record }]);
+  assert.equal(anchors.get('M133')?.[0].kind, 'tableSecond');
+
+  // It ranks last, so it can never take an identifier that has any other block at all.
+  const chosen = pickAnchor('M133', [
+    { file: 'PLAN_BROWSER_PERF_SECURITY.md', line: 4, kind: 'tableSecond', headingLevel: 0 },
+    { file: 'PLAN_M132_TIER2_DEBT.md', line: 9, kind: 'tableRow', headingLevel: 0 },
+  ]);
+  assert.equal(chosen.kind, 'tableRow', 'the lead-cell row still outranks it');
+
+  // And the row publishes with the header it is a row of: on its own, `| a | b |` has no delimiter
+  // line, so every renderer shows literal pipes.
+  const body = extractBlock(record, { line: 4, kind: 'tableSecond', headingLevel: 0 });
+  assert.match(body, /^\| \| milestone \| what \|\n\|---\|---\|---\|\n\| editors \| `M133`/);
+});

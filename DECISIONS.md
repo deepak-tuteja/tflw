@@ -5041,9 +5041,11 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
 
 ### M133
 
-<sub>cited from SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
-**`M133-01` stays at eleven words** — this milestone adds nothing to the D24b editor catch-up.
+| | milestone | what |
+|---|---|---|
+| editors | `M133` | D24b's LSP/VS Code catch-up, batched across Tier 1 **and** Tier 2 grammar, plus `SPEC.md` §9.11 for the authorization scan (`M131-02`) |
 
 ### M134
 

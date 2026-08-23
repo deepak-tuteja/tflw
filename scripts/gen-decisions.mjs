@@ -128,6 +128,21 @@ export function collectCitations(files) {
 export const LOCAL_M_NAMESPACE = new Set(['PLAN_DOCS_REFRESH.md', 'PLAN_CODE_THEME.md', 'PLAN_BRAND_MARK.md']);
 
 /**
+ * This milestone's own plan is a record *of the index*, so a block in it that names some other
+ * identifier is by construction a citation: `§8`'s proofing tables have a row per entry, and `§9`'s
+ * section titles name the decision each class turned into. Left alone, 11 of its table rows became
+ * anchor candidates for ids they only discuss — including the one row that says `M133` is published
+ * from the wrong record, which would have been published *as* `M133`.
+ *
+ * It is still the record that takes `D666`–`D688`, and those are written the way every plan writes
+ * a decision: the block's title *is* the identifier. So the file anchors through the three forms
+ * where that is true and through no other. This is a property of a self-documenting record, not of
+ * this filename — any later plan that tabulates the index needs the same line.
+ */
+const SELF_DOCUMENTING = new Set(['PLAN_M152_DECISION_PROVENANCE.md']);
+const TITLES_ITS_OWN = new Set(['h1', 'heading', 'boldLead']);
+
+/**
  * The seven forms a private record uses to define an identifier. Ordered by how strongly each says
  * "this block *is* the definition" rather than "this block mentions it" — `pickAnchor` reads the
  * order as precedence (D682).
@@ -140,26 +155,26 @@ export const LOCAL_M_NAMESPACE = new Set(['PLAN_DOCS_REFRESH.md', 'PLAN_CODE_THE
  * measurement's pattern set and not of the records (D684).
  */
 const ANCHORS = [
-  { kind: 'roadmap', only: 'PLAN.md', re: /^\s*[-*]\s+\*\*`?(M\d{1,3}[a-z]?\d?)`?\s*[—:-]/ },
+  { kind: 'roadmap', only: 'PLAN.md', re: /^\s*[-*]\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—:-]/ },
   // `PLAN.md`'s ordered list sometimes titles an item with the milestone it covers —
   // `109. **M15 — Docs site polish…**`. So `P#109` and `M15` name the same block, in the two
   // namespaces at once: the collision of §1.2 seen from the inside.
-  { kind: 'roadmapTitle', only: 'PLAN.md', re: /^\d{1,3}\.\s+\*\*`?(M\d{1,3}[a-z]?\d?)`?\s*[—:-]/ },
-  { kind: 'h1', re: /^#\s+.*?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\s*[—:-]/ },
-  { kind: 'heading', re: /^#{1,5}\s+(?:\d+\.\s*)?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\s*[—.:-]/ },
+  { kind: 'roadmapTitle', only: 'PLAN.md', re: /^\d{1,3}\.\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—:-]/ },
+  { kind: 'h1', re: /^#\s+.*?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—:-]/ },
+  { kind: 'heading', re: /^#{1,5}\s+(?:\d+\.\s*)?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—.:-]/ },
   // `## M50 shipped 2026-08-02 — collapse `scenario` into `test``: a heading whose id is followed by
   // a word rather than a dash. It has to outrank `headingMid`, because that same line ends
   // `(D127, PLAN_DISCOVERY_EXCLUDE.md)` and a weaker rule reading the parenthetical first would
   // resolve the heading to the decision it *cites* instead of the milestone it *is*.
-  { kind: 'headingLoose', re: /^#{1,5}\s+`?(M\d{1,3}[a-z]?\d?)`?\s+\w/ },
-  { kind: 'boldLead', re: /^\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\s*[—.:-]/ },
-  { kind: 'decisionsTaken', re: /^\*\*Decisions? taken:?\*\*\s*`?(D\d{1,3}[a-z]?)`?\s*[—-]/ },
-  { kind: 'listBold', re: /^\s*[-*]\s+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\*{0,2}\s*[—.:-]/ },
+  { kind: 'headingLoose', re: /^#{1,5}\s+`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\s+\w/ },
+  { kind: 'boldLead', re: /^\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—.:-]/ },
+  { kind: 'decisionsTaken', re: /^\*\*Decisions? taken:?\*\*\s*`?(D\d{1,3}[a-z]?)(?!-\d)`?\s*[—-]/ },
+  { kind: 'listBold', re: /^\s*[-*]\s+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*[—.:-]/ },
   // `PROGRESS.md`'s commit table: `| `b017c9b` | **M71** — … |`, and its milestone status table:
   // `| M20 — test-coverage audit follow-up: … | ✅ | … |`. Both are already one-sentence statements
   // of what a milestone shipped, written when it shipped — which is the shape `D670` wants, found
   // rather than reconstructed.
-  { kind: 'progressTable', re: /^\|\s*`?[0-9a-f]{6,10}`?\s*\|\s*\*{0,2}`?(M\d{1,3}[a-z]?\d?)`?\*{0,2}\s*[—-]/ },
+  { kind: 'progressTable', re: /^\|\s*`?[0-9a-f]{6,10}`?\s*\|\s*\*{0,2}`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*[—-]/ },
   // A heading naming an id parenthetically — `### 1.1 Driver boundary (D5)` — is the section that
   // *takes* the decision under `PLAN_BROWSER_PERF_SECURITY.md`'s own numbering, and it outranks the
   // two generic table kinds: a cell in a scope or index table only *names* an id, and letting a name
@@ -173,11 +188,19 @@ const ANCHORS = [
   // of which are about the milestone rather than the milestone's own account of itself. And it stays
   // below `boldLead`, which is what keeps `M50`'s `### M50 shipped … (D127, …)` from resolving
   // `D127` to the milestone that cites it.
-  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?[),`]/ },
-  { kind: 'tableLead', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\*{0,2}\s*[—:-]\s/ },
-  { kind: 'tableRow', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`?\*{0,2}\s*\|/ },
+  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?[),`]/ },
+  { kind: 'tableLead', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*[—:-]\s/ },
+  { kind: 'tableRow', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*\|/ },
+  // An index table whose first column is the category and whose second is the id —
+  // `| editors | \`M133\` | D24b's LSP/VS Code catch-up… |`. Weakest of all, so it can only ever win
+  // where nothing else matched: `M133` is the one milestone in the corpus with neither a plan of its
+  // own nor a `PROGRESS.md` entry, and this row of its arc's index is the only block that states it.
+  { kind: 'tableSecond', re: /^\|[^|]*\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*\|/ },
 ];
 const RANK = Object.fromEntries(ANCHORS.map((a, i) => [a.kind, i]));
+
+/** The anchor kinds whose block is one row of a table, and so needs its header to render. */
+const TABLE_KINDS = new Set(['progressTable', 'tableRow', 'tableLead', 'tableSecond']);
 
 /**
  * @param {{path: string, text: string}[]} records
@@ -196,6 +219,7 @@ export function collectAnchors(records) {
         if (!m) continue;
         const id = m[1];
         if (id[0] === 'M' && LOCAL_M_NAMESPACE.has(name)) continue;
+        if (SELF_DOCUMENTING.has(name) && !TITLES_ITS_OWN.has(a.kind)) continue;
         const level = /^(#{1,6})\s/.exec(ln)?.[1].length ?? 0;
         const list = found.get(id) ?? [];
         list.push({ file: path, line: i + 1, kind: a.kind, headingLevel: level });
@@ -425,7 +449,7 @@ export function extractBlock(text, anchor) {
       .replace(/\*\*/g, '')
       .trim();
     body = [`**${title}**`, '', ...lines.slice(i, j)].join('\n');
-  } else if (anchor.kind === 'progressTable' || anchor.kind === 'tableRow' || anchor.kind === 'tableLead') {
+  } else if (TABLE_KINDS.has(anchor.kind)) {
     // A row, with the header it is a row of. On its own a `| a | b |` line is not a table to any
     // markdown renderer — no delimiter row, so it renders as literal pipes, which is how 45 entries
     // published a milestone as `| M18 — … | ✅ | 2026-07-23 | 2026-07-23 |`. Walking up to the
