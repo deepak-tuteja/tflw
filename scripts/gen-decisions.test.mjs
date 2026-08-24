@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CITATION,
+  PREAMBLE,
   collectAnchors,
   RANGE,
   byId,
@@ -751,4 +752,24 @@ test('an index table naming the id in its second column is the weakest anchor, a
   // line, so every renderer shows literal pipes.
   const body = extractBlock(record, { line: 4, kind: 'tableSecond', headingLevel: 0 });
   assert.match(body, /^\| \| milestone \| what \|\n\|---\|---\|---\|\n\| editors \| `M133`/);
+});
+
+test('every identifier the preamble names resolves in the index the preamble introduces', () => {
+  // `D690`. The entries cannot drift from the records — `D668` regenerates them — but the preamble
+  // is hand-written, and six of its claims had gone stale by the time `M152a` was proofed. This is
+  // the one that misled hardest: it illustrated the `P#n`/`D<n>` collision with `P#43` and `D43`,
+  // and `D43` is cited only from source comments, which `§6` excludes. The index the sentence sits
+  // on top of therefore had no `D43`, so the worked example was the one example that did not work.
+  //
+  // Reads the real, tracked `DECISIONS.md` rather than a fixture: the claim under test is about
+  // this repository's actual index, and a fixture would only re-assert the generator's own output.
+  const entries = publishedIds(readFileSync(join(ROOT, 'DECISIONS.md'), 'utf8'));
+  assert.ok(entries.size > 400, 'sanity: the index was located');
+
+  const named = [...new Set([...PREAMBLE.matchAll(/`(P#\d{1,3}|D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`/g)]
+    .map((m) => m[1]))];
+  assert.ok(named.length >= 8, 'sanity: the preamble names worked examples');
+
+  const dangling = named.filter((id) => !entries.has(id));
+  assert.deepEqual(dangling, [], `the preamble names ${dangling.join(', ')}, which the index does not resolve`);
 });

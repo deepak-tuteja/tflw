@@ -623,11 +623,10 @@ regenerated, so the two can never say different things.
 | \`D318\` | decision 318 of the later sequence, which runs past 665 |
 | \`M137d\` | a milestone: a slice of work that shipped as one pull request |
 
-**\`P#n\` and \`D<n>\` are different sequences that collide on the number.** \`P#43\` is the
-publishable-bundle decision; \`D43\` is a browser-arc concurrency probe. The prefix reads as
-*principle* over a list that is mostly decisions, which is a wart — it is kept because it was
-already the spelling in 130 places and churning those to fix a letter would have been the larger
-change.
+**\`P#n\` and \`D<n>\` are different sequences that collide on the number.** \`P#16\` is soft
+assertions; \`D16\` is the load-execution model. The prefix reads as *principle* over a list that is
+mostly decisions, which is a wart — it is kept because it was already the spelling in 131 places in
+tracked prose, and churning those to fix a letter would have been the larger change.
 
 A milestone entry is a one-line statement of what it shipped. A decision entry is the decision
 itself, at whatever length it was taken.
@@ -642,9 +641,9 @@ index.
 | --- | --- |
 | \`decision 43\`, \`#43\` | \`P#43\` — the founding list, in the two spellings that predate \`P#n\` |
 | \`enterprise decision 3a\` | item 3a of the enterprise arc's own list, which has no entries here |
-| \`gap #9\` | an item of a backlog file that no longer exists in any form |
+| \`gap #9\` | item 9 of \`TFLW-GAPS.md\`, a nineteen-item expressiveness backlog — a \`testFlow-tests\` record, not published |
 
-**Read the sentence, not the number.** The founding list runs to 112 and the enterprise list to 22,
+**Read the sentence, not the number.** The founding list runs to 114 and the enterprise list to 22,
 so a bare \`decision n\` at or below 22 does not say which one it means. Eleven citations sit in that
 band and four of them mean the enterprise list — \`M12\`'s "decision 16" is the docs-site cluster, and
 \`P#16\` above it is soft assertions. Every one of the four is recoverable from the sentence around
@@ -654,14 +653,21 @@ Not every \`#n\` is a citation at all: \`D147\`, \`M92\` and \`M148\` number pul
 \`M130\` numbers an OWASP category.
 
 An entry may also name a **file**. Most of those are in this repository — \`SPEC.md\`, \`CHANGELOG.md\`,
-a docs-site page named by its basename. Eleven name a file in the **\`testFlow-tests\`** repository,
-which is public: \`VULNS.md\`, \`TFLW-GAPS.md\`, \`PLAN_CI.md\`, \`plan_v2.md\`,
-\`FINDINGS_M35B_ROOT_CAUSE.md\`. The rest name a design record, which is not published, for the
-reason at the top of this page.
+a docs-site page named by its basename. Eight name a file that is tracked in the **\`testFlow-tests\`**
+repository and so is public: \`VULNS.md\` and \`FINDINGS_M35B_ROOT_CAUSE.md\`. The rest name a design
+record, which is not published, for the reason at the top of this page — and three of those
+(\`TFLW-GAPS.md\`, \`PLAN_CI.md\`, \`plan_v2.md\`) are \`testFlow-tests\`' **own** records, gitignored
+there under the same policy. Being one repository away does not make a file public; being tracked
+does.
 
 A bare **\`§n\`** is a section of \`SPEC.md\` in fifty of the eighty-six places it appears. Where it is
 not, it is a section of whichever record the sentence names — or, if it names none, of the record on
 that entry's own \`lifted from\` line.
+
+This index answers **tracked prose**. The same notation appears about 9,300 more times in comments
+in tracked *source*, naming 671 identifiers — most of which have no entry here, because a comment
+addresses a maintainer who has the working tree. That exclusion is deliberate and it is large: if
+you arrived from a citation in a \`.ts\` file and find nothing below, this is why.
 
 **\`A4-05\`, \`FU-11\`, \`M130-01\`** and the like are rows of the review ledger: a working queue of
 open defects, kept out of this repository for a different reason than the plans, and not resolved
