@@ -5596,7 +5596,7 @@ milestone — only *which kinds* it can execute changed.
 
 ### M53
 
-<sub>cited from SPEC.md, packages/cli/README.md, packages/docs-site/reference/cli.md +1 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/cli/README.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M53 shipped 2026-08-02 — `parallel`/`sequential` keyword + `tflw load` folded into `tflw run`**
 
@@ -5640,7 +5640,7 @@ no way to make one test's own rows race each other today. The keyword only ever 
 
 ### M56
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/docs-site/reference/cli.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M56 shipped 2026-08-02 — reporter unification (`PLAN_UNIFIED_TEST_WORKLOAD.md` Phase 3, D116-D122)**
 
@@ -5697,7 +5697,7 @@ adjacent defect; all four are here, the rest of batch 1's 132 rows are recorded 
 
 ### M60
 
-<sub>cited from SPEC.md, packages/docs-site/guide/load-testing.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
 
 **M60 shipped 2026-08-03 — checker parity + the A4/A2 checker findings (`REVIEW_FINDINGS_A4.md`, `REVIEW_FINDINGS_A2.md`)**
 
@@ -6311,7 +6311,7 @@ arity and a source path, but not a body — and the row filed it as a *when*, no
 
 ### M110
 
-<sub>cited from SPEC.md, packages/docs-site/reference/cli.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 **M110 — doc truth, part 2 (`V4-02`…`V4-06`), 2026-08-08**
 
