@@ -118,6 +118,18 @@ jobs:
       # mutation pass. Before `npm test` would be wrong: a red suite is the more useful signal.
       - run: npm run verify:observability
 
+      # `DECISIONS.md` is the resolution target for the private notation this repo is written in —
+      # `P#43`, `D318`, `M137d`, roughly 730 citations of records `.gitignore` excludes (M152/`D666`).
+      # THIS STEP RUNS ONLY HALF THE CHECK, and says so rather than printing a bare green. Both
+      # sides of the conformance and scrub tiers are tracked, so they run here: no cited identifier
+      # lacks an entry, no entry lacks a citation, nothing in the scrub classes leaks into a public
+      # commit. The third tier — that each entry is still byte-identical to the record it was lifted
+      # from — cannot run on a runner, because those records are the 66 gitignored files (`D683`).
+      # That half is checked on a developer machine by the same command and by review. `D527`'s rule
+      # is why the skip is printed: a tier that silently does not run reads exactly like a tier that
+      # passed.
+      - run: npm run verify:decisions
+
       # Every internal anchor on the docs site resolves to a real heading (M62/DT-07), and every
       # page renders the sidebar it belongs to (M125e/`FU-30`). Separate from `npm test` because
       # both read the built `.vitepress/dist` — the root `npm run build` above already produced it.

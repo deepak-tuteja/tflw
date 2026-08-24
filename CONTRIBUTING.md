@@ -66,6 +66,7 @@ npm run build
 npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
+npm run verify:decisions                # ※ does less in CI than it does here
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
@@ -89,6 +90,26 @@ npm run verify:ledger                  # § never runs in CI, by decision
   optional: without a display the headed suites **hang** rather than fail.
 - **`npm run verify:observability`** — a test naming a `TF0xx` its harness cannot emit is a passing
   test of nothing. Static, seconds.
+- **`npm run verify:decisions`** — **※ it does less in CI than it does here, by design.** `DECISIONS.md`
+  is the resolution target for the notation this repo is written in: `P#43`, `D318`, `M137d` are
+  cited roughly 730 times in tracked prose and every one of them names a block in a file
+  `.gitignore` excludes. On a runner this checks the two tiers whose *both* sides are tracked — every
+  cited identifier has an entry, every entry is cited, and nothing in the scrub classes reached a
+  public commit — and then **prints that it skipped the third**, because the records it would
+  compare against are not on the runner. Your run does all three, including the one that catches an
+  entry drifting from the record it was lifted from. That tier has no CI counterpart, so a local run
+  before pushing is the only thing that performs it. If it fails, the fix is in the design record and
+  then `npm run docs:decisions` — never an edit between the `GENERATED:decisions` markers.
+  **It is also the one gate that cannot be offloaded to the box.** `scripts/exec.mjs` syncs the
+  tree without `.git/`, and this reads the tracked set through `git ls-files`, so there it fails
+  with a message saying exactly that rather than a green it has not earned.
+  Each entry's provenance line names **files, never lines** (`D686`) — so it moves when the set of
+  documents citing an identifier changes, and not when a paragraph is added above one. The line
+  numbers went to **`npm run docs:provenance`**, which is not published and not tracked: per entry
+  it prints the anchor that was picked with its line and form, the anchors that lost the ranking,
+  and every citing site. That is the report to read when an entry looks like it was lifted from the
+  wrong place — the published file names the record, but 57 identifiers have two candidate blocks
+  inside the *same* record and only the report can tell you which one you are reading.
 - **`npm run test:links -w @tflw/docs-site`** — every internal docs anchor resolves and every page
   renders the sidebar it belongs to. Separate from `npm test` because it reads the **built**
   `.vitepress/dist`, so it needs `npm run build` first. This is the gate the ledger row that
