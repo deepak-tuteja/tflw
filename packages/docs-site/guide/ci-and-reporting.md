@@ -270,4 +270,4 @@ there's work to review. It's real, tested machinery sitting ready for the day a 
 actually ships, not a stub.
 
 Full reference: [SPEC.md §12](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#12-cli-),
-[§13 (events/report)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#13-events-report-ci-outputs-p4-5-p23-p30-).
+[§13 (events/report)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#13-events-report-ci-outputs-p45-p23-p30-).

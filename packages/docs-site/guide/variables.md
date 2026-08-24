@@ -117,4 +117,4 @@ test "transforms a value with base64/hex/url encoding"
 Pure transforms — unlike generators, these consume an existing value rather than manufacture a
 fresh one.
 
-Full reference: [SPEC.md §7](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#7-variables-data--expressions-p19-p21-25-).
+Full reference: [SPEC.md §7](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#7-variables-data--expressions-p19-p2125-).

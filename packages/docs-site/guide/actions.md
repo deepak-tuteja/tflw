@@ -147,5 +147,5 @@ action parameter; a step referencing a variable bound only in one caller's own s
 pulled into the shared action, since that would break at runtime). Always re-run `tflw check`/
 `tflw run` after applying to confirm the rewritten suite still passes.
 
-Full reference: [SPEC.md §8](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#8-actions-imports-element-aliases-p2-p17-18-),
+Full reference: [SPEC.md §8](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#8-actions-imports-element-aliases-p2-p1718-),
 [§11 (JS escape hatch)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#11-js-escape-hatch-p11-).

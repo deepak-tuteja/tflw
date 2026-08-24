@@ -13,7 +13,7 @@ import { code } from '../.vitepress/mdCode.ts';
 
 Every stable `TF0xx` code tflw can print — generated from
 [`packages/lang/src/spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts),
-the same manifest that regenerates [SPEC.md §17](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#17-diagnostic-codes-tf0xx)
+the same manifest that regenerates [SPEC.md §17](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#17-diagnostic-codes-tf0xx-)
 and powers hover-on-error in the [editor](/editor). A shipped code is never renumbered or reused —
 gaps in the numbering are reserved, not skipped by accident.
 

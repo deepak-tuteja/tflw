@@ -176,4 +176,4 @@ neighbouring one.
 See [Security hygiene scanning](/guide/security-scanning) and
 [Authorization testing](/guide/authorization-testing).
 
-Full reference: [SPEC.md §3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#3-the-config-dialect--tflwconfig-p27-31).
+Full reference: [SPEC.md §3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#3-the-config-dialect--tflwconfig-p2731-).

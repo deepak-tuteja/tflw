@@ -67,6 +67,7 @@ xvfb-run -a npm test
 npm run verify:observability
 npm run verify:decisions                # ※ does less in CI than it does here
 npm run verify:citations
+npm run verify:anchors
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
@@ -124,6 +125,21 @@ npm run verify:ledger                  # § never runs in CI, by decision
   fragment like `SPEC.md#45-…-d16-d19d24ad26d70d93-d122` is an address that has to survive
   verbatim, and eight strings inside it read as citations. It reads the tracked set through `git ls-files`, so like the gate above it cannot run on
   the box.
+- **`npm run verify:anchors`** — every `SPEC.md#<fragment>` a tracked file links to resolves to a
+  real heading (`D677`). The failure it catches is invisible to a reader and to a link checker
+  alike: GitHub does **not** 404 on a bad fragment, it serves `SPEC.md` and drops you at the top of
+  3,700 lines, so a link that says §7 and lands on the title looks like the section is missing
+  rather than the pointer wrong. Six were dead when this gate was written, all on user-facing pages,
+  five of them for one reason — a heading writes a range with an en-dash, `(P#27–31)`, and GitHub
+  deletes punctuation *before* it turns spaces into hyphens, so the anchor is `p2731` while every
+  author who read the heading typed the ASCII `p27-31` they could see. **If you rename a heading in
+  `SPEC.md`, this is the gate that tells you what you broke**, and it names the nearest real anchor
+  rather than only the dead one. The slug rule lives in `scripts/github-slug.mjs` and is not
+  trusted on its own: `scripts/spec-anchors.json` holds the anchors **GitHub itself** minted, and
+  `github-slug.test.mjs` fails if the two ever disagree. Re-pin that corpus with
+  `node scripts/refresh-spec-anchors.mjs --ref <branch>` — after pushing the branch, since GitHub
+  can only render a ref it has. That refresh needs the network and an authenticated `gh`; only the
+  comparison runs in CI.
 - **`npm run test:links -w @tflw/docs-site`** — every internal docs anchor resolves and every page
   renders the sidebar it belongs to. Separate from `npm test` because it reads the **built**
   `.vitepress/dist`, so it needs `npm run build` first. This is the gate the ledger row that

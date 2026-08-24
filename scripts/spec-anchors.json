@@ -1,0 +1,309 @@
+{
+  "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
+  "repo": "deepak-tuteja/tflw",
+  "ref": "main",
+  "sha": "bbbf8ccf84e5322681794c0ccc24afd9fba192de",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/bbbf8ccf84e5322681794c0ccc24afd9fba192de/SPEC.md",
+  "headings": [
+    [
+      "testFlow — SPEC",
+      "testflow--spec"
+    ],
+    [
+      "1. Principles (P#1, P#4, P#5) ✅",
+      "1-principles-p1-p4-p5-"
+    ],
+    [
+      "2. Project layout ✅",
+      "2-project-layout-"
+    ],
+    [
+      "3. The config dialect — `tflw.config` (P#27–31) ✅",
+      "3-the-config-dialect--tflwconfig-p2731-"
+    ],
+    [
+      "3.1 `defaults` + `env` blocks (P#28)",
+      "31-defaults--env-blocks-p28"
+    ],
+    [
+      "3.2 Named API services (P#29)",
+      "32-named-api-services-p29"
+    ],
+    [
+      "3.3 `session` blocks — the single auth concept (P#20, P#31) ✅",
+      "33-session-blocks--the-single-auth-concept-p20-p31-"
+    ],
+    [
+      "`csrf from … send as header \"…\"` (M137b) ✅",
+      "csrf-from--send-as-header--m137b-"
+    ],
+    [
+      "3.4 Secrets (P#30)",
+      "34-secrets-p30"
+    ],
+    [
+      "3.5 Corporate networks (proxies, private CAs, self-signed certs) ✅",
+      "35-corporate-networks-proxies-private-cas-self-signed-certs-"
+    ],
+    [
+      "3.6 Client certificates — mTLS (PLAN decision 99b) ✅",
+      "36-client-certificates--mtls-plan-decision-99b-"
+    ],
+    [
+      "3.7 Host allowlist — `allow hosts` (PLAN decision 101a, enterprise arc cluster 2) ✅",
+      "37-host-allowlist--allow-hosts-plan-decision-101a-enterprise-arc-cluster-2-"
+    ],
+    [
+      "3.8 Logging defaults — `log destination`/`log level` (M27, PLAN_LOG.md) ✅",
+      "38-logging-defaults--log-destinationlog-level-m27-plan_logmd-"
+    ],
+    [
+      "3.9 Test discovery — `exclude` (D127, PLAN_DISCOVERY_EXCLUDE.md)",
+      "39-test-discovery--exclude-d127-plan_discovery_excludemd"
+    ],
+    [
+      "3.10 Authorized targets — `authorized target` (M128b, D21/D291) ✅",
+      "310-authorized-targets--authorized-target-m128b-d21d291-"
+    ],
+    [
+      "3.10.1 Public targets — `--allow-public-target` (M131a, D21/D340) ✅",
+      "3101-public-targets----allow-public-target-m131a-d21d340-"
+    ],
+    [
+      "4. Tests & structure ✅",
+      "4-tests--structure-"
+    ],
+    [
+      "4.1 `test`",
+      "41-test"
+    ],
+    [
+      "4.2 Hooks (P#10, P#19)",
+      "42-hooks-p10-p19"
+    ],
+    [
+      "4.3 Data tables — `with each` (P#10, P#24)",
+      "43-data-tables--with-each-p10-p24"
+    ],
+    [
+      "4.4 `retry` (P#10)",
+      "44-retry-p10"
+    ],
+    [
+      "4.5 Load testing — workload-bearing tests (M29/M30, M50-M56, D16-D19/D24a/D26/D70/D93-D122)",
+      "45-load-testing--workload-bearing-tests-m29m30-m50-m56-d16-d19d24ad26d70d93-d122"
+    ],
+    [
+      "4.6 Step keyword quick reference (M125e, `FU-24`, D277)",
+      "46-step-keyword-quick-reference-m125e-fu-24-d277"
+    ],
+    [
+      "5. API steps (P#3, P#7, P#29, P#32, P#33) ✅",
+      "5-api-steps-p3-p7-p29-p32-p33-"
+    ],
+    [
+      "5.1 Request line",
+      "51-request-line"
+    ],
+    [
+      "5.2 Body forms (P#32)",
+      "52-body-forms-p32"
+    ],
+    [
+      "5.3 Response subjects (what `expect` can see after an api step)",
+      "53-response-subjects-what-expect-can-see-after-an-api-step"
+    ],
+    [
+      "5.4 `capture` (P#7)",
+      "54-capture-p7"
+    ],
+    [
+      "5.5 Retry semantics & `wait until api` (P#15)",
+      "55-retry-semantics--wait-until-api-p15"
+    ],
+    [
+      "6. Assertions (P#13–16) ✅",
+      "6-assertions-p1316-"
+    ],
+    [
+      "6.1 The one form",
+      "61-the-one-form"
+    ],
+    [
+      "6.2 Matcher table",
+      "62-matcher-table"
+    ],
+    [
+      "6.2.1 Contract validation — `matches schema \"Name\" from \"src\"` (PLAN decision 102a,",
+      "621-contract-validation--matches-schema-name-from-src-plan-decision-102a"
+    ],
+    [
+      "6.2.2 Connection-failure assertions — `request connects`/`fails` (`PLAN_ENTERPRISE.md` decision 18,",
+      "622-connection-failure-assertions--request-connectsfails-plan_enterprisemd-decision-18"
+    ],
+    [
+      "6.2.3 Binary body matching — `matches file \"<path>\"` (closes TFLW-GAPS.md gap #17)",
+      "623-binary-body-matching--matches-file-path-closes-tflw-gapsmd-gap-17"
+    ],
+    [
+      "6.3 Array quantifiers (P#14)",
+      "63-array-quantifiers-p14"
+    ],
+    [
+      "6.3.1 Partial-object matching — `matches subset {...}` (P#14)",
+      "631-partial-object-matching--matches-subset--p14"
+    ],
+    [
+      "6.4 Hard vs soft (P#16)",
+      "64-hard-vs-soft-p16"
+    ],
+    [
+      "6.5 Retry split (P#15)",
+      "65-retry-split-p15"
+    ],
+    [
+      "6.6 Failure-message size (P#14, TFLW-GAPS.md gap #8)",
+      "66-failure-message-size-p14-tflw-gapsmd-gap-8"
+    ],
+    [
+      "7. Variables, data & expressions (P#19, P#21–25) ✅",
+      "7-variables-data--expressions-p19-p2125-"
+    ],
+    [
+      "7.1 `let`",
+      "71-let"
+    ],
+    [
+      "7.1.1 Referring to a variable: `{x}` and the bare form (M99a)",
+      "711-referring-to-a-variable-x-and-the-bare-form-m99a"
+    ],
+    [
+      "7.2 `unique` — collision-safe identity data (P#19, P#21)",
+      "72-unique--collision-safe-identity-data-p19-p21"
+    ],
+    [
+      "7.3 `random` — value-shaped data, collisions allowed (P#21–22)",
+      "73-random--value-shaped-data-collisions-allowed-p2122"
+    ],
+    [
+      "7.3.1 Generators quick reference (PLAN decision 103, enterprise arc cluster 4)",
+      "731-generators-quick-reference-plan-decision-103-enterprise-arc-cluster-4"
+    ],
+    [
+      "7.4 Reproducibility (P#23)",
+      "74-reproducibility-p23"
+    ],
+    [
+      "7.5 Expressions (P#25)",
+      "75-expressions-p25"
+    ],
+    [
+      "7.6 Transforms: `base64`/`hex`/`url` (M18)",
+      "76-transforms-base64hexurl-m18"
+    ],
+    [
+      "7.7 `log` — user-defined logging (M27, PLAN_LOG.md) ✅",
+      "77-log--user-defined-logging-m27-plan_logmd-"
+    ],
+    [
+      "8. Actions, imports, element aliases (P#2, P#17–18) 🔧",
+      "8-actions-imports-element-aliases-p2-p1718-"
+    ],
+    [
+      "9. UI steps (P#8–9, P#26) 🔧",
+      "9-ui-steps-p89-p26-"
+    ],
+    [
+      "9.1 Navigation & interaction ✅",
+      "91-navigation--interaction-"
+    ],
+    [
+      "9.2 `fill form` (P#26) ✅",
+      "92-fill-form-p26-"
+    ],
+    [
+      "9.3 Locators (P#8–9) ✅ (`element` aliases not yet built)",
+      "93-locators-p89--element-aliases-not-yet-built"
+    ],
+    [
+      "9.4 Waiting & UI subjects ✅",
+      "94-waiting--ui-subjects-"
+    ],
+    [
+      "9.5 Frames, tabs, downloads, drag-drop & `wait until <ui>` (M3b) ✅",
+      "95-frames-tabs-downloads-drag-drop--wait-until-ui-m3b-"
+    ],
+    [
+      "9.6 Screenshots, failure evidence & Playwright trace (M3c, D12) ✅",
+      "96-screenshots-failure-evidence--playwright-trace-m3c-d12-"
+    ],
+    [
+      "9.7 Network observation & `stub` (M3d, D14) ✅",
+      "97-network-observation--stub-m3d-d14-"
+    ],
+    [
+      "9.8 Accessibility (M3e, D14) ✅",
+      "98-accessibility-m3e-d14-"
+    ],
+    [
+      "9.9 Visual regression (M4b, D15) ✅",
+      "99-visual-regression-m4b-d15-"
+    ],
+    [
+      "9.10 Security hygiene scan (M128b/M128c, D283–D300) ✅",
+      "910-security-hygiene-scan-m128bm128c-d283d300-"
+    ],
+    [
+      "9.11 Authorization scan (M130b, D304–D332) ✅",
+      "911-authorization-scan-m130b-d304d332-"
+    ],
+    [
+      "9.12 Input-handling scan (M134a, D366–D383) ✅",
+      "912-input-handling-scan-m134a-d366d383-"
+    ],
+    [
+      "9.13 Findings, the gate and the baseline (M134b, D385–D389) ✅",
+      "913-findings-the-gate-and-the-baseline-m134b-d385d389-"
+    ],
+    [
+      "9.14 Remediation and `findings.sarif` (M135, D402–D417) ✅",
+      "914-remediation-and-findingssarif-m135-d402d417-"
+    ],
+    [
+      "9.15 Active crawl — the `crawl` declaration (M137c, D432/D443/D450) 🔧",
+      "915-active-crawl--the-crawl-declaration-m137c-d432d443d450-"
+    ],
+    [
+      "10. Sessions & isolation (P#20, P#31) 🔧",
+      "10-sessions--isolation-p20-p31-"
+    ],
+    [
+      "11. JS escape hatch (P#11) ✅",
+      "11-js-escape-hatch-p11-"
+    ],
+    [
+      "12. CLI 🔧",
+      "12-cli-"
+    ],
+    [
+      "13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧",
+      "13-events-report-ci-outputs-p45-p23-p30-"
+    ],
+    [
+      "14. Architecture (P#1, P#12) 🔧",
+      "14-architecture-p1-p12-"
+    ],
+    [
+      "15. Distribution (P#35–39, amended by P#41–50) 🔧",
+      "15-distribution-p3539-amended-by-p4150-"
+    ],
+    [
+      "16. Out of v1 (parking lot) 🔮",
+      "16-out-of-v1-parking-lot-"
+    ],
+    [
+      "17. Diagnostic codes (TF0xx) ✅",
+      "17-diagnostic-codes-tf0xx-"
+    ]
+  ]
+}

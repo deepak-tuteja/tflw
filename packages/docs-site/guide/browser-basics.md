@@ -115,4 +115,4 @@ thin Playwright wrapper. `has count` is the one matcher meaningful against more 
 every other matcher still hard-errors on ambiguity. "Zero elements" is itself a legitimate,
 non-erroring state for `is hidden`, `is not visible` and `has count 0`.
 
-Full reference: [SPEC.md §9](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#9-ui-steps-p8-9-p26-).
+Full reference: [SPEC.md §9](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#9-ui-steps-p89-p26-).

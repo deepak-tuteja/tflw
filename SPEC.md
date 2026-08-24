@@ -575,7 +575,7 @@ mechanism.
   the two fixes; `ENOTFOUND` names a DNS lookup failure; `ECONNREFUSED` asks whether the service is
   actually listening at that host:port. Everything else still surfaces the raw message, unmodified.
 
-### 3.6 Client certificates — mTLS (PLAN decision 99b) ✅
+### 3.6 Client certificates — mTLS (P#99b) ✅
 
 Some enterprise APIs authenticate the *client* via a TLS certificate rather than (or in addition
 to) a bearer token. Per-`env` (or `defaults`) `cert`/`key` config keys:
@@ -604,7 +604,7 @@ env staging
   here than Node's own default behavior for these two env vars, which are otherwise read only once
   per process.
 
-### 3.7 Host allowlist — `allow hosts` (PLAN decision 101a, enterprise arc cluster 2) ✅
+### 3.7 Host allowlist — `allow hosts` (P#101a, enterprise arc cluster 2) ✅
 
 An "anti-pointed-at-prod" guardrail: refuse to send a request to any host not explicitly listed.
 
@@ -1495,7 +1495,7 @@ advice about **parens**, for a mistake that has nothing to do with calls. All th
 working form. This was filed as a capability gap and re-probed as a discoverability one — the
 language could always express it, nothing pointed the way.
 
-### 6.2.1 Contract validation — `matches schema "Name" from "src"` (PLAN decision 102a,
+### 6.2.1 Contract validation — `matches schema "Name" from "src"` (P#102a,
 enterprise arc cluster 3, closes TFLW-GAPS.md gap #6)
 
 Validates the subject against a named schema in an externally-fetched OpenAPI document, using a
@@ -1827,7 +1827,7 @@ sentence. For `random date between` that line falls inside the construct — two
 the same anchor (`today - 10 days` against `today`) are ordered without a clock, while `now` against
 `today` differs by however far into the day the run started and is left to the run.
 
-### 7.3.1 Generators quick reference (PLAN decision 103, enterprise arc cluster 4)
+### 7.3.1 Generators quick reference (P#103, enterprise arc cluster 4)
 
 <!-- GENERATED:generators:start -->
 | Family | Generator | Notes | Example |
