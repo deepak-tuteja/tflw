@@ -15,7 +15,7 @@ import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, access } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CLI_FLAGS } from '@tflw/lang';
+import { CLI_FLAGS, SPEC_MANIFEST_VERSION, specConstructs } from '@tflw/lang';
 import { ARTIFACT_CONTRACT } from '@tflw/reporter';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -372,6 +372,90 @@ test('…and the reverse: every flag `tflw --help` shows is in CLI_FLAGS (M62)',
     for (const m of line.matchAll(/(--[a-z][a-z-]*)/g)) if (!documented.has(m[1])) undocumented.add(m[1]);
   }
   assert.deepEqual([...undocumented], [], 'every flag `--help` prints must be in CLI_FLAGS, which the reference page generates from');
+});
+
+// ---- tflw spec (M154a) ------------------------------------------------------
+
+test('`tflw spec --json` emits the whole construct manifest, with a build stamp', async () => {
+  // M154a. `testFlow-tests` is this language's conformance target and had no way to ask what the
+  // surface *is* — its only tflw dependency is a self-contained bundled tarball with no `@tflw/*`
+  // packages to import, so a coverage gate there cannot read `STEP_KEYWORDS` out of a module. This
+  // subcommand is the surface it does have, which is why it is asserted against the real bundle
+  // here rather than only in `packages/lang`.
+  const { stdout } = await execFileAsync('node', [cliEntry, 'spec', '--json']);
+  const manifest = JSON.parse(stdout) as {
+    manifest: number;
+    build: { version: string; source: string; commit: string | null; dirty: boolean | null; builtAt: string | null };
+    constructs: { id: string; family: string; group: string; name: string; status: string }[];
+  };
+
+  assert.equal(manifest.manifest, SPEC_MANIFEST_VERSION);
+  assert.deepEqual(
+    manifest.constructs.map((c) => c.id).slice().sort(),
+    specConstructs().map((c) => c.id).slice().sort(),
+    'the bundle emits the same manifest the library assembles',
+  );
+  for (const family of ['step', 'matcher', 'generator', 'locator', 'config', 'diagnostic']) {
+    assert.ok(manifest.constructs.some((c) => c.family === family), `no ${family} constructs reached the bundle`);
+  }
+});
+
+test('the build stamp is what a stale vendored copy gets caught by (M153b-01)', async () => {
+  // The row: `testFlow-tests`' `check:acceptance` grades the *vendored* `node_modules/tflw`, and a
+  // nine-day-old copy reported `probe ciphers` as unknown grammar nine days after it shipped —
+  // output indistinguishable from a real gap. `builtAt` is the field that makes staleness visible,
+  // so it is asserted as a real timestamp rather than merely present.
+  const { stdout } = await execFileAsync('node', [cliEntry, 'spec', '--json']);
+  const { build } = JSON.parse(stdout) as { build: { version: string; source: string; commit: string | null; dirty: boolean | null; builtAt: string | null } };
+
+  assert.equal(build.source, 'bundle', 'the built artifact must know it is a build');
+  assert.match(build.version, /^\d+\.\d+\.\d+/);
+  assert.ok(build.builtAt !== null, 'a bundle always stamps a build time');
+  assert.ok(!Number.isNaN(Date.parse(build.builtAt)), `builtAt must parse as a date: ${build.builtAt}`);
+
+  // `commit` is deliberately nullable and NOT asserted non-null: this suite runs on a machine with
+  // no `.git` (the Fedora offload rsyncs the tree without it) as well as in CI, where there is one.
+  // What is asserted is that it is never *invented* — either a real short sha or nothing, because a
+  // fabricated one would be believed. `dirty` follows it: a commit means a known cleanliness.
+  if (build.commit !== null) {
+    assert.match(build.commit, /^[0-9a-f]{7,40}$/, `commit must be a short sha or null, got ${build.commit}`);
+    assert.equal(typeof build.dirty, 'boolean');
+  } else {
+    assert.equal(build.dirty, null, 'no commit means nothing is known about the tree, not that it was clean');
+  }
+});
+
+test('`tflw spec` without --json prints a human listing naming the build', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, 'spec']);
+  assert.match(stdout, /^tflw \d+\.\d+\.\d+ — \d+ constructs, manifest v\d+/, stdout.slice(0, 200));
+  assert.match(stdout, /\n {2}build: /, 'the human rendering names the build too — it is the one a person reads');
+  assert.match(stdout, /machine-readable: `tflw spec --json`/);
+  // Not JSON, and not accidentally parseable as it — the two renderings must be tellable apart by a
+  // script that forgot the flag.
+  assert.throws(() => JSON.parse(stdout));
+});
+
+test('`tflw spec` refuses an unknown flag and a positional argument (M61/B6-11 shape)', async () => {
+  // Every command that shipped without a fall-through branch got this wrong quietly:
+  // `install-browsers --browsr firefox` downloaded Chromium at exit 0. A new subcommand starts with
+  // the branch rather than acquiring it after the bug.
+  await assert.rejects(
+    () => execFileAsync('node', [cliEntry, 'spec', '--jsonn']),
+    (e: { code?: number; stderr?: string }) => {
+      assert.equal(e.code, 2);
+      assert.match(e.stderr ?? '', /unknown flag `--jsonn` for `tflw spec`/);
+      assert.match(e.stderr ?? '', /did you mean `--json`\?/);
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => execFileAsync('node', [cliEntry, 'spec', 'matchers']),
+    (e: { code?: number; stderr?: string }) => {
+      assert.equal(e.code, 2);
+      assert.match(e.stderr ?? '', /unexpected argument `matchers`\. Usage: tflw spec \[--json\]/);
+      return true;
+    },
+  );
 });
 
 test('a value-taking flag with no value is a usage error, not a silent fall-back to the default (M63/A12-04)', async () => {

@@ -11,7 +11,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { STATEMENT_KEYWORDS, RETIRED_STATEMENT_KEYWORDS, REFUSED_SPELLINGS, REFUSED_WORDS, STEP_KEYWORDS, WORKLOAD_DIRECTIVES } from '../src/index.js';
+import { STATEMENT_KEYWORDS, RETIRED_STATEMENT_KEYWORDS, REFUSED_SPELLINGS, REFUSED_WORDS, STEP_KEYWORDS, WORKLOAD_DIRECTIVES, specConstructs } from '../src/index.js';
 import { DELIBERATELY_UNCOLOURED, REFUSED_ON_PURPOSE, COLOURED_VOCABULARY } from '../src/semanticTokens.js';
 
 const ids = STEP_KEYWORDS.map((k) => k.id);
@@ -26,6 +26,15 @@ test('every keyword the parser dispatches on has a manifest entry', () => {
 test('every manifest entry is a keyword the parser dispatches on', () => {
   const extra = ids.filter((id) => !expected.includes(id));
   assert.deepEqual(extra, [], `STEP_KEYWORDS documents words the parser does not accept: ${extra.join(', ')}`);
+});
+
+test('…and the emitter carries the parity forward — `tflw spec --json` offers exactly these words', () => {
+  // M154a. The two tests above hold `STEP_KEYWORDS` to the parser; this holds `specConstructs()` to
+  // `STEP_KEYWORDS`, which is what makes the published manifest inherit the parity rather than merely
+  // resemble it. Without this the fold in `spec-data.ts` could quietly drop a keyword and both tests
+  // above would stay green — a construct the parser accepts, that no conformance gate ever demands.
+  const emitted = specConstructs().filter((c) => c.family === 'step').map((c) => c.name);
+  assert.deepEqual(emitted.slice().sort(), expected.slice().sort());
 });
 
 test('retired spellings are absent — documenting one would teach an error', () => {

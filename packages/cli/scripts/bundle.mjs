@@ -5,6 +5,7 @@
 // dist removal is portable across OSes (decision 79) and the version doesn't need shell quoting.
 
 import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { build, formatMessages } from 'esbuild';
 import { collectNotices, renderNotices } from '../../../scripts/third-party-notices.mjs';
@@ -25,6 +26,41 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 // that `files: ["dist"]` would have to either ship (megabytes, for nobody) or omit (a dangling
 // reference — the exact overselling class this review exists for).
 const sourcemap = process.env.TFLW_BUNDLE_SOURCEMAP === '1';
+
+// M154a — the build stamp `tflw spec` prints, alongside the version `define` above.
+//
+// The row this closes (`M153b-01`): `testFlow-tests`' `check:acceptance` grades the *vendored*
+// `node_modules/tflw`, which only `npm run refresh-tflw` refreshes. A nine-day-old copy reported a
+// grammar gap that had been closed nine days earlier, and nothing in the output could tell that
+// from a real one. A binary that cannot say when it was built cannot be caught being stale.
+//
+// **Never invented.** Outside a git checkout — an `npm pack` from a published tarball, a vendored
+// tree, a Docker build context without `.git` — `commit` is the empty string and the CLI maps that
+// to `null`. A fabricated sha would be strictly worse than an absent one, because it would be
+// believed. Failures are swallowed for the same reason a missing git is: the build must still
+// succeed, and the honest answer to "which commit?" is then "unknown".
+//
+// `SOURCE_DATE_EPOCH` is honoured where it is set, the reproducible-builds convention, so a
+// distribution rebuilding this can still get a byte-identical artifact. Nothing here sets it; the
+// default is genuinely now, which is the value the staleness check needs.
+function gitOutput(args) {
+  try {
+    return execFileSync('git', args, { cwd: pkgRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+const commit = gitOutput(['rev-parse', '--short', 'HEAD']);
+// `--porcelain` over the whole repo, not just this package: a bundle built from a dirty tree is a
+// bundle whose sha does not describe it, wherever the edit was.
+//
+// `null`, not `false`, when there is no commit to be dirty relative to. Written as `false` first and
+// caught immediately by `e2e.test.ts` running on a tree with no `.git` (the Fedora offload rsyncs
+// without it): `false` there is a claim that the working tree was clean, and nobody looked. The
+// three-valued answer is the honest one — clean, dirty, or unknown.
+const dirty = commit === '' ? null : gitOutput(['status', '--porcelain']) !== '';
+const epoch = process.env.SOURCE_DATE_EPOCH;
+const builtAt = new Date(epoch ? Number(epoch) * 1000 : Date.now()).toISOString();
 
 // M92c (review `FU-27`) — `npm pack` emitted three `empty-import-meta` warnings, from two sites
 // that are both correctly guarded and both already carry a comment explaining why esbuild is wrong
@@ -112,7 +148,12 @@ const cliBuild = await build({
   target: 'node22',
   outfile: 'dist/cli.cjs',
   sourcemap,
-  define: { __TFLW_VERSION__: JSON.stringify(pkg.version) },
+  define: {
+    __TFLW_VERSION__: JSON.stringify(pkg.version),
+    __TFLW_COMMIT__: JSON.stringify(commit),
+    __TFLW_DIRTY__: JSON.stringify(dirty),
+    __TFLW_BUILD_TIME__: JSON.stringify(builtAt),
+  },
   // `playwright` (M3a, D5) is an optional peer of `@tflw/runtime`, dynamically imported only when
   // a test actually runs a browser step — it must NOT be inlined into this bundle: (a) it's often
   // not installed at all (an API-only consumer never needs it, and this build must still succeed

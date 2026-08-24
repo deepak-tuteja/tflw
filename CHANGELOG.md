@@ -352,6 +352,31 @@ a different thing depending on which matcher a file happened to use.
   failure mode is silence: an invalid document uploads successfully and produces no alerts, with no
   error to read (D414).
 
+### Added — `tflw spec`, the construct manifest (M154a)
+
+- **New subcommand `tflw spec [--json]`** — prints the construct manifest of *this build*: every
+  step keyword, matcher, generator, locator, `tflw.config` word and diagnostic code the parser
+  dispatches (166 today), plus a build stamp naming version, commit, dirty state and build time.
+- It exists for conformance testing. A suite that wants to prove it exercises the whole language
+  has to be able to ask what the whole language is, and a consumer of the published package cannot
+  read that out of `@tflw/lang` — the tarball is one self-contained bundle with no `@tflw/*`
+  packages to import. `--json` is the form such a gate reads.
+- **A 🔮 planned construct is absent, not listed as planned.** Building one therefore makes it
+  *appear* in the manifest, which turns a downstream coverage gate red on its own the day it ships
+  — no badge to remember to flip, and no hand-maintained list of things that do not exist.
+  `MATCHERS` is the one table carrying its own status field and is emitted verbatim, so a planned
+  matcher would say so rather than quietly claiming to work.
+- `LOCATORS` joins `STEP_KEYWORDS` and `CONFIG_KEYWORDS` as a manifest held **two-way** to the
+  parser's own dispatch list, so `tflw spec` cannot offer a locator the parser rejects nor omit one
+  it accepts. `element` (SPEC §9.3, planned) is in neither, which is the rule's worked case.
+- Diagnostics contribute their **codes** and none of SPEC §17's prose — that table is ~78 KB of
+  markdown written for a rendered spec section, and the code is the construct.
+- The **build stamp** answers *which tflw produced this output*. `commit` is a short sha, or `null`
+  where there was no git to ask (a published tarball, a vendored checkout) — never invented,
+  because an invented one would be believed. `dirty` is `null` when there is no commit for it to be
+  relative to. `source` is `dev` under the unbundled `npm run dev`, where the bundle-time values do
+  not exist, so a consumer can refuse a build with no provenance to check.
+
 ### Added — editor support for `tflw.config` as its own dialect (M136b)
 
 - **`tflw.config` files now have their own VS Code language id** (`tflw-config`) and their own

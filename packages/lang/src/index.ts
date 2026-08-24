@@ -37,6 +37,10 @@ export {
   CONFIG_KEYS,
   PROBE_SUB_CLAUSES,
   configKeyAllowedIn,
+  // `M154a`/D736 — the locator dialect's half of the same arrangement: `spec-data.ts`'s `LOCATORS`
+  // is held to this list by `specManifest.test.ts`, so `tflw spec --json` cannot offer a locator the
+  // parser rejects, nor omit one it accepts.
+  LOCATOR_KEYWORDS,
   type ConfigBlockKind,
   type ParseResult,
   type ConfigResult,

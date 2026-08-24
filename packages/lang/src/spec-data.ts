@@ -235,7 +235,7 @@ export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'watch' | 'migrate' | 'global';
+  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'watch' | 'migrate' | 'spec' | 'global';
   readonly effect: string;
 }
 
@@ -579,6 +579,123 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--no-color`', command: 'watch', effect: 'disables ANSI color in CLI output' },
   { flag: '`--env <name>`', command: 'migrate', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one — deprecations are checker diagnostics, so this only affects which env-scoped checks run' },
   { flag: '`--no-color`', command: 'migrate', effect: 'disables ANSI color in CLI output' },
+  { flag: '`--json`', command: 'spec', effect: "emits the construct manifest as JSON instead of the human listing — the form `testFlow-tests`' conformance gate reads (`M154a`). Spelled as a boolean rather than `--format json` (D738): `spec` has one machine format and one human one, so there is no open set of renderings to name" },
   { flag: '`--version`, `-v`', command: 'global', effect: 'print the installed version' },
   { flag: '`--help`, `-h`', command: 'global', effect: 'print usage' },
 ] as const;
+
+// ---- The construct manifest (`M154a`, D736–D738) ---------------------------
+//
+// One flat list of every construct tflw ships, assembled from the tables above and emitted by
+// `tflw spec --json`. It exists because `testFlow-tests` had no way to ask what tflw's surface *is*
+// — the dogfood is the conformance target for this language, and until `M154` nothing joined the
+// set of constructs to the set of constructs it exercises. `PLAN_M154_DOGFOOD_CONFORMANCE.md` §2
+// measured the cost of that: seven step keywords with literally zero occurrences across 126 `.tflw`
+// files, four of the six workload shapes never executed by anything.
+//
+// **D736 — the manifest lists what the parser dispatches, and nothing else.** A `🔮 planned`
+// construct is *absent*, not listed with a `planned` status. Two reasons, and the second is the one
+// that matters. First, every table here is already held to the parser two-way (D277 for
+// `STEP_KEYWORDS`, D444 for `CONFIG_KEYWORDS`, and `LOCATORS` below joins them), so "what the
+// parser accepts" is the only set that can be derived rather than remembered. Second, a `planned`
+// list would be a hand-maintained wordlist of things that do not exist — `D659`'s exact
+// prohibition — and it buys nothing: a construct that gets built simply *appears* here, and the
+// consumer's `no construct without a row` rule (D724) goes red on its own the same day. Nobody has
+// to remember to flip a badge. `MATCHERS` is the one table carrying its own `status` field, from
+// `M97b`; it is emitted verbatim rather than overridden, so if a `planned` matcher is ever added
+// the manifest says so instead of quietly claiming it works.
+//
+// **What is deliberately not here.** `DIAGNOSTICS` contributes its *codes* and neither `meaning`
+// nor `example`: both are multi-kilobyte markdown written for SPEC §17, the whole table is ~78 KB
+// of prose, and a coverage gate needs the code. `RUNTIME_RULES` (`conformance.ts`) is a different
+// manifest answering a different question — which rules the runtime enforces — and belongs to the
+// checker contract, not to the surface a test file can exercise.
+
+/** The word that may open a locator, with the line it says about itself. Hand-authored and held to
+ * `parser.ts`'s own `LOCATOR_KEYWORDS` by `specManifest.test.ts`, the `STEP_KEYWORDS`/D277 shape —
+ * `spec-data.ts` cannot import `parser.ts` (the dependency runs the other way, and a cycle here
+ * would be a real one), so the two are held in step by a test rather than derived.
+ *
+ * `element` is absent on purpose: SPEC §9.3 lists it as `🔮 planned`, `parseLocator` refuses it, and
+ * per D736 a manifest that named it would promise a spelling that does not work. */
+export interface LocatorEntry {
+  readonly id: string;
+  readonly syntax: string;
+  readonly summary: string;
+  readonly example: string;
+}
+
+export const LOCATORS: readonly LocatorEntry[] = [
+  { id: 'button', syntax: '`button "<name>"`', summary: 'a button, link or any element with a button role, by its accessible name', example: '`click button "Add to cart"`' },
+  { id: 'field', syntax: '`field "<label>"`', summary: 'a form control by its label, placeholder or accessible name', example: '`fill field "Email" with {email}`' },
+  { id: 'text', syntax: '`text "<content>"`', summary: 'an element by the text it renders', example: '`expect text "Order placed" is visible`' },
+  { id: 'list', syntax: '`list "<name>"`', summary: 'a list or table region by its accessible name — the container form `within` scopes into', example: '`within list "Cart items"`' },
+  { id: 'css', syntax: '`css "<selector>"`', summary: 'a raw CSS selector, for what no semantic locator reaches', example: '`click css "#dropzone"`' },
+  { id: 'xpath', syntax: '`xpath "<expr>"`', summary: 'a raw XPath expression, the last resort when neither semantics nor CSS reach it', example: '`click xpath "//tr[2]/td[1]"`' },
+] as const;
+
+/** Which table a construct came from. Not a synonym for the `group` beneath it: `step` covers all
+ * five step families including `workload`, because `WORKLOAD_DIRECTIVES` and `STEP_KEYWORDS`'
+ * `workload` family are the same seven words (asserted, not assumed — `specManifest.test.ts`), and
+ * emitting both would put two ids on one construct. */
+export type SpecConstructFamily = 'step' | 'matcher' | 'generator' | 'locator' | 'config' | 'diagnostic';
+
+export interface SpecConstruct {
+  /** The key a coverage manifest keys on. **Opaque**: the only thing promised about it is that it
+   * is unique across the manifest and stable across builds (`specManifest.test.ts` asserts the
+   * first; `SPEC_MANIFEST_VERSION` covers a deliberate change to the second). It is spelled
+   * `<family>:<name>` today, and `config` qualifies by slot as well, so nothing has to guess what a
+   * future `probe` sharing a name with a key would do. Parse `family`/`name` from their own fields,
+   * never out of this string. */
+  readonly id: string;
+  readonly family: SpecConstructFamily;
+  /** The sub-grouping inside the family, where the source table has one: a step's
+   * `api|assertion|value|browser|workload`, a generator's `unique|random|transform`, a config
+   * word's `directive|key|probe`. Equal to `family` where the table has no finer axis. */
+  readonly group: string;
+  /** The construct as it is typed — or, for a diagnostic, its `TF0xx` code. */
+  readonly name: string;
+  /** `planned` can only come from `MATCHERS`' own field; everything else here is, by D736,
+   * something the parser dispatches today. */
+  readonly status: 'shipped' | 'planned';
+  /** Markdown-ready cell text, carried through verbatim from the source table. Absent on
+   * diagnostics, whose prose is deliberately not emitted (see the note above). */
+  readonly syntax?: string;
+  readonly summary?: string;
+  readonly example?: string;
+}
+
+/** The manifest's own version, bumped when the *shape* changes — not when a construct is added or
+ * removed, which is the whole point of the thing. A consumer pins this so a shape change is a loud
+ * failure rather than a silently-empty gate (the `M141`/`D538` class). */
+export const SPEC_MANIFEST_VERSION = 1;
+
+/** Assembled fresh on each call rather than frozen at module scope: this runs once per
+ * `tflw spec` invocation, and a shared frozen array is a thing a consumer can mutate. */
+export function specConstructs(): readonly SpecConstruct[] {
+  return [
+    ...STEP_KEYWORDS.map((k): SpecConstruct => ({
+      id: `step:${k.id}`, family: 'step', group: k.family, name: k.id, status: 'shipped',
+      syntax: k.syntax, summary: k.summary, example: k.example,
+    })),
+    ...MATCHERS.map((m): SpecConstruct => ({
+      id: `matcher:${m.id}`, family: 'matcher', group: 'matcher', name: m.id, status: m.status,
+      syntax: m.syntax, summary: m.appliesTo, example: m.example,
+    })),
+    ...GENERATORS.map((g): SpecConstruct => ({
+      id: `generator:${g.id}`, family: 'generator', group: g.family, name: g.id, status: 'shipped',
+      syntax: g.syntax, summary: g.notes, example: g.example,
+    })),
+    ...LOCATORS.map((l): SpecConstruct => ({
+      id: `locator:${l.id}`, family: 'locator', group: 'locator', name: l.id, status: 'shipped',
+      syntax: l.syntax, summary: l.summary, example: l.example,
+    })),
+    ...CONFIG_KEYWORDS.map((c): SpecConstruct => ({
+      id: `config:${c.slot}:${c.id}`, family: 'config', group: c.slot, name: c.id, status: 'shipped',
+      summary: c.summary,
+    })),
+    ...DIAGNOSTICS.map((d): SpecConstruct => ({
+      id: `diagnostic:${d.code}`, family: 'diagnostic', group: 'diagnostic', name: d.code, status: 'shipped',
+    })),
+  ];
+}
