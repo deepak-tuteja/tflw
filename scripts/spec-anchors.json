@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "main",
-  "sha": "bbbf8ccf84e5322681794c0ccc24afd9fba192de",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/bbbf8ccf84e5322681794c0ccc24afd9fba192de/SPEC.md",
+  "ref": "m152c-anchors",
+  "sha": "dd332c45cb638207983c91c1dcc0c7ef07f794e1",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/dd332c45cb638207983c91c1dcc0c7ef07f794e1/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -46,12 +46,12 @@
       "35-corporate-networks-proxies-private-cas-self-signed-certs-"
     ],
     [
-      "3.6 Client certificates — mTLS (PLAN decision 99b) ✅",
-      "36-client-certificates--mtls-plan-decision-99b-"
+      "3.6 Client certificates — mTLS (P#99b) ✅",
+      "36-client-certificates--mtls-p99b-"
     ],
     [
-      "3.7 Host allowlist — `allow hosts` (PLAN decision 101a, enterprise arc cluster 2) ✅",
-      "37-host-allowlist--allow-hosts-plan-decision-101a-enterprise-arc-cluster-2-"
+      "3.7 Host allowlist — `allow hosts` (P#101a, enterprise arc cluster 2) ✅",
+      "37-host-allowlist--allow-hosts-p101a-enterprise-arc-cluster-2-"
     ],
     [
       "3.8 Logging defaults — `log destination`/`log level` (M27, PLAN_LOG.md) ✅",
@@ -134,8 +134,8 @@
       "62-matcher-table"
     ],
     [
-      "6.2.1 Contract validation — `matches schema \"Name\" from \"src\"` (PLAN decision 102a,",
-      "621-contract-validation--matches-schema-name-from-src-plan-decision-102a"
+      "6.2.1 Contract validation — `matches schema \"Name\" from \"src\"` (P#102a,",
+      "621-contract-validation--matches-schema-name-from-src-p102a"
     ],
     [
       "6.2.2 Connection-failure assertions — `request connects`/`fails` (`PLAN_ENTERPRISE.md` decision 18,",
@@ -186,8 +186,8 @@
       "73-random--value-shaped-data-collisions-allowed-p2122"
     ],
     [
-      "7.3.1 Generators quick reference (PLAN decision 103, enterprise arc cluster 4)",
-      "731-generators-quick-reference-plan-decision-103-enterprise-arc-cluster-4"
+      "7.3.1 Generators quick reference (P#103, enterprise arc cluster 4)",
+      "731-generators-quick-reference-p103-enterprise-arc-cluster-4"
     ],
     [
       "7.4 Reproducibility (P#23)",
