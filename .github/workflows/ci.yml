@@ -130,6 +130,15 @@ jobs:
       # passed.
       - run: npm run verify:decisions
 
+      # The other half of `D666`. `verify:decisions` keeps every *canonical* citation pointed at an
+      # entry that exists; this keeps prose from writing the older spelling, `decision 57`, which
+      # names a number without saying which of nine numbered sequences indexes it (`M152b`/`D691`).
+      # A bare number is worse than an unresolvable identifier because it looks resolvable: 22
+      # numbers publish both a `P#n` and a `D<n>` entry today, on unrelated subjects. It runs here
+      # and not only on a developer machine because both sides are tracked — unlike the tier above,
+      # nothing it reads is gitignored.
+      - run: npm run verify:citations
+
       # Every internal anchor on the docs site resolves to a real heading (M62/DT-07), and every
       # page renders the sidebar it belongs to (M125e/`FU-30`). Separate from `npm test` because
       # both read the built `.vitepress/dist` — the root `npm run build` above already produced it.

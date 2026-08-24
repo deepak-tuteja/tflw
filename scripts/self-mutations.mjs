@@ -273,4 +273,22 @@ export const SELF_MUTATIONS = [
       ["      `  NOT CHECKED HERE: that each entry still matches the record it was lifted from. The design\\n` +\n", ""],
     ],
   },
+  {
+    id: 'the-fence-exemption-goes-blanket',
+    milestone: 'm152b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-citations.mjs',
+    what: "the bare-citation gate exempts EVERY fence instead of only the ones marked as tflw's own output. This is not a hypothetical: it is `D691` clause 2 exactly as first written, and against the real corpus it exempts ten genuine defects — eight of them `GRAMMAR.md` EBNF comments like `# inference (decision 22/M19)`, which are authored prose addressed to a reader, not a quotation of output. The generator had already learned the same lesson once; a blanket fence rule would have dropped 99 citations silently, in the milestone whose subject is citations nobody can follow",
+    find: '      const skipLine = inProductFence || inScript;',
+    replace: '      const skipLine = inProductFence || inScript || /^\\s*(```|~~~)/.test(ln);',
+  },
+  {
+    id: 'the-wrapped-tail-flips-code-span-parity',
+    milestone: 'm152b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-citations.mjs',
+    what: "the inline-code exemption counts backticks across the joined wrap instead of the current line. The failure is SILENT and it was live for one commit: the tail is sliced at a fixed width, so a slice landing inside a code span leaves an odd number of backticks in front of the citation and the exemption swallows it. Nothing is reported — the gate simply goes green early, which is `D527`'s class arriving inside a gate written to end exactly that",
+    find: '        if (inCodeSpan(own)) continue;',
+    replace: '        if (inCodeSpan(before)) continue;',
+  },
 ];

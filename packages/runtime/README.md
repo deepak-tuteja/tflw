@@ -2,7 +2,9 @@
 
 This documents how `runProgram` (`src/interpreter.ts`) decides what runs concurrently and what
 doesn't, once a file mixes functional `test`s and workload-bearing `test`s (Phase 2b,
-`PLAN_UNIFIED_TEST_WORKLOAD.md` D99/D105-D115). There are **three independent axes** — a test never
+`PLAN_UNIFIED_TEST_WORKLOAD.md` D99/D105-D115 — those citations, and every `P#n`/`D<n>`/`M<n>`
+below, resolve in [DECISIONS.md](https://github.com/deepak-tuteja/tflw/blob/main/DECISIONS.md), which
+lifts the cited block out of the unpublished record verbatim). There are **three independent axes** — a test never
 runs in more than one of these at once, but all three apply simultaneously to a given `tflw run`:
 
 1. **The DSL keyword** (`test "name" parallel` / `test "name" sequential`, default `sequential`) —

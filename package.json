@@ -33,6 +33,7 @@
     "verify:mutations": "node scripts/mutate.mjs",
     "verify:ledger": "node scripts/verify-ledger.mjs",
     "verify:decisions": "node scripts/gen-decisions.mjs --check",
+    "verify:citations": "node scripts/verify-citations.mjs",
     "docs:decisions": "node scripts/gen-decisions.mjs",
     "docs:provenance": "node scripts/gen-decisions.mjs --provenance"
   },

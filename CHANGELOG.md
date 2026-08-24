@@ -2,35 +2,38 @@
 
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Internal milestone labels track the
-arc order: `0.1` (API) → `0.2` (browser) → `0.3` (performance) → `0.4` (pen-test) → `1.0.0`. None
+arc order: `0.1` (API) → `0.2` (browser) → `0.3` (performance) → `0.4` (pen-test) → `1.0.0`. The
+`P#n`/`D<n>`/`M<n>` citations below name blocks in design records this repository does not publish;
+each one resolves in [DECISIONS.md](https://github.com/deepak-tuteja/tflw/blob/main/DECISIONS.md),
+which lifts the block verbatim. None
 of `0.1`–`0.4` is ever actually published — **the first `npm publish` is `1.0.0`**, gated on all
 four arcs plus one final integrated acceptance pass against the real dogfood app (`PLAN.md`
-decision 112). The shipped API grammar is frozen additive-only from `1.0.0` on: no existing syntax
+P#112). The shipped API grammar is frozen additive-only from `1.0.0` on: no existing syntax
 changes, only new syntax.
 
 ## [Unreleased]
 
 Everything below is built and verified but not yet published — it ships as part of `1.0.0`, which
-is gated on the pen-test arc plus one final integrated acceptance pass (decision 112). The
+is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
 ### Added — enterprise arc (M9–M28)
 
 - Session hardening: refresh-on-`401`, per-session TTL, `session <name> oauth2` client-credentials
-  sugar, and per-env `cert`/`key` mTLS client certificates (decisions 99–100).
+  sugar, and per-env `cert`/`key` mTLS client certificates (P#99–P#100).
 - Safety and evidence controls: the `allow hosts` allowlist, `--forbid-insecure` as a CI policy
-  gate, `evidence full|headers only|none`, and `redact` (decision 101).
+  gate, `evidence full|headers only|none`, and `redact` (P#101).
 - `matches schema` contract validation against a JSON Schema or OpenAPI document (cached per run),
-  and `Retry-After`-aware retry (decision 102).
+  and `Retry-After`-aware retry (P#102).
 - The documentation site (VitePress) plus `spec-data.ts` — one structured manifest of matcher,
   generator and CLI-flag signatures that SPEC.md's tables, the Reference pages and the LSP's
-  hover/signature help are all generated from, instead of four hand-maintained copies (decision 103).
+  hover/signature help are all generated from, instead of four hand-maintained copies (P#103).
 - **A real Language Server** (`tflw lsp`, `packages/lsp-server`): diagnostics, hover,
   go-to-definition, completion, rename, signature help and semantic tokens, with the VS Code
-  extension reduced to a client over it (decisions 104–105).
-- Connection-failure assertions — `expect request connects` / `expect request fails` (decision 108).
+  extension reduced to a client over it (P#104–P#105).
+- Connection-failure assertions — `expect request connects` / `expect request fails` (P#108).
 - CI ergonomics: `--failed` (replay last run's failures), `--bail`, `--format ndjson`,
-  `--no-timestamps`, `--log-file` (decision 111).
+  `--no-timestamps`, `--log-file` (P#111).
 
 ### Added — browser arc (`0.2` internal milestone)
 
@@ -65,7 +68,7 @@ performance arc closed 2026-08-02 and is included below.
 - `tflw migrate`: the rewrite machinery (`Diagnostic.deprecation` + `collectMigrations`/
   `applyMigrations`) for checker-flagged deprecations, wired end to end and proven via synthetic
   diagnostics. **It has nothing to migrate and cannot have:** no checker rule emits a deprecation,
-  because the grammar has been additive-only since the first release (decision 45), so every run
+  because the grammar has been additive-only since the first release (P#45), so every run
   reports `no deprecated syntax found` and touches no files. Shipped ahead of the first real
   deprecation, not as a working migration path.
 - A 10-test mixed UI/API acceptance suite against a purpose-built dogfood target (webV2:
@@ -78,7 +81,7 @@ performance arc closed 2026-08-02 and is included below.
   workload-bearing the moment it contains a workload line; the body is ordinary steps, so an
   `action` written for the functional suite is reusable unchanged.
 - Five workload shapes: `ramp to N users over D`, `hold N users for D`, `step …`, `spike …`, and
-  `run N iterations across M users` (decisions 97/98/102).
+  `run N iterations across M users` (D97/D98/D102).
 - `threshold` assertions (`p50`/`p90`/`p95`/`p99` duration, and error rate; optionally scoped to
   one step via `for "label"`) — a workload-bearing test's verdict comes from its thresholds, and a
   workload-bearing test with none is a checker error, since it could never fail.
@@ -97,16 +100,16 @@ performance arc closed 2026-08-02 and is included below.
 ### Added — one `test` keyword, one report (M50–M58)
 
 - `scenario` blocks were **removed** and collapsed into `test`, with the kind inferred from the
-  presence of a workload clause (decisions 93–96, 103). `scenario` is now a hard `TF033` error
+  presence of a workload clause (D93–D96, D103). `scenario` is now a hard `TF033` error
   naming its replacement.
 - `tflw load` was **removed** and folded into `tflw run`, which drives functional and
-  workload-bearing tests alike in one pass, in file declaration order (decisions 105–115).
+  workload-bearing tests alike in one pass, in file declaration order (D105–D115).
 - A `parallel`/`sequential` test-header modifier controls a test's concurrency with its
   file-siblings; `--parallel N` (file concurrency) and `--workers N` (load generation) are separate,
   unrelated axes, and `--skip-workload` drops workload-bearing tests for fast functional iteration.
 - Workload results render **inline with the functional ones** in the same `report.html`/`junit.xml`/
-  `results.json` — there are no separate `load-*` artifacts (decisions 116–122).
-- An `exclude` config directive for file discovery (decision 127).
+  `results.json` — there are no separate `load-*` artifacts (D116–D122).
+- An `exclude` config directive for file discovery (D127).
 
 ### Added — pen-test arc, Tier 1 (`0.4` internal milestone, M128)
 
@@ -114,47 +117,47 @@ performance arc closed 2026-08-02 and is included below.
   HTTP hygiene rules (cookie flags, HSTS/CSP/`X-Frame-Options`/nosniff, credentialed CORS
   wildcards, cacheable authenticated responses, version disclosure, TLS protocol version and cipher
   suite) run over the response the last `api` step received, reusing the `Finding`/severity model
-  the a11y scan introduced (decisions 283, 289, 290).
+  the a11y scan introduced (D283, D289, D290).
 - **Applicability is a third state.** Every rule declares a precondition; a rule whose precondition
   is unmet reports *not applicable*, which is neither a violation nor a silent pass. Without it,
   `hsts-missing` and `cookie-not-secure` would fire on every response of every plaintext suite
-  (decision 284).
+  (D284).
 - **An assertion where no rule applied fails**, with a dedicated message naming each precondition
-  that went unmet — a scan that could not have failed must not report a pass (decision 285). A
+  that went unmet — a scan that could not have failed must not report a pass (D285). A
   severity floor narrows which rules run at all, so the printed counts describe the work actually
-  done (decision 296).
+  done (D296).
 - **A `session` block's own login response is scanned once, at establishment**, with findings
   attributed to the session by name and folded into that test's security assertions — otherwise a
-  suite whose session cookie lacks `HttpOnly` reports clean (decision 287).
+  suite whose session cookie lacks `HttpOnly` reports clean (D287).
 - **`authorized target "<url>" reason "<text>"`** in `tflw.config` — the declaration layer of the
   safety model, required before any security assertion (`TF060`) and rejecting wildcards and
   scheme-less targets (`TF061`). The reason is printed in the CLI summary and embedded in
-  `report.html`, so every artifact records the claim that permitted the scan (decisions 21, 291).
+  `report.html`, so every artifact records the claim that permitted the scan (D21, D291).
 - **`sec/tls-version-old` and `sec/tls-weak-cipher`**, from a stdlib `tls.connect()` probe to the
   same host — the runtime drives Node's `fetch`, which exposes neither the negotiated protocol nor
   the cipher, and the dependency that would is the one the zero-runtime-dep bundle declined. One
   handshake per `host:port` per **run**, obeying `allow hosts` and re-checking the `authorized
   target` declaration against where the run actually ended up rather than the base URL the checker
-  could see (decision 288).
+  could see (D288).
 - The probe deliberately offers a **TLS 1.0 floor**, below Node's own `DEFAULT_MIN_VERSION` — a host
   speaking nothing but a deprecated protocol would otherwise refuse the handshake, leaving
   `tls-version-old` unable to fire in the one case it exists for. Measured: offering an old floor
   never drags a healthy server down, because the server still picks the newest version both sides
   speak. Cipher suites are *not* widened the same way, since reaching a legacy-cipher-only peer
   needs OpenSSL's `@SECLEVEL=0`, which also lowers what counts as an acceptable certificate
-  (decision 298).
+  (D298).
 - Both TLS rules answer **"what does this host give a current client?"** — not what the asserted
   request negotiated (the probe is a second connection), and not the server's whole offer (a host
   supporting RC4 alongside AES-GCM negotiates AES-GCM and is correctly silent). Enumerating
   everything a server would accept takes one handshake per suite, and belongs to `tflw scan`
-  (decision 299).
+  (D299).
 - No handshake at all when the severity floor has already excluded both TLS rules — the floor
   narrows the pack before applicability, so a `critical`-floor assertion never consults them, and a
-  connection opened for an assertion that cannot use it is one nobody asked for (decision 302).
+  connection opened for an assertion that cannot use it is one nobody asked for (D302).
 - A probe that cannot connect makes both rules *not applicable*, never an error — a network failure
   is not a security verdict. But it is **announced** on every result line, passing ones included:
   a rule blocked by a failed instrument is reported differently from one blocked by its
-  precondition, because the first means the assertion did less than it was asked to (decision 300).
+  precondition, because the first means the assertion did less than it was asked to (D300).
 
 ### Added — pen-test arc, Tier 2 (`0.4` internal milestone, M130)
 
@@ -162,45 +165,45 @@ performance arc closed 2026-08-02 and is included below.
   (BOLA/IDOR). The request the last `api` step *actually made* is re-issued under every other
   declared principal and the responses are compared. A **separate matcher** from `security
   violations`, deliberately: folding them would make every already-shipped Tier 1 assertion start
-  sending cross-identity traffic the moment its author upgraded (decisions 303, 304).
+  sending cross-identity traffic the moment its author upgraded (D303, D304).
 - **The unit of input is an observed request, not a route.** 79% of `api` paths in a real suite
   carry a `{interpolation}`, so a static endpoint × session cross-product yields addresses nobody
   can dial. The probe is rebuilt from the observed trace rather than re-run through the step, which
   would re-evaluate `unique(…)`/`random(…)`/`{var}` and ask about a resource the owner never
-  touched (decisions 303, 323).
+  touched (D303, D323).
 - **The oracle is differential on resource identity, not on status codes.** An admin legitimately
   gets a byte-identical `200` on another user's order, and a collection endpoint's correct answer
   for a non-owner is a filtered `200` — both invisible to a status oracle. Extraction is narrow
   (bare root `id` only; an envelope yields *no resource identity found*, a failure rather than a
   pass) and containment is wide (a scalar-leaf walk at any depth, exact equality), because a leak
-  returned under a different key is still a leak (decisions 305, 321, 322).
+  returned under a different key is still a leak (D305, D321, D322).
 - **Five probe outcomes, and `clean` has to be earned.** `429`, any `5xx`, a non-JSON body and a
   CSRF-shaped `403` are all *inconclusive*, so a suite that trips its own rate limiter can never
   report the throttle as an authorization boundary. `404` sits with the refusals, because returning
   `404` rather than `403` to avoid revealing a resource's existence is the more careful of two
-  correct implementations (decisions 324, 325).
+  correct implementations (D324, D325).
 - **`session <name> [oauth2] privileged`** — a principal that is *meant* to reach other principals'
   resources is left out of the probe set. A claim about authority, not a speed knob: marking every
-  session privileged is refused (decisions 307, 310).
+  session privileged is refused (D307, D310).
 - **`probe mutating`**, an optional indented sub-clause under `authorized target` — permission for
   a probe to re-issue a `POST`/`PUT`/`PATCH`/`DELETE` against *that host*. Without it a mutating
   step reports `not probed` rather than silently sending writes somewhere nobody said it could. The
-  one-line declaration is unchanged (decisions 311, 330).
+  one-line declaration is unchanged (D311, D330).
 - **`TF062`/`TF063`/`TF064`** — a step naming its own credential, an assertion with no principal to
   judge with, and an assertion inside `wait until api` (which re-polls until its expects pass, so a
   real finding would be re-probed on every poll and reported as a *timeout*). `TF033` covers the
   same rule inside a workload. `TF062`/`TF063` are each a lexical refusal **plus** an exact runtime
   guard, because calls bind late and an `action` body's owner is not statically knowable
-  (decisions 315, 328, 329).
+  (D315, D328, D329).
 - **Every finding emits a runnable `.tflw` repro** under `report/authz-repro/`, with **per-rule
   templates**: a collection leak's correct answer is a filtered `200`, so a single always-`403`
   template would emit a regression that goes red the moment somebody fixes the bug. Names are
   derived from rule + method + path + principal, so duplicates collide into one file instead of
-  racing (decisions 314, 332).
+  racing (D314, D332).
 - **The run states its own blind spot.** `authz coverage: N of M api steps in the suite sit in a
   test that declares an owner` — a static census over every discovered file, printed beside the
   `authorized target` reason, so "we probed everything we asserted on" cannot be read as "we probed
-  everything"; plus this run's own declines, aggregated (decision 331).
+  everything"; plus this run's own declines, aggregated (D331).
 
 ### Added — pen-test arc, Tier 3 (`0.4` internal milestone, M134)
 
@@ -208,28 +211,28 @@ performance arc closed 2026-08-02 and is included below.
   `api` step actually made, re-sent once per (mutable input × payload) with **exactly one** input
   replaced. Two bare words, not `input-handling`: the lexer's identifier rule is `[A-Za-z0-9_]` and
   `-` is the minus operator, so a hyphen cannot appear in a tflw keyword, and the hyphenated spelling
-  the plan proposed is a parse error (decision 366, as corrected in build).
+  the plan proposed is a parse error (D366, as corrected in build).
 - **It changes no identity, and that is the whole difference from Tier 2.** Tier 2 strips
   `Authorization`/`Cookie` and applies a different principal; this scan moves only the payload, so
   the observed request's own `X-CSRF-Token` travels with every probe and the probe reaches the code
   it was sent to test. Consequently there is deliberately **no `TF062`/`TF063` analogue** — no owner
-  is required, and a step carrying its own credential is fine (decisions 370, 375).
+  is required, and a step carrying its own credential is fine (D370, D375).
 - **A fixed, enumerable corpus — no sampling, no seed.** 15 payloads in four classes, applied to
   every mutable input in a fixed order, so a run's request count is a number you can put in a report
   and it is the same number tomorrow. A seeded random fuzzer would need a corpus-coverage story tflw
   has no machinery for, and would produce findings whose fingerprints moved with the seed
-  (decision 367).
+  (D367).
 - **Three kinds of mutable input** read off the observed request: an identifier path segment (UUID,
   all-digits, or 24+ hex), a query parameter, and a JSON body leaf. Type-confusion payloads apply to
   body leaves only — a path segment and a query value are strings by construction, so there is no
   type there to confuse. Path and query payloads are percent-encoded, or `../` would be normalised
-  away by the URL parser before the request left the process (decision 371).
+  away by the URL parser before the request left the process (D371).
 - **The bar is disclosure, not status.** A bare `5xx` is **not** a finding — plenty of correct
   applications answer `500` to a type they never expected, and Tier 1's zero-false-positive bar is
   not renegotiated. Four rules read for evidence instead: `sec/error-detail-disclosure` (serious),
   `sec/reflected-input-unescaped` (moderate), `sec/path-traversal-read` (critical),
   `sec/oversized-input-accepted` (minor). Each **subtracts the control response's own hits**, so a
-  finding means this payload caused it rather than that the string was always there (decision 373).
+  finding means this payload caused it rather than that the string was always there (D373).
 - **Three outcomes, not Tier 2's five** — `answered` (any status the host produced, `5xx` included),
   `inconclusive` (`429` only), `not probed`. A `5xx` is a first-class answer here because the app
   demonstrably *did* process the payload, which is the thing being asked about.
@@ -238,12 +241,12 @@ performance arc closed 2026-08-02 and is included below.
   class is exhaustion-shaped and the other's positive finding *is* the act of reading the file. This
   is where D21 safety layer 4's "per class" language first has literal classes to apply to; Tier 2's
   single boolean discharged the layer for a tier that had one class, and the layer was re-opened
-  rather than assumed discharged (decision 372).
+  rather than assumed discharged (D372).
 - **`TF067`** — an assertion on a request with nothing to mutate (no id segment, no query, no JSON
   body leaf) had no power to fail, and fails. A checker code with a runtime twin that reuses it, so
   the interpolated cases the checker deliberately stays silent about are still caught. The checker
   answers *false* on every uncertainty: a `{var}` in the path may bind to an id, a `body from` file
-  is not the checker's to read, and raw text may well be JSON (decision 382).
+  is not the checker's to read, and raw text may well be JSON (D382).
 - **`TF064` widened, not duplicated.** The `wait until api` refusal now covers both pentest scans
   under one code, renamed `SCAN_ASSERTION_REPEATED_REQUEST`, because the repair is one identical
   sentence for both — what makes the construct wrong is a property of `wait until api` that does not
@@ -253,7 +256,7 @@ performance arc closed 2026-08-02 and is included below.
   first change that permits two probes in flight") is still not met and `probe rate` does not come
   due. Every result line, pass or fail, states what it cost (`3 sites, 30 requests sent, 10.0 per
   site`) and what it declined to send, because a green run that skipped two classes and a green run
-  that ran them are otherwise indistinguishable (decisions 381, 291).
+  that ran them are otherwise indistinguishable (D381, D291).
 
 ### Added — pen-test arc, findings & the gate (`0.4` internal milestone, M134b)
 
@@ -265,7 +268,7 @@ a different thing depending on which matcher a file happened to use.
   **fingerprint** computed from the scan, the rule, the endpoint, the location within it and the
   invariant violated — and deliberately *not* from the payload that triggered it or the response text
   proving it, so rewording an error message does not invalidate an acceptance for a change that fixed
-  nothing (decisions 376, 385).
+  nothing (D376, D385).
 - **`--fail-on <severity>`, `--baseline <file>` and `--baseline-write <file>`.** A scanner that goes
   red on its first run against an existing codebase gets turned off; these are what make "adopt now,
   fix on a schedule" possible. Both gates are applied *inside* the assertion, before its pass/fail
@@ -274,10 +277,10 @@ a different thing depending on which matcher a file happened to use.
   command-line flag that could turn a green suite red produces a failure nobody can locate from the
   source. A withheld finding still renders, badged with which relaxation withheld it, and the passing
   line names the count: a report that agreed with the gate would describe the gate rather than the
-  run (decisions 377, 386, 387).
+  run (D377, D386, D387).
 - **Neither gate applies to the negated form** (`not has no … violations`), where a finding is what
   makes the assertion succeed — suppressing findings there would fail an assertion for having found
-  something, which is not a relaxation in any sense (decision 386).
+  something, which is not a relaxation in any sense (D386).
 - **Baselines match on the fingerprint alone.** The `rule` and `endpoint` beside each entry are for
   the human reading the file; matching on the name would let a rule renamed in a tflw release
   silently un-accept every entry that mentioned it. A malformed baseline is refused rather than
@@ -285,7 +288,7 @@ a different thing depending on which matcher a file happened to use.
   an empty acceptance set looks exactly like a codebase that fixed everything. Stale entries are
   **reported and never removed** — a `--tag` run legitimately produces a subset of the suite's
   findings, so pruning on absence would delete acceptances the next full run still needs
-  (decision 387).
+  (D387).
 - **`--probe-seeded <n>`** adds `n` generated mutation payloads per **already-granted** class on top
   of Tier 3's fixed corpus. It cannot widen what `authorized target` permitted — seeding is a
   capability of the run and a mutation class is a claim in the config, so no number reaches
@@ -295,12 +298,12 @@ a different thing depending on which matcher a file happened to use.
   renders with the payload and the seed that drew it under the call to action *promote this payload
   into the corpus*, which makes the layer self-liquidating. Accepted consequence, stated rather than
   hidden: a real weakness found only this way does not fail CI until somebody promotes it — a finding
-  you must read beats a gate you cannot trust (decisions 369, 388).
+  you must read beats a gate you cannot trust (D369, D388).
 - **Which rules ran, on passing runs too.** Every report carries a per-scan census of the rules that
   applied and the rules that stood down *with the reason*. A rule that stands down produces no
   finding, so before this the only run in which that information existed was one where something else
   had already failed — and the run where it disappeared was the ordinary green one. Closes the
-  long-open row about a report that could not name its not-applicable rules (decision 389).
+  long-open row about a report that could not name its not-applicable rules (D389).
 
 ### Added — pen-test arc, remediation (`0.4` internal milestone, M135a)
 
@@ -309,18 +312,18 @@ a different thing depending on which matcher a file happened to use.
   framework-neutral terms and again concretely in NestJS, a CWE id and the OWASP document the fix is
   traceable to — rendered as a collapsed *possible fixes* disclosure inside each row of the report's
   findings block. An alert that names a weakness and says nothing about repairing it is a task
-  handed to somebody with the research still to do (decision 402).
+  handed to somebody with the research still to do (D402).
 - **A rule cannot ship without one.** Each pack exports its ids as a closed tuple and the KB is
   typed over their union, so a nineteenth rule fails the build until an entry exists for it. The
   failure this prevents is quiet — remediation missing because nobody wrote it looks exactly like
   remediation omitted because the fix was thought obvious, and it surfaces to whoever is triaging
-  (decision 409).
+  (D409).
 - **Severity stays in the rule modules**, against the original report design putting it in the KB. It
   is already stated twice per input-handling rule; a third home is how the rule that fails a build
   and the rule shown in a dashboard come to disagree with nothing to say which is right
-  (decision 408).
+  (D408).
 - Groundwork, not yet user-visible: the SARIF severity mapping that `M135b`'s exporter will publish —
-  four tflw levels onto SARIF's three, each with the numeric GitHub actually ranks on (decision 406).
+  four tflw levels onto SARIF's three, each with the numeric GitHub actually ranks on (D406).
 
 ### Added — pen-test arc, `findings.sarif` (`0.4` internal milestone, M135b)
 
@@ -328,26 +331,26 @@ a different thing depending on which matcher a file happened to use.
   anchors to the `.tflw` line that made the assertion, carries the endpoint as a logical location
   (the endpoint is the finding's subject, but its source is usually not in the repository being
   scanned), and arrives with the remediation, the CWE tag and the references from the knowledge base
-  above (decisions 403, 405, 407). Paths are relative to the **repository root** — found by walking
+  above (D403, D405, D407). Paths are relative to the **repository root** — found by walking
   up for `.git` — rather than to the directory tflw was invoked from, because GitHub anchors an alert
   by matching the path against the checked-out tree and an unanchored alert uploads without an error.
 - **Written only when the run actually scanned** — not written empty. An empty SARIF document is not
   neutral: `upload-sarif` reads an empty results array as *everything previously reported is fixed*
   and resolves the matching alerts, so a functional-only CI job emitting one would silently close the
   security job's whole backlog. Absence is a signal a workflow can test; emptiness is a signal that
-  reads as good news (decision 404).
+  reads as good news (D404).
 - **A baselined finding uploads suppressed; one below `--fail-on` uploads as an ordinary alert.**
   Accepted and unranked are different states, and a team that later lowers the floor should not watch
-  a pile of alerts un-dismiss themselves with no change in the application (decision 410).
+  a pile of alerts un-dismiss themselves with no change in the application (D410).
 - **`rules[]` declares what applied**; rules that stood down are listed with their reasons under
   `runs[].properties["tflw/notApplicable"]`, so the three-state coverage model survives into the
-  machine-readable artifact instead of collapsing into one empty state (decision 412). Seeded
+  machine-readable artifact instead of collapsing into one empty state (D412). Seeded
   payloads are absent entirely — they have no stable identity, and a tracking system keyed on
-  identity would mint a new permanent alert on every reseed (decision 411).
-- Authorization alerts link the runnable `.tflw` repro the run already wrote (decision 413).
+  identity would mint a new permanent alert on every reseed (D411).
+- Authorization alerts link the runnable `.tflw` repro the run already wrote (D413).
 - The document is validated against the real SARIF schema in the test suite, because this format's
   failure mode is silence: an invalid document uploads successfully and produces no alerts, with no
-  error to read (decision 414).
+  error to read (D414).
 
 ### Added — editor support for `tflw.config` as its own dialect (M136b)
 

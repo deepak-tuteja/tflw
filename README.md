@@ -153,11 +153,11 @@ release.
 ## Platform support
 
 Tested on Linux/macOS. Windows works via WSL; there is no native-Windows CI for `0.1` yet — a
-deliberate trade-off (PLAN decision 79), revisited on demand.
+deliberate trade-off (P#79), revisited on demand.
 
 ## Contributing (working in this monorepo)
 
-Source is public and issues are welcome — pull requests aren't accepted yet (PLAN decision 80).
+Source is public and issues are welcome — pull requests aren't accepted yet (P#80).
 
 ```sh
 git clone <this repo> && cd testFlow
@@ -170,8 +170,9 @@ was missing five, for the whole life of the ledger row that eventually produced 
 there is held to `.github/workflows/` by a test, so it cannot go stale the way this paragraph could.
 
 `npm run build` (root, or `-w tflw`) always produces the same self-contained, esbuild-bundled
-`packages/cli/dist/cli.cjs` that `npm publish` would ship — see PLAN.md decision 43 (the bundle) and
-decision 84 (why `build` and the publish artifact are the same thing, not two).
+`packages/cli/dist/cli.cjs` that `npm publish` would ship — see P#43 (the bundle) and P#84
+(why `build` and the publish artifact are the same thing, not two). Those are citations of design
+records this repository does not publish; both resolve in [DECISIONS.md](DECISIONS.md).
 
 Running from a clone without publishing to npm, or embedding `tflw` in another local project
 without a registry: see

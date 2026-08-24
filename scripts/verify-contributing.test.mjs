@@ -104,6 +104,14 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:citations',
+    class: 'gate',
+    local: 'npm run verify:citations',
+    why: 'the other half of `D666` (`M152b`/`D691`), and unlike the gate above it does the same work in both places because both sides are tracked. It refuses the spelling that predates the index — `decision 57`, a number with no letter — which is worse than an unresolvable identifier BECAUSE it looks resolvable: 22 numbers publish both a `P#n` and a `D<n>` entry, on unrelated subjects. It shares the `git ls-files` constraint, so it cannot run through `scripts/exec.mjs` either',
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run test:links -w @tflw/docs-site',
     class: 'gate',
     local: 'npm run test:links -w @tflw/docs-site',

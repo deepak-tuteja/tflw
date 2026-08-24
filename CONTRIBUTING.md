@@ -1,7 +1,6 @@
 # Contributing to tflw
 
-Source is public and issues are welcome — **pull requests aren't accepted yet** (PLAN.md decision
-80). GitHub will show you this file when you open one anyway; that is a known cost of having the
+Source is public and issues are welcome — **pull requests aren't accepted yet** (P#80). GitHub will show you this file when you open one anyway; that is a known cost of having the
 file, and it is cheaper than not having it, because the thing this document is really for is
 *working in the monorepo* — including future-me at 2am wondering what has to be green before a
 branch is pushed.
@@ -67,6 +66,7 @@ npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
 npm run verify:decisions                # ※ does less in CI than it does here
+npm run verify:citations
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
@@ -78,7 +78,7 @@ npm run verify:ledger                  # § never runs in CI, by decision
 **What each one is for, and the two that are not what they look like:**
 
 - **`npm run build`** — every workspace compiles, and produces the same self-contained,
-  esbuild-bundled `packages/cli/dist/cli.cjs` that `npm publish` would ship (PLAN.md decisions 43
+  esbuild-bundled `packages/cli/dist/cli.cjs` that `npm publish` would ship (P#43
   and 84: `build` and the publish artifact are the same thing, not two). Several gates below read
   that output, so this runs first.
 - **`npm run typecheck`** — types across all seven workspaces.
@@ -110,6 +110,20 @@ npm run verify:ledger                  # § never runs in CI, by decision
   and every citing site. That is the report to read when an entry looks like it was lifted from the
   wrong place — the published file names the record, but 57 identifiers have two candidate blocks
   inside the *same* record and only the report can tell you which one you are reading.
+- **`npm run verify:citations`** — the other half of that, and it runs the same in CI as it does
+  here. `verify:decisions` keeps every *canonical* citation pointed at an entry; this refuses the
+  older spelling, `decision 57`, which names a number without saying which of nine numbered
+  sequences indexes it. A bare number is worse than an unresolvable identifier because it looks
+  resolvable: 22 numbers publish both a `P#n` and a `D<n>` entry today, on unrelated subjects, so a
+  reader who guesses lands on a real entry about the wrong thing. **Read the sentence, never the
+  magnitude** — of the 181 identifiers `M152b` wrote into tracked prose, **37 carry a number that
+  also publishes an entry in the other sequence**, so a digit-keyed rule would have sent a reader to
+  a real entry about something else 37 times. Four exemptions exist and each is narrow: a citation that names its own
+  record, a `tflw`/`console` fence (quoted output, not a citation), a `<script setup>` block (a
+  source comment that happens to live in a `.md`), and a link target — that last one because a
+  fragment like `SPEC.md#45-…-d16-d19d24ad26d70d93-d122` is an address that has to survive
+  verbatim, and eight strings inside it read as citations. It reads the tracked set through `git ls-files`, so like the gate above it cannot run on
+  the box.
 - **`npm run test:links -w @tflw/docs-site`** — every internal docs anchor resolves and every page
   renders the sidebar it belongs to. Separate from `npm test` because it reads the **built**
   `.vitepress/dist`, so it needs `npm run build` first. This is the gate the ledger row that
