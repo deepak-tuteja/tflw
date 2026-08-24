@@ -7,6 +7,9 @@ makes `activate()` testable at all without an Extension Host (see the header of
 Code the right wiring; they cannot prove VS Code does anything with it.** Nothing in CI has ever
 started a real Extension Host.
 
+The `P#n`/`D<n>`/`M<n>` citations below name blocks in design records this repository does not
+publish; each resolves in [DECISIONS.md](https://github.com/deepak-tuteja/tflw/blob/main/DECISIONS.md).
+
 So the manifest tests assert that a contributed language has an `onLanguage:` activation event, a
 grammar, and a `semanticTokenScopes` map — they do not assert that the editor then *activates*,
 *tokenizes*, or *colours*. Everything below is the part a human has to look at.

@@ -16,13 +16,13 @@ regenerated, so the two can never say different things.
 | spelling | means |
 | --- | --- |
 | `P#43` | item 43 of the original plan's numbered list — the language's founding decisions |
-| `D318` | decision 318 of the later sequence, which runs past 665 |
+| `D318` | `decision 318` of the later sequence, which runs past 665 |
 | `M137d` | a milestone: a slice of work that shipped as one pull request |
 
 **`P#n` and `D<n>` are different sequences that collide on the number.** `P#16` is soft
 assertions; `D16` is the load-execution model. The prefix reads as *principle* over a list that is
-mostly decisions, which is a wart — it is kept because it was already the spelling in 131 places in
-tracked prose, and churning those to fix a letter would have been the larger change.
+mostly decisions, which is a wart — it is kept because it was already the spelling in tracked prose,
+183 times as of 2026-08-24, and churning those to fix a letter would have been the larger change.
 
 A milestone entry is a one-line statement of what it shipped. A decision entry is the decision
 itself, at whatever length it was taken.
@@ -30,20 +30,26 @@ itself, at whatever length it was taken.
 ## Citations inside an entry
 
 Entries are lifted verbatim, so they cite each other in whatever spelling the record used at the
-time. Three of those spellings are not the ones above, and one names a sequence this file does not
-index.
+time. Two of those spellings are not the ones above, and neither names a sequence this file indexes.
 
 | in an entry | means |
 | --- | --- |
-| `decision 43`, `#43` | `P#43` — the founding list, in the two spellings that predate `P#n` |
 | `enterprise decision 3a` | item 3a of the enterprise arc's own list, which has no entries here |
 | `gap #9` | item 9 of `TFLW-GAPS.md`, a nineteen-item expressiveness backlog — a `testFlow-tests` record, not published |
 
-**Read the sentence, not the number.** The founding list runs to 114 and the enterprise list to 22,
-so a bare `decision n` at or below 22 does not say which one it means. Eleven citations sit in that
-band and four of them mean the enterprise list — `M12`'s "decision 16" is the docs-site cluster, and
-`P#16` above it is soft assertions. Every one of the four is recoverable from the sentence around
-it, which is also why no rule keyed on the digits can be trusted to do it for you.
+A third spelling used to be here and is gone: a bare `decision 43` or `#43`, the two forms that
+predate `P#n`. All 171 were read in place and rewritten — one sentence at a time, because no rule
+on the digits could do it — and `npm run verify:citations` now fails on a new one. They survive only in comments in tracked *source*, which
+this index does not answer — see below.
+
+**Why they were read rather than converted.** The founding list runs to 114 and the enterprise list
+to 22, so a bare `decision n` at or below 22 does not say which one it means. Eleven citations sat
+in that band and four meant the enterprise list — `M12`'s was the docs-site cluster while `P#16` is
+soft assertions, and `P#111`'s was CI ergonomics while `P#7` is API vocabulary. Nine more above the
+band would also have resolved to the wrong sequence on magnitude alone: `CHANGELOG.md`'s
+`decisions 97/98/102` are workload shapes, and `P#102` is an enterprise cluster. A rule keyed on
+the digits would have sent each of those to a published entry about something else, which is worse
+than the dead pointer it replaced. The survivors say `enterprise decision n`, which names its list.
 
 Not every `#n` is a citation at all: `D147`, `M92` and `M148` number pull requests with it, and
 `M130` numbers an OWASP category.
@@ -319,7 +325,7 @@ here.
 
 27. **Config is a tflw dialect.** `tflw.config` is parsed by the same lexer/parser as tests — a
     declaration-only dialect (`env`/`defaults`/`session`/`require` blocks; `test` not allowed).
-    Forced by decision 20: sessions contain real steps, and steps-in-strings would lose the
+    Forced by P#20: sessions contain real steps, and steps-in-strings would lose the
     parser/checker/squiggles. Config errors get the same teaching-quality diagnostics as tests.
     **Rejected:** YAML/TOML (steps degrade to strings), JS/TS config (Node semantics in the first
     file manual QA edits).
@@ -363,7 +369,7 @@ here.
 
 31. **Sessions are the auth presets.** No second auth concept: a `session` block's captured
     headers apply to api steps of tests running `as <session>`; its storage state applies to
-    their browser contexts. Decision 7's "auth presets" resolves to this.
+    their browser contexts. P#7's "auth presets" resolves to this.
 
 ### P#32
 
@@ -456,7 +462,7 @@ here.
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
-41. **Publish gate re-scoped to an API-only acceptance (amends #35).** The M7 verdict
+41. **Publish gate re-scoped to an API-only acceptance (amends P#35).** The M7 verdict
     (side-by-side vs raw *Playwright*) is inherently a browser-era comparison and now gates
     **1.0**, not the first publish. New gate for publishing (M2.7): ~10 scenarios side-by-side
     vs **raw `fetch` + `node:test`** (the honest "no tool" baseline) judged on line count,
@@ -464,22 +470,22 @@ here.
     QA-practice API with real auth/CRUD/token flows — an API we can't fix when it's awkward);
     and the publish-readiness checklist (`npm pack` clean install elsewhere, README funnel,
     LICENSE, CI). **Rejected:** publish-now-no-gate (only dogfood so far is our own API),
-    keeping #35 as-is (API work would get zero external feedback before the grammar freezes),
+    keeping P#35 as-is (API work would get zero external feedback before the grammar freezes),
     Hurl/newman as the comparison target (benchmarks another tool's philosophy, not value over
     the default).
 
 ### P#43
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CONTRIBUTING.md, README.md, SPEC.md · lifted from `PLAN.md`</sub>
 
 43. **Packaging mechanism + runtime slimming.** `tflw` becomes one publishable package via an
     **esbuild bundle at prepack** (cli+lang+runtime+reporter into `dist/`; `@tflw/*` stay
-    private/refactorable — implements #37's "cli bundles" line, which was never actually built:
+    private/refactorable — implements P#37's "cli bundles" line, which was never actually built:
     today's package.json depends on private workspace packages and would publish broken).
     **Node ≥ 22** (20 went EOL 2026-04) and **drop the `tsx` runtime dependency**: native
     type-stripping loads `.ts` helpers via plain dynamic `import()`; a teaching error covers the
     unsupported corner (enums/namespaces/parameter properties in helpers). Published tflw has
-    essentially zero runtime deps. **Amended by decision 99/enterprise decision 13:** `undici` is
+    essentially zero runtime deps. **Amended by P#99/enterprise decision 13:** `undici` is
     now a real, narrowly-scoped `dependencies` entry of `@tflw/runtime` (mTLS's client-cert path
     only — every other request still uses the plain global `fetch`, untouched); this doesn't
     reverse the promise here since only the bundled CLI artifact is ever published, never
@@ -491,19 +497,19 @@ here.
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
-44. **Playwright arrives in the browser release as an optional peer (amends #37's "regular
+44. **Playwright arrives in the browser release as an optional peer (amends P#37's "regular
     dependency").** v0.2 loads `playwright` via dynamic import at the first browser step;
     missing → teaching error pointing at `tflw install-browsers`, which then does **both** the
     `npm i -D playwright` and the browser download. API-only projects stay small forever — the
-    actual #36 promise — and upgrading API-only users never pull the Playwright npm payload.
+    actual P#36 promise — and upgrading API-only users never pull the Playwright npm payload.
     **Rejected:** regular dep (every API-only upgrade downloads it), separate `tflw-browser`
     package (multi-package release train in public).
 
 ### P#45
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
 
-45. **Stability promise at publish (amends #38).** The shipped API grammar is declared
+45. **Stability promise at publish (amends P#38).** The shipped API grammar is declared
     **frozen additive-only** from the first npm release — the browser half adds statement
     keywords (provably additive; old files keep parsing) but never changes existing syntax.
     Escape clause in the README: any breaking change before 1.0 requires a checker deprecation
@@ -512,6 +518,23 @@ here.
     building migrate pre-publish (weeks of work, zero migrations to run), 0.x-no-promises
     (re-rejected — now external suites would be the casualties).
 
+### P#46
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+46. **Publish-gating correctness fixes (from this session's code review).** Must-fix before
+    publish: `--tag` matching zero tests anywhere exits 0 with a green CI (make it a hard
+    error); `--seed abc` silently coerces NaN→0 (usage error); a parse error in one file lets
+    *other* files execute (real side effects) yet exits without writing report.html/junit.xml
+    (validate **all** files before running **any**; always write the report for tests that ran);
+    the docs claim that retry replays generated values identically (true for `random`, not
+    `unique` — the counter deliberately advances so retried attempts can't collide with data the
+    failed attempt created; fix the claim, keep the behavior). Documented-not-gating (fix if
+    trivial): report.html keeps only the last retry attempt's steps (the flaky badge has no
+    evidence trail); JSON-escaped secrets dodge value-based redaction; `equals` on objects is
+    key-order-sensitive; header override merging is case-sensitive; an `any` quantifier throws
+    if one element lacks the remaining path.
+
 ### P#48
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
@@ -519,14 +542,131 @@ here.
 48. **Repo & license.** `git init` in `testFlow/`, push to a new **public GitHub repo** named
     after the npm package, **MIT** license, GitHub Actions CI (build+typecheck+tests on Node
     22/24 — which also verifies the README CI-snippet claim), `repository`/`license`/`author`
-    fields in package.json. (Decision #35 said "public-grade from day one"; there was no git
+    fields in package.json. (P#35 said "public-grade from day one"; there was no git
     repo at all — this closes that.) The npm name **`tflw` is free** (verified 2026-07-06;
     `testflow` is taken). **Rejected:** Apache-2.0 (ceremony without benefit at this scale),
     publishing from a private repo (kills issues/source-reading, no provenance).
 
+### P#49
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+49. **Published docs split.** README documents **exclusively what the installed package does**
+    (API surface) plus one roadmap line; SPEC.md stays the single full design doc with a
+    **per-section status badge** (✅ shipped / 🔮 planned), the §12 CLI table split
+    shipped/planned. **Rejected:** SPEC/ROADMAP split (shared concepts would duplicate and
+    drift), status-paragraph-only (nobody reads it before clicking a §9 anchor).
+
+### P#51
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+
+51. **`body text` response subject — implement it (it's promised, not optional).** SPEC §5.3 marks
+    `body text` a ✅ shipped response subject and two runtime errors (`interpreter.ts` :695/:750)
+    tell users to "use `body text` for non-JSON" — but the parser never recognised it
+    (`SUBJECT_KEYWORDS` is `status/duration/header/body`; no `BodyTextSubject` AST node; no
+    `resolveSubject` case), so asserting on a non-JSON (text/HTML/XML) response is impossible and the
+    tool's own error messages point at a dead end. Fix: add `BodyTextSubject` end-to-end (lexer/
+    parser accept `body text` as a subject, AST node, interpreter resolves it to `response.bodyText`).
+    **Rejected:** downgrading SPEC to 🔮 + rewording the two errors — the messages are correct and the
+    feature is small; the bug is the missing implementation, not the promise.
+
+### P#52
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+52. **Date generators must honor `--seed` (or the guarantee is narrowed honestly).** `random date in
+    past`/`in future` anchor on wall-clock `Date.now()` (`eval.ts` :101–104), so the same `--seed`
+    yields different absolute dates every run — a direct contradiction of §7.4 ("reproduces exact
+    values"). Fix: capture **one run-clock** at run start, thread it through `EvalCtx`, and derive
+    `today`/`now`/`date in past`/`date in future` from it (not `new Date()`); stamp the run-clock in
+    the report/CLI/junit next to the seed and accept a `--now <iso>` replay flag so `--seed` +
+    `--now` reproduces absolute dates exactly. SPEC §7.4 reworded to state precisely what `--seed`
+    alone reproduces vs. what also needs `--now`. Add the date generators to the reproducibility
+    test (they're currently untested). **Rejected:** leaving `Date.now()` and quietly keeping the
+    "exact values" claim.
+
+### P#53
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+53. **Session generators + splice point must be worker-deterministic.** `SessionCache.ensure`
+    (`interpreter.ts` :238) runs a session's steps with the `TestCtx` of *whichever test first opts
+    in*, and splices its steps into that test. Under `--workers N>1` that's a race, so a session body
+    using `random`/`unique` produces values that depend on scheduling, and the login steps land in a
+    non-deterministic test — breaking P#47's own "byte-identical at any worker count" promise.
+    Fix: seed a session's generator stream from a **stable** sub-seed derived from the session name +
+    run seed (independent of the race), and choose the splice-target test deterministically
+    (first opting-in case in sorted order, computed up front). **Rejected:** relying on `workers 1`
+    being the default to hide it.
+
+### P#54
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+54. **A failed session must not permanently poison `retry` and the whole authenticated suite.**
+    `SessionCache` memoizes the session *promise*, so a single transient auth blip caches
+    failure forever: every test running `as <session>` fails, and because the cache is shared across
+    a test's retry attempts, `retry N` on those tests can never re-establish — the flagship
+    flaky-recovery feature is nullified for exactly the tests most likely to flake. Fix: cache only
+    **successful** outcomes; a failed establishment is not cached, so a retry (or a later test) may
+    re-attempt it. **Rejected:** the current permanent-failure memoization.
+
+### P#55
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+55. **A soft `check` inside an `action` must stay soft.** `execCall` (`interpreter.ts` :507) throws a
+    hard `RuntimeError` whenever an action's steps report `ok:false`, but `execSteps` returns
+    `ok:false` for accumulated soft-`check` failures too — so a `check` that fails inside an imported
+    action aborts the caller immediately, silently converting `check`→`expect` and violating §6.4's
+    closed soft-assertion semantics. Fix: propagate an action's soft failures back to the caller as
+    soft (accumulate, don't throw). **Rejected:** documenting actions as hard-only (a surprising
+    carve-out in a uniform grammar).
+
+### P#56
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+56. **Close the redaction ordering window.** Traces are redacted per-step as steps run, but a secret
+    is registered only when its `env(NAME)` is first *evaluated* (`eval.ts` :57) — so a secret first
+    read late in a run won't retroactively mask an earlier step whose trace already contained that
+    value. "Ticket-attachable by construction" (§3.4) has an unstated, untested ordering assumption.
+    Fix: (a) pre-register every `require env` variable at run start, and (b) run a **final
+    full-report redaction pass** at write time with the fully-populated redactor, so a late-registered
+    secret still masks earlier steps. **Rejected:** per-step eager redaction alone.
+
+### P#57
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+57. **Honest static-checker scope, plus a conservative unknown-variable pass.** `checker.ts` defers
+    "matcher↔subject compatibility, unknown captures" to "later milestones", so the single most
+    common authoring mistake — a typo'd `{var}` — surfaces only as a *runtime* error when the request
+    fires, not as a checker squiggle, undercutting §1's "diagnostics are a feature" pillar for the
+    manual-QA audience the README courts. Fix: add a **conservative** checker pass that flags a
+    `{var}`/subject reference provably never bound in its reachable scope (`let`/`capture`/action
+    param/table column) with a did-you-mean; matcher↔subject stays runtime for now but §1 gets an
+    honest "static scope" note. (Gate: the SPEC note is a must; the conservative pass is a strong
+    should — ship it if it lands cleanly, don't hold the push on edge cases.) **Rejected:** claiming
+    full teaching-diagnostics coverage while the commonest mistake is runtime-only.
+
+### P#59
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+59. **M2.65 exit = clean tree + green suite as the push gate.** Every fix above lands with a
+    regression test, and the reproducibility test is backfilled to cover `unique`, session-internal
+    generators, and the date generators (all currently untested); a sessions-under-`--workers` test
+    asserts identical output across concurrency. M2.65 is `done` only when `npm run build &&
+    typecheck && test` is green **and** `git status` is clean on a single reviewed initial commit —
+    that is the gate the first `git push` (and then `npm publish`) waits behind. The
+    already-documented last-attempt-only retry-report limitation (SPEC §4.4) stays a known gap, not a
+    push blocker.
+
 ### P#60
 
-<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
 
 60. **Lexer: identifiers named after an HTTP verb break arithmetic division (critical, novel bug).**
     `canStartPath()` (`lexer.ts` :272–275) decides a `/` starts a PATH token purely from the
@@ -543,6 +683,181 @@ here.
     previous token happens to read GET/POST/…"), and add a regression test lexing `get`/`post`/
     `delete`/`patch` as ordinary variable names next to `/`.
 
+### P#61
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+61. **Duplicate response headers silently collapse to the last value (high, novel bug).**
+    `http.ts` :35–37 builds the response header map with
+    `res.headers.forEach((value, key) => { headers[key] = value; })` — a same-named repeated header
+    (most commonly multiple `Set-Cookie`s, e.g. a session cookie *and* a CSRF cookie on one login
+    response) silently overwrites down to whichever value the Fetch API iterates last. `capture
+    header "set-cookie" as token` then captures the wrong cookie with no error and no sign anything
+    was dropped — invisible in the report because only one value was ever recorded. No test in
+    `request-shapes.test.ts` or `sessions.test.ts` exercises a multi-value header. Fix: preserve
+    repeated headers (e.g. join with `, ` per HTTP semantics, or expose a list), and add a
+    regression test asserting on a response with two `Set-Cookie` headers.
+
+### P#62
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+62. **Interpolated path/URL segments are never percent-encoded (high, novel bug).** `execApi`
+    (`interpreter.ts`) builds the request URL from `interpolatePath(spec.path.raw, ctx)`
+    (`eval.ts`), which string-concatenates evaluated `{var}` values with no
+    `encodeURIComponent`. A captured or generated value containing `&`, `#`, `?`, a space, or
+    non-ASCII characters (e.g. a real API's name/email field round-tripped into a later path, or a
+    `unique("prefix")` value composed with such data) silently corrupts the request — wrong query
+    params, a truncated path, or a request to the wrong resource — instead of erroring or encoding
+    correctly. No test covers a path variable containing a URL-special character. Fix:
+    percent-encode each interpolated path segment (not the whole path, so intentional `/`s in a
+    multi-segment `{var}` — if ever needed — stay a deliberate choice) and add a regression test
+    with a captured value containing `&`/space/`#`.
+
+### P#63
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+63. **Nested object/array literals with a quoted string key fail to parse (high, novel bug).**
+    `parser.ts`'s `parseFieldValue()` (:1438) only recognises a nested object shape when the first
+    key is a bare `ident` immediately followed by `:` (or an empty `{}`); anything else falls
+    through to `parseValue()` → `parseAtom()`'s `lbrace` case → `parseInterp()`, which unconditionally
+    expects an `ident` token and errors (`TF010`) on a leading string token. A field value shaped
+    like `{ "name": "Widget" }` — valid JSON, and something `parseObject()` itself explicitly
+    supports at the top level (string keys, :1452) — cannot be nested inside another object/array:
+    `body { user: { "name": "Widget" } }` spuriously parse-errors even though the equivalent
+    top-level `body { "name": "Widget" }` works fine. No golden fixture or unit test exercises a
+    nested object/array element with a string-literal key; the restful-booker dogfood didn't catch
+    this because its nested objects (`bookingdates: { checkin: …, checkout: … }`) happen to use bare
+    idents. Fix: make the object-vs-interpolation disambiguation in `parseFieldValue()` also
+    recognise a leading string-or-ident key followed by `:`, and add a nested-object-with-
+    string-key fixture/test.
+
+### P#64
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+64. **Redactor over-redaction: no minimum-length guard on registered secrets (high, novel bug).**
+    `Redactor.register()` (`redact.ts` :16–21) registers *any* non-empty `env(NAME)` value for
+    substring replacement, with no length floor. A short or common secret value — a numeric ID, a
+    port number (`env(PORT)` = `"3001"`), a single-character flag — causes `redact()` to replace
+    *every* occurrence of that substring anywhere in the rendered report, including in completely
+    unrelated response fields, silently corrupting report content (e.g. an unrelated
+    `body.orderId` that happens to also be `3001` renders as `•••(PORT)`) or masking an assertion's
+    real actual/expected values. This is the inverse failure mode of the already-tracked ordering
+    gap (P#56) and needs its own fix. Not covered by `redact.test.ts` (all its fixtures use
+    long, realistically-unique secret values). Fix: require a minimum length (e.g. ≥ 6 chars,
+    configurable) before a value is eligible for substring redaction, and add a regression test
+    with a short `require env` value asserting it does *not* redact an unrelated matching
+    substring elsewhere in the report.
+
+### P#65
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+65. **CSV data tables silently mis-type, mis-align, and mis-count data (medium-high, novel bug).**
+    `parseCsvRows` (`runtime/src/dataTable.ts` :56–64) binds every cell as a raw string with a
+    naive `line.split(',')` — no quoted-field support, and no row-length validation. Three distinct
+    problems, none documented beyond the "deliberately simple" comment nor tested with a case that
+    would expose them: (a) **type loss** — a numeric CSV column (e.g. `qty`) is always bound as a
+    string, while a JSON-backed table (`.json`) preserves real types via `JSON.parse`; `expect
+    body.qty equals {qty}` against a real JSON response then always fails (`deepEqual(3, "3")` is
+    `false`) even when the data genuinely matches, because the matcher's `equals` is type-strict.
+    (b) **silent misalignment** — any field containing a comma (a quoted address or name, e.g.
+    `"Smith, John",30`) desyncs every subsequent column with no error at all — cells shift into the
+    wrong named column silently. (c) **silent row-length mismatch** — a row with fewer cells than
+    the header fills the missing ones with `''` instead of erroring, and a row with extra cells
+    silently drops them; a single mis-aligned row in a large CSV (the exact "for volume" use case
+    SPEC §7.5 describes, less likely to be hand-reviewed than inline rows) produces silently-wrong
+    test data rather than a clear "row N has M cells, expected K" error. Fix: either document CSV
+    as "unquoted, comma-only, strings-only, exact column count" loudly in SPEC §4.3 with a
+    checker/runtime warning on suspicious rows, or support minimal RFC-4180 quoting plus row-length
+    validation; regardless, coerce numeric-looking CSV cells so `equals` against a real JSON number
+    doesn't silently fail. Add tests for a comma-in-quotes row, a numeric-column-vs-JSON-number
+    `equals` case, and a short/long row.
+
+### P#66
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+66. **The checker never validates `api <service>` steps declared inside `session` blocks (medium,
+    novel gap).** `checkServices(program, knownServices)` (`checker.ts` :100–112) only walks
+    `program.tests`, `program.actions`, and `program.hooks` — `SessionDecl`s live on
+    `ConfigFile.sessions`, a separate tree, and neither `cli.ts` nor any checker pass runs a service
+    check against a session's step bodies. A typo'd/unknown service name inside `session admin`
+    (e.g. `api billng POST /auth/login`) produces zero checker diagnostics and is invisible until
+    the session actually executes at runtime — the same class of gap P#57 is fixing for
+    `{var}` typos, just for a different reference kind. `checker.test.ts` has dedicated tests for
+    services-in-actions and services-in-hooks but none for services-in-sessions — a confirmed,
+    demonstrable omission, not a hypothetical. Fix: extend `checkServices` (or add a sibling pass)
+    to also walk `ConfigFile.sessions`' step bodies; add a regression test.
+
+### P#67
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+
+67. **`wait until api`'s configured timeout only bounds the polling loop, not any individual poll
+    (medium, novel bug).** `execWaitUntilApi` (`interpreter.ts` :643–677) checks its `deadline` only
+    *after* each `execApi` call returns — a single slow/hanging endpoint can take up to
+    `config.timeouts.step` (default 30s) before the loop even re-checks the deadline, so `wait until
+    api` configured with `timeouts.wait: 500` can still block for tens of seconds if one poll hangs,
+    silently violating the documented timeout. `wait-until-api.test.ts` only covers the
+    "condition never true, all polls fast" path, never a slow/hanging individual poll. Fix: race
+    each poll against the remaining time-to-deadline (not just `timeouts.step`), and add a
+    regression test with an artificially slow single poll.
+
+### P#68
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+68. **A retried, session-authenticated test's final report shows no evidence the session ever ran
+    (medium, novel bug, compounds with P#54's fix).** `SessionCache.shown` (`interpreter.ts`
+    :236, :244–247) is a set keyed only by session name, marked the *first* time `ensure()` is
+    called for that name — regardless of which retry attempt that call happens on. Because
+    `report.html` already only keeps the *last* retry attempt's steps (documented gap, SPEC §4.4),
+    a test declared `test "…" as admin retry N` that fails on attempt 1 and passes on attempt 2
+    calls `ensure()` twice: attempt 1 consumes `shown` and gets the real steps (then attempt 1's
+    entire result is discarded since only the last attempt is kept), and attempt 2 — the one whose
+    steps actually survive into the report — gets `steps: []` back. The surviving report shows the
+    session's headers took effect but zero step evidence that a login ever happened. Not exercised
+    by any test (no test combines `retry` with `as <session>`). Fix belongs alongside P#54's
+    remediation: `shown` should track "has this *specific attempt's* report already gotten the
+    steps" rather than a permanent per-session-name flag, or the interpreter should splice session
+    steps into whichever attempt is the one actually kept. Add a retry+session combination test.
+
+### P#70
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+70. **Minor: `random number`/`random decimal` never validate `from <= to`.** Neither the parser,
+    checker, nor `eval.ts` reject `random number 10 to 5`; the reversed range silently produces
+    values outside the range a reader would expect rather than a clear authoring error. Low
+    priority — add a runtime check ("`to` must be ≥ `from`") next time this area is touched.
+
+### P#72
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+72. **Minor: the redactor mislabels a secret when two `require env` vars share the same value**
+    (`redact.ts` :16–21, `register()`'s `if (!this.secrets.has(value)) …` guard). If two different
+    vars (or a `require env` var and a coincidentally-equal generated/test value) hold the same
+    string, every occurrence renders under whichever name registered first — not a leak, but can
+    mislead someone reading the report about which credential is actually in play. Fix: track all
+    names registered for a given value (or warn on collision) rather than silently keeping only the
+    first.
+
+### P#73
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+73. **Minor: `junit.xml`'s `esc()` doesn't strip XML-invalid control characters** (`reporter/src/
+    junit.ts` :33–35 escapes `& < > "` but not C0 control characters other than tab/LF/CR, which
+    XML 1.0 forbids outright). A test name or error message that happens to contain one — e.g.
+    echoed from a garbled/binary response body in an error — produces a `junit.xml` that is not
+    well-formed XML, which some CI JUnit parsers will reject outright rather than degrade
+    gracefully. Fix: strip (or `&#xFFFD;`-substitute) disallowed control characters in `esc()`; add
+    a regression test with a control character in a test name/error.
+
 ### P#74
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
@@ -552,13 +867,13 @@ here.
     handed off is broken. (b) No `tflw --version`/`-v` — table stakes for a public CLI and the
     first thing a bug report needs; version injected from package.json at bundle time (esbuild
     `--define`). (c) The usage banner leaks internal jargon ("testFlow runner (M2.6: …)") —
-    rewrite in user language, no milestone numbering. (d) No `CHANGELOG.md` — decisions 38/45 make
+    rewrite in user language, no milestone numbering. (d) No `CHANGELOG.md` — P#38/P#45 make
     versioning *promises* (deprecation windows, additive-only freeze) with no artifact to live in;
     create one (Keep-a-Changelog style) with a `0.1.0` entry. (e) **The published tarball ships no
     README and no LICENSE** — the verified `npm pack` result is 2 files (`dist/cli.js` +
     `package.json`); npm only auto-includes README/LICENSE from the *package's own directory*, and
     `packages/cli/` has neither, so the npm package page would render essentially blank. Fix: a
-    consumer-facing `packages/cli/README.md` (installed-package view, per decision 49) + LICENSE
+    consumer-facing `packages/cli/README.md` (installed-package view, per P#49) + LICENSE
     copied into the package.
 
 ### P#75
@@ -579,14 +894,14 @@ here.
 
 76. **Editor support at launch: highlight-only VS Code extension.** TextMate grammar + language
     registration for `.tflw`/`tflw.config`, published to the Marketplace on its own cadence
-    (decision 37 already reserved that lane). No checker integration — squiggles/LSP stay M5.
+    (P#37 already reserved that lane). No checker integration — squiggles/LSP stay M5.
     A brand-new DSL rendering as plain white text is a real adoption barrier; highlighting alone
     removes most of it for ~a day of work. **Rejected:** grammar-file-in-repo-only (nobody finds
     it), defer-entirely-to-M5 (concedes first impressions for months).
-    **Superseded 2026-07-07 — see decision 94.** The "squiggles/LSP stay M5" deferral turned out to
+    **Superseded 2026-07-07 — see P#94.** The "squiggles/LSP stay M5" deferral turned out to
     be more conservative than needed: child-process-driven diagnostics (`tflw check --format
     json`, no real LSP) is a well-worn, low-effort pattern, not the heavier LSP-wrapping work M5
-    was reserved for — decision 94 ships it without waiting for a real LSP consumer to exist.
+    was reserved for — P#94 ships it without waiting for a real LSP consumer to exist.
 
 ### P#77
 
@@ -600,9 +915,27 @@ here.
     **Rejected:** stability-rule-only (the index is cheap and is what search lands on), codes-stay-
     informal (retroactively breaking by construction).
 
-### P#79
+### P#78
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+78. **Proxy & TLS, zero-dep (the corporate-QA reality).** Node's fetch ignores
+    `HTTP_PROXY`/`HTTPS_PROXY` and hard-fails self-signed staging certs — today both die as an
+    opaque `fetch failed`, and corporate QA (the exact target audience) lives behind proxies
+    against self-signed staging APIs. Ship three zero-dependency pieces: (1) a per-env config key
+    `insecure true` — disables TLS cert verification for the run, explicit and greppable in
+    review, with a visible warning in the CLI summary and report header; (2) a "corporate
+    networks" README/SPEC section — `NODE_EXTRA_CA_CERTS` for private CAs, `NODE_USE_ENV_PROXY=1`
+    on Node ≥ 24, and the Node 22 no-proxy limitation stated honestly; (3) unwrap fetch's error
+    `cause` chain into teaching errors (CERT_* → "self-signed/private CA? see `insecure` /
+    NODE_EXTRA_CA_CERTS"; ENOTFOUND/ECONNREFUSED → named hints). **Rejected:** undici as a real
+    dependency (full per-service proxy/CA support, but reverses P#43's zero-runtime-dep win
+    for a need nobody has voiced), docs-only (leaves the self-signed case on a global env var with
+    a Node warning).
+
+### P#79
+
+<sub>cited from README.md, SPEC.md · lifted from `PLAN.md`</sub>
 
 79. **Platform bar: Linux/macOS, documented; no Windows CI for 0.1.** README states "tested on
     Linux/macOS; Windows via WSL". Deliberately chosen over the recommended
@@ -614,7 +947,7 @@ here.
 
 ### P#80
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CONTRIBUTING.md, README.md, SPEC.md · lifted from `PLAN.md`</sub>
 
 80. **Repo posture: public, contributions closed initially.** No CONTRIBUTING.md / SECURITY.md /
     issue templates at 0.1 — public source is an npm-trust requirement, a community is not. One
@@ -624,6 +957,16 @@ here.
     unchanged). **Rejected:** full community-file set + provenance workflow (ceremony ahead of a
     community; reverses the manual-publish decision), skip-even-the-posture-line (ambiguity reads
     as abandonment).
+
+### P#82
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+82. **`tflw init` scaffolds secrets hygiene (restores P#36's original promise).** P#36 promised `.env.example` + `.gitignore` in the scaffold; M2.7 fixed the *docs* to match the
+    lesser reality instead of building it. For a tool whose flagship feature is "secrets never
+    leak into reports", leaving `.env` committable in its own quickstart is off-message: init now
+    also writes `.env.example` (matching the scaffold config's `require env`) and creates/appends
+    `.gitignore` with `.env` and `report/`. **Rejected:** keep-init-minimal.
 
 ### P#83
 
@@ -635,19 +978,328 @@ here.
     source-rewriting machinery lands anyway — recorded so it's a decision, not an oversight.
     **Rejected:** minimal-fmt-in-0.1.
 
-### P#99
+### P#84
+
+<sub>cited from README.md · lifted from `PLAN.md`</sub>
+
+84. **Checkout usability: a plain `npm run build` must produce the same portable artifact `npm
+    publish` would ship (found 2026-07-06, ahead of M2.8 work, via a direct user question).** The
+    repo can go public (P#48) before `npm publish` ever happens — M2.7's push and publish are
+    two separate, user-triggered steps with nothing sequencing them. Checked whether a stranger
+    cloning the public repo *before* an npm release existed would have any working path to run
+    `tflw`: they would not have. `packages/cli`'s own `"build"` script was a plain `tsc` compile
+    (thin, per-file output, importing `@tflw/lang`/`runtime`/`reporter` as bare specifiers) while the
+    real, portable, zero-runtime-dependency artifact (P#43's esbuild bundle) was only ever
+    produced by `prepack`, which nothing but `npm pack`/`npm publish` invokes. The `tsc` output
+    happened to run at all only because of incidental npm-workspace symlink hoisting into the
+    monorepo's own root `node_modules` — it would not survive being copied or installed outside the
+    workspace, and nothing documented or tested this path either way. Fix: `packages/cli`'s
+    `"build"` script now runs the same esbuild bundle `prepack` uses (`"build": "npm run bundle"`,
+    and `"bundle"` itself now cleans `dist/` first so there's never a stale mixed tsc+bundle output
+    directory); `prepack` reuses `"build"` instead of duplicating the bundle command. So
+    `git clone` → `npm install` → `npm run build` now always produces the exact self-contained
+    `dist/cli.js` a registry install would give — runnable by direct path
+    (`node packages/cli/dist/cli.js run`) or pulled into another project with zero registry
+    involvement via `npm install --no-save file:<path-to>/packages/cli` (verified working end-to-end;
+    plain `npm link` was tried first and rejected — it needs global install permissions this
+    environment doesn't have, `file:` doesn't). No new CLI surface, no new milestone: this closes
+    drift between "build for development" and "build for distribution" that had no reason to exist,
+    and `packages/cli/test/e2e.test.ts` (already builds the workspace, then spawns `dist/cli.js` from
+    a separate scratch directory) now exercises exactly this checkout-and-run path as its regression
+    test, no new test needed. README's "Contributing" section gained a "using this checkout without
+    npm" subsection with both invocation forms. **Rejected:** docs-only fix (leaves an accidental,
+    workspace-symlink-dependent mechanism as the public story — untested and liable to silently break
+    the moment workspace hoisting changes); a separate dev-only bin shape (two artifacts to keep in
+    sync for zero benefit — P#43's entire point is that there's only one shape of the tool);
+    documenting `npm link` as the primary path (works in principle but depends on global npm
+    write permissions / a Node version manager that not every machine has — `file:` has no such
+    dependency and was the one actually verified here).
+
+### P#86
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
+86. **`report.html` now shows every `retry` attempt's evidence, not just the final one (closes
+    P#46's documented-not-gating gap / SPEC §4.4's known gap); plus two SPEC-only
+    clarifications found in the same pass.** `TestResult` gains an optional `attempts:
+    AttemptResult[]` (present only when more than one attempt actually ran — a non-retried test's
+    shape is untouched); `runTest`'s retry loop now accumulates each attempt's `{attempt, ok,
+    durationMs, steps, error?}` instead of overwriting a single `result` variable. `report.html`
+    renders every failed prior attempt as a collapsed native `<details>` block (no JS) above the
+    final attempt's already-visible steps, each carrying its own fail/pass badge, so a flaky pass
+    reads as "attempt 1 failed, attempt 2 failed, attempt 3 passed" rather than a bare badge with
+    no trail. `junit.xml`'s existing `flaky` `<system-out>` line gains the attempt count when the
+    data is available, falling back to its old fixed text otherwise — kept summary-only by design;
+    JUnit's schema has no natural home for step-level evidence, and report.html is already that
+    artifact. Also documented (no behavior change): `before file`/`after file` hooks execute in
+    their own isolated scope, never shared with any test's scope (SPEC §4.2) — a `let` bound there
+    can never be read by a test, only a same-scope `before`/`after` hook can share bindings; and
+    `unique(...)`'s run-wide counter keeps advancing across a test's own retry attempts while
+    `random`-family values replay identically per attempt (SPEC §7.2) — anything a retry needs to
+    reuse identically (an idempotency key, a namespace) must be `random`, never `unique`, or a
+    "successful" retry will silently target different data than the attempt it's supposedly
+    retrying. **Rejected:** changing junit.xml's `<testcase>` shape to carry per-attempt detail
+    (CI JUnit parsers assume the standard schema; report.html is the narrative-evidence artifact,
+    junit.xml stays the CI-summary artifact); mining the existing `step:end` event stream instead
+    of changing `TestResult` (nothing persists that stream today — the report is built from
+    `TestResult[]` alone, so the fix has to live in the data model those types describe, not bolt
+    a second read path onto events that already exist for a different purpose).
+
+### P#91
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+91. **`--verbose` step-level console logging + always-on live failure diff — first two of the
+    four `/grill-me` UX/tooling tracks (2026-07-07), scoped alongside report.html tabs and the
+    VS Code extension.** `packages/cli/src/cli.ts`'s live ticker (`liveEmit`, formerly built only
+    when `color` was true) previously showed nothing but a bare `✓/✗ name` line per test, and only
+    in an interactive TTY — a piped/CI run showed *nothing* live at all, and even interactively a
+    failure gave zero detail without opening `report.html`. Two independent, additive changes:
+    - **Always-on failure diff (no flag):** `formatEvent`'s `test:end` branch now always prints a
+      failing test's `✗ name` line plus each failing step's already-capped/subset-aware `detail`
+      (gap #8's `truncate()`/`subsetMismatches()`, already baked into `StepResult.detail` — no new
+      diff logic needed), regardless of `--verbose` or TTY color. A *passing* test's tick stays
+      gated on `color`/`--verbose` exactly as before, so a plain CI/piped green run stays exactly
+      as terse as it always was (verified: `renderCliSummary`'s own end-of-run recap already
+      showed this same per-failing-step detail — that part wasn't a real gap, only the *live*
+      mid-run ticker was silent on it).
+    - **`--verbose`:** consumes the `step:end` event (`StepResult.kind`/`detail`/`durationMs`, no
+      new computation) to print a `test:start` header line plus one indented line per step, pass
+      or fail. No `-v` short form — `-v` is already `--version`. Under `--workers > 1`, per-step
+      lines from concurrently-running files would interleave illegibly (no file id on any
+      `RunEvent`, and `runWithConcurrency` is a real in-process concurrent pool) — so in that
+      combination only, each file's worker gets its own `bufferedEmit` sink that collects lines and
+      flushes them as one contiguous block once that file's `runProgram` resolves; the shared live
+      `liveEmit` is used for everything else (single worker, or non-verbose at any worker count).
+      Both sinks share one `formatEvent(ev, color, verbose)` pure mapper so live and buffered output
+      stay in lockstep.
+    4 new tests in `packages/cli/test/e2e.test.ts` (all spawning the real built `dist/cli.js`):
+    live diff visible with `--no-color`+no `--verbose`; a passing test still produces exactly one
+    mention of its name (proving no live-tick duplicate was added on the terse path); `--verbose`'s
+    per-step line format against a 4-step test; `--verbose --workers 2` against a deliberately
+    slow vs. fast file pair, asserting the two files' line ranges never interleave. All 28
+    pre-existing cli tests + 133 runtime + 146 lang + 7 reporter tests stayed green (32 cli tests
+    total after the 4 new ones).
+
+### P#92
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+92. **report.html: a collapsible per-file sidebar tree + per-test tabs — third of the four
+    `/grill-me` UX/tooling tracks (2026-07-07).** Every test used to render as one flat vertical
+    `<section>` in document order — fine at a handful of tests, unwieldy once a suite has 77+ tests
+    across 23 files (as testFlow-tests' own report already does). `packages/reporter/src/html.ts`
+    gains a `TestSlot` (id + file + the `TestResult`) computed once and shared by both a new
+    sidebar (`renderSidebar`/`renderFileGroup`/`renderTestLink`) and `<main>`'s existing per-test
+    panels (`renderTest`, now also carrying `id`/`data-file` and an `active` class). Grouping key is
+    the new optional `TestResult.file` field (`types.ts`) — optional, not required, so every
+    existing fixture/report built directly against `TestResult` across `runtime`/`reporter`'s own
+    unit tests keeps compiling and rendering unchanged (groups under a `"(no file)"` fallback); the
+    real value is stamped once, in `cli.ts`'s worker callback, by mapping each file's `report.tests`
+    with `file: relative(cwd, file)` after `runProgram` returns — deliberately not threaded through
+    `RunOptions`/the interpreter, since it's a display concern only, not something the interpreter
+    itself needs to know.
+    - Considered a pure-CSS `:checked`-hack tab UI (keeps report.html JS-free) but rejected it —
+      can't do "default-select the first failing test" or a live filter box, which are the two
+      things that actually matter once a suite is this size. Went with a small inline `<script>`
+      instead (`SCRIPT` in `html.ts`): still one self-contained file (no external requests, opens
+      via `file://` unchanged), just no longer JS-free.
+    - Default state: a file group with any failing test starts expanded (`<details open>`) and
+      shows a red dot + failure count; an all-passing group stays collapsed with a green dot. The
+      first failing test's panel is active on load; an all-green run defaults to the first file's
+      first test. A text filter + an All/Failed/Passed status toggle narrow the sidebar tree live.
+    - `@media print` forces every `.test` panel visible and hides the sidebar, so printing/PDF
+      export isn't affected by which tab happened to be open.
+    8 new tests: 5 in `packages/reporter/test/html.test.ts` (file-group order/membership, open/
+    collapsed + ok/fail state, default-active-section for both a-failure and all-green reports, the
+    `"(no file)"` fallback, sidebar/script markup presence) plus fixing 1 pre-existing exact-markup
+    test (new `id`/`data-file` attributes on `<section>`) and 1 pre-existing `cli/test/e2e.test.ts`
+    regex (`<section class="test[^"]*">` → `[^"]*"[^>]*>`, to tolerate the new attributes). All
+    146 lang + 133 runtime + 12 reporter (7→12) + 32 cli tests stayed green. Manually verified in a
+    real Chromium tab (Playwright MCP) against testFlow-tests' actual 77-test/23-file report:
+    default expand/collapse, click-to-switch between tests (including across file groups),
+    text-filter narrowing, and the Failed/Passed status toggle all worked as designed — zero
+    console errors beyond an unrelated browser-requested `favicon.ico` 404.
+
+### P#93
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+93. **`tflw docs [topic]` — fourth of the four `/grill-me` UX/tooling tracks (2026-07-07).** A
+    static cheatsheet generated from SPEC.md at build time, not hand-maintained separately and not
+    parsed live at runtime (SPEC.md isn't shipped in the npm package). New
+    `packages/cli/scripts/gen-docs.mjs` exports a pure `parseSpecToTopics(text, aliases?)`
+    (no file I/O) that walks SPEC.md's `##`/`###` headings, strips trailing status emoji
+    (✅/🔧/🔮) and `(P#...)`/`(TFLW-GAPS.md ...)` parentheticals and leading `N`/`N.M` numbering
+    from the title, and collects each heading's own body text (up to the next heading of either
+    level — a `##` parent with `###` children only gets its own intro paragraph as a topic, the
+    children become their own separate topics). Topic slugs auto-derive from the heading text
+    (kebab-cased, backticks stripped, only the part before an em-dash used for slugging so e.g.
+    "Partial-object matching — `matches subset {...}`" slugs from just "Partial-object matching");
+    a small `ALIASES` table (5 entries: `config`, `subset`, `quantifiers`, `matchers`, `events`)
+    covers the handful of headings whose literal-text slug wouldn't be what a user actually types —
+    everything else (mostly single backticked keywords like `retry`/`capture`/`let`) needed no
+    help. The script's top-level file-read/write only runs when invoked directly
+    (`process.argv[1] === fileURLToPath(import.meta.url)` guard), so a test can import
+    `parseSpecToTopics` and exercise it against a small fixture string instead of the real
+    ~800-line SPEC.md. Output is `packages/cli/src/docs-data.generated.ts` (gitignored, not
+    source-committed) — wired into `pretest`/`predev`/`bundle` (which `prepack` already runs) so it
+    regenerates automatically and can never drift from the SPEC.md that produced it.
+    `docsCommand` in `cli.ts`: no topic lists every slug; a valid topic prints its title (underlined
+    with `=`) + body; an unknown topic is a usage error (exit 2) reusing `@tflw/lang`'s existing
+    `suggest()` (already public via `export *` from `diagnostic.ts` — no lang API change needed) for
+    a "did you mean" hint, same mechanism the checker already uses for typo'd variables/sessions.
+    6 new unit tests in `packages/cli/test/gen-docs.test.ts` (fixture-based: topic extraction,
+    alias application, parent/child body-splitting, custom-alias-table support, no-topic-for-
+    childless-empty-parent, `slugify`); 3 new e2e tests in `e2e.test.ts` against the real built
+    `dist/cli.js` (topic listing, a real topic's content, the did-you-mean usage error). All 146
+    lang + 133 runtime + 12 reporter + 41 cli tests (32→41) stayed green; `tsc --noEmit` clean.
+
+### P#94
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+94. **VS Code extension: diagnostics + snippets + run — the last of the four `/grill-me`
+    UX/tooling tracks (2026-07-07), explicitly supersedes P#76's "highlight-only in v0.1,
+    squiggles/LSP wait for a real LSP consumer" deferral.** Not a real LSP (no hover/completion/
+    go-to-def) — child-process-driven diagnostics + snippets + a run CodeLens, the same low-effort
+    pattern most non-LSP editor extensions use. Two prerequisite CLI additions in `packages/cli/
+    src/cli.ts`, both additive (no change to either command's existing default output):
+    - `tflw check --format json <file>`: `loadAndValidate` gained an optional `onFileDiagnostics`
+      callback parameter — when given, a per-file diagnostic batch (the common case: a syntax/
+      checker error in the `.tflw` file itself) is handed to the callback instead of
+      `renderDiagnostics`+stderr. `checkCommand`'s new json branch collects into an array and
+      prints it as JSON, still returning the same exit code (0/2) as the text mode. Deliberately
+      scoped: a broken `tflw.config` or unknown session service (config-level, not this-file's
+      problem) still prints text to stderr and returns exit 2 with an empty JSON array on stdout —
+      out of scope for a per-file editor check, not worth the complexity of representing every
+      failure mode structurally for a v1.
+    - `tflw run <file> --only "<exact test name>"`: `--tag` alone can't target one test (tags
+      aren't required/unique). Filters `program.tests` by `t.name.value === args.only`, composing
+      with `--tag` as AND (both must match) rather than treating them as mutually exclusive — no
+      real reason to forbid combining them. A match-count-zero `--only` is a hard usage error
+      (P#46), same posture as an unmatched `--tag`.
+
+    Extension itself (`packages/vscode`), previously grammar-only with zero runtime code:
+    - `src/lib.ts` (new): every piece of vscode-*independent* logic — `findProjectRoot` (walks up
+      for the nearest `tflw.config`, the project's cwd for `tflw check`/`tflw run`),
+      `resolveTflwBin` (prefers `node_modules/.bin/tflw`, falls back to a bare `tflw` on PATH),
+      `spanToZeroBasedRange` (SPEC.md's 1-based line/column → VS Code's 0-based `Position`),
+      `parseTestDeclarationLine` (regex-based `test "..."` matching + `\"`/`\\` unescaping, for
+      CodeLens positioning — deliberately not a real parse, since this is editor-only positioning,
+      not a correctness-sensitive check). Factored out specifically so it's unit-testable: `vscode`
+      isn't a real installable npm package (only its *types* are, via `@types/vscode`) — the real
+      module only exists inside a running extension host, so anything importing it can't run under
+      a headless `node --test`.
+    - `src/extension.ts` (new): thin glue over `lib.ts` — `activate()` wires
+      `onDidSaveTextDocument`/`onDidOpenTextDocument` to spawn `tflw check --format json` and
+      publish a `vscode.DiagnosticCollection`; a `TflwCodeLensProvider` places "▶ Run test"/
+      "▶ Run file" above every `test "..."` line, both sending a command to a shared "tflw"
+      integrated terminal (`--only` for the former, plain `tflw run <file>` for the latter).
+      `tflw.config` is excluded from the diagnostics path (`doc.fileName.endsWith('.tflw')`) since
+      `check --format json` expects a *test* file, not the declaration-only config dialect.
+    - `snippets/tflw.json` (new): 7 snippets (`test`, `expect`, `session`, `before`/`after`
+      each-scope and file-scope hooks, `with each`), contributed declaratively — no code.
+    - Bundling: `scripts/bundle.mjs` (new) — esbuild, forced to CommonJS via a `.cjs` extension
+      (`dist/extension.cjs`) regardless of the package's own `"type": "module"` (used for the
+      tsx-run test suite), since VS Code's classic extension-host loader expects a `require()`-able
+      module; `vscode` marked `external` (supplied by the host at runtime, never a real dependency
+      to bundle). `main`/`activationEvents: ["onLanguage:tflw"]` added to `package.json`.
+    - Packaging gotcha hit and fixed: `vsce package`'s default dependency-bundling walk followed
+      this monorepo's hoisted `node_modules` workspace symlinks and pulled in **the entire
+      repository** (671 files, 27MB, including a stray `.env` vsce correctly refused to ship) —
+      irrelevant for a package with zero runtime npm dependencies (everything is esbuild-bundled
+      into one file). Fixed with `vsce package --no-dependencies` (new `npm run package` script) +
+      an explicit `"files"` allowlist in `package.json` (`dist`, `syntaxes`, `snippets`,
+      `language-configuration.json`, `LICENSE`) replacing the old `.vscodeignore` (vsce refuses to
+      combine both strategies) — the correct, not just expedient, fix for a fully-bundled extension.
+    12 new unit tests in `packages/vscode/test/lib.test.ts` (project-root walking, binary
+    resolution incl. the win32 `.cmd` filename case, span math incl. a floor-at-zero edge case,
+    test-name parsing incl. escape decoding) — the 2 pre-existing grammar tests stayed green
+    alongside them (14 total). 5 new e2e tests for the two CLI flags in `packages/cli/test/
+    e2e.test.ts` (structured diagnostics on a real error, empty array on a clean file, unsupported
+    `--format` value rejected, `--only` runs exactly one test, `--only` matching nothing is a usage
+    error). Manually verified beyond unit tests, on the actual installed VS Code on this machine
+    (`code --install-extension`, real `vsce package --no-dependencies` .vsix): the extension
+    activates in the real extension host with zero errors (confirmed via `~/.config/Code/logs/*/
+    windowN/exthost/exthost.log`, twice, in two independent sessions), and `tflw check --format
+    json` against a fixture file with a deliberate typo returns the exact diagnostic the extension
+    would consume. Screen-capture verification (squiggles/CodeLens actually rendering) was
+    attempted but blocked by this machine's ImageMagick policy (`coder rights="none" pattern="*"`)
+    — a system security policy, not touched — so the final visual link (does VS Code actually
+    *render* the diagnostic/CodeLens once handed valid data) is unverified by this session and
+    flagged for the user to spot-check themselves; the extension is already installed on this
+    machine for that purpose.
+
+### P#96
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+96. **Multi-session opt-in per test — `test "..." as admin, userA` — closes `TFLW-GAPS.md` gap
+    #7.** Sourced from testFlow-tests' gap-hunting backlog (M5, 2026-07-07): only one identity
+    could be opted into via session sugar, so every scenario needing two-plus identities in one
+    test (a cross-user authz check, an admin acting alongside a shopper) fell back to an inline ad
+    hoc login for every identity but one. Comma-separated list, same grammar shape as `require env
+    A, B, C` (`parseRequire`) — `parseTest` now loops on `comma` tokens after the first `ident`
+    following `as`. `TestDecl.session: string | null` → `TestDecl.sessions: readonly string[]`
+    (empty array = anonymous); every AST golden fixture's `TestDecl` node changed shape as a
+    result (mechanical rename, regenerated via `UPDATE_GOLDEN=1`, diffed to confirm nothing else
+    moved).
+
+    **Semantics — "independent, unrelated sessions," not a merge/compose model:** each opted-into
+    session's headers and cookie jar fold into the test's starting state in declared order, a
+    **later-listed session winning any header/cookie-name conflict against an earlier one** — the
+    same "later source replaces" rule the existing config→session→jar→per-step precedence chain
+    (§3.3) already followed, just extended one level. In the overwhelmingly common case this never
+    actually collides (different sessions are normally different auth transports — a bearer header
+    vs. a cookie), so the rule mostly exists for completeness, not because conflicts are expected.
+    `checkSessions` (TF028) now loops per name, emitting one diagnostic per unknown name rather
+    than aborting the whole `as` list on the first bad one. `CookieJar` gained `mergeFrom(other)`
+    (last-call-wins per cookie name) since `clone()` alone only ever handled one source jar.
+
+    **Splice-owner resolution (P#53) extended to per-session-*name*, not per-test:**
+    `findSessionUsages` now emits one `{session, localIndex}` entry per name a case opts into
+    (previously one entry per case); the CLI's existing up-front, sorted-file-order
+    smallest-global-index-wins precompute (`sessionSpliceOwners: Map<string, number>`) needed no
+    structural change at all — it was already generic over "however many usages a case
+    contributes." `runProgramInner` now builds a `ReadonlyMap<string, boolean>` of per-name
+    ownership per case (`kase.test.sessions.map(name => [name, owners.get(name) === globalIndex])`)
+    instead of one boolean; `runTest`/`runTestAttempt` thread that map through instead of a single
+    `isSessionOwner`, falling back to `SessionCache.claimShown(name)` per name when ownership
+    wasn't precomputed (single-`runProgram`-call callers, e.g. test helpers). A test can therefore
+    own one opted-in session's step-splice without owning another's, if some other test already
+    claimed that other name first — proven directly by a new CLI e2e test extending P#53's
+    own concurrency-determinism fixture to three files with *overlapping* session opt-ins
+    (`a` as `auth1`; `b` as `auth1, auth2`; `c` as `auth2`), asserting each name's owner stays
+    identical at `--workers 1` vs. `--workers 3`.
+
+    23 new/updated tests: 1 new parser golden fixture (`multi-session`) + 1 new invalid-syntax
+    fixture (`trailing-comma-session-list`, exercising the same dangling-comma error `parseRequire`
+    already had) + 4 new `checkSessions` unit tests (accepts several known names; flags only the
+    bad name(s) among several, one diagnostic each) + 4 new runtime tests in `sessions.test.ts`
+    (both sessions' headers/cookies land on one request; later-listed wins a header conflict, and
+    reversing the `as` order flips the winner too — confirms it's genuinely opt-in order, not
+    config declaration order; each session in a multi-opt-in still shown exactly once,
+    independently per name; an unknown name among several valid ones still fails clearly) + 1 new
+    CLI e2e test (above). All existing suites stayed green throughout: 157/157 lang, 138/138
+    runtime (was 134, +4), 12/12 reporter, 47/47 cli (was 46, +1), 12/12 vscode — 366 total, 0
+    regressions. SPEC §3.3 and §4.1 updated with the multi-session prose; `GRAMMAR.md`'s (already
+    stale/unmaintained — missing `retry`/`with each` too) `TestDecl` line updated for consistency
+    regardless.
+
+### P#99
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
+
 99. **M9 — Auth: session refresh-on-401 + TTL, `oauth2` session sugar, mTLS client certs** —
     cluster 1 of the enterprise-readiness arc (`PLAN_ENTERPRISE.md`, a `/grill-me` session,
-    2026-07-18, decisions 1–3/13/14). The arc **displaces M3 (browser half)** as tflw's next work
+    2026-07-18, enterprise decisions 1–3/13/14). The arc **displaces M3 (browser half)** as tflw's next work
     (enterprise decision 2) and proceeds in a fixed 6-cluster ping-pong cadence against
     testFlow-tests (enterprise decision 14); this is cluster 1 of 6. Three sub-features, all
     additive grammar/runtime, no breaking change:
 
     **(a) Session refresh-on-401 + TTL (enterprise decision 3a).** The real pain this closes:
-    M14's session cache ran a session's steps *at most once per run* (decision 42) and cached
+    M14's session cache ran a session's steps *at most once per run* (P#42) and cached
     forever on success — correct for a login that never expires mid-run, wrong the moment a
     session's credential has a real TTL (an OAuth2 access token, a short-lived JWT). `EvalCtx`
     gains `sessionNames: readonly string[]` (the test's own `as <session>` list, `[]` for an
@@ -700,10 +1352,10 @@ here.
     margin (`min(2s, 50% of expires_in)` shaved off the end) so a request that lands right at the
     boundary refreshes proactively rather than racing a real `401`. Zero new redaction code needed:
     `client secret`'s `env(...)` value is auto-registered by the existing eager
-    `config.requiredEnv` pre-registration (decision 56), so it's masked in the token-request
+    `config.requiredEnv` pre-registration (P#56), so it's masked in the token-request
     evidence from the very first step, same as any other secret.
 
-    **Bundling fallout (undici, decision 13):** esbuild's ESM bundle output couldn't absorb
+    **Bundling fallout (undici, enterprise decision 13):** esbuild's ESM bundle output couldn't absorb
     undici's CJS internals — undici's own source has `require()` calls inside function bodies
     (lazy/conditional), which esbuild can't hoist into static ESM `import`s; bundled into ESM
     output they became a shim that throws `Dynamic require of "node:assert" is not supported` at
@@ -713,7 +1365,7 @@ here.
     synchronous there. `package.json`'s `bin` field and every hardcoded `dist/cli.js` reference
     across tests/docs/comments updated to `dist/cli.cjs`; `package-lock.json` regenerated to match.
     `packages/runtime/package.json` gains `undici` as a real `dependencies` entry — this does not
-    reverse decision 43's zero-runtime-dependency promise for the *published* `tflw` package,
+    reverse P#43's zero-runtime-dependency promise for the *published* `tflw` package,
     since only the bundled CLI artifact is ever published (never `@tflw/runtime` standalone); §15
     updated to say so explicitly rather than leave the older "essentially zero runtime deps"
     phrasing overclaiming again.
@@ -724,6 +1376,31 @@ here.
     supporting fixture/support-file updates), **12/12 reporter** (unchanged), **52/52 cli** (+1 —
     the esbuild-format regression surfaced and fixed the CLI's own `dist/cli.cjs` rename), **12/12
     vscode** (unchanged) — 407 total, 0 regressions.
+
+### P#99a
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+    **(a) Session refresh-on-401 + TTL (enterprise decision 3a).** The real pain this closes:
+    M14's session cache ran a session's steps *at most once per run* (P#42) and cached
+    forever on success — correct for a login that never expires mid-run, wrong the moment a
+    session's credential has a real TTL (an OAuth2 access token, a short-lived JWT). `EvalCtx`
+    gains `sessionNames: readonly string[]` (the test's own `as <session>` list, `[]` for an
+    anonymous test/action call) so an `ApiStep` that comes back `401` knows which session(s) are
+    even eligible to refresh — a `401` on an anonymous test, or one whose opted-in sessions are
+    already exhausted, is never treated as refreshable. `SessionOutcome` gains an optional
+    `expiresAt: number`; `SessionCache.ensure()` now checks `Date.now() >= cached.expiresAt` before
+    returning a memoized promise, treating expiry exactly like a cache miss (a plain header-block
+    session with no TTL concept never sets `expiresAt`, so its old cache-forever behavior is
+    unchanged). A new `SessionCache.invalidate(name)` clears one session's memo on demand. On a
+    `401`, `execSteps` now calls a new `refreshSessions(ctx, ctx.sessionNames, …)`: invalidates and
+    re-establishes each opted-in session in declared order, mutates the test's live
+    `sessionHeaders`/`cookieJar` in place, records synthetic `header`-kind evidence steps in the
+    report (so a manual QA sees "session re-established" in the timeline, not just a mysteriously
+    passing retry), and retries the failed request **exactly once** — bounded, no infinite
+    refresh↔401 loop even if the credential is permanently bad. If the re-establish attempt itself
+    fails, the original `401` stands and fails the test with the refresh attempt's own evidence
+    attached, never a silent swallow.
 
 ### P#99b
 
@@ -751,6 +1428,840 @@ here.
     rejects a CN-only cert with `ERR_TLS_CERT_ALTNAME_INVALID`, so the server cert needs a real
     `subjectAltName` extension, not just a `CN`.
 
+### P#99c
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+    **(c) `oauth2` session sugar (enterprise decision 3c), built on top of (a).** `session <name>
+    oauth2` (new `Oauth2SessionConfig` on `SessionDecl`, mutually exclusive with a hand-written
+    body — the parser branches on an `oauth2` keyword right after the session name) — `token url`,
+    `client id`, `client secret`, optional `scope`, every field a `Value` so `env(...)` works.
+    `runOauth2Session` POSTs a standard form-urlencoded client-credentials grant
+    (`grant_type=client_credentials&client_id=…&client_secret=…&scope=…`), reads `access_token`
+    (required, fails clearly if absent) and `expires_in` (optional — no `expires_in` means no TTL,
+    the token is cached exactly like a hand-written session), and sets `expiresAt` with a safety
+    margin (`min(2s, 50% of expires_in)` shaved off the end) so a request that lands right at the
+    boundary refreshes proactively rather than racing a real `401`. Zero new redaction code needed:
+    `client secret`'s `env(...)` value is auto-registered by the existing eager
+    `config.requiredEnv` pre-registration (P#56), so it's masked in the token-request
+    evidence from the very first step, same as any other secret.
+
+### P#100
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN.md`</sub>
+
+100. **Fix: `parseConfig()` hang/OOM on a malformed `require env` continuation** — found dogfooding
+    M22 in testFlow-tests: `require env A, B,\n  C, D` (a trailing comma before the newline —
+    `require env` has no line-continuation support) hung the CLI, and on a second attempt drove
+    Node to `FATAL ERROR: Reached heap limit`. Root cause: `parseRequire()`'s comma loop fails
+    cleanly on the dangling continuation (an `expect('ident', …)` diagnostic, no crash there), but
+    the orphaned indented continuation line (`  C, D`) leaves a stray `dedent` token that
+    `parseConfig()`'s own top-level recovery loop then gets stuck on forever. `synchronize()`
+    deliberately never consumes a `dedent` it's already sitting on (nested blocks consume their
+    own — by design, per `parse()`'s own comment on this exact hazard), so every other top-level/
+    block-level recovery loop in `parser.ts` (`parse()`, `parseBlock()`, `parseConfigEntries()`,
+    `parseSessionBlock()`, `parseOauth2SessionConfig()`, `parseApiHeaders()`, `parseWaitUntilBody()`,
+    `parseDataTable()`) independently guarantees forward progress with `if (this.pos === before)
+    this.advance();` after calling `synchronize()`. `parseConfig()` alone was missing this guard —
+    a plain oversight, not a deliberate asymmetry between the two grammar entry points (`parse()`
+    for `.tflw` files, `parseConfig()` for `tflw.config`). Fixed by adding the identical guard.
+    Deliberately did **not** add line-continuation support to `require env` itself — that's a
+    feature question (unclear if worth the grammar complexity vs. just documenting one-line-only),
+    out of scope for a crash fix; the parser now reports three bounded diagnostics (TF010 + two
+    TF022s) and recovers to keep parsing the rest of the file, instead of hanging. New golden
+    fixture `config-errors/require-env-trailing-comma-continuation` (`packages/lang/test/
+    fixtures.ts`) pins this down — its second `env` block only parses if recovery genuinely resumes
+    normal parsing, not just that the loop exits. 409/409 lang+runtime+reporter+cli+vscode tests
+    green (+2 over P#99's 407, both from this fixture).
+
+### P#101
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN.md`</sub>
+
+101. **M10 — Safety/redaction: `allow hosts`, `--forbid-insecure`, `evidence` levels, `redact`
+    fields** — cluster 2 of the enterprise-readiness arc (`PLAN_ENTERPRISE.md`, decisions 5/9/14),
+    immediately following cluster 1 (P#99). Four sub-features, all additive grammar/
+    runtime, no breaking change:
+
+    **(a) `allow hosts "…"` host allowlist (enterprise decision 9).** New `AllowHostsDecl` AST
+    node (`allow` added to `CONFIG_KEYS`, dispatches to `parseAllowHostsDecl` — `allow`, a
+    required `hosts` keyword, then a comma-separated list of host strings, mirroring
+    `parseTimeoutDecls`'s comma-loop shape). Unlike `insecure`/`workers` (override — env wins),
+    `allow hosts` **accumulates** across `defaults` + `env`, the same push semantics `header`
+    already uses — a baseline allowlist in `defaults`, extended per env.
+    `ResolvedConfig.allowHosts: string[] | null` (`null` = never declared, no enforcement,
+    backward compatible). Enforced in `execApi()` (`interpreter.ts`) right after the final `url`
+    is computed, **before** `sendRequest` — a violation throws `RuntimeError` with zero network
+    I/O attempted, not just a failed request; the `oauth2` token request (`runOauth2Session`) gets
+    the identical check before its own `sendRequest` call, since it's a real network request the
+    allowlist must cover too, not just ordinary `api` steps. A pattern starting with `*.` matches
+    that suffix or the bare domain; anything else must match the hostname exactly
+    (`hostMatchesAllowPattern`).
+
+    **(b) `--forbid-insecure` (enterprise decision 9).** A pure CLI boolean, `run` only, no config
+    representation — the "anti-pointed-at-prod" CI policy gate the arc named directly. Checked in
+    `runCommand()` right after `loadAndValidate()` resolves the active env's config:
+    `resolved.insecure` active + the flag set is a usage error (`EXIT_USAGE`), before any test
+    runs, before the `missingRequiredEnv` gate. Deliberately reads only the *active* env's resolved
+    `insecure` (the config actually in effect for this run), not a scan of every `env` block in
+    the file — "active" is the plan's own wording, and an unrelated env's `insecure true` was
+    never going to run anyway.
+
+    **(c) `evidence full|headers-only|none` + `--evidence` override (enterprise decision 5a).** New
+    scalar `EvidenceDecl` (override semantics, like `insecure`), default `full` — today's
+    unchanged behavior. The value is a string literal (`evidence "headers-only"`), not a bare
+    word: the lexer has no hyphen in `isIdentCont`, so `headers-only` can't lex as a single ident.
+    `--evidence <level>` on the CLI overrides it for that run only, validated the same way
+    `--seed`/`--workers` are (a usage error on an unrecognized value, never silently ignored).
+    Enforced exactly where the **report-only** trace is already built — `redactRequest`/
+    `redactResponse` (`interpreter.ts`), which every step already routes through separately from
+    the raw `trace` that `expect`/`capture` read — so trimming a level never affects what an
+    assertion can see, only what lands in the report. `headers-only` drops `body`/`bodyText`
+    (replaced with a `[omitted by evidence level]` marker so it reads as intentional, never
+    confused with a genuinely empty 204 body); `none` drops headers too, keeping only
+    method/url/status/statusText/durationMs.
+
+    **(d) `redact body.email, body.*.address` declarative field redaction (enterprise decision
+    5b).** New `RedactDecl`/`RedactPattern`/`RedactPathSegment` — deliberately a *separate*,
+    minimal path type from the `PathSegment` `expect`/`capture` already use, not an extension of
+    it (those never need wildcards and shouldn't silently gain them). `body.*.address` lexes for
+    free off the lexer's existing `star` token (already used for arithmetic `*`) — no new lexer
+    work. Accumulates across `defaults` + `env`, same as `allow hosts`. New sibling module
+    `packages/runtime/src/fieldRedact.ts` (`redactFields`): best-effort JSON parse → mask every
+    leaf a pattern's segments reach with `[redacted]` → re-stringify; a non-JSON body, or a
+    pattern matching nothing in this particular body, passes through byte-for-byte unchanged (no
+    gratuitous reformatting). Applied at the same `redactRequest`/`redactResponse` boundary as
+    (c), in order: secret `Redactor.redact()` (existing, P#30) → field redaction → evidence-level
+    trim. Distinct mechanism from the existing taint-based secret redaction (`redact.ts`): this one
+    masks a field by *path*, regardless of whether its value ever came from `env(...)`.
+
+    29 new/updated tests, all suites green throughout: **183/183 lang** (+12 — golden AST/error
+    fixtures for `allow`/`evidence`/`redact`), **175/175 runtime** (+13 — `allow-hosts.test.ts`,
+    `evidence-level.test.ts`, `field-redaction.test.ts`), **12/12 reporter** (unchanged), **56/56
+    cli** (+4 — `--forbid-insecure`/`--evidence` e2e coverage in `e2e.test.ts`, against the real
+    built `dist/cli.cjs`), **12/12 vscode** (unchanged) — 438 total, 0 regressions. SPEC.md
+    updated: new §3.7 (host allowlist), §3.4 extended (declarative field redaction alongside the
+    existing taint-based secret redaction), §12 (the two new CLI flags), §13 (evidence-level
+    vocabulary). `PLAN_ENTERPRISE.md` cluster 2 is done on the tflw side; testFlow-tests' M23
+    consumption milestone (new PII profile/export fixture + real `.tflw` coverage) follows next,
+    per this workspace's standing git-push/commit confirmation rule commits are created but not
+    pushed without asking first.
+
+### P#101b
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+    **(b) `--forbid-insecure` (enterprise decision 9).** A pure CLI boolean, `run` only, no config
+    representation — the "anti-pointed-at-prod" CI policy gate the arc named directly. Checked in
+    `runCommand()` right after `loadAndValidate()` resolves the active env's config:
+    `resolved.insecure` active + the flag set is a usage error (`EXIT_USAGE`), before any test
+    runs, before the `missingRequiredEnv` gate. Deliberately reads only the *active* env's resolved
+    `insecure` (the config actually in effect for this run), not a scan of every `env` block in
+    the file — "active" is the plan's own wording, and an unrelated env's `insecure true` was
+    never going to run anyway.
+
+### P#101c
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+    **(c) `evidence full|headers-only|none` + `--evidence` override (enterprise decision 5a).** New
+    scalar `EvidenceDecl` (override semantics, like `insecure`), default `full` — today's
+    unchanged behavior. The value is a string literal (`evidence "headers-only"`), not a bare
+    word: the lexer has no hyphen in `isIdentCont`, so `headers-only` can't lex as a single ident.
+    `--evidence <level>` on the CLI overrides it for that run only, validated the same way
+    `--seed`/`--workers` are (a usage error on an unrecognized value, never silently ignored).
+    Enforced exactly where the **report-only** trace is already built — `redactRequest`/
+    `redactResponse` (`interpreter.ts`), which every step already routes through separately from
+    the raw `trace` that `expect`/`capture` read — so trimming a level never affects what an
+    assertion can see, only what lands in the report. `headers-only` drops `body`/`bodyText`
+    (replaced with a `[omitted by evidence level]` marker so it reads as intentional, never
+    confused with a genuinely empty 204 body); `none` drops headers too, keeping only
+    method/url/status/statusText/durationMs.
+
+### P#101d
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+    **(d) `redact body.email, body.*.address` declarative field redaction (enterprise decision
+    5b).** New `RedactDecl`/`RedactPattern`/`RedactPathSegment` — deliberately a *separate*,
+    minimal path type from the `PathSegment` `expect`/`capture` already use, not an extension of
+    it (those never need wildcards and shouldn't silently gain them). `body.*.address` lexes for
+    free off the lexer's existing `star` token (already used for arithmetic `*`) — no new lexer
+    work. Accumulates across `defaults` + `env`, same as `allow hosts`. New sibling module
+    `packages/runtime/src/fieldRedact.ts` (`redactFields`): best-effort JSON parse → mask every
+    leaf a pattern's segments reach with `[redacted]` → re-stringify; a non-JSON body, or a
+    pattern matching nothing in this particular body, passes through byte-for-byte unchanged (no
+    gratuitous reformatting). Applied at the same `redactRequest`/`redactResponse` boundary as
+    (c), in order: secret `Redactor.redact()` (existing, P#30) → field redaction → evidence-level
+    trim. Distinct mechanism from the existing taint-based secret redaction (`redact.ts`): this one
+    masks a field by *path*, regardless of whether its value ever came from `env(...)`.
+
+### P#102
+
+<sub>cited from CHANGELOG.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+
+102. **M11 — Contract + Retry-After: `matches schema ... from ...`, `retry honoring
+    "Retry-After" up to N`** — cluster 3 of the enterprise-readiness arc (`PLAN_ENTERPRISE.md`
+    decisions 5/6/14), immediately following cluster 2 (P#101). Closes TFLW-GAPS.md gaps
+    #6 and #5 — enterprise decision 14's fixed cadence puts gap #12 (assert on a computed local value) in
+    cluster 6's "gap tail" instead, despite enterprise decision 6's looser "entire open gap backlog" phrasing.
+    Two sub-features, both additive grammar/runtime, no breaking change:
+
+    **(a) `expect body matches schema "Name" from "source"` contract validation (enterprise
+    decision 6, gap #6).** A third branch under the existing `matches` matcher keyword
+    (`parseMatcher`), alongside `matches subset {...}`/`matches "regex"` — `matches schema`,
+    a string schema name, `from`, a string URL/path. New `'matchesSchema'` `MatcherName` +
+    optional `schemaName`/`schemaSource` on `Matcher` (`value` stays null, like the state
+    matchers). Real **ajv** validation (enterprise decision 13's second bundled dependency,
+    alongside `undici`) against an API's own `/openapi.json` — not the hand-rolled minimal
+    validator testFlow-tests' `schema-check.ts` JS-escape-hatch used as a workaround; ajv gets
+    real `$ref` resolution across `components.schemas` for free. Deliberately **not** evaluated
+    inside `evalMatcher`/`matcher.ts` (pure and synchronous by design, P#13) — fetching an
+    external document is I/O, so `evaluateExpect`/`execExpect` (`interpreter.ts`) become `async`
+    instead (both their call sites: `execSteps`'s `ExpectStmt` case, and `wait until api`'s own
+    nested-expects `.map` → `Promise.all`), dispatching `matchesSchema` straight to a new sibling
+    module `packages/runtime/src/contract.ts` and bypassing `evalMatcher` entirely for this one
+    matcher. `evaluateQuantified` (`any`/`all`) gets a guard throwing `RuntimeError` on
+    `matchesSchema` — a per-element quantifier combined with a whole-document async fetch is out
+    of scope, same "loud, not silent" philosophy as its existing body-path-subject guard.
+    `contract.ts`: a module-level `Map<string, Promise<Ajv>>` cache keyed by resolved URL (same
+    precedent as `interpreter.ts`'s existing `mtlsCredCache`, not threaded through
+    `RunOptions`/`TestCtx` — dedupes concurrent `--workers N` fetches of the same doc for free); a
+    relative source resolves against the **default service's** base URL (`resolveBaseUrl(null,
+    …)`, now exported for this reuse, alongside `ensureLeadingSlash`/`checkHostAllowed` — the
+    `allow hosts` policy gates this real network fetch too, not just `api` steps); each
+    `components.schemas` entry is registered via `ajv.addSchema(schema, '#/components/schemas/' +
+    name)`, the standard recipe that makes ajv resolve a DTO's own `$ref` against a sibling
+    registration; a `normalizeOpenApiSchema()` pass folds OpenAPI 3.0's `nullable: true` (a
+    keyword plain ajv doesn't understand) into `type: [..., 'null']` before registering. `ajv`
+    needed no esbuild config to get bundled into `dist/cli.cjs` — it's a transitive dependency of
+    `@tflw/runtime` now, and `bundle: true` already picks up every dependency the same way it
+    already did for `undici`.
+
+    **(b) `retry honoring "Retry-After" up to N` (enterprise decision 6, gap #5).** Deliberately
+    **not** a reuse of `test … retry N` (SPEC §4.4) — that retries the *entire test* immediately,
+    which is wrong here: the real workaround it replaces (testFlow-tests'
+    `sleep-and-retry.ts` JS helper) re-issues only *one specific request*, not a test's earlier
+    setup calls. A new per-`api`-step sub-clause instead, parsed in the same indented block as a
+    step's `header "…" is …` lines (`parseApiHeaders`, now also returning `retryAfter`): `retry`
+    `honoring` a string (validated against a fixed one-item list, `["Retry-After"]`, the same
+    string-literal-validation trick `evidence "headers-only"` used for the lexer's no-hyphen-in-
+    identifiers limitation) `up` `to` a number. New `RetryAfterClause` AST node; `ApiRequestSpec`
+    gains `retryAfter: RetryAfterClause | null` (always null for `wait until api`, which keeps its
+    own poll-until-expect-passes retry mechanism and never parses this clause). `execApi`
+    (`interpreter.ts`): after the first `sendRequest`, if set, loops reading
+    `response.headers['retry-after']` — absent or unparseable stops immediately (today's
+    unchanged single-attempt behavior); otherwise a new `parseRetryAfterMs()` helper (all-digits →
+    seconds; else `Date.parse` → clamped `max(0, date - now)`; neither → stop) → `sleep()` (the
+    existing helper `wait until api`'s own polling already uses) → re-`sendRequest` the identical
+    request, up to `max` extra attempts (same "up to N *extra* attempts" semantics `test … retry
+    N` already uses). `ApiExec` gains `retryAfterAttempts`/`retryAfterWaitedMs`; `execSteps`'s
+    `ApiStep` case (both its initial and 401-refresh-retry `execApi` call sites) appends a visible
+    report-line suffix when attempts > 0 — retry evidence stays visible in the report, the same
+    stated principle (P#5/P#16) the 401-refresh-retry code right next to it already follows.
+
+    No config-key, no CLI-flag surface for either feature — pure DSL grammar + runtime behavior;
+    `checker.ts` needed no changes (neither touches its `ConfigEntry`-only `keyName()`
+    exhaustiveness switch). `GRAMMAR.md` deliberately not touched — confirmed via `git log` that
+    P#99/P#101 never touched it either despite their own writeups saying they would; it's a
+    frozen M0 snapshot in practice, SPEC.md is the actual living grammar reference.
+
+    20 new/updated tests, all suites green throughout: **193/193 lang** (+10 — golden AST/error
+    fixtures for the schema matcher + `retry honoring`), **185/185 runtime** (+10 —
+    `retry-after.test.ts` (4: seconds format, HTTP-date format, max-attempts-exhausted, unchanged
+    no-clause behavior), `contract-schema.test.ts` (6: positive match with cross-`$ref`
+    resolution, missing-required-field mismatch, `not matches schema` polarity, unknown-schema-
+    name error, malformed-document error, single-fetch caching across two assertions)), **12/12
+    reporter** (unchanged), **56/56 cli** (unchanged — no new CLI surface this cluster), **12/12
+    vscode** (unchanged) — 458 total, 0 regressions. SPEC.md updated: §5.1 (the `retry honoring`
+    clause), the matcher section (`matches schema … from …`), and the existing "`ajv` … is
+    planned for arc cluster 3 but not yet built" sentence corrected to say it's now actually
+    bundled. `PLAN_ENTERPRISE.md` cluster 3 is done on the tflw side; testFlow-tests' M24
+    consumption milestone (new `retry-demo`/`contract-demo` apiV2 fixtures + real `.tflw`
+    coverage + closing TFLW-GAPS.md gaps #5/#6) follows next, per this workspace's standing
+    git-push/commit confirmation rule commits are created but not pushed without asking first.
+
+### P#102a
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+
+    **(a) `expect body matches schema "Name" from "source"` contract validation (enterprise
+    decision 6, gap #6).** A third branch under the existing `matches` matcher keyword
+    (`parseMatcher`), alongside `matches subset {...}`/`matches "regex"` — `matches schema`,
+    a string schema name, `from`, a string URL/path. New `'matchesSchema'` `MatcherName` +
+    optional `schemaName`/`schemaSource` on `Matcher` (`value` stays null, like the state
+    matchers). Real **ajv** validation (enterprise decision 13's second bundled dependency,
+    alongside `undici`) against an API's own `/openapi.json` — not the hand-rolled minimal
+    validator testFlow-tests' `schema-check.ts` JS-escape-hatch used as a workaround; ajv gets
+    real `$ref` resolution across `components.schemas` for free. Deliberately **not** evaluated
+    inside `evalMatcher`/`matcher.ts` (pure and synchronous by design, P#13) — fetching an
+    external document is I/O, so `evaluateExpect`/`execExpect` (`interpreter.ts`) become `async`
+    instead (both their call sites: `execSteps`'s `ExpectStmt` case, and `wait until api`'s own
+    nested-expects `.map` → `Promise.all`), dispatching `matchesSchema` straight to a new sibling
+    module `packages/runtime/src/contract.ts` and bypassing `evalMatcher` entirely for this one
+    matcher. `evaluateQuantified` (`any`/`all`) gets a guard throwing `RuntimeError` on
+    `matchesSchema` — a per-element quantifier combined with a whole-document async fetch is out
+    of scope, same "loud, not silent" philosophy as its existing body-path-subject guard.
+    `contract.ts`: a module-level `Map<string, Promise<Ajv>>` cache keyed by resolved URL (same
+    precedent as `interpreter.ts`'s existing `mtlsCredCache`, not threaded through
+    `RunOptions`/`TestCtx` — dedupes concurrent `--workers N` fetches of the same doc for free); a
+    relative source resolves against the **default service's** base URL (`resolveBaseUrl(null,
+    …)`, now exported for this reuse, alongside `ensureLeadingSlash`/`checkHostAllowed` — the
+    `allow hosts` policy gates this real network fetch too, not just `api` steps); each
+    `components.schemas` entry is registered via `ajv.addSchema(schema, '#/components/schemas/' +
+    name)`, the standard recipe that makes ajv resolve a DTO's own `$ref` against a sibling
+    registration; a `normalizeOpenApiSchema()` pass folds OpenAPI 3.0's `nullable: true` (a
+    keyword plain ajv doesn't understand) into `type: [..., 'null']` before registering. `ajv`
+    needed no esbuild config to get bundled into `dist/cli.cjs` — it's a transitive dependency of
+    `@tflw/runtime` now, and `bundle: true` already picks up every dependency the same way it
+    already did for `undici`.
+
+### P#102b
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+
+    **(b) `retry honoring "Retry-After" up to N` (enterprise decision 6, gap #5).** Deliberately
+    **not** a reuse of `test … retry N` (SPEC §4.4) — that retries the *entire test* immediately,
+    which is wrong here: the real workaround it replaces (testFlow-tests'
+    `sleep-and-retry.ts` JS helper) re-issues only *one specific request*, not a test's earlier
+    setup calls. A new per-`api`-step sub-clause instead, parsed in the same indented block as a
+    step's `header "…" is …` lines (`parseApiHeaders`, now also returning `retryAfter`): `retry`
+    `honoring` a string (validated against a fixed one-item list, `["Retry-After"]`, the same
+    string-literal-validation trick `evidence "headers-only"` used for the lexer's no-hyphen-in-
+    identifiers limitation) `up` `to` a number. New `RetryAfterClause` AST node; `ApiRequestSpec`
+    gains `retryAfter: RetryAfterClause | null` (always null for `wait until api`, which keeps its
+    own poll-until-expect-passes retry mechanism and never parses this clause). `execApi`
+    (`interpreter.ts`): after the first `sendRequest`, if set, loops reading
+    `response.headers['retry-after']` — absent or unparseable stops immediately (today's
+    unchanged single-attempt behavior); otherwise a new `parseRetryAfterMs()` helper (all-digits →
+    seconds; else `Date.parse` → clamped `max(0, date - now)`; neither → stop) → `sleep()` (the
+    existing helper `wait until api`'s own polling already uses) → re-`sendRequest` the identical
+    request, up to `max` extra attempts (same "up to N *extra* attempts" semantics `test … retry
+    N` already uses). `ApiExec` gains `retryAfterAttempts`/`retryAfterWaitedMs`; `execSteps`'s
+    `ApiStep` case (both its initial and 401-refresh-retry `execApi` call sites) appends a visible
+    report-line suffix when attempts > 0 — retry evidence stays visible in the report, the same
+    stated principle (P#5/P#16) the 401-refresh-retry code right next to it already follows.
+
+### P#103
+
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+
+103. **M12 — Documentation site** — cluster 4 of the (now 8-cluster) enterprise-readiness arc
+    (`PLAN_ENTERPRISE.md` decision 16, a `/grill-me` session 2026-07-19), immediately following
+    cluster 3 (P#102). Unlike clusters 1–3, this cluster adds no DSL grammar or runtime
+    behavior, so it has **no testFlow-tests consumption milestone** — the cadence exception
+    enterprise decision 16 documents. Six lettered sub-parts, from a canonical `spec-data.ts` manifest
+    through a new VitePress `docs-site` workspace, a parse-and-check playground, a `GRAMMAR.md`
+    rewrite and a README trimmed to a landing page, to the workflow that publishes the site.
+
+    **(a) `packages/lang/src/spec-data.ts` — a canonical structured manifest** (enterprise decision 16.4).
+    Hand-authored `MATCHERS`/`GENERATORS`/`CLI_FLAGS` arrays (there's no `GeneratorName` union or
+    CLI-flag type to introspect — generators parse via dedicated functions, `cli.ts`'s arg parsing
+    is hand-rolled). New `packages/lang/scripts/gen-spec-tables.mjs` (`renderMatcherTable`/
+    `renderGeneratorTable`, pure and tested, mirroring `gen-docs.mjs`'s own split) regenerates
+    SPEC.md's §6.2 matcher table in place (byte-identical to the hand-written version it replaced —
+    verified via diff) and a new §7.3.1 generators quick-reference table, both between
+    `<!-- GENERATED:name:start/end -->` markers. Wired as `@tflw/lang`'s `docs:gen`
+    (`pretest`/`predev` hook), and `packages/cli`'s own `docs:gen` now runs it first
+    (`npm run docs:gen --prefix ../lang && node scripts/gen-docs.mjs`) so `tflw docs
+    matchers`/`generators`'s SPEC.md-prose-parse always sees fresh table content. The `CLI_FLAGS`
+    array (13 entries — the 8 that were in README's old table plus 5 real flags that table had
+    silently drifted out of sync on: `--only`, `--verbose`, `--forbid-insecure`, `--evidence`,
+    `--format json`) doesn't regenerate anything in SPEC.md — it feeds only `docs-site`'s
+    `Reference/cli.md`, replacing README's table (enterprise decision 16.10). All three arrays, plus
+    `spec-data.ts` itself, are consumed directly (plain TS, no build step) by `docs-site`'s
+    Reference pages now and a later LSP's hover/signature-help then (`PLAN_ENTERPRISE.md` enterprise decision
+    17.7).
+
+    **(b) `packages/docs-site` — a new workspace member (VitePress)** (enterprise decisions 16.1, 16.3, 16.6,
+    16.7, 16.9, 16.12). Nav/sidebar IA: Home · Getting Started · Guide (9 hand-adapted sub-topics,
+    enterprise decision 16.2) · Reference (Matchers/Generators/CLI, generated) · Grammar (`@include`s
+    `packages/lang/GRAMMAR.md` verbatim) · Changelog (`@include`s root `CHANGELOG.md`) · Playground.
+    `appearance` left at VitePress's default (`true`) rather than overridden — the toggle already
+    respects the reader's OS/browser preference, satisfying enterprise decision 16.12 with zero extra config.
+    Single unversioned site tracking `main`, local search (VitePress built-in), no version switcher
+    until first npm publish.
+
+    **(c) Playground — parse+check only** (enterprise decision 16.5). A Vue component importing `@tflw/lang`
+    directly (zero runtime deps, confirmed browser-safe — no `node:` imports anywhere in
+    `packages/lang/src`), running `parseSource` + `checkUnknownVariables` live against a textarea.
+    `checkServices`/`checkSessions`/`checkDataTables` are deliberately skipped — they validate
+    against a real `tflw.config`'s declared services/sessions, which a standalone playground
+    snippet doesn't have. No execution, no network calls, no backend.
+
+    **(d) `GRAMMAR.md` freshening** (enterprise decision 16.11). Full rewrite, not a patch — the file was a
+    frozen M0-only snapshot (confirmed via `git log`: never touched by P#99/P#101/P#102 despite
+    their own writeups saying they would). Rewritten to mirror SPEC.md §3–§13's structure in the
+    same EBNF-ish notation, covering the config dialect, sessions (`oauth2` sugar, mTLS, cookie
+    jar), hooks, `with each`, `retry N` + `retry honoring`, all matcher forms including `matches
+    schema`, generators, `allow hosts`/`evidence`/`redact`, and actions/imports/the JS escape
+    hatch — everything shipped through this decision. Required going forward per enterprise decision 16.11.
+    Cross-links to SPEC.md/`spec-data.ts` use absolute GitHub URLs rather than repo-relative ones,
+    since the file is read both directly on GitHub and `@include`-embedded into `docs-site`'s
+    `grammar.md` (a relative link correct in one context 404s in the other).
+
+    **(e) README.md trimmed to a landing page** (enterprise decision 16.10). Kept: Why, Project layout,
+    Install & quickstart, a short CI pointer, Status & roadmap, Platform support, Contributing.
+    Removed: the full walkthrough sections (actions/imports/hooks/polling/data-driven/generators/
+    retry code blocks), Corporate networks prose, and the CLI reference table — all now live on
+    the docs site, replaced here with pointer links.
+
+    **(f) `.github/workflows/docs.yml`** (enterprise decision 16.8) — a second workflow alongside the existing
+    `ci.yml`, push-to-`main` triggered: builds `@tflw/lang` then `packages/docs-site`, deploys via
+    `actions/configure-pages` + `actions/upload-pages-artifact` + `actions/deploy-pages` (standard
+    two-job build/deploy recipe, `github-pages` environment). Not verifiable end-to-end without
+    pushing; YAML confirmed well-formed. **Manual one-time step outside this milestone's scope:**
+    the repo's GitHub Pages source must be switched to "GitHub Actions" in repo Settings before
+    this workflow's first run can actually publish anything.
+
+    3 new tests (`gen-spec-tables.test.ts`), all suites green: **196/196 lang** (+3), **185/185
+    runtime** (unchanged), **12/12 reporter** (unchanged), **56/56 cli** (unchanged), **12/12
+    vscode** (unchanged), **`docs-site` builds clean** (VitePress's own dead-link check passing) —
+    461 total across the 5 tested packages, 0 regressions from a 458 baseline. `PLAN_ENTERPRISE.md`
+    cluster 4 is done — no testFlow-tests consumption milestone follows (cadence exception, enterprise decision
+    16.9); cluster 5 (LSP) is next, per this workspace's standing git-push/commit confirmation rule
+    commits are created but not pushed without asking first.
+
+### P#104
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN.md`</sub>
+
+104. **M13 — LSP** — cluster 5 of the enterprise-readiness arc (`PLAN_ENTERPRISE.md` decision 17, a
+    `/grill-me` session 2026-07-19), immediately following cluster 4 (P#103). Like cluster 4,
+    **no testFlow-tests consumption milestone** (cadence exception, enterprise decision 17's own note). Built
+    and tracked phase-by-phase in a dedicated `PLAN_M13_LSP.md` rather than inline here, per that
+    file's own stated reason (too large a build to track any other way) — this entry is the summary
+    written once all 5 phases landed, mirroring the M9–M12 precedent. Five lettered sub-parts:
+
+    **(a) `packages/lang` — symbol table + prefix-based completion** (enterprise decision 17.6, 17.8).
+    `collectSymbols`/`collectConfigSymbols` (`packages/lang/src/symbols.ts:126,219`) build a
+    def/ref `SymbolTable` for both dialects; a real parser completion mode
+    (`getCompletionContext`, `packages/lang/src/completion.ts:27`) parses up to the cursor and
+    captures the legal-next-token set on end-of-input-mid-production, rejecting the lower-risk
+    line-context/regex heuristic `lib.ts`'s `parseTestDeclarationLine` already uses elsewhere in
+    favor of true grammar-awareness, per enterprise decision 17.6. Known v1 limitation, not fixed: a cursor on
+    an otherwise-blank line (zero characters typed yet) resolves to `null`, since the lexer emits no
+    token for a whitespace-only line — the dominant real-world case (typing, not an empty new line)
+    still resolves normally.
+
+    **(b) `packages/lsp-server` — pure resolution functions** (enterprise decision 17.8): a new workspace
+    member. `findNodeAtOffset` (offset → AST node walk) backs five pure functions —
+    `findDefinition` (`resolution/definition.ts:25`), `getHover` (`resolution/hover.ts:73`),
+    `getCompletions` (`resolution/completion.ts:80`), `findRenameTargets`
+    (`resolution/rename.ts:32`), `getSignatureHelp` (`resolution/signatureHelp.ts:24`) — over
+    `Program`/`SymbolTable`/`spec-data.ts` (enterprise decision 16.4's manifest, consumed here per enterprise decision
+    17.7 for hover text and signature-help parameter shapes). Zero `vscode-languageserver` import
+    anywhere in this directory, the pure/impure split enterprise decision 17.8 called for.
+
+    **(c) `packages/lsp-server` — I/O layer + protocol wiring** (enterprise decision 17.2–17.4, 17.9): project
+    root discovery, `tflw.config`/env resolution (`loadProjectConfig`,
+    `workspace/configResolution.ts:42` — decision B slots `tflw.env` into `selectEnv`'s existing
+    `--env`/`TFLW_ENV` precedence chain, no changes to `resolve.ts` itself), a debounced
+    (~150–300ms) full-reparse `DocumentStore` (`workspace/documentStore.ts:62`) branching on
+    `tflw.config` vs. `*.tflw` per decision A (config buffers get real diagnostics too — no
+    exclusion filter anywhere in this stack), an mtime-cached `CrossFileResolver`
+    (`workspace/crossFile.ts:31`) mirroring `buildRegistry`'s import resolution for a long-lived
+    server, and a lazy project-wide index backing cross-file rename. `startServer()`
+    (`server.ts:76`) wires every handler over `createConnection`, real stdio by default or an
+    in-memory stream pair for tests (enterprise decision 17.8's protocol-test idiom).
+
+    **(d) `packages/cli`'s `lsp` subcommand ships** (enterprise decision 17.4): `case 'lsp'`
+    (`packages/cli/src/cli.ts:78`) dispatches to `lspCommand` (`cli.ts:585`), which calls
+    `startServer()` and returns a promise that deliberately never resolves —
+    `vscode-languageserver`'s own `createConnection()` already registers `end`/`close` listeners on
+    the input stream and calls `process.exit()` itself (0 after a proper LSP `shutdown`+`exit`
+    handshake, 1 on an abrupt disconnect), discovered by trial rather than reimplemented. This is
+    the mechanism that actually delivers editor-agnosticism enterprise decision 17.4 names (Neovim/Helix/
+    coc.nvim, not just VS Code) — the VS Code extension's own launch reuses this exact entry point.
+
+    **(e) `packages/vscode` rewrite** (enterprise decision 17.3): the old save-triggered `tflw check --format
+    json` spawn-and-parse diagnostics path deleted entirely. `activate()`
+    (`packages/vscode/src/extension.ts:25`) constructs a real `LanguageClient`
+    (`extension.ts:42`), `ServerOptions` spawning `tflw lsp`, `documentSelector: [{ language:
+    'tflw' }]` covering both dialects (one selector, no per-dialect branching needed client-side).
+    `resolveWorkspaceRoot()` (`extension.ts:57`, not in the original plan sketch — a practical
+    necessity once actually wired up) picks the client's single project root from whichever
+    `tflw`-language document is already open at `activate()` time, falling back to each open
+    workspace folder. `tflw.env` (decision B) reaches the server via
+    `initializationOptions.env` + `synchronize.configurationSection` pushing
+    `workspace/didChangeConfiguration` on change. CodeLens/`runInTerminal`/`resolveTargetUri` stay
+    client-side, untouched, per enterprise decision 17.3.
+
+    546 tests total across the 6 tested packages (218 lang +22, 185 runtime unchanged, 12 reporter
+    unchanged, 62 lsp-server new, 59 cli +3, 10 vscode net −2 — two dead `spanToZeroBasedRange`
+    cases removed, no new tests possible for `vscode`-host-only code), 0 regressions from the 461
+    M12 baseline, verified via a genuine from-scratch build (every package's `dist/` deleted
+    first). Two real bugs caught mid-build: a root `package.json` workspaces-array ordering bug
+    (`npm run build --workspaces` has no topological sort — `lsp-server` had to move before its
+    first dependent, `cli`) that only a from-scratch build ever exercised, and a wrong-exit-code
+    design in `lspCommand` corrected once `vscode-languageserver`'s own exit semantics were found.
+    Full detail, including every phase's own status note and deviations from the original sketch,
+    lives in `PLAN_M13_LSP.md`. **Not yet done:** the manual Extension Development Host walkthrough
+    (`PLAN_M13_LSP.md`'s Verification section) — a human-in-the-editor proof this automated pass
+    can't cover, left as a follow-up. `PLAN_ENTERPRISE.md` cluster 5 is done — cluster 6 (CI
+    ergonomics) resumes the normal ping-pong cadence, per this workspace's standing git-push/commit
+    confirmation rule commits are created but not pushed without asking first.
+
+### P#105
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN.md`</sub>
+
+105. **M13 post-ship: manual walkthrough fixes** — P#104 flagged the Extension Development
+    Host walkthrough as not-yet-done; this is what surfaced doing it. Three sub-parts, found and
+    fixed same-session, 2026-07-20:
+
+    **(a) Interpolation-hole span bug (rename/hover/go-to-def).** `symbols.ts`'s
+    `walkStringParts`/`walkRefPath` used a string literal's *entire* span (quotes included, or any
+    surrounding literal text like `"Bearer {token}"`) as a `{name}` interpolation hole's ref span,
+    because `StringPart.interp` (`ast.ts`) carries no span of its own — `parseStringParts`
+    (`parser.ts:2088`) works purely on the already-decoded string value with zero position
+    tracking. Renaming `csrf` inside `header "X-CSRF-Token" is "{csrf}"` therefore replaced the
+    whole quoted literal, stripping the quotes/braces. Fixed via escape-aware raw-offset mapping
+    (`buildRawOffsetMap`/`resolveInterpRefs`, `symbols.ts`) that locates each hole's real `{`/`}`
+    bounds in the raw source, then reuses the existing `findIdentifierSpans` windowed re-lex to
+    land on just the identifier — the same technique already established elsewhere in this file.
+    Fixes rename, hover, and go-to-def uniformly (all three shared the same over-broad span), for
+    both quoted-string and unquoted-path interpolation.
+
+    **(b) Diagnostic hint formatting.** `lsp-server/src/server.ts`'s `toLspDiagnostic` appended a
+    diagnostic's `hint` as a trailing `(hint)` parenthetical onto `message` — combined with VS
+    Code's own hover suffix (`message source(code)`), a `TF011` "unknown step" diagnostic rendered
+    as two parentheticals glued together on one line. Changed to a `\n`-separated second line,
+    matching the CLI reporter's own `= help:` line convention for the same `hint` field
+    (`diagnostic.ts`'s doc comment) rather than inventing a second, LSP-only rendering.
+
+    **(c) Semantic tokens** (this entry's namesake): `packages/lang/src/semanticTokens.ts`
+    (`collectSemanticTokens(source, symbols)`) + `lsp-server`'s new
+    `connection.languages.semanticTokens.on(...)` handler (`server.ts` — this one LSP feature is
+    namespaced differently from every other handler in the file). Closes a coloring gap the static
+    `syntaxes/tflw.tmLanguage.json` grammar structurally can't: matcher/operator words and numbers
+    *are* correctly grammar-tagged but VS Code's own default theme defines no color rule for
+    `keyword.operator`/`constant.numeric` (confirmed by dumping its `tokenColors`), so they render
+    unstyled; object-literal field keys and variable/parameter names can never be grammar-colored
+    at all since they're arbitrary user text, not fixed vocabulary. Two passes merged and sorted by
+    offset: an AST-derived pass reusing the already-computed `SymbolTable` as-is (zero new AST
+    walking — variable/parameter/action spans, including inside string/path interpolation holes,
+    come free from (a)'s fix), and a lexer-driven pass over a single flat `lex()` of the document,
+    classifying `ident`/`number` tokens by wordlist membership (four hand-maintained arrays
+    mirroring `tflw.tmLanguage.json`'s own keyword lists — same already-accepted independent-copy
+    tradeoff as that file vs. `parser.ts`, which doesn't centralize most keywords into exported
+    arrays) plus an exact colon-lookahead for object-literal keys (`colon` has no other role in
+    this grammar, confirmed against `parser.ts`'s own object-field parsing — not a heuristic guess).
+    A ref's true kind (`variable` vs. `parameter`) is resolved via its `defSpan` against the def
+    list rather than trusted directly, since `symbols.ts` tags every *ref* `kind: 'variable'`
+    regardless of what it points at (only defs distinguish the two). No `packages/vscode` changes
+    needed — `vscode-languageclient` auto-registers the provider from the server's advertised
+    `legend`, the same zero-client-code pattern already relied on for every other LSP feature.
+
+    555 tests total (226 lang +8, 185/12 unchanged, 63 lsp-server +1, 59/10 unchanged), 0
+    regressions from the 546 M13 baseline, verified via a from-scratch build. Manually verified
+    against the real spawned `tflw lsp` binary (not just the automated suite) for all three:
+    rename tested live in the Extension Development Host and confirmed correct; the diagnostic
+    message format and a full semantic-tokens response both confirmed via hand-rolled raw LSP
+    requests piped to the refreshed binary, then semantic tokens additionally confirmed live via
+    VS Code's own "Inspect Editor Tokens and Scopes" panel. `testFlow-tests`' vendored `tflw`
+    tarball re-packed via `refresh-tflw` after each fix.
+
+    **(c) addendum — theme-fallback gap, found live.** The first Dev Host reload after (c) still
+    showed no color for `operator`/`number`/`variable`/`parameter`/`property`. The token inspector
+    proved the data itself was correct (`semantic token type: operator`) — VS Code's own built-in
+    default tries a scope-based fallback (`keyword.operator` for our `operator` type) when a theme
+    has no direct `semanticTokenColors` rule for a type, but the active default theme (Dark Modern/
+    Dark+, no theme extension installed) has no rule for that fallback scope either, so it resolves
+    to the plain editor foreground — indistinguishable from unstyled. Not a provider bug; a gap in
+    this one (very sparse) theme's own coverage. Closed two ways in `packages/vscode/package.json`:
+    `contributes.semanticTokenScopes` (idiomatic — gives every theme, including ones with real
+    `keyword.operator`/`constant.numeric` rules, a scope-based fallback path) plus
+    `contributes.configurationDefaults` → `editor.semanticTokenColorCustomizations` shipping
+    explicit colors for the 6 types actually observed falling back to plain foreground (not
+    `keyword`/`type`, which already render correctly via the pre-existing static grammar either
+    way) — guarantees a correct look in this exact sparse-theme environment too, not just richer
+    themes. First attempt scoped these via a `"[tflw]"` settings-override wrapper around the whole
+    `editor.semanticTokenColorCustomizations` value — silently inert (a live re-check afterward
+    still showed `number`/`property` unstyled while `operator`/`variable` happened to already work,
+    the latter purely via the theme's own pre-existing `variable`-scope rule, not this setting).
+    The setting is scoped per-rule instead, via the documented `"type:language"` selector suffix on
+    each rule key (`"number:tflw"`, `"property:tflw"`, …) directly under the top-level (unwrapped)
+    `editor.semanticTokenColorCustomizations.rules` — confirmed working live via the token
+    inspector (`semantic token type: number`, `foreground: User settings: number:tflw - #b5cea8`).
+
+    **Reverted the `configurationDefaults` half on request.** It's a global default-value
+    override — it wins over *any* theme's own `keyword.operator`/`constant.numeric`/etc. rules, not
+    just VS Code's sparse bundled default theme, which is wrong for a publicly distributed
+    extension (forces tflw's own palette onto users who picked a theme specifically for its
+    colors). Removed; `contributes.semanticTokenScopes` alone remains — the theme-respecting
+    fallback mechanism, giving every richer theme (anything with real `keyword.operator`/
+    `constant.numeric`/`variable.other.property` coverage) a correct scope-based match
+    automatically, at the cost of VS Code's own sparse bundled default theme keeping this one gap
+    (a known, accepted limitation of that specific theme, not of the extension). 10/10 vscode tests
+    still pass throughout; no automated test possible for theme-resolution behavior itself (needs a
+    running editor) — verified live against both the sparse default theme (gap confirmed, as
+    accepted) and a richer-theme spot check: installed One Dark Pro (`code --install-extension
+    zhuangtongfa.material-theme`), confirmed live that operators/numbers/property keys/variables all
+    render distinctly colored purely via the theme's own coverage, with zero tflw-specific overrides
+    in play — the generic design works as intended.
+
+### P#108
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN.md`</sub>
+
+108. **M14 — Connection-failure assertions: `request connects`/`fails`** — cluster 5.5 of the
+    enterprise-readiness arc (`PLAN_ENTERPRISE.md` decisions 18–19, a third `/grill-me` session
+    2026-07-20, prompted by planning `testFlow-tests` CI). Closes the gap enterprise decision 18 identified:
+    a request that fails *before* any HTTP response exists (a TLS handshake rejection, DNS
+    failure, `ECONNREFUSED`, an `allow hosts` block) always crashed the whole test fail-fast, with
+    no way to write a genuinely passing regression test proving a guardrail actually triggers.
+    Full fidelity across every package — grammar, checker, runtime, language server, docs and
+    tests — the same bar as clusters 1–3.
+
+    **`packages/lang`**: new `RequestSubject` AST node + `connects`/`fails` `MatcherName`s
+    (`ast.ts`); parser accepts `request` as a subject (`parseSubject`) and `connects`/`fails` as
+    top-level matcher keywords, `fails` with an optional `matching "<regex>"` clause reusing the
+    existing string-operand machinery (`parseMatcher`) — deliberately *not* nested under `is`
+    like the UI state words, per the user's own correction mid-interview: keep `expect`/`not`/
+    `equals`/`not equals` as the general mechanism, but `connects`/`fails` read as natural-
+    language opposites for the connection-specific case, the DSL's founding design philosophy.
+    `not` composes for free (`expect request not connects` ≡ a bare `expect request fails`,
+    P#15's existing negation rule already covers it — no special-cased logic). New checker rule
+    `checkRequestAssertions` (`checker.ts`, new code `TF031`): rejects a `request` assertion
+    combined with a response-based one (`status`/`header`/`body`/`duration`) in the contiguous
+    run of `expect`/`check` steps following one `api` call, and rejects a `request` assertion
+    inside `wait until api` outright (structurally meaningless there — polling never opts into
+    catching a connection failure). `spec-data.ts` gains `connects`/`fails` matcher rows, feeding
+    SPEC.md §6.2's generated table, the docs-site Reference page, and `tflw docs` (a new
+    `connection-failure-assertions` topic, auto-generated from the new SPEC.md §6.2.2 prose — 49
+    topics now, up from 48).
+
+    **`packages/runtime`**: `execSteps` precomputes which `ApiStep` indices are immediately
+    followed by a `request`-subject assertion (`findRequestAssertionApiIndices`) — only those
+    opt into catching a connection-level error in a local try/catch instead of letting it
+    propagate to the function's own outer catch-all (P#16's unconditional fail-fast, unchanged
+    for every other request). A new `lastConnectionError` alongside the existing `lastResponse`
+    carries the caught (redacted) error message to `evaluateExpect`, which bypasses
+    `resolveSubject`/`evalMatcher` entirely for a `RequestSubject` — the same pattern
+    `matchesSchema` already uses for its own different reason — dispatching to a new
+    `evalRequestMatcher` (`matcher.ts`) instead. The `api` step's own report line still reports
+    `ok: true` when it caught a connection failure (like any other request, whatever it got
+    back) — only the following `expect`/`check request connects`/`fails` step judges the
+    outcome. `resolveSubject` and `rawMatch`'s default branch both gained a `RequestSubject`/
+    `connects`|`fails` case with a clear runtime error for the two structurally-impossible
+    misuses the checker doesn't (yet) statically forbid: `capture request as x` (no value to
+    capture) and `expect status connects` (wrong subject for this matcher).
+
+    **`packages/lsp-server`**: `request` added to `completion.ts`'s subject candidates,
+    `connects`/`fails` added to its matcher candidates and `hover.ts`'s `MATCHER_SPEC_ID` map —
+    both sourced from the same `spec-data.ts` rows as every other matcher, no new plumbing.
+
+    **Docs**: SPEC.md gained §6.2.2 (full semantics: opt-in scope, `matching`, negation,
+    not-capturable, the two checker rejections, and an explicit note that report-artifact
+    verification — e.g. proving `report.html` masks a redacted field — is a separate, unrelated
+    concern this feature doesn't and shouldn't cover); §5.3's subject list updated. GRAMMAR.md's
+    `Subject`/`MatcherCore` productions updated, plus a note that the mix/`wait until api`
+    restriction is checker-enforced, not a grammar restriction. `packages/docs-site/guide/
+    assertions.md` gained a matching narrative section (mirroring the existing contract-
+    validation one). `packages/vscode/syntaxes/tflw.tmLanguage.json` and `packages/lang/src/
+    semanticTokens.ts` both gained `request`/`connects`/`fails`/`matching` to their keyword
+    wordlists, so the new grammar highlights correctly both statically (VS Code's TextMate
+    grammar) and semantically (the LSP's `textDocument/semanticTokens/full`, P#105's
+    addendum). CHANGELOG.md gained an `### Added` bullet under the still-frozen `[0.1.0]`
+    heading (enterprise decision 12 — version doesn't bump mid-arc).
+
+    **Testing**: 32 new tests, 0 regressions — 587/587 across all 6 tested packages (238 lang
+    +20, 202 runtime +17, 12 reporter unchanged, 66 lsp-server +4, 59 cli unchanged, 10 vscode
+    unchanged), up from the 555 M13 baseline. `packages/lang`: a new golden AST fixture +
+    error-snapshot fixture (`request-connects-fails`, `fails-matching-missing-string`) plus 9
+    `checkRequestAssertions` unit tests. `packages/runtime`: `mtls.test.ts` gained 6 tests reusing
+    its own real-TLS-rejection server fixture — most notably one proving the *exact* scenario the
+    file's pre-existing "without cert/key... rejects the connection" test shows crashing the run
+    today now passes green with `expect request fails`, the headline proof this feature exists
+    for. A new `request-connects-fails.test.ts` (12 tests) covers ECONNREFUSED, an `allow hosts`
+    block, `matching`/negation/soft-form combinations, the unconditional-crash-when-not-opted-in
+    regression proof, `capture request` rejection, an invalid-regex error, and two independent
+    `api` calls in one test each tracking their own connection error. `matchers.test.ts` gained
+    one test for the wrong-subject error message. `packages/lsp-server`: hover + 2 completion
+    tests. No `packages/cli`-level e2e test was added specifically for this feature — the
+    runtime-level tests already exercise the real `runProgram` path the CLI itself calls
+    unchanged, and the full CLI suite (dist/cli.cjs-driven e2e included) stayed green throughout,
+    the same bar M9–M11 held before LSP/docs-site added their own dedicated test layers.
+
+    Not yet done: `testFlow-tests`' consumption (`PLAN_ENTERPRISE.md` decision 19 — the
+    `mtlsSidecarNoCert` env, `tests/mtls-rejection.tflw`, `scripts/verify-redaction.mjs`, the two
+    new `regression.mjs` phases, and `.github/workflows/ci.yml` itself) — hard-blocked on this
+    decision until now, unblocked as of this entry; see `testFlow-tests/PLAN_CI.md` for that
+    milestone's own breakdown.
+
+### P#111
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
+
+111. **M17 — CI ergonomics + console/log output** — enterprise arc cluster 6
+    (`PLAN_ENTERPRISE.md` decision 21, a fifth `/grill-me` session 2026-07-20). Enterprise decision 7's
+    original scope (`--format json`/`results.json`, `--failed`, `--bail`) plus a second topic
+    folded in at the user's request: console/log output (NDJSON event stream, timestamps, GitHub
+    Actions log grouping, `--log-file`). Not cadence-exempted (unlike clusters 4/5/9) — this is a
+    real CLI/runtime behavior change, so it gets a normal `testFlow-tests` consumption milestone,
+    merged into enterprise decision 19/`PLAN_CI.md` rather than a separate one (see that decision's amended
+    note, 2026-07-20).
+
+    **`report/results.json`** — always written, no flag, same footing as `report.html`/
+    `junit.xml`. `packages/reporter/src/index.ts` gained `writeResultsJson`: `JSON.stringify` of
+    the exact redacted `RunReport` `report.html` already renders from — no second serialization
+    to keep in sync, secrets-redaction guarantee inherited for free. Deliberately not the same
+    feature as `tflw check --format json` (stdout-replacing) — a file, matching how `junit.xml`
+    already solves "read a run's outcome without scraping stdout."
+
+    **`tflw run --failed`** — new `packages/reporter/src/last-run.ts`: `renderLastRun` (pure,
+    filters `report.tests` to `!t.ok` — a `flaky`-flagged test that ultimately passed is never in
+    the list, since `TestResult.ok` is already the final post-retry verdict) plus `writeLastRun`/
+    `readLastRun` I/O against `report/.last-run.json` (already gitignored via `report/`, no new
+    entry needed). `writeLastRun` runs unconditionally after every run, including one already
+    filtered by `--failed` itself, so repeated `--failed` invocations narrow further as tests get
+    fixed — confirmed with a dedicated test that fixes a failing test between two `--failed` runs
+    and asserts the state file ends up `{ failed: [] }`. No state file, or a prior run with zero
+    failures: `cli.ts` prints "no failed tests from the last run — running the full suite" and
+    proceeds as a normal full run, matching pytest's `--lf` default (enterprise decision 21.2) rather than
+    erroring or silently running nothing. Composes with `--tag`/`--only` as one combined AND
+    filter chain in `runCommand`'s `runnable` computation (a test must pass every active filter);
+    a `--failed` filter that matches zero current tests (files changed since the last run) is a
+    hard usage error, same treatment as an unmatched `--tag`/`--only`.
+
+    **`--bail`** — `runWithConcurrency` (the existing pull-based worker pool) gained an optional
+    `shouldBail` predicate, checked after every result; once true, the pool stops calling
+    `runNext()`'s claim step but never touches an in-flight worker — no hard-abort/cancellation-
+    token plumbing into `runProgram`/the interpreter, exactly the scoped-down semantics enterprise decision
+    21.3 called for. `args.bail ? (r: RunReport) => !r.ok : undefined` as the predicate — since
+    `TestResult.ok`/file-level `RunReport.ok` are already post-retry final verdicts, a mid-retry
+    failing attempt never trips it. Files never claimed are simply absent from the returned
+    reports array (changed `runWithConcurrency`'s internal array from `R[]` to `(R | undefined)[]`
+    then filtered nulls out at the end) — `mergeReports`/`results.json`/`report.html` all already
+    tolerate a partial run correctly (same code path a mid-run crash already exercised).
+
+    **`--format ndjson`** — a genuinely separate feature from `results.json` (item 1), confirmed
+    explicitly with the user mid-interview after an initial ambiguity: a *live*, line-per-event
+    stream (`JSON.stringify` of the same `RunEvent`s `--verbose`'s human renderer already
+    consumes), not an end-of-run summary. New `ndjsonEmit` sink in `cli.ts`; when active, replaces
+    the human ticker entirely (no buffering distinction needed for `--workers > 1` — unlike human
+    text, JSON lines are self-contained and safe to interleave). Amended mid-interview: also
+    always written to `report/events.ndjson` (new `packages/reporter/src/events-ndjson.ts`) — not
+    stdout-only — so the stream survives even when the invoking process didn't capture it.
+    `RunEvent` (`packages/runtime/src/types.ts`) gained an optional `file` field on every variant
+    to disambiguate concurrent files' events — set by a new `withFileTag` wrapper in `cli.ts`
+    around whichever sink actually runs, **not** threaded through `runProgram`/the interpreter
+    itself, deliberately mirroring the exact "file is a display concern, stamped by the CLI"
+    precedent `TestResult.file` already established (P#92) — `packages/runtime` stays
+    unaware `file` exists as a concept.
+
+    **Verbosity ladder: no change, considered and dropped.** A `--quiet` flag (suppress today's
+    one-line-per-test default down to failures + a tally, for CI log volume on large green suites)
+    and a `--log-level` replacement for the boolean `--verbose` were both raised and dropped
+    mid-interview after the user pushed back on `--quiet`'s value — no concrete near-term
+    large-suite CI-noise pain point exists, and replacing `--verbose` would break scripts using a
+    flag stable since M2.15 for no compensating benefit. Recorded in `PLAN_ENTERPRISE.md` decision
+    enterprise decision 21.6 as "considered and rejected," the same pattern enterprise decision 20 used for its own dropped ideas
+    — a real design decision, not a silent omission.
+
+    **Timestamps, on by default.** New `timestamp()`/`withTimestamps()` helpers in `cli.ts` —
+    `HH:MM:SS.mmm` wall-clock, one instant captured per printed block (not recomputed per physical
+    line within a multi-line block), blank spacer lines left bare (no timestamp on nothing — a
+    refinement made while implementing, not part of the original interview). `--no-timestamps`
+    opts out, symmetric to `--no-color`. This changes the CLI's default output shape: one existing
+    e2e test (`--verbose prints one indented line per step under a test-name header`) asserted an
+    exact bare-string line match and needed `--no-timestamps` added to keep testing verbose's
+    *structure*, not coupling to this unrelated feature — exactly the golden-fixture update
+    enterprise decision 21.7 anticipated, not worked around.
+
+    **GitHub Actions log grouping.** Auto-detected via `GITHUB_ACTIONS` env var, no new flag.
+    `formatEvent` gained a `githubActions` parameter — `::group::<name>` replaces the plain
+    `test:start` header line and `::endgroup::` is appended to the `test:end` block, only when
+    `verbose` is also true (normal mode is already one line per test). Not a GitHub annotation —
+    pure log folding, enterprise decision 7's "no GitHub annotations" scope boundary unaffected (same
+    distinction enterprise decision 21.8 drew).
+
+    **`--log-file <path>`.** New `makeConsole()` in `cli.ts` — every piece of `run`'s console
+    output (human or NDJSON) now flows through one `out.write()` call instead of scattered direct
+    `process.stdout.write()`s, so `--log-file` can mirror it; buffers the whole run's output in
+    memory rather than opening a real file stream (a run's console output is never large enough to
+    justify one), written once via `out.save()` at the end. Always plain text — a new `stripAnsi()`
+    regex strips ANSI codes on the way into the buffer, independent of whatever `--no-color`/
+    `isTTY` decided for stdout itself.
+
+    **testFlow-tests consumption**: merges into enterprise decision 19/`PLAN_CI.md` (enterprise decision 21.12) — not
+    built as part of this milestone. `PLAN_CI.md`'s CI workflow will be built using `results.json`
+    artifact upload, `--bail`, and GH Actions log grouping from the start once that milestone is
+    picked up.
+
+    **Testing**: 21 new tests, 0 regressions — `packages/reporter` (+7: `renderLastRun`/
+    `writeLastRun`/`readLastRun` round-trip + overwrite-narrows semantics, `writeEventsNdjson`
+    ordering + empty-list edge case) and `packages/cli` e2e (+13: `results.json` content +
+    redaction, `--failed` replay/empty-fallback/narrowing, `--bail` stops a later file/unchanged
+    without it, `--format ndjson` line-parseability + file-tagging + `report/events.ndjson` parity
+    + full detail without `--verbose` + an unsupported-value usage error, default timestamps +
+    `--no-timestamps`, GH Actions grouping's three-way verbose×env-var matrix, `--log-file`
+    content parity) plus 1 existing test updated (`--no-timestamps` added to keep an unrelated
+    verbose-structure assertion exact). 611/611 across all 6 tested packages (240 lang unchanged,
+    202 runtime unchanged, 19 reporter [+7], 68 lsp-server unchanged, 72 cli [+13, 1 modified],
+    10 vscode unchanged), up from the 591 M16 baseline.
+    `tsc --noEmit` clean on all 6 packages, `npm run build` clean workspace-wide. Two real testing
+    gotchas hit and fixed, not initial-implementation bugs: (a) a first draft of the timestamp e2e
+    test asserted `{2}` (two) leading spaces after the prefix on a verbose step line, but the
+    actual line has three (the timestamp helper's own trailing space plus the step line's existing
+    two-space indent) — fixed to `\s+`; (b) a first draft of the `--no-timestamps` opt-out test
+    used an unanchored regex that false-matched the summary line's own `now 2026-...T20:15:49.955Z`
+    ISO field (which legitimately contains an `HH:MM:SS.mmm`-shaped substring) — fixed to anchor
+    on line-start (`^`). SPEC.md §12's `tflw run` row and a new §13 "CI ergonomics + console/log
+    output" subsection cover the full feature set; `packages/lang/src/spec-data.ts`'s `CLI_FLAGS`
+    gained the 5 new flags (feeds `reference/cli.md` and `tflw docs` for free); `docs-site/guide/
+    ci-and-reporting.md` gained 3 new sections and `guide/debugging.md`'s "Isolate a test" section
+    gained `--failed`/`--bail`. Verified live: `vitepress build` clean, `vitepress dev` + Playwright
+    confirmed `reference/cli.md` renders all 5 new flags and both guide pages render their new
+    content.
+
+    **Amended same day: doc-completeness audit, user-requested ("does the doc-site clearly depict
+    this update in all relevant places").** The above verification confirmed the *new* pages/
+    sections rendered — it didn't check whether *pre-existing* "what does `tflw run` write"
+    statements elsewhere had gone stale. They had: `getting-started.md`'s quickstart paragraph,
+    `index.md`'s feature card + "Why tflw" bullet, root `README.md` (3 spots: "Why tflw" bullet,
+    quickstart paragraph, project-layout table row), `packages/cli/README.md` (2 spots, same
+    pattern), and SPEC.md (3 spots: project-layout ASCII comment, §14 architecture diagram, §13's
+    top capability summary) all still said only "`report.html` and `junit.xml`," silently missing
+    `results.json`. Fixed all of them to name `results.json` too. `packages/cli/README.md`'s own
+    `## CLI` usage block turned out stale beyond just this milestone — missing `--only`/
+    `--forbid-insecure`/`--evidence`/`--verbose`/`tflw docs`/`tflw lsp`, gaps that predate M17
+    entirely — brought fully in sync with `cli.ts`'s actual flag set rather than patched to add
+    only the M17 flags, since leaving it half-fixed would still be inaccurate. Three internal
+    SPEC.md mentions of "`report.html`/`junit.xml`" as informal shorthand in redaction-mechanism
+    prose (not artifact inventories) were deliberately left alone — adding `results.json` to every
+    such phrase would be diminishing-returns pedantry, not a real gap. Verified: `vitepress build`
+    clean, `vitepress dev` + Playwright confirmed `results.json` renders on both the home page and
+    `getting-started.md`; full suite re-run, still 611/611.
+
+### P#112
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
+
+112. **Version-line revision: perf and pentest now gate `1.0.0`, not the browser-era M7 verdict
+     alone.** Supersedes P#50's mapping (`0.1.0` API-only → `0.2.0` browser → `1.0.0` "final,
+     after the browser-era acceptance verdict, P#41/P#38"). By the time M7 actually shipped
+     (2026-07-27/28), `PLAN_BROWSER_PERF_SECURITY.md` had already committed two more arcs — perf
+     and pentest — as in-scope, pre-1.0 work, so P#50's placement of `1.0.0` right after the
+     browser verdict stranded it mid-roadmap instead of at the actual finish line. New mapping:
+     `0.1` (API) → `0.2` (+ browser, done) → `0.3` (+ perf) → `0.4` (+ pentest) → `1.0.0` = the
+     **actual first npm publish**, gated on all four arcs plus one final integrated acceptance pass
+     (API + browser + perf + pentest together, against the real dogfood app) — not before.
+     Reaffirms `PLAN_ENTERPRISE.md` decision 12 ("stays `0.1.0` throughout the arc — tflw isn't on
+     npm yet"): `package.json`'s literal `version`/`private` fields don't move for any of these
+     internal arcs, only at the real publish. The `0.2`/`0.3`/`0.4` labels are bookkeeping in
+     planning docs and `CHANGELOG.md`'s `[Unreleased]` section — never a real git tag or npm
+     version. M7's "1.0 gate" framing (this file's own milestone bullet below, PROGRESS.md, SPEC.md
+     §15, README.md, docs-site, and already-written git commit messages) is retroactively
+     understood as **the browser arc's own acceptance gate** (`0.2.0`-equivalent) — P#41/P#45's
+     substance (the acceptance methodology, `tflw migrate` shipping as that arc's deliverable)
+     doesn't change, only the version label attached to what M7 actually unlocked. **Rejected:**
+     keeping `1.0.0` tied to the browser verdict alone and relabeling perf/pentest `1.1.0`/`1.2.0`
+     (the scheme `PLAN_BROWSER_PERF_SECURITY.md` D3 originally used) — that leaves no clean home for
+     "everything's actually done," which is precisely the gate the user wants before ever
+     publishing.
+
 ### D1
 
 <sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
@@ -758,7 +2269,7 @@ here.
 - **D1 — One language, three execution modes.** tflw grows `tflw load` and `tflw scan`
   alongside `tflw run`. Browser steps, a load `scenario` construct, and a security `scan`
   construct all share the existing request model, `session`/auth, env config, redaction, checker,
-  reporter and LSP. Single npm package, single SPEC, additive-only versioning (P#13/decision 45
+  reporter and LSP. Single npm package, single SPEC, additive-only versioning (P#13/P#45
   take real pressure — each mode must justify its vocabulary).
 
 ### D5
@@ -768,13 +2279,13 @@ here.
 **Driver boundary (D5)**
 
 - Peer stays **`playwright` core** (not `@playwright/test`), optional, dynamic-imported at first
-  browser step, installed via `tflw install-browsers` (decision 44 unchanged).
+  browser step, installed via `tflw install-browsers` (P#44 unchanged).
 - **Delegate actionability, own assertions.** `locator.click()/fill()` inherit Playwright's
   battle-tested action-level waiting (visible/stable/enabled/receives-events). The **assertion
   retry loop, timeout policy, and 100% of failure text are tflw's own**, polling
-  `count()/isVisible()/textContent()` on tflw's clock. Reason: decision 9 (a UI failure *is* a
+  `count()/isVisible()/textContent()` on tflw's clock. Reason: P#9 (a UI failure *is* a
   diagnosis) is structurally impossible on top of Playwright's assertion errors; and API-side
-  subject-split retry (decision 15) must not live in a vendored dep.
+  subject-split retry (P#15) must not live in a vendored dep.
 
 ### D6
 
@@ -782,7 +2293,7 @@ here.
 
 **Selector model (D6) — resolves the SPEC §11 contradiction**
 
-SPEC currently promises both a global cascade (§11:1032) and "never silent fallback" (decision 9)
+SPEC currently promises both a global cascade (§11:1032) and "never silent fallback" (P#9)
 — incompatible. Resolution: **the noun picks the strategy; only `field` cascades; any non-tier-1
 resolution is reported.**
 
@@ -806,7 +2317,7 @@ resolution is reported.**
 
 **Escape hatch (D9)**
 
-- **No browser access in JS helpers.** Helpers stay context-in/values-out (decision 11). Keeps the
+- **No browser access in JS helpers.** Helpers stay context-in/values-out (P#11). Keeps the
   peer genuinely optional, avoids a permanent Playwright-`Page` compat obligation, and forces
   grammar gaps to surface as language feedback. A narrow tflw-owned facade (evaluate-in-page /
   storage / wait-for-predicate — never raw `page`) is held in reserve **only** if dogfooding
@@ -938,7 +2449,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 **Language semantics under load (D18)**
 
 - **`think 2s` / `think 1s to 3s`** legal **only inside `scenario`**; the checker rejects it inside
-  `test`. Named `think` (not `sleep`) so decision 8's `sleep` ban survives where it was aimed
+  `test`. Named `think` (not `sleep`) so P#8's `sleep` ban survives where it was aimed
   (functional sync hacks) — under load, think time is a modeling primitive, not a hack.
 - **`expect` inside a scenario aborts the *iteration*** and counts it toward the error rate; never
   aborts the run. Definition unchanged ("hard-fail the unit of execution"), scope changes (test
@@ -1078,7 +2589,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D93
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D93 — single DSL keyword.** `scenario` and its mandatory `as load` clause are removed entirely.
   Every top-level block is `test "name" { ... }`. Breaking change, no deprecation period (project is
@@ -1102,7 +2613,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D96
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D96 — field exclusivity, checker-enforced.** `retry N` or `with each` together with a workload
   clause in the same block is a hard checker error (extends the existing D19 pattern — browser
@@ -1110,7 +2621,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D97
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D97 — distinct named keywords per workload shape**, not a generalized stage-sequence construct.
   Five workload kinds total, each its own top-level keyword inside a `test` body:
@@ -1131,7 +2642,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D98
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D98 — every new shape supports both closed (users) and open (rps) variants**, matching `ramp`'s
   existing dual support. Same closed-model back-off diagnostic (D17) applies uniformly to every
@@ -1169,7 +2680,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D102
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D102 — count-based workloads keep `think` pacing, drop the D17 diagnostic.** `think`
   (pending the separate rename, see `PLAN_THINK_TO_PAUSE.md`) remains legal inside a count-based
@@ -1179,7 +2690,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D103
 
-<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D103 — migration diagnostic for leftover `scenario`.** A `scenario` keyword found post-removal
   produces a specific, named error pointing at the new syntax (e.g. "`scenario` was removed — write
@@ -1198,7 +2709,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D105
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D105 — generic scope, not workload-only.** `parallel`/`sequential` applies to *every* `test`,
   functional (API/UI) or workload-bearing alike — not just load tests. Confirmed feasible by reading
@@ -1346,7 +2857,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D115
 
-<sub>cited from packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, packages/runtime/README.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D115 — report.html marks a test that ran in a `parallel` batch with a small inline badge, next
   to its name.** D101/D112 settled *ordering* (one entry per test, declaration order) but not
@@ -1366,7 +2877,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D116
 
-<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D116 — discriminated `ReportEntry` union.** `TestResult` gains a required `readonly kind:
   'functional'` (breaking, pre-1.0 precedent per D99's `tflw load` removal). New
@@ -1434,7 +2945,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D122
 
-<sub>cited from SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D122 — console summary.** `renderCliSummary` (reporter package) gains a workload-entry branch
   — name, ok/fail mark, then its threshold lines (`renderLoadSummary`'s old tick-mark format) —
@@ -1445,7 +2956,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D127
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_DISCOVERY_EXCLUDE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_DISCOVERY_EXCLUDE.md`</sub>
 
 **`D127` — bare discovery gets an `exclude` list, and a path that matches nothing is a no-op.**
 `tflw.config` gains a top-level `exclude "<path>"[, "<path>"…]` directive, relative to the config's
@@ -1627,8 +3138,7 @@ product and a real maintenance surface.
 
 **D202 — a demo run says so, everywhere a run says anything**
 
-The CLI summary and the report header both carry it, following `insecure true`'s precedent (PLAN
-decision 78): a run with an unusual footing is never silently normal-looking. A green `PASS 1/1`
+The CLI summary and the report header both carry it, following `insecure true`'s precedent (P#78): a run with an unusual footing is never silently normal-looking. A green `PASS 1/1`
 screenshot must not be mistakable for evidence about a real service — the demo's whole job is to be
 obviously itself.
 
@@ -1708,7 +3218,7 @@ the parser actually dispatches on.
 
 ### D283
 
-<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D283 — Tier 1 is a scan-and-assert over a rule pack, not a set of discrete subjects**
 
@@ -1718,7 +3228,7 @@ existing `filterBySeverity` floor.
 
 ### D284
 
-<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D284 — a rule declares a precondition; "not applicable" is a third state**
 
@@ -1727,7 +3237,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 ### D285
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D285 — zero applicable rules is a failure, not a pass**
 
@@ -1746,7 +3256,7 @@ no new config surface**.
 
 ### D287
 
-<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D287 — cookie rules see this response's `Set-Cookie`, plus session establishment**
 
@@ -1756,17 +3266,17 @@ session by name.
 
 ### D288
 
-<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D288 — TLS facts come from an out-of-band stdlib `tls.connect()` probe**
 
-Node's `tls` module, no new dependency, decision 43 intact: connect to the same `host:port`, read
+Node's `tls` module, no new dependency, P#43 intact: connect to the same `host:port`, read
 `getProtocol()` and `getCipher()`, close. Cached **once per `host:port` per run** — a rule that
 fires per response must not open a handshake per response.
 
 ### D289
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D289 — the v1 pack is ten rules: six browser-shaped, four API-shaped**
 
@@ -1790,7 +3300,7 @@ this tool is actually pointed:
 
 ### D290
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D290 — `response has no [<severity>] security violations`**
 
@@ -1799,7 +3309,7 @@ one word covers both scan kinds.
 
 ### D291
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D291 — D21's declaration half lands now, and Tier 1 requires it**
 
@@ -1876,7 +3386,7 @@ Each rule in the pack must be demonstrated three ways against the real target:
 
 ### D296
 
-<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D296 — the severity floor narrows the pack *before* applicability, not the findings after**
 
@@ -1897,7 +3407,7 @@ observation.
 
 ### D298
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D298 — the probe offers a TLS 1.0 floor, and does not widen ciphers**
 
@@ -1909,7 +3419,7 @@ probe therefore sets `minVersion: 'TLSv1'`.
 
 ### D299
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D299 — both TLS rules answer "what does this host give a current client?", not "what does it offer?"**
 
@@ -1923,7 +3433,7 @@ both of which the rules state in their own failure text rather than leaving to t
 
 ### D300
 
-<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D300 — a rule blocked by a failed instrument is announced; one blocked by its precondition is not**
 
@@ -1932,9 +3442,28 @@ reaching only D285's not-applicable listing — which prints when *nothing* appl
 pass or failure, a probe that could not connect was completely invisible: `expect response has no
 security violations` printed a clean green line whose TLS rules had never run.
 
+### D302
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+
+**D302 — no handshake when the floor has already discarded both TLS rules**
+
+*Decided during `M128c`.* D296 narrows the pack **before** applicability, so
+`expect response has no critical security violations` never consults a TLS rule. The probe was
+nonetheless opening its second connection and throwing the answer away.
+
+### D303
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+
+**D303 — the input is an observed request, not a static cross-product**
+
+Tier 2 judges **the request the step just made**, re-issued under other principals. It does not
+enumerate the suite's endpoints and it does not build a table.
+
 ### D304
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D304 — the surface is a per-step assertion: `response has no [<severity>] authorization violations`**
 
@@ -1942,7 +3471,7 @@ A second matcher on the existing `response` subject, in the exact shape D290 cho
 
 ### D305
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D305 — the oracle is differential on resource identity**
 
@@ -1958,7 +3487,7 @@ The no-credentials probe needs no declaration and is in every probe set.
 
 ### D307
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D307 — `privileged` marks a session exempt from probing**
 
@@ -2002,7 +3531,7 @@ error. There is no owner to be non-owning *of*.
 
 ### D310
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D310 — the probes fire inline, at the assertion**
 
@@ -2011,7 +3540,7 @@ test's lifetime.
 
 ### D311
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D311 — safe methods by default; `probe mutating` opts in, per authorized target**
 
@@ -2043,7 +3572,7 @@ collection, or a shared public resource — is **not** a finding. The invariant 
 
 ### D314
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D314 — every finding emits a runnable `.tflw` repro**
 
@@ -2065,7 +3594,7 @@ this.
 
 ### D315
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D315 — applicability, and what "not applicable" means here**
 
@@ -2159,7 +3688,7 @@ a bundle.
 
 ### D321
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D321 — resource-id extraction reaches the bare shapes only, and says so out loud**
 
@@ -2171,7 +3700,7 @@ From the owner's response body:
 
 ### D322
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D322 — containment is a scalar-leaf walk with exact equality, at any depth**
 
@@ -2181,7 +3710,7 @@ envelope the owner's own response did not use, is still a leak.
 
 ### D323
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D323 — `authzProbe.ts` is the only file that sends a probe, and it rebuilds rather than re-runs**
 
@@ -2191,7 +3720,7 @@ fifth request path.
 
 ### D324
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D324 — five probe outcomes, and `clean` has to be earned**
 
@@ -2205,7 +3734,7 @@ fifth request path.
 
 ### D325
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D325 — a cookie-borne principal refused on a mutating method is `inconclusive` (`M130-01`)**
 
@@ -2236,7 +3765,7 @@ request then carries admin's `Authorization` **and** shopper's `Cookie` simultan
 
 ### D328
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D328 — `TF062` is a lexical refusal plus an exact runtime guard**
 
@@ -2248,7 +3777,7 @@ that boundary deliberately (*"a frame whose registry is knowable: a `test` or ho
 
 ### D329
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D329 — `TF063` uses the same split, and `before file` hooks are refused**
 
@@ -2262,7 +3791,7 @@ that boundary deliberately (*"a frame whose registry is knowable: a `test` or ho
 
 ### D330
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D330 — `probe mutating` is an optional indented sub-clause**
 
@@ -2281,7 +3810,7 @@ lines instead of needing a second grammar.
 
 ### D331
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D331 — the blind spot is two numbers, and one of them is a checker census**
 
@@ -2293,7 +3822,7 @@ declines aggregated beside it.
 
 ### D332
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D332 — repro templates are per-rule, and mirror the hand-written control**
 
@@ -2410,7 +3939,7 @@ orphaned it.
 
 ### D366
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D366 — the matcher is `has no input-handling violations`**
 
@@ -2426,7 +3955,7 @@ compose exactly as the other two do — `FindingSeverity` is unchanged (`minor` 
 
 ### D367
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D367 — rule ids stay in the `sec/` namespace**
 
@@ -2447,7 +3976,7 @@ byte-identical findings.
 
 ### D369
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D369 — a seeded extension exists, is opt-in, and never gates**
 
@@ -2457,7 +3986,7 @@ opt-in layer on top of the corpus.
 
 ### D370
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D370 — the surface is the observed request only. No OpenAPI seed.**
 
@@ -2466,7 +3995,7 @@ here and left to Tier 4's crawler.
 
 ### D371
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D371 — the mutable inputs are path params, query params and body leaf scalars. Headers are deferred.**
 
@@ -2480,7 +4009,7 @@ here and left to Tier 4's crawler.
 
 ### D372
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D372 — the four classes, and their per-class safety opt-in as sibling lines**
 
@@ -2491,7 +4020,7 @@ rather than reopening the layer.
 
 ### D373
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D373 — the invariants, and the 5xx bar: disclosure, not status**
 
@@ -2510,7 +4039,7 @@ and a probe response).
 
 ### D375
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D375 — `M130-01` is not promoted by this milestone, and this is why**
 
@@ -2521,7 +4050,7 @@ a pass. Its S4 severity rests on *"no shipped tflw has this defect… it can bit
 
 ### D376
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D376 — R8's fingerprints, re-attached to `RunReport`**
 
@@ -2533,7 +4062,7 @@ distinct.
 
 ### D377
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D377 — the gate: `--fail-on` and `--baseline`**
 
@@ -2581,7 +4110,7 @@ quiet against a correct application, and tells us whether D377's gate is urgent 
 
 ### D381
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D381 — the pace bound holds; `probe rate` does not come due**
 
@@ -2591,7 +4120,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 ### D382
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D382 — diagnostic codes, and the coupling**
 
@@ -2616,7 +4145,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 ### D385
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D385 — findings ride the report for all three scans, not only Tier 3**
 
@@ -2628,7 +4157,7 @@ D332's repro emitter needed facts rather than a rendered sentence.
 
 ### D386
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D386 — the gate can only relax, never tighten, and relaxation is never silent**
 
@@ -2639,7 +4168,7 @@ that produced it. A second gate axis would mean two sources of truth for the sam
 
 ### D387
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D387 — `--baseline` reads, `--baseline-write` produces, and stale entries are named**
 
@@ -2659,7 +4188,7 @@ that produced it. A second gate axis would mean two sources of truth for the sam
 
 ### D388
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D388 — the seeded layer is a run flag, and it grants nothing**
 
@@ -2671,7 +4200,7 @@ not a new one.
 
 ### D389
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D389 — `M128-01` is fixed here, and this is the milestone that can**
 
@@ -2690,7 +4219,7 @@ call is **fix it**, on three measurements rather than on the row's age:
 
 ### D402
 
-<sub>cited from SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D402 — `M135` is R7 + R8 + R9. R10's `--unsafe-evidence` is deferred.**
 
@@ -2701,7 +4230,7 @@ live consumer at `authzRules.ts:309` and D376 reused it unchanged — so what is
 
 ### D403
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D403 — SARIF re-attaches to `RunReport`, and R1/R2's `ScanReport` container is formally dead**
 
@@ -2717,7 +4246,7 @@ last piece and states the consequence plainly, since D360 forbids editing the cl
 
 ### D404
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D404 — `findings.sarif` is written only when the run scanned**
 
@@ -2727,7 +4256,7 @@ file is written at all.
 
 ### D405
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D405 — a result points at the `.tflw` assertion, and names the endpoint logically**
 
@@ -2746,7 +4275,7 @@ already normalized to `METHOD /templated/path` for the fingerprint.
 
 ### D406
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D406 — four levels into three, plus the numeric GitHub actually ranks on**
 
@@ -2759,7 +4288,7 @@ already normalized to `METHOD /templated/path` for the fingerprint.
 
 ### D407
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D407 — CWE rides in `rule.properties.tags`**
 
@@ -2773,7 +4302,7 @@ links inside `help.markdown`, so a human reading one alert has them without a ta
 
 ### D408
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D408 — the KB carries remediation and references. It does not carry severity.**
 
@@ -2782,7 +4311,7 @@ overclaim found in the file you are already reading gets rewritten rather than s
 
 ### D409
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D409 — a rule with no KB entry is a compile error**
 
@@ -2791,7 +4320,7 @@ Each rule module exports its ids as a `const` tuple; their union types the KB as
 
 ### D410
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D410 — `baseline` suppresses; `--fail-on` does not**
 
@@ -2803,7 +4332,7 @@ Each rule module exports its ids as a `const` tuple; their union types the KB as
 
 ### D411
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D411 — seeded findings are excluded from the SARIF entirely**
 
@@ -2812,7 +4341,7 @@ that makes it un-baselinable and non-gating: a rule can be forgotten, a missing 
 
 ### D412
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D412 — `rules[]` declares what applied; what stood down goes in `run.properties`**
 
@@ -2831,7 +4360,7 @@ This is the three-state coverage model expressed in SARIF's own vocabulary:
 
 ### D413
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D413 — repros: wire what exists, defer the generalization behind a condition**
 
@@ -2841,7 +4370,7 @@ full; on the other 16 rules the property is simply absent.
 
 ### D414
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D414 — `@types/sarif` + `ajv`, validated against the bundled 2.1.0 schema**
 
@@ -3303,7 +4832,7 @@ files that mostly are not.
   tiered selector resolution + `css`/`xpath` escapes + `element` aliases, auto-retrying UI
   expects, the browser half of `session` blocks (cached storage state; the API half shipped in
   M2.6) + fresh context per test, screenshots in the report, lazy `tflw install-browsers`
-  (+ `init --ui`) which now also npm-installs the optional `playwright` peer (decision 44).
+  (+ `init --ui`) which now also npm-installs the optional `playwright` peer (P#44).
   A mixed UI+API test passes against testFlow-tests' frontend (already built, waiting for this
   milestone — see its own PLAN.md's M2).
 
@@ -3339,7 +4868,7 @@ architecture changes, only additions.
 Third browser-arc slice, same day as M3a/M3b's own kickoff (`PLAN_BROWSER_PERF_SECURITY.md`
 §1.12). Builds on M3a's `BrowserManager`/`BrowserPageState` — no architecture changes, only
 additions: `report/` was already a directory in practice (`report.html`/`junit.xml`/`results.json`/
-`.last-run.json` all already lived there, decision 111) — what M3c actually adds is the
+`.last-run.json` all already lived there, P#111) — what M3c actually adds is the
 `assets/` subdirectory plus everything that fills it.
 
 ### M3d
@@ -3396,7 +4925,7 @@ reads as shorthand for one feature area, not two overlapping constructs — `stu
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
-- **M4 — browser-era polish.** Trimmed twice (decisions 40, 47): tags/hooks/retry/check/tables/
+- **M4 — browser-era polish.** Trimmed twice (P#40, P#47): tags/hooks/retry/check/tables/
   junit went to M2.5, parallel workers to M2.6. What remains: full report polish once M3 lands
   (screenshots per browser step alongside the API panels/timeline), and hardening workers for
   browser-sized suites (worker_threads/processes behind the same `workers` setting if in-process
@@ -3443,13 +4972,13 @@ exact mechanism D15 was asking for.
 
 <sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
 
-- **M7 — acceptance (the browser arc's own gate, `0.2.0`-equivalent — decision 112 amends the
+- **M7 — acceptance (the browser arc's own gate, `0.2.0`-equivalent — P#112 amends the
   original "1.0 gate" framing below).** Build out the 10-test dogfood suite (testFlow-tests) + its
   own feature extensions; run the side-by-side vs raw Playwright; write FINDINGS in PROGRESS.md.
-  This verdict gates the **browser arc** (decisions 41, 50 as originally written; decision 112
+  This verdict gates the **browser arc** (P#41, P#50 as originally written; P#112
   clarifies it isn't the literal `1.0.0` publish gate — that now waits on perf + pentest + a final
   integrated acceptance pass too), not the first publish (that happened at M2.7): on a win, ship
-  `tflw migrate` (decision 45's deliverable) and freeze the grammar additive-only (decision 38) —
+  `tflw migrate` (P#45's deliverable) and freeze the grammar additive-only (P#38) —
   both done, unaffected by the version-label correction.
 
 ### M9
@@ -3500,9 +5029,9 @@ exact mechanism D15 was asking for.
 
 103. **M12 — Documentation site** — cluster 4 of the (now 8-cluster) enterprise-readiness arc
     (`PLAN_ENTERPRISE.md` decision 16, a `/grill-me` session 2026-07-19), immediately following
-    cluster 3 (decision 102). Unlike clusters 1–3, this cluster adds no DSL grammar or runtime
+    cluster 3 (P#102). Unlike clusters 1–3, this cluster adds no DSL grammar or runtime
     behavior, so it has **no testFlow-tests consumption milestone** — the cadence exception
-    decision 16 documents. Six lettered sub-parts, from a canonical `spec-data.ts` manifest
+    enterprise decision 16 documents. Six lettered sub-parts, from a canonical `spec-data.ts` manifest
     through a new VitePress `docs-site` workspace, a parse-and-check playground, a `GRAMMAR.md`
     rewrite and a README trimmed to a landing page, to the workflow that publishes the site.
 
@@ -3523,7 +5052,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 108. **M14 — Connection-failure assertions: `request connects`/`fails`** — cluster 5.5 of the
     enterprise-readiness arc (`PLAN_ENTERPRISE.md` decisions 18–19, a third `/grill-me` session
-    2026-07-20, prompted by planning `testFlow-tests` CI). Closes the gap decision 18 identified:
+    2026-07-20, prompted by planning `testFlow-tests` CI). Closes the gap enterprise decision 18 identified:
     a request that fails *before* any HTTP response exists (a TLS handshake rejection, DNS
     failure, `ECONNREFUSED`, an `allow hosts` block) always crashed the whole test fail-fast, with
     no way to write a genuinely passing regression test proving a guardrail actually triggers.
@@ -3545,7 +5074,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 <sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 110. **M16 — Docs site: running & debugging tests guide + getting-started prerequisites** — a
-    direct follow-up to M15/decision 109 (cluster 9), user-reported this session (not a `/grill-me`
+    direct follow-up to M15/P#109 (cluster 9), user-reported this session (not a `/grill-me`
     interview — a scoped, self-contained content gap, same weight as the `.gitignore` fix folded
     into M15). The user pointed out the doc site had almost no material on actually *running* a
     test (what the CLI prints), *debugging* a failure, or the pre-conditions needed before `tflw
@@ -3559,17 +5088,17 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 <sub>cited inside a range only · lifted from `PLAN.md`</sub>
 
 111. **M17 — CI ergonomics + console/log output** — enterprise arc cluster 6
-    (`PLAN_ENTERPRISE.md` decision 21, a fifth `/grill-me` session 2026-07-20). Decision 7's
+    (`PLAN_ENTERPRISE.md` decision 21, a fifth `/grill-me` session 2026-07-20). Enterprise decision 7's
     original scope (`--format json`/`results.json`, `--failed`, `--bail`) plus a second topic
     folded in at the user's request: console/log output (NDJSON event stream, timestamps, GitHub
     Actions log grouping, `--log-file`). Not cadence-exempted (unlike clusters 4/5/9) — this is a
     real CLI/runtime behavior change, so it gets a normal `testFlow-tests` consumption milestone,
-    merged into decision 19/`PLAN_CI.md` rather than a separate one (see that decision's amended
+    merged into enterprise decision 19/`PLAN_CI.md` rather than a separate one (see that decision's amended
     note, 2026-07-20).
 
 ### M18
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -3655,7 +5184,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
      (`results.json`/`--format ndjson` always carry every `log` step); only the two human-facing
      renderers (console text, `report.html`) filter by the resolved `log destination`/`log level`
      (new `tflw.config` keys, `--log-output`/`--log-level` CLI overrides — same config-default/
-     CLI-override precedence `evidence` already established, decision 101c). `--log-output` only
+     CLI-override precedence `evidence` already established, P#101c). `--log-output` only
      ever reaches a bare `log "…"` call; an explicit per-statement `to …` always wins. Full grammar/
      data-model/precedence design lives in `PLAN_LOG.md` (decisions 113–124 there, folded into this
      single entry here rather than 12 separate PLAN.md entries, mirroring decision 104's LSP
@@ -3674,12 +5203,12 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 114. **M28 — `log` catches up to editor tooling (LSP + VS Code).** M27 added `log` to
      `STATEMENT_KEYWORDS` but never touched `packages/lsp-server`/`packages/vscode`, per
      `PLAN_LOG.md`'s own flagged follow-on (same pattern M9-M11 each got a dedicated LSP catch-up
-     later, at M13/decision 104). Full design + direct-read evidence in `PLAN_LOG_LSP.md`. Four
+     later, at M13/P#104). Full design + direct-read evidence in `PLAN_LOG_LSP.md`. Four
      independently-maintained keyword lists that `STATEMENT_KEYWORDS` additions don't propagate to
      for free each needed `'log'` added by hand: `tflw.tmLanguage.json`'s static TextMate grammar
      (`keywords-statement`, line 58 — `log` rendered fully unstyled before this), `semanticTokens.ts`'s
      `KEYWORDS` set (the richer, theme-independent VS Code coloring path wired through
-     `lsp-server/server.ts`'s live `semanticTokens.on` handler, decision 105), `lsp-server`'s
+     `lsp-server/server.ts`'s live `semanticTokens.on` handler, P#105), `lsp-server`'s
      `completion.ts`'s `STEP_KEYWORDS` (autocomplete at a step position never offered `log`), and
      `symbols.ts`'s `walkSteps()` switch (a `{var}` referenced only inside a `log` message was
      invisible to hover/go-to-def/rename — silently, since a checker-clean file just produced an
@@ -5381,5 +6910,15 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
    longer here — `D660` moved it to `M149b`.)
 2. `CONTRIBUTING.md`'s gate list grows by **two**; `ci.yml` is authoritative and the prose is held to it
    (`M138`).
+
+### M152b
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`M152b` — normalisation and declarations (tflw)**
+
+**BUILT 2026-08-24 — green on its own gate (`D692`), `D695`–`D699` filed.** Scoped `D691`/`D692`;
+what the build actually found is `D695` (171 citations, not 90–104 + 47) and `D697` (five more
+exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 <!-- GENERATED:decisions:end -->

@@ -6,12 +6,14 @@ observation (`request to "…"`/`of request to "…"`) and `stub`, plus M3e's `p
 load-testing/workload dialect (M29–M53), and the grammar-freeze changes of milestone B1
 (`FS-04` … `FS-08`). This is a strict subset of the
 full language design in [SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md); SPEC.md is the prose reference with rationale
-and examples, this file is the grammar shape only. Cross-references to SPEC decisions are `(P#n)`;
-cross-references to a SPEC section are `(§n)`.
+and examples, this file is the grammar shape only. Cross-references to a SPEC section are `(§n)`.
+Cross-references to a decision are `(P#n)` for the founding list, `(D<n>)` for the later sequence
+and `(M<n>)` for a milestone — all three name blocks in design records this repository does not
+publish, and each resolves in [DECISIONS.md](https://github.com/deepak-tuteja/tflw/blob/main/DECISIONS.md).
 
-**Freshening note (PLAN decision 103, enterprise arc cluster 4, decision 16.11):** this file was a
-frozen M0-only snapshot from 2026-07-06 through M11 — every milestone after M0 updated SPEC.md but
-not this file. That rewrite caught it up through decision 102, and the rule is that every milestone
+**Freshening note (P#103, enterprise arc cluster 4, `PLAN_ENTERPRISE.md` decision 16.11):** this
+file was a frozen M0-only snapshot from 2026-07-06 through M11 — every milestone after M0 updated
+SPEC.md but not this file. That rewrite caught it up through P#102, and the rule is that every milestone
 changing the grammar updates this file alongside SPEC.md — the same discipline `spec-data.ts`'s
 generated tables (§6.2, §7.3.1) enforce for the constructs they cover.
 
@@ -50,7 +52,7 @@ PATH        a run beginning with '/' — OR, since M125b1 (FU-18), with an absol
                  BOTH forms are lexed ONLY in HTTP-method position (right after `api` or
                  `api <service>` and a method word). That guard is not an optimisation: it
                  is what makes `let ratio = get / 2` division rather than a path
-                 (decision 60), and the absolute form is gated on the identical predicate
+                 (P#60), and the absolute form is gated on the identical predicate
                  so that an ident which merely reads like a scheme keeps lexing as one.
 TAG         '@' IDENT
 ```
@@ -246,7 +248,7 @@ WaitBudget      := 'timeout' 'wait' Duration                     # M147d/D640 (`
                                                                   # ApiRequestLine's own `timeout`,
                                                                   # which bounds ONE poll's request
                                                                   # and is clamped to what remains
-                                                                  # of this budget (decision 67); a
+                                                                  # of this budget (P#67); a
                                                                   # poll may carry both. Read by
                                                                   # both `wait until` forms and by
                                                                   # nothing else — no other step has
@@ -269,13 +271,13 @@ BodyForm        := 'body' JsonDoc                                # inline JSON (
                  | 'form' FormField (',' FormField)*              # application/x-www-form-urlencoded
                  | 'upload' STRING 'as' STRING ('type' STRING)?   # multipart file upload; `type`
                     ('form' FormField (',' FormField)*)?          # overrides extension-based MIME
-                                                                    # inference (decision 22/M19)
+                                                                    # inference (M19)
 FormField       := IDENT '=' Value
 
 HeaderLine      := 'header' STRING 'is' Value NEWLINE
 RetryAfterClause:= 'retry' 'honoring' STRING 'up' 'to' NUMBER NEWLINE
                    # STRING must equal "Retry-After" — the only value this clause's vocabulary
-                   # currently accepts (PLAN decision 102b, gap #5). One per api step, after any
+                   # currently accepts (P#102b, gap #5). One per api step, after any
                    # header lines in the step's indented sub-block.
 ```
 
@@ -296,12 +298,12 @@ Quantifier  := 'any' | 'all'                                    # only over a bo
 Subject     := 'status' NetworkRef?
              | 'duration'
              | 'header' STRING NetworkRef?
-             | 'body' 'text' NetworkRef?                          # raw response body as a string (§5.3, decision 51)
+             | 'body' 'text' NetworkRef?                          # raw response body as a string (§5.3, P#51)
              | 'body' 'bytes'                                    # raw response body bytes (§6.2.1, gap #17)
              | 'body' 'csv' BodyPath?                            # body parsed as RFC 4180 CSV (gap #19)
              | 'body' 'pdf' 'text'                               # text extracted from a PDF body (gap #19)
              | 'body' BodyPath? NetworkRef?                      # bare `body` = whole-body subject
-             | 'request'                                        # (§6.2.2, PLAN decision 18) — the
+             | 'request'                                        # (§6.2.2, `PLAN_ENTERPRISE.md` decision 18) — the
                                                                   # connection attempt, not a response
              | 'request' NetworkRef                              # (§9.7, M3d) — an *observed* network
                                                                   # request; disambiguated from the bare
@@ -320,7 +322,7 @@ MatcherCore := 'equals' Value
              | 'contains' Value
              | 'matches' STRING                                  # regex
              | 'matches' 'subset' Object                         # (§6.3.1)
-             | 'matches' 'schema' STRING 'from' STRING            # (§6.2.1, PLAN decision 102a, gap #6)
+             | 'matches' 'schema' STRING 'from' STRING            # (§6.2.1, P#102a, gap #6)
              | 'matches' 'file' STRING                            # (§6.2.1, gap #17) — `body bytes` only
              | 'matches' 'snapshot' STRING SnapshotMask*          # visual regression (§9.9, M4b/D15);
                                                                   #   `page`/UI subjects only
@@ -390,7 +392,7 @@ for one example per matcher.
 LetStmt     := 'let' IDENT '=' Value NEWLINE
 CaptureStmt := 'capture' Subject 'as' IDENT NEWLINE
               # `request` parses here syntactically (it's the same Subject production) but is a
-              # runtime error — it carries no value to capture (§6.2.2, PLAN decision 18).
+              # runtime error — it carries no value to capture (§6.2.2, `PLAN_ENTERPRISE.md` decision 18).
               # `request to "…"` and any `of request to "…"` clause parse here too (same Subject
               # production) but are likewise runtime errors — no `capture` form exists for a
               # network-observation subject, only `expect`/`check` (§9.7, M3d). Same for `page`

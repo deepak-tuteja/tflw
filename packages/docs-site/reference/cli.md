@@ -21,8 +21,7 @@ const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
 
 Generated from
 [`packages/lang/src/spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts)
-(this table used to live in README.md — it moved here as part of the docs-site cluster, decision
-16.10). For the full prose description of each subcommand, see
+(this table used to live in README.md — it moved here as part of the docs-site cluster). For the full prose description of each subcommand, see
 [SPEC.md §12](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#12-cli-).
 
 Every subcommand the shipped `tflw` binary dispatches has a section on this page, and

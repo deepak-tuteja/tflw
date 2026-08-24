@@ -31,7 +31,7 @@ test('getHover: a base64/hex/url transform expression surfaces its spec-data.ts 
   const result = getHover(program, table, source.indexOf('base64 encode') + 2);
   assert.ok(result);
   assert.match(result!.contents, /base64 encode/);
-  assert.match(result!.contents, /decision 98/);
+  assert.match(result!.contents, /not a fresh-value generator \(M18\)/);
 });
 
 test('getHover: a variable ref shows its symbol kind', () => {

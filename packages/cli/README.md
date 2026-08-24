@@ -5,6 +5,9 @@ Playwright automation) and load testing (ramp/hold/step/spike, thresholds, valid
 real contended workloads) are all built; security/pen-test testing is next. Pre-1.0, not yet
 published to npm.
 
+This file cites decisions as `P#n`, `D<n>` and `M<n>` — blocks in design records the repository does
+not publish. Each one resolves in [DECISIONS.md](https://github.com/deepak-tuteja/tflw/blob/main/DECISIONS.md).
+
 ## Why tflw
 
 Three things tflw does that a general-purpose language + an HTTP client doesn't give you for free:

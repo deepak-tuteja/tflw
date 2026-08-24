@@ -620,13 +620,13 @@ regenerated, so the two can never say different things.
 | spelling | means |
 | --- | --- |
 | \`P#43\` | item 43 of the original plan's numbered list — the language's founding decisions |
-| \`D318\` | decision 318 of the later sequence, which runs past 665 |
+| \`D318\` | \`decision 318\` of the later sequence, which runs past 665 |
 | \`M137d\` | a milestone: a slice of work that shipped as one pull request |
 
 **\`P#n\` and \`D<n>\` are different sequences that collide on the number.** \`P#16\` is soft
 assertions; \`D16\` is the load-execution model. The prefix reads as *principle* over a list that is
-mostly decisions, which is a wart — it is kept because it was already the spelling in 131 places in
-tracked prose, and churning those to fix a letter would have been the larger change.
+mostly decisions, which is a wart — it is kept because it was already the spelling in tracked prose,
+183 times as of 2026-08-24, and churning those to fix a letter would have been the larger change.
 
 A milestone entry is a one-line statement of what it shipped. A decision entry is the decision
 itself, at whatever length it was taken.
@@ -634,20 +634,26 @@ itself, at whatever length it was taken.
 ## Citations inside an entry
 
 Entries are lifted verbatim, so they cite each other in whatever spelling the record used at the
-time. Three of those spellings are not the ones above, and one names a sequence this file does not
-index.
+time. Two of those spellings are not the ones above, and neither names a sequence this file indexes.
 
 | in an entry | means |
 | --- | --- |
-| \`decision 43\`, \`#43\` | \`P#43\` — the founding list, in the two spellings that predate \`P#n\` |
 | \`enterprise decision 3a\` | item 3a of the enterprise arc's own list, which has no entries here |
 | \`gap #9\` | item 9 of \`TFLW-GAPS.md\`, a nineteen-item expressiveness backlog — a \`testFlow-tests\` record, not published |
 
-**Read the sentence, not the number.** The founding list runs to 114 and the enterprise list to 22,
-so a bare \`decision n\` at or below 22 does not say which one it means. Eleven citations sit in that
-band and four of them mean the enterprise list — \`M12\`'s "decision 16" is the docs-site cluster, and
-\`P#16\` above it is soft assertions. Every one of the four is recoverable from the sentence around
-it, which is also why no rule keyed on the digits can be trusted to do it for you.
+A third spelling used to be here and is gone: a bare \`decision 43\` or \`#43\`, the two forms that
+predate \`P#n\`. All 171 were read in place and rewritten — one sentence at a time, because no rule
+on the digits could do it — and \`npm run verify:citations\` now fails on a new one. They survive only in comments in tracked *source*, which
+this index does not answer — see below.
+
+**Why they were read rather than converted.** The founding list runs to 114 and the enterprise list
+to 22, so a bare \`decision n\` at or below 22 does not say which one it means. Eleven citations sat
+in that band and four meant the enterprise list — \`M12\`'s was the docs-site cluster while \`P#16\` is
+soft assertions, and \`P#111\`'s was CI ergonomics while \`P#7\` is API vocabulary. Nine more above the
+band would also have resolved to the wrong sequence on magnitude alone: \`CHANGELOG.md\`'s
+\`decisions 97/98/102\` are workload shapes, and \`P#102\` is an enterprise cluster. A rule keyed on
+the digits would have sent each of those to a published entry about something else, which is worse
+than the dead pointer it replaced. The survivors say \`enterprise decision n\`, which names its list.
 
 Not every \`#n\` is a citation at all: \`D147\`, \`M92\` and \`M148\` number pull requests with it, and
 \`M130\` numbers an OWASP category.

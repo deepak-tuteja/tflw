@@ -2,16 +2,19 @@
 
 The complete language and implementation reference for `.tflw` / the `tflw` CLI, organized by
 surface, **API features before UI features**. This is the *what*; the *why* behind every choice
-is tracked in an internal numbered decision log, cross-referenced here as `(P#n)`.
+is tracked in design records this repository does not publish, cited here in three numbered
+notations: `P#n` (the founding list), `D<n>` (the later decision sequence) and `M<n>` (a milestone).
+Every one of them resolves in [DECISIONS.md](DECISIONS.md), which lifts the cited block out of the
+record it was decided in, verbatim.
 
 Status: the API-only surface (config-as-tflw, sessions, capture-chaining, hooks/retry/tags/data-tables,
 actions + JS escape hatch, generators, parallel workers, teaching diagnostics, `report.html` +
 `junit.xml`) is feature-complete. **M2.65 is done**: the pre-push critical-hardening pass (PLAN
-Round 8, decisions 51–59) fixed every correctness bug and doc-overclaim surfaced in that review
+Round 8, P#51–P#59) fixed every correctness bug and doc-overclaim surfaced in that review
 (`body text` subject, date-generator/session-generator `--seed` reproducibility, failed-session-
 vs-`retry`, soft-`check`-in-action, redaction ordering, a conservative unknown-`{var}` checker
 pass, inert `timeout expect` documented) — the clean-tree push gate cleared 2026-07-06. **M2.66 is
-done too**: a second review, run as three parallel passes then merged (Round 9, decisions 60–73),
+done too**: a second review, run as three parallel passes then merged (Round 9, P#60–P#73),
 found further novel bugs not in that list — a lexer/arithmetic collision with HTTP-verb-named
 variables, duplicate response headers collapsing to the last value, unencoded path interpolation, a
 nested-object parse gap, redactor over-redaction on short secrets, CSV data-table mis-typing/
@@ -22,18 +25,18 @@ test, same day (2026-07-06). **M2.7 (packaging and both critical-hardening gates
 the actual git push + npm publish remain, left to the user)** is packaging + publish: esbuild
 bundle, public GitHub repo + MIT, CI, this docs split, acceptance vs raw fetch+node:test +
 restful-booker — on a passing verdict, **`npm publish tflw@0.1.0`**. **The push/publish tail is
-additionally gated on M2.8 — "public face" (PLAN Round 10, decisions 74–83, 2026-07-06, 🟨 in
+additionally gated on M2.8 — "public face" (PLAN Round 10, P#74–83, 2026-07-06, 🟨 in
 progress):** a shippable-public-tool review found the package would currently publish broken
 (`"private": true`, no README/LICENSE in the tarball) plus a missing public-tool surface. Done so
 far: `tflw --version`/`--check`, CHANGELOG, the un-`private` + README/LICENSE tarball fix, a
 highlight-only VS Code extension, the TF0xx diagnostics index, and the zero-dep proxy/TLS story
 (`insecure` key + teaching errors). The browser half (M3, internal milestone label `0.2.0`) has
 since shipped in full (M3a–M4b) along with the reuse pass (M6) and acceptance (M7) — see §15 and
-`PLAN.md` decision 112 for the current versioning story: `1.0.0` is the actual first publish,
+P#112 for the current versioning story: `1.0.0` is the actual first publish,
 gated on the perf and pentest arcs too, not on the browser-era verdict alone. Build order was
 API-first: the API vertical slice built and dogfooded before any Playwright/browser code.
 
-Every section below carries a status badge (decision 49): **✅ shipped** (built, tested, in
+Every section below carries a status badge (P#49): **✅ shipped** (built, tested, in
 `v0.1.0`), **🔮 planned** (spec'd, not built), or **🔧 mixed** (part shipped, part planned — read
 the section's own note).
 
@@ -52,7 +55,7 @@ the section's own note).
   Narrowed here in `M144b` (`V4-12`); the gap itself is tracked as `M144-02`.
 - Maintainability comes from tooling (reuse pass, lints), not discipline (P#2).
 
-**Static-checker scope (M2.65, PLAN decision 57):** the checker validates config, named services,
+**Static-checker scope (M2.65, P#57):** the checker validates config, named services,
 sessions, inline data-table columns, and — as of M2.65 — a conservative pass over `{var}`/bare
 variable references: a name provably never bound anywhere reachable in its scope (`let`, `capture`,
 an action's own parameter, or an *inline* table's declared columns) is flagged with a "did you
@@ -70,7 +73,7 @@ response it came from. The rule reads `MATCHERS` directly, so §6.2's table and 
 statement rather than two that can drift. (This was a documented gap until M97b; §17's `TF042` row
 carries the detail.)
 
-**Diagnostic codes are public API (PLAN decision 77):** every **checker** diagnostic carries a
+**Diagnostic codes are public API (P#77):** every **checker** diagnostic carries a
 stable `TF0xx` code. Rule: a shipped code is **never renumbered or reused**; new diagnostics get
 new codes. §17 is the diagnostics appendix — code → one-line meaning → tiny example — so the codes
 users grep for and paste into bug reports have a canonical index. **Runtime failures are not
@@ -81,7 +84,7 @@ Narrowed here in `M144b` (`V4-12`); the gap itself is tracked as `M144-02`.
 > "Named services" validation also covers `api <service>` references inside `session` blocks
 > (§3.3) via `checkSessionServices`, a config-level pass run once (not per test file, since sessions
 > live in `tflw.config` rather than a test file) — a typo'd service name there is a checker error at
-> parse time, exit 2, same as inside a test/action/hook (PLAN decision 66).
+> parse time, exit 2, same as inside a test/action/hook (P#66).
 
 ## 2. Project layout ✅
 
@@ -134,7 +137,7 @@ env staging
   `timeout wait <duration>` (§9.5). `timeout expect` has no per-step form. The two clauses are
   different quantities and may appear on the same line; see §9.5.
 - `insecure true` — a per-env (or `defaults`) key that disables TLS certificate verification for
-  the whole run, for self-signed/private-CA staging certs (PLAN decision 78). Explicit and
+  the whole run, for self-signed/private-CA staging certs (P#78). Explicit and
   greppable in review; a run with it active carries a visible warning in the CLI summary and the
   report header — never a silent trade-off. See §3.5 for the full corporate-networks story.
 - `viewport <width> <height>` (M3c, D11, §9.6) — browser window size in px for every new context;
@@ -258,7 +261,7 @@ session admin
   truth and called it deliberate — of the two, §10 was the one describing the shipped tool.
 - There is no separate "auth preset" concept.
 - A test may opt into **more than one independent, unrelated session at once**:
-  `test "..." as admin, userA` (decision 96, closing TFLW-GAPS.md gap #7). Each session's headers
+  `test "..." as admin, userA` (P#96, closing TFLW-GAPS.md gap #7). Each session's headers
   and cookie jar fold into the test's starting state in the order listed — a **later-listed
   session wins any header/cookie-name conflict against an earlier one**, the same "later source
   replaces" rule the cookie-jar precedence chain below already follows. In practice this rarely
@@ -270,10 +273,10 @@ session admin
   decided up front **per session name**, in sorted-file/declaration order — a test can own one
   opted-in session's step-splice without owning another's, if some other test already claimed that
   other name first. Both stay identical regardless of `--parallel N>1` concurrency (fixed in M2.65,
-  decision 53; extended to multi-session opt-ins in decision 96).
+  P#53; extended to multi-session opt-ins in P#96).
 - Only a **successful** establishment is cached: a session that fails (a transient auth blip) is
   not memoized, so a later attempt — a `retry` on the same test, or a later test opting in — may
-  re-establish it (fixed in M2.65, decision 54).
+  re-establish it (fixed in M2.65, P#54).
 - A session block runs with an **empty call registry**: `action`/`use` calls are not available
   inside `session` bodies in `v0.1` — `create widget(...)` inside a session fails with `unknown
   call \`create widget(...)\` — no action (\`import\`) or JS helper (\`use\`) defines it`, even if
@@ -327,13 +330,13 @@ session shopper
   purpose (P#13).
 
 "Which attempt's report shows the session's steps" is resolved **once per test, per session
-name**, not once per retry attempt (PLAN decision 68) — so a `retry`-ing test running `as
+name**, not once per retry attempt (P#68) — so a `retry`-ing test running `as
 <session>` (or several) that fails on attempt 1 and passes on attempt 2 still carries each owned
 session's steps only in the surviving (last) attempt's report; earlier failed attempts remain
-visible in `report.html` too (PLAN decision 86), just without the session's own steps in them
+visible in `report.html` too (P#86), just without the session's own steps in them
 (§4.4).
 
-**Refresh on 401 + TTL expiry (PLAN decision 99a).** A session is no longer cached forever once
+**Refresh on 401 + TTL expiry (P#99a).** A session is no longer cached forever once
 established — two independent mechanisms cover the two ways a real credential goes stale:
 
 - **Reactive: any opted-in session refreshes automatically on a `401`.** If a test's request comes
@@ -350,7 +353,7 @@ established — two independent mechanisms cover the two ways a real credential 
   actual `401` to prove it. A hand-written `session` block with no TTL concept keeps its original
   cache-forever-on-success behavior unchanged.
 
-**`oauth2` session sugar (PLAN decision 99c), built on refresh.** An alternative to a hand-written
+**`oauth2` session sugar (P#99c), built on refresh.** An alternative to a hand-written
 `session` body, for the common client-credentials shape:
 
 ```
@@ -426,7 +429,7 @@ require env ADMIN_USER, ADMIN_PW
 ```
 
 - `require env` validates at startup; **one** error lists *all* missing vars. Every `require env`
-  variable is also pre-registered with the redactor at run start (fixed in M2.65, decision 56) —
+  variable is also pre-registered with the redactor at run start (fixed in M2.65, P#56) —
   masked from the very first step even if its `env(NAME)` is never actually evaluated anywhere in
   the run (e.g. a var only used to satisfy a session another file doesn't touch, but that happens
   to leak into an unrelated response).
@@ -438,7 +441,7 @@ require env ADMIN_USER, ADMIN_PW
   `env(NAME)` isn't evaluated until later in the run) still masks that earlier step: a final
   full-report redaction pass runs once when each file's `runProgram` call finishes, and again on
   the merged report just before `tflw run` writes it, so both the within-file and cross-file
-  ordering windows are closed (fixed in M2.65, decision 56). `report/events.ndjson` (§13) is
+  ordering windows are closed (fixed in M2.65, P#56). `report/events.ndjson` (§13) is
   re-walked through that same pass before it is written (M63) — it is a persisted artifact, built
   after the run, so it gets the fully-populated redactor like every other file in `report/`. The
   one thing that pass cannot reach is the **live** `--format ndjson` stdout stream: a line is
@@ -448,7 +451,7 @@ require env ADMIN_USER, ADMIN_PW
 
 A value shorter than `MIN_REDACTABLE_LENGTH` (6 characters) is never registered for substring
 redaction — a short/common secret (a numeric ID, a port number) would otherwise blot out every
-matching substring anywhere in the report, including unrelated fields (PLAN decision 64). **A run
+matching substring anywhere in the report, including unrelated fields (P#64). **A run
 that skips a value for this reason says so**, naming the variables (never their values) in the CLI
 summary and in `report.html`'s header, beside the `insecure: true` banner and for the same reason —
 declining to protect something you were told is a secret is not a silent trade-off:
@@ -463,9 +466,9 @@ carried a maskable value somewhere in the same run — pointing a reader at a na
 masked in the report they are holding would be worse than saying nothing. If two
 different `require env` vars (or a secret and a coincidentally-equal generated value) hold the
 same string, the redactor tracks every name registered for it and renders all of them —
-`•••(NAME1|NAME2)` — rather than silently keeping only whichever registered first (PLAN decision 72).
+`•••(NAME1|NAME2)` — rather than silently keeping only whichever registered first (P#72).
 
-**Declarative position redaction — `redact` (PLAN decision 101d, enterprise arc cluster 2;
+**Declarative position redaction — `redact` (P#101d, enterprise arc cluster 2;
 widened by FS-03).** The secret redaction above is *value-based*: it only ever masks something that
 actually entered via `env(...)`. `redact` is a separate, *position-based* mechanism for masking a
 named JSON field, header or query parameter regardless of where its value came from — a response's
@@ -535,7 +538,7 @@ env staging
 
 Corporate QA — the audience this tool courts — routinely runs against a staging API sitting behind
 a self-signed or private-CA certificate, and/or a corporate HTTP(S) proxy. Node's own `fetch`
-handles neither by default: both die as an opaque `TypeError: fetch failed` (PLAN decision 78).
+handles neither by default: both die as an opaque `TypeError: fetch failed` (P#78).
 Zero new runtime dependencies — every piece below is either a `tflw.config` key or a standard Node
 mechanism.
 
@@ -826,8 +829,7 @@ test "an admin acting on a shopper's behalf" as admin, userA
 ```
 
 - `@tags` filter via `tflw run --tag smoke` (P#10), or `tflw run --tag smoke,critical` for
-  comma-separated OR across several tags — a test runs if it carries *any* listed tag (decision
-  97). No exclusion syntax (`--tag !x`).
+  comma-separated OR across several tags — a test runs if it carries *any* listed tag (M2.21). No exclusion syntax (`--tag !x`).
 - `as <session>` opts into a cached session (§3.3); `as <session>, <session>...` opts into several
   independent, unrelated sessions at once — a comma-separated list, same shape as `require env A,
   B, C` (§3.4). Omitted → anonymous fresh state.
@@ -895,7 +897,7 @@ test "invite {role}"
   \`name\`?` — because by then the row is loaded and its columns are known (`M147c`, `A4-18`). It is
   a message and not a code: the runtime carries none.
 
-`.csv` parsing (PLAN decision 65): minimal RFC-4180 — a field may be quoted (`"Smith, John"`) to
+`.csv` parsing (P#65): minimal RFC-4180 — a field may be quoted (`"Smith, John"`) to
 contain a comma verbatim, `""` inside a quoted field is an escaped quote. A numeric-looking cell
 (`3`, `-1.5`) is coerced to a real number, matching a `.json`-backed table's native types (so
 `expect body.qty equals {qty}` works against a real JSON number either way). Every row's cell count
@@ -915,7 +917,7 @@ with data the failed attempt already created (§7.2, §7.4).
 `report.html` shows every attempt's steps for a `retry`-ed test, not just the last: each failed
 prior attempt renders as a collapsed section (labeled `attempt 1 — failed`, `attempt 2 — failed`,
 …) above the final attempt's already-visible steps, so a `flaky` badge always has its evidence
-trail one click away (PLAN.md decision 86, closing decision 46's deferred gap). `junit.xml` stays
+trail one click away (P#86, closing P#46's deferred gap). `junit.xml` stays
 summary-only by design — its `<testcase>` carries a `flaky` `<system-out>` note with the attempt
 count, not step-level detail; that detail lives in report.html. The final attempt is labelled with
 its own verdict — `attempt N of N — passed` or `— failed` — so a test that exhausted its budget
@@ -1189,7 +1191,7 @@ where `<target>` is either a path (`/orders`) or an absolute URL (`https://host/
   client paths and with or without `allow hosts` — the guardrail changes how a chain is walked
   (§3.7), never what walking off the end of one means (M88a, review cluster C2). `without
   redirects` is unaffected: a chain that is never followed cannot be too long.
-- `retry honoring "Retry-After" up to N` (PLAN decision 102b, enterprise arc cluster 3, closes
+- `retry honoring "Retry-After" up to N` (P#102b, enterprise arc cluster 3, closes
   TFLW-GAPS.md gap #5): a line under the api step, alongside `header`. Re-issues *this one
   request* — not the whole test, unlike `retry N` on `test` (§4.4) — whenever its response
   carries a `Retry-After` header, sleeping the indicated duration before each re-attempt, up to
@@ -1209,8 +1211,7 @@ where `<target>` is either a path (`/orders`) or an absolute URL (`https://host/
 
 Interpolated `{var}` path segments are percent-encoded (`encodeURIComponent`) before being
 concatenated into the URL, so a captured/generated value containing `&`, `#`, `?`, a space, or
-non-ASCII characters lands as its own path/query segment rather than corrupting the request (PLAN
-decision 62). This only applies to the URL path — a `body from "<file>"` template's `{var}` holes
+non-ASCII characters lands as its own path/query segment rather than corrupting the request (P#62). This only applies to the URL path — a `body from "<file>"` template's `{var}` holes
 interpolate the raw value, unencoded, since that's JSON/text content, not a URL.
 
 ### 5.2 Body forms (P#32)
@@ -1220,12 +1221,12 @@ interpolate the raw value, unencoded, since that's JSON/text content, not a URL.
 | Inline JSON | `body { name: {n}, qty: random number 1 to 5 }` or `body [{ id: 1 }, { id: 2 }]` | small payloads; expressions + generators inside; object **or top-level array** (M147d, `A3-12`, D639) |
 | File-backed | `body from "./payloads/order.json"` | file is a template — `{vars}` interpolate; checker warns when a literal path names nothing (`TF043`, M97c; warning not error since M97e/D147 — the file is read at step time) |
 | Form-encoded | `form user={u}, pass=env(PW)` | `application/x-www-form-urlencoded` |
-| Multipart upload | `upload "./files/img.png" as "avatar"` | Content-Type inferred from the file extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` overrides the inference; may combine with `form` fields (decision 22/M19) |
+| Multipart upload | `upload "./files/img.png" as "avatar"` | Content-Type inferred from the file extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` overrides the inference; may combine with `form` fields (M19) |
 | Raw text | `body text "plain payload"` | sets no JSON content-type |
 
 Out of v1: binary bodies, GraphQL blocks, XML helpers (P#32).
 
-**`upload`'s Content-Type** (decision 22/M19): `upload "./files/img.png" as "avatar" type "image/png"`
+**`upload`'s Content-Type** (M19): `upload "./files/img.png" as "avatar" type "image/png"`
 places the optional `type "…"` clause after `as "field"` and before any `form k=v, …` fields. Left
 out, the Content-Type is inferred from the file's extension; an unrecognized extension (or no
 extension) falls back to `application/octet-stream`, matching pre-M19 behavior exactly. When given,
@@ -1268,7 +1269,7 @@ parse — and fixed the same session; see `packages/lang/src/lexer.ts`.
 
 A nested object/array literal's first key may be either a bare ident or a **quoted string** —
 `body { user: { "name": "Widget" } }` parses the same as the equivalent top-level `body { "name":
-"Widget" }` (PLAN decision 63).
+"Widget" }` (P#63).
 
 ### 5.3 Response subjects (what `expect` can see after an api step)
 
@@ -1281,7 +1282,7 @@ itself, not the response).
 - `duration`: wall time of the request — `expect duration is less than 500ms`. A regression
   tripwire, not perf testing (P#33).
 - `body text`: the raw response body as a string, for non-JSON (text/HTML/XML) responses —
-  `expect body text contains "healthy"`. Implemented end-to-end in M2.65 (PLAN decision 51):
+  `expect body text contains "healthy"`. Implemented end-to-end in M2.65 (P#51):
   lexer/parser accept `body text` as a subject (`BodyTextSubject` AST node), the interpreter
   resolves it to `response.bodyText`, and it works with `expect`/`check`/`capture` alike.
 - `body bytes`: the raw, untouched response body, for binary responses (PDF, image, …) that
@@ -1340,7 +1341,7 @@ savedId` is `let savedId = {orderId}` with a second name, and the diagnostic say
 
 A response with multiple same-named headers (most commonly several `Set-Cookie`s) preserves every
 value rather than collapsing to whichever the Fetch API iterates last — `capture header
-"set-cookie" as token` sees all of them, newline-joined (PLAN decision 61). This raw capture stays
+"set-cookie" as token` sees all of them, newline-joined (P#61). This raw capture stays
 useful for *asserting* on `Set-Cookie`'s own attributes (`expect header "set-cookie" matches
 "HttpOnly"`); it is not how cookies get replayed on a later request anymore — the cookie jar
 (§3.3, P#33) does that automatically, and a newline-joined multi-cookie capture reused directly as
@@ -1359,7 +1360,7 @@ wait until api GET /orders/{orderId}
 
 Each individual poll's own request timeout is clamped to whatever's left of the `wait` deadline, not
 just the (usually much longer) per-request `timeout step` — so a slow/hanging endpoint can't make
-the whole `wait until api` block silently exceed its configured budget (PLAN decision 67).
+the whole `wait until api` block silently exceed its configured budget (P#67).
 
 **The two budgets on a poll line** (`M147d`, `A3-10`, D640). `wait until api GET /jobs timeout 30s`
 has always parsed, and the `timeout` in it is `ApiRequestLine`'s own — it bounds **one poll's HTTP
@@ -1380,8 +1381,7 @@ here for the first time: it was inherited silently from the shared request line,
 `wait until api` may carry its own `header "…" is <value>` lines, exactly like an `api` step's
 header sub-block (§5.1) — the same `header`/`expect` block, headers first by convention but not
 enforced by the grammar. Every poll re-sends them, so a poll that needs a specific auth token,
-per-file namespace, or idempotency key attached is expressible without a workaround (PLAN decision
-95, closes gap #4):
+per-file namespace, or idempotency key attached is expressible without a workaround (M2.19, closes gap #4):
 
 ```
 wait until api GET /jobs/{jobId}
@@ -1544,7 +1544,7 @@ expect body matches schema "ProductResponseDto" from "/openapi.json"
 - `not matches schema ...` asserts the subject does **not** conform — useful for a deliberately-
   drifted-endpoint regression check.
 
-### 6.2.2 Connection-failure assertions — `request connects`/`fails` (PLAN decision 18,
+### 6.2.2 Connection-failure assertions — `request connects`/`fails` (`PLAN_ENTERPRISE.md` decision 18,
 enterprise arc cluster 5.5)
 
 Before this, a request that failed *before* any HTTP response existed — a TLS handshake rejection
@@ -1679,7 +1679,7 @@ expect body matches subset { type: "about:blank", title: "Unprocessable Entity",
 - This stays uniform through an `action` call (§8): a `check` failing *inside* an imported action
   propagates back to the caller as soft — the caller's own later steps still run, and the whole
   test only fails at the end, exactly as if the `check` had been written inline (fixed in M2.65,
-  decision 55; previously any failure inside an action's steps, soft or hard, aborted the caller
+  P#55; previously any failure inside an action's steps, soft or hard, aborted the caller
   immediately).
 
 ### 6.5 Retry split (P#15)
@@ -1761,7 +1761,7 @@ a uniqueness constraint.
 same guarantee mechanism `unique("prefix")` gets from literal string concatenation), so
 distinctness is a true guarantee, not v4's usual low collision probability. There is deliberately
 no `unique password` — passwords carry no real-world uniqueness constraint the way email/order-id
-do (decision 98); see `random password` (§7.3).
+do (M18); see `random password` (§7.3).
 
 **Under `retry` (§4.4):** `unique(...)`'s run-wide counter keeps advancing on every retry attempt
 of the *same* test — by design, so a retried attempt never collides with data the failed attempt
@@ -1801,7 +1801,7 @@ while the runtime read the pattern literally (`A4-OS-13`).
 No built-in faker realism (names/addresses) — use `random of` with your own list, or JS (P#22).
 `random password` is not an exception to this — it satisfies a validation policy (at least one
 upper/lower/digit/symbol), not a fake human identity, same category as `unique like`'s pattern
-fill (decision 98).
+fill (M18).
 
 **The generator-operand rule** (`M147c`, D629/D630). *A generator refuses an operand when no value
 it could produce keeps the generator's own promise.* Until this milestone the family had four
@@ -1844,9 +1844,9 @@ the same anchor (`today - 10 days` against `today`) are ordered without a clock,
 | random | `random like "SKU-####-??"` | `#` = digit, `?` = letter; seed-reproducible pattern fill | `random like "SKU-####-??"` |
 | random | `random uuid` | v4, collisions allowed (not collision-guaranteed like `unique uuid`) | `random uuid` |
 | random | `random password [N]` | default length 12, min 4; satisfies a validation policy, not fake-identity realism | `random password 16` |
-| transform | `base64 encode(...)` / `base64 decode(...)` | pure deterministic value transform, not a fresh-value generator (decision 98) | `base64 encode("{email}:{password}")` |
-| transform | `hex encode(...)` / `hex decode(...)` | pure deterministic value transform, not a fresh-value generator (decision 98) | `hex encode("{token}")` |
-| transform | `url encode(...)` / `url decode(...)` | pure deterministic value transform, not a fresh-value generator (decision 98) | `url encode("{query}")` |
+| transform | `base64 encode(...)` / `base64 decode(...)` | pure deterministic value transform, not a fresh-value generator (M18) | `base64 encode("{email}:{password}")` |
+| transform | `hex encode(...)` / `hex decode(...)` | pure deterministic value transform, not a fresh-value generator (M18) | `hex encode("{token}")` |
+| transform | `url encode(...)` / `url decode(...)` | pure deterministic value transform, not a fresh-value generator (M18) | `url encode("{query}")` |
 <!-- GENERATED:generators:end -->
 
 Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/lang`
@@ -1857,7 +1857,7 @@ Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/la
 - All `random` values derive from **one run seed** with per-test sub-seeds (parallel order
   doesn't shift values).
 - All `today`/`now`-derived values (`today`, `now`, `random date in past`/`in future`) derive from
-  **one run clock** — the real current instant, or `--now <iso>` to pin it exactly (decision 52).
+  **one run clock** — the real current instant, or `--now <iso>` to pin it exactly (P#52).
 - Seed and run clock are both stamped in the CLI summary, report.html header, and junit
   properties.
 - `tflw run --seed <s>` alone reproduces *which* relative values a run draws — the same choice
@@ -1871,7 +1871,7 @@ Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/la
 
 `unique(…)` values are deliberately **not** seed-reproducible (their run-wide counter keeps
 advancing so a retry can't collide — §4.4). Generators used *inside* a `session` block reproduce
-identically under any `--parallel N` (§3.3, decision 53), same as everywhere else.
+identically under any `--parallel N` (§3.3, P#53), same as everywhere else.
 
 ### 7.5 Expressions (P#25)
 
@@ -1948,11 +1948,11 @@ dogfooding on 2026-07-18), which is why the nine line-terminated lists keep refu
 A variable named `get`, `post`, `put`, `delete`, or `patch` (any case) followed by `/` lexes as
 division, not an HTTP path — `let ratio = get / 2` parses fine, since PATH-start requires the
 preceding ident to actually sit in HTTP-method grammatical position (right after `api`, optionally
-with a named service in between), not just read like a method word (PLAN decision 60). `random
+with a named service in between), not just read like a method word (P#60). `random
 number`/`random decimal` reject a reversed range (`to < from`) as a runtime error rather than
-silently producing an out-of-range value (PLAN decision 70).
+silently producing an out-of-range value (P#70).
 
-### 7.6 Transforms: `base64`/`hex`/`url` (decision 98)
+### 7.6 Transforms: `base64`/`hex`/`url` (M18)
 
 Pure value transforms — unlike §7.2/§7.3's generators, these consume an existing value rather
 than manufacture a fresh one, same category as `format <value> as "<pattern>"` (§7.5):
@@ -2631,7 +2631,7 @@ check  response has no security violations              # soft form, §6.4
   ordinary third state, and listing every not-applicable rule on every line would bury the counts.
 - **The two TLS rules read a second connection, and say so (D288).** The runtime drives Node's
   global `fetch`, which exposes neither the negotiated protocol version nor the cipher, and the
-  dependency that would (`undici`) is the one decision 43 declined. So tflw opens its own
+  dependency that would (`undici`) is the one P#43 declined. So tflw opens its own
   `tls.connect()` to the same `host:port`, reads `getProtocol()`/`getCipher()`, and closes — stdlib
   only, **once per `host:port` per run**, never once per response. It honours `allow hosts` and
   requires an `authorized target` covering the origin it is about to reach, checked against where the
@@ -3213,17 +3213,17 @@ nothing — the trigger is a manifest missing the key, not a missing manifest, w
 
 | Command | Purpose |
 |---|---|
-| `tflw init [--load]` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) + `package.json` (`{"private": true, "type": "module"}`) — decision 82; API-only — `--ui` is still 🔮 planned and unscheduled (the browser arc M3a–M3c shipped without it), and `initCommand` now *rejects* it rather than ignoring it: any `--…` other than `--load` exits 2 via `unknownFlag`. Every file after `tflw.config` is written **only if absent**, never merged into or overwritten; `package.json` is there so the §11 `.ts` escape hatch doesn't make Node guess the module type on first use (M125b2, `FU-15`). The scaffolded config points `api` at `tflw://demo` (§3.1, M118/`FU-04`), so `tflw init` followed by `tflw run` is green in an empty directory — swapping that one line for your own service is the intended first edit. `--load` (M29/D30) additionally scaffolds a `load.tflw` holding a workload-bearing `test` in the open (`rps`) model, run by plain `tflw run` like any other file |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error] [--fail-on minor\|moderate\|serious\|critical] [--baseline FILE] [--baseline-write FILE] [--probe-seeded N]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — decision 91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (decision 97). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — decision 94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (decision 101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (decision 101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are PLAN decision 111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording. `--fail-on`/`--baseline`/`--baseline-write`/`--probe-seeded` (M134b, §9.13) govern what the three security scans do with a finding after a rule raises it: the first two can only **relax** an assertion, never tighten it, and never silently — a withheld finding still renders, badged with which relaxation withheld it. `--baseline-write` produces the accepted set (fingerprints are hashes; hand-transcribing them is not an adoption path), and `--probe-seeded N` adds N generated mutation payloads per already-granted class whose findings are reported and never gate |
-| `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkSessionServices`, then `checkProgram` — the one composed per-file pass list, `checkServices`/`checkDataTables`/`checkSessions`/`checkActionDecls`/`checkUnknownVariables`/`checkRequestAssertions`/`checkWorkloadTests` — shared verbatim with the language server and the docs-site editor demo since M60, so all three report the same thing), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (decision 94) prints JSON instead, for editor and CI integrations: an array with **one `{ "file": "<path>", "diagnostics": [ … ] }` entry per file checked**, in discovery order, paths relative to the cwd and POSIX-separated. Clean files are listed with an empty `diagnostics` array — a consumer that draws diagnostics needs to know a file was checked and found clean in order to clear the ones it drew last time (M70; before that this was a flat `Diagnostic[]` concatenated across files, and `Diagnostic` carries a span but no file, so it only worked when exactly one file was named). A config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout — which under this shape means "nothing was checked" rather than being ambiguous with "everything was clean". Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this — a reuse hint is a cross-file suggestion carrying a diff preview, not a diagnostic anchored to a span, so it does not belong in a per-file diagnostics array |
+| `tflw init [--load]` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) + `package.json` (`{"private": true, "type": "module"}`) — P#82; API-only — `--ui` is still 🔮 planned and unscheduled (the browser arc M3a–M3c shipped without it), and `initCommand` now *rejects* it rather than ignoring it: any `--…` other than `--load` exits 2 via `unknownFlag`. Every file after `tflw.config` is written **only if absent**, never merged into or overwritten; `package.json` is there so the §11 `.ts` escape hatch doesn't make Node guess the module type on first use (M125b2, `FU-15`). The scaffolded config points `api` at `tflw://demo` (§3.1, M118/`FU-04`), so `tflw init` followed by `tflw run` is green in an empty directory — swapping that one line for your own service is the intended first edit. `--load` (M29/D30) additionally scaffolds a `load.tflw` holding a workload-bearing `test` in the open (`rps`) model, run by plain `tflw run` like any other file |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error] [--fail-on minor\|moderate\|serious\|critical] [--baseline FILE] [--baseline-write FILE] [--probe-seeded N]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — P#91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (M2.21). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — P#94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (P#101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (P#101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are P#111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording. `--fail-on`/`--baseline`/`--baseline-write`/`--probe-seeded` (M134b, §9.13) govern what the three security scans do with a finding after a rule raises it: the first two can only **relax** an assertion, never tighten it, and never silently — a withheld finding still renders, badged with which relaxation withheld it. `--baseline-write` produces the accepted set (fingerprints are hashes; hand-transcribing them is not an adoption path), and `--probe-seeded N` adds N generated mutation payloads per already-granted class whose findings are reported and never gate |
+| `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkSessionServices`, then `checkProgram` — the one composed per-file pass list, `checkServices`/`checkDataTables`/`checkSessions`/`checkActionDecls`/`checkUnknownVariables`/`checkRequestAssertions`/`checkWorkloadTests` — shared verbatim with the language server and the docs-site editor demo since M60, so all three report the same thing), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (P#94) prints JSON instead, for editor and CI integrations: an array with **one `{ "file": "<path>", "diagnostics": [ … ] }` entry per file checked**, in discovery order, paths relative to the cwd and POSIX-separated. Clean files are listed with an empty `diagnostics` array — a consumer that draws diagnostics needs to know a file was checked and found clean in order to clear the ones it drew last time (M70; before that this was a flat `Diagnostic[]` concatenated across files, and `Diagnostic` carries a span but no file, so it only worked when exactly one file was named). A config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout — which under this shape means "nothing was checked" rather than being ambiguous with "everything was clean". Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this — a reuse hint is a cross-file suggestion carrying a diff preview, not a diagnostic anchored to a span, so it does not belong in a per-file diagnostics array |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
-| `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), decision 93 |
+| `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), P#93 |
 | `tflw lsp` | run the Language Server over stdio, for editor integrations (M13, enterprise arc cluster 5). Speaks LSP on stdin/stdout and never writes to them otherwise, so it is not a command you run by hand — `packages/vscode`'s extension spawns exactly this, and any other LSP-capable editor can. It serves diagnostics, hover, go-to-definition, completion, document symbols and semantic tokens off the same `checkProgram` pass list `tflw check` runs (M60), which is what makes the squiggles and the CI exit code agree. Absent from this table until M110 (`V4-02`) — the one shipped command SPEC never listed, for eleven milestones |
 | `tflw install-browsers [--browser chromium\|firefox\|webkit]` | one-time browser binary download for UI steps (M3a, P#36, default chromium per D11) — runs the `playwright` CLI that ships inside the optional peer dependency itself, resolved from the consuming project (M92b, `B6-09`). It never installs `playwright`: with the peer absent it refuses and says how to add it, rather than fetching an unpinned copy the project won't then use. Playwright's own download output passes through; tflw brackets it (M118, `FU-03`, D204) — success names the engine and the `playwright` version that now has it (which is the `B6-09` confusion, stated), failure adds a tflw-voice summary and exits 2 ("could not run", not "a test failed"). Before M118 the success path printed **nothing at all**, on either stream |
 | `tflw pick <url> [--browser chromium\|firefox\|webkit]` | opens a real, visible browser at `<url>`; every click prints the best *verified* tflw locator for whatever was clicked (M5, §9.3) — walks the same resolution tiers (D6) the runtime itself uses and only ever prints a suggestion once it's confirmed to resolve to exactly the clicked element (D7), falling back to a generated CSS selector when nothing semantic round-trips. Picking is inert: `preventDefault`/`stopPropagation` stop a clicked link or submit button from actually navigating/submitting. Runs until the window is closed or Ctrl+C; `<url>` must be absolute (no `tflw.config` involved) |
 | `tflw watch [files] [--env E] [--seed S] [--browser chromium\|firefox\|webkit] [--no-color]` | save → the affected test re-runs headed (M5) — one shared, real browser window for the *whole watch session* (not relaunched per save), so it's still there to inspect after a failure. One seed, resolved once at startup (`--seed`, else freshly minted) and reused for every run for the life of the session — since it never changes, a run right after a fix trivially reuses the seed the failing run before it used. Saving a `.tflw` file re-runs *that file*; saving `tflw.config` re-runs the whole (requested) suite, since every file's resolved settings could have changed — no cross-file dependency tracking beyond that (a `.ts` helper behind `use "…"` isn't watched). Runs until Ctrl+C |
 | `tflw refactor apply <id>` | apply one reuse-pass extraction (M6, §8, P#2) — re-runs the same deterministic detection over the whole default-discovered suite (no `[files]`, matching `tflw run`/`tflw check` with none given), finds the hint with that id, writes its `action` into a fresh `shared/<name>.tflw`, and rewrites every occurrence's call site in place (a bare `CallStmt`, §8) — adding an `import "…"` line to each affected file that doesn't already have one. Refuses (exit 2, nothing written) if the id isn't found (ids can shift as the suite changes — re-run `tflw check` for fresh ones) or if the target `shared/<name>.tflw` already exists, rather than ever guessing or clobbering. The only command that mutates source (P#2's "builds never mutate source" is about `run`/`check`, not this explicit, user-invoked one) |
-| `tflw migrate [files] [--env E] [--no-color]` | mechanically rewrite a suite past every deprecation the checker can name (P#38/45, decision 112; cluster C8/M90). A diagnostic carrying a `deprecation.replacement` gets that exact source span spliced, widest-first, in the same ordering `refactor apply` uses — no id to pick, since a deprecation is never something to leave half-migrated on purpose. Three rules carry one today: `scenario`→`test`, `think`→`pause`, `uncheck`→`untick`. **Bare `check <locator>` deliberately carries none** — `tick field "…"` (the old click) and `check field "…" is checked` (the assertion) are both honest readings of it, and guessing wrong writes a mutation into a test that keeps passing, so migrate reports it and leaves it to you (§9.1). Any diagnostic that offers ``run `tflw migrate` to apply this automatically`` is one it can act on; that line is *derived* from the payload, so the offer and the capability cannot drift apart. **It acts on files that do not parse** — the only kind it exists for: it splices what it can, writes, re-checks the rewritten source, and renders whatever remains against post-splice offsets, repeating until a pass finds nothing left (a `think` nested in a `scenario` is invisible to the parser until the `scenario` is fixed). Exit **0** when the suite is clean afterwards, **2** when errors remain — including when migrate successfully did work and the file still fails, because migrate's job is the rewrite, not the verdict. It rewrites *keywords*, not prose: a migrated file can be entirely correct and still say the old name in its comments and `test "…"` names. Takes no `--format`: its output is a report of edits, not a diagnostics array (`check --format json` already serializes `deprecation` for machines). The second of the two commands that mutate source |
+| `tflw migrate [files] [--env E] [--no-color]` | mechanically rewrite a suite past every deprecation the checker can name (P#38/45, P#112; cluster C8/M90). A diagnostic carrying a `deprecation.replacement` gets that exact source span spliced, widest-first, in the same ordering `refactor apply` uses — no id to pick, since a deprecation is never something to leave half-migrated on purpose. Three rules carry one today: `scenario`→`test`, `think`→`pause`, `uncheck`→`untick`. **Bare `check <locator>` deliberately carries none** — `tick field "…"` (the old click) and `check field "…" is checked` (the assertion) are both honest readings of it, and guessing wrong writes a mutation into a test that keeps passing, so migrate reports it and leaves it to you (§9.1). Any diagnostic that offers ``run `tflw migrate` to apply this automatically`` is one it can act on; that line is *derived* from the payload, so the offer and the capability cannot drift apart. **It acts on files that do not parse** — the only kind it exists for: it splices what it can, writes, re-checks the rewritten source, and renders whatever remains against post-splice offsets, repeating until a pass finds nothing left (a `think` nested in a `scenario` is invisible to the parser until the `scenario` is fixed). Exit **0** when the suite is clean afterwards, **2** when errors remain — including when migrate successfully did work and the file still fails, because migrate's job is the rewrite, not the verdict. It rewrites *keywords*, not prose: a migrated file can be entirely correct and still say the old name in its comments and `test "…"` names. Takes no `--format`: its output is a report of edits, not a diagnostics array (`check --format json` already serializes `deprecation` for machines). The second of the two commands that mutate source |
 
 Across every subcommand, a flag that takes a value must actually be given one: `--evidence` with
 nothing after it, or with another `--flag` in the value slot, is a usage error (exit 2), never a
@@ -3292,7 +3292,7 @@ regression baselines (their own before/after/diff evidence) wait for M4b.
   always was.
 - A collapsible sidebar tree groups every test by its source file, with one clickable link per
   test and one detail panel per test in `<main>` toggled via a shared `active` class — a small
-  inline `<script>` (decision 92) wires up click-to-switch, a text filter, and an All/Failed/Passed
+  inline `<script>` (P#92) wires up click-to-switch, a text filter, and an All/Failed/Passed
   status toggle. Self-contained (no external requests, opens via `file://`) whenever the run
   produced no external `assets/` (M3c, above) — no longer JS-free either way; the footer says which
   of the two this report is (FS-01, below). A file group with any
@@ -3315,7 +3315,7 @@ regression baselines (their own before/after/diff evidence) wait for M4b.
 
 `junit.xml`'s escaping strips XML-invalid C0 control characters (keeping tab/LF/CR, which XML 1.0
 permits) in addition to entity-escaping `& < > "` — a test name or error message that happens to
-echo one (e.g. from a garbled/binary response) still produces well-formed XML (PLAN decision 73).
+echo one (e.g. from a garbled/binary response) still produces well-formed XML (P#73).
 
 **`junit.xml`'s document shape (FS-09, review finding A13-01).** A `<testsuites name="tflw">` root
 holding **one `<testsuite>` per `.tflw` file**, named by that file's path relative to the run's cwd
@@ -3339,7 +3339,7 @@ them — any suite a reader opens hands back the seed needed to reproduce the ru
 arrives with no `file` at all (`TestResult.file` is optional; the interpreter never sets it) groups
 under `(no file)`, the same placeholder `report.html` uses.
 
-**Evidence levels — `evidence full\|headers only\|none` (PLAN decision 101c, enterprise arc
+**Evidence levels — `evidence full\|headers only\|none` (P#101c, enterprise arc
 cluster 2).** A `tflw.config` key controlling how much of each step's request/response trace lands
 in `report.html`; `--evidence LEVEL` (§12) overrides it for one run. Override semantics like
 `insecure` (env wins over `defaults`); default `full`, today's unchanged behavior.
@@ -3400,7 +3400,7 @@ once (at the default `evidence full` the file embeds whole response bodies and s
 report with external assets is not one file), and a report generator is not in a position to
 certify that anything is safe to share.
 
-**CI ergonomics + console/log output (PLAN decision 111, enterprise arc cluster 6).**
+**CI ergonomics + console/log output (P#111, enterprise arc cluster 6).**
 
 - `report/results.json` — always written (no flag), the exact same redacted `RunReport` that
   feeds `report.html`, so CI can read a run's outcome from a file instead of scraping stdout.
@@ -3491,7 +3491,7 @@ certify that anything is safe to share.
 - GitHub Actions log grouping — auto-detected via the `GITHUB_ACTIONS` env var, wraps a test's
   block in `::group::`/`::endgroup::`, only under `--verbose` (normal mode is already one line per
   test). Pure log folding, not a GitHub annotation (`::error::`) — out of scope, unchanged from
-  decision 7.
+  `PLAN_ENTERPRISE.md` decision 7.
 - `--log-file <path>` — duplicates console output to a file, always plain text (ANSI stripped)
   regardless of stdout's own color state.
 
@@ -3514,10 +3514,10 @@ packages/
   lsp-server/ the Language Server (M13) — diagnostics, hover, go-to-definition, completion,
              document symbols, semantic tokens; a pure wrap of lang/, no I/O of its own beyond
              the LSP transport and reading imported files
-  vscode/    highlighting + run CodeLens (decision 94) + a `LanguageClient` that spawns
+  vscode/    highlighting + run CodeLens (P#94) + a `LanguageClient` that spawns
              `tflw lsp` — the editor's diagnostics come from the language server, not from
              parsing `tflw check --format json` output
-  docs-site/ the VitePress documentation site (decision 103), deployed to GitHub Pages; imports
+  docs-site/ the VitePress documentation site (P#103), deployed to GitHub Pages; imports
              lang/'s own manifests so its reference pages cannot drift from the tool
 ```
 
@@ -3536,14 +3536,14 @@ a packed tarball the way a user would (M4/P#43). It replaced `automationTestPOC`
 
 Describes the whole release plan; individual bullets below are already true (posture, packaging
 mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.3.0`/`0.4.0` internal
-milestones and the eventual `1.0.0` publish — see decision 112).
+milestones and the eventual `1.0.0` publish — see P#112).
 
 - **Posture:** public-grade from day one (public GitHub repo — own repo, MIT, CI, P#48 —
   stranger-readable README, `npm pack`-clean layout). The mechanical publish-readiness bar
   (un-`private` the package, README/LICENSE in the tarball, `--version`, `check`, CHANGELOG,
   positioning — P#74–82, M2.8) and the acceptance methodology (side-by-side vs raw
   fetch+node:test + external dogfood on restful-booker, P#41) were both proven out at the M2.7/
-  M2.8 stage — but **no `npm publish` actually happens until `1.0.0`** (PLAN.md decision 112):
+  M2.8 stage — but **no `npm publish` actually happens until `1.0.0`** (P#112):
   browser (`0.2.0`, done), perf (`0.3.0`), and pentest (`0.4.0`) all land as internal milestones
   first, then one final integrated acceptance pass verifies all four arcs together against the
   real dogfood app before the first-ever publish. Repo is public with
@@ -3551,7 +3551,7 @@ milestones and the eventual `1.0.0` publish — see decision 112).
   the README (P#80). Platform bar at 0.1: tested on Linux/macOS, Windows via WSL (P#79). A VS Code
   extension ships alongside 0.1 on its own Marketplace cadence (P#76): TextMate grammar, snippets,
   a run CodeLens, and diagnostics. Diagnostics arrived first as child-process
-  `tflw check --format json` parsing (decision 94, superseding P#76's "squiggles/LSP stay M5"
+  `tflw check --format json` parsing (P#94, superseding P#76's "squiggles/LSP stay M5"
   deferral — the CodeLens pattern didn't need to wait for a real LSP consumer to exist), and
   **M13 replaced that path with a real language server**: the extension now spawns `tflw lsp`
   (§12) via a `LanguageClient`. This paragraph said "not a real LSP" until M110 (`V4-03`).
@@ -3559,7 +3559,7 @@ milestones and the eventual `1.0.0` publish — see decision 112).
   **Node ≥ 22** (P#43). `.ts` escape-hatch helpers load via native type stripping — no tsx/
   esbuild runtime dependency. Published tflw now bundles two real runtime dependencies:
   **`undici`** (P#99b, mTLS client-cert dispatch — the one request path Node's plain global
-  `fetch` can't serve) and **`ajv`** (decision 102a, enterprise arc cluster 3, real JSON-Schema
+  `fetch` can't serve) and **`ajv`** (P#102a, enterprise arc cluster 3, real JSON-Schema
   validation for `matches schema ... from ...`, §6.2.1) — both build-time-only in `package.json`
   terms, since esbuild inlines them into `dist/cli.cjs` and a consumer's own `npm install` never
   pulls in packages named `undici`/`ajv`. `ajv` needed zero extra esbuild config to get bundled —
@@ -3575,12 +3575,11 @@ milestones and the eventual `1.0.0` publish — see decision 112).
   unpinned copy the project never saw). API-only projects stay small forever (P#44, P#36). VS Code
   extension → Marketplace separately, embedding `lang/` (P#37).
 - **Versioning:** single semver. The shipped API grammar is **frozen additive-only from the
-  first publish** (P#45), i.e. from `1.0.0` — the only version that ever actually ships (decision
-  112); any pre-1.0 breaking change requires a checker deprecation warning one full release ahead.
+  first publish** (P#45), i.e. from `1.0.0` — the only version that ever actually ships (P#112); any pre-1.0 breaking change requires a checker deprecation warning one full release ahead.
   `tflw migrate` was the browser arc's (`0.2.0`-equivalent) deliverable (P#45) and has already
   shipped. It was proven against synthetic diagnostics for four arcs, having nothing real to
   deprecate; `M147b` (D623) gave it the first three — `evidence`, `log destination` and `log level`
-  each answer their retired quoted spelling with a replacement payload; the additive-only freeze itself takes effect for good at `1.0.0` (P#38, decision 112).
+  each answer their retired quoted spelling with a replacement payload; the additive-only freeze itself takes effect for good at `1.0.0` (P#38, P#112).
   TF0xx diagnostic codes fall under the same promise: never renumbered or reused once shipped
   (P#77). A root `CHANGELOG.md` (Keep-a-Changelog style) tracks progress arc-by-arc under
   `[Unreleased]` starting from `0.1.0`'s internal milestone label, becoming real release notes
@@ -3611,7 +3610,7 @@ contributions open (P#80).
 Every diagnostic carries a stable code (`packages/lang/src/diagnostic.ts`'s `Codes` table defines
 the constants; `packages/lang/src/spec-data.ts`'s `DIAGNOSTICS` manifest is the single source of
 truth for what each one *means* — this appendix, the docs-site Reference page, and LSP hover all
-generate from it, decision 20). **Stability rule (P#77):** a shipped code is never
+generate from it, `PLAN_ENTERPRISE.md` decision 20). **Stability rule (P#77):** a shipped code is never
 renumbered or reused; a retired diagnostic leaves its number retired, and a new diagnostic always
 gets a new one. Codes print in every `error[TFxxx]: …` line, so they're what a CI grep filter, a
 bug report, or a search engine query anchors on — this appendix exists so that lookup doesn't
@@ -3643,13 +3642,13 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF023` | Parser: a duration whose unit is missing, mis-spelled, mis-cased, or spaced off its number. M98c (`A1-07`) made it reachable from **value** position — `expect duration is less than 250 ms` and `2sec` used to fall out of the step as ``TF010: unexpected `ms` at end of step`` / `= help: expected end of line`, because `250ms` and `250 ms` lex identically and the value path simply declined to build a duration when its adjacency or unit check failed. The three cases are kept apart because their fixes differ: a real unit written with a space, shown the closed-up spelling, a word that means a unit tflw spells differently (`sec` → `s`, `MS` → `ms`), and a word that was never a unit, which keeps the generic error. The known-spelling table is enumerated, not inferred, so `1e3` and `0xff` stay `TF001`'s numeric-notation case rather than acquiring a second, wrong explanation. M147d (`A3-13`, D638) folded the three unit vocabularies into one — every duration position now takes `seconds`/`minutes`/`hours`/`days`/`weeks` as well as `ms`/`s`/`m` — and the *adjacency* half survived that on purpose: it is asked of an **abbreviation**, which is what makes `250 ms` a mistake worth teaching, and not of a **word**, which date arithmetic has always accepted with a space. So this code now reports three things and not two: a spaced abbreviation, a mis-spelled or mis-cased one, and a word that is not a unit in any spelling. | `defaults` then `timeout step 5x` in `tflw.config` → `` unknown time unit `x` ``; `api GET /a` then `expect duration is less than 2sec` → `` tflw's abbreviated time units are `ms`, `s` and `m` — write `2s` `` |
 | `TF024` | Checker (config): more than one `env` marked `default`, or a duplicate env name. | two `env … default` blocks in one `tflw.config` → `` more than one env is marked `default` `` |
 | `TF025` | Checker (config): a key used in the wrong block. | `defaults` then `web "https://example.com"` in `tflw.config` → `` `web` is not allowed in defaults `` |
-| `TF026` | Checker: an `api <service>`/`wait until api <service>` name not declared in the active env — checked in test/action/hook bodies **and** inside `session` blocks (decision 66). | `api billng POST /auth/login` → `` did you mean `billing`? `` |
+| `TF026` | Checker: an `api <service>`/`wait until api <service>` name not declared in the active env — checked in test/action/hook bodies **and** inside `session` blocks (P#66). | `api billng POST /auth/login` → `` did you mean `billing`? `` |
 | `TF027` | Checker: a `{col}` reference **in a test's name** that is not among its inline `with each` table's declared columns. Deliberately the name and nothing else (M110, `V4-05`): a bad `{col}` in the test *body* is indistinguishable from any other unbound variable at check time and is already `TF030`, which says the same thing with the same "did you mean" — a second code for it would split one mistake across two. **File-backed** tables (`with each from "…"`) are skipped entirely: their columns are not known until the file is read at run time, and `lang` does no I/O (`TF043` covers the file itself going missing). | `test "checkout {prcie}"` over a `with each` table whose only column is `price` → `unknown table column "prcie" referenced in the test name` |
 | `TF028` | Checker: a `test … as <session>[, <session>...]` name not declared by any `session` block — one diagnostic per unknown name. | `test "x" as ghost` then `api GET /a` → `unknown session "ghost"` |
 | `TF029` | Checker (config): a session name that is not the session's alone — a duplicate, or (M130b, D333) the reserved name `anonymous`. **One code, because it is one repair**: rename the session. `anonymous` is the built-in principal every `has no authorization violations` assertion probes with, present in the probe set without being declared, so a session by that name would either shadow it or be shadowed by it and neither is visible from the config. That is the same failure a duplicate has — one name, two things behind it — which is why this widened the row rather than taking a code of its own. | two `session admin` blocks in one `tflw.config` → `` duplicate session `admin` ``; `session anonymous` then `api POST /login` in `tflw.config` → `is a reserved principal name` |
-| `TF030` | Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (decision 57): only flags a name that's *definitely* unreachable, never one that merely might be. | `api POST /orders` then `capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"` |
-| `TF031` | Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (decision 18). | `api GET /a` then `expect request connects` then `expect status equals 200` → `` can't be combined with `request connects`/`fails` on the same request `` |
-| `TF032` | Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (decision 22/M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run. | `api POST /u upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"` |
+| `TF030` | Checker: a `{var}`/bare-identifier reference provably never bound anywhere reachable in its scope — conservative (P#57): only flags a name that's *definitely* unreachable, never one that merely might be. | `api POST /orders` then `capture body.ok as orderId` then `api GET /orders/{orderid}` → `unknown variable "orderid"` |
+| `TF031` | Checker: a `request` assertion (`connects`/`fails`) combined with a response-based assertion (`status`/`header`/`body`/`duration`) on the same request, or used at all inside `wait until api` (`PLAN_ENTERPRISE.md` decision 18). | `api GET /a` then `expect request connects` then `expect status equals 200` → `` can't be combined with `request connects`/`fails` on the same request `` |
+| `TF032` | Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run. | `api POST /u upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"` |
 | `TF033` | Parser/checker (load, M29/M30, M50/D93-D96): a workload-bearing `test`'s workload/threshold shape is invalid, two such tests in one file share a name (M30, D29 — names key each one's own metrics/threshold breakdown under concurrent multi-load-test runs), a `retry`/`with each` clause coexists with a workload (D96), a browser step appears inside a workload-bearing body (D19 — API-only in v1), `pause` appears outside one (D18), a workload-bearing `test` carries no `threshold` at all (M60/A4-01 — its verdict comes only from thresholds, so with none it can never fail), a workload-bearing `test` thresholds `duration` without pairing it with an **unscoped** `error rate` threshold (M89c/B3-14 — a duration threshold reads only the iterations that succeeded, so alone it is satisfied by a target that fails half its requests fast, and a *scoped* error-rate threshold bounds one endpoint while the rest of the scenario fails freely), an `authorization violations` assertion appears inside a workload-bearing body (M130b, D315 — each one sends a probe per declared principal, so under a workload the cross-identity traffic is multiplied by the load factor against a host authorized for a scan, not for a scan times the VU count), or a removed keyword is found — `scenario` (D103 — write `test "…" { ramp to … }` instead) or `think` (FS-05 — renamed to `pause`). The `pause`/browser-step bans follow calls into `action`s (M60/A4-02) and report at the call site, since the same action is legal under a workload and illegal outside one. The `pause` hint names both ways out honestly (FS-05): a *condition* is `wait until …` / `wait until … for <dur>`, while genuinely elapsed time — a cache TTL, a token expiry — has no condition to poll and belongs in the JS escape hatch (§11). | `pause 2s` → `` `pause` is only legal inside a workload-bearing `test` ``; `think 2s` → `` `think` was renamed to `pause` `` |
 | `TF034` | Checker (load, M43/D70): a `threshold … for "label"` clause references a label that matches no `api` step's identity (its explicit `as "label"` tag, or its automatic `METHOD path.raw` identity when untagged) within the same workload-bearing test. | `threshold p95 duration for "checkotu" is less than 250ms` with only an `as "checkout"`-tagged step in scope → `` threshold `for "checkotu"` matches no step in this test `` |
 | `TF035` | Checker (M60/`A2-01`; widened M97b/`B5-02`): a name is declared as an `action` more than once in the namespace a file actually runs in. Two `action`s in one file is the original case — actions are file-scoped, so the second shadows nothing, it is simply ambiguous. As of M97b the same code also covers a name declared locally *and* brought in by an `import`, and a name two `import`s both provide: the runtime (`buildRegistry`) has always refused all three, and `TF035` used to see only the first — so the manifest, the checker and its test agreed with each other while missing what the runtime enforced. The imported halves are reported only when the imports were actually read (the same `undefined`-vs-`[]` rule `TF037` turns on): a name cannot be called a duplicate of something nobody looked at. | `action fetch it()` declared twice → `duplicate action "fetch it"`; the same name arriving via `import "./shared/orders.tflw"` → `duplicate action "fetch it" (imported from "./shared/orders.tflw")` |

@@ -92,7 +92,7 @@ test('getCompletions: transform kind attaches spec-data.ts detail text (decision
     candidates.map((c) => c.label),
     ['encode'],
   );
-  assert.match(candidates[0]!.detail ?? '', /decision 98/);
+  assert.match(candidates[0]!.detail ?? '', /not a fresh-value generator \(M18\)/);
 });
 
 // -- M4a: browser-arc (M3a-M3e) step/subject/matcher keywords, previously missing from these ------
