@@ -8,7 +8,7 @@
 // The old extractor recognised two tags and dropped everything else on the floor without counting
 // it — 31 of 89 blocks checked behind a line reading `31/31 … parse cleanly`. See PLAN_DOC_TRUTH.md.
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 /** Fence tags whose contents are `.tflw` source, keyed to how a sample is made checkable. */
@@ -247,6 +247,21 @@ export const DECLARED_ROADMAP = new Map([
       },
     ],
   ],
+  /**
+   * `M153a`. This file reached the guard for the first time when `D719` made `roadmapFiles()`
+   * derive its `@include` set from `INCLUDED_RECORDS` — the grammar shim had been publishing onto
+   * the site with the roadmap rule unable to see it, which is what `M152d-01` filed. The claim it
+   * found on the first run is real, current, and names its own reason.
+   */
+  [
+    'packages/lang/GRAMMAR.md',
+    [
+      {
+        includes: '`element` aliases are not yet implemented',
+        why: 'true, and self-dating: the sentence says no milestone owns them, so the line changes when one does',
+      },
+    ],
+  ],
 ]);
 
 /**
@@ -381,6 +396,48 @@ export const INCLUDED_RECORDS = new Map([
   ['changelog.md', { include: '../../CHANGELOG.md', why: 'CHANGELOG.md, declared and linked to DECISIONS.md at its head' }],
   ['grammar.md', { include: '../lang/GRAMMAR.md', why: 'packages/lang/GRAMMAR.md, declared and linked to DECISIONS.md at its head' }],
 ]);
+
+/**
+ * The file set, explicit because the obvious one is wrong in two ways (`D658`).
+ *
+ * Every other check here walks `findMarkdownFiles(ROOT)` and nothing else, and for this check that
+ * would place the guard where the class has *never* been fully visible:
+ *
+ *  - **`README.md` is unreachable** from `ROOT`. It sits at the repo root and is `srcExclude`d from
+ *    the site. `M135b` — the precedent proving this class recurs — fired *in `README.md`*, and so
+ *    did two of the five occurrences `M149a` swept. A guard placed where the class last fired that
+ *    cannot see the file it fired in is a guard against the wrong thing.
+ *  - **`CHANGELOG.md` is unreachable** too, and for a subtler reason: `changelog.md` on disk is a
+ *    header plus `<!--@include: ../../CHANGELOG.md-->`. The body arrives at VitePress build time,
+ *    so a scanner reading markdown files sees a 233-byte stub and reports the page as clean.
+ *
+ * The shims are therefore located relative to `root` rather than to this script, so a scratch
+ * corpus gets its own records or none at all instead of silently borrowing the repository's.
+ *
+ * It lives here rather than in `verify-docs.mjs` because `D719` made it read `INCLUDED_RECORDS`,
+ * and a corpus rule belongs beside the corpus it selects — `verify-docs.mjs` runs its whole
+ * verification on import, so nothing there can be unit-tested at all.
+ */
+export function roadmapFiles(root, included = INCLUDED_RECORDS) {
+  const repo = join(root, '..', '..');
+  const files = findMarkdownFiles(root).map((path) => ({ key: path.slice(root.length + 1), path }));
+  // The shims, from the registry rather than by name (`D719`). `D706` already decided that these
+  // two guards want opposite answers about an `@include` — that one skips the record's body, this
+  // one must read it — and gave the reasoning. What it could not fix from where it sat is that one
+  // guard's list was derived and this one's was two string literals, so a third shim would have
+  // updated exactly one of them, silently. The verdicts stay opposite; the *set* is now shared.
+  for (const { include } of included.values()) {
+    const path = join(root, include);
+    if (existsSync(path)) files.push({ key: relative(repo, path), path });
+  }
+  // `README.md` is hand-added and stays that way, because it is a different case wearing the same
+  // shape: it is unreachable because the site `srcExclude`s it, not because it is a stub. Nothing
+  // in `INCLUDED_RECORDS` describes it, and putting it there to save a line would claim it is an
+  // `@include` page — which `assertShim` would then, correctly, deny.
+  const readme = join(repo, 'README.md');
+  if (existsSync(readme)) files.push({ key: 'README.md', path: readme });
+  return files.map(({ key, path }) => ({ key, text: readFileSync(path, 'utf8') }));
+}
 
 /** The 1-based line numbers a fenced block occupies, opening and closing fences included. */
 function fencedLines(text) {

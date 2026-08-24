@@ -1893,11 +1893,12 @@ here.
 
     **(c) `packages/lsp-server` — I/O layer + protocol wiring** (enterprise decision 17.2–17.4, 17.9): project
     root discovery, `tflw.config`/env resolution (`loadProjectConfig`,
-    `workspace/configResolution.ts:42` — decision B slots `tflw.env` into `selectEnv`'s existing
-    `--env`/`TFLW_ENV` precedence chain, no changes to `resolve.ts` itself), a debounced
-    (~150–300ms) full-reparse `DocumentStore` (`workspace/documentStore.ts:62`) branching on
-    `tflw.config` vs. `*.tflw` per decision A (config buffers get real diagnostics too — no
-    exclusion filter anywhere in this stack), an mtime-cached `CrossFileResolver`
+    `workspace/configResolution.ts:42` — `PLAN_M13_LSP.md` decision B slots `tflw.env` into
+    `selectEnv`'s existing `--env`/`TFLW_ENV` precedence chain, no changes to `resolve.ts` itself),
+    a debounced (~150–300ms) full-reparse `DocumentStore` (`workspace/documentStore.ts:62`)
+    branching on `tflw.config` vs. `*.tflw` per `PLAN_M13_LSP.md` decision A (config buffers get
+    real diagnostics too — no exclusion filter anywhere in this stack), an mtime-cached
+    `CrossFileResolver`
     (`workspace/crossFile.ts:31`) mirroring `buildRegistry`'s import resolution for a long-lived
     server, and a lazy project-wide index backing cross-file rename. `startServer()`
     (`server.ts:76`) wires every handler over `createConnection`, real stdio by default or an
@@ -1920,7 +1921,7 @@ here.
     `resolveWorkspaceRoot()` (`extension.ts:57`, not in the original plan sketch — a practical
     necessity once actually wired up) picks the client's single project root from whichever
     `tflw`-language document is already open at `activate()` time, falling back to each open
-    workspace folder. `tflw.env` (decision B) reaches the server via
+    workspace folder. `tflw.env` (`PLAN_M13_LSP.md` decision B) reaches the server via
     `initializationOptions.env` + `synchronize.configurationSection` pushing
     `workspace/didChangeConfiguration` on change. CodeLens/`runInTerminal`/`resolveTargetUri` stay
     client-side, untouched, per enterprise decision 17.3.

@@ -5,7 +5,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, extractBlocks, parseInfoString, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, grammarPhrases, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { classify, extractBlocks, parseInfoString, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, grammarPhrases, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const one = (md) => {
   const blocks = extractBlocks(md);
@@ -343,6 +346,40 @@ test('an @include shim is skipped by name, and a shim that grew a body is report
   assert.equal(problems.length, 1);
   assert.equal(problems[0].where, 'INCLUDED_RECORDS changelog.md');
   assert.match(problems[0].message, /no longer includes/);
+});
+
+test('a third @include shim reaches both guards, and neither guard holds a list of its own', () => {
+  // `D719`, and the acceptance clause it was written for. The two guards want **opposite** answers
+  // about an `@include` — the notation rule skips the record's body because its citations are
+  // declared provenance (`D706`), the roadmap rule must read it because a forward-looking claim
+  // renders onto the page either way. `D706` decided that and left it standing. What it could not
+  // fix is that one guard derived its set and the other named two files inline, so a third shim
+  // would have updated exactly one of them without saying so.
+  //
+  // The proof is a shim NEITHER guard has ever heard of, declared in one place: both must change
+  // behaviour, in their own opposite directions, with no edit to either.
+  const root = mkdtempSync(join(tmpdir(), 'tflw-shim-registry-'));
+  try {
+    mkdirSync(join(root, 'site'));
+    writeFileSync(join(root, 'THIRD.md'), '# Third\n\nThis is `not yet implemented`, and P#27 explains why.\n');
+    const stub = '# Third\n\n<!--@include: ../THIRD.md-->\n';
+    writeFileSync(join(root, 'site', 'third.md'), stub);
+    const included = new Map([['third.md', { include: '../THIRD.md', why: 'THIRD.md, declared at its head' }]]);
+
+    // The roadmap guard reads THROUGH the shim: the claim lives in the record, not the stub.
+    const files = roadmapFiles(join(root, 'site'), included);
+    const record = files.find((f) => f.key.endsWith('THIRD.md'));
+    assert.ok(record, 'the record the site @includes is in the roadmap corpus');
+    const { claims } = scanRoadmapClaims([record], { allowlist: new Map(), checkStale: false });
+    assert.equal(claims, 1, 'the claim inside the included record is visible to the roadmap rule');
+
+    // The notation guard stops AT the shim, from the same one registry entry.
+    const { problems, scanned } = scanPrivateNotation([{ key: 'third.md', text: stub }], { included });
+    assert.deepEqual(problems, [], 'the shim keeps its declared citations');
+    assert.equal(scanned, 0, 'and is not counted as a page this rule covered');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('an excluded page is not counted as scanned, so the report cannot overstate coverage', () => {

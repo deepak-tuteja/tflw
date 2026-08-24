@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { census, findMarkdownFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { census, findMarkdownFiles, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
 import { CLI_FLAGS } from '@tflw/lang';
 // The whole namespace, because the *page* decides which manifest it renders: `constructCorpus`
 // reads each page's own `import { … } from '…spec-data.ts'` and matches it against a `v-for`. Naming
@@ -396,31 +396,6 @@ function checkFlagProse() {
 // Roadmap truth — a forward-looking claim is declared, or it fails (`D657`/`D658`).
 // ---------------------------------------------------------------------------
 
-/**
- * The file set, explicit because the obvious one is wrong in two ways (`D658`).
- *
- * Every other check here walks `findMarkdownFiles(ROOT)` and nothing else, and for this check that
- * would place the guard where the class has *never* been fully visible:
- *
- *  - **`README.md` is unreachable** from `ROOT`. It sits at the repo root and is `srcExclude`d from
- *    the site. `M135b` — the precedent proving this class recurs — fired *in `README.md`*, and so
- *    did two of the five occurrences `M149a` swept. A guard placed where the class last fired that
- *    cannot see the file it fired in is a guard against the wrong thing.
- *  - **`CHANGELOG.md` is unreachable** too, and for a subtler reason: `changelog.md` on disk is a
- *    header plus `<!--@include: ../../CHANGELOG.md-->`. The body arrives at VitePress build time,
- *    so a scanner reading markdown files sees a 233-byte stub and reports the page as clean.
- *
- * Both are therefore added by hand, located relative to `ROOT` rather than to this script, so a
- * scratch corpus gets its own two files or none at all instead of silently borrowing the repo's.
- */
-function roadmapFiles() {
-  const files = findMarkdownFiles(ROOT).map((path) => ({ key: path.slice(ROOT.length + 1), path }));
-  for (const name of ['README.md', 'CHANGELOG.md']) {
-    const path = join(ROOT, '..', '..', name);
-    if (existsSync(path)) files.push({ key: name, path });
-  }
-  return files.map(({ key, path }) => ({ key, text: readFileSync(path, 'utf8') }));
-}
 
 /**
  * `D659`. The manifests come from `@tflw/lang` and the grammar from the file `grammarCoverage.test.ts`
@@ -478,7 +453,7 @@ function checkRoadmapClaims() {
   // `DT-08`'s scratch corpora name their page `index.md`, which is a real page here — so the
   // staleness half of the allowlist is real-corpus only. Reported below rather than dropped.
   const checkStale = process.env.TFLW_DOCS_ROOT === undefined;
-  const { problems: found, claims, files } = scanRoadmapClaims(roadmapFiles(), { checkStale });
+  const { problems: found, claims, files } = scanRoadmapClaims(roadmapFiles(ROOT), { checkStale });
   for (const p of found) fail(p.where, p.message, p.detail);
   return { claims, files, checkStale };
 }
@@ -563,7 +538,7 @@ const report = [
   `    fenced blocks and <script> blocks excluded — plus the ${INCLUDED_RECORDS.size} pages that @include a repo record`,
   `    verbatim, which keep their citations because each record is declared and resolves in DECISIONS.md (D706).`,
   `${roadmap.claims} forward-looking claims found across ${roadmap.files} files (${ROADMAP_PHRASES.length} idioms,`,
-  `    raw text including frontmatter, plus the repo root's README.md and CHANGELOG.md) — each one`,
+  `    raw text including frontmatter, plus README.md and the ${INCLUDED_RECORDS.size} records the site @includes) — each one`,
   `    declared in DECLARED_ROADMAP with the reason it is legitimately future.`,
   roadmap.checkStale
     ? `    ${[...DECLARED_ROADMAP.values()].flat().length} declared exemptions, each still matching a line it names.`

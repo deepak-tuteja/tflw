@@ -2,7 +2,7 @@
   "name": "@tflw/docs-site",
   "version": "0.1.0",
   "private": true,
-  "description": "tflw documentation site (VitePress) — deployed to GitHub Pages. PLAN decision 103, enterprise arc cluster 4.",
+  "description": "tflw documentation site (VitePress) — deployed to GitHub Pages.",
   "type": "module",
   "scripts": {
     "brand": "node scripts/generate-brand-assets.mjs",
