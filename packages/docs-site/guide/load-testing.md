@@ -60,7 +60,7 @@ per-row cases, only per-VU ones.
 
 Calling an `action` doesn't get around either ban. The checker follows the call, and reports on the
 call line — because the same action is perfectly legal inside a functional test, so only the caller
-decides. (Before M60 it didn't follow the call: a workload test calling an action containing
+decides. (It didn't always follow the call: a workload test calling an action containing
 `click` ran tens of thousands of failing iterations and still printed `PASS`.)
 
 ## Two workload models — pick deliberately

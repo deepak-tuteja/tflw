@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { census, findMarkdownFiles, scanRoadmapClaims, scanConstructCoverage, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { census, findMarkdownFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
 import { CLI_FLAGS } from '@tflw/lang';
 // The whole namespace, because the *page* decides which manifest it renders: `constructCorpus`
 // reads each page's own `import { … } from '…spec-data.ts'` and matches it against a `v-for`. Naming
@@ -451,6 +451,29 @@ function checkConstructCoverage() {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// The private notation stays off the pages a user reads (`D673`, `D706`).
+// ---------------------------------------------------------------------------
+
+/**
+ * `D706`'s file set: the pages a human wrote, and **not** the repo records the site `@include`s.
+ *
+ * The contrast with `roadmapFiles()` above is the point and is deliberate. That one reaches
+ * *through* the shims by hand-adding `CHANGELOG.md`, because a stale roadmap claim is a lie
+ * wherever it renders. This one stops at them, because a citation inside a declared record is
+ * provenance rather than an artifact. Both are decisions; neither is the shape of the file walk.
+ *
+ * So this passes the shim pages **in** rather than filtering them out here — `scanPrivateNotation`
+ * skips them by name and checks each is still a shim, which a filter written at this call site
+ * could not do.
+ */
+function checkPrivateNotation() {
+  const files = findMarkdownFiles(ROOT).map((path) => ({ key: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
+  const { problems: found, scanned } = scanPrivateNotation(files);
+  for (const p of found) fail(p.where, p.message, p.detail);
+  return { scanned, pages: files.length };
+}
+
 function checkRoadmapClaims() {
   // `DT-08`'s scratch corpora name their page `index.md`, which is a real page here — so the
   // staleness half of the allowlist is real-corpus only. Reported below rather than dropped.
@@ -515,6 +538,7 @@ else {
 const flagReferences = checkFlagProse();
 const roadmap = checkRoadmapClaims();
 const coverage = checkConstructCoverage();
+const notation = checkPrivateNotation();
 
 const count = (kind) => blocks.filter((b) => b.kind === kind).length;
 const files = new Set(blocks.map((b) => b.file)).size;
@@ -535,6 +559,9 @@ const report = [
     : `${covered} shipped subcommands, each with a reference/cli.md section and a SPEC §12 shipped row`,
   `${flagReferences} flag references inside CLI_FLAGS' own descriptions checked — names, not effects:`,
   `    a description that names a flag correctly and describes the wrong behaviour still passes (B5-04).`,
+  `${notation.scanned} hand-written pages checked for this project's private notation (${NOTATION.length} shapes),`,
+  `    fenced blocks and <script> blocks excluded — plus the ${INCLUDED_RECORDS.size} pages that @include a repo record`,
+  `    verbatim, which keep their citations because each record is declared and resolves in DECISIONS.md (D706).`,
   `${roadmap.claims} forward-looking claims found across ${roadmap.files} files (${ROADMAP_PHRASES.length} idioms,`,
   `    raw text including frontmatter, plus the repo root's README.md and CHANGELOG.md) — each one`,
   `    declared in DECLARED_ROADMAP with the reason it is legitimately future.`,

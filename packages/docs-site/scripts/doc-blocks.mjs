@@ -329,6 +329,147 @@ export function scanRoadmapClaims(files, { allowlist = DECLARED_ROADMAP, phrases
  * about a construct from the documentation, which is a large thing to assert quietly. The reverse
  * check below deletes an entry that stops being true, the same way `DECLARED_ROADMAP`'s does.
  */
+// ---------------------------------------------------------------------------
+// The private notation, kept off the pages a user reads (`D673`/`D706`).
+// ---------------------------------------------------------------------------
+
+/**
+ * The identifier shapes this project uses to name its own design record.
+ *
+ * `DECISIONS.md` resolves the first three for a reader who finds one in a repo file. **Nothing
+ * resolves the fourth** — a review-ledger row id lives in a gitignored document — which makes it
+ * strictly the worst of them to leave on a public page, and it is why the list is not just the
+ * three `D666` names.
+ *
+ * **Case-sensitive on purpose, and this is load-bearing.** GitHub's heading anchors are lowercased,
+ * so `SPEC.md#…-p2731-` and `#…-d105` are full of these shapes in lower case. `D691` clause 4
+ * therefore scoped an exclusion for URL fragments — but measured against the real site that
+ * exclusion matches **nothing**, because capitalisation already separates an address from a
+ * citation. No exclusion was added: a guard that never fires is a guard nobody can evaluate. The
+ * property is pinned by a test instead, so a later widening to `/i` fails and says why.
+ */
+export const NOTATION = [
+  { what: 'a milestone', re: /\bM\d{1,3}[a-z]?\d*\b/g },
+  { what: 'a decision', re: /\bD\d{2,3}\b/g },
+  { what: 'a plan item', re: /\bP#\d+[a-z]?\b/g },
+  { what: 'a bare decision citation', re: /\bdecisions?\s+\d+/g },
+  { what: 'a review-ledger row', re: /\b(?:[A-Z]{1,3}\d+|DT|FU)-\d+\b/g },
+];
+
+/**
+ * The two site pages that are not pages: a header plus `<!--@include: …-->` of a repo record.
+ *
+ * **`D706`. This is the milestone's actual decision and it has to be written, not inherited.**
+ * `CHANGELOG.md` and `packages/lang/GRAMMAR.md` render onto the site verbatim, and between them
+ * they publish 284 citations — vastly more than the four this guard was scoped for. The rule does
+ * not reach them: `D673` objects to an identifier standing in front of a reader with nothing that
+ * resolves it, and both records carry a declaration sentence linking `DECISIONS.md`, so their
+ * citations are provenance rather than an artifact. Deleting them would remove the thing `M152a`
+ * and `M152b` were built to construct.
+ *
+ * The reason this is a named constant rather than a comment: `findMarkdownFiles` sees these two
+ * files as ~230-byte stubs and would skip their bodies **by accident**, producing exactly this
+ * scope with none of this reasoning. `roadmapFiles()` in `verify-docs.mjs` faced the same fork for
+ * `D657` and went the other way, hand-adding `CHANGELOG.md` so the rule could see through the shim.
+ * Two guards in one file reaching opposite conclusions is fine; two guards reaching them silently
+ * is not.
+ *
+ * `assertShim` below keeps this honest: if a page stops being an `@include` stub, its exemption
+ * stops describing it and the scan says so rather than continuing to skip a page full of prose.
+ */
+export const INCLUDED_RECORDS = new Map([
+  ['changelog.md', { include: '../../CHANGELOG.md', why: 'CHANGELOG.md, declared and linked to DECISIONS.md at its head' }],
+  ['grammar.md', { include: '../lang/GRAMMAR.md', why: 'packages/lang/GRAMMAR.md, declared and linked to DECISIONS.md at its head' }],
+]);
+
+/** The 1-based line numbers a fenced block occupies, opening and closing fences included. */
+function fencedLines(text) {
+  const lines = new Set();
+  for (const block of extractBlocks(text)) {
+    const body = block.source === '' ? 0 : block.source.split('\n').length;
+    const last = block.startLine + body + (block.unterminated ? 0 : 1);
+    for (let n = block.startLine; n <= last; n++) lines.add(n);
+  }
+  return lines;
+}
+
+/**
+ * The 1-based line numbers inside a `<script …>` block.
+ *
+ * VitePress pages open with `<script setup>` to pull in a generated table, and those blocks carry
+ * ordinary source comments. A comment in a Vue SFC is not prose a reader meets — it never renders —
+ * so it is excluded for the same reason `D697` excludes a product fence: it is not a citation
+ * aimed at anybody.
+ */
+function scriptLines(text) {
+  const lines = new Set();
+  let open = false;
+  text.split('\n').forEach((line, i) => {
+    if (/<script[\s>]/.test(line)) open = true;
+    if (open) lines.add(i + 1);
+    if (line.includes('</script>')) open = false;
+  });
+  return lines;
+}
+
+/**
+ * Every occurrence of the private notation on a hand-written page.
+ *
+ * Pure and injectable, like `scanRoadmapClaims` above and for the same reason: the part worth
+ * testing is what the guard *tolerates*, and that cannot be tested through a corpus on disk.
+ *
+ * `files` is `{ key, text }` with `text` the raw contents including frontmatter.
+ */
+export function scanPrivateNotation(files, { included = INCLUDED_RECORDS, patterns = NOTATION } = {}) {
+  const problems = [];
+  const found = [];
+  let scanned = 0;
+  const seen = new Set();
+
+  for (const { key, text } of files) {
+    seen.add(key);
+    const record = included.get(key);
+    if (record !== undefined) {
+      // The exemption has to keep describing the page. A shim that grew a body is a page this
+      // guard would then be skipping for a reason that stopped being true.
+      if (!text.includes(`@include: ${record.include}`)) {
+        problems.push({
+          where: `INCLUDED_RECORDS ${key}`,
+          message: `this page no longer includes \`${record.include}\`, so its exemption no longer describes it`,
+          detail:
+            'INCLUDED_RECORDS in scripts/doc-blocks.mjs exempts this page because it is a stub that\n' +
+            'renders a repo record verbatim (D706). If the page now holds its own prose, delete the\n' +
+            'entry so the notation rule covers it; if the include moved, update the entry.',
+        });
+      }
+      continue;
+    }
+    scanned++;
+    const fenced = fencedLines(text);
+    const script = scriptLines(text);
+    text.split('\n').forEach((line, i) => {
+      const n = i + 1;
+      if (fenced.has(n) || script.has(n)) return;
+      for (const { what, re } of patterns) {
+        for (const m of line.matchAll(re)) {
+          found.push({ key, line: n, token: m[0], what });
+          problems.push({
+            where: `${key}:${n}`,
+            message: `\`${m[0]}\` names ${what} in this project's private design record`,
+            detail:
+              'A reader of this page is a tflw user with no relationship to that record (D673).\n' +
+              'Say what the identifier refers to instead of naming it — "earlier versions", "it was\n' +
+              'folded into `run`" — rather than linking it. A fenced block, a <script> block and the\n' +
+              'two included records in INCLUDED_RECORDS are already excluded.',
+          });
+        }
+      }
+    });
+  }
+
+  return { problems, found, scanned };
+}
+
 export const DECLARED_UNDOCUMENTED = new Map();
 
 /**

@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, extractBlocks, parseInfoString, scanRoadmapClaims, scanConstructCoverage, grammarPhrases, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { classify, extractBlocks, parseInfoString, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, grammarPhrases, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
 
 const one = (md) => {
   const blocks = extractBlocks(md);
@@ -234,4 +234,122 @@ test('two manifests naming one absent construct report one problem, not two', ()
   });
   assert.equal(problems.length, 1);
   assert.match(problems[0].where, /CONFIG_KEYWORDS \(probe\) \+ GRAMMAR\.md `probe ciphers`/);
+});
+
+
+// ---------------------------------------------------------------------------
+// The private notation on a user-facing page (`M152d`, `D673`/`D706`).
+// ---------------------------------------------------------------------------
+//
+// Two things decide what this guard is worth, and neither is whether it can spot `M60`: what it
+// **excludes**, and whether the exclusions are decisions or accidents. So every exclusion below is
+// tested as a pair — the excluded form beside the near-identical form that must still be caught —
+// the same discipline `verify-anchors.test.mjs` uses, and for the same reason: an exclusion that
+// swallowed the real defect too would pass silently.
+
+const notation = (text, key = 'guide/load-testing.md', opts) =>
+  scanPrivateNotation([{ key, text }], opts).problems.map((p) => p.where);
+
+test('a page with no notation on it produces nothing', () => {
+  // The cheapest way to be accidentally green is to be accidentally red.
+  const { problems, scanned } = scanPrivateNotation([
+    { key: 'guide/config.md', text: '# Config\n\nSet `baseUrl` in `tflw.config`. Run `tflw check`.\n' },
+  ]);
+  assert.deepEqual(problems, []);
+  assert.equal(scanned, 1);
+});
+
+test('every notation shape is recognised, and each says what it names', () => {
+  const { problems } = scanPrivateNotation([
+    { key: 'x.md', text: '# x\n\nM60 did it.\n\nD657 says so.\n\nP#101a too.\n\nSee decision 94.\n\nAnd V4-02.\n' },
+  ]);
+  assert.deepEqual(problems.map((p) => p.where), ['x.md:3', 'x.md:5', 'x.md:7', 'x.md:9', 'x.md:11']);
+  assert.deepEqual(
+    problems.map((p) => p.message.replace(/^`[^`]+` names /, '')),
+    [
+      "a milestone in this project's private design record",
+      "a decision in this project's private design record",
+      "a plan item in this project's private design record",
+      "a bare decision citation in this project's private design record",
+      "a review-ledger row in this project's private design record",
+    ],
+  );
+});
+
+test('a review-ledger row is caught, and it is the worst of the five rather than the mildest', () => {
+  // `DECISIONS.md` resolves `M60`, `D657` and `P#101a` for anyone who finds one. Nothing resolves
+  // `V4-02` — the ledger it indexes is gitignored — so a reader who tries to follow it cannot,
+  // even in principle. `D673` names the three; leaving this one out would have published the only
+  // shape with no possible destination.
+  assert.deepEqual(notation('# x\n\nfails the build if one is added without one (M110, `V4-02`).\n'),
+    ['guide/load-testing.md:3', 'guide/load-testing.md:3']);
+});
+
+test('notation inside a fence is tflw output; the same line outside one is prose', () => {
+  // `# emitted by tflw M137d — sec/error-detail-disclosure` is a real line on the security pages:
+  // the tool's own output, reproduced verbatim. Checking it would be the guard objecting to a
+  // transcript. `D697` paid for this distinction in the citation gate; it is the same one.
+  const line = '# emitted by tflw M137d — sec/error-detail-disclosure';
+  assert.deepEqual(notation(['# x', '', '```sh', line, '```', ''].join('\n')), []);
+  assert.deepEqual(notation(['# x', '', line, ''].join('\n')), ['guide/load-testing.md:3']);
+});
+
+test('a comment in a <script> block never renders; the same text in prose does', () => {
+  // Every reference page opens with `<script setup>` to pull in a generated table, and those
+  // carry ordinary source comments. A Vue SFC comment reaches no reader at all.
+  const comment = '// one shared module because it used to be four identical copies (`M110b-02`).';
+  assert.deepEqual(notation(['<script setup>', comment, '</script>', '', '# x', ''].join('\n')), []);
+  assert.deepEqual(notation(['# x', '', comment.slice(3), ''].join('\n')), ['guide/load-testing.md:3']);
+  // One finding, not two: `M110b-02` is a ledger row, but the row pattern wants `-\d+` straight
+  // after the digits and this one carries a letter, so it is the MILESTONE pattern that catches it
+  // on the `M110b` prefix. The line is flagged either way — only the label differs — and the
+  // overlap is left alone rather than widened, because widening would make both patterns fire on
+  // one token and report the same defect twice.
+});
+
+test('a lowercase GitHub anchor does not trip, and this is case doing the work, not an exclusion', () => {
+  // `D691` clause 4 scoped a URL-fragment exclusion, reasoning that `D677`'s anchor gate needs the
+  // very fragments this rule would flag. Measured against the real site that exclusion matches
+  // NOTHING: GitHub lowercases its anchors, so `…-p2731-` and `…-d105` are already not the
+  // notation. No exclusion was added, because a guard that never fires is one nobody can evaluate.
+  //
+  // THIS TEST IS THE EXCLUSION. Widen any pattern to `/i` and it goes red here, with this comment
+  // attached, instead of the rule quietly starting to flag every SPEC.md link on the site.
+  // A real anchor off this site, carrying a lowercase `d105` and a lowercase `p2731`: with `/i`
+  // on the decision pattern this line reports a defect on every SPEC.md link the docs carry.
+  const link = '[SPEC.md §4.5](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#45-retries-d105-and-the-config-dialect-p2731-)';
+  assert.deepEqual(notation(`# x\n\n${link}\n`), []);
+  for (const { re } of NOTATION) assert.ok(!re.flags.includes('i'), `${re} is case-insensitive — see the test above this one`);
+
+  // And the capitalised form on the same page is still caught, so the pass above is about case
+  // rather than about the line being a link.
+  assert.deepEqual(notation('# x\n\nsee [the dialect](/guide/config) — P#27 covers it\n'), ['guide/load-testing.md:3']);
+});
+
+test('an @include shim is skipped by name, and a shim that grew a body is reported', () => {
+  // `D706`. `CHANGELOG.md` and `GRAMMAR.md` render onto the site verbatim and publish 284
+  // citations between them; the rule stops at them because each record is declared and resolves.
+  // The exemption is by NAME rather than by the file walk on purpose — `findMarkdownFiles` sees a
+  // 233-byte stub and would skip the body accidentally, producing this scope with none of this
+  // reasoning.
+  const included = new Map([['changelog.md', { include: '../../CHANGELOG.md', why: 'CHANGELOG.md' }]]);
+  const shim = '# Changelog\n\nIncluded from CHANGELOG.md — decision 94 lives in there.\n\n<!--@include: ../../CHANGELOG.md-->\n';
+  assert.deepEqual(notation(shim, 'changelog.md', { included }), []);
+
+  // If the page stops being a stub, the exemption stops describing it — and saying so is the
+  // difference between an exclusion and a blind spot.
+  const grown = '# Changelog\n\nHand-written now, and decision 94 is still here.\n';
+  const { problems } = scanPrivateNotation([{ key: 'changelog.md', text: grown }], { included });
+  assert.equal(problems.length, 1);
+  assert.equal(problems[0].where, 'INCLUDED_RECORDS changelog.md');
+  assert.match(problems[0].message, /no longer includes/);
+});
+
+test('an excluded page is not counted as scanned, so the report cannot overstate coverage', () => {
+  const included = new Map([['changelog.md', { include: '../../CHANGELOG.md', why: 'CHANGELOG.md' }]]);
+  const { scanned } = scanPrivateNotation(
+    [{ key: 'changelog.md', text: '<!--@include: ../../CHANGELOG.md-->\n' }, { key: 'index.md', text: '# x\n' }],
+    { included },
+  );
+  assert.equal(scanned, 1, 'the shim is excluded, and the count says 1 page rather than 2');
 });

@@ -25,7 +25,7 @@ Generated from
 [SPEC.md §12](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#12-cli-).
 
 Every subcommand the shipped `tflw` binary dispatches has a section on this page, and
-`verify-docs.mjs` fails the build if one is added without one (M110, `V4-02`).
+`verify-docs.mjs` fails the build if one is added without one.
 
 ```sh
 npx tflw run --env staging --parallel 4 --seed 42 --now 2026-01-01T00:00:00.000Z --no-color
@@ -46,7 +46,7 @@ npx tflw run --env staging --parallel 4 --seed 42 --now 2026-01-01T00:00:00.000Z
 `tflw run` drives functional and workload-bearing `test`s alike in one pass — a `test` becomes
 workload-bearing the moment it contains a `ramp`/`hold`/`step`/`spike`/`run … iterations` line (see
 the [load testing guide](/guide/load-testing)); there's no separate `load` command (folded into
-`run` in M53). `parallel`/`sequential` (a test-header modifier, not a flag) controls which tests in
+`run`). `parallel`/`sequential` (a test-header modifier, not a flag) controls which tests in
 a file run concurrently with each other; `--workers N` is the unrelated, workload-only axis above —
 it scales *one* workload-bearing test's own generated load across `N` forked processes, never files.
 Every run with at least one workload-bearing test also self-diagnoses its own generator process's
@@ -54,7 +54,7 @@ event-loop lag/CPU and warns if tflw itself was the bottleneck. A live ~1Hz cons
 iterations/rps/error-rate for the workload-bearing tests currently in flight; Ctrl-C stops new
 iterations and flushes a **partial** report instead of losing the run. Everything — functional and
 workload-bearing test results alike — renders into the one `report/report.html`/`junit.xml`/
-`results.json` (M56), in file-declaration order; there are no separate `load-*` artifacts. Exit `0`
+`results.json`, in file-declaration order; there are no separate `load-*` artifacts. Exit `0`
 = every test passed and every `threshold` was met (or none declared), `1` = a test failed or a
 threshold was breached, `2` = usage error, `3` = **inconclusive** (a workload-bearing test ran and
 tflw's own generator process saturated — the numbers describe tflw contending with itself, not the
