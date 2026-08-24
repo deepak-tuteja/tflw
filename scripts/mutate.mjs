@@ -3481,6 +3481,20 @@ export function partition(mutations, n) {
 export const SHARD_BUDGET_SECONDS = 30 * 60;
 export const RESHARD_AT = 2 / 3;
 
+/**
+ * How many shards CI actually splits the registry into. Mirrored by `ci.yml`'s matrix and asserted
+ * equal by `verify-shards.test.mjs`, for the same reason `SHARD_BUDGET_SECONDS` is: two numbers in
+ * two files describing one thing is the drift this whole file exists to catch.
+ *
+ * Written down by `M152e`, because the balance probe had been measuring a **six**-way split since
+ * `M128b` — the shard count at the time — and CI has run twenty since. That is not a small
+ * difference in this cost model: at six the packer cannot break `root:test:scripts`'s chunk across
+ * bins and lands 14 minutes above the per-mutation LPT floor, while at twenty it lands one minute
+ * *below* it, because it pays each package's baseline in far fewer bins (262 CPU-minutes against
+ * LPT's 308). The probe was reporting a genuinely lopsided deal in a configuration nobody runs.
+ */
+export const SHARD_COUNT = 20;
+
 /** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
  *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
 export function shardCost(shard) {

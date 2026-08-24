@@ -421,6 +421,29 @@ function skipBlank(lines, j) {
  *
  * @param {string} text @param {{line: number, kind: string, headingLevel: number}} anchor
  */
+/**
+ * A list, from its first item to the line after its last. Blank lines inside it are part of it —
+ * a loose list separates its items with them — so the end is the first non-blank line that is
+ * neither an item nor indented under one.
+ */
+function takeList(lines, start) {
+  const ITEM = /^\s*(?:[-*]\s|\d+[.)]\s)/;
+  const CONTINUATION = /^\s+\S/;
+  let last = start;
+  for (let j = start; j < lines.length; j++) {
+    const ln = lines[j];
+    if (ITEM.test(ln)) { last = j; continue; }
+    // A blank line may separate two items of a loose list, and an indented one continues the item
+    // above; neither ends the list. Anything else does — but the list ends at its last ITEM, not
+    // here, so scanning past a blank line that turns out to be the end costs nothing.
+    if (ln.trim() === '' || CONTINUATION.test(ln)) continue;
+    break;
+  }
+  let end = last + 1;
+  while (end < lines.length && CONTINUATION.test(lines[end])) end++;
+  return end;
+}
+
 export function extractBlock(text, anchor) {
   const lines = text.split('\n');
   const start = anchor.line - 1;
@@ -494,7 +517,23 @@ export function extractBlock(text, anchor) {
   } else {
     // A bold lead or a numbered roadmap item: its own block, and the sentence after it when that
     // block is a fence.
-    body = lines.slice(start, takeStatement(lines, start)).join('\n');
+    let j = takeStatement(lines, start);
+    // A LABEL IS NOT A STATEMENT. Three plans introduce a milestone's work as a bold line with
+    // nothing after it but the numbered list of the work — `**\`M138b\` — testFlow-tests**, and then
+    // items 5-8. `takeStatement` stops at the blank line, so the entry published the label and
+    // nothing else: 28 characters, naming a repository and a milestone the reader already knew,
+    // which is `§1.2`'s dead pointer wearing an entry's clothes.
+    //
+    // So a *single-line* bold lead reaches forward to the list it introduces, and only then. The
+    // narrowness is the point: a lead with any prose of its own has already said something and is
+    // left alone, and the heading branch above deliberately does NOT do this — a heading's section
+    // is not its statement (`D670`), while a bare label's list is the only statement there is.
+    if (j === start + 1 && /^\s*\*\*/.test(lines[start])) {
+      let k = j;
+      while (k < lines.length && lines[k].trim() === '') k++;
+      if (k < lines.length && /^\s*(?:[-*]\s|\d+[.)]\s)/.test(lines[k])) j = takeList(lines, k);
+    }
+    body = lines.slice(start, j).join('\n');
   }
   return body.replace(/\s+$/, '');
 }
@@ -633,6 +672,12 @@ prose has an entry below, **lifted verbatim** from the record that defines it. N
 summary: if a block reads oddly out of context the fix is written into the record and this file is
 regenerated, so the two can never say different things.
 
+**Tracked prose means both repositories.** [\`tflw-tests\`](https://github.com/deepak-tuteja/tflw-tests)
+is tflw's dogfood target — a deliberately realistic API and the \`.tflw\` suites that exercise it —
+and it cites the same notation, out of the same records, to the same readers. Its citations are
+indexed here too; a provenance line naming \`tflw-tests/VULNS.md\` is a file in that repository, not
+this one.
+
 ## The notation
 
 | spelling | means |
@@ -751,8 +796,63 @@ function readTracked(root) {
  * an identifier with no anchor is a finding about the records, and the caller decides whether that
  * is a build failure or a line in a report.
  */
-export function build(records, tracked) {
-  const cited = collectCitations(tracked);
+/** Where the sibling's citation pin lives. Tracked, so tier 1 can read it on a CI runner. */
+export const SIBLING_PIN = join('scripts', 'sibling-citations.json');
+
+/**
+ * The dogfood target's citations, pinned (`D709`, `D710`).
+ *
+ * `testFlow-tests` cites this repository's notation in prose its own readers meet, and until this
+ * existed the index answered 91 of the 185 identifiers it uses — the rest had no entry, not because
+ * the records lack them but because nothing here had asked. `D675`'s conformance is evaluated over
+ * both repositories' prose or it is evaluated over an arbitrary half.
+ *
+ * Read rather than fetched: the pin is tracked, so the gate that compares it runs everywhere. It is
+ * refreshed by `scripts/refresh-sibling-citations.mjs` from a ref, and checked against the sibling's
+ * real prose by the sibling's own `verify:citation-pin`, in the only job that has both trees.
+ *
+ * NOT OPTIONAL. A missing pin is a broken tree, not a smaller question: the index would silently
+ * drop 94 entries and `--check` would then call them orphans, which reads as *delete these* and is
+ * the opposite of what happened.
+ */
+export function readSiblingPin(root) {
+  const path = join(root, SIBLING_PIN);
+  let pin;
+  try {
+    pin = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    throw new Error(
+      `cannot read ${SIBLING_PIN}: ${String(e.message).split('\n')[0]}\n` +
+      `  The index publishes what BOTH repositories' prose asks for (D709). Without this file it\n` +
+      `  would drop the sibling's 94 identifiers and then report them as orphans on the next check.\n` +
+      `  Re-pin with \`node scripts/refresh-sibling-citations.mjs --ref main\`.`,
+    );
+  }
+  if (!pin?.repo || !pin.citations) throw new Error(`${SIBLING_PIN} is missing \`repo\` or \`citations\` — re-pin it rather than hand-editing.`);
+  return pin;
+}
+
+/**
+ * Folds the pin into a citation map. Sibling files are named with the sibling's repo so the
+ * published provenance line cannot be misread as this repository's own `README.md`.
+ *
+ * An identifier the sibling cites only inside a range arrives with an empty file list and stays
+ * `viaRange` — the same "cited inside a range only" the local scan produces, rather than a
+ * provenance line pointing at no file.
+ */
+export function mergeSiblingCitations(cited, pin) {
+  const repo = basename(pin.repo);
+  for (const [id, files] of Object.entries(pin.citations)) {
+    const e = cited.get(id) ?? { sites: [], viaRange: true };
+    for (const file of files) e.sites.push({ file: `${repo}/${file}`, line: 0 });
+    if (files.length) e.viaRange = false;
+    cited.set(id, e);
+  }
+  return cited;
+}
+
+export function build(records, tracked, pin) {
+  const cited = mergeSiblingCitations(collectCitations(tracked), pin);
   const anchors = collectAnchors(records);
   const legacy = collectLegacy(records.find((r) => r.path === 'PLAN.md')?.text ?? '');
   const byPath = new Map(records.map((r) => [r.path, r.text]));
@@ -829,10 +929,11 @@ function main() {
   const checking = argv.includes('--check');
   const reporting = argv.includes('--provenance');
   const tracked = readTracked(ROOT);
+  const pin = readSiblingPin(ROOT);
   const outPath = join(ROOT, OUTPUT);
 
   const haveRecords = existsSync(join(ROOT, 'PLAN.md'));
-  const citedIds = new Set([...collectCitations(tracked).keys()]);
+  const citedIds = new Set([...mergeSiblingCitations(collectCitations(tracked), pin).keys()]);
   const noRecords = (verb) =>
     `✗ cannot ${verb}: the design records are not in this tree.\n` +
     `  They are gitignored by design (D668). Generation runs where they exist; CI verifies the\n` +
@@ -840,7 +941,7 @@ function main() {
 
   if (reporting) {
     if (!haveRecords) { console.error(noRecords(`report on ${OUTPUT}`)); return 1; }
-    const { entries, unresolved } = build(readRecords(ROOT), tracked);
+    const { entries, unresolved } = build(readRecords(ROOT), tracked, pin);
     console.log(provenance(entries));
     if (unresolved.length) console.error(`\n✗ ${unresolved.length} unresolved: ${unresolved.join(' ')}`);
     return unresolved.length ? 1 : 0;
@@ -851,7 +952,7 @@ function main() {
       console.error(noRecords(`generate ${OUTPUT}`));
       return 1;
     }
-    const { entries, unresolved } = build(readRecords(ROOT), tracked);
+    const { entries, unresolved } = build(readRecords(ROOT), tracked, pin);
     writeFileSync(outPath, render(entries), 'utf8');
     const kinds = { 'P#': 0, D: 0, M: 0 };
     for (const id of entries.keys()) kinds[id.startsWith('P#') ? 'P#' : id[0]]++;
@@ -909,7 +1010,7 @@ function main() {
       `  developer machine and by review — not by this run, which is why this line exists (D683).`);
     return 0;
   }
-  const { entries, unresolved } = build(readRecords(ROOT), tracked);
+  const { entries, unresolved } = build(readRecords(ROOT), tracked, pin);
   const want = render(entries);
   if (unresolved.length) {
     console.error(`✗ ${unresolved.length} cited identifiers have no anchor in the records: ${unresolved.join(' ')}`);

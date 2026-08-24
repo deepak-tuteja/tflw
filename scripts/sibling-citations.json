@@ -1,0 +1,586 @@
+{
+  "comment": "Every identifier testFlow-tests cites in tracked prose, and which of its files cite it, read from the ref below (D709/D710). Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:citation-pin` is what fails when this goes stale.",
+  "repo": "deepak-tuteja/tflw-tests",
+  "ref": "m152e-provenance",
+  "sha": "4445b134db1311ca7b1a398022a13fe478864fd2",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/4445b134db1311ca7b1a398022a13fe478864fd2",
+  "files": [
+    "CONTRIBUTING.md",
+    "README.md",
+    "VULNS.md",
+    "apiV2/README.md",
+    "tflw-acceptance/README.md",
+    "tflw-acceptance/perf/README.md",
+    "tflw-acceptance/perf/profile/FINDINGS.md",
+    "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+    "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
+    "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md",
+    "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+    "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+  ],
+  "citations": {
+    "D10": [
+      "tflw-acceptance/README.md"
+    ],
+    "D127": [
+      "tflw-acceptance/perf/README.md"
+    ],
+    "D17": [
+      "tflw-acceptance/README.md"
+    ],
+    "D19": [
+      "tflw-acceptance/README.md"
+    ],
+    "D206": [
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "D207": [
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "D21": [
+      "VULNS.md"
+    ],
+    "D211": [
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "D25": [
+      "tflw-acceptance/README.md"
+    ],
+    "D284": [
+      "VULNS.md"
+    ],
+    "D285": [
+      "VULNS.md"
+    ],
+    "D291": [
+      "VULNS.md"
+    ],
+    "D293": [
+      "VULNS.md"
+    ],
+    "D295": [
+      "VULNS.md",
+      "tflw-acceptance/README.md"
+    ],
+    "D299": [
+      "VULNS.md"
+    ],
+    "D305": [
+      "VULNS.md"
+    ],
+    "D307": [
+      "VULNS.md"
+    ],
+    "D31": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/README.md"
+    ],
+    "D311": [
+      "VULNS.md"
+    ],
+    "D315": [
+      "VULNS.md"
+    ],
+    "D317": [
+      "VULNS.md"
+    ],
+    "D319": [
+      "VULNS.md"
+    ],
+    "D32": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md"
+    ],
+    "D324": [
+      "VULNS.md"
+    ],
+    "D325": [
+      "VULNS.md"
+    ],
+    "D327": [
+      "VULNS.md"
+    ],
+    "D33a": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "D33c": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md"
+    ],
+    "D33d": [
+      "tflw-acceptance/README.md"
+    ],
+    "D33e": [
+      "tflw-acceptance/perf/profile/FINDINGS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md"
+    ],
+    "D34": [
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md"
+    ],
+    "D35": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md"
+    ],
+    "D356": [
+      "VULNS.md"
+    ],
+    "D36": [],
+    "D363": [
+      "VULNS.md"
+    ],
+    "D37": [
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md"
+    ],
+    "D377": [
+      "VULNS.md"
+    ],
+    "D379": [
+      "VULNS.md"
+    ],
+    "D38": [
+      "tflw-acceptance/README.md"
+    ],
+    "D380": [
+      "VULNS.md"
+    ],
+    "D389": [
+      "VULNS.md"
+    ],
+    "D39": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md"
+    ],
+    "D395": [
+      "VULNS.md"
+    ],
+    "D396": [
+      "VULNS.md"
+    ],
+    "D40": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "D41": [
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "D42": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "D43": [
+      "tflw-acceptance/README.md"
+    ],
+    "D433": [
+      "VULNS.md"
+    ],
+    "D434": [
+      "VULNS.md"
+    ],
+    "D437": [
+      "VULNS.md"
+    ],
+    "D438": [
+      "VULNS.md"
+    ],
+    "D44": [
+      "tflw-acceptance/README.md"
+    ],
+    "D441": [
+      "VULNS.md"
+    ],
+    "D442": [
+      "VULNS.md"
+    ],
+    "D445": [
+      "VULNS.md"
+    ],
+    "D45": [
+      "tflw-acceptance/README.md"
+    ],
+    "D454": [
+      "VULNS.md"
+    ],
+    "D455": [
+      "VULNS.md"
+    ],
+    "D457": [
+      "VULNS.md"
+    ],
+    "D46": [
+      "tflw-acceptance/README.md"
+    ],
+    "D465": [
+      "VULNS.md"
+    ],
+    "D47": [
+      "tflw-acceptance/README.md"
+    ],
+    "D48": [],
+    "D480": [
+      "VULNS.md"
+    ],
+    "D482": [
+      "VULNS.md"
+    ],
+    "D483": [
+      "VULNS.md"
+    ],
+    "D485": [
+      "VULNS.md"
+    ],
+    "D486": [
+      "VULNS.md"
+    ],
+    "D489": [
+      "VULNS.md"
+    ],
+    "D49": [
+      "tflw-acceptance/README.md"
+    ],
+    "D493": [
+      "VULNS.md"
+    ],
+    "D50": [],
+    "D51": [
+      "tflw-acceptance/README.md"
+    ],
+    "D52": [
+      "tflw-acceptance/README.md"
+    ],
+    "D53": [
+      "tflw-acceptance/README.md"
+    ],
+    "D54": [],
+    "D55": [
+      "tflw-acceptance/README.md"
+    ],
+    "D56": [
+      "tflw-acceptance/README.md"
+    ],
+    "D57": [
+      "tflw-acceptance/README.md"
+    ],
+    "D58": [
+      "tflw-acceptance/README.md"
+    ],
+    "D59": [
+      "tflw-acceptance/README.md"
+    ],
+    "D60": [
+      "tflw-acceptance/README.md"
+    ],
+    "D61": [],
+    "D62": [
+      "tflw-acceptance/README.md"
+    ],
+    "D63": [],
+    "D64": [
+      "tflw-acceptance/README.md"
+    ],
+    "D65": [],
+    "D66": [
+      "tflw-acceptance/README.md"
+    ],
+    "D67": [
+      "tflw-acceptance/README.md"
+    ],
+    "D68": [],
+    "D69": [],
+    "D70": [],
+    "D71": [],
+    "D72": [
+      "tflw-acceptance/README.md"
+    ],
+    "D73": [
+      "tflw-acceptance/README.md"
+    ],
+    "D74": [
+      "tflw-acceptance/README.md"
+    ],
+    "D75": [
+      "tflw-acceptance/README.md"
+    ],
+    "D76": [
+      "tflw-acceptance/README.md"
+    ],
+    "D77": [
+      "tflw-acceptance/README.md"
+    ],
+    "D78": [
+      "tflw-acceptance/README.md"
+    ],
+    "D79": [
+      "tflw-acceptance/README.md"
+    ],
+    "D80": [
+      "tflw-acceptance/README.md"
+    ],
+    "D81": [
+      "tflw-acceptance/README.md"
+    ],
+    "D82": [
+      "tflw-acceptance/README.md"
+    ],
+    "D83": [],
+    "D84": [
+      "tflw-acceptance/README.md"
+    ],
+    "D85": [
+      "tflw-acceptance/README.md"
+    ],
+    "D88": [
+      "tflw-acceptance/README.md"
+    ],
+    "M115": [
+      "CONTRIBUTING.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "M118": [
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "M119": [
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "M121": [
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "M128": [
+      "CONTRIBUTING.md"
+    ],
+    "M128a": [
+      "CONTRIBUTING.md",
+      "README.md",
+      "VULNS.md"
+    ],
+    "M128b": [
+      "VULNS.md"
+    ],
+    "M128c": [
+      "VULNS.md",
+      "tflw-acceptance/README.md"
+    ],
+    "M130": [
+      "VULNS.md"
+    ],
+    "M130a": [
+      "VULNS.md"
+    ],
+    "M130b": [
+      "VULNS.md"
+    ],
+    "M130c": [
+      "VULNS.md"
+    ],
+    "M132": [
+      "CONTRIBUTING.md"
+    ],
+    "M132b": [
+      "VULNS.md"
+    ],
+    "M134b": [
+      "VULNS.md"
+    ],
+    "M134c": [
+      "VULNS.md"
+    ],
+    "M135c": [
+      "VULNS.md"
+    ],
+    "M136a": [
+      "VULNS.md"
+    ],
+    "M136c": [
+      "VULNS.md"
+    ],
+    "M137b": [
+      "VULNS.md"
+    ],
+    "M137c1": [
+      "VULNS.md"
+    ],
+    "M137c2": [
+      "VULNS.md"
+    ],
+    "M137e": [
+      "VULNS.md"
+    ],
+    "M137f": [
+      "VULNS.md"
+    ],
+    "M137g": [
+      "VULNS.md"
+    ],
+    "M138b": [
+      "CONTRIBUTING.md"
+    ],
+    "M139": [
+      "VULNS.md"
+    ],
+    "M141": [
+      "CONTRIBUTING.md"
+    ],
+    "M143a": [
+      "CONTRIBUTING.md"
+    ],
+    "M143c": [
+      "CONTRIBUTING.md"
+    ],
+    "M22": [
+      "CONTRIBUTING.md"
+    ],
+    "M25": [
+      "README.md"
+    ],
+    "M29": [
+      "tflw-acceptance/README.md"
+    ],
+    "M3": [
+      "README.md"
+    ],
+    "M30": [],
+    "M31": [
+      "tflw-acceptance/README.md"
+    ],
+    "M32": [
+      "tflw-acceptance/README.md"
+    ],
+    "M33": [
+      "tflw-acceptance/README.md"
+    ],
+    "M34": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "M35": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "M35a": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md"
+    ],
+    "M35b": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "M35c": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "M35d": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "M36": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+    ],
+    "M37": [
+      "tflw-acceptance/README.md"
+    ],
+    "M38": [
+      "tflw-acceptance/README.md"
+    ],
+    "M39": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/README.md"
+    ],
+    "M3a": [
+      "README.md"
+    ],
+    "M3b": [
+      "README.md"
+    ],
+    "M40": [
+      "tflw-acceptance/README.md"
+    ],
+    "M41": [
+      "tflw-acceptance/README.md"
+    ],
+    "M42": [
+      "tflw-acceptance/README.md"
+    ],
+    "M43": [
+      "tflw-acceptance/README.md"
+    ],
+    "M44": [
+      "tflw-acceptance/README.md"
+    ],
+    "M45": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "M46": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/README.md"
+    ],
+    "M46d": [
+      "tflw-acceptance/README.md"
+    ],
+    "M47": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "M48": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/README.md"
+    ],
+    "M49": [
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/README.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+    ],
+    "M4a": [
+      "tflw-acceptance/README.md"
+    ],
+    "M58": [
+      "README.md"
+    ],
+    "M60": [
+      "tflw-acceptance/perf/README.md"
+    ],
+    "M7": [
+      "tflw-acceptance/README.md"
+    ],
+    "M89": [
+      "tflw-acceptance/README.md"
+    ],
+    "M89a": [
+      "tflw-acceptance/README.md"
+    ],
+    "M89c": [
+      "tflw-acceptance/perf/README.md"
+    ],
+    "P#25": [
+      "tflw-acceptance/README.md"
+    ],
+    "P#42": [
+      "tflw-acceptance/README.md"
+    ],
+    "P#7": [
+      "tflw-acceptance/README.md"
+    ]
+  }
+}

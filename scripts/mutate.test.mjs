@@ -18,6 +18,7 @@ import {
   M98_PLAN,
   MUTATIONS,
   ROOT_SUITE,
+  SHARD_COUNT,
   UNRECONSTRUCTED,
   classifySuiteFailure,
   costProblem,
@@ -500,7 +501,11 @@ test('shards are balanced by measured suite time, not by mutation count', () => 
   // The property that matters is that the split follows the cost. `@tflw/lang`'s 49 mutations are
   // cheaper together than `tflw`'s seven, so a count-balanced split would be wrong by ~3×; the
   // shard holding the most mutations must not be the most expensive one.
-  const shards = partition(MUTATIONS, 6);
+  //
+  // `SHARD_COUNT`, NOT A LITERAL SIX (`M152e`). This probe was written at six because six was what
+  // `ci.yml` ran; the matrix has been twenty since, and nothing moved the probe with it. The
+  // difference is not cosmetic — see the ratio note below.
+  const shards = partition(MUTATIONS, SHARD_COUNT);
   const costs = shards.map(shardCost);
   const biggest = shards.indexOf(shards.reduce((a, b) => (b.length > a.length ? b : a)));
   assert.ok(costs[biggest] <= Math.max(...costs), 'the largest shard by count is also the most expensive — the deal ignored cost');
@@ -525,6 +530,16 @@ test('shards are balanced by measured suite time, not by mutation count', () => 
   // would be comfortable: at 1.7 the 1.584 split passes and the next real regression still fails.
   // If it trips again, re-measure the max against the atom-LPT floor before moving it — that
   // comparison, not the ratio, is what says whether CI is actually slower.
+  //
+  // IT TRIPPED, AND THE RE-MEASUREMENT MOVED THE SPLIT RATHER THAN THE BAR (`M152e`). Three
+  // mutations against `root:test:scripts` took the six-way ratio from 1.641 to 1.805, and the
+  // comparison the paragraph above demands says the six-way deal really is lopsided: max 59m
+  // against a per-mutation LPT floor of 45m. But six is not what CI runs. At twenty — `SHARD_COUNT`,
+  // which is now written down and held to `ci.yml` — the current packer's max is 14m against an LPT
+  // floor of 15m, so it is *at* the floor, and it gets there for 262 CPU-minutes where LPT costs
+  // 308. The bar is untouched; what changed is that the probe now measures the split that exists.
+  // The six-way number is left recorded here because it is real: if CI ever shards coarsely again,
+  // `root:test:scripts` is the chunk the packer cannot break up, and that is where to look.
   assert.ok(Math.max(...costs) / Math.min(...costs) < 1.7, `shards are lopsided: ${costs.map((c) => Math.round(c / 60) + 'm').join(', ')}`);
 });
 

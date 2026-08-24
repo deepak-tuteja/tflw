@@ -104,6 +104,13 @@ npm run verify:ledger                  # § never runs in CI, by decision
   **It is also the one gate that cannot be offloaded to the box.** `scripts/exec.mjs` syncs the
   tree without `.git/`, and this reads the tracked set through `git ls-files`, so there it fails
   with a message saying exactly that rather than a green it has not earned.
+  **The index answers both repositories' prose** (`D709`). `testFlow-tests` cites this notation in
+  documents its own readers meet, and the index used to publish 91 of the 185 identifiers it uses —
+  the rest had anchors nobody had asked for. Its half arrives through `scripts/sibling-citations.json`,
+  a tracked pin re-taken with `node scripts/refresh-sibling-citations.mjs --ref <ref>` (network, an
+  authenticated `gh`, never CI — the same asymmetry `spec-anchors.json` lives with). Nothing here
+  notices when that pin goes stale: the sibling's own `verify:provenance` does, in the only job in
+  either repository with both trees checked out, so a cross-repo change merges **tflw first**.
   Each entry's provenance line names **files, never lines** (`D686`) — so it moves when the set of
   documents citing an identifier changes, and not when a paragraph is added above one. The line
   numbers went to **`npm run docs:provenance`**, which is not published and not tracked: per entry

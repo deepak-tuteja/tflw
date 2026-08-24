@@ -50,8 +50,17 @@ export const BARE = /(?<![\w])(?:design\s+)?decisions?\s+(?:no\.\s*)?\d{1,3}[a-z
  */
 export const BARE_HASH = /(?<![\w)\]#/-])#(\d{1,3})\b/g;
 
-/** The words that mark a `#n` as belonging to somebody else's numbering. */
-const FOREIGN_HASH = /(gaps?|PRs?|issues?|API|UTS|RFC|ADR|§)\s*$/i;
+/**
+ * The words that mark a `#n` as belonging to somebody else's numbering.
+ *
+ * `steps?` and `predictions?` were added by `M152e`, when the index started publishing the blocks
+ * `testFlow-tests` cites and two of them turned out to number something that is not a decision:
+ * `ci.yml` step #21 is a position in a workflow file, and prediction #4 is one of `D494`'s scored
+ * predictions, a sequence per plan rather than per repository. Both are real occurrences — `D708`'s
+ * rule holds, an exemption that exempts nothing does not get built — and rewriting either would
+ * have made a true sentence false, which `§1.2` ranks below the dead pointer.
+ */
+const FOREIGN_HASH = /(gaps?|PRs?|issues?|steps?|predictions?|API|UTS|RFC|ADR|§)\s*$/i;
 
 /**
  * A number's namespace is established once per paragraph, and a later mention of the *same* number
