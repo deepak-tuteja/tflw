@@ -152,3 +152,20 @@ test('a citation broken BY the wrap is still a citation', () => {
   // The line below reports its own matches, so the pair is not counted twice.
   assert.equal(scan('a run honours decision\n    80 here, and decision 81 there.').length, 2);
 });
+
+test('`step #n` and `prediction #n` index somebody else\'s numbering', () => {
+  // `M152e`. Both arrived in the index at once, when it started publishing the blocks
+  // `testFlow-tests` cites: `ci.yml` step #21 is a position in a workflow file, and prediction #4 is
+  // one of `D494`'s scored predictions — a sequence per plan, not per repository. Neither is a
+  // decision, and rewriting either would have made a true sentence false.
+  assert.deepEqual(phrases('`package.json` `verify:contributing`; `ci.yml` step #21 in `acceptance-check`'), []);
+  assert.deepEqual(phrases('`M143a` shipped with prediction #4: *tflw-only, no commit*'), []);
+  assert.deepEqual(phrases('steps #4 and #5 of the job'), []);
+});
+
+test('a bare `#n` with no owning word in front of it is still a founding-list citation', () => {
+  // The control for the pair above, and the reason the exemption is keyed on the preceding word
+  // rather than on the shape. `#40` on its own is `PLAN.md`'s item 40 and nothing says so — the
+  // finding that sent `P#42`'s own text back to the record for repair.
+  assert.deepEqual(phrases('pulled into the published draft (amends #40\'s M3 attachment)'), ['#40']);
+});

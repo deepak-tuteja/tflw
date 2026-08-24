@@ -11,6 +11,12 @@ prose has an entry below, **lifted verbatim** from the record that defines it. N
 summary: if a block reads oddly out of context the fix is written into the record and this file is
 regenerated, so the two can never say different things.
 
+**Tracked prose means both repositories.** [`tflw-tests`](https://github.com/deepak-tuteja/tflw-tests)
+is tflw's dogfood target — a deliberately realistic API and the `.tflw` suites that exercise it —
+and it cites the same notation, out of the same records, to the same readers. Its citations are
+indexed here too; a provenance line naming `tflw-tests/VULNS.md` is a file in that repository, not
+this one.
+
 ## The notation
 
 | spelling | means |
@@ -133,7 +139,7 @@ here.
 
 ### P#7
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN.md`</sub>
 
 7. **API vocabulary** — full request spec (method, path relative to per-env base URL, headers,
    query, JSON body, auth presets); response assertions on status, headers, and path-addressed
@@ -301,7 +307,7 @@ here.
 
 ### P#25
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN.md`</sub>
 
 25. **Value expressions — arithmetic + keyword date math, hard fence.** Closed grammar: `+ - * /`
     on numbers, string interpolation, and `today` / `now` with `today + 3 days`-style offsets
@@ -473,6 +479,19 @@ here.
     keeping P#35 as-is (API work would get zero external feedback before the grammar freezes),
     Hurl/newman as the comparison target (benchmarks another tool's philosophy, not value over
     the default).
+
+### P#42
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN.md`</sub>
+
+42. **API-half `session` blocks pulled into the published draft (amends `PLAN.md`'s item 40, the
+    M3 attachment).**
+    A public API tool lives on auth ergonomics; without sessions every published example repeats
+    the login boilerplate the DSL exists to kill. Ship the pure-API half now: a `session` block
+    executes once per run, its captured headers auto-apply to the api steps of tests running
+    `as <session>`. The browser/storage-state half stays M3. **Rejected:** document-the-hook-
+    pattern (flagship examples would look worse than a Postman collection), grammar-reserved-
+    but-dead keyword.
 
 ### P#43
 
@@ -2344,7 +2363,7 @@ resolution is reported.**
 
 ### D10
 
-<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Sessions & identity (D10) — no bridge**
 
@@ -2449,7 +2468,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D17
 
-<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Workload model (D17) — both, arrival-rate taught as default**
 
@@ -2479,7 +2498,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D19
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Generator architecture (D19)**
 
@@ -2507,7 +2526,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D21
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Safety / authorization (D21) — layered default-deny**
 
@@ -2564,6 +2583,21 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
   inline-SVG charts, per-second-buckets + HDR histogram, live console + partial-on-SIGINT,
   thresholds+inconclusive gating).
 
+### D25
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D25 — Version-line revision (2026-07-28, amends D3 and the version map above).** The
+  browser-era M7 verdict (side-by-side vs. raw Playwright, `tflw migrate`, 266/266 real acceptance
+  tests) landed and passed, but the user does not intend to publish until performance and pen-test
+  are *also* in and dogfooded against the real app — so `1.0.0` can't sit right after M7 the way the
+  original D3 had it. Full detail + rationale in `PLAN.md` decision 112 (the canonical record — D3/
+  the version map here were edited in place to match rather than duplicating the reasoning twice).
+  One new terminal milestone — an integrated full-scope acceptance pass across API + browser + perf
+  + pentest together — is the actual `1.0.0` gate, not yet named/scheduled since perf/pentest
+  haven't started. **Rejected:** the original `1.1.0`/`1.2.0` labels for perf/pentest (stranded
+  `1.0.0` mid-roadmap instead of at the finish line, same rejection PLAN.md decision 112 records).
+
 ### D26
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
@@ -2596,6 +2630,612 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
   milestone already builds, and landing it early lets that same milestone's docs-site examples
   point at real scaffold output instead of hand-written prose.
 
+### D31
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D31 — Perf: acceptance bar (2026-07-30).** Mirrors M7's actual method (not a conversion tool —
+  `tflw migrate` is unrelated, it rewrites deprecated *tflw* syntax, not raw Playwright/k6 scripts):
+  the same load scenario against the contended endpoint is hand-written in both tflw and k6,
+  measured numbers compared within tolerance, and the two novel diagnostics (D17's back-off
+  warning, D19's self-saturation invalidation) are demonstrated firing — things k6 doesn't surface.
+  No k6-to-tflw conversion tooling is in scope; nothing in this plan asked for one.
+
+### D32
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D32 — Perf: load-engine hardening scoped as M35, a fast-follow to M34, not a reopening of it
+  (2026-07-31).** M34 shipped and passed its own diagnostics/thresholds bar, but was honest that
+  D31's numeric half did not hold: tflw trailed k6 by ~3x on the contended checkout scenario, root-
+  caused (not just observed) to a ~2x tflw-vs-raw-fetch per-POST-request overhead that compounds
+  under real contention. Rather than reopen M34 (already committed, its own write-up already states
+  the mixed verdict accurately), the fix is a new milestone, M35, scoped below — same reasoning as
+  M4a deferring worker hardening pending real measurement: the measurement now exists, so the work
+  is justified, but it's additive to the perf arc, not a correction of M34's own scope.
+
+### D33a
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D33a — acceptance tolerance: within ~10% of k6 (revised 2026-07-31 — user tightened from an
+  initial ~25-30% recommendation).** Not 1:1 parity — tflw's interpreted single-process Node
+  generator vs. k6's compiled Go one still makes exact parity unrealistic, and D31 itself says
+  "agree within tolerance," not "match exactly" — but 10% is a materially tighter bar than the
+  original proposal. Closes M34's ~3x gap to something small and explainable rather than zero.
+  Practical consequence: D33e's ≥5%-of-overhead cutoff for secondary hot spots is now load-bearing,
+  not just opportunistic — a single fix (the redaction hypothesis alone) closing a ~3x gap to
+  within 10% is optimistic, so M35b likely needs to actually address multiple hot spots the
+  flamegraph surfaces, not just the dominant one, to hit this bar.
+  **Amended 2026-08-01 (M40, D55's fallback):** the ~10% bar remains as-is for throughput and for
+  p95 on uncontended/light-contention targets (both were met or within noise on every clean
+  measurement this arc produced — M38's throughput, M39's rung D). A separate, explicit tolerance
+  now applies to **p95 specifically on a real-row-lock-contended target: ~50%** — after M36 (D40,
+  D42) and M40 systematically refuted every concrete client-side mechanism candidate (connection
+  ceiling, VU-dispatch overhead, per-iteration bookkeeping compounding), the remaining ~46-49% p95
+  gap under contention (M38: 46%, M39: 49.2%) is treated as the honest, measured baseline for this
+  specific scenario shape — an inherent interpreted-Node-vs-compiled-Go scheduling difference under
+  real lock contention, not a fixable bug this arc found evidence for. See §2.11/`acceptance/
+  README.md`'s "M40" section for the full elimination trail.
+  **Amended again 2026-08-01 (M44, D73) — the ~50% figure is superseded; it was measuring the wrong
+  thing.** M43 (§2.14) found that every combined-duration p95 this arc reported since M38 (46%,
+  49.2%, 48.1%, and M42's pinned-Client 32.0%) summed the scenario's uncontended `GET /products`
+  lookup together with the contended `POST /orders` checkout into one number, while k6's own
+  `checkout-burst.js` tags and thresholds the checkout leg alone. With M43's per-endpoint reporter
+  fix shipped and `checkout-burst.tflw` retagged (`as "checkout"` / `for "checkout"`), M44 re-ran the
+  scenario checkout-scoped and found the true contended-p95 gap is **~17.5%** (80.3ms vs. k6's
+  68.4ms, 3 runs each side) — not 46-50%. **The contended-p95 tolerance is now ~20%**, keeping the
+  same headroom-above-measured design intent as the original ~10% throughput bar, rather than the
+  ~50% figure that was calibrated against an inflated metric. Throughput's ~10% tolerance is
+  unaffected (9.5% measured checkout-scoped, unchanged in kind from every prior clean throughput
+  reading). See §2.15/`acceptance/README.md`'s "M44" section for the full re-measurement and the old
+  metric's own inflation shown side-by-side (combined p95 103.3ms avg vs. checkout-scoped 80.3ms avg,
+  same three runs). D74 (§2.16, M45's pinned-connection bar) is anchored to this 17.5%/80.3ms figure
+  going forward, not M42's superseded number.
+  **Confirmed for good 2026-08-01 (M47, §2.18) — the arc's final closing measurement.** Re-running
+  the full ladder fresh (checkout-scoped, 3 runs each side, post-M45-pinning): rung D
+  (dogfood-post-uncontended) landed at **-2.6%** (tflw *ahead* of k6 on p95 this round — a sign-flip
+  from M46's own +2.90%, both readings noise around a closed gap); rung E (checkout-burst) landed at
+  **+6.85%** (tflw behind, same accepted-ceiling story as M46's 5.86%, still comfortably inside the
+  ~20% bar). Throughput leads k6 on both rungs. **No further re-scoping — the ~20% contended-p95 /
+  ~10% throughput tolerance stands as this arc's final acceptance bar**, met with large headroom on
+  real, final numbers. See `acceptance/README.md`'s "M47" section for the full three-way (tflw/k6/
+  Artillery) ladder and the pentest-arc (D33d/D52/D56/D64) unblock decision made alongside it.
+
+### D33c
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D33c — investigation time-box: one more hypothesis pass, then ship + document.** If M35a's
+  flamegraph refutes or only partially explains the gap via the redaction hypothesis, chase the
+  next-highest hot function it actually shows, fix that, then close the milestone — ship whatever
+  improvement was found and document the residual gap honestly (same standard M34 already set),
+  rather than an open-ended chase for a fully-explained 0% gap.
+
+### D33d
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D33d — arc ordering: M35 finishes before the pentest arc starts.** Keeps the established
+  one-arc-at-a-time discipline (D3/`PLAN.md` decision 112) instead of splitting attention across
+  two open arcs. M35 is small and already bounded (three sub-milestones), so this is a short delay
+  before pentest begins, and it leaves the perf arc in a clean, fully-passing state first.
+
+### D33e
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D33e — secondary hot spots: fix anything ≥ ~5% of measured overhead.** If M35a's flamegraph
+  shows other non-trivial costs beyond the primary redaction hypothesis (candidates already flagged
+  below: `setHeader`/`buildHeaderMap` per-header allocation, `mkStep`'s spread-object allocation,
+  `cookieJar.clone()` per iteration), M35b fixes anything crossing that cutoff, not just the single
+  dominant cause and not everything down to noise — the same data-driven boundary D33c's time-box
+  already established for the investigation itself.
+
+### D34
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D34 — resolved: invest one more bounded pass (M35b), via direct instrumentation rather than
+  another synthetic rebuild.** M35a-2's deeper pass exhausted the checkable-hypothesis list (D32's
+  original redaction candidate, every D33e secondary hot spot, and three new ones that pass added —
+  chain depth, `sendRequest` shape, full trace/`StepResult` allocation) without confirming a fixable
+  mechanism, and found the gap reproduces at 1 VU with zero concurrency (a ~15x per-iteration
+  latency gap, 78.9% vs 13.8% idle) — ruling out D33c's original "concurrency/scheduling-density"
+  framing too. Eight separate synthetic reimplementations of tflw's request pipeline all failed to
+  reproduce the gap, which is itself informative: the cause lives in the real interpreter code, not
+  in anything isolable and rebuildable standalone. Resolved via `/grill-me` on 2026-07-31 (D35-D38
+  below) — invest in one more bounded, direct-instrumentation pass (M35b) before falling back to
+  re-scoping D33a's tolerance.
+
+### D35
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D35 — M35b time-box: one tick-log pass + one instrumentation pass, then ship + document
+  regardless of outcome.** Same bounded-effort convention D33c already established for M35a — one
+  `node --prof`/`--prof-process` tick-log pass first (free, no source changes), one
+  `performance.now()`-checkpoint instrumentation pass of the real call chain if the tick-log doesn't
+  resolve it, then stop and write up whatever was found either way. Not open-ended, and not a fixed
+  hypothesis count — a fixed *tool budget* (two distinct diagnostic passes), since the point of this
+  round is to escalate to better tools, not to keep guessing candidates the way M35a-2 did.
+
+### D36
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D36 — M35b target: the isolated echo-server harness only, not the real acceptance target.**
+  Keeps this measurement directly comparable to M35a/M35a-2's own numbers (`acceptance/perf/
+  profile/`) and free of the real target's own DB row-lock contention, which would confound
+  fine-grained timing checkpoints. Validating that whatever's found also explains the real ~3x gap
+  is M35c's (re-measure's) job, not this one's.
+
+### D37
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D37 — if M35b confirms a fixable mechanism: stop, write up, check in before any fix code.**
+  This is an investigative milestone, not a fix milestone. A fix would touch real interpreter
+  internals on a hot path — deserves its own scoped go-ahead once the mechanism is actually known,
+  the same pattern M35a already used (stopped for direction rather than auto-proceeding into a fix).
+
+### D38
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D38 — if M35b is still inconclusive after its time-box: re-scope D33a's tolerance, not another
+  investigation round.** Avoids indefinite sunk-cost investigation on top of what M35a/M35a-2/M35b
+  will have already spent. If this triggers, the next conversation is "what tolerance is realistic
+  given a genuinely unexplained ~3x gap," not "what else can we try."
+
+### D39
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D39 — reopening.** M35 (a-d) is treated as complete and its own write-ups stand unchanged;
+  M36 is a new, separately-scoped milestone continuing the same investigation thread, not a
+  reopening of M35 itself. The pentest arc (D33d) is further delayed until M36 also reaches a
+  stop condition (fix shipped and re-measured, or refuted and reported) — same one-arc-at-a-time
+  discipline (D3), just with perf's own end pushed later than D33d originally assumed.
+
+### D40
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D40 — hypothesis.** Node's global `fetch()` (backed by undici) may cap concurrent connections
+  per origin below tflw's configured VU count — so tflw's 60 "VUs" may not actually hold 60
+  simultaneous in-flight requests against the server the way k6's Go-native client does. Grounded
+  in the shape of M35d's own evidence: VUs measured 84-86% blocked/back-off time on a target whose
+  contention is a real, serialized Postgres row lock, and the gap to k6 is a roughly stable
+  multiplier (not diffuse) across both M34's and M35d's measurements — exactly what an
+  under-utilized client-side concurrency budget would produce, independent of the per-call `fetch()`
+  cost M35b/M35c already fixed. Distinct in kind from M35b's finding: that was a process-wide
+  per-call CPU/latency tax; this is a request-dispatch/concurrency-management question — how many
+  requests tflw actually keeps in flight at once, not how expensive each one is.
+
+### D41
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D41 — investigation plan, one bounded pass (same convention as D33c/D35/D38).** Instrument the
+  actual concurrent in-flight request / open-socket count during a run — a counter around dispatch
+  in `packages/runtime/src/http.ts`, or hooking undici's `diagnostics_channel` events — and compare
+  it against the configured VU count, on two targets: the isolated echo-server harness
+  (`acceptance/perf/profile/`, control, already re-baselined post-M35c at 4,470 iter/s) and the
+  real `checkout-burst.tflw` acceptance target, with k6's equivalent concurrency as the reference
+  point on the same targets. One measurement pass: confirm or refute the ceiling exists and, if it
+  does, whether it's close enough to the VU count to explain the ~3x gap's *magnitude* (not just
+  its existence) — then stop and report either way, before writing any fix code (mirrors D37's
+  "stop and check in" pattern from M35b).
+
+### D42
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D42 — fallback if refuted.** If in-flight concurrency tracks the configured VU count closely
+  (no meaningful ceiling), the next real candidate is scheduling/dispatch overhead inside the
+  `RampUsersWorkload` spawn model itself — specifically, how much wall-clock time elapses inside
+  one VU's own loop between a request resolving and the next one being issued, which under a
+  contended endpoint could look identical to a concurrency ceiling from the outside (fewer
+  effective requests reaching the server per second) without actually being a connection-pool
+  limit. That would be a second, separately-scoped pass, not automatic. If that pass is also
+  inconclusive, D38's original fallback applies: re-scope D33a's tolerance rather than open a third
+  investigation round.
+
+### D43
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D43 — the real root cause, found 2026-08-01.** While running D42's own pass against the real
+target (above), an instrumentation artifact (impossible negative "dispatch gap" values, real-target
+only) led to discovering a genuine bug: `runLoadCore` establishes each scenario's session **once**
+(`baseSessionHeaders`, `interpreter.ts:430-438`) before the VU loop starts, and every iteration
+clones that same frozen snapshot (`interpreter.ts:453`). `refreshSessions` (`interpreter.ts:1105-1132`)
+correctly re-authenticates on a 401 and updates the shared `sessionCache` — but only ever writes
+the fresh headers into *that one iteration's own* `ctx.sessionHeaders`, never back into
+`baseSessionHeaders`. With `testFlow-tests`' dev-environment `JWT_ACCESS_TTL=5s` (already known and
+documented — `acceptance/README.md`'s "session resilience" section, `checkout-burst.js`'s own
+comment header — but never measured for cost), this means: once the shared token first expires
+(~5s into `checkout-burst.tflw`'s 20s ramp), **every single subsequent iteration** re-authenticates
+— not periodically, continuously — because the stale snapshot is never updated. Measured across
+three real-target runs: 40-42% of all iterations pay for a full extra `POST /auth/login` round
+trip; from the 5s mark to the end of the 20s scenario (75% of its own window), the reauth rate is
+100%. **Causally confirmed via an environment-only A/B** (no source touched): temporarily raising
+`testFlow-tests/.env`'s `JWT_ACCESS_TTL` from `5s` to `10m` (so the bug structurally can't fire),
+then restoring it — throughput went from ~172-219/s to **528.4/s** (vs. k6's 620/s, ~1.17x — down
+from ~3.2-3.4x), and the p95 threshold, which had failed on every single prior run in this entire
+arc (M34, M35d, every M36 re-check), **passed outright** (105ms vs. the 250ms bar). Full write-up:
+`acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md`. **This — not D40's concurrency ceiling
+(refuted) and not D42's dispatch overhead (refuted) — is the real, dominant, fixable driver of the
+whole M34→M35→M36 gap.** No fix code written; all temporary instrumentation reverted (confirmed
+via a clean debug-marker grep + full 372/372 runtime + 106/106 CLI test pass), `testFlow-tests/.env`
+restored to `JWT_ACCESS_TTL=5s`. Per this arc's own established stop-and-check-in convention
+(D37/M35b→M35c): **stopping here, awaiting explicit direction before scoping or writing the actual
+fix** (`runLoadCore`'s session setup needs to stay in sync with `sessionCache` instead of freezing a
+one-time snapshot — exact approach not yet decided).
+
+### D44
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D44 — fix strategy: re-derive session state from `sessionCache` every iteration, not a frozen
+  snapshot.** `runLoadCore`'s scenario setup keeps its existing upfront `sessionCache.ensure(name,
+  ..., true)` calls (`interpreter.ts:432-439`) for their fail-fast value (a broken `session` block
+  still errors the whole run immediately, before any VU spawns, rather than 60 VUs independently
+  discovering it) — but `runIteration` (`interpreter.ts:441-497`) stops cloning the frozen
+  `baseSessionHeaders`/`baseCookieJar` snapshot (`interpreter.ts:453/455`) and instead calls
+  `sessionCache.ensure(name, decl, config, tc, false)` fresh, per session, at the top of every
+  iteration. On a cache hit (the overwhelmingly common case — no expiry in play) this is a `Map.get`
+  plus awaiting an already-resolved promise: negligible, and `load.test.ts`'s existing "a session
+  opted into via `as <name>` establishes once before the loop, not once per iteration" test should
+  keep passing unchanged (a healthy session never triggers a second `runSession()` call). The
+  win: reads always come from the one place `refreshSessions` already correctly updates
+  (`sessionCache`), so a reactive 401-triggered refresh from *any* VU is immediately visible to
+  *every* VU's next iteration — not just the one VU that happened to hit the 401 — and `oauth2`
+  sessions get `ensure()`'s existing proactive TTL re-check for free, which the current snapshot
+  design never benefited from either. Rejected alternative: patching `baseSessionHeaders` in place
+  only when a reactive refresh fires — achieves the same end state but needs new plumbing from deep
+  inside `execSteps`/`refreshSessions` back up to `runIteration`, and (being purely reactive) never
+  helps `oauth2`'s proactive path. Chosen for being simpler *and* more complete, not just simpler.
+
+### D45
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D45 — also close the relogin-storm race, in the same pass.** `refreshSessions`
+  (`interpreter.ts:1105-1132`) currently calls `sessionCache.invalidate(name)` unconditionally
+  before re-establishing — if several VUs hit 401 on the same stale token near-simultaneously (the
+  expiry-boundary moment this whole bug was found from), each one discards whatever the *previous*
+  one just installed and pays for its own redundant `POST /auth/login`, even though the first
+  refresh already made the cache current. Bounded and self-limiting (at most one extra login per VU
+  genuinely in flight at that exact instant, not proportional to iteration count) — but the user
+  chose to close it now rather than leave it, since D44 already touches this exact code path.
+  Design: `SessionCache` gains a cheap synchronous accessor exposing the *current* cached promise
+  for a name as an opaque handle (e.g. `currentRef(name): SessionRef | undefined`, `SessionRef` a
+  type alias for `Promise<SessionOutcome>` — opaque to callers, compared only by `===` identity,
+  same guarded-by-identity pattern `ensure()`'s own TTL-eviction already uses at
+  `interpreter.ts:926-931`), plus a guarded re-establish method (e.g. `reestablish(name, staleRef,
+  decl, config, tc)`) that only actually invalidates + re-logs-in if the cache's live entry is still
+  exactly `staleRef` — otherwise it's already been refreshed by someone else, so it just returns the
+  current (already-fresh) `ensure()` result with no redundant network call. `EvalCtx` (`eval.ts`)
+  gains a new optional field, `readonly sessionRefs?: ReadonlyMap<string, SessionRef>`, populated
+  wherever `sessionHeaders`/`cookieJar` are captured from `sessionCache.ensure()` — for this fix,
+  scoped to `runLoadCore`'s per-iteration read only (D44's own new call site); the regular `tflw
+  run` ctx-building path is left populating nothing (`sessionRefs` stays `undefined` there), so
+  `refreshSessions` degrades to today's unconditional-invalidate behavior for that path — zero
+  behavior change, zero regression risk outside the load engine, where the 60-VU-scale storm
+  scenario doesn't realistically arise the same way. `refreshSessions` itself calls
+  `sessionCache.reestablish(name, ctx.sessionRefs?.get(name), ...)` instead of
+  `invalidate()`+`ensure()` directly.
+
+### D46
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D46 — milestone scope: fix + tests only; re-measurement is a follow-up milestone (M38).**
+  Mirrors this arc's own M35b (root cause) → M35c (fix + unit tests) → M35d (re-measure) precedent.
+  M37 stops once the fix is implemented, verified by unit tests, and the full suite is green — it
+  does **not** re-run `checkout-burst.tflw` against the real testFlow-tests target or update
+  `acceptance/README.md`'s verdict. That's M38, scoped separately once M37 lands.
+
+### D47
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D47 — pursue the residual gap now, not defer to the pentest arc.** Both of
+  `checkout-burst.tflw`'s own thresholds already pass (p95 < 250ms, error rate < 1%) — the
+  remaining ~11.3%/~46% gap is only visible against D33a's stricter tflw-vs-k6 comparison, not a
+  functional problem with the scenario. Pursued anyway, at the user's explicit direction, as one
+  more bounded pass before accepting it as a permanent open item.
+
+### D48
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D48 — targets: the two existing local harnesses only, no new target.** Considered adding a
+  self-hosted `httpbin`-style container for a dialable-latency dimension neither existing harness
+  has; rejected — `echo-server.mjs` (zero-latency, no contention) and testFlow-tests' real dogfood
+  app (real DB contention) have both been proven reliable and reproducible across M35a-M38, and a
+  third target would duplicate most of what they already cover. Public shared instances
+  (httpbin.org, reqres.in, etc.) are out of consideration entirely — repeated automated load-test
+  traffic against a shared public service the user doesn't control is exactly the kind of usage
+  those services ask you not to send, independent of whether it would even give reproducible
+  numbers (shared rate limits, noisy neighbors, no control over their infra).
+
+### D49
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D49 — method: rebuild M34's isolation ladder with k6 counterparts at every rung, not just
+  repeat checkout-burst for confidence.** M34's own root-cause table (`acceptance/README.md`)
+  isolated tflw's per-request overhead by escalating workload shape (GET-only → POST-uncontended →
+  POST-contended) but only ever compared tflw against a raw `fetch` script at each rung — never k6,
+  which is the actual comparison D33a's tolerance is about. Rebuilding the same ladder with k6
+  scripts at each rung answers a question M34 never could: does the tflw-vs-k6 gap already exist on
+  a plain GET, only appear once a `POST` body enters the picture, or only widen once real
+  contention (the Postgres row lock) is added? Concretely, five rungs (echo-server has no
+  contention mechanism, so its ladder is two rungs, not three):
+  - **echo-server** (zero-latency, no shared state): (a) GET-only, (b) POST with body — both
+    already have tflw-side scripts (`bench.tflw`'s GET/POST pair); new k6 counterparts needed,
+    none exist yet for this harness.
+  - **dogfood** (real Postgres): (c) GET-only (session auth), (d) POST uncontended
+    (`POST /cart/items`, static body, no shared row), (e) POST contended (the acceptance scenario
+    itself, already built as `checkout-burst.tflw`/`checkout-burst.js`). (c) and (d) need new
+    `.tflw` scenario files (M34's own numbers for these rows came from ad-hoc runs, never saved as
+    fixtures) and new k6 scripts (none exist for anything but the full contended scenario).
+
+### D50
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D50 — sample size: 3 tflw runs + 2 k6 runs per rung**, a step up from M35d/M38's 2+1
+  baseline since this series exists specifically to separate real signal from noise across more
+  configurations (5 rungs) than any prior single-scenario re-measure. Echo-server rungs are cheap
+  (~8-20s each) so the extra runs cost little; dogfood rungs need a load-target reset
+  (`POST /admin/load/reset`) before every run, so cost is higher there but still bounded.
+
+### D51
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D51 — scope: investigation + write-up only, no fix.** Same precedent D37 already set for
+  M35b ("if M35b confirms a fixable mechanism: stop, write up, check in before any fix code") —
+  whatever the ladder finds, a fix on this hot path (`execApi`/`prepareBody`/`sendRequest` in
+  `packages/runtime/src/interpreter.ts`, the same code M34's original table already implicated but
+  never pinned to a line) gets its own scoped go-ahead once the actual mechanism is known, not an
+  auto-proceed within the same milestone.
+
+### D52
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D52 — arc ordering + stop condition.** M39 finishes before the pentest arc (v0.4.0) starts —
+  same one-arc-at-a-time discipline (D3) as every prior milestone in this thread, and M39 is
+  bounded (15 tflw runs + 10 k6 runs total across 5 rungs), so this is a short delay, not another
+  reopening of the whole perf arc. **If the ladder is inconclusive** (doesn't clearly localize
+  where the tflw-vs-k6 gap opens or widens): re-scope D33a's tolerance and close the thread, the
+  same fallback D38 already used for M35b, rather than open an M40. An inconclusive result after
+  one well-instrumented, multi-rung pass is itself informative — it would suggest the residual gap
+  is an inherent interpreted-Node-vs-compiled-Go architecture difference, not a fixable bug, and
+  the tolerance should be loosened to match reality rather than chased indefinitely.
+
+### D53
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D53 — root-cause first, fix separate (a new M41).** M39 localized *where* the gap lives (p95
+  tail, specifically under real row-lock contention) but not *why* at a code level — the
+  compounding-overhead mechanism is still a hypothesis. Explored `runLoadCore`'s VU-iteration loop
+  directly (`packages/runtime/src/interpreter.ts`) before asking: `runIteration` calls the exact
+  same `execSteps`/`execApi`/`sendRequest` chain `tflw run` uses for every ordinary test (not a
+  load-isolated code path) — so a blind fix attempt on this hot path risks regressing every
+  functional test in the suite, not just load runs. Given that blast radius, M40 stays
+  investigation-only; mirrors M35a/M35b→M35c's own precedent of stopping to check in once the
+  mechanism is known, before any fix code (D37/D51's convention, applied a third time).
+
+### D54
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D54 — method: instrument the real call chain at 1 VU vs. 60 VU on `checkout-burst`, not
+  echo-server.** Same direct `performance.now()`-checkpoint technique as M35b's decisive step
+  (temporary checkpoints added to the real `interpreter.ts`/`http.ts` source, rebuilt into
+  `dist/cli.cjs`, run for real, then reverted — never shipped as permanent code, matching M35b's own
+  convention). Echo-server has no contention mechanism at all, so it structurally cannot reproduce a
+  p95-under-contention effect — the instrumented target has to be the real dogfood endpoint.
+  Concretely: checkpoint every boundary in `runIteration`→`execSteps`→`execApi`→`sendRequest`, run
+  `checkout-burst.tflw` once at 1 VU (no contention — an intra-process baseline for tflw's own
+  bookkeeping cost) and once at the full 60-VU ramp (real contention), and compare what share of
+  each iteration's wall time is *not* spent waiting inside `sendRequest`'s `fetch()` call (i.e.
+  session-cache reads, header building, `execSteps` dispatch, trace/redact construction, VU-loop
+  continuation) between the two runs. If tflw's own bookkeeping share grows disproportionately at 60
+  VU relative to 1 VU, that's direct, real-code evidence for the compounding hypothesis — the same
+  kind of decisive, non-speculative finding M35b's own instrumentation step produced (which, notably,
+  found a *different* root cause than the candidates first suspected — direct instrumentation reveals
+  whatever's actually eating the time, not just confirms one named hypothesis going in).
+
+### D55
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D55 — stop condition: bookkeeping share meaningfully larger at 60 VU confirms the mechanism and
+  proposes M41; flat/noise-level refutes it.** If confirmed, M40 writes up the specific mechanism
+  (which boundary in the chain, and roughly how much of the tail it accounts for) and proposes a
+  separate M41 fix milestone scoped around that mechanism — not an auto-proceed within M40 itself,
+  since the fix would touch shared hot-path code and needs its own explicit go-ahead plus the full
+  regression suite (currently 374 runtime + 106 CLI tests) green before anything else builds on top
+  of it. If the bookkeeping share doesn't move (within noise), that refutes the compounding
+  hypothesis — same fallback D38/D52 already used once each: re-scope D33a's tolerance specifically
+  for contended-tail-latency scenarios (exact number to be set from what M40 actually measures, not
+  pre-committed here) and close the thread, no M41.
+
+### D56
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D56 — arc ordering: M40 (and M41, if it happens) still finish before the pentest arc (v0.4.0)
+  starts.** Third time this line gets pushed out (M36 first pushed it, M39 reaffirmed it, now M40/M41
+  again) — same one-arc-at-a-time discipline (D3) as every milestone in this thread. Justified by
+  M40 being a single bounded investigation pass (not iterative if inconclusive, per D55's stop
+  condition), and by the shared-code blast radius identified in D53: starting the pentest arc's own
+  work on top of a not-yet-understood hot-path performance characteristic would make any future fix
+  here harder to land cleanly against a moving codebase.
+
+### D57
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D57 — one more bounded root-cause pass, aimed at the HTTP-client/protocol layer, not another
+  architecture redesign.** Given real OS-level parallelism (just tested) showed zero improvement, a
+  parallel-VU-execution-model redesign (worker_threads or multi-process VU sharding) would almost
+  certainly not close the gap either — that whole design axis is now off the table. What's left after
+  eliminating five separate client-side mechanisms across M36/M40/this session is something at the
+  level of how Node's `fetch()`/undici issues and completes an individual HTTP request differently
+  from Go's `net/http` client — mirrors this arc's own M35a→b→c and M39→M40 precedent (confirm a
+  specific mechanism before committing to any fix) rather than jumping straight to an uncertain fix.
+
+### D58
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D58 — method: adapt `raw-fetch-bench.mjs` (M35a) to the real contended target, compare its p95
+  directly against k6.** `raw-fetch-bench.mjs` already exists as a bare Node `fetch()`-loop script
+  with zero tflw interpreter/session/redaction machinery, built for M35a's CPU-profiling comparison
+  against echo-server. M41 adapts it (or a sibling script) to hit the real dogfood `checkout-burst`
+  target with bearer auth, the same 60-VU/20s ramp shape, against **both** rung D (uncontended) and
+  rung E (contended) for a proper apples-to-apples read against the existing ladder — not just the
+  contended target alone. If the raw loop's p95 gap vs. k6 matches tflw's own (~48% on the contended
+  rung): the cause is isolated to Node's fetch()/undici stack itself, not any tflw code. If the raw
+  loop's gap collapses toward k6's: something specific in tflw's own `execSteps`/session/redact call
+  chain is still responsible despite M40's bookkeeping-share finding, and needs one more targeted
+  look. Same sample size as the ladder's own convention (D50): 3 raw-loop runs; k6's side reuses this
+  session's already-fresh runs (629.5/s p95=68.13ms, 642.5/s p95=69.62ms on the contended rung) rather
+  than re-measuring an unchanged baseline, mirroring M40's own reuse of M36's D40 finding instead of
+  redundant re-testing.
+
+### D59
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D59 — stop condition, per outcome.** *Isolated to Node's HTTP stack* (raw loop's gap matches
+  tflw's own): confirms by elimination — now a sixth angle, across M36/M40/this session's `--workers`
+  test/M41 — that the gap is inherent to Node's runtime HTTP implementation versus Go's, not a bug in
+  tflw's own code. An HTTP-client swap (undici's `Pool`/`Client` API tuned directly, or an alternate
+  library) is a real but high-effort, uncertain-payoff bet with no guarantee it moves a runtime-level
+  characteristic. Per this arc's D51/D52/D55 bounded-effort convention: don't open that bet
+  speculatively — re-confirm D33a's ~50% contended-p95 tolerance (already covering 46%/49.2%/48.1%,
+  three independent measurements) and let the pentest arc start. No M42. *Isolated to tflw's own code*
+  (raw loop's gap collapses toward k6's): the good outcome — a real, fixable target exists. M41 stays
+  investigation + write-up only regardless of outcome (same discipline as M39/M40); a fix gets its own
+  explicit-go-ahead milestone (M42) scoped around whatever the raw-loop comparison specifically
+  isolates, not an auto-proceed inside M41 itself.
+
+### D60
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D60 — scope: isolation test first, in the existing raw harness, zero tflw code touched.**
+`raw-fetch-bench-dogfood.mjs` (M41) is a standalone one-off Node process, so importing `undici` there
+carries none of M35b's fetch()-poisoning risk — sidesteps that problem entirely for this milestone.
+Mirrors this arc's own investigate-before-fix precedent (M35a→b→c, M39→M40, M41 itself): confirm the
+hypothesis cleanly in a disposable harness before any real runtime design work.
+
+### D61
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D61 — one clean pinned-Client variant only, no capped-Pool variant in the same pass.** A
+pinned-per-VU `undici.Client` (one `Client` per VU, HTTP/1.1, created once at worker spawn, reused
+for the VU's full lifetime) is the direct Artillery/k6 mirror and the only variant this milestone
+tests. A `Pool` with `connections` capped to exactly `users` is a different hypothesis (bounded
+sharing vs. true 1:1 pinning) — deliberately left out to keep this milestone's verdict attributable
+to one specific mechanism, not blurred across two.
+
+### D62
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D62 — success bar: must approach ~1-2% to count.** Only a pinned-Client result landing near the
+user's original ~1-2% target counts as confirming the hypothesis and justifying a follow-on
+milestone. Anything short of that — including a real but partial improvement, e.g. into the 15-20%
+range — is treated the same as a refutation: a fourth negative result (after M36's concurrency
+ceiling, M40's bookkeeping-share, M41's raw-fetch reproduction), and D33a's ~50% contended-p95
+tolerance stands for good, with no further HTTP-client-layer chase after this.
+
+### D63
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D63 — the poisoning-avoidance design question is deferred to a from-scratch M43.** M42 does not
+design how tflw's real `sendRequest`/`runLoadCore` could use pinned connections without re-triggering
+M35b's ~18.6x fetch()-poisoning landmine for the non-load `run` path that shares the same interpreter
+process — that's real implementation design work, and only matters if D62's bar is met. If M43 gets
+triggered, it scopes that question itself, from scratch, via its own grill-me round.
+
+### D64
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D64 — arc ordering: re-blocks the pentest arc.** Unlike M41 (which delivered a legitimate close
+and left the pentest arc unblocked), M42 is a real, live investigation the user explicitly reopened
+knowing that — per this arc's own one-arc-at-a-time discipline (D3, D33d/D52/D56), the pentest arc
+(v0.4.0) waits for M42's result. Sixth time this ordering line gets pushed out.
+
+### D65
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D65 — one M42, isolation-test only, no tflw runtime changes.** Same shape as M41/M35a: extend the
+script, run 3× on rung E (the rung that matters — rung D's uncontended gap is already small and near
+D33a's ~10% tolerance), write up the verdict. No split into sub-milestones; the change is small
+enough (one new function in an existing script) not to warrant one.
+
+### D66
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D66 — research grounding: one bounded, inline websearch pass, not delegated.** Run directly by the
+main session (not handed to a background agent, per the incident above) before the write-up above —
+confirmed the undici/Artillery primary-source claims and surfaced the open undici#1203 issue as
+honest supporting (not conclusive) context. No further research pass planned; the isolation test
+itself is the actual source of truth from here.
+
+### D67
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D67 — endpoint identity ships as automatic AND explicit, together, this milestone.** Every `api`
+step gets an identity of `(service, method, path.raw)` for free, zero grammar changes, works
+retroactively on every existing fixture. On top of that, a new optional trailing clause —
+`api POST /orders as "checkout"` — lets an author assign an explicit label, shipped in this same
+milestone rather than deferred (R6 called this "per-tag," a separate axis from "per-endpoint";
+D67 reunifies them into one milestone since the explicit form is what this arc's own comparison
+actually needs).
+
+### D68
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D68 — an explicit tag replaces the identity, k6-style.** When present, `as "label"` alone
+determines the bucket — matching k6's `{name: 'checkout'}` exactly, not merely relabeling a
+still-path-keyed bucket. Untagged steps fall back to the automatic `(service, method, path.raw)`
+identity. This is what lets `checkout-burst.tflw`'s POST step share an identity with k6's own
+`checkout`-tagged request for a true apples-to-apples read.
+
+### D69
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D69 — all three report surfaces, this milestone.** `load-results.json` gets the per-endpoint
+breakdown for free (`LoadReport`/`LoadScenarioReport` grow an additive `endpoints` field, no separate
+serialization code). `load-report.html` reuses the *already generic* `renderMetricsSection()`
+(`packages/reporter/src/load-html.ts:55-74` takes a heading + `LoadMetrics` + thresholds already —
+confirmed by reading the file before asking) once per endpoint inside each scenario's section — a
+small addition, not a rewrite. Live console gets a compact one-line-per-endpoint table. `junit.xml`
+needs no *new* mechanism (it's already threshold-driven, one `<testcase>` per threshold —
+`packages/reporter/src/load-junit.ts:25-26`), it just also walks each endpoint's own scoped
+thresholds (D70) the same way it already walks a scenario's whole-iteration ones.
+
 ### D70
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
@@ -2605,6 +3245,230 @@ is less than 250ms` — the `for "label"` clause matches either an explicit tag 
 derived `METHOD path.raw` string. Without it, `threshold` keeps meaning exactly what it means today
 (whole-iteration-scoped). This directly replaces `checkout-burst.tflw`'s existing threshold with the
 true equivalent of k6's own scoped one (D72).
+
+### D71
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D71 — all four milestones (M43-M46) scoped in full today**, not one-at-a-time. Front-loads M45's
+design (the pinned-connection mechanism, D75) and M46's shape before M43/M44 have run — accepted
+risk that M44's real numbers could still shift M45/M46's assumptions; scoped anyway per explicit
+instruction.
+
+### D72
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D72 — fixtures and checker gain real coverage.** `checkout-burst.tflw`/`.js` retag the POST step
+`as "checkout"` (already matches k6's own `name: 'checkout'` tag verbatim — no k6-side change
+needed) and swap the whole-iteration threshold for the new `for "checkout"`-scoped one. Untagged
+fixtures (`bench.tflw`, `echo-*`, `dogfood-get-only`, `dogfood-post-uncontended`) are untouched —
+automatic identity covers them with zero edits. New checker diagnostic **TF034** ("threshold `for`
+clause references a label no step in this scenario declares or derives") — the next free code after
+TF033, catching a typo'd `for "checkotu"` at check-time instead of it silently evaluating against an
+empty/missing bucket at runtime.
+
+### D73
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D73 — D33a's contended-p95 tolerance is re-scoped immediately after this milestone**, not deferred
+to M46. `leg-split-diag.mjs`'s own diagnostic put the true unpinned gap at ~18% (17.75%, 18.1%);
+M44's job is to confirm that number lands the same way inside tflw's real, shipped report (not the
+throwaway script) and set D33a's tolerance to match it directly — a real number from a real report,
+not a placeholder pending M45.
+
+### D74
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D74 — the strict ~1-2% bar still applies**, now measured against M44's corrected baseline rather
+than the original 48-52% numbers it was set against. Re-affirmed explicitly (not assumed) given the
+starting gap shrank by roughly an order of magnitude between when D62 set the bar and now — the bar
+is about reaching parity with k6, not about how large the gap being closed happens to be.
+
+### D75
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D75 — the mechanism is Node's native `node:http`/`node:https` `Agent({keepAlive: true})`, not
+`undici`.** M35b's own root-cause finding is specific to the userland `undici` package; `node:http`
+is a structurally separate implementation Node has shipped natively for years, never touched by that
+bug. A new load-only send path — `sendRequest`/`fetch()` stays completely untouched for `tflw run` —
+uses `http.request()`/`https.request()` with a per-VU `Agent({keepAlive: true})`, created once in the
+existing per-VU closure (`interpreter.ts`, the `(async () => { ...while (performance.now() < runEnd)
+await runIteration(); })()` block around line 533-541) and reused for that VU's full lifetime, mirroring
+Artillery's/k6's own default and M42's own finding that this is what closes most of the gap. Stays in
+the main process — no IPC, no child-process complexity, unlike extending `mtlsWorker`'s pattern to
+all load traffic (the rejected alternative — would add per-request IPC serialization overhead that
+could itself erode a meaningful share of the latency win pinning is meant to deliver).
+
+### D76
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D76 — Candidate A: TCP_NODELAY/Nagle asymmetry (primary suspect).** `httpPinned.ts`'s pinned send
+path calls `lib.request(url, {...}, resolve)` then `req.end(bodyBuffer)` and never calls
+`req.setNoDelay(true)`. Node's raw `http`/`https` module does not disable Nagle's algorithm on its
+own — the caller must opt in explicitly. Confirmed via source reading + web research that every
+other client in this comparison already does: `undici`'s own `connect.js` calls
+`socket.setNoDelay(true)` unconditionally on every connection (so `fetch()` — tflw's pre-M45
+unpinned path, and every non-load `tflw run` — has always had this), and Go (k6's implementation
+language) disables `TCP_NODELAY` by default for every `net.Dial`-established TCP connection. tflw's
+brand-new pinned path is the one client in this whole arc that leaves Nagle on. Nagle interacting
+with a peer's delayed-ACK timer (~40ms) is a well-documented cause of intermittent head-of-line
+stalls specifically when a small request body is written in a separate `socket.write()` from its
+headers — exactly the checkout POST's shape, and exactly a tail-latency (p95) symptom rather than a
+throughput one, consistent with M45's own finding that throughput already leads k6 while only p95
+lags (a systemic per-request cost would show in both; an intermittent stall shows in the tail
+alone).
+
+### D77
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D77 — fix directly, no isolation diagnostic.** Unlike M41/M42's mechanisms (speculative,
+required a throwaway harness to confirm before touching real code), this one already has an
+external, citable root cause and a single well-precedented, zero-downside fix
+(`req.setNoDelay(true)` right after `lib.request(...)`, trivially revertible). Apply it directly to
+`httpPinned.ts` and remeasure with this arc's own standard 3-runs-per-side protocol (load target
+reset before every run, both `checkout-burst` and `dogfood-post-uncontended`, fresh k6 baseline in
+the same window) rather than building another isolation script first.
+
+### D78
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D78 — Candidate B: percentile algorithm mismatch (documented, not changed — investigated second).**
+`LatencyHistogram.percentile()` (`histogram.ts:84-94`) uses nearest-rank over a bucketed histogram
+(3-sig-fig rounding at record time, D19's deliberate HDR-histogram-style tradeoff for constant-size,
+mergeable IPC payloads regardless of sample count). k6's `TrendSink.P()` (`metrics/sink.go`) uses
+linear interpolation over exact, unbucketed raw sample values. Nearest-rank-on-real-samples is
+known to bias slightly high vs. interpolation on right-skewed distributions, plus up to ~0.1-0.5%
+relative rounding from the bucketing itself. This is real but architectural — D19's tradeoff still
+serves every other load report every tflw user sees, so `percentile()`'s algorithm is **not**
+changed globally. Instead, after D77's remeasure, a throwaway script (not shipped code) computes
+k6-style linear interpolation over that same run's raw per-iteration samples and reports it
+alongside the shipped nearest-rank number, so the bias is a measured quantity in the write-up, not
+just an asserted direction.
+
+### D79
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D79 — stop condition.** After D77 (Nagle fix, remeasured) and D78 (percentile bias quantified):
+if the residual checkout-scoped p95 gap lands clearly small (**<3%**, roughly M45's own
+dogfood-side result) once the quantified percentile bias is accounted for, declare this chase
+closed and proceed to M47 — this is the practical JS/V8-vs-Go ceiling. If a meaningful residual
+remains, allow **at most one further bounded root-cause pass** (D80, mirroring M41's own "one
+pass" discipline) before accepting whatever's left as the ceiling regardless of the literal D74
+number — no open-ended chase, consistent with this arc's own repeated precedent (D35/D38/D51).
+
+### D80
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D80 — secondary mechanisms, sequential only.** Server-side Nagle on testFlow-tests' NestJS/Node
+HTTP server, per-request `AbortSignal.timeout()` allocation overhead in the pinned hot path, and
+Node event-loop/GC jitter under sustained load are plausible but weaker candidates. They are **not**
+investigated in this pass; they're the reserve for D79's "one further pass" only if the gap is
+still ≥3% after D77/D78.
+
+### D81
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D81 — extended at the user's explicit direction to a three-way ladder (tflw + k6 + Artillery),
+2026-08-01.** M46d added Artillery as a corroborating comparator on two rungs only (D, E). The user
+asked for the *final* acceptance round itself to compare all three tools across the whole ladder,
+not just the two rungs M46d happened to need. Scope call, made directly (no full grill-me — the
+shape is a mechanical extension of M46d's already-proven method, not a new design question):
+
+- **All five rungs get an Artillery counterpart**, including echo-server A/B and dogfood GET-only
+  C — cheap to build (echo-server has no auth; C reuses M46d's `processor.cjs`) and the user asked
+  for all three tools compared "in this acceptance," not just the two contention-relevant rungs.
+- **Rungs A-C keep M39's own exclusion from the D33a tolerance check and from any tflw-vs-other
+  conclusion** — tflw's generator self-saturates on these near-zero-latency targets (D19), a
+  separately-diagnosed phenomenon unrelated to client-protocol overhead. Artillery's numbers on A-C
+  are reported for completeness (a real three-way reading, and a bonus k6-vs-Artillery data point
+  neither tool self-saturates on) but, like tflw's own A-C numbers since M39, are not used to draw
+  conclusions about the residual gap or D33a's tolerance — same framing M39 already established for
+  these rungs, just extended to the third tool.
+- **Rungs D and E are the trustworthy three-way comparison**, same as M39/M44/M45/M46d. Artillery's
+  configs for these two already exist (`acceptance/perf/artillery/checkout-burst.yml`,
+  `dogfood-post-uncontended.yml`) — M47 re-runs them fresh under the same 3×-per-rung protocol as
+  the other two rungs, not reusing M46d's own numbers (mirrors M39's "re-measured fresh" precedent
+  for checkout-burst rather than reusing M38's numbers).
+- **Calibration for the three new Artillery rungs (A/B/C) targets k6's p95**, not tflw's — tflw's
+  own numbers on these rungs are the self-saturated, unreliable side per M39, so bisecting against
+  them would just be calibrating against noise.
+
+### D82
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D82 — "improve the app" means widen load-test surface, not general fixes.** Two new endpoint
+  dimensions, both already implemented in apiV2, neither needing new business logic:
+  - **Rung F — search-read** (`GET /products?q=<term>&sort=...`): real Postgres full-text search
+    (`to_tsvector`/`plainto_tsquery`), not just an indexed lookup like rung C's `GET /health` —
+    genuine query cost on an uncontended, public, read-only path. 120 seeded bulk products
+    (`seed.ts`'s `BULK_COUNT`) give it a real result set to search over.
+  - **Rung G — ticket-write** (`POST /tickets`): a second uncontended write shape, distinct from
+    rung D's single-row `POST /cart/items` — `TicketsService.create` writes a `Ticket` row *and* a
+    companion `TicketEvent` row (`logEvent(..., CREATED, ...)`) synchronously, so it's a genuinely
+    different write cost, not a repeat of D. No uniqueness constraint on tickets (unlike
+    `POST /products/:id/reviews`, which is both rate-limited *and* `@Unique(['userId','productId'])`
+    — checked and rejected as a rung candidate: a fixed load user/product pool 409s permanently
+    after each pair's first success, which tests the uniqueness wall, not throughput).
+  - **One real app change**: `LoadAdminService.reset()` currently deletes the load user's orders
+    but not tickets — extend it to also delete the load user's tickets (cascades to `ticket_events`
+    at the DB level, mirroring the existing orders-cascade comment), adding `ticketsDeleted` to
+    `LoadResetResult`, so repeated `tflw load`/k6 runs against rung G stay repeatable instead of
+    accumulating debris between runs.
+
+### D83
+
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D83 — rungs F/G are tflw-vs-k6 only, not three-way.** Explicit user call this session, diverging
+  from M47's own three-way default — no Artillery configs for the new rungs.
+
+### D84
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D84 — p50/p99 are reported, not gated.** tflw already computes `p50`/`p90`/`p95`/`p99` per
+  scenario for free (`interpreter.ts:619`, `timeline.ts`) — no runtime change needed, just extraction
+  into the write-up. k6's default `summaryTrendStats` only includes `p(90)`/`p(95)` — every new (F/G)
+  and existing authoritative (D/E) k6 script gets `summaryTrendStats` extended to include `p(50)` and
+  `p(99)` explicitly. D/E's tflw-side p50/p99 can be read from M47's own already-captured histogram
+  output (no tflw re-run needed there); D/E's k6-side needs one fresh 3-run pass per rung since the
+  option change only takes effect on a new run. No new D33a-style tolerance is set on p50/p99 this
+  milestone — see the real numbers first, especially whether the contended rung (E) shows a
+  materially wider gap at p99 than at p95 (lock-queueing tails plausibly bite harder there); that's
+  a finding to report, not a bar to pre-commit to.
+
+### D85
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D85 — rung lettering stays contiguous.** F = search-read, G = ticket-write, keeping the A-E
+  convention rather than a separate namespace.
+
+### D88
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+**D88 — landed the fix.** `req.destroy()` on an in-flight request surfaces as a generic
+`ECONNRESET`/"socket hang up" on `error` — not a distinguishable code — so the isolation script's
+timeout detection (and the shipped fix) uses a closure flag, not the caught error's shape (verified,
+not assumed). `httpPinned.ts`'s `signal: AbortSignal.timeout(opts.timeoutMs)` replaced with a
+manually-hoisted `setTimeout`/`clearTimeout` spanning both the request and the body-read loop below
+it (matching the original's actual scope — `AbortSignal.timeout()` stayed attached to `req` through
+body streaming too, not just time-to-first-byte; an earlier draft of this fix cleared the timer on
+the `response` event alone and was caught and corrected before landing, since that would have
+silently stopped enforcing the timeout during a slow body drip). Full suite green (390 runtime + 107
+CLI, typecheck, build).
 
 ### D93
 
@@ -2975,7 +3839,7 @@ true equivalent of k6's own scoped one (D72).
 
 ### D127
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_DISCOVERY_EXCLUDE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_DISCOVERY_EXCLUDE.md`</sub>
 
 **`D127` — bare discovery gets an `exclude` list, and a path that matches nothing is a no-op.**
 `tflw.config` gains a top-level `exclude "<path>"[, "<path>"…]` directive, relative to the config's
@@ -3184,7 +4048,7 @@ mirror, disk space).
 
 ### D206
 
-<sub>cited from SPEC.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **D206 — the open model sends over `node:http`, not `fetch`**
 
@@ -3192,6 +4056,29 @@ mirror, disk space).
 this genus of problem — its header records that it "never imports `undici`" because of the `M35b`
 root-cause finding, and that `node:http`'s own `Agent` "was never implicated". `M118-02` is the
 same lesson arriving a second time, at a path `M45` explicitly declined to cover.
+
+### D207
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+
+**D207 — a shared agent pair per open scenario, not per arrival, and explicitly not "pinning"**
+
+`M45`'s comment (`interpreter.ts:916-920`) is right that pinning has no meaning here: an open
+arrival is not a VU and has no loop to pin a connection to. But that argument rules out
+*per-VU pinning*, not *pooling*. What the open model needs is one `keepAlive` agent pair for the
+whole scenario, shared by every arrival, created before the arrival loop and destroyed in its
+`finally`.
+
+### D211
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+
+**D211 — record it internally, and report it nowhere**
+
+**Reversed 2026-08-10, by the user, and this is the standing form.** The original decision was to
+file the finding against `nodejs/undici` with the §1.3 table. It will not be filed — not there, not
+`nodejs/node`, not anywhere outside tflw and testFlow-tests. Nothing external gets touched on the
+strength of this work.
 
 ### D245
 
@@ -3247,7 +4134,7 @@ existing `filterBySeverity` floor.
 
 ### D284
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D284 — a rule declares a precondition; "not applicable" is a third state**
 
@@ -3256,7 +4143,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 ### D285
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D285 — zero applicable rules is a failure, not a pass**
 
@@ -3328,7 +4215,7 @@ one word covers both scan kinds.
 
 ### D291
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D291 — D21's declaration half lands now, and Tier 1 requires it**
 
@@ -3352,7 +4239,7 @@ standalone scan artifact, at Tier 3/4.
 
 ### D293
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D293 — target: reuse `M22`'s 8443 sidecar, add `env secureLocal` and a hygiene-only `vuln/` slice**
 
@@ -3392,7 +4279,7 @@ That applies here, but §0(a) makes it cheap — the listener exists. `M128a` is
 
 ### D295
 
-<sub>cited inside a range only · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D295 — acceptance: a positive, a negative, and a not-applicable case for every rule**
 
@@ -3438,7 +4325,7 @@ probe therefore sets `minVersion: 'TLSv1'`.
 
 ### D299
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D299 — both TLS rules answer "what does this host give a current client?", not "what does it offer?"**
 
@@ -3490,7 +4377,7 @@ A second matcher on the existing `response` subject, in the exact shape D290 cho
 
 ### D305
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D305 — the oracle is differential on resource identity**
 
@@ -3506,7 +4393,7 @@ The no-credentials probe needs no declaration and is in every probe set.
 
 ### D307
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D307 — `privileged` marks a session exempt from probing**
 
@@ -3559,7 +4446,7 @@ test's lifetime.
 
 ### D311
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D311 — safe methods by default; `probe mutating` opts in, per authorized target**
 
@@ -3613,7 +4500,7 @@ this.
 
 ### D315
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D315 — applicability, and what "not applicable" means here**
 
@@ -3636,7 +4523,7 @@ report names what it could not judge:
 
 ### D317
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D317 — the target: one peer session, three planted routes, and the control stays**
 
@@ -3676,7 +4563,7 @@ yet consuming it):
 
 ### D319
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D319 — acceptance: precision, recall, and agreement with the hand-written control**
 
@@ -3739,7 +4626,7 @@ fifth request path.
 
 ### D324
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D324 — five probe outcomes, and `clean` has to be earned**
 
@@ -3753,7 +4640,7 @@ fifth request path.
 
 ### D325
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D325 — a cookie-borne principal refused on a mutating method is `inconclusive` (`M130-01`)**
 
@@ -3773,7 +4660,7 @@ Declared-session order from `tflw.config`, then `anonymous` last.
 
 ### D327
 
-<sub>cited inside a range only · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D327 — every session a test names is an owner**
 
@@ -3937,6 +4824,26 @@ Following `M130b2`'s rule that **a diagnostic code is a repair, not a topic**:
 | `TF065` | an originating scan would reach a public origin and no `--allow-public-target` names it | add the flag |
 | `TF066` | `--allow-public-target` names an origin this run does not scan, or one no `authorized target` declares | fix the flag's value |
 
+### D356
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+
+**D356 — `M130-05`: plant a vulnerable idempotent `PUT`. One polarity.**
+
+Verified: `apiV2/src/vuln/vuln-orders.controller.ts` carries `@Get()` (`:67`), `@Get(':id')`
+(`:91`) and `@Delete(':id')` (`:120`) — **no `PUT`, no `PATCH`** — while nine sibling controllers
+have one.
+
+### D363
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+
+**D363 — Added during the `M132b` build, 2026-08-14: the corpus needed a bearer non-owner before D356's plant could be judged at all.**
+
+**D356 was buildable but not sufficient as scoped, and the run is what said so.** The plan measured
+that a `PUT` would "leak normally" and stopped there. It did not check whether the acceptance
+corpus contained *anybody able to make a mutating probe*, and it did not.
+
 ### D364
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
@@ -4081,7 +4988,7 @@ distinct.
 
 ### D377
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D377 — the gate: `--fail-on` and `--baseline`**
 
@@ -4101,7 +5008,7 @@ the emitter already builds a runnable `.tflw` from a `ProbeResult`.
 
 ### D379
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D379 — the plants: `V10`–`V13`, and the D363 trap checked before designing them**
 
@@ -4119,7 +5026,7 @@ is *what*, not *who*, and the measurement is worse:
 
 ### D380
 
-<sub>cited inside a range only · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D380 — the negatives are the real app, untouched**
 
@@ -4219,7 +5126,7 @@ not a new one.
 
 ### D389
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D389 — `M128-01` is fixed here, and this is the milestone that can**
 
@@ -4235,6 +5142,29 @@ call is **fix it**, on three measurements rather than on the row's age:
    structure this milestone is already building.
 3. Deferring again makes it worse on a schedule: Tier 3 added four rules to the instrument, and risk
    4 of §3 says so in advance.
+
+### D395
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**D395 — each plant is specified against its rule's detector, not against its rule's name**
+
+| plant | what D379 said | what the shipped rule requires | consequence for the route |
+|---|---|---|---|
+| `V10` | "reflected input unescaped" | `reflectedInputUnescaped` **refuses a JSON echo**: the response content type must be `text/html`, `application/xhtml` or any `text/*`, and the payload must come back with its angle brackets intact | the route must serve **`text/html`**. A NestJS handler returning an object serves `application/json` and the rule stands down — the plant would be invisible |
+| `V11` | "path used in a file read" | `pathTraversalRead` matches a **filesystem signature** (`root:…:0:0:`, a private-key header, a Windows ini section), never a path echo | the route must return the **file's contents**. A route that echoes the rejected path, or 404s with the attempted path in the message, produces nothing |
+| `V12` | "`body.text` into a raw query" | `errorDetailDisclosure` matches a stack frame, a SQL error fragment, an **ORM exception class name**, or an absolute source path with a line number | the handler must **catch and serialize** the driver error. Letting it propagate cannot work — see D396 |
+| `V13` | "`body.title`, unbounded" | `oversizedInputAccepted` fires **only on a 2xx**; a `400` or `413` is the application behaving correctly | the DTO must carry validation decorators **and no length bound** — see D397 |
+
+### D396
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**D396 — the app cannot leak by accident, so `V12` must leak on purpose**
+
+`ProblemDetailsFilter` catches everything, and for anything that is not an `HttpException` it
+answers `{"type":"about:blank","title":"Internal Server Error","status":500,"detail":"an unexpected
+error occurred"}`, sending the stack to the **logger** and never to the body.
 
 ### D402
 
@@ -4466,13 +5396,23 @@ fires. The remedy does not follow.
 
 ### D433
 
-<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D433` — CSRF token capture lives on `session`. It is a session feature the scanner needs, not a scanner feature**
 
 `D423` establishes that capturing a token the app itself issued is not synthesis — *"it is what a
 browser does"* — and that `tests/api/identity/sessions.tflw:54` already captures `body.csrfToken` by
 hand for exactly this reason, and has since `M22`.
+
+### D434
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D434` — one new rule, `sec/csrf-not-enforced`, expressed as a derived credential**
+
+Once tflw can capture the token, it can **withhold** it — and whether a mutating route still succeeds
+is a finding rather than a blind spot. This inverts `M130-01`: the thing that has obstructed the
+cookie principal all arc becomes the thing being measured.
 
 ### D435
 
@@ -4485,9 +5425,41 @@ narrowing (`D381`), **never concurrency**."* This plan does not overturn it. The
 sequential, `authz-probe-pacing.test.ts:101`'s `maxInFlight() === 1` stays green, and **`probe rate`
 stays deferred with its condition unmet** (`D448`).
 
+### D437
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D437` — every finding carries its seed, and every seed gets a plant only it can reach**
+
+Without this the enumerator — the single largest new component — is **unfalsifiable**. It could
+regress to returning nothing and every acceptance gate would stay green on the captured-traffic seed
+alone, because the plants are all reachable that way.
+
+### D438
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D438` — a documented plant is possible under `VULN_MODE=1`, and the exclusion's own reason permits it**
+
+`VULNS.md:11-13`'s standing rule is *"no route in `apiV2/src/vuln/` without a row, and no row without
+a route"*, and the whole slice is `@ApiExcludeController()`. Taken together those say no plant can
+ever be OpenAPI-documented — which would leave `D437`'s enumeration plant unbuildable.
+
+### D441
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D441` — `D299`'s TLS cipher enumeration rides in, last and cuttable**
+
+`D365` named TLS enumeration its **first** tenant. This plan builds the home the second tenant was
+waiting for, so the first must be decided now — and deferring it a third time is not honestly
+available. Its condition has already fired, and `D416` names the alternative shape ("the first
+external request for it") as unmeetable by construction on an unpublished tool: *"a cancellation
+wearing a deferral's clothes."*
+
 ### D442
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D442` — the browser spider fetches and parses. It does not render**
 
@@ -4504,6 +5476,15 @@ Allocated from `TF068` (see §1.4). The bar is `D419`'s — it rejected a code s
 *"two rows in the generated codes reference with one repair"* — so each must earn a **distinct**
 repair.
 
+### D445
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D445` — what the `vuln/` acceptance is owed: a versioned baseline of the real app's true findings**
+
+§4.2's *"zero findings elsewhere"* is already false (§1.2). `M137` replaces it with something
+measurable rather than leaving the arc's final gate resting on a contradiction.
+
 ### D450
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
@@ -4514,6 +5495,27 @@ repair.
 construct's syntax is the half users actually meet. Every element below is taken from something the
 language already does; nothing here is invented where a precedent existed.
 
+### D454
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D454` — `sessions.tflw` keeps its hand-capture. `D433`'s "goes away as a side effect" is wrong**
+
+`D433` reasons from `tests/api/identity/sessions.tflw:54` and concludes the hand-wiring *"goes away as a
+side effect, which is the tell that this is the right home"*; §5 carries it as an `M137b` item,
+*"`sessions.tflw:54`'s hand-capture removed"*. The diagnosis is right and the conclusion does not
+follow from it.
+
+### D455
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D455` — a token-less cookie principal is declared, so the blind-spot control keeps a live positive**
+
+`D431` sells `M137b` as unblocking `shopper` across every existing Tier 2 and Tier 3 probe. It does.
+What no decision here noticed is that the corpus has built four assertions on `shopper` being
+*blocked*, and they do not survive it.
+
 ### D456
 
 <sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
@@ -4522,6 +5524,16 @@ language already does; nothing here is invented where a precedent existed.
 
 **`M137b` mints no diagnostic code.** `TF068` stays next-free for `D432`'s `crawl`, and §1.4's
 statement about it stays true.
+
+### D457
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D457` — the derived probe travels in its own field, because the existing rules would call it a leak**
+
+`D434` says the engine *"derives a 'same cookie session, token withheld' principal and probes it like
+any other"*. Building it exposed a false positive that phrase walks straight into, and the fix is
+structural rather than a filter.
 
 ### D463
 
@@ -4534,9 +5546,22 @@ body restriction, which `ast.ts` already documents as the checker's job rather t
 It earns a code on `D419`'s bar — one repair, *put the step in a `test`*, shared by nothing else in the
 table.
 
+### D465
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D465` — the crawl's own writes are gated by `probe mutating`, the opt-in that already exists**
+
+The gap this closes was not in the plan, and nothing in §5's item list would have led to it. `D435`
+says Tier 4 *"multiplies the request count again while adding no new gate"* and `D439` explains why
+that is acceptable — but both are about **findings** and about **volume**. Neither notices that a
+synthesized request is a *new kind of request*: every prober built in this arc re-issues a request the
+author wrote, and the crawl invents one nobody wrote. A synthesized `DELETE /products/{id}` is
+categorically further from authored intent than any Tier 2 probe of an authored `DELETE`.
+
 ### D480
 
-<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D480` — a crawl resolves the document's paths against the document's own server, never against the `api` base's path**
 
@@ -4554,7 +5579,7 @@ needed to know it had judged nothing — `sent 31`, `reached 0` — printed them
 
 ### D482
 
-<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D482` — a resource the public receives has no owner, so it has no boundary to cross**
 
@@ -4563,7 +5588,7 @@ rather than merely appearing more often.
 
 ### D483
 
-<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D483` — a spider walks before it probes, so disclosure bounds two phases rather than one**
 
@@ -4573,7 +5598,7 @@ for are written against the assumption that it never is.
 
 ### D485
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D485` — enumeration is gated by `probe ciphers`, a fourth `authorized target` sub-clause, and `sec/tls-weak-cipher` is genuinely widened rather than forked**
 
@@ -4586,7 +5611,7 @@ handshakes for one unchanging answer."*
 
 ### D486
 
-<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D486` — the enumeration handshake reads one bit and is forbidden the rest, which is what answers `D298`'s refusal**
 
@@ -4594,6 +5619,29 @@ handshakes for one unchanging answer."*
 reaching a legacy-cipher peer needs `@SECLEVEL=0`, *"and OpenSSL's security level is not a cipher
 knob — it also lowers what counts as an acceptable certificate, so a strict run would quietly start
 trusting keys and signatures it currently rejects."*
+
+### D489
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D489 — The manifest is the source; `VULNS.md`'s table is checked against it. Direction matters.**
+
+If `VULNS.md` prose were parsed to build the manifest, a typo in prose would silently retune the
+oracle. If the manifest is generated from tflw output, §2.2's "agree by construction" problem returns.
+So: **`plants.mjs` is hand-authored and authoritative; a check asserts `VULNS.md`'s ledger table lists
+exactly the manifest's ids, and nothing more.** `VULNS.md` stays prose a human reads, and gains one
+machine-checked invariant: its id set.
+
+### D493
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D493 — Closing `M137e-01` is M139's first item, not a prerequisite.**
+
+`M137e-01` (S3, open) is the blocker and it already carries its own fix design: *"the coverage tables
+stay a human-read report run by hand, and `D445`'s precision + staleness assertions become a regression
+phase of their own."* `M137g` raised its stakes — `V18` and both `probe ciphers` notes are graded by
+that ungated script and by nothing else.
 
 ### D537
 
@@ -4824,6 +5872,17 @@ it this once.
 printed the citing sites the same way. Both were line numbers in a **tracked** file pointing into
 files that mostly are not.
 
+### D709
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D709` — the sibling's citations do not resolve today, and the repair is the index's input set**
+
+*Taken 2026-08-24, on `M152e`'s scoping measurement.* `§3`'s part reads "**739 citations across the
+11 tracked `.md`** repointed", on the assumption that `M152b`'s repair transfers across the repo
+boundary: give each tracked prose file a sentence naming `DECISIONS.md`, and its notation becomes
+resolvable. Measured against the published index, **that sentence would be false for half of them.**
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -4855,7 +5914,7 @@ files that mostly are not.
 
 ### M3
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/README.md · lifted from `PLAN.md`</sub>
 
 - **M3 — browser half (v0.2.0 public).** Playwright binding: `open/click/fill` + `fill form`,
   tiered selector resolution + `css`/`xpath` escapes + `element` aliases, auto-retrying UI
@@ -4867,7 +5926,7 @@ files that mostly are not.
 
 ### M3a
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/README.md · lifted from `PROGRESS.md`</sub>
 
 **M3a — browser core: Playwright peer, interaction steps, selector model, UI expects, dialogs**
 
@@ -4880,7 +5939,7 @@ catch-up (M4a), and visual regression (M4b) all follow separately.
 
 ### M3b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/README.md · lifted from `PROGRESS.md`</sub>
 
 **M3b — frames/tabs/windows/downloads, drag-drop, `wait until <ui>`**
 
@@ -4962,7 +6021,7 @@ reads as shorthand for one feature area, not two overlapping constructs — `stu
 
 ### M4a
 
-<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M4a — browser-arc LSP + VS Code catch-up**
 
@@ -4999,7 +6058,7 @@ exact mechanism D15 was asking for.
 
 ### M7
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN.md`</sub>
 
 - **M7 — acceptance (the browser arc's own gate, `0.2.0`-equivalent — P#112 amends the
   original "1.0 gate" framing below).** Build out the 10-test dogfood suite (testFlow-tests) + its
@@ -5159,7 +6218,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M22
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -5183,7 +6242,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M25
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/README.md · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -5254,7 +6313,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M29
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M29 — perf arc: `scenario`/`threshold` grammar + single-scenario load engine**
 
@@ -5280,7 +6339,7 @@ since a multi-scenario report is meaningless without it.
 
 ### M31
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M31 — perf arc: multi-process generator + self-diagnosis**
 
@@ -5294,7 +6353,7 @@ self-diagnoses its own event-loop lag/CPU and warns when tflw's own generator wa
 
 ### M32
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M32 — perf arc: full `LoadReport` design**
 
@@ -5306,7 +6365,7 @@ the actual report the plan designed on top of it, without touching the engine's 
 
 ### M33
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M33 — perf-arc LSP + VS Code catch-up**
 
@@ -5327,7 +6386,7 @@ to share with a `test`.
 
 ### M34
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md +2 more · lifted from `PROGRESS.md`</sub>
 
 **M34 — perf arc acceptance**
 
@@ -5339,15 +6398,100 @@ pure acceptance-testing pass.
 
 ### M35
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 | ID | Scope |
 |---|---|
 | **M35** | Load-engine hardening (D32) — close the tflw-vs-k6 gap M34 found and root-caused but did not fix; re-run M34's own acceptance comparison unchanged once fixed, to see whether D31's numeric half now holds. **M35a/M35a-2/M35b done 2026-07-31 (root cause found: an unconditional `undici` npm import in `http.ts` cripples Node's built-in global `fetch()` — see §2.7/FINDINGS_M35B_ROOT_CAUSE.md). M35c done 2026-07-31 (mTLS dispatch isolated into a dedicated child process; ~12.8x throughput improvement on the isolated 1-VU harness, all 372 runtime + 106 CLI tests green). M35d done 2026-07-31 — real, mixed result: the fix is verified and worth keeping, but does NOT close the gap on M34's real contended acceptance target (tflw still ~173-191/s vs k6's 620/s, same ~3.2-3.4x as before); back-off-dominated real latency swamps the ~1.4ms/call the fix saves. D33a's ~10% tolerance is not met — see acceptance/README.md's "M35d — re-measured" section. M35 complete; residual gap left open, not chased further per D33c/D35/D38.** |
 
+### M35a
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +1 more · lifted from `PROGRESS.md`</sub>
+
+**M35a — load-engine hardening: CPU-profile the tflw-vs-k6 gap**
+
+Scoped via `/grill-me` as D32/D33 (`PLAN_BROWSER_PERF_SECURITY.md` §2.7) directly off M34's own
+"not built this milestone" line above. D33's starting hypothesis — that `execApi` unconditionally
+building a fully-redacted request/response trace on every load iteration, then discarding the
+whole thing (`runLoad`'s `runIteration` only ever reads `.ok`/`.error`/a `think`-duration filter,
+never the trace) — was grounded in reading the code, not a guess, and predicted the right shape of
+symptom (POST costs more than GET, doesn't scale with `--workers`). **M35a's own job was to check
+that hypothesis against a real CPU profile before anyone wrote a line of fix code — and the profile
+refuted it.**
+
+### M35b
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +3 more · lifted from `PROGRESS.md`</sub>
+
+**M35b — root-cause via direct instrumentation**
+
+Two bounded diagnostic passes per D35's time-box, against the isolated echo-server harness only
+(D36). Full write-up: `acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md`. (1) A `node --prof`
+V8 tick-log pass resolved `--cpu-prof`'s bare `(idle)` bucket to `__syscall_cancel_arch_end` —
+79.1% of ticks, confirming genuinely-blocked-in-syscall but with no resolvable JS caller;
+inconclusive alone, as anticipated. (2) Temporary `performance.now()` checkpoints inside the real
+`execSteps`/`execApi`/`sendRequest` call chain (not a reimplementation, reverted after use) found
+it: interpreter-side overhead is only ~8% of iteration time, but `fetch()` itself averages
+~1.4ms/call against a *zero-latency* server — ~20x `raw-fetch-bench.mjs`'s own steady-state
+`fetch()` calls, the identical global `fetch()` function. **Root cause: `http.ts` unconditionally
+imports the standalone `undici` npm package at module scope** (for the mTLS `Agent` path, SPEC
+§3.5) — a decisive isolated test showed merely importing `undici` (any export, never called) is an
+**18.6x** slowdown to Node's separate built-in global `fetch()`, independent of whether mTLS is
+ever exercised in the run. Per D37, stopped here and checked in with the user before writing any
+fix code — no runtime/CLI/reporter code changed this sub-milestone.
+
+### M35c
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PROGRESS.md`</sub>
+
+**M35c — fix: isolate mTLS dispatch into a dedicated child process**
+
+The entire mTLS dispatch path moved into a dedicated, lazily-spawned child process
+(`packages/runtime/src/mtlsWorker.ts` + `mtlsWorkerEntry.ts`) so `undici` is never imported on the
+main thread at all, regardless of whether/when mTLS requests happen in the run — a deferred import
+alone wouldn't have covered mixed mTLS/non-mTLS runs, since the poisoning is process-global, not
+per-call. `bundle.mjs` gains a second `esbuild.build()` call emitting `dist/mtls-worker.cjs`
+alongside `dist/cli.cjs`; `http.ts` loses its top-level `undici` import entirely; `cli.ts`'s
+`main()` teardown gains `shutdownMtlsWorker()` so the worker child doesn't outlive the run.
+**Verified**: all 372 runtime tests + 106 CLI tests pass unchanged, including the real-TLS
+`mtls.test.ts` suite both in dev/tsx and end-to-end through the bundled CLI against a real
+client-cert-requiring HTTPS server, plus a new `pack.test.ts` assertion confirming
+`dist/mtls-worker.cjs` ships alongside `dist/cli.cjs` with zero added runtime dependencies.
+Isolated 1-VU harness: 349 → 4,470 iter/s (**~12.8x**). Full write-up:
+`acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md`.
+
+### M35d
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md +1 more · lifted from `PROGRESS.md`</sub>
+
+**M35d — re-measure against the real acceptance target/k6**
+
+Re-ran M34's own acceptance artifacts unchanged (`acceptance/perf/tflw/checkout-burst.tflw` vs.
+`acceptance/perf/k6/checkout-burst.js`) against a fresh testFlow-tests stack + load-target reset —
+twice for tflw (noise check), once for k6. k6 reproduced its own M34 baseline almost exactly
+(620/s vs. 624/s), confirming a fair, non-noisy re-run. **tflw: 172.6/s and 191.1/s (avg ~182/s)
+vs. M34's original 195/s — unchanged within noise, not improved.** Gap to k6 stayed ~3.2-3.4x,
+statistically the same as M34's ~3.2x. Mechanism: M35b's own instrumentation found the poisoned
+`fetch()` cost ~1.4ms/call more than it should — against a zero-latency echo server that *is* the
+whole per-call cost (hence the 12.8-26x isolated win), but against this real target both runs'
+back-off diagnostics show VUs 84-86% blocked on genuine network/Postgres row-lock wait — a ~1.4ms
+tax is noise against that. A re-check of M34's two GET-only isolation rows (no writes, no
+contention confound) did show a small, real gain (+3-11%), consistent with the mechanism, since
+those rows were unknowingly running under the same poisoned `fetch()` throughout M34's original
+run too. The two POST-uncontended isolation rows were **not** re-measured as a clean comparison —
+this environment's single shared `LOAD_USER_EMAIL` for all 60 VUs makes any user-scoped POST land
+on one shared DB row regardless of client speed (94% measured back-off); flagged as an environment
+limitation rather than chased, per D33c/D35/D38. **Verdict: the M35b/M35c fix is real, verified,
+and worth keeping — a genuine process-wide bug that silently taxed every `tflw run`/`tflw load`
+invocation, mTLS or not — but it is not the dominant driver of M34's ~3x real-target gap.** That
+gap's true cause was left open at the end of this sub-milestone. Full write-up:
+`acceptance/README.md`'s "M35d — re-measured after the M35b/M35c fix" section;
+`PLAN_BROWSER_PERF_SECURITY.md` §2.7's Acceptance bar marked "Not met." M35 (all of a-d) complete
+as of this sub-milestone.
+
 ### M36
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **M36 — continued investigation: client-side concurrency ceiling**
 
@@ -5358,7 +6502,7 @@ intentional user override, not a process lapse.
 
 ### M37
 
-<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M37 — fix D43's bug (scoped 2026-08-01)**
 
@@ -5382,7 +6526,7 @@ three open branches resolved with the user before any code was written:
 
 ### M38
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M38 — re-measured (2026-08-01)**
 
@@ -5398,7 +6542,7 @@ Picked up immediately after M37 in the same session. Mirrors M35d's own procedur
 
 ### M39
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PROGRESS.md`</sub>
 
 **M39 — confirm the residual gap is real (scoped 2026-08-01)**
 
@@ -5421,7 +6565,7 @@ implemented the same day and its results are recorded separately, as *M39 — fi
 
 ### M40
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M40 — root-cause the p95-under-contention mechanism (scoped 2026-08-01)**
 
@@ -5448,7 +6592,7 @@ as *M40 — findings*.
 
 ### M41
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M41 — reopening the tolerance amendment, closed (2026-08-01)**
 
@@ -5459,7 +6603,7 @@ within ~1-2% of k6's.
 
 ### M42
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M42 — pinned-per-VU connections, scoped and measured (2026-08-01)**
 
@@ -5469,7 +6613,7 @@ stopping point and asked for a comprehensive plan for an HTTP-client-level chang
 
 ### M43
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M43-M46 — the reporter bug, and a corrected close to the arc (scoped 2026-08-01; M43 shipped 2026-08-01)**
 
@@ -5480,7 +6624,7 @@ one found the actual missing thing, and it wasn't in Node's HTTP stack at all.
 
 ### M44
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M44 shipped (2026-08-01)**
 
@@ -5488,7 +6632,7 @@ Pure measurement + decision, no source changes beyond M43's own fixture retaggin
 
 ### M45
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PROGRESS.md`</sub>
 
 **M45 shipped (2026-08-01)**
 
@@ -5503,15 +6647,23 @@ only, so `sendRequest`'s `fetch()` path for `tflw run` is provably untouched, mi
 
 ### M46
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 | ID | Scope |
 |---|---|
 | **M46** | Depends on M45 (shipped, kept). Root-caused M45's residual checkout-scoped p95 gap (4.9%/3.6%) by comparing tflw's actual measurement *logic* against k6's, not just its numbers (D76-D80). Landed the Nagle fix (`req.setNoDelay(true)` in `httpPinned.ts`) and quantified the percentile-algorithm bias (0.00% at this sample size, `percentile()` left unchanged). Effect was asymmetric: closed `dogfood-post-uncontended`'s gap (3.6% → 2.90%, under the <3% bar) but did not move `checkout-burst`'s (4.9% → 5.86%, within noise); a bounded D80 follow-up ruled out server-side Nagle (nginx fronts the client connection and already defaults `tcp_nodelay on`); a second, user-requested pass ruled out event-loop/GC jitter too (checkout-burst's readings were indistinguishable from an uncontended control). **Shipped 2026-08-01 — checkout-burst's 5.86% residual accepted as the practical ceiling per D79.** Full design + result in §2.17. |
 
+### M46d
+
+<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+| ID | Scope |
+|---|---|
+| **M46d** | Depends on M46 (shipped). At the user's request: adds a third comparator, Artillery (the most enterprise-adopted Node.js load-testing tool), to test whether checkout-burst's residual 5.86% gap is a Node/JS-vs-Go runtime characteristic or tflw-specific. **Shipped 2026-08-01.** Calibrated (bisection) a flat open-model arrival rate whose achieved p95 approximated tflw/k6's on both scenarios — required ~33-47% of tflw/k6's own throughput to get there. The proper 3-run protocol exposed real instability (checkout p95 spread 24-107ms across 3 clean runs; dogfood's 3rd run hit a 54% request-failure rate — `ECONNRESET`/client-side fetch failures, something neither k6 nor tflw ever showed in this arc). Conclusion: directionally supportive (clean-run p95s land in the same order of magnitude as k6's, consistent with tflw's gap being a real, modest, plausible characteristic) but not a controlled proof, given the open-vs-closed workload mismatch; more confidently, Artillery's own default (non-pinned) connection handling is markedly less stable under this load than tflw's M45 pinned-connection implementation — corroborating that this arc's engineering (pinned connections, self-diagnosis) addresses a real class of problem, not a tflw-specific gap. No change to M46's own verdict. Full design + result in §2.19. |
+
 ### M47
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PROGRESS.md`</sub>
 
 **M47 shipped 2026-08-01, extended to a three-way (tflw/k6/Artillery) ladder at the user's request**
 
@@ -5526,7 +6678,7 @@ rest of the ladder.
 
 ### M48
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PROGRESS.md`</sub>
 
 **M48 shipped 2026-08-02 — acceptance-suite breadth (two new rungs) + p50/p99**
 
@@ -5537,7 +6689,7 @@ metric. Full design + results in `PLAN_BROWSER_PERF_SECURITY.md` §2.20 (D82-D85
 
 ### M49
 
-<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M49 shipped 2026-08-02 — root-caused M48's p50/p99 widening: AbortSignal.timeout() tail cost**
 
@@ -5671,7 +6823,7 @@ grammar anywhere (only §17's `TF033`/`TF034` diagnostic rows mentioned it) and 
 
 ### M58
 
-<sub>cited from CHANGELOG.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/README.md · lifted from `PROGRESS.md`</sub>
 
 **M58 shipped 2026-08-03 — `exclude` config directive (D127, PLAN_DISCOVERY_EXCLUDE.md)**
 
@@ -5697,7 +6849,7 @@ adjacent defect; all four are here, the rest of batch 1's 132 rows are recorded 
 
 ### M60
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PROGRESS.md`</sub>
 
 **M60 shipped 2026-08-03 — checker parity + the A4/A2 checker findings (`REVIEW_FINDINGS_A4.md`, `REVIEW_FINDINGS_A2.md`)**
 
@@ -5927,7 +7079,7 @@ gets `SPEC` ~~§16.1~~ **§13** restated, which means `docs-data.generated.ts` r
 
 ### M89
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **`M89` — workload results are made to describe the run that actually happened.** Cluster C3: a
 workload's reported population included iterations that never completed, so percentiles, error
@@ -5937,7 +7089,7 @@ and one consequence for the perf arc's own acceptance benchmark. Shipped as `M89
 
 ### M89a
 
-<sub>cited from SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89a — the truthful population (`B3-02`, §3.2, §3.3) · single-repo**
 
@@ -5968,7 +7120,7 @@ follows for free. `junit.ts` mentions `workload.overMs` only in prose.
 
 ### M89c
 
-<sub>cited from SPEC.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89c — `TF033` requires a meaningful threshold · two-repo**
 
@@ -6337,6 +7489,18 @@ controls** and **Coverage** to `matrix.node-version == 22`. The shared steps are
 each other (`npm test` 3m46s vs 3m35s). There is no Node 22 anomaly — the row below is about what
 those two exclusive steps cost, which is the real finding and a different one.
 
+### M115
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `REVIEW_FINDINGS.md`</sub>
+
+**Filed by `M115` (2026-08-09)**
+
+Three rows, all about the **instruments** rather than the subject — the pattern this arc keeps
+reproducing. Neither was the thing `M115` set out to look at; both were found by watching the tools
+work rather than by reading them. The mutation sweep's own output is the evidence for the first:
+**49 of 49 kills** are labelled with a reason that cannot be true of all of them, and the label was
+read past for four milestones because the verdict beside it was right.
+
 ### M116
 
 <sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
@@ -6349,7 +7513,7 @@ milestone takes all 8, because they collapse into **three new rules and one exte
 
 ### M118
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **M118 — the first two minutes**
 
@@ -6360,7 +7524,7 @@ stays `TF054`.
 
 ### M119
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **Filed by `M119` (2026-08-09)**
 
@@ -6372,7 +7536,7 @@ itself.
 
 ### M121
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **M121 — the open model's client**
 
@@ -6462,7 +7626,7 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M128
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128` — pentest arc Tier 1: hygiene findings, and the safety declaration that gates them**
 
@@ -6472,7 +7636,7 @@ assertions) together with the declaration half of **D21** (the layered default-d
 
 ### M128a
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md, tflw-tests/README.md +1 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128a` — testFlow-tests** *(no tflw changes; nothing consumes this yet)*
 1. `env secureLocal` → 8443, `insecure true`, `allow hosts "localhost"`.
@@ -6486,7 +7650,7 @@ assertions) together with the declaration half of **D21** (the layered default-d
 
 ### M128b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128b` — tflw** *(the grammar milestone)*
 6. `securityRules.ts` — the eight non-TLS rules as pure `(response, request) → applicability +
@@ -6504,7 +7668,7 @@ assertions) together with the declaration half of **D21** (the layered default-d
 
 ### M128c
 
-<sub>cited from SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128c` — tflw** *(the probe, and the arc's first acceptance)*
 13. `tlsProbe.ts` — `tls.connect()`, per-`host:port` cache, `allow hosts` + D291 enforced, timeout
@@ -6514,7 +7678,7 @@ assertions) together with the declaration half of **D21** (the layered default-d
 
 ### M130
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **`M130` — pentest arc Tier 2: the generated authorization matrix**
 
@@ -6523,15 +7687,47 @@ arc's stated differentiator and its answer to **OWASP API #1 (BOLA/IDOR)**. Seco
 `PLAN_LAUNCH_REVIEW.md` R3 committed to (*"DECIDED 2026-08-03 (user) — build Tiers 1–2, defer the
 Tiers 3–4 call"*).
 
+### M130a
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+
+**`M130a` — testFlow-tests** *(no tflw changes; nothing consumes this yet)*
+
+1. `session peer` in `tflw.config` (`USER_B_*`, cookie transport, mirroring `shopper`).
+2. `apiV2/src/vuln/`: `GET /vuln/orders/:id`, `GET /vuln/orders`, `DELETE /vuln/orders/:id`, all
+   behind `VULN_MODE=1`, all with a header comment saying they are deliberate and why.
+3. `VULNS.md` rows `V6`–`V8`, and the "Not planted, on purpose" BOLA paragraph rewritten now that it
+   is planted.
+4. `scripts/verify-security-target.mjs` extended: curl each planted route as a non-owner and assert
+   the leak is present, and each clean counterpart and assert it is not.
+5. File the stale `authz.tflw` comment (`SPEC §3.3: one session per test`, contradicted by
+   `P#96`) as a ledger row rather than fixing it inside this milestone.
+6. Gate: the full suite still green under `env local`; `VULN_MODE` off by default in
+   `docker compose up`.
+
 ### M130b
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **`M130b` — the authorization-violations engine**
 
 The tflw half of the pentest arc's Tier 2. Scoped 2026-08-13, by grilling, against
 `PLAN_M130_PENTEST_TIER2.md` §2 items 7–14 — eight one-line bullets turned into an implementable
 milestone.
+
+### M130c
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+
+**`M130c` — testFlow-tests** *(the config that needs new grammar, and the measurement)*
+
+15. `session admin privileged`; `probe mutating` under the `authorized target` in the acceptance
+    corpus's config only, never in the root config.
+16. `tflw-acceptance/security/` authz corpus — the three states per rule, plus D311's two halves.
+17. `authz-generated.tflw` beside the untouched `authz.tflw`.
+18. `scripts/verify-security-acceptance.mjs` extended to the authz rules; `VULNS.md`'s measurement
+    table grows the two rules and prints its gaps.
+19. Merge **after** `M130b` is on tflw `main`, then re-run and read which revision the log built.
 
 ### M131
 
@@ -6575,9 +7771,17 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
    `probe mutating` as the item that closed, restate the remaining deferral as a condition), and
    `PLAN_BROWSER_PERF_SECURITY.md` §3.5's ordering.
 
+### M132
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+
+**`M132` — Tier 2's debt: the cross-repo coupling, and two plan claims measurement falsified**
+
+**Scoped 2026-08-14 by grilling. Decisions D350–D362. Not started.**
+
 ### M132b
 
-<sub>cited from SPEC.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
 
 **`M132b` — testFlow-tests**
 
@@ -6636,7 +7840,7 @@ but *is my gate set the one CI runs*.
 
 ### M134b
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **`M134b` — the gate contract (2026-08-14 addendum, D385–D391)**
 
@@ -6645,6 +7849,18 @@ means for every mode, and deciding that under build pressure inside the engine m
 contract acquires a design by accident."* Reading the code with the engine built, D377 leaves four
 questions genuinely open and one of them has a wrong-looking obvious answer. These are the decisions,
 made before any of `M134b` was written.
+
+### M134c
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**`M134c` — the plants, re-derived from the shipped rules (2026-08-15 addendum, D395–D400)**
+
+D379 named four plants and one invariant each, three weeks before the rule pack existed. Read back
+against `inputRules.ts` as it merged, **three of the four would have been planted and reported
+nothing** — not because the plan was careless but because a one-line invariant name is not a
+detector, and every one of these rules ships with a narrowing that exists to hold Tier 1's
+zero-false-positive bar.
 
 ### M135
 
@@ -6673,9 +7889,17 @@ things reported is exactly the set `M134b` already computes.
 |---|---|---|---|---|
 | **`M135b`** | tflw | the SARIF exporter (D403–D407, D410–D413), `report/findings.sarif` write condition (D404), `report/repros/`, `@types/sarif` + `ajv` + schema test (D414), docs-site + SPEC corrections | no | no |
 
+### M135c
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M135_SARIF.md`</sub>
+
+| | repo | contents | new codes | coupled |
+|---|---|---|---|---|
+| **`M135c`** | tflw-tests | acceptance over the emitted document (D415) | no | no |
+
 ### M136a
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -6689,6 +7913,14 @@ things reported is exactly the set `M134b` already computes.
 |---|---|---|---|---|
 | **`M136b`** | tflw | `D427`, `D428` — the `tflw-config` language id, both wordlists, the three wiring sites, the config-buffer diagnostic test | no | no |
 
+### M136c
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
+| **`M136c`** | testFlow-tests | `D422`'s second proof, which survives its row's closure — the un-probed principal named against `apiV2`'s **real** `AnyAuthGuard` rather than against a fixture tflw wrote, plus whatever the `scanBlindSpot` rename touches in the corpus | n/a | **sequenced** |
+
 ### M137
 
 <sub>cited from CHANGELOG.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
@@ -6700,7 +7932,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -6716,7 +7948,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137c1
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -6724,7 +7956,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137c2
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -6738,9 +7970,17 @@ things reported is exactly the set `M134b` already computes.
 |---|---|---|---|---|
 | **`M137d`** | tflw | `D440` repro generalization to Tiers 2/3/4 | no | no |
 
+### M137e
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+| milestone | repo | contents | codes | coupled |
+|---|---|---|---|---|
+| **`M137e`** | testFlow-tests | `D438`'s documented plant, `D437`'s exclusive plants, `VULNS.md` rows, grader updates, `D445`'s baseline | n/a | **sequenced** |
+
 ### M137f
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -6748,7 +7988,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137g
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -6767,6 +8007,29 @@ settled below, in §5, each with the measurement that decided it. The seed's §2
 not an aside; it is the milestone's central evidence, and it changed the answer to §5's first
 question.
 
+### M138b
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+
+**`M138b` — testFlow-tests**
+
+5. `scripts/verify-contributing.mjs` — the same classification for §2.3's 11 sites, plus the
+   pointer-resolves check against the sibling checkout (D502).
+6. `CONTRIBUTING.md` — including the cross-repo section moved from README (D509).
+7. `README.md` — pointer replaces the moved section; §Setup untouched.
+8. `package.json` `verify:contributing`; `ci.yml` step #21 in `acceptance-check`; classify that step in
+   its own table.
+
+### M139
+
+<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**M139 — acceptance vs the `vuln/` ledger: recall per *plant*, and a gate that runs**
+
+**Merged 2026-08-18 as `testFlow-tests` PR #25.** The pentest arc's terminal milestone: one plant
+manifest that both the target and the acceptance read, and precision/recall measured **per plant**
+rather than per run, gated inside the regression sweep. Closes `M137e-01`.
+
 ### M140
 
 <sub>cited from SPEC.md · lifted from `PLAN_M140_REVERIFICATION.md`</sub>
@@ -6775,6 +8038,16 @@ question.
 
 **Grilled 2026-08-18.** Decisions **D514–D527**. Closes **`M136a-01` (S3)** and **`M113-01` (S3)**,
 which this scoping establishes are the same defect filed twice, ten milestones apart.
+
+### M141
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**M141 — two answers to one question (Order 1 of the ledger drawdown)**
+
+**Status: GRILLED 2026-08-19.** Supersedes the same-day seed, which is preserved only where it was
+right. Decisions **D531–D546**. Highest existing before this file was `D530`
+(`PLAN_M140_REVERIFICATION.md`).
 
 ### M142
 
@@ -6787,7 +8060,7 @@ Order 3 of the ledger drawdown.
 
 ### M143a
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
 
 **Amendments made while building `M143a` (2026-08-19)**
 
@@ -6796,6 +8069,15 @@ Two decisions the build forced, both widening what was scoped. `D581` puts the m
 serve as the control stalled 45.9 minutes in the identical step. `D582` sets the soft budget at 20
 minutes rather than `M137g-03`'s ~22, so that the instrument's number and `D574`'s re-shard
 condition are the same number rather than two to be correlated.
+
+### M143c
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
+
+**`M143c` — the half this milestone did not know it had**
+
+`M143a` shipped with prediction #4: *tflw-only, no `testFlow-tests` commit*. It was falsified the
+same day, by the sibling repo's own CI, on the PR that was waiting to merge behind it.
 
 ### M144
 

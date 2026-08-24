@@ -24,7 +24,7 @@
 // directly — a runner with no records has to say so in its output *and* still exit 0.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { after } from 'node:test';
@@ -56,7 +56,7 @@ after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true })
  * design records that define it. `withRecords: false` is a CI runner — the records simply are not
  * there, which is the condition `D683`'s second tier has to notice rather than skip past.
  */
-function fixture({ withRecords = true, spec = null } = {}) {
+function fixture({ withRecords = true, spec = null, sibling = {}, pin = undefined } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tflw-decisions-'));
   temps.push(dir);
   const write = (rel, text) => writeFileSync(join(dir, rel), text, 'utf8');
@@ -106,6 +106,14 @@ function fixture({ withRecords = true, spec = null } = {}) {
       '',
     ].join('\n'));
   }
+
+  // The sibling's citation pin (`D710`). Tracked, and present in every fixture — the generator
+  // treats a missing one as a broken tree rather than a smaller question, so a fixture without it
+  // would be testing the error path in every test that is about something else.
+  mkdirSync(join(dir, 'scripts'), { recursive: true });
+  write(join('scripts', 'sibling-citations.json'), `${JSON.stringify(pin ?? {
+    repo: 'example/tflw-tests', ref: 'main', sha: '0'.repeat(40), files: [], citations: sibling,
+  }, null, 2)}\n`);
 
   execFileSync('git', ['add', '-A'], { cwd: dir });
   cpSync(GENERATOR, join(dir, 'scripts', 'gen-decisions.mjs'), { recursive: false, force: true, mkdir: true });
@@ -772,4 +780,115 @@ test('every identifier the preamble names resolves in the index the preamble int
 
   const dangling = named.filter((id) => !entries.has(id));
   assert.deepEqual(dangling, [], `the preamble names ${dangling.join(', ')}, which the index does not resolve`);
+});
+
+// --- M152e: the sibling's citations (`D709`, `D710`) ----------------------------------------------
+
+test('an identifier only the sibling cites gets an entry', () => {
+  // `D709`'s defect, in one assertion. `D7` is defined in the fixture's records and cited by
+  // nothing in the fixture's own prose — the exact shape of the 94 identifiers `testFlow-tests`
+  // used against an index that published 491 of the 585 it needed.
+  const bare = ['# Spec', '', 'Nothing here cites anything.', ''].join('\n');
+  const without = fixture({ spec: bare });
+  assert.equal(run(without).code, 0);
+  assert.ok(!publishedIds(decisions(without)).has('D7'), 'sanity: local prose does not ask for D7');
+
+  const with_ = fixture({ spec: bare, sibling: { D7: ['VULNS.md'] } });
+  assert.equal(run(with_).code, 0);
+  assert.ok(publishedIds(decisions(with_)).has('D7'), 'the pin did not reach the index');
+});
+
+test('a sibling file is named by its repository in the provenance line', () => {
+  // Both repositories have a `README.md`. A provenance line reading `cited from README.md` for a
+  // file in the other one is not a small imprecision: the reader is being told where to look.
+  const dir = fixture({ sibling: { D7: ['README.md'] } });
+  assert.equal(run(dir).code, 0);
+  const entry = decisions(dir).split('### D7')[1].split('###')[0];
+  assert.match(entry, /cited from [^\n]*tflw-tests\/README\.md/);
+});
+
+test('an identifier the sibling cites only inside a range says so, rather than naming no file', () => {
+  // `collectCitations` distinguishes a citation with a site from one implied by `D40–D44`, and the
+  // pin has to carry that distinction across: an empty file list is range-only, not absent. Without
+  // it the entry would render `cited from ` with nothing after it.
+  const dir = fixture({ spec: '# Spec\n\nNothing here cites anything.\n', sibling: { D7: [] } });
+  assert.equal(run(dir).code, 0);
+  const entry = decisions(dir).split('### D7')[1].split('###')[0];
+  assert.match(entry, /cited inside a range only/);
+});
+
+test('a missing pin fails loudly, rather than publishing 94 fewer entries', () => {
+  // The failure this refuses is the quiet one. Drop the file and the index simply stops asking for
+  // the sibling's identifiers — and the very next `--check` calls them orphans, which reads as
+  // *delete these* and is the opposite of what happened.
+  const dir = fixture({ sibling: { D7: ['VULNS.md'] } });
+  rmSync(join(dir, 'scripts', 'sibling-citations.json'));
+  const gen = run(dir);
+  assert.notEqual(gen.code, 0);
+  assert.match(gen.stderr, /sibling-citations\.json/);
+  assert.match(gen.stderr, /refresh-sibling-citations/);
+});
+
+test('a pin naming an identifier the records do not define is unresolved, exactly like a local citation', () => {
+  // The pin is a citation source, not a bypass. An identifier with no anchor is a finding about the
+  // records whichever repository asked for it.
+  const dir = fixture({ sibling: { D999: ['VULNS.md'] } });
+  const gen = run(dir);
+  assert.notEqual(gen.code, 0);
+  assert.match(gen.stderr, /D999/);
+});
+
+// --- M152e: a label is not a statement -------------------------------------------------------------
+
+test('a bold label whose only content is the list under it publishes the list', () => {
+  // Three plans introduce a milestone's work this way, and the entry published the label alone:
+  // ``**`M138b` — testFlow-tests**``, 28 characters, naming a repository and a milestone the reader
+  // had just looked up. The list is the whole statement there is.
+  const record = [
+    'x',
+    '**`M138b` — testFlow-tests**',
+    '',
+    '5. `verify-contributing.mjs` — the same classification for §2.3\'s 11 sites.',
+    '6. `CONTRIBUTING.md` — including the cross-repo section moved from README.',
+    '',
+    '## Something else',
+    '',
+  ].join('\n');
+  const body = extractBlock(record, { line: 2, kind: 'boldLead', headingLevel: 0 });
+  assert.match(body, /verify-contributing\.mjs/);
+  assert.match(body, /cross-repo section/);
+  assert.ok(!body.includes('Something else'), 'the list must end before the next heading');
+});
+
+test('a bold lead that already carries prose is left where it ends', () => {
+  // The control, and the reason the rule is keyed on a *single-line* block. A lead with a sentence
+  // of its own has said something; reaching forward from it would publish the next list as though
+  // the decision had introduced it.
+  const record = [
+    'x',
+    '**`D77` — fix directly, no isolation diagnostic.** Unlike M41\'s mechanism, this one is',
+    'confirmed, so there is nothing a throwaway harness would establish.',
+    '',
+    '1. An unrelated list that belongs to the section, not to the decision.',
+    '',
+  ].join('\n');
+  const body = extractBlock(record, { line: 2, kind: 'boldLead', headingLevel: 0 });
+  assert.match(body, /nothing a throwaway harness would establish/);
+  assert.ok(!body.includes('An unrelated list'), 'the reach-forward fired on a lead that was not a label');
+});
+
+test('a single-line label followed by a paragraph does not reach forward either', () => {
+  // The other edge of the same rule. Reaching forward is for a label whose statement is the list
+  // under it; a label followed by prose is a lead whose block `takeStatement` already ends
+  // correctly, and taking the paragraph after it would attribute somebody else's sentence to the
+  // identifier. Only a list triggers it, and this is the assertion that says so.
+  const record = [
+    'x',
+    '**`M138b` — testFlow-tests**',
+    '',
+    'A paragraph belonging to the section, which this milestone did not decide.',
+    '',
+  ].join('\n');
+  const body = extractBlock(record, { line: 2, kind: 'boldLead', headingLevel: 0 });
+  assert.equal(body, '**`M138b` — testFlow-tests**');
 });

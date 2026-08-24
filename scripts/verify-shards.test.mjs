@@ -13,7 +13,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { MUTATIONS, RESHARD_AT, SHARD_BUDGET_SECONDS, partition } from './mutate.mjs';
+import { MUTATIONS, RESHARD_AT, SHARD_BUDGET_SECONDS, SHARD_COUNT, partition } from './mutate.mjs';
 import { checkManifests, checkShardCost, findManifests } from './verify-shards.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -267,4 +267,25 @@ test('a real sweep of this registry is priced by constants that would pass their
   }));
   const { problems } = checkShardCost(manifests);
   assert.deepEqual(problems, []);
+});
+
+test('SHARD_COUNT is the shard job\'s matrix, and the balance probe measures that split', () => {
+  // `M152e`. The pair `SHARD_BUDGET_SECONDS`/`timeout-minutes` above exists because two numbers in
+  // two files describing one limit drift; the shard count was a third such number and had already
+  // done it. `mutate.test.mjs` balanced a six-way split from `M128b` onward while `ci.yml` moved to
+  // twenty, so the only guard on the packer was reporting on a configuration nobody runs — and at
+  // six the packer is 14 minutes above its floor while at twenty it is one minute below it.
+  const ci = readFileSync(path.join(HERE, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
+  const job = ci.slice(ci.indexOf('\n  mutations:'));
+  const m = job.match(/^\s*shard: \[([^\]]+)\]/m);
+  assert.ok(m, 'the mutations job no longer declares a shard matrix');
+  const declared = m[1].split(',').length;
+  assert.equal(
+    SHARD_COUNT,
+    declared,
+    `mutate.mjs packs for ${SHARD_COUNT} shards and ci.yml runs ${declared}. The balance property is asserted against SHARD_COUNT, so a wrong one guards a split that does not exist.`,
+  );
+  // The matrix is 1..N with no gaps — a hole would upload no manifest for that index, and
+  // `mutation controls` reads a missing manifest as *the sweep did not cover the registry*.
+  assert.deepEqual(m[1].split(',').map((s) => Number(s.trim())), Array.from({ length: declared }, (_, i) => i + 1));
 });
