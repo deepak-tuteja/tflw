@@ -12,8 +12,14 @@
 //
 //     git push -u origin <branch> && node scripts/refresh-spec-anchors.mjs --ref <branch>
 //
-// Without that, a milestone like `M152c` — which normalises seven headings — could only ever pin
+// Without that, a milestone like `M152c` — which normalises four headings — could only ever pin
 // anchors for the tree it was replacing.
+//
+// THE PIN IS A COMMIT, AND THE BRANCH IT NAMES GETS SQUASHED. `sha` here will not be reachable from
+// `main` after a squash merge; it stays resolvable through the closed pull request, which is enough
+// for a reader following `source`, and re-pinning against `main` afterwards is never *wrong* — only
+// unnecessary, because the bytes are identical and the corpus records where the answer came from
+// rather than where the file now lives.
 //
 // IT IS NOT A CI STEP. It needs the network and an authenticated `gh`; CI runs the comparison, not
 // the fetch. That asymmetry is deliberate and it is the same one `verify-decisions` lives with: the
