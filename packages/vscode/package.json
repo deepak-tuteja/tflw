@@ -1,7 +1,7 @@
 {
   "name": "tflw-vscode",
   "displayName": "tflw",
-  "description": "Syntax highlighting, inline diagnostics, and run CodeLenses for testFlow .tflw test files and tflw.config (decision 94 supersedes decision 76's highlight-only deferral).",
+  "description": "Syntax highlighting, inline diagnostics, and run CodeLenses for testFlow .tflw test files and tflw.config.",
   "version": "0.1.0",
   "private": true,
   "publisher": "deepak-tuteja",
@@ -106,7 +106,7 @@
         "tflw.env": {
           "type": "string",
           "default": null,
-          "description": "The tflw.config environment to resolve services/sessions against (same precedence slot as `tflw run --env`/`TFLW_ENV`, decision B). Leave unset to use the config's default or sole environment."
+          "description": "The tflw.config environment to resolve services/sessions against (same precedence slot as `tflw run --env`/`TFLW_ENV`). Leave unset to use the config's default or sole environment."
         }
       }
     },

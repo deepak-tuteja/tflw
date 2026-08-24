@@ -12,11 +12,16 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findBare } from './verify-citations.mjs';
+import { findBare, findInPackages } from './verify-citations.mjs';
 
 /** One file's worth of prose, as the gate takes it. */
 const scan = (text, path = 'SPEC.md') => findBare([{ path, text }]);
 const phrases = (text, path) => scan(text, path).map((f) => f.phrase);
+
+/** One `package.json` string, as the metadata half of the gate takes it (`M153a`). */
+const meta = (value, path = '.description', file = 'packages/x/package.json') =>
+  findInPackages([{ file, path, value }]);
+const cited = (value, path) => meta(value, path).map((f) => f.phrase);
 
 test('a clean file produces nothing', () => {
   assert.deepEqual(phrases('Frozen additive-only since the first release (`P#45`), see `D122`.'), []);
@@ -168,4 +173,78 @@ test('a bare `#n` with no owning word in front of it is still a founding-list ci
   // rather than on the shape. `#40` on its own is `PLAN.md`'s item 40 and nothing says so — the
   // finding that sent `P#42`'s own text back to the record for repair.
   assert.deepEqual(phrases('pulled into the published draft (amends #40\'s M3 attachment)'), ['#40']);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The metadata corpus (`M153a`). Every rule above changes meaning here, and two reverse outright.
+// ---------------------------------------------------------------------------------------------
+
+test('a lettered decision is caught, and the English that surrounds it is not (`D716`)', () => {
+  // `PLAN_M13_LSP.md` numbers a pair of LSP decisions `A` and `B` — a tenth namespace on top of
+  // `D687`'s nine, and the one `M152c-01` singled out as indexing nothing this repository
+  // publishes. Every matcher in the repo missed it, because the rule was digits-only.
+  //
+  // The pair is the point. `decisions?\s+[0-9A-Za-z]+`, the form the scoping proposed, reads all
+  // four of these — it finds 36 phrases in the real corpus and 33 are ordinary English.
+  assert.deepEqual(phrases('the setting reaches the server per decision B, as decision A implies'),
+    ['decision B', 'decision A']);
+  assert.deepEqual(phrases('the decision the reviewer made, and the decision rather than the rule'), []);
+  // Case does the work, so no exemption list is needed (`D708`): a lowercase letter after the word
+  // is an article, and `a decision a human recorded` is a real line in `SPEC.md`.
+  assert.deepEqual(phrases('marked suppressed — a decision a human recorded outside the run'), []);
+});
+
+test('naming the record repairs a citation in prose and IS the defect in metadata (`D715`)', () => {
+  // The same string, read by two corpora, to opposite verdicts — and both are right. A reader of
+  // the records can open `PLAN_ENTERPRISE.md`; a reader of `npm view tflw` cannot, because every
+  // `PLAN*.md` here is gitignored and none has ever left the repository.
+  const line = 'testFlow Language Server (PLAN_ENTERPRISE.md decision 17) — stdio protocol wiring.';
+  assert.deepEqual(phrases(line), []);
+  assert.deepEqual(cited(line), ['PLAN_ENTERPRISE.md', 'decision 17']);
+});
+
+test('a milestone label and a ledger row are citations in metadata (`D717`)', () => {
+  // Neither carries a record name, so `NAMES_RECORD` provably cannot reach them — and both are how
+  // the two sites this half of the gate was built for are actually written. Measured at zero false
+  // positives across every string in every tracked `package.json` in both repositories.
+  assert.deepEqual(cited('taint tracking, and (M3a) the Playwright-backed browser step driver.'), ['M3a']);
+  assert.deepEqual(cited('`M147e`/`M147-10`: this chains docs:check.'), ['M147e', 'M147-10']);
+});
+
+test('one identifier, one finding — the rules overlap and the longer reading wins', () => {
+  // `M147-10` is a ledger row to one rule and an `M147` label to another. Reporting both asks for
+  // the same repair to be made twice, and the row is what was cited.
+  const found = meta('see `M147-10` for the rest');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].phrase, 'M147-10');
+  assert.equal(found[0].what, 'a review-ledger row');
+});
+
+test('a finding names the JSON path, because the line number points at nothing', () => {
+  const [f] = meta('precedence slot as `tflw run --env`, decision B).',
+    '.contributes.configuration.properties."tflw.env".description');
+  assert.equal(f.file, 'packages/x/package.json');
+  assert.equal(f.path, '.contributes.configuration.properties."tflw.env".description');
+  assert.equal(f.what, 'a lettered decision citation');
+});
+
+test('a product blurb with no citation stays quiet', () => {
+  // The metadata rules are broader than the prose ones, so the always-green failure mode is the
+  // one to pin: these are the repaired descriptions of four real workspaces.
+  assert.deepEqual(cited('testFlow language front-end — lexer, recursive-descent parser, AST, diagnostics.'), []);
+  assert.deepEqual(cited('tflw documentation site (VitePress) — deployed to GitHub Pages.'), []);
+  assert.deepEqual(cited('Syntax highlighting, inline diagnostics, and run CodeLenses for testFlow .tflw test files.'), []);
+  assert.deepEqual(cited('testFlow runtime — interpreter over the AST, fetch binding, event stream, taint tracking.'), []);
+});
+
+test('a bare record-local sequence is a KNOWN blind spot, not a caught one (`D718`)', () => {
+  // `webV2-1`, in the sibling repository's admin console. No record name precedes it and no general
+  // pattern should reach it: a rule broad enough would flag every hyphenated token in every
+  // description. It is repaired by hand and the gate is documented as blind to its shape, so the
+  // next one gets through knowingly. `D659` refuses the wordlist that would "fix" this — a stale
+  // list of record-local prefixes fails without saying so.
+  //
+  // This test asserts the blind spot on purpose. If a later rule closes it, this fails, and that
+  // failure is the notification that `M153a-02` can be closed.
+  assert.deepEqual(cited('SSR admin console (webV2-1) over apiV2 — server-rendered, no client bundle.'), []);
 });
