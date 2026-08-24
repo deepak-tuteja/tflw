@@ -139,6 +139,14 @@ jobs:
       # nothing it reads is gitignored.
       - run: npm run verify:citations
 
+      # Every `SPEC.md#<fragment>` a tracked file links to resolves to a real heading (`D677`).
+      # Six were already dead when this was written, all on user-facing docs pages, because GitHub
+      # does not 404 on a bad fragment — it serves the page and drops the reader at the top of a
+      # 3,700-line document, so nothing ever reported them. The heading slugs are computed by
+      # `scripts/github-slug.mjs`, whose rule is held against GitHub's own anchors by
+      # `github-slug.test.mjs`; that corpus is refreshed by hand, and only the comparison runs here.
+      - run: npm run verify:anchors
+
       # Every internal anchor on the docs site resolves to a real heading (M62/DT-07), and every
       # page renders the sidebar it belongs to (M125e/`FU-30`). Separate from `npm test` because
       # both read the built `.vitepress/dist` — the root `npm run build` above already produced it.

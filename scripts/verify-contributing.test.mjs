@@ -112,6 +112,14 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:anchors',
+    class: 'gate',
+    local: 'npm run verify:anchors',
+    why: '`D677` — every `SPEC.md#<fragment>` a tracked file links to resolves to a real heading. It runs identically in both places: unlike `verify:decisions` it reads nothing gitignored, and unlike `test:links` it needs no build, because the anchors are computed from `SPEC.md` itself. A contributor has to run it before pushing for one specific reason — renaming a heading in `SPEC.md` silently breaks every link into it, and GitHub answers a dead fragment with the top of the page rather than a 404',
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run test:links -w @tflw/docs-site',
     class: 'gate',
     local: 'npm run test:links -w @tflw/docs-site',

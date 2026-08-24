@@ -217,4 +217,4 @@ itself requires zero differing pixels (no fuzz slider). `tflw run --update-snaps
 overwrites a baseline instead of comparing — the accept step for a deliberate visual change;
 `report.html` shows a before/after/diff triptych for anything that wrote or changed one.
 
-Full reference: [SPEC.md §9](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#9-ui-steps-p8-9-p26-).
+Full reference: [SPEC.md §9](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#9-ui-steps-p89-p26-).

@@ -321,7 +321,7 @@ here.
 
 ### P#27
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN.md`</sub>
 
 27. **Config is a tflw dialect.** `tflw.config` is parsed by the same lexer/parser as tests — a
     declaration-only dialect (`env`/`defaults`/`session`/`require` blocks; `test` not allowed).
@@ -1546,6 +1546,25 @@ here.
     consumption milestone (new PII profile/export fixture + real `.tflw` coverage) follows next,
     per this workspace's standing git-push/commit confirmation rule commits are created but not
     pushed without asking first.
+
+### P#101a
+
+<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+
+    **(a) `allow hosts "…"` host allowlist (enterprise decision 9).** New `AllowHostsDecl` AST
+    node (`allow` added to `CONFIG_KEYS`, dispatches to `parseAllowHostsDecl` — `allow`, a
+    required `hosts` keyword, then a comma-separated list of host strings, mirroring
+    `parseTimeoutDecls`'s comma-loop shape). Unlike `insecure`/`workers` (override — env wins),
+    `allow hosts` **accumulates** across `defaults` + `env`, the same push semantics `header`
+    already uses — a baseline allowlist in `defaults`, extended per env.
+    `ResolvedConfig.allowHosts: string[] | null` (`null` = never declared, no enforcement,
+    backward compatible). Enforced in `execApi()` (`interpreter.ts`) right after the final `url`
+    is computed, **before** `sendRequest` — a violation throws `RuntimeError` with zero network
+    I/O attempted, not just a failed request; the `oauth2` token request (`runOauth2Session`) gets
+    the identical check before its own `sendRequest` call, since it's a real network request the
+    allowlist must cover too, not just ordinary `api` steps. A pattern starting with `*.` matches
+    that suffix or the bare domain; anything else must match the hostname exactly
+    (`hostMatchesAllowPattern`).
 
 ### P#101b
 
@@ -4784,6 +4803,16 @@ demonstrated it: three shipped constructs (`probe ciphers`, `session … csrf fr
 with its critical `sec/csrf-not-enforced`, and `seed spider`) appear **nowhere** on the site, all
 three fully specified in `SPEC.md`. No phrase list could ever have found them, because an absent page
 matches no grep.
+
+### D677
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D677` — a new gate resolving every `SPEC.md#<anchor>` referenced from tracked files.** 23 exist,
+one points into a heading this milestone edits, and nothing watches any of them because they are
+absolute GitHub URLs. The gate parses `SPEC.md`'s headings, computes their slugs, and fails on a
+fragment that resolves to nothing. It closes the hole `M149` left open rather than merely avoiding
+it this once.
 
 ### D686
 

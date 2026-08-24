@@ -59,6 +59,24 @@ export const RANGE = /(?<![\w#])([DM])(\d{1,3})[a-z]?\s*[-–—]\s*(?:[DM])?(\d
  */
 export const PRODUCT_FENCE_INFO = new Set(['tflw', 'console']);
 
+/**
+ * Whether the position sits inside an inline code span — i.e. whether what follows is being
+ * *quoted* rather than made. Shared by both gates that read this corpus, for the reason `D697`
+ * records: a rule one of them learned the hard way must not be re-derived by the next one.
+ *
+ * `verify-citations` needs it becausethe preamble's own glossary row reads `` | `decision 43`, `#43` | `P#43` — … | ``, and
+ * that row exists to teach the reader the very spelling this gate objects to. Flagging it would be
+ * the gate objecting to its own documentation, and rewriting it would delete the glossary.
+ * `verify-anchors` needs it because `CONTRIBUTING.md` illustrates the shape of a SPEC fragment in
+ * backticks, with an ellipsis where the middle would be, and that is not an address to check.
+ *
+ * Counting backticks before the match is enough — a span cannot open on one line and close on
+ * another, and the only double-backtick spans in the corpus are the ones quoting single backticks.
+ */
+export function inCodeSpan(before) {
+  return (before.match(/`/g) ?? []).length % 2 === 1;
+}
+
 /** @param {string} text @returns {{line: number, inProductFence: boolean, text: string}[]} */
 export function scanLines(text) {
   const out = [];

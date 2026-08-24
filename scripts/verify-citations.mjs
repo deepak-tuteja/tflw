@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { scanLines } from './gen-decisions.mjs';
+import { inCodeSpan, scanLines } from './gen-decisions.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -92,19 +92,6 @@ const NAMES_RECORD = /(`?PLAN[A-Za-z0-9_]*\.md`?|(?<![_A-Za-z])PLAN|(?<![\w])ent
  * address, and no reader reads it as a citation.
  */
 const IN_LINK_TARGET = /\]\([^)]*$|<[^>\s]*$|https?:\/\/\S*$|\.md#\S*$/;
-
-/**
- * Whether the position sits inside an inline code span. A citation in backticks is being *quoted*,
- * not made: the preamble's own glossary row reads `` | `decision 43`, `#43` | `P#43` — … | ``, and
- * that row exists to teach the reader the very spelling this gate objects to. Flagging it would be
- * the gate objecting to its own documentation, and rewriting it would delete the glossary.
- *
- * Counting backticks before the match is enough — a span cannot open on one line and close on
- * another, and the only double-backtick spans in the corpus are the ones quoting single backticks.
- */
-function inCodeSpan(before) {
-  return (before.match(/`/g) ?? []).length % 2 === 1;
-}
 
 /** Tracked markdown. Same corpus, and same `.git` requirement, as the generator's own gate. */
 function trackedMarkdown(root) {

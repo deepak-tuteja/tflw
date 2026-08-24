@@ -455,7 +455,7 @@ RandomExpr  := 'random' 'number' Value 'to' Value
   operands, field values, array elements and call arguments all parse through it, which is why
   `has count {n}` works and why `equals {id: 1}` and `matches subset {id: 1}` agree.
 
-See the generated [generators quick reference](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#731-generators-quick-reference-plan-decision-103-enterprise-arc-cluster-4)
+See the generated [generators quick reference](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#731-generators-quick-reference-p103-enterprise-arc-cluster-4)
 (§7.3.1, from [`spec-data.ts`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/src/spec-data.ts))
 for one example per form.
 

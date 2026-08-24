@@ -34,6 +34,7 @@
     "verify:ledger": "node scripts/verify-ledger.mjs",
     "verify:decisions": "node scripts/gen-decisions.mjs --check",
     "verify:citations": "node scripts/verify-citations.mjs",
+    "verify:anchors": "node scripts/verify-anchors.mjs",
     "docs:decisions": "node scripts/gen-decisions.mjs",
     "docs:provenance": "node scripts/gen-decisions.mjs --provenance"
   },
