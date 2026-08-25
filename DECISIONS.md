@@ -222,7 +222,7 @@ here.
 
 ### P#17
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
 
 17. **Actions (the reuse unit, fully specified)** — `action name(param, …)` containing ordinary
     steps; `give <expr>` returns values so actions compose with chaining
@@ -5942,6 +5942,21 @@ recall the way `M139` grades the security plants. `VULNS.md` is not merged into 
 specialist ledger for the `VULN_MODE` slice and `CONSTRUCTS.md` cites it rather than duplicating
 it. The `no route without a row, no row without a route` discipline carries over verbatim.
 
+### D725
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D725` — plants are always-present fixture modules; `vuln/` keeps its gate.**
+New plants follow the `flaky-widget` / `retry-demo` / `contract-demo` / `safety-demo` /
+`load-admin` precedent: named modules, unconditionally mounted, each owning the behaviour one
+construct family must catch. `vuln/` keeps `VULN_MODE=1` because a live vulnerability is
+categorically different from a deliberate 404 or a slow route, and `M137e` already pays the
+two-stack cost for it alone. Rejected: a global `PLANT_MODE` (doubles every CI leg and forces the
+five existing demo modules to move, breaking ~45 files' targets); data-only plants (most
+zero-coverage constructs need *behaviour* the data layer cannot express); a request-scoped fault
+injector (a bug in it is indistinguishable from a tflw defect — the instrument becomes the thing
+you cannot trust).
+
 ### D726
 
 <sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
@@ -6103,7 +6118,7 @@ is its own state and it is printed.
 
 ### D742
 
-<sub>cited from SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D742` — the manifest has a seventh family, and `M154a` missing it was structural.**
 `tflw spec --json` shipped six families; the parser also dispatches seven **declarations** (`test`,
@@ -6116,6 +6131,17 @@ not have gone red for it on any day, in any state. Found by scoping `M154c`, who
 *adding* generators: a construct `M154c` plants "cannot be demanded by a gate that cannot see it".
 Measured at the time: `after file` used **once** in the corpus, a bare `after` **twice**, `retry`
 **five times**.
+
+### D743
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D743` — a pure value transform is graded against a literal, with no target at all.**
+A deliberate departure from `D725`, which says plants are always-present fixture modules. `base64`,
+`hex` and `url` consume a value and return a value (`SPEC` §7.6); routing one through an apiV2 echo
+endpoint would prove the HTTP client works and nothing whatever about the transform, while adding a
+module, a route and a serialization layer between the claim and the thing claimed. So `C8`–`C10`
+have `target: none` and assert against hand-written literals.
 
 ### M0
 
@@ -6547,7 +6573,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M29
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PROGRESS.md`</sub>
 
 **M29 — perf arc: `scenario`/`threshold` grammar + single-scenario load engine**
 
@@ -8479,7 +8505,7 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 ### M154a
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154a` — tflw: `tflw spec --json` and the build stamp**
 
@@ -8495,7 +8521,7 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 ### M154c
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154c` — the functional/API tier**
 

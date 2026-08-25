@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites in tracked prose, and which of its files cite it, read from the ref below (D709/D710). Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:citation-pin` is what fails when this goes stale.",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "m154b-construct-coverage",
-  "sha": "73dd0f38b9074376a6934ace0b03c29ce8f97fa9",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/73dd0f38b9074376a6934ace0b03c29ce8f97fa9",
+  "ref": "m154c-api-tier-plants",
+  "sha": "a89f44fd7df9c924c3559bf231f4cee85a905f2b",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/a89f44fd7df9c924c3559bf231f4cee85a905f2b",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -316,6 +316,9 @@
     "D724": [
       "CONSTRUCTS.md"
     ],
+    "D725": [
+      "CONSTRUCTS.md"
+    ],
     "D726": [
       "CONSTRUCTS.md"
     ],
@@ -345,6 +348,12 @@
     ],
     "D741": [
       "CONTRIBUTING.md"
+    ],
+    "D742": [
+      "CONSTRUCTS.md"
+    ],
+    "D743": [
+      "CONSTRUCTS.md"
     ],
     "D75": [
       "tflw-acceptance/README.md"
@@ -481,9 +490,15 @@
     "M153b": [
       "CONSTRUCTS.md"
     ],
+    "M154a": [
+      "CONSTRUCTS.md"
+    ],
     "M154b": [
       "CONSTRUCTS.md",
       "CONTRIBUTING.md"
+    ],
+    "M154c": [
+      "CONSTRUCTS.md"
     ],
     "M154e": [
       "CONSTRUCTS.md"
@@ -495,6 +510,7 @@
       "README.md"
     ],
     "M29": [
+      "CONSTRUCTS.md",
       "tflw-acceptance/README.md"
     ],
     "M3": [
@@ -630,6 +646,9 @@
       "tflw-acceptance/perf/README.md"
     ],
     "P#16": [
+      "CONSTRUCTS.md"
+    ],
+    "P#17": [
       "CONSTRUCTS.md"
     ],
     "P#25": [
