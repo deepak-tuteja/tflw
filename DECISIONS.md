@@ -213,7 +213,7 @@ here.
 
 ### P#16
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
 
 16. **Soft assertions** — `expect` hard-fails the test immediately (trustworthy artifacts).
     `check` is its soft twin: identical grammar/matchers, records pass/fail in the report and
@@ -5671,6 +5671,15 @@ precisely because a same-commit branch made all 70 citations vacuous):
 | the `results` contract section | `sarif.test.ts`'s two-way walk (contract promises a key the emitter dropped, and vice versa) |
 | `verify-watch --expect-no-display` | it *is* the break; record the observed failure text |
 
+### D538
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**D538 — `M138b-01`: ANSWERED by the user 2026-08-19 — option A**
+
+Put to the user as three options (A drop `npm test` + drop `--fix`; B write the unit tests; C document
+both). **The answer is A**, with a reason that is not in the row and changes how the fix is written:
+
 ### D623
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
@@ -5851,7 +5860,7 @@ reconstructed, and the rule stands going forward.
 
 ### D659
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **D659 — a completeness gate beside the denylist: a shipped construct must be mentioned somewhere**
 
@@ -5892,6 +5901,106 @@ files that mostly are not.
 11 tracked `.md`** repointed", on the assumption that `M152b`'s repair transfers across the repo
 boundary: give each tracked prose file a sentence naming `DECISIONS.md`, and its notation becomes
 resolvable. Measured against the published index, **that sentence would be false for half of them.**
+
+### D722
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D722` — the dogfood's job is defect yield, and coverage is the gate.**
+A construct counts as covered when it is exercised in a way that *could fail* — a known-answer
+plant, not a happy path. Presence is necessary and not sufficient. This is the bar under which
+§2.2's fourteen constructs are gaps; under a presence-only bar they are all already green, and the
+milestone would be a formality. Rejected alternatives: presence-only (recreates today's state
+exactly), scenario-realism-first (leaves `spike`/`step`/`cleanup` uncovered because no realistic
+flow demands them), and a spec-conformance fixture suite decoupled from the app (abandons
+dogfooding, which `plan_v2.md` §4.2 deliberately protects).
+
+### D723
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D723` — ground truth is `tflw spec --json`, emitted by the binary under test.**
+tflw grows one new subcommand emitting its own surface: statement keywords (from
+`STATEMENT_KEYWORDS`), the `directive`/`key`/`probe` slots from `spec-data.ts`, matchers,
+diagnostic codes, and each entry's `SPEC.md` status badge. The sibling's gate obtains it by running
+**the vendored binary**, so the checklist and the program under test are the same artifact and
+cannot disagree. Rejected: a hand-maintained list (`D659` — this repo's guards do not maintain
+wordlists, and a stale one reports green forever, which is the exact failure being closed); reading
+`SPEC.md` §4.6's generated table (step keywords only — no probes, matchers, directives or
+diagnostics, so ~half the surface has no entry); the gate living in tflw and walking the sibling's
+corpus (inverts CI's checkout direction and makes tflw red for a corpus it does not control,
+which makes `D511`'s merge order harder rather than easier).
+
+### D724
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D724` — the manifest is known-answer and repo-wide: `CONSTRUCTS.md`.**
+Generalize `VULNS.md` past security. One row per shipped construct: the planted defect in
+apiV2/webV2 it must catch, the test that catches it, the expected verdict. Graded by precision and
+recall the way `M139` grades the security plants. `VULNS.md` is not merged into it — it stays the
+specialist ledger for the `VULN_MODE` slice and `CONSTRUCTS.md` cites it rather than duplicating
+it. The `no route without a row, no row without a route` discipline carries over verbatim.
+
+### D726
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D726` — workload shapes are graded against a server-observed arrival curve.**
+`tflw-acceptance/perf/profile/concurrency-groundtruth-{instant,ramped}.mjs` already prove the
+idiom: the *server* records arrivals and the run is graded against what landed. Generalize it into
+apiV2's `load-admin`. A `spike` must actually spike; `run 500 iterations` must issue exactly 500.
+**The generator is graded against physics, not against its own report** — the only formulation that
+could catch tflw mis-pacing a shape it still reports green. Calibrated-latency percentile grading
+is a *complement*, deferred to `M154e`'s stretch; threshold-breach plants alone grade the verdict
+only, and a completely wrong shape still breaches a threshold.
+
+### D727
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D727` — static gate in CI, perf on a scheduled box run.**
+The coverage gate is static (parse the corpus, compare against `tflw spec --json`) so it costs
+seconds and runs on every PR. Functional/UI/security plants join the existing four regression legs.
+Arrival-curve grading runs box-only on a schedule. GitHub's shared runners cannot produce a
+trustworthy arrival curve; the box can.
+
+### D729
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D729` — UI plants prefer a real flow; a harness page is the fallback.**
+Most of the uncovered browser surface has a believable home: an invoice PDF download on
+`OrderConfirmationPage`, a native `confirm` on admin delete, an iframe payment widget at checkout,
+drag-to-reorder in admin categories, a `track shipment` link opening a tab. Build them as product
+features and plant the defect in the feature. Fall back to a `RenderFixturePage`-style harness only
+where no honest flow exists (viewport matrices, deliberate visual-baseline drift). A construct
+proven only on a purpose-built page is proven against the easiest possible case.
+
+### D730
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D730` — the ratchet: an uncovered list that may only shrink.**
+The gate ships in `M154b` with an explicit uncovered list and **fails if the list grows**, or if a
+listed construct silently disappears from `tflw spec --json`. Each later milestone deletes entries.
+This buys the anti-regression property on day one — *a new tflw keyword can never again ship
+uncovered* — which is the property that actually decayed, while coverage catches up over
+milestones. Precedent: `verify-test-counts.mjs`'s `EXPECTED` is exactly this shape. The list is a
+wordlist, but a monotonically shrinking one whose growth is a failure, which is not the thing
+`D659` forbids.
+
+### D734
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D734` — a plant that fails because tflw is broken must be distinguishable from a plant that is
+wrong.**
+The point of defect yield is that plants *will* catch real tflw defects. When one does, the finding
+is filed as a row in tflw's ledger and the plant is marked `blocked-on:<row>` in `CONSTRUCTS.md` —
+counted as *covered but currently failing for a known reason*, never quietly deleted or moved to
+the ratchet. A plant that turns red with no row is a plant that is wrong. Without this the
+milestone's own successes look identical to its bugs.
 
 ### D736
 
@@ -5939,6 +6048,58 @@ machine form and one human one, so the flag is the boolean it looks like. `--for
 deliberately **not** accepted as a second spelling: two ways to say one thing is the drift this
 repository keeps paying for elsewhere, and the cost of a reader typing the wrong one is a usage
 error naming the right one.
+
+### D739
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D739` — "uncovered" on the ratchet means *unrostered*, not *unexercised*.**
+`M154b`'s ratchet ships with 163 of the 166 constructs on it, and `step:api` is one of them — with
+1139 occurrences behind it, `step:expect` with 1692, `step:capture` with 523. Read as "constructs
+this suite never exercises" that list is false of a good third of itself, and a list nobody believes
+is a list nobody defends. So the entry means exactly one thing: *no row in `CONSTRUCTS.md` states
+its known answer.* For the well-covered constructs of §2.4 that will usually be a cheap row, because
+the evidence exists and only the claim is missing; for the seven at zero it is a plant that does not
+exist yet. Both are unrostered, they cost very different amounts, and the gate deliberately does not
+pretend to know which is which — that is what `M154c`–`M154f` are for. The alternative considered
+and rejected was two lists, `unrostered` and `unexercised`, which would have required someone to
+classify all 163 up front and would have made the *cheap* half of the gate depend on the *expensive*
+half being right.
+
+### D740
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D740` — the ratchet's ceiling is a second, pinned integer.**
+`D730` says the uncovered list may only shrink. The list is tracked, so growing it is a visible
+diff — but that is social, and this pair of repositories has a documented history of properties that
+held only because nobody got round to breaking them (`M141`/`D538`, `M149f-01`, `M115-03`).
+`RATCHET_CEILING` is a pinned number the list's length must not exceed, on
+`scripts/verify-test-counts.mjs`'s `EXPECTED` model — the precedent `D730` itself names. Adding an
+entry therefore takes two edits in two places, the second being a number going *up* in a file whose
+entire purpose is that it goes down. Lowering it is the ordinary business of every later milestone
+and needs no ceremony.
+
+### D741
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D741` — the coverage gate refuses a stale build; `check-acceptance` only annotates one.**
+Both scripts grade the vendored tflw and `M153b-01` is about both, but the same staleness does two
+different things to them. `check-acceptance.mjs` answers *does this corpus parse against the
+released build* — against a stale one that is an **old** answer about a real program, and its own
+docblock argues at length that grading the released build is the correct question there. So it
+prints its provenance up front and, when it reports failures on a build that is not current, a
+banner after them. `verify-construct-coverage.mjs` cannot do the same, because its ground truth
+**is** the manifest that build emits: a vendored copy packed before a new keyword shipped emits a
+manifest without it, the ratchet matches, and the gate goes green on precisely the day it was built
+to go red. That is not an old answer, it is a confident wrong one, so provenance is a precondition
+and a build outside `current`/`dirty`/`unknowable` exits 2 before anything is compared.
+`unknowable` is in that set deliberately and is not a synonym for `current`: it is the ordinary
+state on the remote build host, whose rsynced trees carry no `.git`, and treating it as a failure
+would make the offload path unusable while treating it as a pass would make the check decorative. It
+is its own state and it is printed.
+---
 
 ### M0
 
@@ -6735,7 +6896,7 @@ rest of the ladder.
 
 ### M48
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PROGRESS.md`</sub>
 
 **M48 shipped 2026-08-02 — acceptance-suite breadth (two new rungs) + p50/p99**
 
@@ -8098,7 +8259,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -8268,7 +8429,7 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 
 ### M149f
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **M149f — the guard, the gates and the PR**
 
@@ -8289,6 +8450,17 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 what the build actually found is `D695` (171 citations, not 90–104 + 47) and `D697` (five more
 exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
+### M153b
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
+
+**`M153b` — the sibling's two descriptions (testFlow-tests)**
+
+1. Repair `inventory-service/package.json` and `webV2/admin/package.json` per `D714`.
+2. **No gate here.** `testFlow-tests` has no `verify:citations`; porting one is a new script, not a
+   corpus widening, and it is a separate row (`M153b-01`).
+3. Refresh `scripts/sibling-citations.json` in tflw if the repair moves any pinned line.
+
 ### M154a
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
@@ -8296,5 +8468,21 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 **`M154a` — tflw: `tflw spec --json` and the build stamp**
 
 **Repo: tflw. Closes `M153b-01`.**
+
+### M154b
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154b` — the walking skeleton**
+
+**Repo: testFlow-tests (+ tflw if `spec --json` needs amending).**
+
+### M154e
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154e` — the perf tier**
+
+**Closes `B6-15`.**
 
 <!-- GENERATED:decisions:end -->
