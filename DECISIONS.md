@@ -5027,7 +5027,7 @@ is *what*, not *who*, and the measurement is worse:
 
 ### D380
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D380 — the negatives are the real app, untouched**
 
@@ -5488,7 +5488,7 @@ test-dialect parser. `probe mutating` has never been completable.
 
 ### D445
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D445` — what the `vuln/` acceptance is owed: a versioned baseline of the real app's true findings**
 
@@ -5644,7 +5644,7 @@ machine-checked invariant: its id set.
 
 ### D493
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
 
 **D493 — Closing `M137e-01` is M139's first item, not a prerequisite.**
 
@@ -6277,6 +6277,20 @@ Absolute throughput on the shared build box moves with thermal state, whatever e
 to stop flaking, vacuous. The ladder already exists to answer a *comparative* question, and a ratio
 between two runners measured in the same window cancels most of that variance; the absolutes ride
 along in the artifact as history rather than as the gate.
+
+### D752
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D752` — a roster row that cites another gate is checked against that gate, in both directions, on
+what the run actually did.**
+`M154f` rosters five security constructs by pointing `CONSTRUCTS.md` at
+`verify-security-acceptance.mjs` instead of writing five new plants, because that script's `LEDGER`,
+`DECLINES` and `APPLICABILITY_PROBES` tables already state their known answers — and state them more
+exactly than a plant row can. A `LEDGER` row names the rules that must fire **and** the rules that
+are in play at that floor and must stay silent, which is a claim about a rule that produced nothing;
+no plant row in this ledger has ever managed to say that. Writing the plants anyway would have
+produced a second, weaker copy of an assertion that already runs on every sweep.
 
 ### M0
 
@@ -7939,7 +7953,7 @@ Closes `M118-02` (S2). Scoped 2026-08-10, not started.
 
 ### M124
 
-<sub>cited from SPEC.md · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
 
 **`M124` — a literal the run will reject is a checker sentence**
 
@@ -8126,7 +8140,7 @@ milestone.
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -8310,7 +8324,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M136c
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/VULNS.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -8367,7 +8381,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137e
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -8375,7 +8389,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137f
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -8682,5 +8696,13 @@ Joins the `security-ui` regression leg.
 **`M154e` — the perf tier**
 
 **Closes `B6-15` — and see the build note below, because it does not, yet.**
+
+### M154f
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154f` — the security tier and the cross-repo seam**
+
+**Closes `M124-03`.**
 
 <!-- GENERATED:decisions:end -->
