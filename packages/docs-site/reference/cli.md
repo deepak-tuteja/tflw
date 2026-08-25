@@ -198,9 +198,9 @@ than parsed at run time — `SPEC.md` itself is not shipped in the npm package.
 
 ## `tflw spec [--json]`
 
-Prints the construct manifest of *this build*: every step keyword, matcher, generator, locator,
-`tflw.config` word and diagnostic code the parser dispatches, followed by a build stamp — version,
-commit and build time.
+Prints the construct manifest of *this build*: every declaration, step keyword, matcher, generator,
+locator, `tflw.config` word and diagnostic code the parser dispatches, followed by a build stamp —
+version, commit and build time.
 
 It exists for conformance testing. A suite that wants to prove it exercises the whole language has
 to be able to ask what the whole language is, and reading it out of `@tflw/lang` is not available to
@@ -210,6 +210,11 @@ a consumer who installed the published `tflw` package: that ships one self-conta
 The manifest lists **what this binary dispatches, and only that**. A construct SPEC marks 🔮 planned
 is absent rather than listed as planned, so building one makes it *appear* — which is what lets a
 downstream coverage gate go red on its own the day it ships, with nobody having to remember.
+
+Declarations are the outermost family: the seven words a file can begin a top-level block with
+(`test`, `crawl`, `action`, `import`, `use`, `before`, `after`) and the five clauses a `test` header
+takes (`tags`, `with each`, `as`, `retry`, `parallel`/`sequential`). A hook's two scopes are one
+construct with two forms, the same way `switch to new tab` and `switch to tab N` are one `switch`.
 
 The build stamp is the other half. `commit` is a short sha, or `null` where there was no git to ask
 (a published tarball, a vendored checkout) — never invented, because an invented one would be

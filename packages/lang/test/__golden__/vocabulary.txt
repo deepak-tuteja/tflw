@@ -19,8 +19,8 @@ A   Retry-After
 A   a11y
 A   accept
 K   across
-K   action
-K   after
+AK  action
+AK  after
 A   all
 A   allow
 K   and
@@ -31,7 +31,7 @@ A   at
 A   authorization
 A   authorized
 V   base64
-K   before
+AK  before
 K   between
 AK  body
 A   both
@@ -50,7 +50,7 @@ A   connects
 A   console
 A   contains
 K   count
-K   crawl
+AK  crawl
 A   critical
 K   csrf
 A   css
@@ -112,7 +112,7 @@ A   hover
 A   html
 K   id
 A   im
-K   import
+AK  import
 AK  in
 A   info
 A   input handling
@@ -210,7 +210,7 @@ K   subset
 A   switch
 K   tab
 K   target
-K   test
+AK  test
 A   tests
 AK  text
 AK  than
@@ -233,7 +233,7 @@ K   until
 K   up
 K   upload
 KV  url
-K   use
+AK  use
 K   user
 K   users
 K   uuid

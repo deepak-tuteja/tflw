@@ -6101,6 +6101,22 @@ would make the offload path unusable while treating it as a pass would make the 
 is its own state and it is printed.
 ---
 
+### D742
+
+<sub>cited from SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D742` — the manifest has a seventh family, and `M154a` missing it was structural.**
+`tflw spec --json` shipped six families; the parser also dispatches seven **declarations** (`test`,
+`crawl`, `action`, `import`, `use`, `before`, `after`) and five `test`-header clauses (`tags`,
+`with each`, `as`, `retry`, `parallel`/`sequential`), and none of them were constructs. That is not
+a cosmetic omission: `D723` makes the manifest the ground truth and `D724` says *no construct
+without a row*, so together they made a whole dialect **unrosterable** — the coverage gate could
+not have gone red for it on any day, in any state. Found by scoping `M154c`, whose own list names
+`retry` and `after` hooks. The argument for fixing it is the one `M154a` already recorded for
+*adding* generators: a construct `M154c` plants "cannot be demanded by a gate that cannot see it".
+Measured at the time: `after file` used **once** in the corpus, a bare `after` **twice**, `retry`
+**five times**.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -8476,6 +8492,16 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 **`M154b` — the walking skeleton**
 
 **Repo: testFlow-tests (+ tflw if `spec --json` needs amending).**
+
+### M154c
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154c` — the functional/API tier**
+
+Plants for the API-side remainder: `check` at scale, `retry`, `after` hooks, `request fails`,
+`base64`/`hex`/`url`, `give`, `matches file`, `HEAD`/`OPTIONS` corners. New fixture modules under
+`apiV2/src/` per `D725`. Ratchet entries deleted.
 
 ### M154e
 

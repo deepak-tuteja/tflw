@@ -634,11 +634,51 @@ export const LOCATORS: readonly LocatorEntry[] = [
   { id: 'xpath', syntax: '`xpath "<expr>"`', summary: 'a raw XPath expression, the last resort when neither semantics nor CSS reach it', example: '`click xpath "//tr[2]/td[1]"`' },
 ] as const;
 
+export interface DeclarationEntry {
+  readonly id: string;
+  /** `declaration` — a word `parseProgram` dispatches on at the top level. `header` — a clause
+   * `parseTest` accepts on (or just above) a `test` line. */
+  readonly group: 'declaration' | 'header';
+  readonly syntax: string;
+  readonly summary: string;
+  readonly example: string;
+}
+
+/**
+ * The declaration dialect — **the family `M154a` missed** (`D742`).
+ *
+ * `M154a` shipped six families and recorded three deliberate departures; this was not among them,
+ * and the reason it matters is the reason it gave for *adding* `GENERATORS`: a construct `M154c`
+ * plants "cannot be demanded by a gate that cannot see it". `M154c` plants `retry` and `after`
+ * hooks. Both are things the parser dispatches, neither was a construct, so `D724`'s
+ * `no construct without a row` could not reach either — and the dogfood corpus, measured at the
+ * time, ran `after file` **once**, a bare `after` **twice** and `retry` **five times**. Thin, and
+ * structurally invisible.
+ *
+ * Held to `parser.ts`'s `DECLARATION_KEYWORDS`/`TEST_HEADER_CLAUSES` behaviourally rather than by
+ * comparison — `specManifest.test.ts` parses a minimal file per row and asserts the parser accepts
+ * it. Two lists agreeing proves only that someone edited both.
+ */
+export const DECLARATIONS: readonly DeclarationEntry[] = [
+  { id: 'test', group: 'declaration', syntax: '`test "<name>" [as <session>[, …]] [retry <N>] [parallel|sequential]` + an indented body', summary: 'the unit of execution and of reporting; every step runs inside one', example: '`test "adds a widget to the cart"`' },
+  { id: 'crawl', group: 'declaration', syntax: '`crawl "<name>"` + an indented body of `violations` assertions', summary: 'a source of requests rather than a kind of judgement — one request per discovered route per declared principal, each judged by every assertion in the body (`TF070`)', example: '`crawl "the v1 surface"`' },
+  { id: 'action', group: 'declaration', syntax: '`action <name>(<param>, …)` + an indented body, ending in `give`', summary: "the language's only unit of reuse; gets its own response scope, so a call never publishes its response to the caller (`FU-12`)", example: '`action create order(name, qty)`' },
+  { id: 'import', group: 'declaration', syntax: '`import "<path.tflw>"`', summary: "pull in another suite's `action`s; its tests never run (`buildRegistry` takes only actions)", example: '`import "./shared/orders.tflw"`' },
+  { id: 'use', group: 'declaration', syntax: '`use "<path.ts|.js>"`', summary: 'the JS escape hatch — a helper module whose exports become callable; one `use` makes `TF037` undecidable for the file, because exports cannot be enumerated without importing', example: '`use "./helpers/sign.ts"`' },
+  { id: 'before', group: 'declaration', syntax: '`before` or `before file` + an indented body', summary: 'setup — bare runs once per test and shares its scope, `file` runs once per file in a scope isolated from every test', example: '`before file`' },
+  { id: 'after', group: 'declaration', syntax: '`after` or `after file` + an indented body', summary: 'teardown, with the same two scopes as `before`; runs whether the test passed or failed', example: '`after file`' },
+  { id: 'tags', group: 'header', syntax: '`@<tag>` on its own line(s) above a `test` or `crawl`', summary: 'label a declaration for `--tag`/`--exclude-tag` selection; a tag line is shared prefix, so which construct it introduces is only knowable past the tags (`D450`)', example: '`@smoke @checkout`' },
+  { id: 'with-each', group: 'header', syntax: '`with each` + an indented table, or `with each from "<file.csv>"`, above a `test`', summary: 'run one copy of the test per row, each reporting as its own test; refused alongside a workload (`D96`)', example: '`with each from "./fixtures/users.csv"`' },
+  { id: 'as', group: 'header', syntax: '`as <session>[, <session>…]`', summary: 'bind the test to one or more declared sessions — the owner identity every authorization probe compares against (`TF063`)', example: '`test "sees only its own orders" as shopper`' },
+  { id: 'retry', group: 'header', syntax: '`retry <N>`', summary: 're-run the whole test up to N times before its final verdict; `retry 0` is the default spelled out loud, and a fraction is `TF071`', example: '`test "settles eventually" retry 2`' },
+  { id: 'concurrency', group: 'header', syntax: '`parallel` or `sequential`', summary: "override the file's default worker behaviour for one test; contradicting both on one header is an error by name, not by position (`M72`)", example: '`test "mutates shared stock" sequential`' },
+] as const;
+
 /** Which table a construct came from. Not a synonym for the `group` beneath it: `step` covers all
  * five step families including `workload`, because `WORKLOAD_DIRECTIVES` and `STEP_KEYWORDS`'
  * `workload` family are the same seven words (asserted, not assumed — `specManifest.test.ts`), and
  * emitting both would put two ids on one construct. */
-export type SpecConstructFamily = 'step' | 'matcher' | 'generator' | 'locator' | 'config' | 'diagnostic';
+export type SpecConstructFamily = 'declaration' | 'step' | 'matcher' | 'generator' | 'locator' | 'config' | 'diagnostic';
 
 export interface SpecConstruct {
   /** The key a coverage manifest keys on. **Opaque**: the only thing promised about it is that it
@@ -674,6 +714,12 @@ export const SPEC_MANIFEST_VERSION = 1;
  * `tflw spec` invocation, and a shared frozen array is a thing a consumer can mutate. */
 export function specConstructs(): readonly SpecConstruct[] {
   return [
+    // First, because a declaration is what a step lives inside — the manifest reads outside-in, and
+    // the human rendering of `tflw spec` groups in this order too.
+    ...DECLARATIONS.map((d): SpecConstruct => ({
+      id: `declaration:${d.id}`, family: 'declaration', group: d.group, name: d.id, status: 'shipped',
+      syntax: d.syntax, summary: d.summary, example: d.example,
+    })),
     ...STEP_KEYWORDS.map((k): SpecConstruct => ({
       id: `step:${k.id}`, family: 'step', group: k.family, name: k.id, status: 'shipped',
       syntax: k.syntax, summary: k.summary, example: k.example,

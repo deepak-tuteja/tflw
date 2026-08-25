@@ -243,6 +243,40 @@ export const STATEMENT_KEYWORDS = [
   // whose did-you-mean is an edit-distance search that will never reach `pause` from `think`.
   'think',
 ] as const;
+
+/**
+ * The declarations `parseProgram` dispatches on, in the order its if-chain tries them (`M154c`).
+ *
+ * **Why this is a const and not a sentence.** The two lines that report an unknown top-level word
+ * used to spell this list out twice, three feet below the chain they describe, and a comment in
+ * that very branch cites `M142-01`'s *reading the row rather than restating it* about a different
+ * list on the same screen. Both renderings now come from here, so a new declaration cannot ship
+ * with an error message that denies it exists.
+ *
+ * It is also what `spec-data.ts`'s `DECLARATIONS` is held to (`D736`, `D742`) — the manifest may
+ * not offer a declaration the parser rejects, nor omit one it accepts. `specManifest.test.ts` makes
+ * that a behavioural check rather than a comparison of two lists: it parses a minimal file for each
+ * word here and asserts no `UNEXPECTED_TOP_LEVEL`.
+ *
+ * Hooks appear once each, not four times. `before`/`before file` differ by a `scope` field the
+ * parser reads *after* dispatching on the word, which is the same relationship `switch to new tab`
+ * and `switch to tab N` have to `switch` — one construct, two forms, one manifest id carrying both
+ * in its `syntax`.
+ */
+export const DECLARATION_KEYWORDS = ['test', 'crawl', 'action', 'import', 'use', 'before', 'after'] as const;
+
+// The `test`-header clauses have **no matching array here**, deliberately. Three of their manifest
+// ids (`tags`, `with-each`, `concurrency`) are not words the language has — they name a construct
+// whose spellings are `@…`, `with each` and `parallel`/`sequential`. `M142`'s vocabulary walk reads
+// every string-literal array in this file as parser vocabulary and caught them the first time they
+// were written here, which is the guard doing exactly its job. They live in `spec-data.ts`, and the
+// thing that holds them to this parser is `specManifest.test.ts` parsing a real header per clause.
+
+/** `` `a`, `b`, or `c` `` — the one rendering both halves of the top-level error share. */
+export function describeDeclarations(): string {
+  const quoted = DECLARATION_KEYWORDS.map((k) => `\`${k}\``);
+  return `${quoted.slice(0, -1).join(', ')}, or ${quoted[quoted.length - 1]}`;
+}
 /**
  * One word the language deliberately refuses, and everything its refusal has to say (`M142-01`).
  *
@@ -854,8 +888,8 @@ class Parser {
         });
         const hint = refused
           ? REFUSED_WORDS[refused].hint
-          : 'only `test`, `crawl`, `action`, `import`, `use`, `before`, or `after` declarations are allowed at the top level';
-        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a \`test\`, \`crawl\`, \`action\`, \`import\`, \`use\`, \`before\`, or \`after\`, found ${describeToken(tok)}`, tok.span, hint);
+          : `only ${describeDeclarations()} declarations are allowed at the top level`;
+        this.error(Codes.UNEXPECTED_TOP_LEVEL, `expected a ${describeDeclarations()}, found ${describeToken(tok)}`, tok.span, hint);
         // The offending token may itself be the `indent` opening an orphaned body, in which case
         // `synchronize()` would step *into* the block and report it line by line all over again.
         if (this.check('indent')) this.skipBlock();

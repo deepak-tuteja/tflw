@@ -41,6 +41,11 @@ export {
   // is held to this list by `specManifest.test.ts`, so `tflw spec --json` cannot offer a locator the
   // parser rejects, nor omit one it accepts.
   LOCATOR_KEYWORDS,
+  // `M154c`/`D742` — the declaration dialect's half of the same arrangement, and the family
+  // `M154a` missed. `spec-data.ts`'s `DECLARATIONS` is held to these by `specManifest.test.ts`,
+  // behaviourally: it parses a minimal file per row rather than comparing two lists.
+  DECLARATION_KEYWORDS,
+  describeDeclarations,
   type ConfigBlockKind,
   type ParseResult,
   type ConfigResult,
