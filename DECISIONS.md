@@ -2601,7 +2601,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D26
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D26 — Perf: after-hook-under-load policy (2026-07-30, resolves §5's flagged open item).**
   A scenario's `after` hook is **skipped by default per iteration** under `tflw load` — running it
@@ -6155,6 +6155,40 @@ endpoint would prove the HTTP client works and nothing whatever about the transf
 module, a route and a serialization layer between the claim and the thing claimed. So `C8`–`C10`
 have `target: none` and assert against hand-written literals.
 
+### D744
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D744` — the ladder's shared fixture values stay literal, and a gate proves they match the
+constant.** `B6-15` asks to "single-source the fixture id", and the obvious reading is an import.
+Refused, on a measurement ground rather than a convenience one: `dogfood-post-uncontended` is the
+rung that isolates *POST with a static body and zero capture or interpolation overhead*, so
+resolving the id at run time would change what that rung measures — and it would change it by a
+**different amount in each of the three runners**, which is exactly the comparison the ladder
+exists to make. A lookup on the tflw side, `open()` on the k6 side and a `processor.cjs` hook on the
+Artillery side are three different costs; Artillery's YAML cannot import at all, so one of the three
+needed a different mechanism regardless. Single-sourcing here therefore means *one source of truth
+plus a gate proving the copies match it* — `D489`'s shape ("the file is the source and the markdown
+is checked against it") applied to a value instead of a document.
+
+### D745
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D745` — the workload-shape plants are graded against a standalone counter, not against apiV2.
+This inverts `D726`'s placement in order to keep `D726`'s principle.**
+`D726` says *generalize it into apiV2's `load-admin`*, on the principle that **the generator is
+graded against physics, not against its own report**. The principle is kept in full; the placement
+cannot be, because of what the target does to the measurement:
+
+- In tflw's **closed** model (`N users`), a VU issues its next request when its previous one
+  returns, so arrival rate is a function of *target latency*. Grade `ramp to 60 users over 20s`
+  against apiV2 and the curve measured is Postgres's row-lock queue — the instrument reads the
+  target and reports it as the generator.
+- In the **open** model (`N rps`) the requirement arrives from the other side: the generator paces
+  on its own clock, so the target must never be the constraint. A target that saturates makes a
+  correct generator look broken.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -6950,7 +6984,7 @@ rest of the ladder.
 
 ### M48
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/README.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M48 shipped 2026-08-02 — acceptance-suite breadth (two new rungs) + p50/p99**
 
@@ -8540,6 +8574,17 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 Plants for the API-side remainder: `check` at scale, `retry`, `after` hooks, `request fails`,
 `base64`/`hex`/`url`, `give`, `matches file`, `HEAD`/`OPTIONS` corners. New fixture modules under
 `apiV2/src/` per `D725`. Ratchet entries deleted.
+
+### M154d
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154d` — the UI/browser tier**
+
+`download as`, `pause`, `accept`/`dismiss dialog`, `switch`/`close tab`, `within frame`, `drag`/
+`drop`, `double`/`right click`, `press`, `hover`, `scroll to`, `screenshot`, `viewport`, visual
+baseline, `stub`, `select`, `tick`/`untick`. Real flows first, harness page as fallback (`D729`).
+Joins the `security-ui` regression leg.
 
 ### M154e
 
