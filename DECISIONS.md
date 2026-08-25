@@ -5972,7 +5972,7 @@ only, and a completely wrong shape still breaches a threshold.
 
 ### D727
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D727` — static gate in CI, perf on a scheduled box run.**
 The coverage gate is static (parse the corpus, compare against `tflw spec --json`) so it costs
@@ -6016,6 +6016,21 @@ project's documented cost-model error class (`D514`, `D543`, `M142` §11, `M143`
 `M153` §10.1 — **six consecutive milestones**, always *the parts not yet scoped are construction*).
 The expensive unknowns — arrival-curve grading, plant-manifest discipline, gate ergonomics — get
 met at n=3 where being wrong is cheap, and every later estimate is anchored on a measured slice.
+
+### D733
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D733` — the scheduled perf run is a registered box tenant.**
+A systemd timer on the shared build box under a new `tflw:perf` lease class, **registered with the
+dashboard's `M20` tenant registry** so `statsctl check` and `statsctl conflict --for` can see it
+and a forge render is never surprised by it. `~/Documents/CLAUDE.md` is explicit that the mutex's
+value is entirely in every heavy job calling it and that *a new tenant belongs on the list*.
+Rejected: a GitHub Actions **self-hosted runner** on the box — both repos are public, and a
+self-hosted runner on a public repository lets a fork pull request execute arbitrary code on the
+machine the forges render on. That is not a trade-off, it is a defect. Also rejected: a Mac-side
+`launchd` job, which fires only while the laptop is awake and on the LAN, so *scheduled* would
+quietly mean *scheduled when the laptop happens to be open*.
 
 ### D734
 
@@ -6188,6 +6203,80 @@ cannot be, because of what the target does to the measurement:
 - In the **open** model (`N rps`) the requirement arrives from the other side: the generator paces
   on its own clock, so the target must never be the constraint. A target that saturates makes a
   correct generator look broken.
+
+### D746
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D746` — the scheduled run leases as `tflw:load:conformance`, class `tflw:load`. `D733`'s new
+`tflw:perf` class would have been a silent downgrade.**
+`D733` says *"a new `tflw:perf` lease class"*. Measured against the dashboard's real table before
+writing anything:
+
+```
+classify('tflw:perf')             -> load-run    requires=()          <-- the trap
+classify('tflw:load')             -> tflw:load   requires=('quiet',)
+classify('tflw:load:conformance') -> tflw:load   requires=('quiet',)
+```
+
+### D747
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D747` — the run acquires through `boxlock.sh acquire`, never through plain `flock`.**
+The dashboard decides who holds the box by walking /proc for processes running `boxlock.sh acquire`
+and matching the holder file's pid against that walk (`collect/lock.py`). A job that takes the same
+flock directly and writes the same holder file itself is reported as
+`stale_holder: claim_without_process` with `holder: null` — a live, correctly-labelled holder
+advertised as debris — and `statsctl check` then tells a forge render *"an unnamed job has held the
+box"*, the least actionable answer it can give. Observed live 2026-08-25 against boxMoeLab's
+`moebench.sh`, which re-implements the protocol that way; recorded as dashboard finding 196 and
+deliberately **not fixed there**, because the two candidate fixes are not equivalent and choosing
+between them needs the box quiet and that script's owner in the room. What this milestone owes is
+that the tenant *it* adds does not have the problem. `~/Documents/CLAUDE.md` already says the mutex's
+value is entirely in every heavy job calling it; this sharpens it to **calling it is not enough, the
+call has to go through `boxlock.sh`** — two jobs can both participate correctly by the mutex's own
+semantics and only one of them be visible to the instrument that reports on it.
+
+### D748
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D748` — the scheduled run measures `origin/main` in its own checkout.**
+`~/tflw-exec/testFlow-tests` is the rsync target `scripts/exec.mjs` maintains from the Mac. A
+scheduled gate pointed at it grades whatever a Mac session last pushed there — arbitrarily stale,
+possibly mid-rsync, attributable to no commit. The unit keeps its own checkout, fetches `origin/main`
+into it, and the artifact records the sha. That is also the shape `M154f`'s functional leg needs,
+with a second checkout of tflw.
+
+### D749
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D749` — the runners are compared on matched populations, and every extractor fails loudly rather
+than defaulting.**
+tflw's `threshold … duration` reads *only the iterations that succeeded* (`SPEC` §12, `M89a`); k6's
+bare `http_req_duration` reads every request. The sibling's `tflw-acceptance/README.md` §M89 records
+that this exact mismatch made `M49`'s published 3.54% p95 gap a comparison of two different
+populations for months, and that it held only *"because this scenario runs at a near-zero error
+rate, where the populations coincide; that was luck, not design."* So the comparison reads
+`http_req_duration{name:<k6Tag>,expected_response:true}`, and `k6Tag` is **declared per rung and
+proved to exist** by `verify-perf-parity.mjs` — it is never the rung's own name (`checkout-burst`
+measures `checkout`), so an extractor that guessed would have been wrong on all seven. Every reader
+throws when its key is absent instead of yielding `undefined`, because a comparison gate whose inputs
+quietly became `null` reports "no regression" forever, which is `M141`'s vacuity with extra steps.
+
+### D750
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D750` — the regression gate compares tflw against its co-runners in the same run, not against
+last month's absolute numbers — and two of its rules need no calibration.**
+Absolute throughput on the shared build box moves with thermal state, whatever else holds the lease, the
+2.4 GHz link and the kernel. A gate on absolutes is either a flake generator or, once widened enough
+to stop flaking, vacuous. The ladder already exists to answer a *comparative* question, and a ratio
+between two runners measured in the same window cancels most of that variance; the absolutes ride
+along in the artifact as history rather than as the gate.
 
 ### M0
 
@@ -7385,7 +7474,7 @@ gets `SPEC` ~~§16.1~~ **§13** restated, which means `docs-data.generated.ts` r
 
 ### M89
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md +1 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **`M89` — workload results are made to describe the run that actually happened.** Cluster C3: a
 workload's reported population included iterations that never completed, so percentiles, error
@@ -7395,7 +7484,7 @@ and one consequence for the perf arc's own acceptance benchmark. Shipped as `M89
 
 ### M89a
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89a — the truthful population (`B3-02`, §3.2, §3.3) · single-repo**
 
@@ -8588,10 +8677,10 @@ Joins the `security-ui` regression leg.
 
 ### M154e
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154e` — the perf tier**
 
-**Closes `B6-15`.**
+**Closes `B6-15` — and see the build note below, because it does not, yet.**
 
 <!-- GENERATED:decisions:end -->
