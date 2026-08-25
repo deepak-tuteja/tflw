@@ -14,6 +14,7 @@ const installFlags = CLI_FLAGS.filter((f) => f.command === 'install-browsers');
 const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
 const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
+const specFlags = CLI_FLAGS.filter((f) => f.command === 'spec');
 const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
 </script>
 
@@ -194,6 +195,37 @@ old keyword in its comments and `test "…"` names — this is not a rename-symb
 Prints one section of the SPEC as a terminal cheatsheet; with no topic, lists every section name.
 Takes no flags. The content is a static artifact regenerated from `SPEC.md` at build time rather
 than parsed at run time — `SPEC.md` itself is not shipped in the npm package.
+
+## `tflw spec [--json]`
+
+Prints the construct manifest of *this build*: every step keyword, matcher, generator, locator,
+`tflw.config` word and diagnostic code the parser dispatches, followed by a build stamp — version,
+commit and build time.
+
+It exists for conformance testing. A suite that wants to prove it exercises the whole language has
+to be able to ask what the whole language is, and reading it out of `@tflw/lang` is not available to
+a consumer who installed the published `tflw` package: that ships one self-contained bundle with no
+`@tflw/*` packages to import. `--json` is the form such a gate reads.
+
+The manifest lists **what this binary dispatches, and only that**. A construct SPEC marks 🔮 planned
+is absent rather than listed as planned, so building one makes it *appear* — which is what lets a
+downstream coverage gate go red on its own the day it ships, with nobody having to remember.
+
+The build stamp is the other half. `commit` is a short sha, or `null` where there was no git to ask
+(a published tarball, a vendored checkout) — never invented, because an invented one would be
+believed. `dirty` says whether the working tree had uncommitted changes, and is `null` when there is
+no commit for it to be relative to. Together they answer *which tflw just produced this output*,
+which is the question a stale vendored copy makes unanswerable.
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in specFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
 
 ## `tflw lsp`
 

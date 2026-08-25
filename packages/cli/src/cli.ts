@@ -29,6 +29,8 @@ import {
   collectMigrations,
   applyMigrations,
   CLI_FLAGS,
+  SPEC_MANIFEST_VERSION,
+  specConstructs,
   type Program,
   type Diagnostic,
   type EvidenceLevel,
@@ -139,6 +141,14 @@ const EXIT_ABORTED = 130; // M32/R5 — Ctrl-C during a `tflw run` with workload
 // real package.json version. Undefined under `npm run dev` (unbundled `tsx`), where `getVersion()`
 // falls back to reading package.json directly.
 declare const __TFLW_VERSION__: string | undefined;
+
+// M154a — the rest of the build stamp `tflw spec` prints, injected by the same `define` mechanism
+// and undefined for the same reason under `npm run dev`. `__TFLW_COMMIT__` is the empty string when
+// the bundle was built somewhere with no git to ask (a published tarball); `buildStamp()` maps that
+// to `null` rather than letting an empty sha look like an answer.
+declare const __TFLW_COMMIT__: string | undefined;
+declare const __TFLW_DIRTY__: boolean | null | undefined;
+declare const __TFLW_BUILD_TIME__: string | undefined;
 
 /** M92c (review `FU-17`) — user-facing surfaces cite `SPEC.md` and its §-numbers, and `SPEC.md` is
  * not in the npm tarball: `docs-data.generated.ts` is cut from it at build time and *is* what ships.
@@ -338,6 +348,8 @@ async function main(argv: string[]): Promise<number> {
       return checkCommand(rest);
     case 'docs':
       return docsCommand(rest);
+    case 'spec':
+      return specCommand(rest);
     case 'lsp':
       return lspCommand(rest);
     case 'install-browsers':
@@ -362,7 +374,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
       );
       return EXIT_USAGE;
   }
@@ -2721,6 +2733,131 @@ async function docsCommand(argv: string[]): Promise<number> {
   return EXIT_OK;
 }
 
+// ---- tflw spec (M154a, PLAN_M154_DOGFOOD_CONFORMANCE.md, D736-D738) ---------
+
+/**
+ * `tflw spec [--json]` — print the construct manifest of *this build*: every step keyword, matcher,
+ * generator, locator, config word and diagnostic code the parser dispatches, plus a build stamp.
+ *
+ * ## Why a command and not a file
+ *
+ * `testFlow-tests` is this language's conformance target, and until `M154` nothing joined the set
+ * of constructs tflw ships to the set the dogfood exercises. The measured cost
+ * (`PLAN_M154_DOGFOOD_CONFORMANCE.md` §2): seven step keywords with **zero** occurrences across 126
+ * `.tflw` files, fourteen more appearing exactly once in exactly one file, and four of the six
+ * workload shapes never executed by anything. That happened because no gate could ask the question
+ * — the sibling repo's only tflw dependency is a self-contained bundled tarball with no `@tflw/*`
+ * packages to import, so a coverage gate there has no module to read `STEP_KEYWORDS` out of. A
+ * subcommand is the one surface it *does* have.
+ *
+ * ## The build stamp, and the row it closes (`M153b-01`)
+ *
+ * On 2026-08-25 a local `npm run check:acceptance` in `testFlow-tests` reported `probe ciphers` as
+ * unknown grammar. It was not: `M137g` had shipped it nine days earlier. `check-acceptance.mjs`
+ * grades the **vendored** `node_modules/tflw` (`resolveTflw('released')`), which `npm run
+ * refresh-tflw` re-vendors and a plain `npm run build` in tflw does not — so the red was a
+ * nine-day-old binary, indistinguishable in its output from a real grammar gap. The wrong
+ * conclusion reached a pull-request body before CI contradicted it.
+ *
+ * So the stamp is not decoration. `version`/`commit`/`builtAt` are what let a consumer say *which*
+ * tflw it just graded, and `M154b` wires that into `check-acceptance.mjs` and the coverage gate.
+ * **This milestone makes the information available; it does not yet close the row** — the row's
+ * condition is that a stale copy cannot produce a red that reads as a grammar failure, and nothing
+ * reads the stamp until the sibling side lands.
+ *
+ * `commit` is `null` rather than invented when there is no git to ask (an `npm pack` from a
+ * published tarball, a vendored checkout) — a fabricated sha would be worse than none, because it
+ * would be believed. `source: 'dev'` marks the unbundled `npm run dev` path, where the esbuild
+ * `define`s do not exist and the answer is honestly "this is not a build".
+ */
+async function specCommand(argv: string[]): Promise<number> {
+  let json = false;
+  for (const a of argv) {
+    if (a === '--json') json = true;
+    // `--format json` is deliberately *not* accepted as a second spelling (D738). `run --format
+    // ndjson` and `check --format json` name a member of an open set of renderings; `spec` has one
+    // machine format and one human one, so the flag is the boolean it looks like. Two spellings for
+    // one thing is the drift this repository keeps paying for elsewhere.
+    else if (a.startsWith('--')) unknownFlag('spec', a);
+    else {
+      err(`unexpected argument \`${a}\`. Usage: tflw spec [--json]`);
+      return EXIT_USAGE;
+    }
+  }
+
+  const manifest = {
+    manifest: SPEC_MANIFEST_VERSION,
+    build: await buildStamp(),
+    constructs: specConstructs(),
+  };
+
+  if (json) {
+    process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+    return EXIT_OK;
+  }
+
+  const { build, constructs } = manifest;
+  const lines: string[] = [
+    `tflw ${build.version} — ${constructs.length} constructs, manifest v${manifest.manifest}`,
+    `  build: ${describeBuild(build)}`,
+    '',
+  ];
+  // Grouped by family then group, in manifest order, so the human rendering and `--json` present
+  // the same thing in the same sequence — a reader comparing the two is comparing one list.
+  let heading = '';
+  for (const c of constructs) {
+    const key = c.family === c.group ? c.family : `${c.family} / ${c.group}`;
+    if (key !== heading) {
+      heading = key;
+      lines.push(`${key}:`);
+    }
+    lines.push(`  ${c.name}${c.status === 'planned' ? '  (planned)' : ''}`);
+  }
+  lines.push('', 'machine-readable: `tflw spec --json`', `the full SPEC lives at ${SPEC_URL}.`, '');
+  process.stdout.write(lines.join('\n'));
+  return EXIT_OK;
+}
+
+interface BuildStamp {
+  readonly version: string;
+  /** `bundle` — built by `packages/cli/scripts/bundle.mjs`, which is what the npm tarball ships and
+   *  what a consumer vendors. `dev` — run unbundled through `tsx`, where the `define`s do not
+   *  exist. A consumer grading a build should refuse `dev`: it has no provenance to check. */
+  readonly source: 'bundle' | 'dev';
+  readonly commit: string | null;
+  /** Whether the working tree had uncommitted changes at bundle time. Its own field rather than a
+   *  `-dirty` suffix on `commit`, so a consumer comparing shas does not have to strip it first. */
+  readonly dirty: boolean | null;
+  readonly builtAt: string | null;
+}
+
+async function buildStamp(): Promise<BuildStamp> {
+  const version = await getVersion();
+  if (typeof __TFLW_BUILD_TIME__ !== 'string') {
+    return { version, source: 'dev', commit: null, dirty: null, builtAt: null };
+  }
+  const commit = typeof __TFLW_COMMIT__ === 'string' && __TFLW_COMMIT__ !== '' ? __TFLW_COMMIT__ : null;
+  return {
+    version,
+    source: 'bundle',
+    commit,
+    // Restated here rather than trusted from the `define`, because the two can only be got wrong
+    // together: with no commit there is nothing for `dirty` to be relative to, and a `false` would
+    // read as "the tree was clean" when in fact nobody looked.
+    dirty: commit === null ? null : typeof __TFLW_DIRTY__ === 'boolean' ? __TFLW_DIRTY__ : null,
+    builtAt: __TFLW_BUILD_TIME__,
+  };
+}
+
+/** One line naming a build, shared by `tflw spec`'s human rendering and reused by anything else
+ * that needs to say which tflw is speaking. Says `unknown commit` out loud rather than omitting the
+ * field: a stamp that silently drops what it could not learn reads as a complete answer. */
+function describeBuild(b: BuildStamp): string {
+  if (b.source === 'dev') return 'dev (unbundled — no provenance)';
+  const sha = b.commit ? `${b.commit}${b.dirty ? '-dirty' : ''}` : 'unknown commit';
+  return `${sha}, built ${b.builtAt}`;
+}
+
 // ---- tflw lsp ---------------------------------------------------------------
 
 /** Speaks the Language Server Protocol over stdio (PLAN_M13_LSP.md Phase 4) — how an editor (VS
@@ -3515,6 +3652,9 @@ function printUsage(): void {
       '  tflw init [--load]                                 scaffold tflw.config + example.tflw',
       '                                                      --load also scaffolds load.tflw (a workload-bearing `test`, M29/M50)',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
+      '  tflw spec [--json]                                 print this build\'s construct manifest — every step keyword, matcher, generator,',
+      '                                                      locator, config word and diagnostic code it dispatches, plus a build stamp',
+      '                                                      (version, commit, build time). --json is the machine form a conformance gate reads',
       '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
       '  tflw install-browsers [--browser chromium|firefox|webkit]',
       '                                                      download a browser binary for UI steps (SPEC §9); default chromium.',

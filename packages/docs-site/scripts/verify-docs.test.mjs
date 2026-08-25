@@ -159,7 +159,7 @@ test('a tflw.config sample is validated, not just parsed', async () => {
 
 /** A reference page covering every command the shipped binary dispatches, minus `omit`. */
 const cliPage = (omit) =>
-  ['run', 'check', 'init', 'docs', 'lsp', 'install-browsers', 'pick', 'watch', 'refactor', 'migrate']
+  ['run', 'check', 'init', 'docs', 'spec', 'lsp', 'install-browsers', 'pick', 'watch', 'refactor', 'migrate']
     .filter((c) => c !== omit)
     .map((c) => `## \`tflw ${c}\`\n\nProse.\n`)
     .join('\n');
@@ -183,7 +183,7 @@ test('a complete CLI reference passes', async () => {
   // rejected every corpus carrying a reference page at all.
   const { code, stdout, stderr } = await guard({ 'index.md': '# x\n', 'reference/cli.md': cliPage() });
   assert.equal(code, 0, stderr);
-  assert.match(stdout, /10 shipped subcommands/);
+  assert.match(stdout, /11 shipped subcommands/);
 });
 
 test('a corpus with no CLI reference reports the check as skipped, not as passed', async () => {

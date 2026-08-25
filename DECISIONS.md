@@ -5477,6 +5477,15 @@ Allocated from `TF068` (see §1.4). The bar is `D419`'s — it rejected a code s
 *"two rows in the generated codes reference with one repair"* — so each must earn a **distinct**
 repair.
 
+### D444
+
+<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D444` — config-dialect completion is built, in `M137a`**
+
+Per §1.3 it does not exist: no config `CompletionKind`, and `runCompletion` only ever enters the
+test-dialect parser. `probe mutating` has never been completable.
+
 ### D445
 
 <sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
@@ -5883,6 +5892,53 @@ files that mostly are not.
 11 tracked `.md`** repointed", on the assumption that `M152b`'s repair transfers across the repo
 boundary: give each tracked prose file a sentence naming `DECISIONS.md`, and its notation becomes
 resolvable. Measured against the published index, **that sentence would be false for half of them.**
+
+### D736
+
+<sub>cited from SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D736` — the manifest lists what the parser dispatches, and nothing else.**
+A `🔮 planned` construct is **absent** from `tflw spec --json`, not listed with a `planned` status.
+This is the operational form of `D731`, and it came out the opposite way to how `D731` reads. Two
+reasons, the second being the one that decided it. First, every table feeding the manifest is
+already held two-way to the parser — `STEP_KEYWORDS`/`D277`, `CONFIG_KEYWORDS`/`D444`, and now
+`LOCATORS` — so *what the parser accepts* is the only set that can be derived rather than
+remembered. Second, a `planned` list would be a hand-maintained wordlist of things that **do not
+exist**, which is `D659`'s prohibition exactly, and it buys nothing: a construct that gets built
+simply *appears* in the manifest, and `D724`'s `no construct without a row` rule turns the sibling
+repo's gate red the same day, with nobody having to flip a badge. `MATCHERS` is the one table
+carrying its own `status` field (`M97b`) and is emitted verbatim, so a `planned` matcher would say
+so rather than quietly claim to work. The worked case is `element` (SPEC §9.3): absent from the
+parser, absent from `LOCATORS`, absent from the manifest, and asserted absent by a test that will
+fail the day it ships.
+
+### D737
+
+<sub>cited inside a range only · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D737` — the build stamp is never invented.**
+`commit` is a short sha or `null`; there is no third answer. Outside a git checkout — a published
+tarball, a vendored tree, the Fedora offload's rsynced copy, a Docker context without `.git` — the
+bundler learns nothing and the stamp says nothing, because a fabricated sha is strictly worse than
+an absent one: it would be *believed*, which is the failure `M153b-01` already cost a PR body once.
+`dirty` follows it and is three-valued for the same reason — `null` when there is no commit for it
+to be relative to, since `false` there is a claim that the working tree was clean when in fact
+nobody looked. That distinction was written as a two-valued `false` first and caught within the
+hour by the `e2e` suite running on the box, whose tree genuinely has no `.git`. `source: 'dev'`
+marks the unbundled `npm run dev` path, so a consumer can refuse a build with no provenance instead
+of grading one.
+
+### D738
+
+<sub>cited from SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D738` — `--json`, not `--format json`.**
+`tflw run --format ndjson` and `tflw check --format json` name a member of an open set of
+renderings, and each owes a `--format text` counterpart it already has. `spec` has exactly one
+machine form and one human one, so the flag is the boolean it looks like. `--format json` is
+deliberately **not** accepted as a second spelling: two ways to say one thing is the drift this
+repository keeps paying for elsewhere, and the cost of a reader typing the wrong one is a usage
+error naming the right one.
 
 ### M0
 
@@ -8232,5 +8288,13 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 **BUILT 2026-08-24 — green on its own gate (`D692`), `D695`–`D699` filed.** Scoped `D691`/`D692`;
 what the build actually found is `D695` (171 citations, not 90–104 + 47) and `D697` (five more
 exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
+
+### M154a
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154a` — tflw: `tflw spec --json` and the build stamp**
+
+**Repo: tflw. Closes `M153b-01`.**
 
 <!-- GENERATED:decisions:end -->

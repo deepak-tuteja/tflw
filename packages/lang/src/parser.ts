@@ -357,7 +357,13 @@ const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'bu
  * *not* a keyword (M96/`FU-11`, D129 — one token of lookahead distinguishes it), so it cannot be
  * appended to the joined list; it is named separately here so the two error sites can't drift. */
 const SUBJECT_EXPECTATION = `expected a subject (${SUBJECT_KEYWORDS.join(', ')}) or a \`{variable}\``;
-const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
+/** The six words that may open a locator. Exported for the same reason `STATEMENT_KEYWORDS`
+ * and `CONFIG_KEYS` are (D277, D444): `spec-data.ts`'s `LOCATORS` table is asserted against this
+ * list rather than against prose, so a seventh locator with no manifest row — and a manifest row
+ * for a word the parser rejects — are both test failures. `element` (SPEC §9.3 \u{1F52E}) is
+ * deliberately absent from both: it is not built, and a manifest that listed it would promise a
+ * spelling `parseLocator` refuses. */
+export const LOCATOR_KEYWORDS = ['button', 'field', 'text', 'list', 'css', 'xpath'] as const;
 const MATCHER_KEYWORDS = ['equals', 'contains', 'matches', 'has', 'connects', 'fails', 'was'] as const;
 const STATE_WORDS = ['visible', 'hidden', 'enabled', 'disabled', 'checked'] as const;
 /** `is` and `not` sit in *front* of a matcher; neither is one. `parseMatcher`'s prefix loop consumes
