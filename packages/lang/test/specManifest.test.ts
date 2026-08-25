@@ -18,6 +18,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DECLARATION_KEYWORDS,
+  DECLARATIONS,
+  describeDeclarations,
+  parseSource,
   LOCATOR_KEYWORDS,
   LOCATORS,
   STEP_KEYWORDS,
@@ -55,6 +59,7 @@ test('ids are unique across the whole manifest', () => {
 
 test('every source table reaches the manifest, by count', () => {
   const count = (family: string) => constructs.filter((c) => c.family === family).length;
+  assert.equal(count('declaration'), DECLARATIONS.length, 'DECLARATIONS');
   assert.equal(count('step'), STEP_KEYWORDS.length, 'STEP_KEYWORDS');
   assert.equal(count('matcher'), MATCHERS.length, 'MATCHERS');
   assert.equal(count('generator'), GENERATORS.length, 'GENERATORS');
@@ -63,8 +68,8 @@ test('every source table reaches the manifest, by count', () => {
   assert.equal(count('diagnostic'), DIAGNOSTICS.length, 'DIAGNOSTICS');
   assert.equal(
     constructs.length,
-    STEP_KEYWORDS.length + MATCHERS.length + GENERATORS.length + LOCATORS.length + CONFIG_KEYWORDS.length + DIAGNOSTICS.length,
-    'the manifest is exactly the six tables and nothing else',
+    DECLARATIONS.length + STEP_KEYWORDS.length + MATCHERS.length + GENERATORS.length + LOCATORS.length + CONFIG_KEYWORDS.length + DIAGNOSTICS.length,
+    'the manifest is exactly the seven tables and nothing else',
   );
 });
 
@@ -117,4 +122,82 @@ test('a fresh array each call — a consumer cannot mutate the next caller’s m
 test('the manifest version is an integer a consumer can pin', () => {
   assert.equal(typeof SPEC_MANIFEST_VERSION, 'number');
   assert.ok(Number.isInteger(SPEC_MANIFEST_VERSION) && SPEC_MANIFEST_VERSION >= 1);
+});
+
+// --- the declaration dialect (`M154c`, `D742`) --------------------------------
+//
+// These are parity claims of the load-bearing kind, and they are made **behaviourally**. The other
+// two-way tables in this file compare a manifest table against a parser array, which proves the two
+// arrays agree and nothing more — if both were edited from the same wrong belief, both are wrong
+// together. A declaration is cheap to just *try*, so these parse a minimal file per row and ask the
+// parser what it did with it.
+
+/** The smallest file in which `word` is a well-formed top-level declaration. */
+function minimalDeclaration(word: string): string {
+  switch (word) {
+    case 'test': return 'test "t"\n  api GET /a\n';
+    case 'crawl': return 'crawl "c"\n  expect response has no critical security violations\n';
+    case 'action': return 'action make thing()\n  api GET /a\n';
+    case 'import': return 'import "./other.tflw"\n';
+    case 'use': return 'use "./helper.ts"\n';
+    case 'before': return 'before file\n  api GET /a\n';
+    case 'after': return 'after file\n  api GET /a\n';
+    default: throw new Error(`no minimal file written for the declaration \`${word}\` — add one when you add the row`);
+  }
+}
+
+test('every declaration the parser dispatches on has a manifest entry, and vice versa', () => {
+  assert.deepEqual(
+    DECLARATIONS.filter((d) => d.group === 'declaration').map((d) => d.id).sort(),
+    [...DECLARATION_KEYWORDS].sort(),
+    'DECLARATIONS and parser.ts DECLARATION_KEYWORDS must name the same seven words',
+  );
+});
+
+test('the parser actually accepts every declaration the manifest offers', () => {
+  for (const word of DECLARATION_KEYWORDS) {
+    const { diagnostics } = parseSource(minimalDeclaration(word));
+    const rejected = diagnostics.filter((d) => d.code === 'TF016');
+    assert.deepEqual(rejected, [], `\`${word}\` is in the manifest but the top level refused it`);
+  }
+});
+
+test('a word that is not a declaration is refused, so the check above can fail', () => {
+  // The control. Without it, `minimalDeclaration` returning something the parser ignores entirely
+  // would make the test above pass for every possible input — the vacuous-green class `M141` is
+  // named after.
+  const { diagnostics } = parseSource('teardown\n  api GET /a\n');
+  assert.ok(diagnostics.some((d) => d.code === 'TF016'), 'the top level accepted `teardown`');
+});
+
+test('every test-header clause the manifest offers parses on a real header', () => {
+  const header: Record<string, string> = {
+    tags: '@smoke\ntest "t"\n  api GET /a\n',
+    'with-each': 'with each\n  | name |\n  | a    |\ntest "t"\n  api GET /a\n',
+    as: 'test "t" as shopper\n  api GET /a\n',
+    retry: 'test "t" retry 2\n  api GET /a\n',
+    concurrency: 'test "t" sequential\n  api GET /a\n',
+  };
+  // No parser-side array to compare against, on purpose (see `DECLARATION_KEYWORDS`' neighbour
+  // comment): three of these ids are not words the language has. Every header row must carry a
+  // sample, so adding one to the manifest without proving it parses fails here.
+  for (const clause of DECLARATIONS.filter((d) => d.group === 'header').map((d) => d.id)) {
+    const source = header[clause];
+    assert.ok(source, `no header written for \`${clause}\` — add one when you add the row`);
+    const { diagnostics } = parseSource(source);
+    assert.deepEqual(diagnostics, [], `\`${clause}\` is in the manifest but a header using it did not parse`);
+  }
+});
+
+test('the top-level error message names every declaration, and is rendered from one list', () => {
+  // `M142-01`'s rule, applied to the list that used to be spelled out twice inside the branch that
+  // reports it. A declaration added without its rendering would otherwise ship an error message
+  // telling the author their valid keyword does not exist.
+  const rendered = describeDeclarations();
+  for (const word of DECLARATION_KEYWORDS) {
+    assert.ok(rendered.includes(`\`${word}\``), `the top-level error does not mention \`${word}\``);
+  }
+  const { diagnostics } = parseSource('teardown\n');
+  const top = diagnostics.find((d) => d.code === 'TF016');
+  assert.ok(top && top.message.includes(rendered), 'the diagnostic does not use the shared rendering');
 });

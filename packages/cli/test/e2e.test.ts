@@ -395,7 +395,10 @@ test('`tflw spec --json` emits the whole construct manifest, with a build stamp'
     specConstructs().map((c) => c.id).slice().sort(),
     'the bundle emits the same manifest the library assembles',
   );
-  for (const family of ['step', 'matcher', 'generator', 'locator', 'config', 'diagnostic']) {
+  // `declaration` joins these in `M154c` (`D742`). Named explicitly rather than derived from the
+  // manifest itself: a fold that dropped a whole table would still satisfy a check that only asks
+  // "is every family present that is present".
+  for (const family of ['declaration', 'step', 'matcher', 'generator', 'locator', 'config', 'diagnostic']) {
     assert.ok(manifest.constructs.some((c) => c.family === family), `no ${family} constructs reached the bundle`);
   }
 });

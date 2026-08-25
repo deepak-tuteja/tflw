@@ -352,6 +352,32 @@ a different thing depending on which matcher a file happened to use.
   failure mode is silence: an invalid document uploads successfully and produces no alerts, with no
   error to read (D414).
 
+### Added — the declaration family in `tflw spec` (M154c)
+
+- **`tflw spec` now emits a seventh family, `declaration`** — the seven words a file can open a
+  top-level block with (`test`, `crawl`, `action`, `import`, `use`, `before`, `after`) and the five
+  clauses a `test` header takes (`tags`, `with each`, `as`, `retry`, `parallel`/`sequential`). The
+  manifest goes from 166 constructs to 178.
+- **This was a gap in M154a, not a widening of scope.** M154a recorded three deliberate departures
+  and this was not among them; its stated reason for *adding* generators applies unchanged here — a
+  construct a conformance gate plants "cannot be demanded by a gate that cannot see it", and `retry`
+  and `after` hooks are exactly that. Measured in the dogfood corpus when the gap was found:
+  `after file` used **once**, a bare `after` **twice**, `retry` **five times**. Thin, and
+  structurally invisible to any coverage gate keyed on the manifest.
+- **Held to the parser behaviourally, not by comparison.** The other two-way tables assert that a
+  manifest array equals a parser array, which proves the arrays agree and nothing more. Each
+  declaration and header clause is instead parsed as a minimal file and the parser asked what it
+  did, with a control asserting a non-declaration is still refused.
+- A hook's two scopes are **one construct with two forms**, matching how `switch to new tab` and
+  `switch to tab N` are one `switch`.
+- The list of declarations the top-level error message names is now rendered from that same array.
+  It was spelled out twice, three lines below the dispatch chain it describes — so a new
+  declaration could ship with an error message denying it exists.
+- **`SPEC_MANIFEST_VERSION` is unchanged at 1.** The document's shape did not change, and adding
+  constructs is explicitly not a version bump. The one consumer that exists reads ids flat rather
+  than filtering by family, so the twelve new ids reach it as an unaccounted-construct failure
+  naming each one — a louder and more precise red than a version mismatch would have produced.
+
 ### Added — `tflw spec`, the construct manifest (M154a)
 
 - **New subcommand `tflw spec [--json]`** — prints the construct manifest of *this build*: every
