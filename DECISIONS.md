@@ -2328,7 +2328,7 @@ here.
 
 ### D6
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Selector model (D6) — resolves the SPEC §11 contradiction**
 
@@ -2338,7 +2338,7 @@ resolution is reported.**
 
 ### D7
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Ambiguity & scoping (D7)**
 
@@ -6005,6 +6005,18 @@ milestones. Precedent: `verify-test-counts.mjs`'s `EXPECTED` is exactly this sha
 wordlist, but a monotonically shrinking one whose growth is a failure, which is not the thing
 `D659` forbids.
 
+### D732
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D732` — walking skeleton first, then scale by tier.**
+`M154a` + `M154b` prove manifest → plant → test → precision/recall end to end on **exactly three
+constructs** (one API, one UI, one workload) before any tier is scaled. Aimed squarely at this
+project's documented cost-model error class (`D514`, `D543`, `M142` §11, `M143` §10, `M152` §10.1,
+`M153` §10.1 — **six consecutive milestones**, always *the parts not yet scoped are construction*).
+The expensive unknowns — arrival-curve grading, plant-manifest discipline, gate ergonomics — get
+met at n=3 where being wrong is cheap, and every later estimate is anchored on a measured slice.
+
 ### D734
 
 <sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
@@ -6825,7 +6837,7 @@ implemented the same day and its results are recorded separately, as *M39 — fi
 
 ### M40
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M40 — root-cause the p95-under-contention mechanism (scoped 2026-08-01)**
 
@@ -6852,7 +6864,7 @@ as *M40 — findings*.
 
 ### M41
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
 
 **M41 — reopening the tolerance amendment, closed (2026-08-01)**
 
@@ -6873,7 +6885,7 @@ stopping point and asked for a comprehensive plan for an HTTP-client-level chang
 
 ### M43
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tflw-acceptance/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M43-M46 — the reporter bug, and a corrected close to the arc (scoped 2026-08-01; M43 shipped 2026-08-01)**
 
@@ -6892,7 +6904,7 @@ Pure measurement + decision, no source changes beyond M43's own fixture retaggin
 
 ### M45
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PROGRESS.md`</sub>
 
 **M45 shipped (2026-08-01)**
 
