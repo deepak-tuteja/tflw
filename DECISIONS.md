@@ -6019,7 +6019,7 @@ met at n=3 where being wrong is cheap, and every later estimate is anchored on a
 
 ### D733
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D733` — the scheduled perf run is a registered box tenant.**
 A systemd timer on the shared build box under a new `tflw:perf` lease class, **registered with the
@@ -6291,6 +6291,119 @@ exactly than a plant row can. A `LEDGER` row names the rules that must fire **an
 are in play at that floor and must stay silent, which is a claim about a rule that produced nothing;
 no plant row in this ledger has ever managed to say that. Writing the plants anyway would have
 produced a second, weaker copy of an assertion that already runs on every sweep.
+
+### D754
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D754` — the schedule is disarmed; the gate is manual on demand until publish.**
+`systemctl --user disable --now tflw-perf.timer` (2026-08-26). Timer and service both `disabled` and
+`inactive`, no tflw entry in `list-timers`, lock free. **The units, the two checkouts and the
+`tflwperf` tenant registry row stay installed and inert** — the deployment work was not wasted and
+the eventual shape amends it rather than rebuilding it. Runs happen by asking, which is what has
+actually been happening: today's ladder PASS was a manual invocation, not the timer's. `D733` is
+**not reversed** — a scheduled run as a registered box tenant is still the right end state, and
+`D747`'s lease ownership and `D748`'s reset-to-`origin/main` discipline are both vindicated and
+retained. What is reversed is the claim that it can be scheduled *now*, on *this* box, against a
+*clock*.
+
+### D755
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D755` — the approval-gated daytime trigger is scoped and rejected before any code.**
+The replacement considered was: auto-trigger during the day, notify through the dashboard, run only
+on explicit approval, show the kill list at approval time, offer delay 1h/2h. It was taken far
+enough to price and then stopped, and the reasons are recorded so it is not re-proposed from
+scratch. (1) **Selectivity, not notification, is the hard part** — the run needs a quiet box
+(`tflw:load` declares `requires: quiet`, kept as-is by decision), and a quiet box during working
+hours is one nobody is using, so the prompt would mostly be *"may I kill what you are doing, in
+order to measure something?"*. An approval prompt that is usually declined stops being read.
+(2) **The kill list is the eviction clause wearing consent** — `M20`'s registry decided conflicts
+are **refused, not auto-evicted**, and the neighbour is often a parallel session's forge render or a
+17 GiB MoE server mid-task. (3) It is a lot of machinery whose own trigger is unattended code, so
+the consent problem is relocated rather than solved.
+
+### D756
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D756` — the box's dashboard project is not reopened; `D-CO-15` stands unamended.**
+The dashboard was briefly taken back into scope to carry the notification, and then taken back out.
+Its freeze names exactly one reopening trigger — *"the box surprised you in a way the instrument
+could not explain"* — and that is not what happened: the instrument explains this fine, nobody had
+asked it. A fourth reopening on *"a capability that would be useful"* is the precedent that
+dissolves the rule, and `tflwperfctl.sh`'s own header already names the endpoint — *"a mutating verb
+that kicked off a 20-minute load run because someone clicked a button in a dashboard would be the
+worst possible reading of `D20`"*. That sentence stays true only while no such button exists.
+`PLAN_M14_WAKE.md`'s W3 (RTC scheduled wake) was re-read and stays won't-do under `D-CO-9`: it
+cannot wake the box from the power-off state observed on 26 Aug, and *"a box that wakes at 08:00 to
+a sleeping Mac has woken to nobody"*.
+
+### D757
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D757` — `M124-03` is re-deferred against publish, and the closure is retracted rather than
+edited away.**
+Status `✅ closed` → `⏸ deferred against a condition`, ledger `354 closed / 14 deferred` →
+`353 closed / 15 deferred`, total unchanged at 387, `verify:ledger` green. The retracted text is
+kept in the cell under *"Superseded, kept for the record"* because the wrong sentence is the
+instructive one. **The new condition is publish**: the two shapes this row has named since `M85` —
+a scheduled sibling run that catches it late, or a `BREAKING:` convention that catches only what
+someone labelled — are still both bad, and nothing since has told us which. Once there is a
+published artifact for a sibling to break against, the choice is informed rather than guessed.
+
+### D758
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D758` — the measured perf gate is a phase of the regression sweep, and the sweep is where it
+lives now.** `scripts/regression.mjs` gains `perf-ladder`, running
+`node scripts/perf-conformance.mjs --profile sweep --in-sweep`. `D733` is still not reversed: a
+registered box tenant remains the right end state and the units, both `~/tflw-perf/` checkouts and
+the `tflwperf` registry row stay installed and inert. What changed is that the gate no longer waits
+for that end state to arrive before it guards anything.
+
+### D759
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D759` — inside the sweep the lease is inherited, verified, and neither re-taken nor waived.**
+This is the finding that made the whole shape work, and it was not visible from the design.
+`scripts/exec.mjs` already holds the whole-box lock as `tflw:<label>` for the entire sweep, by the
+same mechanism this file uses (`D747`): an open stdin that dies with the driver. `boxlock.sh` is a
+whole-box mutex and is **not reentrant**, so a phase calling `acquire` inside that would have waited
+out its own parent and failed `EX_TEMPFAIL` after the timeout. Worth being precise about: that
+deadlock is the *correct* behaviour of a correct mutex. There was nothing to fix in the lock, only
+something to stop asking of it.
+
+### D760
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D760` — the sweep phase runs a new `sweep` profile (`ladder` + `functional`), not `full`.** The
+omission is `curve`. `full` is right for a run whose entire purpose is the measurement; as a *phase*
+the arithmetic differs. The sweep already costs 30 phases each paying a Docker restart, and `curve`
+is the breaking-point search: the longest leg, the most sensitive to a neighbour, and the one whose
+answer moves least between two commits on a branch. `ladder` is the leg that catches a regression
+(7 rungs, ratio bands, ~4 min measured) and `functional` is 55 s. Those two are a cost a developer
+keeps paying; adding the breaking-point search is one they start skipping, and **a gate that gets
+skipped is worth less than a smaller gate that does not.** `--profile full` is exactly as available
+as it was.
+
+### D761
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D761` — the phase is `localOnly` by declaration, and "not this machine" is a third verdict.**
+`perf-ladder` carries `localOnly: true` in a field `regression.mjs`'s partition guard reads: an
+ungrouped phase still fails the build, and a `localOnly` phase found *inside* a `PHASE_GROUPS` entry
+now fails it too, because that would put a four-minute box measurement onto a GitHub runner where it
+can only fail in a way that reads as a perf regression. Off the box `perf-conformance` exits **3**,
+which the sweep renders `⊘ skipped (skipped — not the box)`, counts separately, and never totals as
+a pass. Two separate refusals to be silent, both of them this pair of repositories' oldest failure
+shape.
 
 ### M0
 
@@ -7953,7 +8066,7 @@ Closes `M118-02` (S2). Scoped 2026-08-10, not started.
 
 ### M124
 
-<sub>cited from SPEC.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
 
 **`M124` — a literal the run will reject is a checker sentence**
 
@@ -8703,7 +8816,12 @@ Joins the `security-ui` regression leg.
 
 **`M154f` — the security tier and the cross-repo seam**
 
-**Closes `M124-03`.**
+~~**Closes `M124-03`.**~~ — **retracted 2026-08-26 under `D757`; the row is re-deferred against
+publish.** `M154f` shipped the code and the deploy armed a timer that then fired 0 of 3 nights, so
+*deployed* was never the condition — *ran* was. Struck rather than deleted for a mechanical reason
+as well as an honest one: `DECISIONS.md` is **generated** from this heading (`D735`), so a claim
+edited away here would simply disappear from the published index, having been asserted there for a
+day and never visibly withdrawn.
 
 ### M154g
 
