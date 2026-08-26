@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites in tracked prose, and which of its files cite it, read from the ref below (D709/D710). Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:citation-pin` is what fails when this goes stale.",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "m154e-scheduled-run",
-  "sha": "4078daeef05ea959a8b16c478489f15d05dab313",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/4078daeef05ea959a8b16c478489f15d05dab313",
+  "ref": "m154f-security-tier",
+  "sha": "cb2f71ef5b98f82b1ba34a02201fd8b797b6124b",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/cb2f71ef5b98f82b1ba34a02201fd8b797b6124b",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -150,6 +150,7 @@
       "tflw-acceptance/README.md"
     ],
     "D380": [
+      "CONSTRUCTS.md",
       "VULNS.md"
     ],
     "D389": [
@@ -204,6 +205,7 @@
       "VULNS.md"
     ],
     "D445": [
+      "CONSTRUCTS.md",
       "VULNS.md"
     ],
     "D45": [
@@ -250,6 +252,7 @@
       "tflw-acceptance/README.md"
     ],
     "D493": [
+      "CONSTRUCTS.md",
       "VULNS.md"
     ],
     "D50": [],
@@ -396,6 +399,9 @@
       "CONTRIBUTING.md",
       "tflw-acceptance/perf/README.md"
     ],
+    "D752": [
+      "CONSTRUCTS.md"
+    ],
     "D76": [
       "tflw-acceptance/README.md"
     ],
@@ -440,6 +446,9 @@
     "M121": [
       "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
     ],
+    "M124": [
+      "CONTRIBUTING.md"
+    ],
     "M128": [
       "CONTRIBUTING.md"
     ],
@@ -467,6 +476,9 @@
     "M130c": [
       "VULNS.md"
     ],
+    "M131": [
+      "CONSTRUCTS.md"
+    ],
     "M132": [
       "CONTRIBUTING.md"
     ],
@@ -486,6 +498,7 @@
       "VULNS.md"
     ],
     "M136c": [
+      "CONTRIBUTING.md",
       "VULNS.md"
     ],
     "M137b": [
@@ -498,9 +511,11 @@
       "VULNS.md"
     ],
     "M137e": [
+      "CONSTRUCTS.md",
       "VULNS.md"
     ],
     "M137f": [
+      "CONSTRUCTS.md",
       "VULNS.md"
     ],
     "M137g": [
@@ -544,6 +559,10 @@
     "M154e": [
       "CONSTRUCTS.md",
       "tflw-acceptance/perf/README.md"
+    ],
+    "M154f": [
+      "CONSTRUCTS.md",
+      "CONTRIBUTING.md"
     ],
     "M22": [
       "CONTRIBUTING.md"
