@@ -6278,6 +6278,19 @@ to stop flaking, vacuous. The ladder already exists to answer a *comparative* qu
 between two runners measured in the same window cancels most of that variance; the absolutes ride
 along in the artifact as history rather than as the gate.
 
+### D751
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D751` — a construct whose known answer is already enforced by a dedicated gate is rostered by
+*reference* to that gate, not by a hand-written row restating it.**
+Taken 2026-08-25 while amending acceptance clause 5, and spent by `M154g`. The diagnostic family is
+66 of the manifest's 178 and `scripts/verify-check-diagnostics.mjs` already grades every one of
+them — against the assigned-code list read out of the **installed bundle's own §17 manifest**, so
+the completeness claim is enforced by the binary under test rather than by a list somebody
+maintains. Sixty-six hand-written rows would restate that as sixty-six claims *nothing* enforces,
+and the roster would get longer while the evidence got weaker.
+
 ### D752
 
 <sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
@@ -6404,6 +6417,21 @@ can only fail in a way that reads as a perf regression. Off the box `perf-confor
 which the sweep renders `⊘ skipped (skipped — not the box)`, counts separately, and never totals as
 a pass. Two separate refusals to be silent, both of them this pair of repositories' oldest failure
 shape.
+
+### D763
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D763` — a roster row may state a *rule* instead of a list, and the anti-regression duty moves to
+the gate it cites.**
+Taken 2026-08-27, spending `D751` on the diagnostic family. `D751` settled that a construct already
+enforced by a dedicated gate is rostered by citing that gate; it did not settle how **sixty-six of
+them at once** are rostered, and the obvious answer is the wrong one. A `coveredBy: [...]` list of
+sixty-six ids would be a hand-maintained wordlist inside the very gate whose header refuses hand-
+maintained wordlists (`D659`), and it would go stale in the one direction nobody checks — silently
+reading as evidence. So `REFERENCE_ROSTERS` names a **family and a grader**, and
+`verify-construct-coverage.mjs` expands it against `tflw spec --json` on the day it runs. The ids
+exist in exactly one place, which is tflw.
 
 ### M0
 
@@ -7211,7 +7239,7 @@ metric. Full design + results in `PLAN_BROWSER_PERF_SECURITY.md` §2.20 (D82-D85
 
 ### M49
 
-<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md +1 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/README.md +2 more · lifted from `PROGRESS.md`</sub>
 
 **M49 shipped 2026-08-02 — root-caused M48's p50/p99 widening: AbortSignal.timeout() tail cost**
 
