@@ -6206,7 +6206,7 @@ cannot be, because of what the target does to the measurement:
 
 ### D746
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D746` — the scheduled run leases as `tflw:load:conformance`, class `tflw:load`. `D733`'s new
 `tflw:perf` class would have been a silent downgrade.**
@@ -6221,7 +6221,7 @@ classify('tflw:load:conformance') -> tflw:load   requires=('quiet',)
 
 ### D747
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D747` — the run acquires through `boxlock.sh acquire`, never through plain `flock`.**
 The dashboard decides who holds the box by walking /proc for processes running `boxlock.sh acquire`
@@ -8699,10 +8699,19 @@ Joins the `security-ui` regression leg.
 
 ### M154f
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154f` — the security tier and the cross-repo seam**
 
 **Closes `M124-03`.**
+
+### M154g
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154g` — the roster completion**
+
+**The terminal milestone, and acceptance clause 5's real home.** Added 2026-08-25 when clause 5 was
+re-read against `M154f`'s actual scope; see §8.5 for why it is a rename rather than a widening.
 
 <!-- GENERATED:decisions:end -->

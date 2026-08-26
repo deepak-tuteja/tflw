@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites in tracked prose, and which of its files cite it, read from the ref below (D709/D710). Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:citation-pin` is what fails when this goes stale.",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "m154f-security-tier",
-  "sha": "cb2f71ef5b98f82b1ba34a02201fd8b797b6124b",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/cb2f71ef5b98f82b1ba34a02201fd8b797b6124b",
+  "ref": "m154g-empty-tally",
+  "sha": "43f5495ddeba744b416c1de50d774cf5fa717a33",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/43f5495ddeba744b416c1de50d774cf5fa717a33",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -12,6 +12,7 @@
     "apiV2/README.md",
     "tflw-acceptance/README.md",
     "tflw-acceptance/perf/README.md",
+    "tflw-acceptance/perf/founding-runs/README.md",
     "tflw-acceptance/perf/profile/FINDINGS.md",
     "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
     "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
@@ -381,10 +382,12 @@
       "CONSTRUCTS.md"
     ],
     "D746": [
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "tflw-acceptance/perf/founding-runs/README.md"
     ],
     "D747": [
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "tflw-acceptance/perf/founding-runs/README.md"
     ],
     "D748": [
       "tflw-acceptance/perf/README.md"
@@ -561,6 +564,11 @@
       "tflw-acceptance/perf/README.md"
     ],
     "M154f": [
+      "CONSTRUCTS.md",
+      "CONTRIBUTING.md",
+      "tflw-acceptance/perf/founding-runs/README.md"
+    ],
+    "M154g": [
       "CONSTRUCTS.md",
       "CONTRIBUTING.md"
     ],
