@@ -32,6 +32,7 @@ import {
   DIAGNOSTICS,
   SPEC_MANIFEST_VERSION,
   specConstructs,
+  CLI_FLAGS,
 } from '../src/index.js';
 
 const constructs = specConstructs();
@@ -200,4 +201,48 @@ test('the top-level error message names every declaration, and is rendered from 
   const { diagnostics } = parseSource('teardown\n');
   const top = diagnostics.find((d) => d.code === 'TF016');
   assert.ok(top && top.message.includes(rendered), 'the diagnostic does not use the shared rendering');
+});
+
+// ---- M154g-03: the manifest's prose is a fourth flag surface, and it was unchecked -----------
+
+test('every CLI flag the construct manifest names is a real flag in CLI_FLAGS', () => {
+  // `CLI_FLAGS` is checked against `tflw --help` in *both* directions already (M62/M63, in
+  // `packages/cli/test/e2e.test.ts`) — but the construct manifest is a third consumer of the same
+  // vocabulary and nothing compared it to the registry. `declaration:tags` advertised
+  // `--tag`/`--exclude-tag` selection; `--exclude-tag` has never existed, `tflw run --exclude-tag`
+  // answers `unknown flag`, and SPEC §4.1 says outright "No exclusion syntax". The string occurred
+  // exactly once in the whole repository — in that summary — so nothing implemented it, nothing
+  // removed it, and no test asserted it.
+  //
+  // What makes this cheap enough to be worth gating: the entire 178-construct manifest names only
+  // six distinct flags, so this is a six-element check that closes the class rather than the one
+  // instance. `D723` designates the manifest as the program's own account of itself, and a
+  // conformance gate reads its *ids*; its prose was the part nobody had pointed anything at.
+  const known = new Set(CLI_FLAGS.flatMap((f) => [...f.flag.matchAll(/(--[a-z][a-z0-9-]*)/g)].map((m) => m[1])));
+
+  const phantom: string[] = [];
+  for (const c of specConstructs()) {
+    for (const field of ['summary', 'syntax', 'example'] as const) {
+      for (const m of String(c[field] ?? '').matchAll(/--[a-z][a-z0-9-]*/g)) {
+        if (!known.has(m[0])) phantom.push(`${c.id}.${field} names ${m[0]}`);
+      }
+    }
+  }
+  assert.deepEqual(phantom, [], 'a manifest summary may only name a flag `tflw` actually takes');
+});
+
+// The check above is only as good as its haystack: if the manifest ever stopped naming flags at
+// all it would pass vacuously and say nothing. Six is the count today.
+test('…and the manifest does name flags, so the check above is not vacuous', () => {
+  const named = new Set<string>();
+  for (const c of specConstructs()) {
+    for (const field of ['summary', 'syntax', 'example'] as const) {
+      for (const m of String(c[field] ?? '').matchAll(/--[a-z][a-z0-9-]*/g)) named.add(m[0]);
+    }
+  }
+  assert.deepEqual(
+    [...named].sort(),
+    ['--env', '--now', '--seed', '--tag', '--workers'],
+    'the manifest names exactly these flags — update this list deliberately, never to make a failure go away',
+  );
 });
