@@ -1764,11 +1764,17 @@ no `unique password` — passwords carry no real-world uniqueness constraint the
 do (M18); see `random password` (§7.3).
 
 `unique like "ORD-######"` reaches the same guarantee the same way: the run-wide counter is rendered
-straight into the pattern's placeholders (`#` = base 10, `?` = base 26), through a seeded permutation
-of that pattern's value space so consecutive draws do not read as a sequence. Distinctness is
-therefore the counter's, not the pattern's collision probability. The values are scattered but
-deliberately **not unpredictable** — they are an arithmetic progression through the space, so two of
-them determine the rest. Nothing should treat one as a secret; `unique` promises collision-safety.
+straight into the pattern's placeholders (`#` = base 10, `?` = base 26), through a permutation of
+that pattern's value space so consecutive draws do not read as a sequence. Distinctness is therefore
+the counter's, not the pattern's collision probability. The values are scattered but deliberately
+**not unpredictable** — they are an arithmetic progression through the space, so two of them
+determine the rest. Nothing should treat one as a secret; `unique` promises collision-safety.
+
+That permutation is keyed by the **pattern only**, so like the rest of this section `unique like` is
+a pure function of the counter: the same pattern yields the same codes in the same order on every
+run, under every `--seed` and every `--now`. That is the opposite of `random like` (§7.3), which
+shares the pattern language and moves with the seed — the two constructs are told apart by exactly
+this, and not by their shape.
 
 A pattern has a finite capacity as a result — 10^6 for the six digits above — and the counter it
 spends is shared with every other `unique` generator in the run (§7.5). A run that exhausts a pattern

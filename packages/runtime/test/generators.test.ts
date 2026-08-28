@@ -286,6 +286,39 @@ test "t1"
   await server.close();
 });
 
+// `unique like`'s permutation is keyed by the pattern and by nothing else, so it belongs to the
+// `unique` family's "pure function of the counter" half rather than the `random` family's seeded
+// half. That is the discriminator between the two constructs that *share the pattern language*, so
+// it is asserted in both directions in one test: the same pattern is frozen across two seeds and a
+// moved clock, while `random like` beside it moves. An earlier draft of the fix keyed the
+// permutation on `runSeed` too, which no assertion here would have caught.
+test('`unique like` is seed- and clock-independent, where `random like` is not', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+
+  const source = `test "keying"
+  let u = unique like "ORD-######"
+  let r = random like "ORD-######"
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const draw = async (seed: number, now: string) => {
+    const { report } = await runProgram(program, testConfig(server.baseUrl), { source, seed, now });
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+    return report.tests[0]!.steps.slice(0, 2).map((st) => st.detail!.match(/"(ORD-\d{6})"/)![1]!);
+  };
+
+  const [u1, r1] = await draw(4242, '2026-07-06T00:00:00.000Z');
+  const [u2, r2] = await draw(9999, '2026-07-06T00:00:00.000Z');
+  const [u3] = await draw(4242, '2027-07-06T00:00:00.000Z');
+
+  assert.equal(u1, u2, '`unique like` must not move with the seed — it renders a counter, not a draw');
+  assert.equal(u1, u3, '`unique like` must not move with the clock either');
+  assert.notEqual(r1, r2, '`random like`, on the same pattern, must move with the seed');
+
+  await server.close();
+});
+
 // decision 98: uuid/password generators + base64/hex/url transforms
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
