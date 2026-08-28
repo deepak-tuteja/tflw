@@ -214,6 +214,111 @@ test('`unique like` renders the pattern and stays distinct across calls', async 
   await server.close();
 });
 
+// `M154g-07` — the test above draws two values and asserts they differ, and the *pre-fix*
+// implementation passed it: it keyed a local RNG off the run-wide counter, filled the pattern from
+// that RNG, and then discarded the counter, so distinctness was probabilistic (1-in-10^6 for the
+// documented pattern) while SPEC §7.2 promised the whole `unique` family was guaranteed. Two draws
+// cannot tell a guarantee from a coin-flip. This one draws a small pattern's **entire** value space
+// and asserts every value is distinct, which is the guarantee itself rather than a sample of it —
+// under the old implementation ten draws of `ORD-##` already produced `ORD-85` three times
+// (measured on `fedora-box`, `--seed 4242`), so a hundred is not a probabilistic argument.
+test('`unique like` fills its whole value space without a collision, then refuses to overflow it', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+
+  const draws = (n: number) => Array.from({ length: n }, (_unused, i) => `  let v${i} = unique like "ORD-##"`).join('\n');
+  const sourceFor = (n: number) => `test "unique like x${n}"\n${draws(n)}\n  api GET /health\n  expect status equals 200\n`;
+
+  const full = sourceFor(100);
+  const { report: rFull } = await runProgram(parseSource(full).program, testConfig(server.baseUrl), { source: full });
+  assert.equal(rFull.ok, true, JSON.stringify(rFull.tests[0], null, 2));
+  const values = rFull.tests[0]!.steps.slice(0, 100).map((s) => {
+    const m = s.detail!.match(/^v\d+ = "([^"]+)" \(unique\)$/);
+    assert.ok(m, `expected a tagged unique detail, got: ${s.detail}`);
+    return m[1]!;
+  });
+  for (const v of values) assert.match(v, /^ORD-\d{2}$/);
+  assert.equal(new Set(values).size, 100, '100 codes must yield 100 distinct values, not 100 draws from 100 codes');
+
+  // The counter is shared with the rest of the family (SPEC §7.5), so a narrow pattern can genuinely
+  // run out. It throws rather than wrapping, and the message names both numbers — wrapping silently
+  // would put the false guarantee straight back, which is the whole of this repair.
+  const over = sourceFor(101);
+  const { report: rOver } = await runProgram(parseSource(over).program, testConfig(server.baseUrl), { source: over });
+  assert.equal(rOver.ok, false);
+  assert.match(rOver.tests[0]!.error ?? '', /can encode at most 100 distinct values/);
+  assert.match(rOver.tests[0]!.error ?? '', /counter has already reached 100/);
+
+  await server.close();
+});
+
+// `M154g-15` — the old `unique like` seeded its RNG with `subSeed(runSeed, counter)`, which is the
+// *same* expression, over the same run seed, that keys a test's own `random` stream from its index
+// (`interpreter.ts`'s `testSeed`). One sub-seed space, two unrelated indices: `unique like`'s k-th
+// draw in a run rendered test k's `random` stream verbatim. Pinned to a seed, so this asserts a
+// deterministic separation rather than betting on two random values differing.
+test('`unique like` does not render some test\'s own `random` stream (`M154g-15`)', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+
+  const source = `test "t0"
+  let r0 = random like "####"
+  let u0 = unique like "AAA-####"
+  api GET /health
+  expect status equals 200
+
+test "t1"
+  let r1 = random like "####"
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, seed: 4242 });
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+
+  const digits = (detail: string) => detail.match(/"(?:AAA-)?(\d{4})"/)![1]!;
+  const r0 = digits(report.tests[0]!.steps[0]!.detail!);
+  const u0 = digits(report.tests[0]!.steps[1]!.detail!);
+  const r1 = digits(report.tests[1]!.steps[0]!.detail!);
+
+  // Counter 0 used to reproduce test 0's stream; counter 1 reproduced test 1's. Both directions.
+  assert.notEqual(u0, r0, '`unique like` must not replay the drawing test\'s `random` stream');
+  assert.notEqual(u0, r1, '`unique like` must not replay another test\'s `random` stream either');
+
+  await server.close();
+});
+
+// `unique like`'s permutation is keyed by the pattern and by nothing else, so it belongs to the
+// `unique` family's "pure function of the counter" half rather than the `random` family's seeded
+// half. That is the discriminator between the two constructs that *share the pattern language*, so
+// it is asserted in both directions in one test: the same pattern is frozen across two seeds and a
+// moved clock, while `random like` beside it moves. An earlier draft of the fix keyed the
+// permutation on `runSeed` too, which no assertion here would have caught.
+test('`unique like` is seed- and clock-independent, where `random like` is not', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+
+  const source = `test "keying"
+  let u = unique like "ORD-######"
+  let r = random like "ORD-######"
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const draw = async (seed: number, now: string) => {
+    const { report } = await runProgram(program, testConfig(server.baseUrl), { source, seed, now });
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+    return report.tests[0]!.steps.slice(0, 2).map((st) => st.detail!.match(/"(ORD-\d{6})"/)![1]!);
+  };
+
+  const [u1, r1] = await draw(4242, '2026-07-06T00:00:00.000Z');
+  const [u2, r2] = await draw(9999, '2026-07-06T00:00:00.000Z');
+  const [u3] = await draw(4242, '2027-07-06T00:00:00.000Z');
+
+  assert.equal(u1, u2, '`unique like` must not move with the seed — it renders a counter, not a draw');
+  assert.equal(u1, u3, '`unique like` must not move with the clock either');
+  assert.notEqual(r1, r2, '`random like`, on the same pattern, must move with the seed');
+
+  await server.close();
+});
+
 // decision 98: uuid/password generators + base64/hex/url transforms
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

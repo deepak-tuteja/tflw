@@ -4,7 +4,7 @@
 
 import { isDecodableBase64, isDecodableHex, isDecodablePercentEncoding, parseStringParts, type BinaryOp, type DateOffsetUnit, type PathSegment, type StringPart, type Value } from '@tflw/lang';
 import type { Redactor } from './redact.js';
-import { subSeed, mulberry32 } from './seed.js';
+import { subSeed, mulberry32, hashString } from './seed.js';
 import type { CookieJar } from './cookieJar.js';
 import type { BrowserManager, BrowserPageState, LocatorScope } from './browser.js';
 import type { SessionRef } from './interpreter.js';
@@ -200,14 +200,10 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
       return `user${ctx.uniqueSeq.next()}@example.test`;
     case 'UniqueNumberExpr':
       return ctx.uniqueSeq.next();
-    case 'UniqueLikeExpr': {
-      // Random-looking but guaranteed distinct: each call gets its own local RNG keyed off the
-      // monotonic counter, not the shared per-test `rng` stream (P#19, P#22).
-      const localRng = mulberry32(subSeed(ctx.runSeed, ctx.uniqueSeq.next()));
-      // A4-OS-13/M102, as in `FormatExpr` above. `renderLikePattern`'s placeholders are `#` and `?`,
-      // so interpolating first cannot collide with the pattern language.
-      return renderLikePattern(String(evalValue(value.pattern, ctx)), localRng);
-    }
+    case 'UniqueLikeExpr':
+      // A4-OS-13/M102, as in `FormatExpr` above. `uniqueLike`'s placeholders are `#` and `?`, so
+      // interpolating first cannot collide with the pattern language.
+      return uniqueLike(String(evalValue(value.pattern, ctx)), ctx.uniqueSeq.next());
     case 'UniqueUuidExpr':
       return uniqueUuid(ctx.uniqueSeq.next(), ctx.runSeed);
     case 'RandomNumberExpr': {
@@ -508,6 +504,103 @@ function randomUuidV4(rng: () => number): string {
   bytes[6] = (bytes[6]! & 0x0f) | 0x40; // version 4
   bytes[8] = (bytes[8]! & 0x3f) | 0x80; // variant 10xxxxxx
   return formatUuidBytes(bytes);
+}
+
+/** `unique like "ORD-######"` — the run-wide monotonic counter rendered straight into the pattern's
+ * placeholders in mixed radix (`#` = base 10, `?` = base 26 over `LETTERS`), most-significant
+ * placeholder first, after passing through an affine permutation of the pattern's own value space
+ * so that consecutive draws do not read as a counter.
+ *
+ * The permutation is keyed by THE PATTERN ALONE and not by the run seed, which makes this a pure
+ * function of the counter like every other member of the family: `unique number` answers 8, 9, 10
+ * on every run at every seed, and this now answers the same three codes beside it. Keying it on
+ * `runSeed` as well was tried first and reverted — the permutation exists only so a draw does not
+ * read as a sequence, the pattern keys that completely, and the seed bought nothing the construct
+ * promises while making one member of a family move under `--seed` when the other four do not.
+ * Cross-*run* collision safety is not on offer here for any of them (§7.2: distinct across
+ * tests/workers *within a run*), so seeding did not buy that either.
+ *
+ * DISTINCTNESS IS A TRUE GUARANTEE, the same kind `unique uuid` gets from embedding the counter and
+ * `unique("prefix")` gets from string concatenation (SPEC §7.2, §7.5): `c → (mul·c + add) mod
+ * capacity` with `gcd(mul, capacity) = 1` is a bijection on `[0, capacity)`, so distinct counters
+ * can only produce distinct codes, and distinct codes render as distinct strings. It is
+ * deliberately NOT unpredictable — the values are an arithmetic progression modulo `capacity`, so a
+ * reader who has seen two of them can extrapolate the rest. `unique` promises collision-safety, not
+ * secrecy, and nothing should treat one of these as a token.
+ *
+ * `M154g-07` — this used to build a local RNG from `mulberry32(subSeed(runSeed, counter))` and fill
+ * the pattern from it, which consumed the counter as a *seed* and then discarded it. That left
+ * `unique like` the one member of the family whose distinctness was probabilistic while §7.2
+ * promised the family was guaranteed: ten draws of `ORD-##` measured on `fedora-box` at `--seed
+ * 4242` produced `ORD-85` three times. It also put the counter into `subSeed`'s *other* namespace —
+ * `subSeed(runSeed, testIndex)` is how a test's own `rng` is keyed — so `unique like`'s k-th draw
+ * rendered test k's `random` stream verbatim (`M154g-15`). Neither hazard can arise here: no RNG is
+ * consulted at all beyond the two constants below, which depend on the pattern alone, never on the
+ * counter and never on the run seed.
+ *
+ * Capacity is finite and the counter is shared with the rest of the `unique` family, so a narrow
+ * pattern can genuinely run out. That throws, naming both numbers — silently wrapping would put the
+ * false guarantee straight back, which is the whole of this fix. */
+function uniqueLike(pattern: string, counter: number): string {
+  const chars = [...pattern];
+  const slots: number[] = [];
+  let capacity = 1n;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!;
+    if (ch !== '#' && ch !== '?') continue;
+    slots.push(i);
+    capacity *= ch === '#' ? 10n : 26n;
+  }
+  if (BigInt(counter) >= capacity) {
+    throw new RuntimeError(
+      `unique like ${JSON.stringify(pattern)} can encode at most ${capacity} distinct value${capacity === 1n ? '' : 's'}, ` +
+        `and this run's \`unique\` counter has already reached ${counter} (it is shared with every other \`unique\` ` +
+        `generator, SPEC §7.5). Widen the pattern, or use \`random like\` if collisions are acceptable.`,
+    );
+  }
+  let code = permuteIndex(BigInt(counter), capacity, pattern);
+  for (let k = slots.length - 1; k >= 0; k--) {
+    const i = slots[k]!;
+    const radix = chars[i] === '#' ? 10n : 26n;
+    const digit = Number(code % radix);
+    code /= radix;
+    chars[i] = radix === 10n ? String(digit) : LETTERS[digit]!;
+  }
+  return chars.join('');
+}
+
+/** The bijection `uniqueLike` renders. `mul` is drawn from a per-pattern sub-seed and then walked up
+ * to the first value coprime with `capacity`, which always terminates: `capacity` is a product of
+ * 10s and 26s, so its prime factors are a subset of {2, 5, 13} and coprime values are dense. The
+ * only key is the pattern, so two patterns of the same shape do not walk their value spaces in
+ * lockstep while one pattern walks its own identically on every run — `--seed` replay reproduces
+ * the draw (P#23) because nothing here varies with the seed at all.
+ *
+ * `BigInt` throughout, not `number`: a 16-`#` pattern's capacity is already past
+ * `Number.MAX_SAFE_INTEGER`, and `index * mul` overflows the double's exact range long before that.
+ * A float rounding here would silently map two counters onto one code — which is precisely the
+ * guarantee this function exists to make true, so it cannot be left to a size assumption about how
+ * wide a pattern anyone writes. */
+function permuteIndex(index: bigint, capacity: bigint, pattern: string): bigint {
+  if (capacity <= 2n) return index; // a 1- or 2-element space has no scrambling to do
+  const rng = mulberry32(subSeed(hashString(pattern) >>> 0, 0x11c5));
+  // `rng()` is a double in [0,1); scaled through `Number` first, then widened — capacity can exceed
+  // 2^53, so the draw lands in a coarse but well-spread subset of a huge space rather than pretending
+  // to a precision `mulberry32` does not have. Bijectivity depends on `gcd`, not on this spread.
+  const pick = (bound: bigint): bigint => (BigInt(Math.floor(rng() * 0x1_0000_0000)) * bound) / 0x1_0000_0000n;
+  let mul = pick(capacity - 1n) + 1n;
+  while (gcdBig(mul, capacity) !== 1n) mul = (mul % (capacity - 1n)) + 1n;
+  const add = pick(capacity);
+  return (index * mul + add) % capacity;
+}
+
+function gcdBig(a: bigint, b: bigint): bigint {
+  while (b !== 0n) {
+    const t = a % b;
+    a = b;
+    b = t;
+  }
+  return a;
 }
 
 /** `unique uuid` — v4-shaped, but the trailing 4 bytes (last 8 hex digits) are the run-wide

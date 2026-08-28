@@ -343,6 +343,13 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     note: '`M147c`/D630 — `M124-01`, closed by the throw its two numeric siblings have always had. `static-if-literal` is exact here and the literal case is narrower than it looks: two bounds **measured from the same anchor** are ordered without a clock (`today - 10 days` is ten days before `today` on every run, and `offsetToMs` is pure arithmetic with no calendar in it), while `now` against `today` differs by however far into the day the run started and is left to the runtime. The interpolated half is the carve-out, as with the two numeric rows above',
   },
   {
+    id: 'unique-like-space-exhausted',
+    file: 'eval.ts',
+    excerpt: 'can encode at most ${capacity} distinct value',
+    decidable: 'needs-values',
+    note: '`M154g-07` — the pattern\'s capacity *is* static (`#` is base 10, `?` is base 26, and both are literal after interpolation), but the thing it is compared against is not: the run-wide `unique` counter is shared with every other generator in the family (SPEC §7.5), so whether a given pattern runs out depends on how many `unique` draws the run made before reaching it. Same shape as `browser-unknown-tab`. There is no decidable sub-case to carve out either — the smallest possible space still serves its first draw, so no literal pattern is wrong on sight',
+  },
+  {
     id: 'eval-invalid-reference',
     file: 'eval.ts',
     excerpt: 'invalid reference',

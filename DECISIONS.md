@@ -6485,7 +6485,7 @@ sitting one phase above it. So this needs no new mechanism: `input-acceptance`, 
 
 ### D767
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D767` — a count in prose is a copy with no guard, so `D504` deletes the number as well as the
 list.**
