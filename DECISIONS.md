@@ -5668,6 +5668,15 @@ stay a human-read report run by hand, and `D445`'s precision + staleness asserti
 phase of their own."* `M137g` raised its stakes — `V18` and both `probe ciphers` notes are graded by
 that ungated script and by nothing else.
 
+### D504
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+
+**D504 — the document names the commands CI runs, not the phases inside them**
+
+M139's `security-acceptance-gate` is a `regression.mjs` phase in the `core` group; CI's line is
+`npm run regression -- --group core`. A contributor who runs the four group commands has run it.
+
 ### D537
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
@@ -6422,7 +6431,7 @@ as it was.
 
 ### D761
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D761` — the phase is `localOnly` by declaration, and "not this machine" is a third verdict.**
 `perf-ladder` carries `localOnly: true` in a field `regression.mjs`'s partition guard reads: an
@@ -6447,6 +6456,44 @@ maintained wordlists (`D659`), and it would go stale in the one direction nobody
 reading as evidence. So `REFERENCE_ROSTERS` names a **family and a grader**, and
 `verify-construct-coverage.mjs` expands it against `tflw spec --json` on the day it runs. The ids
 exist in exactly one place, which is tflw.
+
+### D764
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D764` — a ratchet condition is audited against the decision it cites, never read as provenance.**
+Taken 2026-08-28 while judging acceptance clause 5. `D739` settled what a `RATCHET` entry *asserts*
+— no known-answer row, never *never exercised* — and nothing settled what its stated **condition**
+has to be. It has to name a requirement, and any decision it cites has to actually state that
+requirement. Three entries here read *"a Tier 3 assertion costs an order of magnitude more requests
+than a Tier 2 one (`D380`) and the cost was judged too high for every-PR"*, and `D380` decides
+something else entirely: that the ~45 real test files are Tier 3's **negative corpus and its volume
+measurement**, which is `sweep-input-volume.mjs` and its 240 observed requests. A different script,
+a different corpus, a different question.
+
+### D765
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D765` — the Tier 3 grader becomes a `regression.mjs` phase, and the cost claim is retracted as
+measured rather than argued.**
+Taken 2026-08-28, built the same day. `verify-input-acceptance.mjs` states its known answers in
+full, asserts them, exits non-zero, and ran in **no automated pass at all** — which is `M137e-01`
+for the third time, and `D493` already settled that remedy in `M139-5` for the Tier 1/2 grader
+sitting one phase above it. So this needs no new mechanism: `input-acceptance`, `VULN_MODE=1`, group
+`core`, an ordinary gated phase.
+
+### D767
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D767` — a count in prose is a copy with no guard, so `D504` deletes the number as well as the
+list.**
+Taken 2026-08-28, from a defect found by touching the sentence rather than by looking for it.
+`D504` keeps the sweep's phase *list* out of `CONTRIBUTING.md` because a copy of it in prose would
+be a copy with no guard, and `PHASE_GROUPS` is already held to `PHASES` by a partition guard. It
+left the **count** in, and the count said `30` while `PHASES` held `38` — eight phases arriving
+across six milestones with nothing anywhere able to notice. Seven occurrences across four files.
 
 ### M0
 
@@ -8304,7 +8351,7 @@ milestone.
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -8595,7 +8642,7 @@ question.
 
 ### M139
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
 
 **M139 — acceptance vs the `vuln/` ledger: recall per *plant*, and a gate that runs**
 
@@ -8882,5 +8929,20 @@ day and never visibly withdrawn.
 
 **The terminal milestone, and acceptance clause 5's real home.** Added 2026-08-25 when clause 5 was
 re-read against `M154f`'s actual scope; see §8.5 for why it is a rename rather than a widening.
+
+### M154h
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**Build note — 2026-08-26, the measured gate moves into the sweep (`M154h`)**
+
+**The question.** With the timer disarmed (`D754`), the gate's coverage depends on someone asking
+for it — stated plainly in the note above, and not a good place to leave it. The question put next
+was the right narrowing of the whole scheduling problem: *keep the full/ladder run in the local box
+regression execution, and keep GitHub CI without it, so it is not missed during development.* That
+is not a smaller version of the rejected daytime-trigger design (`D755`); it is a different design
+with none of its parts. There is no notification, no approval, no eviction and no unattended code,
+because there is **no trigger at all** — the run rides something a developer already invokes on
+purpose.
 
 <!-- GENERATED:decisions:end -->
