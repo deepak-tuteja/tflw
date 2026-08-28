@@ -515,3 +515,70 @@ test('`not` negates any matcher', async () => {
 
   await server.close();
 });
+
+
+// `M154g-09` — `equals` between two dates was unconditionally TRUE, so `not equals` on two visibly
+// different instants was unconditionally red and the failure message printed both of them. A `Date`
+// is `typeof 'object'` with no own enumerable keys, so `deepEqual` fell into its plain-object branch,
+// compared `Object.keys(a)` against `Object.keys(b)`, and found `[]` matching `[]`. Nothing in the
+// suite met it because value-to-value `equals` had no site anywhere in either repository — the
+// matchers above all read a response subject, where a date can never appear.
+test('`equals` compares two dates by instant, not by their (empty) key sets', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, { ok: true }) });
+
+  const differing = `test "two different instants are not equal"
+  let past = random date in past
+  let future = random date in future
+  check {past} not equals {future}
+  api GET /orders
+  expect status equals 200
+`;
+  const { program: p1 } = parseSource(differing);
+  const { report: r1 } = await runProgram(p1, testConfig(server.baseUrl), { source: differing, seed: 4242 });
+  assert.equal(r1.ok, true, JSON.stringify(r1.tests[0], null, 2));
+
+  const same = `test "one instant equals itself"
+  let when = random date in past
+  check {when} equals {when}
+  api GET /orders
+  expect status equals 200
+`;
+  const { program: p2 } = parseSource(same);
+  const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: same, seed: 4242 });
+  assert.equal(r2.ok, true, JSON.stringify(r2.tests[0], null, 2));
+
+  // The direction that used to pass. Both instants are printed, so a green here would have been
+  // visibly absurd on the page — and was, for as long as nothing asked.
+  const bogus = `test "two different instants are not equal, asserted the wrong way"
+  let past = random date in past
+  let future = random date in future
+  check {past} equals {future}
+  api GET /orders
+  expect status equals 200
+`;
+  const { program: p3 } = parseSource(bogus);
+  const { report: r3 } = await runProgram(p3, testConfig(server.baseUrl), { source: bogus, seed: 4242 });
+  assert.equal(r3.ok, false);
+  assert.match(r3.tests[0]!.error ?? '', /expected past to equal "20\d\d-/);
+
+  await server.close();
+});
+
+// A date reached the same branch against ANY key-less object, so `{}` was equal to every instant
+// too. Same repair, different door — kept separate because a future rewrite could plausibly special-
+// case `Date` on both sides and still leave this one green.
+test('`equals` does not call a date equal to an empty object literal', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, { ok: true }) });
+
+  const source = `test "a date is not an empty object"
+  let when = random date in past
+  check {when} not equals {}
+  api GET /orders
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, seed: 4242 });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});

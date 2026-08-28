@@ -1763,6 +1763,19 @@ distinctness is a true guarantee, not v4's usual low collision probability. Ther
 no `unique password` — passwords carry no real-world uniqueness constraint the way email/order-id
 do (M18); see `random password` (§7.3).
 
+`unique like "ORD-######"` reaches the same guarantee the same way: the run-wide counter is rendered
+straight into the pattern's placeholders (`#` = base 10, `?` = base 26), through a seeded permutation
+of that pattern's value space so consecutive draws do not read as a sequence. Distinctness is
+therefore the counter's, not the pattern's collision probability. The values are scattered but
+deliberately **not unpredictable** — they are an arithmetic progression through the space, so two of
+them determine the rest. Nothing should treat one as a secret; `unique` promises collision-safety.
+
+A pattern has a finite capacity as a result — 10^6 for the six digits above — and the counter it
+spends is shared with every other `unique` generator in the run (§7.5). A run that exhausts a pattern
+**fails, naming both numbers**. It never wraps: a wrapped value is a repeat, and a repeat under a
+guarantee of distinctness is worse than a stopped run. Widen the pattern, or use `random like` (§7.3)
+where collisions are acceptable.
+
 **Under `retry` (§4.4):** `unique(...)`'s run-wide counter keeps advancing on every retry attempt
 of the *same* test — by design, so a retried attempt never collides with data the failed attempt
 already created. That means a retried attempt **cannot** use `unique(...)` to reproduce a value an
@@ -1835,7 +1848,7 @@ the same anchor (`today - 10 days` against `today`) are ordered without a clock,
 | unique | `unique("prefix")` | collision-safe across tests/workers/retries | `unique("Widget")` |
 | unique | `unique email` | collision-safe across tests/workers/retries | `unique email` |
 | unique | `unique number` | collision-safe across tests/workers/retries | `unique number` |
-| unique | `unique like "ORD-######"` | `#` = digit; pattern fill, collision-safe | `unique like "ORD-######"` |
+| unique | `unique like "ORD-######"` | `#` = digit, `?` = letter; the run-wide counter is rendered into the placeholders, so distinctness is guaranteed, not probabilistic — a pattern too narrow to encode the counter is refused rather than allowed to repeat | `unique like "ORD-######"` |
 | unique | `unique uuid` | v4-shaped; trailing digits are the run-wide counter, so distinctness is guaranteed, not probabilistic | `unique uuid` |
 | random | `random number A to B` / `random decimal A to B` | seed-reproducible; a reversed range is refused — at check time when both bounds are literal, at run time otherwise | `random number 1 to 100` |
 | random | `random date in past` / `in future` / `between A and B` | seed- and run-clock-reproducible (`--seed`/`--now`); `between` refuses a reversed range, and a bound that is not a date | `random date in past` |

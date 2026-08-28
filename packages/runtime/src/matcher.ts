@@ -138,6 +138,21 @@ function deepEqual(a: unknown, b: unknown): boolean {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     return a.every((el, i) => deepEqual(el, b[i]));
   }
+  // `M154g-07`'s sibling, `M154g-09`, and the more serious of the two because it made an assertion
+  // *pass*. A `Date` is `typeof 'object'` with **no own enumerable keys**, so it fell into the
+  // plain-object branch below, which compared `Object.keys(a)` against `Object.keys(b)`, found `[]`
+  // and `[]`, and returned `true` — for *any* pair of dates. `equals` between two dates was
+  // unconditionally true, so `not equals` on two different instants was unconditionally red, and
+  // the failure message printed the two visibly different instants it had just called equal. A date
+  // against a `{}` literal was equal for the same reason.
+  //
+  // Compared by instant. A date is only ever equal to another date — no coercion to its ISO string,
+  // because `equals` has never coerced (`B3-04` took the same line for `is less than`) and accepting
+  // a string here would be a widening rather than the repair. Two *invalid* dates are unequal, since
+  // `NaN !== NaN`; that mirrors the arithmetic everywhere else and no generator can produce one.
+  if (a instanceof Date || b instanceof Date) {
+    return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+  }
   if (a && b && typeof a === 'object' && typeof b === 'object') {
     const aRec = a as Record<string, unknown>;
     const bRec = b as Record<string, unknown>;
