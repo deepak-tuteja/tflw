@@ -897,7 +897,7 @@ here.
 
 ### P#75
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
 
 75. **`tflw check` ships in 0.1, text-only.** Validate-only command: parse + the full checker
     pipeline (exactly what `run` already executes before running) over given or discovered files,
@@ -3972,6 +3972,21 @@ Cyrillic, Greek, Cherokee or Armenian.
 
 `TF049` fires in comments. `TF050` does not, and the reason is D166's own principle: **a rule with
 no way to comply is a capability removed, not a lint.**
+
+### D183
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M104_CONFIG_RELATIVE_PATHS.md`</sub>
+
+**D183 — the mTLS half is a separate row, not a silent ride-along**
+
+`loadMtlsCreds(config, baseDir)` was found while threading `configDir` through `execApi`. It is the
+same defect but not the same finding, so it is filed as `M104-01` rather than folded into
+`M97c-03`'s scope note:
+
+- **Wider blast radius.** It affects every request on an mTLS env, not only sessions.
+- **Not a race.** It is deterministically wrong for any test file not beside `tflw.config` — which
+  is the ordinary layout (`tests/*.tflw`).
+- **SPEC documents the broken form.** §3.6's own example is `cert "./certs/client.pem"`.
 
 ### D198
 
@@ -7974,6 +7989,14 @@ Closes `A4-OS-11` (S2) and `A4-OS-13` (S4), the two rows the M101 audit turned u
 **M103 — the characters that are visible and lie**
 
 Closes `M98d-02` (S3 as filed; **re-graded S2 here**, see "What raised the severity").
+
+### M104
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M104_CONFIG_RELATIVE_PATHS.md`</sub>
+
+**M104 — a config-declared path means one file**
+
+Closes `M97c-03` (S2). Files and closes `M104-01` (S2), found while fixing it.
 
 ### M106
 
