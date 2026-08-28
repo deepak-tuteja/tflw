@@ -8923,7 +8923,7 @@ day and never visibly withdrawn.
 
 ### M154g
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154g` — the roster completion**
 
@@ -8944,5 +8944,21 @@ is not a smaller version of the rejected daytime-trigger design (`D755`); it is 
 with none of its parts. There is no notification, no approval, no eviction and no unattended code,
 because there is **no trigger at all** — the run rides something a developer already invokes on
 purpose.
+
+### M161
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+
+**`M161` — one string form for a value, stated once**
+
+**Status:** **built 2026-08-29** — tflw half (`M161a`–`M161e`) complete, suite green on the box;
+`M161f` (sibling `testFlow-tests` touchpoints) outstanding behind `D511`'s merge order.
+**Behaviour change** — `matches` against a date now passes where it used to fail. No grammar change.
+**Closes:** `M154g-08` (S4, re-stamp pending to S3 per §2.1), `M154c-02` (S4), `M154g-15` (S4).
+**Filed and closed one new row**, `M161-01` (**S2**) — `unique` collides across forked load workers,
+contradicting a stated `SPEC` guarantee (§2.4); reproduced at 167 draws / 84 distinct before the fix.
+**Numbering:** takes `D812`–`D817`. Next free after this plan: **`D818`**. Mints no `TF` code.
+Sibling work gated on `D511` (tflw merges first).
+Gitignored by `.gitignore:35`.
 
 <!-- GENERATED:decisions:end -->

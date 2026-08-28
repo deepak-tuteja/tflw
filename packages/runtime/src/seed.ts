@@ -12,10 +12,33 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+/** Domain separators for `subSeed` (`M154g-15`, `D815`). An index only means something inside the
+ * space it was minted for, and this function was being handed indices from two unrelated spaces —
+ * a *test index* and the *`unique` counter* — with no way to tell them apart. The consequence was
+ * not a wrong-looking value but a predictable one: `unique uuid`'s k-th draw derived its
+ * random-looking half from exactly the stream test k's `random` draws from, so an unrelated test
+ * could be used to predict it. Two callers, two domains, no shared space.
+ *
+ * `test` is `0` **on purpose**: it keeps the historical derivation bit-for-bit, so adding this
+ * parameter moves `unique uuid` alone and leaves every test's `random` stream replaying exactly as
+ * it did before under the same `--seed`. A domain separator that renumbered both spaces would have
+ * been the tidier constant and the worse change. */
+export const SEED_DOMAIN = {
+  /** A test's own `rng`, keyed by its global test index. The historical (and only) caller. */
+  test: 0,
+  /** `unique uuid`'s local shape RNG, keyed by the run-wide `unique` counter. */
+  uniqueUuid: 0x753d,
+} as const;
+
 /** Per-test sub-seed derived from the run seed + test index, so parallel/worker order never
- * shifts generated values (P#23) — a cheap deterministic combine, not a second PRNG draw. */
-export function subSeed(runSeed: number, index: number): number {
-  return (runSeed ^ Math.imul(index + 0x9e3779b9, 2654435761)) >>> 0;
+ * shifts generated values (P#23) — a cheap deterministic combine, not a second PRNG draw.
+ *
+ * `domain` (`D815`) separates callers that index *different* things into this one function; see
+ * `SEED_DOMAIN`. It defaults to `SEED_DOMAIN.test` (`0`), which is the identity for the mixing step
+ * below, so the pre-`M161` derivation is preserved exactly for that caller. */
+export function subSeed(runSeed: number, index: number, domain: number = SEED_DOMAIN.test): number {
+  const base = (runSeed ^ Math.imul(index + 0x9e3779b9, 2654435761)) >>> 0;
+  return domain === 0 ? base : (base ^ Math.imul(domain + 0x85ebca6b, 0xc2b2ae35)) >>> 0;
 }
 
 /** The active run seed: `--seed <n>` if given, else a fresh one (stamped in the report/CLI

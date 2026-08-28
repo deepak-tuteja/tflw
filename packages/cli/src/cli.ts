@@ -1562,7 +1562,18 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const tlsProber = new TlsProber();
   const seed = resolveRunSeed(seedArg);
   const now = resolveRunClock(nowArg).toISOString();
-  const uniqueSeq = makeUniqueSeq();
+  // `M161-01` (`D815`) — under `--workers N>1` this process is **shard 0**: it forks `N-1` children
+  // and runs shard 0's own share itself, through `runProgram` rather than `runLoadShard`. So the
+  // shard striping `runLoadCore` applies for the forked children never reached this counter, and
+  // shard 0 kept emitting `0, 1, 2, …` while shard 1 emitted `1, 3, 5, …` — overlapping on every
+  // odd value. Striping it here rather than inside `runProgram` is what keeps it *one* counter
+  // across every file in the run (the reason it is created here at all): a per-file sharded counter
+  // would make two files in the same run collide with each other while fixing the process axis.
+  //
+  // The parent's functional tests draw from this too and are also striped as a result. That is
+  // harmless and deliberate — they stay distinct, and the forked children run **only** workload, so
+  // nothing else is drawing from the odd lanes.
+  const uniqueSeq = makeUniqueSeq(workersArg !== undefined && workersArg > 1 ? { index: 0, count: workersArg } : undefined);
 
   // `tflw run --failed` (decision 111/M17): replay only the previous run's failing tests. Read
   // the prior state *before* this run's own write overwrites it. No state file, or a prior run

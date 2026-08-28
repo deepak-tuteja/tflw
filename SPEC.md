@@ -1971,6 +1971,28 @@ with a named service in between), not just read like a method word (P#60). `rand
 number`/`random decimal` reject a reversed range (`to < from`) as a runtime error rather than
 silently producing an out-of-range value (P#70).
 
+**One string form for a value.** Several places turn a value into text — `{interpolation}`, `encode`/`decode` input, `matches` and
+`contains`. They all use the **same** form, and this table is that form:
+
+| value | text |
+|---|---|
+| string | itself, unquoted |
+| number, boolean | the JavaScript default (`42`, `true`) |
+| `null` | `null` |
+| date | **ISO-8601 UTC** (`2025-07-27T00:00:00.000Z`) — never a locale/timezone rendering |
+| object, array | JSON (`{"a":1}`, `[1,2]`) — never `[object Object]` |
+
+The date row is the one that has teeth. A local rendering (`Sun Jul 27 2025 02:00:00 GMT+0200 …`)
+depends on the machine's `TZ`, so any assertion reading it would pass or fail differently on two
+machines running the same file at the same seed. `matches` used to read exactly that form while its
+failure message printed the ISO one — so `matches` against a date was incoherent *and* reported a
+"got" value that plainly satisfied the pattern it had just failed (`M154g-08`).
+
+This is distinct from how a value is **displayed** in a failure message, which quotes strings and
+abbreviates binary bodies (`<binary body, N bytes>`). One question is *what does this value compare
+as*, the other is *how is it shown to a reader*; they are allowed to differ, and a matcher that
+picks a third answer is a defect.
+
 ### 7.6 Transforms: `base64`/`hex`/`url` (M18)
 
 Pure value transforms — unlike §7.2/§7.3's generators, these consume an existing value rather
@@ -1990,6 +2012,13 @@ let creds = base64 encode("{email}:{password}")
 api GET /orders
   header "Authorization" is "Basic {creds}"
 ```
+
+`hex encode` emits **lowercase** (`ff`, never `FF`), and `hex decode` accepts either case. The
+asymmetry is deliberate and is the general rule for these transforms: strict in what is emitted,
+liberal in what is accepted. It is stated here because it was previously pinned only by a dogfood
+plant asserting a literal value — an implementation detail quietly promoted to a contract, which is
+how a spec gap becomes invisible (`M154c-02`). `base64`'s alphabet is the standard one, not the
+URL-safe variant; `url` is `encodeURIComponent`/`decodeURIComponent` as noted above.
 
 A `decode` direction on malformed input (invalid base64/hex characters, invalid percent-encoding)
 is a runtime error, not a silently-wrong value — `Buffer`'s own base64/hex decoding is lenient by

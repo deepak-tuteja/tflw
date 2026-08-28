@@ -1333,7 +1333,11 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   const lines = opts.source.split('\n');
   const runSeed = resolveRunSeed(opts.seed);
   const runClock = resolveRunClock(opts.now);
-  const uniqueSeq = makeUniqueSeq();
+  // `opts.shard` (`M161-01`, `D815`) — this call may be one forked worker of several, and each one
+  // reaching this line independently is what made `unique` collide across them. It was already in
+  // scope here, and passed to `scenarioCtx` a few lines below for the iteration axis; only the
+  // `unique` axis was left unsharded.
+  const uniqueSeq = makeUniqueSeq(opts.shard);
   const sessionCache = new SessionCache();
   const tlsProber = new TlsProber();
   const registry = await buildRegistry(program, baseDir);
@@ -1943,9 +1947,35 @@ export function spliceLoadReportIntoRunReport(report: RunReport, loadReport: Loa
   });
 }
 
-export function makeUniqueSeq(): { next(): number } {
-  let n = 0;
-  return { next: () => n++ };
+/** The run-wide monotonic counter every `unique` construct draws from (`SPEC` §7.2).
+ *
+ * `shard` (`M161-01`, `D815`) makes the guarantee true across **processes**. `SPEC` §7.2 promises
+ * `unique` values are "distinct across tests/**workers** within a run (run/worker-seeded)", but
+ * under `--workers N>1` the CLI forks one `--internal-load-worker` child per worker and each child
+ * built its own counter from `0` — so every shard emitted the identical `0, 1, 2, …` and every
+ * `unique` draw collided N ways. Measured on `fedora-box` 2026-08-29 at `--workers 2`: 167 draws,
+ * 84 distinct. The target sees the duplicates as its own duplicate-key errors, which is why this
+ * survived — the failure misattributes itself to the system under test.
+ *
+ * **Striped, not block-partitioned**: shard `i` of `n` emits `i, i+n, i+2n, …`. Striping needs no
+ * advance estimate of how many values a shard will draw and cannot exhaust one shard's block while
+ * another's sits unused. It is also the scheme `globalIterationIndex` already uses one screen up,
+ * for the neighbouring axis and for the same reason: each shard needs only its own `index`/`count`
+ * and nothing from its siblings (`D19`, "no message passing").
+ *
+ * `unique uuid`'s trailing 8 hex digits stay "the run-wide counter itself" exactly as `SPEC` §7.2
+ * words it — the sentence becomes true rather than being edited. Unsharded (the functional path and
+ * a single-process load run) is the identity: `0, 1, 2, …`, unchanged. */
+export function makeUniqueSeq(shard?: { readonly index: number; readonly count: number }): { next(): number } {
+  let n = shard ? shard.index : 0;
+  const step = shard ? shard.count : 1;
+  return {
+    next: () => {
+      const value = n;
+      n += step;
+      return value;
+    },
+  };
 }
 
 /** One reportable case: a plain `TestDecl` runs once (`cells: null`); a `with each` test expands
