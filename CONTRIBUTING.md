@@ -281,11 +281,21 @@ worked around.
   ellipsis and keeps the dash. Deriving one by eye failed **four times across `M149c`–`M149e`**,
   every time in the same confident direction. `npm run build -w @tflw/docs-site` then
   `grep -o 'id="[^"]*"' .vitepress/dist/guide/<page>.html` answers it in one command.
-- **A shipped construct needs a page.** `verify-docs.mjs` takes the set difference between
-  `spec-data.ts`'s manifests plus `GRAMMAR.md`'s multi-word productions and every code string on the
-  site, and fails on a construct that appears nowhere (`M149f`/`D659`). If something is deliberately
-  undocumented, say so in `DECLARED_UNDOCUMENTED` with the reason; if it is legitimately future, that
-  is `DECLARED_ROADMAP` and a different guard.
+- **A shipped construct needs a page, and it is matched on its syntax, not its name.**
+  `verify-docs.mjs` takes the set difference between `specConstructs()` — one manifest, all 178
+  constructs, less the 66 diagnostics `diagnosticsCoverage.test.ts` already holds (`D790`/`D791`) —
+  and every code string on the site, and fails on a construct that appears nowhere (`M149f`/`D659`).
+  What counts as a mention is the construct's own `syntax` cell, so `close tab` is coverage of
+  `close` and `close()` is not (`D792`); write the construct the way the manifest spells it. The
+  config keys carry no syntax cell, so they match on `slot` + `id` and **only inside a `tflw-config`
+  fence** (`D837`) — eight of the sixteen are words the step dialect also uses. If something is
+  deliberately undocumented, say so in `DECLARED_UNDOCUMENTED` with the reason; if it is legitimately
+  future, that is `DECLARED_ROADMAP` and a different guard.
+- **One citation classifier, and it lives in `scripts/verify-citations.mjs`.** The private notation
+  (`M158`, `D105`, `P#75`, `A3-05`) does not belong on a page a tflw user reads (`D673`), and the
+  rule that spots it is imported by the docs-site guard rather than duplicated there (`D794`/`D795`).
+  Widening a shape-based rule to `/i` is a red test, not a preference: GitHub lowercases its heading
+  anchors, so case is the only thing separating `SPEC.md#45-retries-d105-` from a citation.
 - **A `tflw-config fragment` is completed with a fixture env, so it has to nest.** `authorized
   target` at the top level of a fragment is `TF022` — put it under `defaults` (or an `env`), the way
   a real config carries it.
