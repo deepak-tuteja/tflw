@@ -8981,10 +8981,18 @@ purpose.
 
 **`M161` — one string form for a value, stated once**
 
-**Status:** **built 2026-08-29** — tflw half (`M161a`–`M161e`) complete, suite green on the box;
-`M161f` (sibling `testFlow-tests` touchpoints) outstanding behind `D511`'s merge order.
+**Status:** **COMPLETE 2026-08-29** — tflw half (`M161a`–`M161e`) merged as tflw#132 (`54cd00a`),
+`D814`/`D815` published and the sibling re-pinned as tflw#133, and `M161f` merged as
+tflw-tests#60. All nine acceptance clauses met.
 **Behaviour change** — `matches` against a date now passes where it used to fail. No grammar change.
-**Closes:** `M154g-08` (S4, re-stamp pending to S3 per §2.1), `M154c-02` (S4), `M154g-15` (S4).
+**Closes:** `M154g-08` (S4, re-stamped **S3** per §2.1), `M154c-02` (S4), `M154g-15` (S4).
+**Filed three rows on the way out**, none of them about the code this plan changed:
+`M161-02` (S4, `ci.yml` justifies `M114`'s unscoped-sweep rule with a case `M122-01`'s own row says
+it could not have caught), `M161f-01` (S4, `CONSTRUCTS.md` said `generator:unique-like` "stays on the
+ratchet" five hundred lines above the section saying the ratchet is empty — fixed in `M161f`, the
+`D767` class it belongs to is not), and `M161f-02` (S3, the retraction of `M154g-07`'s retry claim
+reached the plant header and neither of the two records that carry it). Ledger 403 -> 406, 14 -> 17
+open.
 **Filed and closed one new row**, `M161-01` (**S2**) — `unique` collides across forked load workers,
 contradicting a stated `SPEC` guarantee (§2.4); reproduced at 167 draws / 84 distinct before the fix.
 **Numbering:** takes `D812`–`D817`. Next free after this plan: **`D818`**. Mints no `TF` code.
