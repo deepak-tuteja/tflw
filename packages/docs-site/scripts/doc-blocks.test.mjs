@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classify, extractBlocks, parseInfoString, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, constructMatchers, ROADMAP_PHRASES } from './doc-blocks.mjs';
-import { JSON_RULES as CITATION_RULES } from '../../../scripts/verify-citations.mjs';
+import { JSON_RULES as CITATION_RULES } from '../../../scripts/citation-rules.mjs';
 import { specConstructs } from '@tflw/lang';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

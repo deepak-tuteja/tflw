@@ -31,7 +31,7 @@ import { basename, join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { census, findMarkdownFiles, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, ROADMAP_PHRASES } from './doc-blocks.mjs';
-import { JSON_RULES as CITATION_RULES } from '../../../scripts/verify-citations.mjs';
+import { JSON_RULES as CITATION_RULES } from '../../../scripts/citation-rules.mjs';
 import { CLI_FLAGS } from '@tflw/lang';
 // The whole namespace, because the *page* decides which manifest it renders: `constructCorpus`
 // reads each page's own `import { … } from '…spec-data.ts'` and matches it against a `v-for`. Naming
@@ -536,7 +536,7 @@ const report = [
     : `${covered} shipped subcommands, each with a reference/cli.md section and a SPEC §12 shipped row`,
   `${flagReferences} flag references inside CLI_FLAGS' own descriptions checked — names, not effects:`,
   `    a description that names a flag correctly and describes the wrong behaviour still passes (B5-04).`,
-  `${notation.scanned} hand-written pages checked for this project's private notation (${CITATION_RULES.length} shapes, the same classifier scripts/verify-citations.mjs uses on both repositories — D794),`,
+  `${notation.scanned} hand-written pages checked for this project's private notation (${CITATION_RULES.length} shapes, the one classifier in scripts/citation-rules.mjs, used on both repositories — D794),`,
   `    fenced blocks and <script> blocks excluded — plus the ${INCLUDED_RECORDS.size} pages that @include a repo record`,
   `    verbatim, which keep their citations because each record is declared and resolves in DECISIONS.md (D706).`,
   `${roadmap.claims} forward-looking claims found across ${roadmap.files} files (${ROADMAP_PHRASES.length} idioms,`,

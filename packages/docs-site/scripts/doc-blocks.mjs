@@ -10,7 +10,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { JSON_RULES as CITATION_RULES } from '../../../scripts/verify-citations.mjs';
+import { JSON_RULES as CITATION_RULES } from '../../../scripts/citation-rules.mjs';
 
 /** Fence tags whose contents are `.tflw` source, keyed to how a sample is made checkable. */
 export const TFLW_LANGS = new Set(['tflw', 'tflw-config']);

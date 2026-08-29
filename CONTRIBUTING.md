@@ -291,7 +291,7 @@ worked around.
   fence** (`D837`) — eight of the sixteen are words the step dialect also uses. If something is
   deliberately undocumented, say so in `DECLARED_UNDOCUMENTED` with the reason; if it is legitimately
   future, that is `DECLARED_ROADMAP` and a different guard.
-- **One citation classifier, and it lives in `scripts/verify-citations.mjs`.** The private notation
+- **One citation classifier, and it lives in `scripts/citation-rules.mjs`.** The private notation
   (`M158`, `D105`, `P#75`, `A3-05`) does not belong on a page a tflw user reads (`D673`), and the
   rule that spots it is imported by the docs-site guard rather than duplicated there (`D794`/`D795`).
   Widening a shape-based rule to `/i` is a red test, not a preference: GitHub lowercases its heading
