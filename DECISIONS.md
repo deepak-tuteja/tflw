@@ -9171,7 +9171,9 @@ Closes `M154e-01`; files `M157-01`. **Breaking** (removes a keyword, changes rep
 
 <sub>cited from SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
-**`M157d` — `D783`/`D784`/`D785`/`D786`.** `CONFIG_KEYS` entry, a `TEARDOWN_PHRASES` list beside
+**`M157d` — the `teardown` key (`D783`/`D784`/`D785`/`D786`)**
+
+`CONFIG_KEYS` entry, a `TEARDOWN_PHRASES` list beside
 `EVIDENCE_PHRASES` (`parser.ts:2350`), `--teardown` flag, the resolve path, and the advisory line
 with its count. The `on success` predicate goes exactly where `D781` removed the gate, so those are
 one edit rather than two. Bad values reuse the existing machinery — `TF020` for the key,
