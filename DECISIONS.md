@@ -6537,6 +6537,18 @@ The comparison uses the unrounded value. A 0.6 ms request currently passes `is l
 (rounds to 1, and 1 < 1 is false — it currently **fails**) — that inversion is exactly the class of
 surprise this milestone removes.
 
+### D812
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D812 — tflw publishes its own rounding rule in the artifact contract; the sibling reads it**
+
+`ARTIFACT_CONTRACT` gains a `durations` block naming `D809`'s rule as data, and
+`derive-perf-bands.mjs` computes its quantum from that instead of from a local literal. This is the
+seam's existing job: the registry exists for exactly "a shape this project can rename out from under
+a consumer's gate", and a rounding rule the sibling's band derivation depends on is that, in the
+only sense that matters — `M160a` changed it and the sibling had no way to know.
+
 ### D813
 
 <sub>cited from SPEC.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
@@ -9028,7 +9040,8 @@ purpose.
 `.tflw` program. **Changes every reported number** at low latency, and changes what
 `histogram.ts`'s own header is allowed to claim.
 **Closes:** `M154f-13` (S3).
-**Numbering:** takes `D807`–`D811`. Next free after this plan: **`D812`**. Mints no `TF` code.
+**Numbering:** takes `D807`–`D812` (`D812` added 2026-08-29 by `M160d`'s build; see `D811`'s
+amendment). Next free after this plan: **`D813`**. Mints no `TF` code.
 Sibling work gated on `D511` (tflw merges first).
 Gitignored by `.gitignore:35`.
 

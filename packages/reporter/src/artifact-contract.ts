@@ -138,6 +138,55 @@ export const ARTIFACT_CONTRACT = {
       because: 'because',
     },
   },
+  /**
+   * `M160d` (`D812`) — how tflw rounds a duration before it reports one. The third thing another
+   * repository reads out of these artifacts, and the first that is a *behaviour* rather than a
+   * spelling.
+   *
+   * WHY A BEHAVIOUR BELONGS IN A NAME REGISTRY. The header's rule is "only names tflw invented and
+   * can therefore rename", and the test it is really applying is *can this project change it out
+   * from under a consumer's gate*. `testFlow-tests`' `derive-perf-bands.mjs` refuses to band a
+   * rung's `p95Ratio` when tflw's reporting quantum is too large a share of the reading — an honest
+   * suppression, and it computed that share from a hard-coded `QUANTUM_MS = 0.5` because tflw
+   * reported whole milliseconds. `M160a` stopped doing that. Nothing went red: the sibling went on
+   * suppressing bands using a quantum this project no longer had, which is `M136a`'s break exactly,
+   * one artifact over and with arithmetic instead of a field name.
+   *
+   * Additive, so `version` does **not** move — the `via` and `results` precedents above apply
+   * unchanged.
+   *
+   * INLINED LITERALS, NOT IMPORTED FROM `duration.ts`. That would be the single source of truth and
+   * it is forbidden here for a reason external to this file: `packages/cli/scripts/bundle.mjs`
+   * imports this module at build time precisely because it imports nothing, and warns that any
+   * value-import transitively reaching `@tflw/runtime` corrupts the coverage measurement
+   * (`browser.ts` 76/70 -> 143/90, global 95.19% -> 92.38%). So this is deliberately a *second*
+   * statement of `D809`'s rule, and `artifact-contract.test.ts` compares it against the first by
+   * walking the real `roundDurationMs` — the same shape as `sarif.test.ts`'s walk over an emitted
+   * document, and what `verify-artifact-contract.mjs` means by "two independent statements of one
+   * shape, compared".
+   *
+   * SCOPED TO WHAT THE SIBLING ACTUALLY READS. `D809`'s parameters (integer at or above 10,
+   * two significant digits below it) are not published, because no consumer's gate reads them and
+   * the header's warning about a registry outliving its last reader applies to a value as much as
+   * to a key. A consumer needing per-value error rather than the bound is a reason to add them
+   * then, with a witness.
+   */
+  durations: {
+    /** The decision that fixes the rule, so a consumer's suppression note can cite it. */
+    rule: 'D809',
+    /**
+     * The largest `|reported - true| / true` this rule can produce, over any positive duration.
+     *
+     * **Exactly `1/21`**, published rounded up. Both branches of `D809` reach it at the same place
+     * and for the same reason: a value just under `1.05 x 10^k` renders down to `10^k`, having
+     * crossed into a cell ten times wider than the one below it, so the error is `0.05 x 10^k`
+     * against a value of `1.05 x 10^k`. The integer branch is the `k = 1` case of that.
+     *
+     * The number is asserted by the test, not transcribed from a plan — a hand-written bound would
+     * be a third statement of a shape that already has two, and the only one nothing checks.
+     */
+    maxRelativeError: 0.0477,
+  },
 } as const;
 
 export type ArtifactContract = typeof ARTIFACT_CONTRACT;

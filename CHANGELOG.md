@@ -578,6 +578,13 @@ endpoint its finding names. All were found by *running* a repro or a crawl, not 
   approximated". Both were wrong — the real bound is **0.5%**, and
   the scalars were exact about numbers that had already lost up to 0.5 ms before the histogram saw
   them. The header now states what the code does, and a test pins the bound.
+- **tflw now publishes its own rounding rule in `dist/artifact-contract.json`** (`D812`), as a
+  `durations` block naming `D809` and the largest relative error it can produce — exactly `1/21`,
+  reached where the render lattice widens by ten while the value has not. A consumer that judges
+  whether a latency reading is precise enough to compare had no way to ask: `testFlow-tests` derived
+  that from a hard-coded "tflw reports whole milliseconds", which this release makes false, and
+  nothing would have gone red. Additive, so the contract version stays 1 and a consumer written
+  against version 1 is unaffected.
 
 ### Fixed — one string form for a value, and `unique` across processes (M161)
 
