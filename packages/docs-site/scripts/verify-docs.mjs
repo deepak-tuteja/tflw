@@ -412,16 +412,17 @@ function checkFlagProse() {
 function checkConstructCoverage() {
   if (process.env.TFLW_DOCS_ROOT !== undefined) return null;
   const files = findMarkdownFiles(ROOT).map((path) => ({ key: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
-  const grammarPath = join(here, '../../lang/GRAMMAR.md');
-  if (!existsSync(grammarPath)) {
-    fail('GRAMMAR.md', 'the grammar is not readable, so construct coverage cannot be checked', `expected ${grammarPath}`);
-    return { constructs: 0, corpus: 0, onlyGenerated: [] };
+  const constructs = manifests.specConstructs();
+  // `D538`'s class: a consumer that reads a manifest without pinning its shape is a gate that goes
+  // quietly empty when the shape changes. The version is the pin; the count is not, and must not be.
+  if (manifests.SPEC_MANIFEST_VERSION !== 1) {
+    fail(
+      'spec-data.ts',
+      `the construct manifest is at version ${manifests.SPEC_MANIFEST_VERSION}, and this gate was written against 1`,
+      'Re-read constructMatchers against the new shape before bumping the number here — see D790.',
+    );
   }
-  const result = scanConstructCoverage({
-    files,
-    grammarText: readFileSync(grammarPath, 'utf8'),
-    manifests,
-  });
+  const result = scanConstructCoverage({ files, constructs, manifests });
   for (const p of result.problems) fail(p.where, p.message, p.detail);
   return result;
 }
@@ -547,7 +548,9 @@ const report = [
     ? ['construct coverage skipped — this corpus is a scratch one, documenting an invented language']
     : [
         `${coverage.constructs} shipped constructs checked against ${coverage.corpus} code strings on the site`,
-        `    (spec-data.ts's manifests + GRAMMAR.md's multi-word productions, both held to parser.ts),`,
+        `    (spec-data.ts's specConstructs(), held to parser.ts by specManifest.test.ts — matched on`,
+        `    each construct's own syntax shape, never on its bare id, so an ordinary English word is`,
+        `    not coverage), less the ${manifests.DIAGNOSTICS.length} diagnostics that diagnosticsCoverage.test.ts already holds.`,
         `    ${DECLARED_UNDOCUMENTED.size} declared deliberately undocumented.`,
         coverage.onlyGenerated.length === 0
           ? '    every one of them is named in prose or a sample.'

@@ -530,36 +530,207 @@ export function scanPrivateNotation(files, { included = INCLUDED_RECORDS, patter
 export const DECLARED_UNDOCUMENTED = new Map();
 
 /**
- * Every multi-word construct the grammar spells out, read from `packages/lang/GRAMMAR.md`.
+ * A construct's *syntax shape*, compiled from the shape the manifest already publishes (`D792`).
  *
- * The source matters more than the extraction. `GRAMMAR.md` is not prose that happens to list the
- * language — `grammarCoverage.test.ts` holds it to the parser: every keyword literal `parser.ts`
- * dispatches on must appear in a production there, or be exempted by name with a reason. So a
- * clause family cannot enter the language without passing through this file, which is what makes it
- * a manifest rather than a fifth hand-maintained wordlist (`B5-09`, four arcs running).
+ * This replaces the four ad-hoc sources the gate used to assemble — `STEP_KEYWORDS`,
+ * `CONFIG_KEYWORDS`, `WORKLOAD_DIRECTIVES` and `GRAMMAR.md`'s multi-word productions — and it
+ * replaces the way they were matched, which mattered more. The old rule was *the leading word of a
+ * code string*, and the file said out loud what that costs: `close`, `select`, `run` and `log` are
+ * ordinary English, so any span beginning with one satisfied the check. Nothing was ever going to
+ * find that, because the gate passes.
  *
- * This reads the **leading run of quoted literals** on a production's right-hand side — `'seed'
- * 'spider'`, `'csrf' 'from'`, `'probe' 'ciphers'` — and keeps the ones two words or longer. The
- * single-word half is covered by `spec-data.ts`'s own manifests, which carry a summary per entry;
- * the multi-word half has no manifest anywhere else, and it is where every construct `M149a`'s
- * truth pass found had been hiding. Measured against the pre-`M149c` site, this list alone names
- * four of the six absences that pass found by hand.
+ * `specConstructs()` publishes a `syntax` cell per construct — `` `button "<name>"` ``,
+ * `` `close tab` ``, `` `log [<level>] "<message>"` `` — and that cell is the matcher. A new
+ * manifest row therefore brings its own rule and cannot arrive unmatched, which is the property the
+ * hand-written list could not have.
  *
- * A production whose leading literals are optional or alternated is read as far as the literals run
- * and no further; the phrase is a *search key*, not a re-statement of the grammar. Being wrong in
- * that direction costs a phrase that is trivially present, never a false failure.
+ * The notation is small and every span in it was surveyed before this was written (115 spans, all
+ * beginning with a literal word or `@`):
+ *
+ *  - `<name>` is a placeholder — one run of non-space, or a quoted string when the notation quotes
+ *    it. `N`, `M`, `A`, `B` are placeholders too: a bare uppercase letter is never a keyword here.
+ *  - `[...]` is optional, and is expanded into both forms rather than made lazy, so `log "hi"` and
+ *    `log info "hi"` both match while `console.log(x)` matches neither.
+ *  - `|` alternates inside a bracket; `…` is any tail; `{...}` is a literal brace and a tail.
+ *  - A `syntax` cell may hold several spans (`` `random number A to B` / `random decimal A to B` ``,
+ *    or `` `parallel` or `sequential` ``). All of them are read; any one matching is coverage.
+ *
+ * Anchored at the start and not at the end: a documented line legitimately carries more after the
+ * construct (`check status equals 200` is `check <subject> …`). Being loose to the right costs a
+ * construct that is trivially present; being loose to the left is the defect this exists to remove.
  */
-export function grammarPhrases(grammarText) {
-  const phrases = new Set();
-  for (const raw of grammarText.split('\n')) {
-    const production = /^(?:[A-Za-z]\w*\s*:=|\|)\s*(.*)$/.exec(raw.trim());
-    if (!production) continue;
-    const lead = /^((?:'[a-z][a-z0-9]*'\s*)+)/.exec(production[1].split('#')[0]);
-    if (!lead) continue;
-    const words = [...lead[1].matchAll(/'([a-z][a-z0-9]*)'/g)].map((m) => m[1]);
-    if (words.length >= 2) phrases.add(words.join(' '));
+// Not anchored at `^`, and this is the correction that measurement forced. A matcher and a
+// generator never begin a line — `check status equals 200`, `let id = unique("ORD")` — so an
+// anchored rule reported eleven matchers and generators as documented nowhere on a site that
+// documents all of them. What the rule actually needs is a **left boundary**: the shape must start
+// where a word starts, so `close tab` is the step and `console.log(x)` is not `log`.
+const SYNTAX_HEAD = String.raw`(?:^|[^\w-])`;
+const SYNTAX_TAIL = String.raw`(?:\s|$|[^\w-])`;
+
+const escapeLiteral = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** `[a|b]` -> both branches, recursively, so a cell with three optionals yields eight forms. */
+function expandOptionals(span, depth = 0) {
+  const open = span.indexOf('[');
+  if (open === -1 || depth > 4) return [span];
+  let level = 0;
+  let close = -1;
+  for (let i = open; i < span.length; i += 1) {
+    if (span[i] === '[') level += 1;
+    else if (span[i] === ']') {
+      level -= 1;
+      if (level === 0) { close = i; break; }
+    }
   }
-  return [...phrases].sort();
+  if (close === -1) return [span];
+  const before = span.slice(0, open);
+  const inner = span.slice(open + 1, close);
+  // `[mask <locator>]*` — the repetition marker is part of the bracket, not a token of its own.
+  const after = span.slice(close + 1).replace(/^\*/, '');
+  const forms = new Set([`${before}${after}`]);
+  for (const branch of inner.split(/[|/]/)) forms.add(`${before}${branch}${after}`);
+  return [...forms].flatMap((form) => expandOptionals(form, depth + 1));
+}
+
+/**
+ * One whitespace-separated token of a syntax cell -> one regex fragment.
+ *
+ * A placeholder is `.+?` rather than `\S+`, which is the second thing measurement corrected: a
+ * `<metric>` is `error rate` and a `<locator>` is `button "Buy"`, both two words. The literals
+ * around it still have to appear, in order, so the shape stays strict where it matters.
+ */
+function tokenToPattern(token) {
+  if (token === '*') return null;
+  if (token === '…' || token === '...') return String.raw`.*`;
+  // `visible/hidden/enabled` — a slash alternates whole words, and only where no placeholder or
+  // quoted string is in play (a `<path.tflw>` carries slashes of its own meaning).
+  if (token.includes('/') && !token.includes('<') && !token.includes('"')) {
+    return `(?:${token.split('/').filter(Boolean).map(escapeLiteral).join('|')})`;
+  }
+  let out = '';
+  let i = 0;
+  while (i < token.length) {
+    if (token[i] === '<') {
+      const close = token.indexOf('>', i);
+      if (close !== -1) { out += String.raw`.+?`; i = close + 1; continue; }
+    }
+    if (token[i] === '"') {
+      const close = token.indexOf('"', i + 1);
+      if (close !== -1) { out += String.raw`"[^"]*"`; i = close + 1; continue; }
+    }
+    if (token.startsWith('...', i)) { out += String.raw`.*`; i += 3; continue; }
+    if (token[i] === '…') { out += String.raw`.*`; i += 1; continue; }
+    // A bare uppercase letter is a placeholder here, never a keyword — `random number A to B`.
+    if (/[A-Z]/.test(token[i]) && !/[\w-]/.test(token[i - 1] ?? '') && !/[\w-]/.test(token[i + 1] ?? '')) {
+      out += String.raw`.+?`; i += 1; continue;
+    }
+    out += escapeLiteral(token[i]);
+    i += 1;
+  }
+  return out;
+}
+
+/** One expanded form -> one regex source. */
+function formToPattern(form) {
+  const parts = form.split(/\s+/).filter(Boolean).map(tokenToPattern).filter((part) => part !== null);
+  if (parts.length === 0) return null;
+  return `${SYNTAX_HEAD}${parts.join(String.raw`\s+`)}${SYNTAX_TAIL}`;
+}
+
+/**
+ * The spans of a `syntax` cell that are **alternate spellings of this construct**, and not the other
+ * constructs its prose happens to name.
+ *
+ * Reading every backticked span was the obvious rule and it is wrong, which the site's own controls
+ * found rather than review. `with-each` publishes:
+ *
+ *     `with each` + an indented table, or `with each from "<file.csv>"`, above a `test`
+ *
+ * — three spans, and the third is the declaration a `with each` sits above. Taken as an alternate
+ * spelling it compiles to a rule matching every `test "…"` line on the site: 120 hits, always green,
+ * checking nothing. That is `D792`'s own failure class arriving through the back door, inside the
+ * milestone that exists to remove it.
+ *
+ * The separator decides. A span is an alternate only when nothing but `/`, `or`, `and` or a comma
+ * stands between it and the span before — which is exactly how the manifest writes real alternates
+ * (`` `parallel` or `sequential` ``, `` `random number A to B` / `random decimal A to B` ``) and
+ * never how it writes prose. Erring here costs an alternate spelling that a page may document
+ * alone; it does not cost a check, because the first span always survives.
+ */
+export function alternateSpellings(syntax) {
+  const spans = [...syntax.matchAll(/`([^`]+)`/g)];
+  const kept = [];
+  for (const [index, span] of spans.entries()) {
+    if (index === 0) { kept.push(span[1]); continue; }
+    const previous = spans[index - 1];
+    const gap = syntax.slice(previous.index + previous[0].length, span.index);
+    if (!/^\s*(?:\/|or|and|,)\s*$/.test(gap)) break;
+    kept.push(span[1]);
+  }
+  return kept;
+}
+
+/**
+ * `D837` — the config family publishes no `syntax`, and its matcher is derived from `slot` + `id`.
+ *
+ * This is the one place `D792`'s sentence *"the syntax field, which every manifest row already
+ * carries"* is not true, and it is not true for 25 of the 112 constructs — measured, not assumed.
+ * `ConfigKeywordEntry` carries `id`, `slot` and `summary` and no shape at all.
+ *
+ * Adding a `syntax` cell to those 25 rows was the other option and is refused here: the cell would
+ * be written *for this gate*, by the same hand, with nothing holding it to the parser — a fifth
+ * wordlist wearing the manifest's clothes — and it changes the manifest's shape, which
+ * `SPEC_MANIFEST_VERSION` exists to make a loud break for every consumer. The slot is already the
+ * shape: a `directive` opens a block, a `key` takes a value, a `probe` is a sub-clause. The gate
+ * already knew this for one of the three (`probe <id>`) and hand-wrote it inline.
+ *
+ * Config constructs are matched only against strings read from a `tflw-config` fence or an inline
+ * span, never from a `tflw` fence. Eight of the sixteen keys — `log`, `web`, `api`, `key`, `report`,
+ * `allow`, `redact`, `timeout` — are words the step dialect also uses, and without the dialect the
+ * match is the English coincidence this milestone is removing.
+ */
+function configPatterns(name, slot) {
+  const id = escapeLiteral(name);
+  if (slot === 'probe') return [`${SYNTAX_HEAD}probe\\s+${id}${SYNTAX_TAIL}`];
+  if (slot === 'directive') return [`${SYNTAX_HEAD}${id}${SYNTAX_TAIL}`];
+  return [`${SYNTAX_HEAD}${id}\\s+\\S`];
+}
+
+/**
+ * Every shipped construct, paired with the regexes that recognise it and the dialect it belongs to.
+ * Pure and exported so `doc-blocks.test.mjs` can assert a rule fails, which is the property a gate
+ * built out of matchers has to have and the old one structurally could not.
+ */
+export function constructMatchers(constructs) {
+  const matchers = [];
+  for (const construct of constructs) {
+    if (construct.family === 'diagnostic') continue;
+    if (construct.family === 'config') {
+      const slot = construct.id.split(':')[1];
+      matchers.push({
+        id: construct.id,
+        family: construct.family,
+        dialect: 'config',
+        patterns: configPatterns(construct.name, slot).map((p) => new RegExp(p)),
+      });
+      continue;
+    }
+    const spans = alternateSpellings(construct.syntax ?? '');
+    const sources = new Set();
+    for (const span of spans) {
+      for (const form of expandOptionals(span)) {
+        const pattern = formToPattern(form);
+        if (pattern) sources.add(pattern);
+      }
+    }
+    matchers.push({
+      id: construct.id,
+      family: construct.family,
+      dialect: 'tflw',
+      patterns: [...sources].map((p) => new RegExp(p)),
+    });
+  }
+  return matchers;
 }
 
 /**
@@ -586,7 +757,11 @@ export function constructCorpus(files, manifests = {}) {
     for (const block of extractBlocks(text)) {
       const kind = classify(block).kind;
       if (kind === 'file' || kind === 'fragment' || kind === 'config' || kind === 'config-fragment') {
-        for (const line of block.source.split('\n')) corpus.push({ key, text: line.trim(), generated: false });
+        // `D837`: which dialect a line was written in is the only thing that separates a config key
+        // from the ordinary English word spelling it. `log 5s` inside a `tflw` fence is the step;
+        // inside a `tflw-config` fence it is the key. A corpus that forgets the fence cannot tell.
+        const dialect = kind === 'config' || kind === 'config-fragment' ? 'config' : 'tflw';
+        for (const line of block.source.split('\n')) corpus.push({ key, text: line.trim(), generated: false, dialect });
       }
     }
 
@@ -595,7 +770,9 @@ export function constructCorpus(files, manifests = {}) {
         if (!new RegExp(`v-for="[^"]+ in ${name}"`).test(text)) continue;
         for (const row of manifests[name] ?? []) {
           for (const value of Object.values(row)) {
-            if (typeof value === 'string') corpus.push({ key, text: value, generated: true });
+            // A generated table row is rendered outside any fence, so it belongs to both dialects —
+            // and `onlyGenerated` already reports it as tabulated rather than explained.
+            if (typeof value === 'string') corpus.push({ key, text: value, generated: true, dialect: 'any' });
           }
         }
       }
@@ -613,13 +790,12 @@ export function constructCorpus(files, manifests = {}) {
       })
       .join('\n');
     for (const m of prose.matchAll(/`([^`]+)`/gs)) {
-      corpus.push({ key, text: m[1].replace(/\s+/g, ' ').trim(), generated: false });
+      // An inline span carries no fence, so it cannot be attributed to one dialect.
+      corpus.push({ key, text: m[1].replace(/\s+/g, ' ').trim(), generated: false, dialect: 'any' });
     }
   }
   return corpus;
 }
-
-const leadingWord = (text) => (/^([a-z]+)\b/.exec(text) ?? [])[1];
 
 /**
  * Every shipped construct is mentioned somewhere on the site, or declared as deliberately absent.
@@ -630,16 +806,18 @@ const leadingWord = (text) => (/^([a-z]+)\b/.exec(text) ?? [])[1];
  * `SPEC.md` and appeared on no page at all, and no phrase list could ever have found them, because
  * an absent page matches no grep.
  *
- * Two manifests, because one construct set does not exist in one place:
+ * **One manifest** (`D790`). `specConstructs()` returns all 178 constructs across seven families and
+ * `specManifest.test.ts` holds it to `parser.ts`. This function used to assemble its own set out of
+ * three of those families plus `GRAMMAR.md`'s multi-word productions, and reached 111 of them —
+ * `LOCATORS` (6) and `DECLARATIONS` (12) were named by neither path, because `grammarPhrases` kept a
+ * production only at two or more keyword literals and eleven of twelve declaration ids are single
+ * words. Nothing failed as a result: the docs cover those families in prose. That is exactly why it
+ * needed measuring rather than reasoning about, and why the repair is a derivation and not a fifth
+ * wordlist.
  *
- *  - **`spec-data.ts`'s curated tables** — `STEP_KEYWORDS`, `CONFIG_KEYWORDS`, `WORKLOAD_DIRECTIVES`
- *    — held to `parser.ts` by `stepKeywords.test.ts`'s two-way parity. Single words, matched as the
- *    leading word of a code string. The weak half: `close`, `select`, `run` and `log` are ordinary
- *    English, so a code span that merely contains one satisfies the check. That is why the second
- *    manifest exists and is the sharper of the two.
- *  - **`GRAMMAR.md`'s multi-word productions** (see `grammarPhrases`) — held to `parser.ts` by
- *    `grammarCoverage.test.ts`. No word here is ordinary English by accident: a phrase is two or
- *    more keyword literals in sequence.
+ * **Diagnostics are excluded by name** (`D791`), not by omitting a manifest and letting the number
+ * come out right. All 66 are already held to the docs by `diagnosticsCoverage.test.ts`, since `M86`
+ * — a page that `v-for`s `DIAGNOSTICS` cannot go stale against it. 178 - 66 = 112.
  *
  * `onlyGenerated` is reported rather than failed, and the distinction is the point. A construct that
  * appears solely in a `v-for` reference table **is** on the site — `D659`'s bar is met and failing it
@@ -649,65 +827,41 @@ const leadingWord = (text) => (/^([a-z]+)\b/.exec(text) ?? [])[1];
  */
 export function scanConstructCoverage({
   files,
-  grammarText,
+  constructs: specConstructs,
   manifests = {},
   allowlist = DECLARED_UNDOCUMENTED,
   checkStale = true,
 }) {
   const corpus = constructCorpus(files, manifests);
-  const byLeadingWord = new Map();
-  for (const entry of corpus) {
-    const word = leadingWord(entry.text);
-    if (!word) continue;
-    if (!byLeadingWord.has(word)) byLeadingWord.set(word, []);
-    byLeadingWord.get(word).push(entry);
-  }
+  const matchers = constructMatchers(specConstructs ?? []);
 
-  const constructs = [];
-  for (const entry of manifests.STEP_KEYWORDS ?? []) {
-    constructs.push({ id: entry.id, manifest: 'STEP_KEYWORDS', hits: byLeadingWord.get(entry.id) ?? [] });
-  }
-  for (const entry of manifests.CONFIG_KEYWORDS ?? []) {
-    // A `probe` sub-clause is never the leading word of anything — it is the second word of
-    // `probe ciphers`, under an `authorized target`. Matched as the phrase a reader would type.
-    const id = entry.slot === 'probe' ? `probe ${entry.id}` : entry.id;
-    const hits = entry.slot === 'probe'
-      ? corpus.filter((c) => c.text.includes(id))
-      : (byLeadingWord.get(entry.id) ?? []);
-    constructs.push({ id, manifest: `CONFIG_KEYWORDS (${entry.slot})`, hits });
-  }
-  for (const directive of manifests.WORKLOAD_DIRECTIVES ?? []) {
-    constructs.push({ id: directive, manifest: 'WORKLOAD_DIRECTIVES', hits: byLeadingWord.get(directive) ?? [] });
-  }
-  for (const phrase of grammarPhrases(grammarText)) {
-    constructs.push({ id: phrase, manifest: 'GRAMMAR.md', hits: corpus.filter((c) => c.text.includes(phrase)) });
-  }
-
-  // One construct, one problem. `probe ciphers` is in `CONFIG_KEYWORDS` *and* in `GRAMMAR.md`, and
-  // two manifests agreeing it is absent is one absence — reporting it twice reads as two repairs.
   const byId = new Map();
-  for (const construct of constructs) {
-    const seen = byId.get(construct.id);
-    if (seen) {
-      seen.manifests.push(construct.manifest);
-      seen.hits.push(...construct.hits);
-    } else {
-      byId.set(construct.id, { id: construct.id, manifests: [construct.manifest], hits: [...construct.hits] });
-    }
+  for (const matcher of matchers) {
+    // A construct with no derivable shape is reported once, below, as the derivation defect it is.
+    // Also calling it absent would be a second repair for one problem, and a wrong one: the gate
+    // does not know whether it is on the site — it knows it cannot look.
+    if (matcher.patterns.length === 0) continue;
+    const hits = corpus.filter(
+      (entry) =>
+        (entry.dialect === 'any' || entry.dialect === matcher.dialect) &&
+        matcher.patterns.some((re) => re.test(entry.text)),
+    );
+    byId.set(matcher.id, { id: matcher.id, family: matcher.family, hits });
   }
 
   const problems = [];
   const declared = new Set();
   const onlyGenerated = [];
+  const unmatchable = [];
   for (const construct of byId.values()) {
-    if (construct.hits.length === 0) {
+    if (byId.get(construct.id).hits.length === 0) {
       const exemption = allowlist.get(construct.id);
       if (exemption) {
         declared.add(construct.id);
         continue;
       }
       problems.push({
-        where: `${construct.manifests.join(' + ')} \`${construct.id}\``,
+        where: `specConstructs() \`${construct.id}\``,
         message: `a shipped construct that appears on no page: \`${construct.id}\``,
         detail:
           'A reader cannot learn a construct that is documented nowhere, and no phrase list can find\n' +
@@ -720,6 +874,21 @@ export function scanConstructCoverage({
     if (construct.hits.every((hit) => hit.generated)) onlyGenerated.push(construct.id);
   }
 
+  // A construct whose `syntax` cell yielded no pattern would be silently *always covered* — the
+  // failure class this whole rewrite is about, arriving one level up. It is a problem, not a skip.
+  for (const matcher of matchers) {
+    if (matcher.patterns.length === 0) {
+      unmatchable.push(matcher.id);
+      problems.push({
+        where: `specConstructs() \`${matcher.id}\``,
+        message: `no syntax shape could be derived for \`${matcher.id}\`, so nothing about it is being checked`,
+        detail:
+          'The manifest row publishes no parseable `syntax` cell. A matcher that cannot fail is not a\n' +
+          'check — see D792. Give the row a syntax cell, or teach constructMatchers its shape.',
+      });
+    }
+  }
+
   for (const [id, why] of checkStale ? allowlist : []) {
     if (declared.has(id)) continue;
     problems.push({
@@ -729,5 +898,11 @@ export function scanConstructCoverage({
     });
   }
 
-  return { problems, constructs: byId.size, corpus: corpus.length, onlyGenerated: [...new Set(onlyGenerated)].sort() };
+  return {
+    problems,
+    constructs: byId.size,
+    corpus: corpus.length,
+    onlyGenerated: [...new Set(onlyGenerated)].sort(),
+    unmatchable,
+  };
 }
