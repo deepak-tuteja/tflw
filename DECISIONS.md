@@ -6495,6 +6495,16 @@ be a copy with no guard, and `PHASE_GROUPS` is already held to `PHASES` by a par
 left the **count** in, and the count said `30` while `PHASES` held `38` — eight phases arriving
 across six milestones with nothing anywhere able to notice. Seven occurrences across four files.
 
+### D813
+
+<sub>cited from SPEC.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+
+**D813 — `stringify()` is the language's stated string form, promoted out of `eval.ts`**
+
+It is currently an implementation helper that happens to be right. It becomes the named rule, stated
+in `SPEC` §7 as a table — date -> ISO-8601 UTC, null -> `null`, number/boolean -> JS default,
+object/array -> JSON, string -> itself — and every consumer is checked against it.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -8947,7 +8957,7 @@ purpose.
 
 ### M161
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
 
 **`M161` — one string form for a value, stated once**
 

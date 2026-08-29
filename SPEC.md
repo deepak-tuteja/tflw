@@ -1971,7 +1971,7 @@ with a named service in between), not just read like a method word (P#60). `rand
 number`/`random decimal` reject a reversed range (`to < from`) as a runtime error rather than
 silently producing an out-of-range value (P#70).
 
-**One string form for a value.** Several places turn a value into text — `{interpolation}`, `encode`/`decode` input, `matches` and
+**One string form for a value (M161, `M154g-08`, D813).** Several places turn a value into text — `{interpolation}`, `encode`/`decode` input, `matches` and
 `contains`. They all use the **same** form, and this table is that form:
 
 | value | text |
