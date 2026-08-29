@@ -9059,7 +9059,7 @@ purpose.
 **`M160` — latency carries a float; rounding happens at render**
 
 **Status:** **`M160a`-`M160d` built 2026-08-29**, both repositories, `D511` order kept throughout
-(tflw #135 -> tflw #136 -> tflw-tests #61 -> this pair). Suite green on the box at 3752 tests.
+(tflw PR 135 -> tflw PR 136 -> tflw-tests PR 61 -> this pair). Suite green on the box at 3752 tests.
 The sibling's perf baseline is re-founded from five run artifacts and now carries **all seven
 `p95Ratio` bands**, against four before — `dogfood-get-only`, `echo-get-only` and `echo-post-only`
 were suppressed on a quantum tflw no longer has. **Not breaking** to any `.tflw` program.
