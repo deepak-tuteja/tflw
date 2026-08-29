@@ -251,6 +251,17 @@ export const JSON_RULES = [
   { what: 'a lettered decision citation', re: BARE_LETTER },
   { what: "the founding list's oldest spelling", re: BARE_HASH },
   /**
+   * `D794`, and a correction to it. Merging this repository's two citation classifiers was decided
+   * on the grounds that this one is *strictly* better than the docs-site's `NOTATION` — it resolves
+   * `M147e`, `(M3a)`, `decision B` and `E4`, which a pattern-only rule provably cannot. Measured,
+   * "strictly" was wrong in one direction: `NOTATION` carried two shapes this list did not, and a
+   * merge that simply adopted this one would have quietly stopped checking both. They are correct
+   * for the package-metadata corpus too — a `D105` or a `P#75` in a product blurb is exactly what
+   * `D714` says to delete — so they are added here rather than kept on one side.
+   */
+  { what: 'a decision', re: /\bD\d{2,3}\b/g },
+  { what: 'a plan item', re: /\bP#\d+[a-z]?\b/g },
+  /**
    * `M147e`, `(M3a)`. Label form carries no record name, so `NAMES_RECORD` provably cannot reach
    * it — it is how the two sites this gate was widened for are written, and it measured **zero**
    * false positives across every string in every tracked `package.json` in both repositories

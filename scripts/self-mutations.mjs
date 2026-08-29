@@ -367,7 +367,12 @@ export const SELF_MUTATIONS = [
     id: 'the-notation-is-matched-case-insensitively',
     milestone: 'm152d',
     pkg: '@tflw/docs-site',
-    file: 'packages/docs-site/scripts/doc-blocks.mjs',
+    // Moved in `M158c` (`D794`): the two citation classifiers became one, so the rule this mutation
+    // breaks now lives beside the other seven in `scripts/verify-citations.mjs`. The suite that must
+    // go red is still the docs-site one — that is where the property is asserted, and asserting it
+    // where the rule now lives would move a docs-site guarantee into a script that has no view of a
+    // GitHub anchor.
+    file: 'scripts/verify-citations.mjs',
     what: "the decision pattern matches case-insensitively. Capitalisation is the whole reason this rule needs no URL-fragment exclusion: GitHub lowercases its heading anchors, so `SPEC.md#45-retries-d105-…` is an address and `D105` is a citation, and nothing but case tells them apart. `D691` clause 4 scoped an exclusion for this and measurement found it matched nothing — so the property is load-bearing and undefended by anything except the pattern's own flags",
     find: "  { what: 'a decision', re: /\\bD\\d{2,3}\\b/g },",
     replace: "  { what: 'a decision', re: /\\bD\\d{2,3}\\b/gi },",

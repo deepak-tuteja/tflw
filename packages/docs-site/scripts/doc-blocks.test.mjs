@@ -5,7 +5,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, extractBlocks, parseInfoString, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, constructMatchers, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { classify, extractBlocks, parseInfoString, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, constructMatchers, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { JSON_RULES as CITATION_RULES } from '../../../scripts/verify-citations.mjs';
 import { specConstructs } from '@tflw/lang';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -353,7 +354,9 @@ test('every notation shape is recognised, and each says what it names', () => {
   assert.deepEqual(
     problems.map((p) => p.message.replace(/^`[^`]+` names /, '')),
     [
-      "a milestone in this project's private design record",
+      // `M158c`: the merged classifier's own vocabulary, which is the point of merging — one rule
+    // set, one wording, in both repositories. It says "label" because that is the shape it matches.
+    "a milestone label in this project's private design record",
       "a decision in this project's private design record",
       "a plan item in this project's private design record",
       "a bare decision citation in this project's private design record",
@@ -405,7 +408,15 @@ test('a lowercase GitHub anchor does not trip, and this is case doing the work, 
   // on the decision pattern this line reports a defect on every SPEC.md link the docs carry.
   const link = '[SPEC.md §4.5](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#45-retries-d105-and-the-config-dialect-p2731-)';
   assert.deepEqual(notation(`# x\n\n${link}\n`), []);
-  for (const { re } of NOTATION) assert.ok(!re.flags.includes('i'), `${re} is case-insensitive — see the test above this one`);
+  // Narrowed in `M158c` from *no rule may be `/i`* to *no rule whose CASE is what separates it from
+  // an anchor may be `/i`*, which is what the sentence above actually claims. `BARE` and
+  // `BARE_LETTER` are case-insensitive on purpose and always have been: they match the English word
+  // `decision(s)` before a number, and a sentence may open with `Decision 5`. It is the WORD that
+  // keeps them off an anchor, not the capital. The shape-based rules are the ones this pins, and
+  // widening any of them to `/i` still goes red here with this comment attached.
+  const shapeBased = CITATION_RULES.filter(({ what }) => !what.includes('bare') && !what.includes('lettered'));
+  assert.equal(shapeBased.length, 6);
+  for (const { re } of shapeBased) assert.ok(!re.flags.includes('i'), `${re} is case-insensitive — see the test above this one`);
 
   // And the capitalised form on the same page is still caught, so the pass above is about case
   // rather than about the line being a link.

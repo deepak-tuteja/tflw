@@ -10,6 +10,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { JSON_RULES as CITATION_RULES } from '../../../scripts/verify-citations.mjs';
 
 /** Fence tags whose contents are `.tflw` source, keyed to how a sample is made checkable. */
 export const TFLW_LANGS = new Set(['tflw', 'tflw-config']);
@@ -363,13 +364,15 @@ export function scanRoadmapClaims(files, { allowlist = DECLARED_ROADMAP, phrases
  * citation. No exclusion was added: a guard that never fires is a guard nobody can evaluate. The
  * property is pinned by a test instead, so a later widening to `/i` fails and says why.
  */
-export const NOTATION = [
-  { what: 'a milestone', re: /\bM\d{1,3}[a-z]?\d*\b/g },
-  { what: 'a decision', re: /\bD\d{2,3}\b/g },
-  { what: 'a plan item', re: /\bP#\d+[a-z]?\b/g },
-  { what: 'a bare decision citation', re: /\bdecisions?\s+\d+/g },
-  { what: 'a review-ledger row', re: /\b(?:[A-Z]{1,3}\d+|DT|FU)-\d+\b/g },
-];
+// `D794`/`D795`. There was a second classifier here — `NOTATION`, five pattern-only regexes with
+// no view of context — and `M153a-01` measured what that cost: it caught 4 of 8 real citations at
+// zero false positives, missing `M147e`, `(M3a)`, `decision B` and `E4`. `JSON_RULES` resolves all
+// four, because it reads the sentence around the token rather than the token's shape alone.
+//
+// Two classifiers for one notation is the defect, not the pattern gap. Merging them means this
+// file's rule now lives in `scripts/verify-citations.mjs`, which is the direction the dependency
+// has to run: that script already reads **both repositories** and holds no docs-site knowledge,
+// while this file is scoped to one package. The dependency follows the breadth.
 
 /**
  * The two site pages that are not pages: a header plus `<!--@include: …-->` of a repo record.
@@ -477,7 +480,7 @@ function scriptLines(text) {
  *
  * `files` is `{ key, text }` with `text` the raw contents including frontmatter.
  */
-export function scanPrivateNotation(files, { included = INCLUDED_RECORDS, patterns = NOTATION } = {}) {
+export function scanPrivateNotation(files, { included = INCLUDED_RECORDS, patterns = CITATION_RULES } = {}) {
   const problems = [];
   const found = [];
   let scanned = 0;
