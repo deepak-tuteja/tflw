@@ -6507,7 +6507,7 @@ across six milestones with nothing anywhere able to notice. Seven occurrences ac
 
 ### D781
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D781 — teardown runs by default under load; the `cleanup` gate is deleted**
 
@@ -6516,7 +6516,7 @@ do. The `cleanup` keyword is removed from the language.
 
 ### D782
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D782 — hook time leaves `durationMs`; this is the defect `D26` actually found**
 
@@ -6525,7 +6525,7 @@ do. The `cleanup` keyword is removed from the language.
 
 ### D783
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D783 — `teardown` is a three-valued level, and every value answers the same question**
 
@@ -6596,6 +6596,16 @@ successor and §2.4's three arms as the evidence.
 
 - **Deleted:** `spec-data.ts:230`, the `cleanup` row (family `step`, tier `workload`).
 - **Added:** a `teardown` row in `config`, `slot: 'key'`, following `evidence`'s shape.
+
+### D789
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D789 — plant `C48` is rewritten, not deleted**
+
+`constructs.mjs` `C48` (`step:cleanup`) grades the contrast this milestone removes: *"exactly 8
+requests — one per iteration of the test that carries `cleanup`, and none from the sibling test that
+omits it."* Under `D781` the correct answer becomes 16.
 
 ### D807
 
@@ -9156,7 +9166,7 @@ purpose.
 
 ### M157
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **PLAN_M157 — teardown under load: delete the `cleanup` gate, fix the metric it was protecting**
 
@@ -9169,6 +9179,17 @@ Closes `M154e-01`; files `M157-01`. **Breaking** (removes a keyword, changes rep
 **Ledger row:** `M154e-01` (S3), reframed. **Decisions:** `D781`–`D789`. **No new diagnostic** —
 `TF079` was scoped and dropped, see `M157c`. Gitignored by `.gitignore:35`.
 
+### M157a
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**`M157a` — `D782` first, alone**
+
+Narrow the timing window to `scenario.body`. No language change,
+no gate change. Land it and observe the reported percentiles move on the existing conformance
+workloads. This is the only step that changes numbers for suites that never touched `cleanup`, so it
+ships isolated and is verified isolated.
+
 ### M157d
 
 <sub>cited from SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
@@ -9180,6 +9201,15 @@ Closes `M154e-01`; files `M157-01`. **Breaking** (removes a keyword, changes rep
 with its count. The `on success` predicate goes exactly where `D781` removed the gate, so those are
 one edit rather than two. Bad values reuse the existing machinery — `TF020` for the key,
 `parseClosedSetDirective` for the value — and no further codes are minted.
+
+### M157f
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**`M157f` — `D789`, in `testFlow-tests`**
+
+Rewrite `C48`, update `verdict.tflw:58-68`, re-run the
+roster and ratchet. **`D511` merge order: tflw first, then testFlow-tests.**
 
 ### M160
 
