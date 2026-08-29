@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites in tracked prose, and which of its files cite it, read from the ref below (D709/D710). Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:citation-pin` is what fails when this goes stale.",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "m157f-teardown-plant",
-  "sha": "53515b9df3c6b21d04230af3a249e2136e7419d3",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/53515b9df3c6b21d04230af3a249e2136e7419d3",
+  "ref": "main",
+  "sha": "f43c1c8f28a2b045fb02a2e5eb766029ad324180",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/f43c1c8f28a2b045fb02a2e5eb766029ad324180",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
