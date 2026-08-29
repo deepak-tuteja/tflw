@@ -9160,9 +9160,11 @@ purpose.
 
 **PLAN_M157 — teardown under load: delete the `cleanup` gate, fix the metric it was protecting**
 
-**Status:** **`M157a`–`M157e` built 2026-08-29**, tflw side complete (`M157a` in PR 138, isolated as
-§4 requires; `M157b`–`M157e` in the PR after it). `M157f`, the `testFlow-tests` half, is the
-remaining step and merges second under `D511`. Suite green on the box at **3766 tests**.
+**Status:** **`M157a`–`M157f` all built 2026-08-29.** tflw: `M157a` in PR 138 (merged, isolated as
+§4 requires), `M157b`–`M157e` in PR 139. `testFlow-tests`: `M157f` in its own PR, merging second
+under `D511`. Suite green on the box at **3766 tests**; sibling gate green at **102 plants**,
+roster 178/178, ratchet 0/0. One follow-up remains and is named in §4b: a third tflw commit
+re-pinning `sibling-citations.json`, which is what publishes `D789`.
 Closes `M154e-01`; files `M157-01`. **Breaking** (removes a keyword, changes reported percentiles).
 **Ledger row:** `M154e-01` (S3), reframed. **Decisions:** `D781`–`D789`. **No new diagnostic** —
 `TF079` was scoped and dropped, see `M157c`. Gitignored by `.gitignore:35`.
