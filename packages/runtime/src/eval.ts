@@ -4,7 +4,7 @@
 
 import { isDecodableBase64, isDecodableHex, isDecodablePercentEncoding, parseStringParts, type BinaryOp, type DateOffsetUnit, type PathSegment, type StringPart, type Value } from '@tflw/lang';
 import type { Redactor } from './redact.js';
-import { subSeed, mulberry32, hashString } from './seed.js';
+import { subSeed, mulberry32, hashString, SEED_DOMAIN } from './seed.js';
 import type { CookieJar } from './cookieJar.js';
 import type { BrowserManager, BrowserPageState, LocatorScope } from './browser.js';
 import type { SessionRef } from './interpreter.js';
@@ -330,6 +330,19 @@ export function describe(value: unknown): string {
   return typeof value === 'string' ? 'a string' : typeof value;
 }
 
+/** **The** value-to-string form for the language (`SPEC` §7.5, `D813`). Every place that turns a
+ * value into text for *comparison or transport* goes through here — `{interpolation}`, `encode`/
+ * `decode` input, and the `matches`/`contains` matchers.
+ *
+ * Not to be confused with `matcher.ts`'s `repr`, which is the **display** form: it quotes strings
+ * and abbreviates a binary body. One function answers *what does this value compare as*, the other
+ * *how is it shown to a reader*. They are allowed to differ; what is not allowed is a third answer,
+ * and `M154g-08` is what that costs — `matches` tested `String(actual)` while its failure message
+ * printed `repr(actual)`, so a date subject was matched against a locale- and timezone-dependent
+ * rendering and then reported as its ISO form, which satisfied the pattern it had just failed.
+ *
+ * The date row is the one with teeth: ISO-8601 UTC, never `Date.prototype.toString`, so the same
+ * file at the same seed cannot pass on one machine's `TZ` and fail on another's. */
 export function stringify(value: unknown): string {
   if (value === null) return 'null';
   if (value instanceof Date) return value.toISOString();
@@ -610,7 +623,11 @@ function gcdBig(a: bigint, b: bigint): bigint {
  * RNG keyed off the same counter (same pattern `UniqueLikeExpr` uses) purely for a realistic
  * random-looking shape — they carry none of the uniqueness guarantee themselves. */
 function uniqueUuid(counter: number, runSeed: number): string {
-  const localRng = mulberry32(subSeed(runSeed, counter));
+  // `SEED_DOMAIN.uniqueUuid` (`M154g-15`, `D815`): without it this passed the `unique` counter into
+  // the same argument position `interpreter.ts` fills with a *test index*, so `unique uuid`'s k-th
+  // draw shaped itself from test k's `random` stream. The trailing 8 hex digits — where the actual
+  // distinctness guarantee lives — are the counter itself and are untouched by this.
+  const localRng = mulberry32(subSeed(runSeed, counter, SEED_DOMAIN.uniqueUuid));
   const bytes: number[] = [];
   for (let i = 0; i < 12; i++) bytes.push(Math.floor(localRng() * 256));
   bytes[6] = (bytes[6]! & 0x0f) | 0x40; // version 4

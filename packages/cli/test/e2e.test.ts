@@ -5094,3 +5094,116 @@ test('`M147d`/`M137f-02`: a session scoped to one env stops being every other en
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// ─── M161a — `unique` across forked load workers (SPEC §7.2) ────────────────────────────────────
+//
+// `SPEC` §7.2 promises `unique` values are "Guaranteed distinct across tests/**workers** within a
+// run (run/worker-seeded)". `makeUniqueSeq()` (`interpreter.ts`) is a bare counter from 0 with no
+// seed and no shard, and `runLoadCore` calls it fresh in every forked `--internal-load-worker`
+// child — so under `--workers N>1` each shard emits 0, 1, 2, … independently and every `unique`
+// draw collides N ways. `opts.shard` is in scope at that call site and was simply not folded in.
+//
+// The `--workers 1` arm is the control: it shares every other moving part with the failing arm and
+// differs only in whether a fork happened, so a failure in one and not the other locates the defect
+// in the fork boundary rather than in `unique` itself.
+
+/** Records the body of every `POST /rec` so a test can ask what the target actually received —
+ * the only vantage point from which a cross-process collision is observable at all (each shard's
+ * own report is internally consistent; only the target sees both). */
+async function withRecordingServer<T>(fn: (baseUrl: string, seen: Array<Record<string, unknown>>) => Promise<T>): Promise<T> {
+  const seen: Array<Record<string, unknown>> = [];
+  const server: Server = createServer((req, res) => {
+    if (req.url === '/rec' && req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          seen.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
+        } catch {
+          // A malformed body is itself a finding — record it as such rather than throwing inside
+          // the server and turning a data defect into a connection error.
+          seen.push({ __unparseable: Buffer.concat(chunks).toString('utf8') });
+        }
+        // ~10ms of deliberate target latency. Without it this server answers faster than tflw can
+        // generate, tflw's self-diagnosis correctly reports itself as the bottleneck, and the run
+        // comes back INCONCLUSIVE — a true verdict about a meaningless workload. The delay makes
+        // the target the slow half, which is what a load run is supposed to be measuring.
+        setTimeout(() => res.writeHead(201, { 'content-type': 'application/json' }).end('{"ok":true}'), 10);
+      });
+    } else {
+      res.writeHead(404).end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  try {
+    return await fn(`http://127.0.0.1:${address.port}`, seen);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+}
+
+/** Runs the workload once at `--workers n` and returns what the target received. */
+async function uniqueDrawsAtWorkers(n: number): Promise<{ ids: unknown[]; tags: unknown[]; stdout: string }> {
+  return withRecordingServer(async (baseUrl, seen) => {
+    const dir = await mkdtemp(join(tmpdir(), `tflw-e2e-unique-shards-w${n}-`));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'load.tflw'),
+        'test "unique under shards"\n' +
+          '  ramp to 4 users over 600ms\n' +
+          '  api POST /rec body { id: unique number, tag: unique("ORD") }\n' +
+          '  threshold error rate is less than 100%\n',
+        'utf8',
+      );
+      // A non-zero exit is tolerated *only* when the target actually received draws: this test
+      // asks what values reached the target, not what verdict the run reached, and a load verdict
+      // can legitimately be inconclusive on a synthetic target. A run that produced no draws is a
+      // different thing entirely — that is a broken harness, and it rethrows with the CLI's output.
+      let stdout = '';
+      try {
+        ({ stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color', '--workers', String(n)], { cwd: dir }));
+      } catch (e) {
+        const err = e as { stdout?: string; stderr?: string };
+        if (seen.length === 0) {
+          throw new Error(`--workers ${n} produced no requests at all\n--- stdout ---\n${err.stdout ?? ''}\n--- stderr ---\n${err.stderr ?? ''}`);
+        }
+        stdout = err.stdout ?? '';
+      }
+      return { ids: seen.map((b) => b['id']), tags: seen.map((b) => b['tag']), stdout };
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('`unique` stays distinct across forked load workers (SPEC §7.2)', async () => {
+  const single = await uniqueDrawsAtWorkers(1);
+  assert.ok(single.ids.length > 4, `control arm produced too few iterations to be meaningful: ${single.ids.length}`);
+  assert.equal(new Set(single.ids).size, single.ids.length, 'control (--workers 1): `unique number` repeated inside one process');
+  assert.equal(new Set(single.tags).size, single.tags.length, 'control (--workers 1): `unique("ORD")` repeated inside one process');
+
+  // Two *and* four: two shards alone cannot tell striping apart from a scheme that merely offsets
+  // the second shard, and `M161`'s acceptance asks for both.
+  for (const n of [2, 4]) {
+    const sharded = await uniqueDrawsAtWorkers(n);
+    assert.ok(sharded.ids.length > 4, `--workers ${n} produced too few iterations to be meaningful: ${sharded.ids.length}`);
+    assert.equal(
+      new Set(sharded.ids).size,
+      sharded.ids.length,
+      `--workers ${n}: \`unique number\` collided across shards — ${sharded.ids.length} draws, ${new Set(sharded.ids).size} distinct`,
+    );
+    const dupTags = sharded.tags.filter((t, i) => sharded.tags.indexOf(t) !== i);
+    assert.equal(
+      new Set(sharded.tags).size,
+      sharded.tags.length,
+      `--workers ${n}: \`unique("ORD")\` collided across shards — ${sharded.tags.length} draws, ${new Set(sharded.tags).size} distinct\n` +
+        `  first 12 ids:  ${JSON.stringify(sharded.ids.slice(0, 12))}\n` +
+        `  first 12 tags: ${JSON.stringify(sharded.tags.slice(0, 12))}\n` +
+        `  dup tags: ${JSON.stringify([...new Set(dupTags)].slice(0, 12))}`,
+    );
+  }
+});

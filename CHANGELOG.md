@@ -551,6 +551,39 @@ endpoint its finding names. All were found by *running* a repro or a crawl, not 
 - **A followed redirect now carries the cookies the chain itself set** — a login answered with a
   redirect was throwing away the session it had just been granted.
 
+### Fixed — one string form for a value, and `unique` across processes (M161)
+
+**`unique` was not distinct across forked load workers**, which `SPEC` §7.2 promises in as many
+words ("distinct across tests/**workers** within a run"). Under `--workers N>1` each generating
+process built its own counter from `0`, so every shard emitted the same sequence and every `unique`
+draw collided N ways. Measured at `--workers 2`: 167 draws, 84 distinct. The counter is now striped
+by shard index, so shard `i` of `n` draws `i, i+n, i+2n, …` — the same scheme `globalIterationIndex`
+already used for the neighbouring axis, and it makes §7.2's sentence true rather than editing it.
+There were **two** call sites, not one: the forked children, and the parent process, which is shard
+0 and runs its own share in-process rather than forking itself. Fixing only the obvious one left
+shard 0 overlapping every other shard on odd values.
+
+**`matches` against a date is coherent, and its failure message no longer contradicts itself.**
+`matches` tested `String(actual)` — a locale- and timezone-dependent rendering — while the failure
+message printed the ISO form, so `check {past} matches "^[0-9]{4}-…"` failed while reporting a "got"
+value that plainly satisfied the pattern. Both halves now use the one value-to-string form the rest
+of the runtime already used, newly written down as `SPEC` §7.5. `contains` had the same defect on
+its expected-value side. An object subject under `matches` now renders as JSON rather than
+`[object Object]`.
+
+- **`hex encode` emits lowercase**, and `hex decode` accepts either case — `SPEC` §7.6 now says so
+  instead of a test asserting a literal value being the only thing that pinned it.
+- `unique uuid`'s random-looking half no longer derives from the same sub-seed space as a test's
+  own `random` stream, so it can no longer be predicted from an unrelated test's values. Its
+  trailing 8 hex digits — where the distinctness guarantee actually lives — are unchanged.
+
+**Seed-replay note.** Two of these change values a given `--seed` reproduces: `unique uuid` (its
+shaped first 12 bytes) and `matches` against a date, plus every `unique` value under `--workers
+N>1`. Nothing else moves — a test's `random` stream replays exactly as before, deliberately, since
+the sub-seed domain for that caller was left at its historical value. Recorded because it is real,
+not because a migration is needed: tflw is unpublished and has no users outside this repository
+and its dogfood sibling.
+
 ### Changed — config directive spelling (M147b)
 
 The rule the language never had, and the last breaking change before `1.0.0`: **a directive whose

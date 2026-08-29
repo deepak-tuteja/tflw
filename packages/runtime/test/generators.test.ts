@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
-import { runProgram } from '../src/interpreter.js';
+import { runProgram, makeUniqueSeq } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 
 test('the same seed reproduces identical `random` values; a different seed changes them', async () => {
@@ -596,4 +596,62 @@ test('M102/A4-OS-13: a `like` pattern with no `{` renders byte-identically to be
   const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 42 });
   assert.match(run.report.tests[0]!.steps[0]!.detail ?? '', /SKU-\d{4}-[A-Z]{2}/);
   await server.close();
+});
+
+// `M154g-15`'s second half (`D815`). `unique like` was fixed in `M154g-07` by dropping the RNG
+// entirely, which closed the harmful half; `unique uuid` still consults one, and still keyed it
+// with `subSeed(runSeed, counter)` — the same expression, over the same run seed, that keys a
+// test's own `random` stream from its index. The uuid's *distinctness* never depended on that half,
+// so nothing looked wrong: the value was unique, merely predictable from an unrelated test. This is
+// the direct inverse of the row's measurement, pinned to a seed so it asserts a deterministic
+// separation rather than betting on two random values differing.
+test('`unique uuid` does not shape itself from some test\'s own `random` stream (`M154g-15`)', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+
+  const source = `test "t0"
+  let u0 = unique uuid
+  let r0 = random uuid
+  api GET /health
+  expect status equals 200
+
+test "t1"
+  let r1 = random uuid
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source, seed: 4242 });
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+
+  const uuid = (detail: string) => /"([0-9a-f-]{36})"/.exec(detail)![1]!;
+  const u0 = uuid(report.tests[0]!.steps[0]!.detail!);
+  const r0 = uuid(report.tests[0]!.steps[1]!.detail!);
+  const r1 = uuid(report.tests[1]!.steps[0]!.detail!);
+
+  // The first 12 bytes are the shaped half — the trailing 8 hex digits are the counter and are
+  // *supposed* to be predictable, so comparing whole uuids would pass for the wrong reason.
+  const shaped = (u: string) => u.replace(/-/g, '').slice(0, 24);
+  assert.notEqual(shaped(u0), shaped(r0), '`unique uuid` must not replay the drawing test\'s `random` stream');
+  assert.notEqual(shaped(u0), shaped(r1), '`unique uuid` must not replay another test\'s `random` stream either');
+
+  await server.close();
+});
+
+// `M161-01` (`D815`) — the process boundary, unit-level. The end-to-end proof is in
+// `packages/cli/test/e2e.test.ts` (a real forked two-worker run against a recording target); this
+// pins the mechanism directly so a regression names the cause rather than a duplicate-key error
+// several layers away.
+test('`makeUniqueSeq` stripes disjointly across shards, and is unchanged unsharded (`M161-01`)', async () => {
+  const draws = (seq: { next(): number }, n: number): number[] => Array.from({ length: n }, () => seq.next());
+
+  assert.deepEqual(draws(makeUniqueSeq(), 5), [0, 1, 2, 3, 4], 'unsharded must stay the plain run-wide counter');
+
+  const shards = [0, 1, 2, 3].map((index) => draws(makeUniqueSeq({ index, count: 4 }), 25));
+  const all = shards.flat();
+  assert.equal(new Set(all).size, all.length, 'four shards must never draw the same value');
+  assert.deepEqual(shards[0]!.slice(0, 3), [0, 4, 8]);
+  assert.deepEqual(shards[3]!.slice(0, 3), [3, 7, 11]);
+  // Striping, not block partitioning: no shard needs to know how many values another will draw,
+  // and no shard can exhaust a block while another's sits unused.
+  assert.deepEqual([...all].sort((a, b) => a - b), Array.from({ length: 100 }, (_, i) => i));
 });

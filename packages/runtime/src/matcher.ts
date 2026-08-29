@@ -3,7 +3,7 @@
 // subject" until the browser half (M3). API expects evaluate once and fail fast (P#15).
 
 import type { Matcher } from '@tflw/lang';
-import { dateOffsetMs, describe, evalValue, RuntimeError, type EvalCtx } from './eval.js';
+import { dateOffsetMs, describe, evalValue, RuntimeError, stringify, type EvalCtx } from './eval.js';
 
 export interface MatchOutcome {
   readonly ok: boolean;
@@ -58,7 +58,17 @@ function rawMatch(actual: unknown, matcher: Matcher, ctx: EvalCtx): RawMatch {
       const expected = String(evalValue(matcher.value!, ctx));
       let ok = false;
       try {
-        ok = new RegExp(expected).test(String(actual));
+        // `stringify`, not `String` (`M161-01`'s sibling, `D812`/`D813`). These differ on exactly
+        // one subject type and it is the one that mattered: `String(date)` is
+        // `"Sun Jul 27 2025 02:00:00 GMT+0200 (…)"` — locale- and **timezone**-dependent — while
+        // every other value-to-string path in the runtime (`{interpolation}`, `encode`/`decode`
+        // input) goes through `stringify` and gets ISO-8601 UTC. Testing one form while the failure
+        // message printed the other (`repr`, i.e. `JSON.stringify`) is what made `matches` against
+        // a date report a "got" value that plainly satisfied the pattern it was said to fail.
+        // Matching a regex against a value's canonical text is a coherent operation, so it is fixed
+        // rather than refused the way `contains` refuses a date — see `D812` for why a subject-type
+        // guard was the wrong repair.
+        ok = new RegExp(expected).test(stringify(actual));
       } catch {
         throw new RuntimeError(`invalid regex in matcher: ${repr(expected)}`);
       }
@@ -216,7 +226,12 @@ function describeSubsetMismatches(actual: Record<string, unknown>, expected: Rec
 }
 
 function contains(actual: unknown, expected: unknown): boolean {
-  if (typeof actual === 'string') return actual.includes(String(expected));
+  // `stringify`, not `String`, for the same reason `matches` uses it (`D812`/`D813`). This is the
+  // *expected* side of the identical defect: `contains` refuses a date **subject** outright, but a
+  // date **expected** against a string subject was being rendered by `String` — locale- and
+  // timezone-dependent — while the failure message printed `repr(expected)`, the ISO form. Found by
+  // `D813`'s audit, which predicted `matches` was the only raw-`String` value site and was wrong.
+  if (typeof actual === 'string') return actual.includes(stringify(expected));
   if (Array.isArray(actual)) return actual.some((el) => deepEqual(el, expected));
   throw new RuntimeError(`\`contains\` expects a string or array subject, got ${describe(actual)}`);
 }
@@ -264,7 +279,12 @@ function num(value: unknown, matcher: string): number {
   return value;
 }
 
-/** Human-readable literal for messages: strings quoted, everything else JSON-ish. */
+/** Human-readable literal for messages: strings quoted, everything else JSON-ish.
+ *
+ * The **display** half of the pair `D813` names; `eval.ts`'s `stringify` is the **comparison** half
+ * (`SPEC` §7.5). Deliberately different from it — quoting a string is exactly what a failure
+ * message wants and exactly what an interpolation must not do — so the rule is that a matcher
+ * compares with `stringify` and reports with `repr`, and never invents a third form. */
 export function repr(value: unknown): string {
   if (value === undefined) return 'undefined';
   if (typeof value === 'string') return JSON.stringify(value);

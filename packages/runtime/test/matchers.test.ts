@@ -582,3 +582,93 @@ test('`equals` does not call a date equal to an empty object literal', async () 
 
   await server.close();
 });
+
+// ─── M161b (`D812`/`D813`) — one string form for a value ────────────────────────────────────────
+//
+// `matches` used to test `String(actual)` while its failure message printed `repr(actual)`
+// (`JSON.stringify`). On a date those are two different serializations, so `matches` against a date
+// was incoherent *and* reported a "got" value that plainly satisfied the pattern it had just failed
+// (`M154g-08`). Both halves now read `stringify` — the same canonical form `{interpolation}` and
+// `encode`/`decode` already use.
+
+test('`matches` tests a date subject as its canonical ISO-8601 form, and says so when it fails', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, { id: 'x' }) });
+
+  // The exact reproducer from `M154g-08`: red before `D812`, green after.
+  const passing = `test "date matches ISO"
+  let past = random date in past
+  api GET /orders
+  expect {past} matches "^[0-9]{4}-[0-9]{2}-[0-9]{2}"
+`;
+  const { program: p1 } = parseSource(passing);
+  const { report: r1 } = await runProgram(p1, testConfig(server.baseUrl), { source: passing });
+  assert.equal(r1.ok, true, JSON.stringify(r1.tests[0], null, 2));
+
+  // The other half of the defect, and the half a green test alone would not catch: when it *does*
+  // fail, the printed subject must genuinely not match the pattern. `String(date)` starts with a
+  // weekday name, so the old message printed an ISO string beside a pattern the ISO string
+  // satisfied — the two halves have to agree or the fix is half a fix.
+  const failing = `test "date fails coherently"
+  let past = random date in past
+  api GET /orders
+  expect {past} matches "^ZZZ"
+`;
+  const { program: p2 } = parseSource(failing);
+  const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: failing });
+  assert.equal(r2.ok, false);
+  const err = r2.tests[0]!.error ?? '';
+  const got = /but got "([^"]*)"/.exec(err);
+  assert.ok(got, `expected a quoted "got" value in: ${err}`);
+  assert.doesNotMatch(got[1]!, /^ZZZ/, 'the printed subject must not satisfy the pattern it just failed');
+  assert.match(got[1]!, /^\d{4}-\d{2}-\d{2}T/, 'the printed subject must be the canonical ISO form');
+
+  await server.close();
+});
+
+test('`matches` renders every subject type the way `stringify` says', async () => {
+  const server = await startFixtureServer({
+    '/v': (_req, res) => json(res, 200, { n: 42, b: true, nul: null, obj: { a: 1 }, arr: [1, 2], s: 'hi' }),
+  });
+
+  // Asserted rather than assumed (`M161` acceptance 3): an object subject renders as JSON, not as
+  // `[object Object]`, which is what a raw `String` would have produced.
+  const source = `test "every subject type"
+  api GET /v
+  expect body.n matches "^42$"
+  expect body.b matches "^true$"
+  expect body.nul matches "^null$"
+  expect body.obj matches "^\\\\{\\"a\\":1\\\\}$"
+  expect body.arr matches "^\\\\[1,2\\\\]$"
+  expect body.s matches "^hi$"
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});
+
+test('`contains` renders a date-typed expected value canonically, not in the local timezone', async () => {
+  // The second raw-`String` site, found by `D813`'s audit after `M161`'s prediction 4 said there
+  // would be none. `contains` refuses a date *subject*; a date *expected* was silently rendered by
+  // `String`, so this assertion's outcome depended on the machine's `TZ`.
+  //
+  // Round-tripped through the request rather than compared to a hard-coded instant: `{d}` in the
+  // URL is rendered by `stringify` (the interpolation path, always ISO) and `contains {d}` is
+  // rendered by the path under test. They agree only if both use the same form — which is the
+  // whole claim — and the test never has to know what the date actually is.
+  const server = await startFixtureServer({
+    '/echo': (req, res) => json(res, 200, { echo: new URL(req.url ?? '', 'http://x').searchParams.get('v') }),
+  });
+
+  const source = `test "contains a date"
+  let d = now
+  api GET /echo?v={d}
+  expect body.echo contains {d}
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+
+  await server.close();
+});
