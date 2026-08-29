@@ -1,4 +1,4 @@
-// `M160d` (`D812`) — the `durations` half of `ARTIFACT_CONTRACT`, compared against the rule it
+// `M160d` (`D834`) — the `durations` half of `ARTIFACT_CONTRACT`, compared against the rule it
 // describes.
 //
 // WHY THIS FILE EXISTS AT ALL. Every other entry in the contract is a *name*, and names cannot
@@ -29,7 +29,7 @@ function* sweep(decades = 6, perDecade = 40000): Generator<number> {
   for (let i = 0; i <= n; i++) yield 10 ** (-3 + (decades * i) / n);
 }
 
-test('D812: `maxRelativeError` is a true upper bound on what `roundDurationMs` reports', () => {
+test('D834: `maxRelativeError` is a true upper bound on what `roundDurationMs` reports', () => {
   let worst = 0;
   let worstAt = 0;
   for (const v of sweep()) {
@@ -45,7 +45,7 @@ test('D812: `maxRelativeError` is a true upper bound on what `roundDurationMs` r
   );
 });
 
-test('D812: the bound is tight — a loose bound would suppress a consumer’s bands for nothing', () => {
+test('D834: the bound is tight — a loose bound would suppress a consumer’s bands for nothing', () => {
   // The supremum is approached, never attained (it needs `v` *just under* the cell boundary), so
   // this asserts closeness rather than equality. Without it the contract could publish 0.5 and
   // still pass the test above, while telling `derive-perf-bands.mjs` that no rung is ever bandable.
@@ -57,7 +57,7 @@ test('D812: the bound is tight — a loose bound would suppress a consumer’s b
   );
 });
 
-test('D812: the bound is exactly 1/21, and both branches of D809 reach it the same way', () => {
+test('D834: the bound is exactly 1/21, and both branches of D809 reach it the same way', () => {
   // Approach `1.05 x 10^k` from below. `k = 1` is the integer branch (10.4999... -> 10); the rest
   // are the two-significant-digit branch (1.04999... -> 1). One number, one cause: a value that has
   // just crossed into a cell ten times wider than the last.
@@ -76,6 +76,6 @@ test('D812: the bound is exactly 1/21, and both branches of D809 reach it the sa
   assert.ok(maxRelativeError >= 1 / 21, 'the published bound must not be under the true supremum');
 });
 
-test('D812: `rule` names the decision a consumer cites when it suppresses on quantisation', () => {
+test('D834: `rule` names the decision a consumer cites when it suppresses on quantisation', () => {
   assert.equal(ARTIFACT_CONTRACT.durations.rule, 'D809');
 });

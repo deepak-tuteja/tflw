@@ -139,7 +139,7 @@ export const ARTIFACT_CONTRACT = {
     },
   },
   /**
-   * `M160d` (`D812`) — how tflw rounds a duration before it reports one. The third thing another
+   * `M160d` (`D834`) — how tflw rounds a duration before it reports one. The third thing another
    * repository reads out of these artifacts, and the first that is a *behaviour* rather than a
    * spelling.
    *

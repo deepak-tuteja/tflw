@@ -6518,7 +6518,7 @@ exactness it does not have and starts claiming the one it will.
 
 ### D809
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **D809 — rendering rounds, and every renderer rounds the same way**
 
@@ -6536,18 +6536,6 @@ One helper, one rule, applied at every point a duration becomes text or JSON:
 The comparison uses the unrounded value. A 0.6 ms request currently passes `is less than 1`
 (rounds to 1, and 1 < 1 is false — it currently **fails**) — that inversion is exactly the class of
 surprise this milestone removes.
-
-### D812
-
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
-
-**D812 — tflw publishes its own rounding rule in the artifact contract; the sibling reads it**
-
-`ARTIFACT_CONTRACT` gains a `durations` block naming `D809`'s rule as data, and
-`derive-perf-bands.mjs` computes its quantum from that instead of from a local literal. This is the
-seam's existing job: the registry exists for exactly "a shape this project can rename out from under
-a consumer's gate", and a rounding rule the sibling's band derivation depends on is that, in the
-only sense that matters — `M160a` changed it and the sibling had no way to know.
 
 ### D813
 
@@ -6578,6 +6566,41 @@ becomes invisible.
 
 Two defects, one rule: an index only means something inside the space it was minted for, and
 `unique` currently crosses two boundaries without saying so.
+
+### D834
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D834 — tflw publishes its own rounding rule in the artifact contract; the sibling reads it**
+
+`ARTIFACT_CONTRACT` gains a `durations` block naming `D809`'s rule as data, and
+`derive-perf-bands.mjs` computes its quantum from that instead of from a local literal. This is the
+seam's existing job: the registry exists for exactly "a shape this project can rename out from under
+a consumer's gate", and a rounding rule the sibling's band derivation depends on is that, in the
+only sense that matters — `M160a` changed it and the sibling had no way to know.
+
+### D835
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D835 — the reporting bound belongs to the run, not to the checkout**
+
+`D834` published the bound and had `derive-perf-bands.mjs` read it from the **installed** tflw. That
+is the same category error `D834` had just fixed, pointed the other way. A bound describes the build
+that *produced* a reading; the artifacts on disk were produced by builds that are no longer
+installed, and nothing about having a current tflw in `node_modules/` makes a two-month-old
+measurement newly precise.
+
+### D836
+
+<sub>cited from tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D836 — contribution is per-metric, not just per-rung**
+
+`derive-perf-bands.mjs` suppressed a rung's whole `p95Ratio` when **any** contributing run reported
+too coarsely. Correct as far as it went, and one axis short: coarse reporting disqualifies a run's
+**p95**, not its **rps**. A count of completed iterations does not become less true because the
+percentile printed beside it was rendered to a whole millisecond.
 
 ### M0
 
@@ -9031,19 +9054,17 @@ purpose.
 
 ### M160
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **`M160` — latency carries a float; rounding happens at render**
 
-**Status:** **`M160a`-`M160c` built 2026-08-29**, suite green on the box (3748 tests). `M160d`
-(the sibling half, `D811`) is outstanding behind `D511`'s merge order. **Not breaking** to any
-`.tflw` program. **Changes every reported number** at low latency, and changes what
-`histogram.ts`'s own header is allowed to claim.
-**Closes:** `M154f-13` (S3).
-**Numbering:** takes `D807`–`D812` (`D812` added 2026-08-29 by `M160d`'s build; see `D811`'s
-amendment). Next free after this plan: **`D813`**. Mints no `TF` code.
-Sibling work gated on `D511` (tflw merges first).
-Gitignored by `.gitignore:35`.
+**Status:** **`M160a`-`M160d` built 2026-08-29**, both repositories, `D511` order kept throughout
+(tflw #135 -> tflw #136 -> tflw-tests #61 -> this pair). Suite green on the box at 3752 tests.
+The sibling's perf baseline is re-founded from five run artifacts and now carries **all seven
+`p95Ratio` bands**, against four before — `dogfood-get-only`, `echo-get-only` and `echo-post-only`
+were suppressed on a quantum tflw no longer has. **Not breaking** to any `.tflw` program.
+**Changes every reported number** at low latency, and changes what `histogram.ts`'s own header is
+allowed to claim.
 
 ### M161
 
