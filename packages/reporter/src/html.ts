@@ -322,7 +322,7 @@ function renderMetricsSection(workload: LoadScenarioReport['workload'] | undefin
   <table class="stats">
     <tr><th>iterations</th><td>${metrics.iterations}</td><th>failures</th><td>${metrics.failures}</td><th>error rate</th><td>${(metrics.errorRate * 100).toFixed(2)}%</td></tr>
     ${metrics.assertions === null ? '' : `<tr><th>assertions</th><td colspan="5">${metrics.assertions}${metrics.assertions === 0 ? ' — this workload asserted nothing, so every figure above describes tflw sending requests rather than the target answering correctly' : ''}</td></tr>`}
-    <tr><th>min</th><td>${d.min}ms</td><th>avg</th><td>${Math.round(d.avg)}ms</td><th>max</th><td>${d.max}ms</td></tr>
+    <tr><th>min</th><td>${d.min}ms</td><th>avg</th><td>${d.avg}ms</td><th>max</th><td>${d.max}ms</td></tr>
     <tr><th>p50</th><td>${d.p50}ms</td><th>p90</th><td>${d.p90}ms</td><th>p95</th><td>${d.p95}ms</td><th>p99</th><td>${d.p99}ms</td></tr>
   </table>
   ${backOff?.warning ? `<p class="backoff-warning">⚠ your load backed off — an estimated ${(backOff.ratio * 100).toFixed(0)}% of this scenario's available VU time was lost to the target system slowing down; results understate real latency (coordinated omission, D17)</p>` : ''}

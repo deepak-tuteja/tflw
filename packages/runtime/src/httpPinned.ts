@@ -259,7 +259,8 @@ export async function sendPinnedRequest(opts: PinnedSendOptions, agents: KeepAli
         continue;
       }
 
-      const durationMs = Math.round(performance.now() - start);
+      // Unrounded, same contract as `http.ts` — see `M160`/`D807`.
+      const durationMs = performance.now() - start;
       const bodyText = bodyBytes.toString('utf8');
       const responseHeaders = buildHeaderMap(res.headers);
       let json: unknown;

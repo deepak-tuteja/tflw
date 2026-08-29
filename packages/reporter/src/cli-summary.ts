@@ -304,7 +304,11 @@ function metricsLines(metrics: LoadMetrics, c: typeof C): string[] {
 }
 
 function durationDigits(d: LoadDurationStats): string {
-  return `min ${d.min}  avg ${Math.round(d.avg)}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`;
+  // `M160`/`D809`: every field here is already the rendered value — `summarizeHistogram` applies
+  // the one rounding rule when it builds the report. `avg` used to be rounded right here, the
+  // only field that needed it because it was the only float; that local `Math.round` is gone
+  // rather than kept as a no-op, since below 10 ms it would round 0.37 back to 0.
+  return `min ${d.min}  avg ${d.avg}  p50 ${d.p50}  p90 ${d.p90}  p95 ${d.p95}  p99 ${d.p99}  max ${d.max}`;
 }
 
 /** M31 (D19/D28): the generator's own event-loop-lag/CPU reading, once per run (not per workload

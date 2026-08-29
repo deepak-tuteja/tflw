@@ -218,7 +218,10 @@ export async function sendRequest(opts: SendRequestOptions): Promise<ResponseTra
     // including replacement-character behavior on invalid UTF-8.
     const bodyBytes = Buffer.from(await res.arrayBuffer());
     const bodyText = bodyBytes.toString('utf8');
-    const durationMs = Math.round(performance.now() - start);
+    // `M160`/`D807`: unrounded. This value reaches the latency histogram, `threshold pNN`
+    // and `expect duration`, all of which are built for precision `Math.round` destroys —
+    // at a 0.4 ms response the rounding error was 100%. Render-time rounding is `D809`.
+    const durationMs = performance.now() - start;
     const headers = buildHeaderMap(res.headers);
     let json: unknown;
     try {

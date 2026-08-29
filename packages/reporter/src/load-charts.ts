@@ -4,6 +4,7 @@
 // 40-100KB of third-party JS in every self-contained artifact. Every function here is pure (data
 // in, an SVG string out) — easy to unit-test the geometry directly without parsing HTML.
 
+import { formatDurationMs } from '@tflw/runtime';
 import type { HistogramBucket, TimelinePoint } from '@tflw/runtime';
 import { esc } from './escape.js';
 
@@ -23,6 +24,9 @@ function scale(value: number, domainMin: number, domainMax: number, rangeMin: nu
   return rangeMin + t * (rangeMax - rangeMin);
 }
 
+/** SVG geometry only — coordinates, widths, heights. Durations do **not** come through here:
+ * they use `D809`'s `formatDurationMs`, because `toFixed(1)` would render `M160`'s whole point
+ * (a 0.37 ms sample) as `0.4`. */
 function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
@@ -129,7 +133,7 @@ export function renderHistogramChart(buckets: readonly HistogramBucket[]): strin
       const barHeight = scale(b.count, 0, maxCount, 0, HEIGHT - PAD_TOP - PAD_BOTTOM);
       const x = PAD_LEFT + i * barWidth;
       const y = baseline - barHeight;
-      return `<rect class="series-histogram" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(Math.max(0.5, barWidth - 1))}" height="${fmt(barHeight)}"><title>${fmt(b.value)}ms × ${b.count}</title></rect>`;
+      return `<rect class="series-histogram" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(Math.max(0.5, barWidth - 1))}" height="${fmt(barHeight)}"><title>${formatDurationMs(b.value)}ms × ${b.count}</title></rect>`;
     })
     .join('\n    ');
 
