@@ -6505,6 +6505,26 @@ It is currently an implementation helper that happens to be right. It becomes th
 in `SPEC` §7 as a table — date -> ISO-8601 UTC, null -> `null`, number/boolean -> JS default,
 object/array -> JSON, string -> itself — and every consumer is checked against it.
 
+### D814
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+
+**D814 — `hex encode` emits lowercase, in `SPEC`**
+
+The sentence `M154c-02` was filed for. Lowercase is what ships, what `Buffer` produces and what
+every consumer has, so the content is not in doubt — the row was filed because *choosing* it is a
+decision and a plant quietly promoting an implementation detail to a contract is how a spec gap
+becomes invisible.
+
+### D815
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+
+**D815 — the `unique` family is keyed correctly across every boundary it crosses**
+
+Two defects, one rule: an index only means something inside the space it was minted for, and
+`unique` currently crosses two boundaries without saying so.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -8957,7 +8977,7 @@ purpose.
 
 ### M161
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
 
 **`M161` — one string form for a value, stated once**
 
