@@ -122,7 +122,8 @@ export async function runMtlsWorkerProcess(): Promise<void> {
         }
         const bodyBytes = Buffer.from(await res.arrayBuffer());
         const bodyText = bodyBytes.toString('utf8');
-        const durationMs = Math.round(performance.now() - start);
+        // Unrounded, same contract as `http.ts` — see `M160`/`D807`.
+        const durationMs = performance.now() - start;
         const headers: Record<string, string> = {};
         res.headers.forEach((value, key) => {
           headers[key] = value;

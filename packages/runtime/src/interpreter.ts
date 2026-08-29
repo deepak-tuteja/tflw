@@ -44,6 +44,7 @@ import type {
 } from '@tflw/lang';
 import { evalValue, interpolatePath, navigate, resolveRef, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
+import { formatDurationMs, roundDurationMs } from './duration.js';
 import { evalUiMatcherOnce } from './uiMatcher.js';
 import { runA11yScan } from './a11y.js';
 import { filterBySeverity, SEVERITY_RANK, type Finding } from './finding.js';
@@ -390,6 +391,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     const tick = (): void => {
       const iterations = accumulators.reduce((n, acc) => n + acc.histogram.count, 0);
       const failures = accumulators.reduce((n, acc) => n + acc.failures, 0);
+      // Progress tick, rounded (`D807`): a live counter redrawn a few times a second for a
+      // human. Sub-millisecond elapsed time has no reader here.
       opts.onProgressTick!({ iterations, failures, elapsedMs: Math.round(performance.now() - runStart), selfDiagnosis: selfDiag.peek() });
     };
     progressTimer = setInterval(tick, 1000);
@@ -579,6 +582,9 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     if (opts.abortSignal?.aborted) {
       const plannedMs = Math.max(0, ...scenarios.map((s) => totalDurationMs(s.workload) ?? 0));
       aborted = true;
+      // Whole-run wall clock, rounded and staying rounded (`D807`): a load run's own elapsed
+      // time is reported to a human against a planned duration in seconds. Nothing resolves it
+      // below a millisecond, and the precision `M160` bought lives in the per-iteration figure.
       abortedMessage = formatAbortedMessage(Math.round(performance.now() - runStart), plannedMs);
     }
     // Phase 2b (D111): `opts.shard` set means this call's contribution is only *part* of the
@@ -596,6 +602,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     ok: results.every((r) => r.ok),
     env: config.envName,
     startedAt,
+    // Whole-run wall clock — rounded, see `D807`.
     durationMs: Math.round(performance.now() - runStart),
     total: results.length,
     passed,
@@ -1071,14 +1078,19 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
         }
       }
       const pauseMs = exec.steps.filter((s) => s.kind === 'pause').reduce((sum, s) => sum + s.durationMs, 0);
-      result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, Math.round(performance.now() - iterStart - pauseMs)) };
+      // `M160`/`D807`: unrounded — this is the number `successHistogram` buckets and
+      // `threshold pNN duration` reads, so it is precision-critical in the same sense as the
+      // transport sites. `pauseMs` is still whole-millisecond (it sums `StepResult.durationMs`,
+      // which `D807` leaves rounded); a `pause` is authored in milliseconds at the finest, so
+      // that subtraction loses nothing this milestone was about.
+      result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, performance.now() - iterStart - pauseMs) };
     } catch (err) {
       const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
       // Pause time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
       // negligible skew: a failure that happens after a `pause` still counts that pacing time as
       // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
       // duration. Only successful iterations feed the duration percentiles that thresholds read.
-      result = { ok: false, scenario: scenario.name.value, durationMs: Math.round(performance.now() - iterStart), error: redactor.redact(message) };
+      result = { ok: false, scenario: scenario.name.value, durationMs: performance.now() - iterStart, error: redactor.redact(message) };
     }
     if (!result.ok) acc.failures++;
     acc.histogram.record(result.durationMs);
@@ -1362,6 +1374,8 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
     const tick = (): void => {
       const iterations = accumulators.reduce((n, acc) => n + acc.histogram.count, 0);
       const failures = accumulators.reduce((n, acc) => n + acc.failures, 0);
+      // Progress tick, rounded (`D807`): a live counter redrawn a few times a second for a
+      // human. Sub-millisecond elapsed time has no reader here.
       opts.onProgressTick!({ iterations, failures, elapsedMs: Math.round(performance.now() - runStart), selfDiagnosis: selfDiag.peek() });
     };
     progressTimer = setInterval(tick, 1000);
@@ -1429,7 +1443,23 @@ function deserializeHistogram(s: SerializedHistogram): LatencyHistogram {
 }
 
 function summarizeHistogram(h: LatencyHistogram): LoadDurationStats {
-  return { min: h.min, max: h.max, avg: h.avg, p50: h.percentile(50), p90: h.percentile(90), p95: h.percentile(95), p99: h.percentile(99) };
+  // `D809`: these seven numbers are the report's, and the report carries the *rendered* value.
+  // Before `M160` all but `avg` were integers by accident of the measurement site rounding, and
+  // `avg` (a mean, so always a float) was rounded ad hoc by each renderer instead. Rounding here
+  // makes it one rule in one place and keeps the JSON reproducible — a consumer diffing two runs
+  // must not have to decide whether `12.000000001` differs from `12` (the sibling's perf bands
+  // are exactly that consumer). The raw histogram is untouched: `serializeHistogram` still ships
+  // exact `min`/`max`/`sum` over IPC, so a merged sharded run and an unsharded one agree at full
+  // float precision, and thresholds below compare the raw percentile, never this one.
+  return {
+    min: roundDurationMs(h.min),
+    max: roundDurationMs(h.max),
+    avg: roundDurationMs(h.avg),
+    p50: roundDurationMs(h.percentile(50)),
+    p90: roundDurationMs(h.percentile(90)),
+    p95: roundDurationMs(h.percentile(95)),
+    p99: roundDurationMs(h.percentile(99)),
+  };
 }
 
 /** M32 (R3/R4) — shapes one accumulated histogram+timeline into a full `LoadMetrics`, used for
@@ -1495,8 +1525,15 @@ function evaluateThresholds(
           : null;
     const baseLabel = t.metric.kind === 'errorRate' ? 'error rate' : `p${t.metric.percentile} duration`;
     const label = scope !== undefined ? `${baseLabel} for "${scope}"` : baseLabel;
+    // `D810`/`D809` together: **compare the raw percentile, report the rounded one.** The
+    // comparison is the whole point of `M160` — a 0.6 ms p95 must satisfy `< 1ms`, which it could
+    // not when the measurement arrived pre-rounded to 1. The reported `actual` is `D809`'s
+    // rendered value so the JSON stays diffable. The two rules meet at a visible edge worth
+    // knowing about: a p95 of 99.6 ms against `< 100ms` passes and reports `actual: 100`, which
+    // reads as `100 < 100`. That is the honest cost of rounding at the boundary rather than at
+    // the measurement, and it is bounded by half a millisecond.
     const ok = actual === null ? false : t.op === 'lessThan' ? actual < t.value : actual > t.value;
-    return { label, op: t.op, target: t.value, actual, ok };
+    return { label, op: t.op, target: t.value, actual: actual === null ? null : roundDurationMs(actual), ok };
   });
 }
 
@@ -2438,7 +2475,7 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
   // short-lived one) so a request that starts just under the wire doesn't land mid-flight on an
   // already-expired token.
   const expiresAt = expiresIn !== undefined ? Date.now() + Math.max(0, expiresIn * 1000 - Math.min(2000, expiresIn * 500)) : undefined;
-  const detail = `oauth2 token request → ${response.status} (${response.durationMs}ms)`;
+  const detail = `oauth2 token request → ${response.status} (${formatDurationMs(response.durationMs)}ms)`;
   return {
     headers: { Authorization: `Bearer ${accessToken}` },
     // M137b (D433) — always empty here, and structurally so rather than by omission: an `oauth2`
@@ -2537,6 +2574,8 @@ async function runFileHooks(
   results: ReportEntry[],
   emit: EventSink,
 ): Promise<boolean> {
+  // `D807`: every `durationMs` below is whole-millisecond and stays that way. A file-hook
+  // batch is reported to a human in a test list; no percentile or threshold reads it.
   if (hooks.length === 0) return true;
   const scope = new Map<string, unknown>();
   const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
@@ -2583,6 +2622,8 @@ async function runTest(
   cells: readonly RowCell[] | null,
   sessionOwnership: ReadonlyMap<string, boolean> | undefined,
 ): Promise<TestResult> {
+  // `D807`: `durationMs` here is whole-millisecond wall clock for one test, reported to a
+  // human and to JUnit. Not precision-critical — see `http.ts` for the sites that are.
   // Resolve session ownership once for the whole test, not once per retry attempt (decision 68) —
   // otherwise a fresh `claimShown` call on every attempt hands the one-time "shown" slot to
   // whichever attempt happens to call `ensure()` first, which is never guaranteed to be the last
@@ -2632,6 +2673,8 @@ async function runTestAttempt(
   isFirstAttempt: boolean,
   sessionOwnership: ReadonlyMap<string, boolean> | undefined,
 ): Promise<TestResult> {
+  // `D807`: whole-millisecond, on every exit path below. One test attempt is a human-scale
+  // span; the milestone that unrounded latency deliberately left this alone.
   const scope = new Map<string, unknown>();
   const nameCtx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
   const testStart = performance.now();
@@ -2728,6 +2771,7 @@ async function runTestAttemptBody(
   steps: StepResult[],
   browserPageState: BrowserPageState | undefined,
 ): Promise<TestResult> {
+  // `D807`: whole-millisecond on every exit path below, same reason as `runTestAttempt`.
   // Several independent, unrelated sessions can be opted into at once (`as admin, userA`) — each
   // one's headers/cookies fold into this test's starting state in declared order, later-listed
   // session winning any header/cookie-name conflict against an earlier one (same "later source
@@ -2812,6 +2856,7 @@ async function runTestAttemptBody(
  * two different things in two places, which is the cost `D432` avoided by reusing the syntax at all.
  */
 async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCtx, traffic: readonly RequestTrace[]): Promise<CrawlResult> {
+  // `D807`: whole-millisecond. A crawl is seconds-to-minutes work.
   const crawlStart = performance.now();
   const name = crawl.name.value;
   tc.emit({ type: 'test:start', name });
@@ -3004,6 +3049,7 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
     kind: 'crawl',
     name,
     ok: outcome.ok,
+    // Whole-crawl wall clock — rounded, see `D807`; a crawl is seconds-to-minutes work.
     durationMs: Math.round(performance.now() - crawlStart),
     steps,
     ...(outcome.error ? { error: outcome.error } : {}),
@@ -3226,7 +3272,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             // needs to see about *this* request belongs on this request's own line, not in a
             // separate diagnostic stream.
             const cookieSuffix = cookieScopeNote !== undefined ? `, ${cookieScopeNote}` : '';
-            result = mkStep('api', src, step.span, true, billFrom, `${step.method} ${redacted.request.url} → ${trace.response.status} (${trace.response.durationMs}ms)${retrySuffix}${cookieSuffix}`, redacted.request, redacted.response, apiStepIdentity(step));
+            result = mkStep('api', src, step.span, true, billFrom, `${step.method} ${redacted.request.url} → ${trace.response.status} (${formatDurationMs(trace.response.durationMs)}ms)${retrySuffix}${cookieSuffix}`, redacted.request, redacted.response, apiStepIdentity(step));
           } catch (err) {
             // Not opted in (no `request connects`/`fails` assertion follows this request, decision
             // 18.2) — rethrow unchanged, caught by this function's own outer `catch` below exactly
@@ -6224,6 +6270,10 @@ function mkStep(
     source,
     line: span.start.line,
     ok,
+    // Per-step duration — rounded, see `D807`. This is the one site where the split is
+    // arguable: unlike the other wall-clock spans a single step really can be sub-millisecond.
+    // It stays rounded because no percentile, threshold or assertion reads it — it is printed
+    // per step in the report and nowhere else. Recorded rather than silently decided.
     durationMs: Math.round(performance.now() - start),
     ...(detail ? { detail } : {}),
     ...(request ? { request } : {}),

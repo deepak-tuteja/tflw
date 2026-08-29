@@ -551,6 +551,34 @@ endpoint its finding names. All were found by *running* a repro or a crawl, not 
 - **A followed redirect now carries the cookies the chain itself set** — a login answered with a
   redirect was throwing away the session it had just been granted.
 
+### Fixed — latency carries a float, and rounding happens at render (M160)
+
+- **Durations are no longer rounded to a whole millisecond at the point of measurement**
+  (`D807`). `performance.now()` is sub-microsecond; `Math.round` at the five precision-critical
+  sites (`http.ts`, `httpPinned.ts`, `mtlsWorker.ts`, and both per-iteration load sites) discarded
+  that before the value reached any accumulator, so a request answering in 0.37 ms could only ever
+  be recorded as 0 or 1. Measured against k6 on the parity ladder, tflw reported p95s of
+  `1, 3, 12, 30, 31, 86` ms where k6 reported `0.37, 3.27, 11.74, 28.86, 29.74, 63.66`; it could
+  not resolve its own generator's overhead at all. The sixteen wall-clock spans (whole test, whole
+  run, crawl, contract compile, progress ticks) deliberately stay whole-millisecond.
+- **Rounding moved to the render boundary and now happens in exactly one place** (`D809`): at or
+  above 10 ms to a whole number — bit-for-bit what was printed before — and below 10 ms to two
+  significant digits, so that ladder now reports `0.37, 3.3, 12, 29, 30, 64`. The JSON report
+  carries these rendered values so a consumer diffing two runs never meets `12.000000001` where it
+  expects `12`. Histogram bucket keys are the one exception and stay at full precision: rounding
+  them would collapse 901 distinct buckets in the 10–100 ms range onto 91 keys.
+- **`expect duration is less than N` compares the unrounded value** (`D810`). This changes the
+  outcome for durations within half a millisecond of their bound, and it changes it in the
+  direction that removes a surprise: a 0.6 ms response now passes `is less than 1`, where before
+  it rounded to 1 and failed.
+- The precision contract moved into the two places that state contracts, since `durationMs` was
+  already typed `number` and TypeScript cannot notice this change (`D808`): `types.ts`'s field docs
+  now say "do not assume an integer", and `histogram.ts`'s header was rewritten. That header had
+  claimed its bucketing carried "~0.1% relative error" and that `min`/`max`/`avg` were "never
+  approximated". Both were wrong — the real bound is **0.5%**, and
+  the scalars were exact about numbers that had already lost up to 0.5 ms before the histogram saw
+  them. The header now states what the code does, and a test pins the bound.
+
 ### Fixed — one string form for a value, and `unique` across processes (M161)
 
 **`unique` was not distinct across forked load workers**, which `SPEC` §7.2 promises in as many

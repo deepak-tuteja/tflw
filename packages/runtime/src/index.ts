@@ -61,6 +61,8 @@ export { resolveImportedActions, resolveMissingFiles, checkConfigFiles, type Imp
 export { mergeSelfDiagnosis } from './selfDiagnosis.js';
 export { finalizeVerdict, noVerdictReason, type NoVerdictReason } from './run-verdict.js';
 export { shutdownMtlsWorker } from './mtlsWorker.js';
+// `M160`/`D809` — rounding at the render boundary, for every consumer that prints a duration.
+export { roundDurationMs, formatDurationMs } from './duration.js';
 export { resolveRunSeed, resolveRunClock } from './seed.js';
 export { BrowserManager, SUPPORTED_BROWSER_ENGINES, type BrowserEngine, type BrowserManagerOptions } from './browser.js';
 export { startPickSession, wirePickSession, type PickedLocator, type PickLocatorKind, type PickSessionHandle } from './browser.js';

@@ -4,11 +4,28 @@
 // samples, R4's own framing); a histogram is a few KB regardless of sample count and merges by
 // summing bucket counts — "no message passing" beyond that one small payload (D19).
 //
-// Values are bucketed to `precision` significant decimal digits (default 3, i.e. ~0.1% relative
-// error) — real HDR histograms make the exact same tradeoff for the exact same reason. Percentiles
-// therefore carry that bounded rounding error; `min`/`max`/`avg` are tracked as exact running
-// scalars alongside the buckets, so those three numbers are never approximated, only the
-// percentiles are. This is used uniformly by every scenario accumulator,
+// Values are bucketed to `precision` significant decimal digits (default 3) — real HDR histograms
+// make the exact same tradeoff for the exact same reason. The resulting relative error is at most
+// **0.5%**, not the ~0.1% this comment claimed until `M160`: `bucketFor` rounds to a magnitude of
+// `10^(floor(log10 v) - precision + 1)`, so the worst case is half that magnitude over `v`, which
+// is maximised as `v` approaches a decade boundary from above (measured: 0.4975% over 3M samples
+// spanning 0.01-10000 ms, at v = 1.005). Percentiles carry that bounded error.
+//
+// `min`/`max`/`avg` are tracked as exact running scalars alongside the buckets, so those three are
+// never approximated *by this class*. Until `M160` that was the whole of the claim and it was
+// misleading, because every caller handed us a value `Math.round`ed at the point of measurement:
+// the scalars were exact about a number that had already lost up to 0.5 ms. `D807` removed that
+// rounding at the five precision-critical sites, so the exactness claimed here is now the
+// exactness a reader actually gets. Two consequences worth knowing:
+//
+//   - Bucket keys are no longer whole numbers, and floating-point noise is visible in them
+//     (11.74 buckets to 11.700000000000001). Integer input never did this. Anything that renders
+//     a percentile must therefore round at the boundary — that is `D809`, and it is why the JSON
+//     report carries the rendered value rather than the raw float.
+//   - `bucketFor` needed no change to accept sub-millisecond input. It is magnitude-relative, so
+//     0.37 buckets to 0.370 exactly as 370 buckets to 370.
+//
+// This is used uniformly by every scenario accumulator,
 // single-process or sharded — single-process runs never need to merge anything, but they pay the
 // same (negligible, sub-millisecond-at-typical-latencies) bucketing cost so there is exactly one
 // code path for "how does a scenario accumulate durations," not two.
@@ -96,6 +113,18 @@ export class LatencyHistogram {
   /** Serializable snapshot for shipping across an IPC boundary (`LoadShardScenarioResult`) —
    * ascending by value so a receiving `fromBuckets` reconstructs a histogram whose `percentile()`
    * behaves identically without needing to re-sort. */
+  /** The bucket array, as it appears in `results.json`.
+   *
+   * **These keys stay raw — they are the one duration in the report `D809` does not round**, and
+   * the reason is arithmetic rather than taste. Bucketing to 3 significant digits spaces keys
+   * 0.1 apart between 10 ms and 100 ms (`10.0, 10.1, 10.2, …`), so `D809`'s ">= 10 ms rounds to an
+   * integer" rule would map ten distinct buckets onto one key: measured, 901 distinct keys in
+   * [10, 100) collapse to 91, and the array would carry duplicate keys with unmerged counts.
+   *
+   * That is not a rounding artifact, it is data loss, so the substrate keeps full precision and
+   * rounding happens where a bucket is *shown* — `load-charts.ts` renders each tooltip through
+   * `formatDurationMs`. The reported statistics (`durations`, and every `TimelinePoint`) are
+   * rounded at the point they are built, which is what `D809` is actually about. */
   toBuckets(): HistogramBucket[] {
     return [...this.buckets.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => a.value - b.value);
   }

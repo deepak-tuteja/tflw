@@ -99,6 +99,7 @@ import {
   type LoadProgressSnapshot,
   type AuthorizedTarget,
   type SelfDiagnosis,
+  formatDurationMs,
 } from '@tflw/runtime';
 import { spawn, fork, type ChildProcess } from 'node:child_process';
 import {
@@ -3162,7 +3163,10 @@ function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActio
   if (verbose && ev.type === 'test:start') return grouping ? `::group::${ev.name}` : ev.name;
   if (verbose && ev.type === 'step:end') {
     const label = ev.step.detail ?? ev.step.kind;
-    return `  ${tick(color, ev.step.ok)} ${label} (${ev.step.durationMs}ms)`;
+    // `D809` at the render boundary. `StepResult.durationMs` is still whole-milliseconds
+    // (`D807`), so this is a no-op today — it is here so the rule holds if that ever changes,
+    // and so no reader has to check which of the two is true.
+    return `  ${tick(color, ev.step.ok)} ${label} (${formatDurationMs(ev.step.durationMs)}ms)`;
   }
   if (ev.type === 'test:end') {
     // M88d (`B3-11`): a workload-bearing test emits a `test:start`/`test:end` pair now, but it
@@ -3174,7 +3178,7 @@ function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActio
     // progress line. The stream itself is unaffected: `--format ndjson` serializes `RunEvent`s
     // directly and never reaches `formatEvent`, and that consumer is the whole of the finding.
     if (ev.result.kind === 'workload') return undefined;
-    const durSuffix = verbose ? ` (${ev.result.durationMs}ms)` : '';
+    const durSuffix = verbose ? ` (${formatDurationMs(ev.result.durationMs)}ms)` : '';
     const closeGroup = grouping ? '\n::endgroup::' : '';
     if (!ev.result.ok) {
       // Always surfaced, live, regardless of `--verbose`/TTY color — a failing test's diff

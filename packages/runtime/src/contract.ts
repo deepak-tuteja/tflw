@@ -131,6 +131,8 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<{ doc
       for (const [name, schema] of Object.entries(schemas)) {
         ajv.addSchema(normalizeOpenApiSchema(schema) as object, `#/components/schemas/${name}`);
       }
+      // `D807`: whole-millisecond. This times schema compilation, reported once as a
+      // diagnostic; nothing percentile-shaped consumes it.
       return { ajv, durationMs: Math.round(performance.now() - start), schemaCount: Object.keys(schemas).length, document };
     })();
     // Cache the *in-flight* promise (that's the point — concurrent assertions share one fetch),

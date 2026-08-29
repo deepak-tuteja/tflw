@@ -7,6 +7,7 @@
 // p50/p95/p99 for that one second, not an approximation of one. `min`/`mean`/`max` are also kept as
 // exact running scalars per bucket, mirroring `LatencyHistogram` itself.
 
+import { roundDurationMs } from './duration.js';
 import { LatencyHistogram, type HistogramBucket } from './histogram.js';
 
 /** One second's worth of a scenario's (or the combined view's) iterations, ready to plot. */
@@ -102,12 +103,15 @@ export class Timeline {
         failures: b.failures,
         rps: b.count,
         errorRate: b.count === 0 ? 0 : b.failures / b.count,
-        min: b.count === 0 ? 0 : b.min,
-        mean: b.count === 0 ? 0 : b.sum / b.count,
-        max: b.count === 0 ? 0 : b.max,
-        p50: b.histogram.percentile(50),
-        p95: b.histogram.percentile(95),
-        p99: b.histogram.percentile(99),
+        min: b.count === 0 ? 0 : roundDurationMs(b.min),
+        mean: b.count === 0 ? 0 : roundDurationMs(b.sum / b.count),
+        max: b.count === 0 ? 0 : roundDurationMs(b.max),
+        // `D809`: the timeline is report JSON and a chart series, so it carries rendered values
+        // for the same reason `summarizeHistogram` does — a consumer diffing two runs should not
+        // meet `11.700000000000001` where it expects `11.7`.
+        p50: roundDurationMs(b.histogram.percentile(50)),
+        p95: roundDurationMs(b.histogram.percentile(95)),
+        p99: roundDurationMs(b.histogram.percentile(99)),
       }));
   }
 

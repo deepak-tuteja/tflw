@@ -1280,7 +1280,12 @@ itself, not the response).
 - `body.<path>`: dot/index addressing — `body.items[0].price`. On a non-JSON response, a
   JSON-path expect raises a teaching error pointing at `body text` (P#33).
 - `duration`: wall time of the request — `expect duration is less than 500ms`. A regression
-  tripwire, not perf testing (P#33).
+  tripwire, not perf testing (P#33). **Measured as a floating-point number of milliseconds and
+  compared unrounded** (`M160`, `D807`/`D810`): a 0.6 ms response satisfies `is less than 1`. Until
+  `M160` the measurement was rounded to a whole millisecond at the point it was taken, which
+  inverted exactly that case — 0.6 rounded to 1, and `1 < 1` is false, so the faster response
+  failed the bound it met. Durations are rounded only when they are *displayed*: at or above 10 ms
+  to a whole number, below 10 ms to two significant digits (`D809`).
 - `body text`: the raw response body as a string, for non-JSON (text/HTML/XML) responses —
   `expect body text contains "healthy"`. Implemented end-to-end in M2.65 (P#51):
   lexer/parser accept `body text` as a subject (`BodyTextSubject` AST node), the interpreter

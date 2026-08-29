@@ -236,6 +236,14 @@ export interface ResponseTrace {
   readonly bodyBytes: Buffer;
   /** Parsed JSON if the body parsed as JSON, else undefined. */
   readonly json?: unknown;
+  /** Wall-clock time for this request, milliseconds, **unrounded** (`M160`/`D807`).
+   *
+   * This is a float and consumers must treat it as one. It feeds the latency histogram,
+   * `threshold pNN duration` and `expect duration is …`, all of which are built for precision that
+   * `Math.round` at the measurement site destroyed — a 0.4 ms response could only be recorded as 0
+   * or 1. TypeScript cannot help here (it was `number` before and it is `number` now), so this
+   * sentence is the contract: **do not assume an integer**. Rounding belongs at render, once, via
+   * `D809`'s helper. */
   readonly durationMs: number;
   /** Where the chain actually ended — equal to the requested URL whenever nothing redirected.
    *
@@ -278,6 +286,11 @@ export interface StepResult {
   readonly source: string;
   readonly line: number;
   readonly ok: boolean;
+  /** Whole milliseconds — deliberately still rounded (`D807`). A single step really can be
+   * sub-millisecond, which makes this the one arguable site in that split; it stays rounded
+   * because it is printed per step in the report and read by no percentile, threshold or
+   * assertion. `pauseMs` in the load path sums these, which is why that subtraction is
+   * whole-millisecond too. */
   readonly durationMs: number;
   /** One-line human summary: `status = 200`, `orderId = 42 (captured)`, or a failure reason. */
   readonly detail?: string;
@@ -689,7 +702,12 @@ export interface LoadIterationResult {
   readonly scenario: string;
   /** Wall-clock duration of this iteration's steps, **excluding** any `pause` time (ast.ts's
    * `PauseStmt` doc: pacing is not system latency — including it would let a load test
-   * satisfy a duration threshold merely by sleeping more). */
+   * satisfy a duration threshold merely by sleeping more).
+   *
+   * **Unrounded** (`M160`/`D807`) — a float, for the same reason as `HttpResponse.durationMs`:
+   * this is what `successHistogram` buckets and what `threshold pNN duration` reads. The `pause`
+   * time subtracted from it is whole-millisecond (`StepResult.durationMs`), which costs nothing —
+   * a `pause` is authored in milliseconds at the finest. */
   readonly durationMs: number;
   readonly error?: string;
 }

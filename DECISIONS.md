@@ -6495,6 +6495,48 @@ be a copy with no guard, and `PHASE_GROUPS` is already held to `PHASES` by a par
 left the **count** in, and the count said `30` while `PHASES` held `38` — eight phases arriving
 across six milestones with nothing anywhere able to notice. Seven occurrences across four files.
 
+### D807
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D807 — the five precision-critical sites carry a float; the sixteen wall-clock sites do not**
+
+`durationMs` becomes an unrounded `number` at those five sites only. The remaining sixteen keep
+`Math.round`, and the reason is stated at each: they measure a span no consumer resolves below a
+millisecond, and a `durationMs: 4823.917261` in a test result is noise wearing precision.
+
+### D808
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D808 — the type does not change; the contract in the comment does**
+
+`durationMs` is already `number`. TypeScript will not notice this milestone, which means nothing
+mechanical will catch a consumer that assumed an integer. So the invariant moves into the two places
+that state contracts: `types.ts`'s field doc, and `histogram.ts`'s header, which stops claiming
+exactness it does not have and starts claiming the one it will.
+
+### D809
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D809 — rendering rounds, and every renderer rounds the same way**
+
+One helper, one rule, applied at every point a duration becomes text or JSON:
+
+- **`>= 10 ms` -> integer.** Nothing below the first decimal matters at that scale.
+- **`< 10 ms` -> two significant digits** (`0.37`, `3.3`).
+
+### D810
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**D810 — `expect duration is less than N` compares the float**
+
+The comparison uses the unrounded value. A 0.6 ms request currently passes `is less than 1`
+(rounds to 1, and 1 < 1 is false — it currently **fails**) — that inversion is exactly the class of
+surprise this milestone removes.
+
 ### D813
 
 <sub>cited from SPEC.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
@@ -8974,6 +9016,21 @@ is not a smaller version of the rejected daytime-trigger design (`D755`); it is 
 with none of its parts. There is no notification, no approval, no eviction and no unattended code,
 because there is **no trigger at all** — the run rides something a developer already invokes on
 purpose.
+
+### M160
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**`M160` — latency carries a float; rounding happens at render**
+
+**Status:** **`M160a`-`M160c` built 2026-08-29**, suite green on the box (3748 tests). `M160d`
+(the sibling half, `D811`) is outstanding behind `D511`'s merge order. **Not breaking** to any
+`.tflw` program. **Changes every reported number** at low latency, and changes what
+`histogram.ts`'s own header is allowed to claim.
+**Closes:** `M154f-13` (S3).
+**Numbering:** takes `D807`–`D811`. Next free after this plan: **`D812`**. Mints no `TF` code.
+Sibling work gated on `D511` (tflw merges first).
+Gitignored by `.gitignore:35`.
 
 ### M161
 
