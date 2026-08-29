@@ -45,11 +45,14 @@ export interface CompletionSources {
 // come from `spec-data.ts`'s `STEP_KEYWORDS`, which carries the `detail` text with them and is held
 // to the parser's own lists by `stepKeywords.test.ts` (D277) — so the copy that used to need
 // manual syncing against every browser-arc and load-testing addition cannot silently fall behind
-// one any more. Retired spellings (`think`, `uncheck`) stay out by construction: the manifest never
-// held them.
+// one any more. Retired spellings (`think`, `uncheck`, `cleanup`) stay out by construction: the
+// manifest never held the first two, and `M157c` deleted the third's row in the same commit that
+// retired the keyword — which is `D724`'s rule (*no construct without a row*) read in the direction
+// it is usually not: the row goes when the construct does, and the completion list follows for free
+// rather than needing its own edit.
 //
-// Still deliberately flat and container-blind. `ramp`/`hold`/`step`/`spike`/`run`/`threshold`/
-// `cleanup` are dispatched by `parseTestBody`'s own loop *before* `parseStep()` is ever reached and
+// Still deliberately flat and container-blind. `ramp`/`hold`/`step`/`spike`/`run`/`threshold`
+// are dispatched by `parseTestBody`'s own loop *before* `parseStep()` is ever reached and
 // are not `Step` productions at all, but a partial word typed at that exact cursor position falls
 // through to `parseStep()`'s completion gate anyway, so `kind: 'step'` is what a user typing inside
 // any `test` body actually gets. Offering them here is the same over-broad-but-harmless tradeoff

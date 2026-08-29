@@ -1,7 +1,7 @@
 // Resolve a parsed tflw.config into the concrete settings the interpreter runs against:
 // active-env selection (P#28), defaults+env merge, per-service base URLs (P#29).
 
-import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern } from '@tflw/lang';
+import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern, TeardownLevel } from '@tflw/lang';
 import { DEFAULT_TIMEOUTS, type AuthorizedTarget, type ResolvedConfig, type ResolvedHeader, type ResolvedTimeouts } from './types.js';
 
 export class ConfigError extends Error {
@@ -56,6 +56,10 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   let allowHosts: string[] | null = null;
   const authorizedTargets: AuthorizedTarget[] = [];
   let evidenceLevel: EvidenceLevel = 'full';
+  // `D781` — `always` is the default, and it is the whole milestone: a workload's `after` hooks used
+  // to run only for a test carrying a `cleanup` line, and even then not on the iterations that
+  // failed. The safe behaviour is now the one you get without writing anything.
+  let teardown: TeardownLevel = 'always';
   const redactPatterns: RedactPattern[] = [];
   let viewport: { width: number; height: number } | null = null;
   let logDestination: LogDestination | 'none' = 'both';
@@ -120,6 +124,9 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
           break;
         case 'EvidenceDecl':
           evidenceLevel = entry.level;
+          break;
+        case 'TeardownDecl':
+          teardown = entry.level;
           break;
         case 'RedactDecl':
           redactPatterns.push(...entry.patterns);
@@ -192,6 +199,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     // overlays the real values.
     allowPublicTargets: [],
     evidenceLevel,
+    teardown,
     redactPatterns,
     viewport,
     logDestination,

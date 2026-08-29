@@ -2997,8 +2997,8 @@ const REGISTRY = [
     milestone: 'm147e',
     file: 'packages/lang/src/parser.ts',
     what: "`M106-02` verbatim, at the rule rather than at the helper: the span is read at the *error site*, where `endLine()` has run and `peek()` is the first token of whatever comes next — the phantom last line for a file that ends there. This is the shape the helper exists to prevent, and mutating the helper does not reproduce it: called before `endLine()`, even `peek()` is still on the header line",
-    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
-    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], body: [] };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], body: [] };",
   },
   {
     id: 'lsp-loses-the-header-anchor',
@@ -3006,8 +3006,8 @@ const REGISTRY = [
     pkg: '@tflw/lsp-server',
     file: 'packages/lang/src/parser.ts',
     what: "`M106-01` reopened in the editor, and the reason this entry names a *different* suite than the identical edit above: the row is an agreement between two surfaces, so the failure only appears where both are read. With `test`'s empty-block rule anchoring past its construct again, the LSP publishes a range on the phantom last line while the CLI caret walks back to the header — `M140-3`'s measurement, which no test in either package could see",
-    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
-    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], cleanup: false, body: [] };",
+    find: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, headerSpan, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], body: [] };",
+    replace: "      this.error(Codes.EMPTY_BLOCK, `this \\`${context}\\` has no steps`, this.peek().span, `indent at least one step under the \\`${context}\\` line`);\n      return { workload: null, thresholds: [], body: [] };",
   },
 
   // --- M147f (`M146-01`) ---------------------------------------------------------------------

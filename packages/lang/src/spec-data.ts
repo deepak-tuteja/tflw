@@ -188,7 +188,7 @@ export interface StepKeywordEntry {
  * are what a user types at the same cursor position, so completion has always offered them, and
  * D277's parity assertion needs them to have a name to be asserted against. FS-06: leading here
  * reserves nothing, so `run checkout("1")` stays a callable action. */
-export const WORKLOAD_DIRECTIVES = ['ramp', 'hold', 'step', 'spike', 'run', 'threshold', 'cleanup'] as const;
+export const WORKLOAD_DIRECTIVES = ['ramp', 'hold', 'step', 'spike', 'run', 'threshold'] as const;
 
 export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
   { id: 'api', family: 'api', syntax: '`api [<service>] <METHOD> <target> [body …] [timeout <dur>] [without redirects]`', summary: 'issue one HTTP request; `<target>` is a path against the env base URL or an absolute URL', example: '`api POST /orders body { name: "Widget", qty: 1 }`' },
@@ -227,7 +227,6 @@ export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
   { id: 'spike', family: 'workload', syntax: '`spike users` / `spike rps` + indented `hold N for <dur>` / `to N over <dur>` lines', summary: 'a baseline → burst → recovery shape, mixing flat and ramped stages in any order', example: '`spike rps`' },
   { id: 'run', family: 'workload', syntax: '`run N iterations [per user] across M users`', summary: 'count-bounded load with no duration; the count is exact and independent of `--workers`', example: '`run 500 iterations across 10 users`' },
   { id: 'threshold', family: 'workload', syntax: '`threshold <metric> is less than <value>`', summary: "the pass/fail rule for a workload-bearing test — decided once, after the run, against the run's aggregate metrics", example: '`threshold p95 duration is less than 800ms`' },
-  { id: 'cleanup', family: 'workload', syntax: '`cleanup` + an indented block', summary: 'steps that run once after a workload finishes, whatever its verdict', example: '`cleanup`' },
 ] as const;
 
 /** One CLI flag, entered by hand (decision 16.4 — `cli.ts`'s arg parsing has nothing to
@@ -324,7 +323,8 @@ export const CONFIG_KEYWORDS: readonly ConfigKeywordEntry[] = [
   { id: 'key', slot: 'key', summary: 'the private key belonging to `cert`' },
   { id: 'allow', slot: 'key', summary: '`allow hosts "…"` — the hosts a run may talk to at all; anything else is refused before a request is made' },
   { id: 'authorized', slot: 'key', summary: '`authorized target "<url>" reason "<text>"` — written permission for the security scans to probe that target (D21)' },
-  { id: 'evidence', slot: 'key', summary: 'how much of each request and response the report keeps: `full`, `headers-only` or `none`' },
+  { id: 'evidence', slot: 'key', summary: 'how much of each request and response the report keeps: `full`, `headers only` or `none`. `--evidence full|headers-only|none` overrides it for one run' },
+  { id: 'teardown', slot: 'key', summary: "when a workload's `after` hooks run after an iteration: `always`, `on success` or `never` — after all of them, only after the ones that passed, or after none. Anything but `always` leaves that run's data in place for investigation and skips those hooks' own assertions with it; `on success` reads the *iteration's* verdict, not the run's thresholds. `--teardown` overrides it for one run" },
   { id: 'redact', slot: 'key', summary: 'body paths, headers and query parameters whose values never reach a report or a log' },
   { id: 'viewport', slot: 'key', summary: 'the browser window size every browser test starts at' },
   { id: 'log', slot: 'key', summary: '`log level`/`log destination` — how much the run says, and where it says it' },
@@ -546,6 +546,7 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--verbose`', command: 'run', effect: 'additionally prints one line per step (pass or fail); buffered per-file under `--parallel > 1` so concurrent files never interleave (`--workers` is the unrelated load-generation axis and has no effect here)' },
   { flag: '`--forbid-insecure`', command: 'run', effect: 'CI policy gate — fails before any test runs if `insecure true` is active for the env actually running' },
   { flag: '`--evidence <level>`', command: 'run', effect: 'overrides `tflw.config`\'s `evidence` key (`full`/`headers-only`/`none`) for this run only' },
+  { flag: '`--teardown <level>`', command: 'run', effect: 'overrides `tflw.config`\'s `teardown` key (`always`/`on-success`/`never`) for this run only — hyphenated here, two bare words in the config (`D628`)' },
   { flag: '`--allow-public-target <origin>`', command: 'run', effect: 'affirms that an **originating** scan (`authorization violations`) may point at a host outside the private address ranges — `TF065`. Repeatable, one origin each (scheme + host + port), and it must match an `authorized target` this env declares. **Has no `tflw.config` key by design** (D21 §3.2(3), M131a/D340): the declaration layer lives in config, and this is the layer that makes it impossible for a committed config to send CI at the internet on its own. A `security violations` scan needs no flag — it only inspects a response the suite already asked for' },
   { flag: '`--failed`', command: 'run', effect: 'replays only the previous run\'s failing tests (state in `report/.last-run.json`); falls back to the full suite with a note if nothing failed last time' },
   { flag: '`--bail`', command: 'run', effect: 'stops after the first failing test\'s final (post-retry) verdict; under `--parallel > 1`, in-flight files still finish (the file pool stops pulling new work, it does not abort a running file)' },

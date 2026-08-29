@@ -100,7 +100,8 @@ export interface ActionDecl extends Node {
 /** A `test "…" { … }` block — functional or workload-bearing, distinguished only by
  * `workload !== null` (M50, D93-D95). Before M50 these were two separate keywords/AST node
  * types (`test`/`TestDecl` vs `scenario`/`ScenarioDecl`); `scenario` carried a mandatory
- * `workload` plus its own `thresholds`/`cleanup`, and forbade `retry`/`table` (checker-enforced,
+ * `workload` plus its own `thresholds` (and a `cleanup` flag, retired by `M157c`), and forbade
+ * `retry`/`table` (checker-enforced,
  * D96). Collapsing them removed an entire keyword and AST node type — nothing else in the
  * grammar distinguished a load test from a functional one, so the workload clause's presence is
  * now the only signal (D94). */
@@ -129,10 +130,6 @@ export interface TestDecl extends Node {
    * run, against the run's accumulated metrics. Order in source is preserved for report display
    * but has no semantic effect. Empty unless `workload` is set (formerly `ScenarioDecl.thresholds`). */
   readonly thresholds: readonly ThresholdDecl[];
-  /** `cleanup` (D26) — opts back into running this file's `after each` hooks after *every*
-   * iteration of a workload-bearing test. Default `false`; meaningless when `workload` is null
-   * (formerly `ScenarioDecl.cleanup`). */
-  readonly cleanup: boolean;
   /** `parallel`/`sequential` (D105-D107) — this test's execution relation to *other* tests in the
    * same file, checked right after `retry` on the header line. Always present (never inferred
    * downstream): the parser resolves the default itself. `'sequential'` (the default) blocks the
@@ -1665,6 +1662,7 @@ export type ConfigEntry =
   | AllowHostsDecl
   | AuthorizedTargetDecl
   | EvidenceDecl
+  | TeardownDecl
   | RedactDecl
   | ViewportDecl
   | LogDestinationDecl
@@ -1809,6 +1807,30 @@ export type EvidenceLevel = 'full' | 'headers-only' | 'none';
 export interface EvidenceDecl extends Node {
   readonly type: 'EvidenceDecl';
   readonly level: EvidenceLevel;
+}
+
+export type TeardownLevel = 'always' | 'on-success' | 'never';
+
+/** `teardown always|on success|never` (`M157d`, `D783`) — when a workload's `after` hooks run
+ * after an iteration: after all of them, only after the ones that passed, or after none. Overrides
+ * like `evidence`/`insecure` (env wins over `defaults`), and `--teardown` overrides this at the CLI
+ * for one run. Default `'always'` (`D781`).
+ *
+ * **Workload-only** (`D784`). Functional `after` hooks run unconditionally whatever this says: the
+ * key exists for forensic access to a load run's residue, and letting a config key switch off
+ * inter-test isolation is a different and much worse power than the one being added.
+ *
+ * The tree carries `'on-success'` while the source spells it `on success` — two bare words, no
+ * hyphen, because this language has zero hyphenated bare keywords (`D628`/`M134a`). That is
+ * `EvidenceLevel`'s arrangement exactly, where `headers only` carries as `'headers-only'`.
+ *
+ * `on success` reads the **iteration's** verdict, never the run's. A breached `threshold` is a
+ * run-level verdict decided after every iteration has finished, and therefore after teardown has
+ * already run; covering that would need teardown deferred and buffered, which is a different
+ * mechanism rather than a fourth value. */
+export interface TeardownDecl extends Node {
+  readonly type: 'TeardownDecl';
+  readonly level: TeardownLevel;
 }
 
 /** `log destination console|html|both` (M27, PLAN_LOG.md decision 116; bare keywords since

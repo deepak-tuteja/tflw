@@ -50,6 +50,20 @@ export function renderCliSummary(report: RunReport, color = true): string {
   // M118 (`FU-04`, D202), same principle: this run proved something about tflw's own demo service
   // and nothing whatsoever about the reader's system. The quickstart's whole job is to produce a
   // green run in an empty directory, which makes it the one green run that must never be quotable.
+  // `D785` (`M157d`) — any teardown level but `always` announces itself, on every run, on the
+  // advisory channel (never the exit code). A config key is a footgun a flag is not: set to debug
+  // one afternoon, committed, and every subsequent run leaks in silence. The line carries the
+  // **count**, not just the mode — `0 of 8000` tells the operator the setting cost them nothing
+  // this time, which is the whole reason to look. `M126`'s rule: the denominator is on the line.
+  if (report.teardown) {
+    const t = report.teardown;
+    const iters = `${t.iterations} iteration${t.iterations === 1 ? '' : 's'}`;
+    lines.push(
+      t.level === 'never'
+        ? `${c.dim}ℹ teardown: disabled (\`teardown never\`) — ${iters} left their data in place${c.reset}`
+        : `${c.dim}ℹ teardown: on success — ${t.skipped} of ${iters} failed and left their data in place${c.reset}`,
+    );
+  }
   if (report.demo) lines.push(`${c.dim}ℹ demo: this run targeted tflw's built-in demo service, not a service of yours — point \`api\` at your own in tflw.config${c.reset}`);
   // `A12-01`, same principle one row down: a value declared secret but too short to substring-mask
   // safely (decision 64's `MIN_REDACTABLE_LENGTH`) ships in the clear. The floor is deliberate; the

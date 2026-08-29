@@ -887,6 +887,13 @@ interface ScenarioAccumulator {
    * the recording code on workload type). */
   early: { count: number; sum: number };
   late: { count: number; sum: number };
+  /** `D785` — iterations whose `after` hooks did **not** run *because of the teardown level*, so
+   * the summary line can name the count and not just the mode. Counted only where the level is the
+   * reason: an iteration whose `before` hook failed also skips teardown, but for `D781`'s reason
+   * (nothing was set up), and attributing that to the operator's setting would be a false number in
+   * the one line whose whole job is to be a true one. Zero unless the file declares an `after`
+   * hook, since a run with none has nothing the level could have skipped. */
+  teardownSkipped: number;
   /** M43 (D67-D69, R6's per-endpoint axis) — keyed by `apiStepIdentity` (explicit tag or automatic
    * `METHOD path.raw`); filled in as identities are first seen during the run, not pre-seeded from
    * `scenario.body` (a scenario can end every iteration early on a failure before reaching a later
@@ -920,6 +927,7 @@ function newScenarioAccumulator(scenario: LoadTest): ScenarioAccumulator {
     assertions: 0,
     early: { count: 0, sum: 0 },
     late: { count: 0, sum: 0 },
+    teardownSkipped: 0,
     endpoints: new Map(),
   };
 }
@@ -1090,16 +1098,47 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       // staying `undefined`: no body ran, so there is no body time to attribute.
       bodyMs = performance.now() - bodyStart;
       iterSteps = exec.steps;
-      if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
-      // D26: `after each` is skipped by default per iteration under load (running it every
-      // iteration would double request volume and pollute the very latency metrics this run
-      // exists to measure) — `cleanup` (ast.ts) opts a scenario back into it.
-      if (scenario.cleanup) {
+      // `D781` (`M157b`) — teardown runs after **every** iteration, passing or failing, exactly as
+      // `before` hooks already do. This supersedes `D26`, which gated it behind a `cleanup` keyword
+      // and justified the gate as metric protection; `D782` above is what that protection was
+      // actually reaching for, and `PLAN_M157` §2.4 measured the gate itself as inoperative.
+      //
+      // The old shape threw on `!exec.ok` one line up, which put the whole `afterEach` loop behind
+      // a failing body: a run at a 5% error rate cleaned up after 95% of its iterations and leaked
+      // on precisely the 5% worth investigating. Failure is now carried as a value through the
+      // hooks and thrown afterwards — line-for-line the functional path's own shape (`:2823-2834`),
+      // which never had this bug because it never had the gate.
+      //
+      // A **`before`-hook** failure still skips teardown, and deliberately: it throws above, before
+      // the body starts, so nothing was set up and there is nothing to tear down. That is the rule
+      // `:421`/`:558` already hold for the `file` scope, and the functional path holds it too.
+      let ok = exec.ok;
+      let error = exec.error;
+      // `D783` (`M157d`) — the level's predicate sits exactly where `D781` removed `cleanup`'s
+      // gate, so the three modes cost one branch rather than new control flow. `on success` reads
+      // **this iteration's** verdict and nothing else: a breached `threshold` is a run-level
+      // judgement made after every iteration has finished, and therefore after teardown has
+      // already run.
+      //
+      // Written as *"runs unless a level says otherwise"* rather than *"runs when the level is
+      // `always`"*, and the difference is not style. `ResolvedConfig.teardown` is a required field,
+      // so the only way it arrives unset is a hand-built config — which every test-support harness
+      // in this repository is. Under the positive form an unset field silently meant `never`, which
+      // is precisely the inversion `D781` exists to remove, reintroduced one layer down. Caught by
+      // `M157a`'s own `after`-hook test going red for that reason and not for its own.
+      const teardownRuns = config.teardown === 'never' ? false : config.teardown === 'on-success' ? exec.ok : true;
+      if (afterEach.length > 0 && !teardownRuns) acc.teardownSkipped++;
+      if (teardownRuns) {
         for (const hook of afterEach) {
           const afterExec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
-          if (!afterExec.ok) throw new RuntimeError(afterExec.error ?? 'an `after` hook failed');
+          if (!afterExec.ok) {
+            ok = false;
+            const afterError = afterExec.error ?? 'an `after` hook failed';
+            error = error ? `${error}\n${afterError}` : afterError;
+          }
         }
       }
+      if (!ok) throw new RuntimeError(error ?? 'a step failed');
       const pauseMs = exec.steps.filter((s) => s.kind === 'pause').reduce((sum, s) => sum + s.durationMs, 0);
       // `M160`/`D807`: unrounded — this is the number `successHistogram` buckets and
       // `threshold pNN duration` reads, so it is precision-critical in the same sense as the
@@ -1835,12 +1874,12 @@ function formatAbortedMessage(elapsedMs: number, plannedMs: number): string {
  * It used to have a third, `buildLoadReport`, which M91a deleted along with `runLoad` (review
  * finding `B3-06`): a single-process `LoadReport` had no production caller once M56 routed the
  * shipped path through `runProgramInner`. */
-function finalizeScenario({ scenario, histogram, successHistogram, timeline, failures, assertions, early, late, endpoints }: ScenarioAccumulator): LoadScenarioReport {
+function finalizeScenario({ scenario, histogram, successHistogram, timeline, failures, assertions, early, late, teardownSkipped, endpoints }: ScenarioAccumulator): LoadScenarioReport {
   const metrics = buildLoadMetrics(histogram, successHistogram, failures, timeline, assertions);
   const thresholdResults = evaluateThresholds(scenario.thresholds, { histogram, successHistogram, failures }, endpoints);
   const backOff = computeBackOff(scenario, early, late);
   const endpointReports = buildLoadReportEndpoints(scenario, endpoints);
-  return { name: scenario.name.value, workload: workloadOf(scenario.workload), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}) };
+  return { name: scenario.name.value, workload: workloadOf(scenario.workload), metrics, thresholds: thresholdResults, ok: thresholdResults.every((t) => t.ok), endpoints: endpointReports, ...(backOff ? { backOff } : {}), ...(teardownSkipped > 0 ? { teardownSkipped } : {}) };
 }
 
 /** M31 (D19) — runs one shard's striped share of every `scenario` in the file (`opts.shard`
@@ -1853,7 +1892,7 @@ function finalizeScenario({ scenario, histogram, successHistogram, timeline, fai
  * Phase 2b/D111) can produce the exact same shape for its own shard-0 contribution when
  * `opts.shard` is set, without duplicating this mapping. */
 function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], selfDiagnosis: SelfDiagnosis): LoadShardResult {
-  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, successHistogram, timeline, failures, assertions, early, late, endpoints }) => ({
+  const scenarios: LoadShardScenarioResult[] = accumulators.map(({ scenario, histogram, successHistogram, timeline, failures, assertions, early, late, teardownSkipped, endpoints }) => ({
     name: scenario.name.value,
     workload: workloadOf(scenario.workload),
     iterations: histogram.count,
@@ -1861,6 +1900,9 @@ function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], self
     // `M146b` (`B3-17`) — this shard's own count, summed parent-side. Without it a `--workers N>1`
     // run would report `assertions: 0` for a suite that asserts on every iteration.
     assertions,
+    // `D785` — summed parent-side like `assertions`, and for the same reason: each shard skipped its
+    // own share and the operator's line names the run's total.
+    teardownSkipped,
     sum: histogram.sum,
     min: histogram.min,
     max: histogram.max,
@@ -1912,6 +1954,7 @@ export function mergeLoadShardReports(
     let iterations = 0;
     let failures = 0;
     let assertions = 0;
+    let teardownSkipped = 0;
     const early = { count: 0, sum: 0 };
     const late = { count: 0, sum: 0 };
     const endpoints = new Map<string, EndpointAccumulator>();
@@ -1929,6 +1972,7 @@ export function mergeLoadShardReports(
       // `M146b` (`B3-17`) — summed like `failures`, for the same reason: every shard asserted its
       // own share and the run's count is the total, not any one shard's.
       assertions += match.assertions;
+      teardownSkipped += match.teardownSkipped;
       early.count += match.early.count;
       early.sum += match.early.sum;
       late.count += match.late.count;
@@ -1947,7 +1991,7 @@ export function mergeLoadShardReports(
         bucket.failures += e.failures;
       }
     }
-    return { scenario, histogram, successHistogram, timeline, iterations, failures, assertions, early, late, endpoints };
+    return { scenario, histogram, successHistogram, timeline, iterations, failures, assertions, early, late, teardownSkipped, endpoints };
   });
 
   // M34 (D17): `finalizeScenario` recomputes back-off from whatever `early`/`late` totals it's

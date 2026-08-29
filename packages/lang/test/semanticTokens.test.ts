@@ -385,6 +385,9 @@ test('collectSemanticTokens: a variable used inside a browser step (`fill … wi
 // `scenario` into a workload-bearing `test` — these now use `test "…" { ramp to … }` instead. ---
 
 test('collectSemanticTokens (M33/M50): `ramp`/`over`/`threshold`/`cleanup`/`pause` classify as `keyword`', () => {
+  // `cleanup` stays in this list after `M157c` retired it, deliberately: a refused word still
+  // colours as the keyword it is, exactly as `uncheck` has since `FS-04`. A highlighter that
+  // painted it as an identifier would make the one line the parser is about to name look ordinary.
   const source = `test "checkout burst"\n  ramp to 10 users over 30s\n  threshold p95 duration is less than 800ms\n  cleanup\n  api GET /health\n  pause 1s to 3s\n`;
   const tokens = tokensOf(source);
   assertTypeAt(tokens, source, 'ramp', 'keyword');

@@ -2318,6 +2318,53 @@ test('`--evidence` with an unsupported value is a usage error, not silently igno
   }
 });
 
+// `M157d` (`D783`/`D785`) — the flag half of `teardown`, end to end: it overrides the config key
+// for one run, it does not persist, and any level but `always` announces itself with a count.
+test('`--teardown never` overrides `teardown always` for one run, prints the advisory line, and does not persist', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-teardown-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\ndefaults\n  teardown always\n`, 'utf8');
+      await writeFile(
+        join(dir, 'load.tflw'),
+        `after\n  api GET /health\n  expect status equals 200\n\ntest "burst"\n  run 4 iterations across 1 users\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n`,
+        'utf8',
+      );
+
+      const overridden = await execFileAsync('node', [cliEntry, 'run', '--teardown', 'never', '--no-color'], { cwd: dir });
+      // Advisory only — the run still passes and the exit code is untouched. Skipping teardown is a
+      // setting, not a failure.
+      assert.match(overridden.stdout, /teardown: disabled \(`teardown never`\) — 4 iterations left their data in place/);
+
+      // The override is per-run. A second invocation with no flag reads the config's `always` and
+      // says nothing, which is the half a flag that quietly persisted would break.
+      const configured = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+      assert.doesNotMatch(configured.stdout, /teardown:/, 'the flag persisted into a run that did not pass it');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`--teardown` with an unsupported value is a usage error, not silently ignored', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-teardown-badvalue-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://localhost:1"\n`, 'utf8');
+    // `on success` with a space is the config spelling, and it is *not* the CLI's: a shell argument
+    // takes the hyphen (`D628`'s two-surface rule). Asserted here so the two spellings stay
+    // deliberately different rather than drifting into accepting both by accident.
+    for (const bad of ['on success', 'sometimes']) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, 'run', '--teardown', bad, '--no-color'], { cwd: dir }),
+        (e: unknown) => (e as { code?: number }).code === 2,
+        `\`--teardown ${bad}\` should be a usage error`,
+      );
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`tflw init` appends only the missing line(s) to an existing `.gitignore`, never duplicating (decision 82)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-init-gitignore-'));
   try {

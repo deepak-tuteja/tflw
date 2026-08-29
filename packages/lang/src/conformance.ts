@@ -560,17 +560,23 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
   {
     id: 'step-failed',
     file: 'interpreter.ts',
-    excerpt: "exec.error ?? 'a step failed'",
+    // `M157b` (`D781`) moved the load path's throw: a failing body used to raise `exec.error` on the
+    // spot, which skipped teardown. Failure is now carried as a value through the `after` hooks and
+    // raised after them, so the site reads `error ?? 'a step failed'`. Same rule, same fallback
+    // string, one identifier narrower.
+    //
+    // **`after-hook-failed` was a row here and is gone, because its throw site is.** The load path
+    // used to raise ``an \`after\` hook failed`` on the spot; it now folds that text into the same
+    // `error` value a body failure travels in and raises once, at this site — which is exactly what
+    // the functional path has always done (`:2893` composes, and returns rather than throwing). The
+    // user-visible string is unchanged; what disappeared is a second `throw`, and this manifest
+    // enumerates throw sites. Recorded rather than re-anchored: an excerpt pointing at a string
+    // that no longer sits inside a `throw` argument would pass the count check and describe
+    // nothing.
+    excerpt: "error ?? 'a step failed'",
     exact: true,
     decidable: 'propagation',
     note: "anchored: this whole message is a substring of `action-failed`'s",
-  },
-  {
-    id: 'after-hook-failed',
-    file: 'interpreter.ts',
-    excerpt: "an \\`after\\` hook failed",
-    decidable: 'propagation',
-    note: 're-raises whatever the hook body failed on',
   },
   {
     id: 'load-run-without-workload',

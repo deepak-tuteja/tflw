@@ -316,6 +316,7 @@ function children(node: Node): readonly Node[] {
     case 'ReportDecl':
     case 'InsecureDecl':
     case 'EvidenceDecl':
+    case 'TeardownDecl':
     case 'RedactDecl':
     case 'RequireDecl':
       return [];
