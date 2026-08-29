@@ -1053,6 +1053,23 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       metricsSink,
     };
     const iterStart = performance.now();
+    // `D782` (`M157a`) — the population a `threshold pNN duration` clause reads is the **scenario
+    // body's** elapsed time, not the iteration's. Hook steps are setup, not the system under load,
+    // and `M146b` already says so twice in this very function: `countAssertions` and both
+    // `recordEndpointMetrics` calls are fed body-only `iterSteps`. `durationMs` was the one metric
+    // that escaped the rule, which is what `D26` observed when it gated `after` hooks to keep their
+    // cost out of the reported percentile. That gate was never the fix — `PLAN_M157` §2.4 measured
+    // an ungated `before` hook polluting the same percentile identically, and the dogfood suite runs
+    // 61 bare `before` blocks against 4 bare `after`, so the gate protected the rare side and left
+    // the common one open. Narrowing the window is the fix, and it is `M146b`'s own rule applied.
+    //
+    // **Contention is deliberately preserved.** A hook's requests still hit the server and still
+    // slow the body they compete with, and that shows up in the body's own latency, correctly. What
+    // leaves the number is the hook's own round-trip, not its effect on the run.
+    //
+    // `iterStart` stays, and still means what it always meant: line ~1140's early/late split asks
+    // *when this iteration started*, which is a schedule question and includes setup.
+    let bodyMs = 0;
     let result: LoadIterationResult;
     // M43 (D67-D69) — the scenario body's own `exec.steps`, captured regardless of whether the
     // iteration goes on to pass or fail (a failed iteration's completed `api` steps are still
@@ -1065,7 +1082,13 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
         const exec = await execSteps(hook.body, config, ctx, iterTc, scenario.name.value, registry);
         if (!exec.ok) throw new RuntimeError(exec.error ?? 'a `before` hook failed');
       }
+      const bodyStart = performance.now();
       const exec = await execSteps(scenario.body, config, ctx, iterTc, scenario.name.value, registry);
+      // Read before the throw below, so a *failing* iteration reports the body time it actually
+      // spent rather than falling back to the whole window. A failure earlier than this — a
+      // `before` hook, or session establishment — leaves `bodyMs` at 0, matching `iterSteps`
+      // staying `undefined`: no body ran, so there is no body time to attribute.
+      bodyMs = performance.now() - bodyStart;
       iterSteps = exec.steps;
       if (!exec.ok) throw new RuntimeError(exec.error ?? 'a step failed');
       // D26: `after each` is skipped by default per iteration under load (running it every
@@ -1083,14 +1106,14 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
       // transport sites. `pauseMs` is still whole-millisecond (it sums `StepResult.durationMs`,
       // which `D807` leaves rounded); a `pause` is authored in milliseconds at the finest, so
       // that subtraction loses nothing this milestone was about.
-      result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, performance.now() - iterStart - pauseMs) };
+      result = { ok: true, scenario: scenario.name.value, durationMs: Math.max(0, bodyMs - pauseMs) };
     } catch (err) {
       const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
       // Pause time isn't tracked on the thrown-error path (no `exec.steps` to inspect) — a
       // negligible skew: a failure that happens after a `pause` still counts that pacing time as
       // part of its own (already-failing, already-excluded-from-percentiles-by-nobody-caring)
       // duration. Only successful iterations feed the duration percentiles that thresholds read.
-      result = { ok: false, scenario: scenario.name.value, durationMs: performance.now() - iterStart, error: redactor.redact(message) };
+      result = { ok: false, scenario: scenario.name.value, durationMs: bodyMs, error: redactor.redact(message) };
     }
     if (!result.ok) acc.failures++;
     acc.histogram.record(result.durationMs);

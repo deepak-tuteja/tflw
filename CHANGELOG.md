@@ -619,6 +619,21 @@ the sub-seed domain for that caller was left at its historical value. Recorded b
 not because a migration is needed: tflw is unpublished and has no users outside this repository
 and its dogfood sibling.
 
+### Fixed — a workload's reported latency is its body's, not its hooks' (M157)
+
+- **`before`/`after` hook time no longer counts toward a workload iteration's reported duration**
+  (`D782`), and therefore no longer toward `p50`/`p95`/`p99`, the timeline, or any
+  `threshold pNN duration` clause. The timing window used to open above the hook loops, so a
+  scenario with a 60 ms setup hook in front of a 25 ms body reported a p95 of 96 ms for a 25 ms
+  system. This is not a new rule but an existing one applied to the metric that escaped it: the
+  same function already counts assertions and per-endpoint metrics off the scenario body alone,
+  on the grounds that a hook's steps are setup rather than the system under load.
+- **Contention is deliberately preserved.** A hook's requests still reach the server and still
+  compete with the body they surround; what leaves the number is the hook's own round-trip, not
+  its effect. Measured on three 20-iteration arms against a target with a 25 ms body path and
+  60 ms hook paths: reported p95 was 37 / 96 / 96 ms before (no hooks / `after` hook / `before`
+  hook) and 35 / 34 / 27 ms after, while the server's own request counts stayed 20 / 40 / 40.
+
 ### Changed — config directive spelling (M147b)
 
 The rule the language never had, and the last breaking change before `1.0.0`: **a directive whose
