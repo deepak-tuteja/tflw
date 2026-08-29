@@ -116,6 +116,22 @@ function migrateOnce(source: string): { migrated: string; edits: ReturnType<type
   return { migrated: applyMigrations(source, edits), edits };
 }
 
+test('`M157c`: `tflw migrate` leaves `cleanup` alone — a deletion is not a splice', () => {
+  // The fourth retirement, and the first that is not a rename. `scenario`->`test`, `think`->`pause`
+  // and `uncheck`->`untick` are word-for-word swaps and carry a `replacement`; `cleanup` has no
+  // successor word, so an automated fix would have to splice the empty string over the span and
+  // leave a blank line behind — a shape nothing here has ever produced, built to automate one line
+  // in one file across both repositories. Withholding the payload is what makes `migrate` decline
+  // it, and this asserts the declining rather than trusting the absence.
+  const source = 'test "S"\n  ramp to 1 users over 1s\n  cleanup\n  api GET /health\n';
+  const { migrated, edits } = migrateOnce(source);
+  assert.deepEqual(edits, [], 'migrate offered an edit for a keyword that has no replacement');
+  assert.equal(migrated, source, 'migrate changed a byte of a file it should not touch');
+  // And the diagnostic still fires — declining to fix is not declining to report.
+  const d = parseSource(source).diagnostics.find((x) => x.message.includes('`cleanup`'));
+  assert.ok(d, 'the refusal itself went missing, which is a different and worse failure');
+});
+
 test('the corpus is what the plan says it is: 7 code sites across 3 files, 5 of them the form migrate declines', () => {
   // Pinning the input, not the output. If someone re-copies these fixtures from a later commit,
   // every number below changes and this fails first with the reason.
@@ -233,16 +249,18 @@ function stripSpans(node: unknown): unknown {
 test('§3.2: a migrated `scenario` block is structurally identical to the hand-written `test` equivalent', () => {
   // `parseScenarioDecl` (verified at `a2c457c^`) made a workload line *mandatory*, so every legal
   // old `scenario` becomes a workload-bearing `test` and a silent load-test→functional-test
-  // demotion is structurally impossible. All three body constructs the old block allowed
-  // (`as admin, userA`, `threshold …`, `cleanup`) still parse inside `parseTest` today — so the
-  // one-token splice yields a semantically identical program, asserted here rather than argued.
+  // demotion is structurally impossible. The body constructs the old block allowed
+  // (`as admin, userA`, `threshold …`) still parse inside `parseTest` today — so the one-token
+  // splice yields a semantically identical program, asserted here rather than argued. The third,
+  // `cleanup`, was retired by `M157c` and is dropped from this fixture: it would now earn a `TF033`
+  // on *both* sides of the comparison, which is still structural identity but stops the fixture
+  // being a legal program, and a migration test whose input no longer parses proves less.
   const body = [
     '  ramp to 10 users over 5s',
     '  threshold p95 duration is less than 1s',
     '  threshold error rate is less than 1%',
     '  api GET /x',
     '  expect status equals 200',
-    '  cleanup',
     '',
   ].join('\n');
   const old = `scenario "burst" as admin\n${body}`;

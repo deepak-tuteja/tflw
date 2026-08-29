@@ -101,9 +101,11 @@ test('getCompletions: transform kind attaches spec-data.ts detail text (decision
 test('getCompletions: step kind includes browser-arc step keywords (M3a-M3d)', () => {
   const source = 'test "ok"\n  cl';
   const ctx = getCompletionContext(source, source.length)!;
-  // `cleanup` (M29/M33) also starts with `cl`, alongside the two browser-arc step keywords this
-  // test originally targeted.
-  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['click', 'close', 'cleanup']);
+  // `cleanup` (M29/M33) used to sit here too — it also starts with `cl`. `M157c` retired the
+  // keyword and `M157e` deleted its manifest row, and this list is built from the manifest, so it
+  // left without this file being edited for it. That is `D724`'s rule paying for itself in the
+  // direction it is rarely read: the row goes when the construct does, and every consumer follows.
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['click', 'close']);
 });
 
 // M28 (PLAN_LOG_LSP.md): `log` (M27) had never caught this independent-copy wordlist up either.
@@ -245,7 +247,7 @@ test('FS-04: `uncheck` is not offered by completion, but `untick` is', () => {
   );
 });
 
-test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at the start of a scenario body line', () => {
+test('getCompletions (M33): step kind includes `ramp`/`threshold` at the start of a scenario body line', () => {
   const rampSource = 'test "checkout burst"\n  ra';
   const rampCtx = getCompletionContext(rampSource, rampSource.length)!;
   assert.deepEqual(rampCtx, { kind: 'step', prefix: 'ra' });
@@ -262,14 +264,16 @@ test('getCompletions (M33): step kind includes `ramp`/`threshold`/`cleanup` at t
     ['threshold'],
   );
 
-  // `cl` alone would also match `click`/`close` (both real step keywords) — narrow the prefix past
-  // where they diverge so this assertion isn't coincidentally fragile to that unrelated list.
+  // `cleanup` was the third arm here until `M157c` retired it. Kept as a **negative**: the word is
+  // still dispatched by `parseTestBody`, so "the parser recognises it" and "the editor offers it"
+  // have to be able to disagree, and this is where that is asserted. Offering a retired spelling is
+  // `B5-10`'s direction of error — the highlighter finishing a word the checker then rejects.
   const cleanupSource = 'test "checkout burst"\n  ramp to 10 users over 30s\n  clea';
   const cleanupCtx = getCompletionContext(cleanupSource, cleanupSource.length)!;
   assert.deepEqual(cleanupCtx, { kind: 'step', prefix: 'clea' });
   assert.deepEqual(
     getCompletions(cleanupCtx).map((c) => c.label),
-    ['cleanup'],
+    [],
   );
 });
 

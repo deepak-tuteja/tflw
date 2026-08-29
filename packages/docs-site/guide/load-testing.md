@@ -197,22 +197,67 @@ to become true, that's [`wait until …`](/guide/browser-basics); if it has to *
 genuinely the thing under test, a cache TTL or a token expiry, no condition exists to poll and the
 [JS escape hatch](/guide/actions) is the honest answer.
 
-## Cleanup — `after each` is skipped by default
+## Teardown — `after` runs after every iteration
 
-If your file has `before`/`after each` hooks (shared with the functional suite), `before each`
-runs on every iteration as normal setup. `after each` does **not** run per iteration by default —
-running teardown on every one of thousands of iterations would double request volume and pollute
-the very latency numbers the run exists to measure. A load test that genuinely needs teardown
-(releasing a held resource, a seat lock) opts back in:
+If your file has `before`/`after` hooks (shared with the functional suite), both run on every
+iteration: `before` as setup, `after` as teardown, whether the iteration passed or failed. You
+write nothing to get that.
 
 ```tflw
+after
+  api DELETE /reservations/{reservationId}
+
 test "reserve and release"
   ramp to 10 users over 10s
-  cleanup
   api POST /reservations body { seat: "12A" }
+  capture body.id as reservationId
   expect status equals 201
   threshold error rate is less than 1%
 ```
+
+**Hook time is not in your latency numbers.** A reported iteration duration covers the test body
+and nothing else, so `p95` measures the system under load rather than the setup around it. The
+hooks' own requests still reach the server and still contend with the body — which shows up in the
+body's latency, correctly — but their round-trips are not counted as the body's.
+
+### Keeping a failed run's data — `teardown`
+
+Sometimes you want the wreckage. A run at a 5% error rate over 10,000 iterations leaves 500 cases
+worth looking at, and teardown deletes exactly those. The `teardown` key in `tflw.config` (or
+`--teardown` for one run) says when the `after` hooks run:
+
+```tflw-config fragment
+defaults
+  teardown on success
+```
+
+- `always` — after every iteration. The default; you get it without writing anything.
+- `on success` — only after the iterations that passed, so the failed ones' data is still there
+  when you go looking.
+- `never` — after none of them.
+
+`on success` reads that **iteration's** verdict, not the run's: a breached `threshold` is decided
+after every iteration has already finished, and therefore after teardown has already run.
+
+Two things worth knowing before you reach for it. Skipping the hook skips **everything** in it,
+assertions included — tflw cannot tell a `DELETE` from the `expect status equals 204` under it, so
+the key's meaning is *"skip the `after` hook"* and preserved data is the consequence. And any level
+but `always` prints a line on every run, naming the count:
+
+```console
+ℹ teardown: on success — 400 of 8000 iterations failed and left their data in place
+```
+
+That line is deliberate. A config key committed after one debugging afternoon is otherwise a run
+that leaks in silence forever.
+
+`teardown` is workload-only. Functional tests always run their `after` hooks, whatever it says —
+inter-test isolation is not something a config key gets to switch off.
+
+Before `1.0`, opting *in* was the per-test keyword `cleanup`, and teardown was off by default. It
+was removed: the gate was justified as protecting the run's latency numbers, and an ungated
+`before` hook polluted them identically, so it never protected anything. Writing `cleanup` now
+reports an error naming `teardown never`.
 
 ## Identity per VU — `as <session>` and `unique(...)`
 

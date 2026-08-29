@@ -136,7 +136,7 @@ const KEYWORDS = new Set([
  * that is a different risk from this one and wants its own measurement rather than a ride on a
  * milestone whose charter is the config dialect. */
 const CONFIG_KEYWORDS = new Set([
-  'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'redact', 'viewport',
+  'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'teardown', 'redact', 'viewport',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
   'destination', 'level', 'query',
   // `M147b` (`A2-14`/`D623`/`D628`) — the enumerated values of `evidence`, `log destination` and
@@ -164,6 +164,12 @@ const CONFIG_KEYWORDS = new Set([
   // paint enumerated values *inside* strings at all (`D538`). It is simply no longer what these
   // words ask.
   'debug', 'info', 'warn', 'console', 'html', 'both', 'full', 'headers', 'only', 'none',
+  // `M157d`/`D783` — `teardown`'s three levels, on the same argument one line up: they are bare
+  // keywords in the config dialect, reachable by a set consulted against `ident` tokens. `on` is
+  // already painted from the shared set (`on`/`to`/`onto`), so only two words are new here.
+  // `success` earns its place by `D427a`'s test — it is not a plausible identifier in a
+  // `tflw.config`, whose whole vocabulary is keys and values.
+  'always', 'never', 'success',
   // M137b (D433) — `csrf from <subject> send as header "<name>"`. Both words belong *here* rather
   // than in the shared list above, by D427a's own test: they are reachable only from the config
   // dialect's session-block production, and `send` in particular is a plausible ordinary identifier
@@ -320,6 +326,9 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   // `minus`, so a hyphenated bare keyword is unspellable and the level is two words. Both of them
   // are coloured individually, in `CONFIG_KEYWORDS`.
   ['headers only', 'not a word: a two-word evidence level — `headers` and `only` are coloured separately'],
+  // `M157d`/`D783`, `headers only`'s shape exactly and for `D628`'s reason: `-` lexes as `minus`, so
+  // a hyphenated bare keyword is unspellable and the level is two words.
+  ['on success', 'not a word: a two-word teardown level — `on` and `success` are coloured separately'],
 ]);
 
 /**

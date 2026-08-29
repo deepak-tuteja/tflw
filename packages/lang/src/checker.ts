@@ -2456,9 +2456,9 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
     if (test.table && test.table.type === 'FileDataTable') continue;
     // A workload-bearing test (D96 already forbids `table` alongside `workload`, so this branch
     // is mutually exclusive with the table check above) has no data table/session and doesn't
-    // share scope with `before`/`after each` hooks the way a functional test does (D26's
-    // `cleanup` flag governs whether those hooks *run* under load, not whether their bindings are
-    // statically visible here — a distinct, narrower concern deliberately left unaddressed in
+    // share scope with `before`/`after each` hooks the way a functional test does (whether those
+    // hooks *run* under load is `D781`'s question — `D26`'s `cleanup` flag until `M157c` — not
+    // whether their bindings are statically visible here — a distinct, narrower concern deliberately left unaddressed in
     // M29 rather than threading hook scope through a second execution model; carried over
     // unchanged by M50's collapse).
     if (test.workload) {
@@ -2900,6 +2900,8 @@ function keyName(entry: ConfigEntry): string {
       return 'authorized target';
     case 'EvidenceDecl':
       return 'evidence';
+    case 'TeardownDecl':
+      return 'teardown';
     case 'RedactDecl':
       return 'redact';
     case 'ViewportDecl':

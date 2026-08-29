@@ -2601,7 +2601,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D26
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D26 — Perf: after-hook-under-load policy (2026-07-30, resolves §5's flagged open item).**
   A scenario's `after` hook is **skipped by default per iteration** under `tflw load` — running it
@@ -2610,6 +2610,16 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
   genuinely needs teardown (releasing a held resource/seat lock) opts back in with an explicit
   `cleanup` clause. **Rejected:** always running it (same reasoning, inverted) and never running it
   with no override (some scenarios do need teardown to avoid leaving load-test junk data behind).
+  **Superseded 2026-08-29 by `D781`/`D782` (`M157`), and left standing rather than amended
+  (`D787`).** The text above is unedited on purpose: `D781` adopts *"always running it"* — the first
+  of the two alternatives this entry names and refuses — and an entry cannot be edited into adopting
+  the option it rejects without erasing the record that the option was considered in 2026-07-30 and
+  why it lost, which is the log's whole purpose. The evidence is `PLAN_M157` §2.4's three arms: the
+  pollution this policy exists to prevent already happened on the **`before`** side, unconditionally
+  and with no keyword, at the same 96 ms p95 against a 37 ms control — so the gate protected the
+  rare side (4 bare `after` blocks in the dogfood suite) and left the common one open (61 bare
+  `before`). `D782` removes hook time from the reported duration entirely, which is the defect this
+  entry observed; `D783` keeps the behaviour reachable as `teardown never` / `teardown on success`.
 
 ### D29
 
@@ -5957,7 +5967,7 @@ which makes `D511`'s merge order harder rather than easier).
 
 ### D724
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D724` — the manifest is known-answer and repo-wide: `CONSTRUCTS.md`.**
 Generalize `VULNS.md` past security. One row per shipped construct: the planted defect in
@@ -6495,14 +6505,97 @@ be a copy with no guard, and `PHASE_GROUPS` is already held to `PHASES` by a par
 left the **count** in, and the count said `30` while `PHASES` held `38` — eight phases arriving
 across six milestones with nothing anywhere able to notice. Seven occurrences across four files.
 
+### D781
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D781 — teardown runs by default under load; the `cleanup` gate is deleted**
+
+`after` hooks run after **every** iteration, passing or failing, exactly as `before` hooks already
+do. The `cleanup` keyword is removed from the language.
+
 ### D782
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D782 — hook time leaves `durationMs`; this is the defect `D26` actually found**
 
 `iterStart`/`iterEnd` narrow to `scenario.body` only. Hook steps stop contributing time to
 `durationMs`, and therefore to `successHistogram` and every `threshold pNN duration` clause.
+
+### D783
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D783 — `teardown` is a three-valued level, and every value answers the same question**
+
+```
+teardown always      # default — after every iteration
+teardown on success  # only after iterations that passed
+teardown never       # after none of them
+```
+
+A `CONFIG_KEYS` entry (`parser.ts:537`) with a `--teardown LEVEL` flag overriding it for one run,
+which is `evidence`'s shape verbatim — a config key plus a run-only flag override (`SPEC:3236`),
+serving the same forensic purpose. A level rather than a boolean for `evidence`'s reason;
+`insecure <bool>` is the only closed-set directive shaped otherwise.
+
+### D784
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D784 — workload-only, matching what `cleanup` gated**
+
+`teardown` governs `after` hooks under `run … iterations` and nothing else. Functional `after` hooks
+run unconditionally, as they do today (`:2754`).
+
+### D785
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D785 — any level other than `always` announces itself on every run**
+
+Unconditional, on the existing advisory channel (`cli.ts:2382`'s reuse-hint block, `ℹ demo:`,
+`ℹ authz coverage:` — *"advisory only, never affects the exit code"*):
+
+```
+ℹ teardown: disabled (`teardown never`) — 8000 iterations left their data in place
+ℹ teardown: on success — 400 of 8000 iterations failed and left their data in place
+```
+
+### D786
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D786 — `teardown never` skips the hook, assertions included; documented, not detected**
+
+tflw cannot distinguish teardown from verification inside an `after` block, and
+`tests/examples/hooks-explained.tflw` shows why the distinction is not academic:
+
+```tflw
+after
+  api DELETE /products/{productId}
+    header "Authorization" is "Bearer {adminToken}"
+  expect status equals 204
+```
+
+### D787
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D787 — `D26` is superseded and left standing, not amended and not deleted**
+
+`D26` keeps its text; `D781` opens by superseding it, and `D26` gains one pointer line naming the
+successor and §2.4's three arms as the evidence.
+
+### D788
+
+<sub>cited from SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D788 — the manifest loses a row and gains one**
+
+- **Deleted:** `spec-data.ts:230`, the `cleanup` row (family `step`, tier `workload`).
+- **Added:** a `teardown` row in `config`, `slot: 'key'`, following `evidence`'s shape.
 
 ### D807
 
@@ -9063,14 +9156,30 @@ purpose.
 
 ### M157
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **PLAN_M157 — teardown under load: delete the `cleanup` gate, fix the metric it was protecting**
 
-**Status:** **`M157a` built 2026-08-29** (tflw PR pending) — `D782` alone, shipped isolated as §4
-requires. `M157b`–`M157f` not built. **Breaking** (removes a keyword, changes reported percentiles).
+**Status:** **`M157a`–`M157f` all built 2026-08-29.** tflw: `M157a` in PR 138 (merged, isolated as
+§4 requires), `M157b`–`M157e` in PR 139. `testFlow-tests`: `M157f` in its own PR, merging second
+under `D511`. Suite green on the box at **3766 tests**; sibling gate green at **102 plants**,
+roster 178/178, ratchet 0/0. One follow-up remains and is named in §4b: a third tflw commit
+re-pinning `sibling-citations.json`, which is what publishes `D789`.
+Closes `M154e-01`; files `M157-01`. **Breaking** (removes a keyword, changes reported percentiles).
 **Ledger row:** `M154e-01` (S3), reframed. **Decisions:** `D781`–`D789`. **No new diagnostic** —
 `TF079` was scoped and dropped, see `M157c`. Gitignored by `.gitignore:35`.
+
+### M157d
+
+<sub>cited from SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**`M157d` — the `teardown` key (`D783`/`D784`/`D785`/`D786`)**
+
+`CONFIG_KEYS` entry, a `TEARDOWN_PHRASES` list beside
+`EVIDENCE_PHRASES` (`parser.ts:2350`), `--teardown` flag, the resolve path, and the advisory line
+with its count. The `on success` predicate goes exactly where `D781` removed the gate, so those are
+one edit rather than two. Bad values reuse the existing machinery — `TF020` for the key,
+`parseClosedSetDirective` for the value — and no further codes are minted.
 
 ### M160
 

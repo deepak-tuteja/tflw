@@ -46,6 +46,8 @@ import type {
   EnvRef,
   EnvScopeRef,
   EvidenceDecl,
+  TeardownDecl,
+  TeardownLevel,
   EvidenceLevel,
   ExcludeDecl,
   ExpectStmt,
@@ -290,11 +292,21 @@ export function describeDeclarations(): string {
  * different purpose and never checked against the first.
  */
 export interface RefusedWord {
-  /** Which dispatch reaches the word: `parseProgram`'s top level or `parseStep`'s switch. A `step`
-   * word must also stay in `STATEMENT_KEYWORDS` — dispatch is how the refusal is reached at all,
-   * and dropping the word would surface as `TF011: unknown statement`, whose did-you-mean is an
-   * edit-distance search that will never reach `pause` from `think`. Held by `stepKeywords.test.ts`. */
-  readonly position: 'top-level' | 'step';
+  /** Which dispatch reaches the word: `parseProgram`'s top level, `parseStep`'s switch, or
+   * `parseTestBody`'s own loop. A `step` word must also stay in `STATEMENT_KEYWORDS` — dispatch is
+   * how the refusal is reached at all, and dropping the word would surface as `TF011: unknown
+   * statement`, whose did-you-mean is an edit-distance search that will never reach `pause` from
+   * `think`. Held by `stepKeywords.test.ts`.
+   *
+   * `test-body` is `M157c`'s third value and exists because `cleanup` was never a *step*: like
+   * `threshold` and the workload line, it was dispatched by `parseTestBody` before `parseStep` was
+   * ever reached, and it was never in `STATEMENT_KEYWORDS`. Filing it as `'step'` would have been
+   * the cheaper edit and a false one — `RETIRED_STATEMENT_KEYWORDS` reads this field to subtract
+   * retired spellings from the did-you-mean corpus, and subtracting a word that was never in that
+   * corpus is a no-op that reads like a rule. The invariant `stepKeywords.test.ts` holds ("a
+   * step-position refusal is a statement keyword") stays exactly as strong; it simply no longer has
+   * to be true of a word that never claimed it. */
+  readonly position: 'top-level' | 'step' | 'test-body';
   /** The sentence that names the replacement. Every row has one — it is what the table is for. */
   readonly hint: string;
   /** Present when the refusal owns its whole diagnostic. Absent for a word refused *inside* a
@@ -314,7 +326,7 @@ export interface RefusedWord {
  * mechanism it cannot see, and moving these four words out of their inline `isKw` calls and into a
  * record would have removed them from the corpus that asks whether the editor accounts for every
  * word the parser knows. `grammarCoverage.test.ts` reads this constant for the same reason. */
-export const REFUSED_SPELLINGS = ['scenario', 'tests', 'think', 'uncheck'] as const;
+export const REFUSED_SPELLINGS = ['scenario', 'tests', 'think', 'uncheck', 'cleanup'] as const;
 
 /** The spellings `refuse()` accepts, derived from the tuple above so the lookup inside it is total:
  * a call naming a word with no row is a type error, not a silent no-op. */
@@ -347,8 +359,9 @@ export const REFUSED_WORDS: Readonly<Record<RefusedSpelling, RefusedWord>> = {
     //
     // That mandatory workload line is also why the splice is *total* rather than approximate: every
     // legal old `scenario` becomes a workload-bearing `test`, never a functional one, so a silent
-    // load-test→functional-test demotion is structurally impossible. All three body constructs the
-    // old block allowed (`as admin, userA`, `threshold …`, `cleanup`) still parse inside `parseTest`.
+    // load-test→functional-test demotion is structurally impossible. Two of the three body constructs
+    // the old block allowed (`as admin, userA`, `threshold …`) still parse inside `parseTest`; the
+    // third, `cleanup`, was itself retired by `M157c` and now has a row of its own in this table.
     position: 'top-level',
     diagnostic: { code: Codes.LOAD_INVALID, message: '`scenario` was removed — write `test` instead' },
     hint: 'a `test` block is a load test whenever it contains a workload line (`ramp to …`); there is no longer a separate keyword',
@@ -377,6 +390,20 @@ export const REFUSED_WORDS: Readonly<Record<RefusedSpelling, RefusedWord>> = {
     diagnostic: { code: Codes.UNKNOWN_STATEMENT, message: '`uncheck` was renamed to `untick` — write `untick field "…"` instead' },
     hint: 'same step, same semantics; it moved with `check <locator>` → `tick <locator>`, which had to stop being a checkbox action so `check` means only the soft assertion (SPEC §9.1)',
     replacement: 'untick',
+  },
+  cleanup: {
+    // `M157c` (`D781`). The first row in this table that is a **deletion** rather than a rename, and
+    // that is why it carries no `replacement`: `migrateCommand` splices the payload over the word's
+    // own span, so a deletion would be an empty splice — a shape nothing here has ever produced,
+    // built to automate one line in one file across both repositories. The other three are
+    // word-for-word swaps (`test`, `pause`, `untick`) and lose nothing by being automated.
+    //
+    // `LOAD_INVALID` rather than a new code, matching `scenario`/`think`: `TF079` was scoped for
+    // this and dropped. A retirement is not a new *kind* of wrongness, and the arc's `TF` budget is
+    // spent on `M156` and `M159`, which mint codes for conditions nothing currently reports.
+    position: 'test-body',
+    diagnostic: { code: Codes.LOAD_INVALID, message: '`cleanup` was removed — teardown now runs by default under load' },
+    hint: 'delete this line; `teardown never` in `tflw.config`, or `--teardown never` for one run, is how a workload opts out now (SPEC §4.5)',
   },
 };
 
@@ -534,7 +561,7 @@ function negatedStateWord(word: string): string | undefined {
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 /** Exported since `M137a` (D444) so config completion offers *this* list rather than a fourth copy
  * of it. `B5-09` is what a fourth copy becomes, and this milestone is repairing the third instance. */
-export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'redact', 'viewport', 'log'] as const;
+export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'teardown', 'redact', 'viewport', 'log'] as const;
 /** Which block a config key belongs in — the parser's view of the rule the checker enforces as
  * `TF025` (checker.ts `DEFAULTS_ONLY`/`ENV_ONLY`, keyed there on AST node type rather than on the
  * word). The parser needs it only to keep a *suggestion* from naming a key the checker will then
@@ -610,6 +637,23 @@ function listAnd(words: readonly string[]): string {
  * record below is where they are reconciled, exactly as `SCAN_MATCHER_NAMES` does it.
  */
 const EVIDENCE_PHRASES = ['full', 'headers only', 'none'] as const;
+/** `M157d`/`D783`. **Every value answers one question — *when does teardown run?*** — which is why
+ * the middle one is `on success` rather than `on failure`. `on failure` would be the only member
+ * describing when teardown is **skipped**, so the three could not be read the same way and SPEC
+ * would have to spend a sentence undoing the literal reading.
+ *
+ * Two bare words, no hyphen (`D628`/`M134a`): this language has zero hyphenated bare keywords,
+ * which is why `evidence "headers-only"` became `evidence headers only`. `TEARDOWN_LEVEL_OF` is
+ * where the user's spelling and the tree's value are reconciled, exactly as `EVIDENCE_LEVEL_OF`
+ * does it one line up — the precedent for the pair differing at all. */
+const TEARDOWN_PHRASES = ['always', 'on success', 'never'] as const;
+/** Phrase → the `TeardownLevel` the tree carries. Total over the tuple, so a fourth level cannot be
+ * added to the vocabulary without being given a value. */
+const TEARDOWN_LEVEL_OF: Readonly<Record<(typeof TEARDOWN_PHRASES)[number], TeardownLevel>> = {
+  always: 'always',
+  'on success': 'on-success',
+  never: 'never',
+};
 /** Phrase → the `EvidenceLevel` the tree carries. A total record over the tuple, so a fourth level
  * cannot be added to the vocabulary without being given a value. */
 const EVIDENCE_LEVEL_OF: Readonly<Record<(typeof EVIDENCE_PHRASES)[number], EvidenceLevel>> = {
@@ -1017,20 +1061,19 @@ class Parser {
   // -- load testing: workload/threshold/think (M29, M50, D16-D19/D24a/D26/D93-D96) -------------
 
   /** A `test` body: an indented block mixing zero-or-one `ramp to …` workload line, zero or more
-   * `threshold …` lines, an optional bare `cleanup` line (D26), and ordinary steps — in any order
+   * `threshold …` lines, and ordinary steps — in any order
    * (M50: this used to be `parseScenarioDecl`'s own body loop, since only `scenario` recognized
    * these clauses; now every `test` body does, and `workload === null` at the end is what makes
    * it an ordinary functional test rather than a load test, D94). Checker-enforced (D96): a
    * non-null workload can't coexist with `retry`/`with each` (`parseTest` reports those before
    * calling this). */
-  private parseTestBody(context: string, headerSpan: Span): { workload: Workload | null; thresholds: ThresholdDecl[]; cleanup: boolean; body: Step[] } {
+  private parseTestBody(context: string, headerSpan: Span): { workload: Workload | null; thresholds: ThresholdDecl[]; body: Step[] } {
     if (!this.check('indent')) {
       this.error(Codes.EMPTY_BLOCK, `this \`${context}\` has no steps`, headerSpan, `indent at least one step under the \`${context}\` line`);
-      return { workload: null, thresholds: [], cleanup: false, body: [] };
+      return { workload: null, thresholds: [], body: [] };
     }
     this.advance(); // indent
     let workload: Workload | null = null;
-    let cleanup = false;
     const thresholds: ThresholdDecl[] = [];
     const body: Step[] = [];
     while (!this.check('dedent') && !this.atEof()) {
@@ -1061,9 +1104,13 @@ class Parser {
         if (t) thresholds.push(t);
         else this.recover(before);
       } else if (this.isKw(tok, 'cleanup')) {
+        // `M157c` (`D781`) — recognized, refused, and consumed. The branch survives the keyword it
+        // used to set: dropping it would degrade the retirement to `TF011: unknown statement`,
+        // whose did-you-mean is an edit-distance search with nothing to reach, which is the policy
+        // this file already states for `scenario`, `think` and `uncheck`.
+        this.refuse('cleanup', tok.span);
         this.advance();
         this.endLine();
-        cleanup = true;
       } else {
         const step = this.parseStep();
         if (step) body.push(step);
@@ -1076,7 +1123,7 @@ class Parser {
       if (this.pos === before) this.advance(); // guarantee progress
     }
     if (this.check('dedent')) this.advance();
-    return { workload, thresholds, cleanup, body };
+    return { workload, thresholds, body };
   }
 
   /** `ramp to N users over <dur>` (closed, D17) / `ramp to N rps over <dur>` (open, D17). */
@@ -1115,7 +1162,7 @@ class Parser {
 
   /** Dispatches a `test` body line that might start a workload clause. Returns `undefined` when
    * `tok` doesn't start one of the 5 workload keywords (so the caller falls through to threshold/
-   * cleanup/step parsing); returns `null` on a parse error inside a recognized keyword (caller
+   * threshold/step parsing); returns `null` on a parse error inside a recognized keyword (caller
    * synchronizes); otherwise returns the parsed `Workload`. */
   private tryParseWorkloadLine(tok: Token): Workload | null | undefined {
     const isWorkloadKw =
@@ -1922,6 +1969,8 @@ class Parser {
         return this.wrap(this.parseAuthorizedTargetDecl());
       case 'evidence':
         return this.wrap(this.parseEvidenceDecl());
+      case 'teardown':
+        return this.wrap(this.parseTeardownDecl());
       case 'log':
         return this.wrap(this.parseLogConfigDecl());
       case 'redact':
@@ -2405,6 +2454,18 @@ class Parser {
     return { type: 'EvidenceDecl', level: EVIDENCE_LEVEL_OF[phrase as (typeof EVIDENCE_PHRASES)[number]], span: this.spanFrom(start) };
   }
 
+  /** `teardown always|on success|never` (`M157d`, `D783`) — `parseEvidenceDecl`'s shape verbatim,
+   * down to reusing `parseClosedSetDirective`, so a bad value earns the existing vocabulary hint
+   * naming all three phrases rather than a code minted for the occasion. */
+  private parseTeardownDecl(): TeardownDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `teardown`
+    const phrase = this.parseClosedSetDirective('teardown', TEARDOWN_PHRASES, 'a teardown level');
+    if (phrase === null) return null;
+    this.endLine();
+    return { type: 'TeardownDecl', level: TEARDOWN_LEVEL_OF[phrase as (typeof TEARDOWN_PHRASES)[number]], span: this.spanFrom(start) };
+  }
+
   /** `log destination console|html|both` / `log level debug|info|warn|error` (M27, PLAN_LOG.md
    * decisions 116/122; bare keywords as of `M147b`/`D623`) — a compound key, same shape as
    * `allow hosts`: `log` alone disambiguates on the next bare word, and now so does its value. */
@@ -2771,8 +2832,8 @@ class Parser {
     // D96 (`retry`/`with each` vs. a workload clause) is checker-enforced, not parser-enforced —
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
-    const { workload, thresholds, cleanup, body } = this.parseTestBody('test', headerSpan);
-    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, cleanup, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
+    const { workload, thresholds, body } = this.parseTestBody('test', headerSpan);
+    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
   }
 
   private tagsContinue(): boolean {
@@ -2848,7 +2909,7 @@ class Parser {
   }
 
   /** A crawl body: `seed …` / `exclude …` directives interleaved with ordinary steps, the same shape
-   * `parseTestBody` uses for `workload`/`threshold`/`cleanup`. The steps are **not** restricted here —
+   * `parseTestBody` uses for `workload`/`threshold`. The steps are **not** restricted here —
    * a crawl body holding an `api GET /orders` line is a semantic error about a fully-formed node, so
    * the checker owns it, the same layering `D96` and `D19` already use. */
   private parseCrawlBody(headerSpan: Span): { seeds: CrawlSeed[]; excludes: StringLit[]; body: Step[] } {

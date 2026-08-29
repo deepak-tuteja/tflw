@@ -83,10 +83,15 @@ test('the workload shapes are step keywords, not a seventh family', () => {
 });
 
 test('the four workload shapes M154 was scoped for are demandable constructs', () => {
+  // `cleanup` was the fifth id checked here until `M157c` removed the construct and, with it, its
+  // row — `D724` in the direction it is rarely read. It is not replaced by `config:key:teardown`:
+  // this test is about the *workload-shape* census, and the new key is a config construct that the
+  // `CONFIG_KEYWORDS` half of the manifest covers.
+
   // Not a tautology worth deleting: these four are the census's headline — `hold`, `step`, `spike`
   // and `run … iterations` have never been executed by anything in `testFlow-tests`, and the gate
   // that will demand them can only do so if they carry ids. Naming them pins that.
-  for (const shape of ['hold', 'step', 'spike', 'run', 'cleanup']) {
+  for (const shape of ['hold', 'step', 'spike', 'run']) {
     assert.ok(byId.has(`step:${shape}`), `no manifest id for the workload shape \`${shape}\``);
   }
 });
@@ -232,7 +237,10 @@ test('every CLI flag the construct manifest names is a real flag in CLI_FLAGS', 
 });
 
 // The check above is only as good as its haystack: if the manifest ever stopped naming flags at
-// all it would pass vacuously and say nothing. Six is the count today.
+// all it would pass vacuously and say nothing. Seven is the count today: `M157e` added `--teardown`
+// on its own new row and `--evidence` on the row beside it, applying `M156`'s `D780` rule — a
+// config key's summary says which command overrides it — to the one that had the shape already and
+// did not say so.
 test('…and the manifest does name flags, so the check above is not vacuous', () => {
   const named = new Set<string>();
   for (const c of specConstructs()) {
@@ -242,7 +250,7 @@ test('…and the manifest does name flags, so the check above is not vacuous', (
   }
   assert.deepEqual(
     [...named].sort(),
-    ['--env', '--now', '--seed', '--tag', '--workers'],
+    ['--env', '--evidence', '--now', '--seed', '--tag', '--teardown', '--workers'],
     'the manifest names exactly these flags — update this list deliberately, never to make a failure go away',
   );
 });

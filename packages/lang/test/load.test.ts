@@ -155,11 +155,30 @@ test('`threshold error rate for "label" is less than N%` also parses a scope on 
   assert.deepEqual(threshold.metric, { kind: 'errorRate' });
 });
 
-test('a bare `cleanup` line sets TestDecl.cleanup; omitted defaults to false', () => {
-  const withCleanup = parseWorkloadTest('test "S"\n  ramp to 1 users over 1s\n  cleanup\n  api GET /health\n');
-  assert.equal(withCleanup.cleanup, true);
-  const withoutCleanup = parseWorkloadTest('test "S"\n  ramp to 1 users over 1s\n  api GET /health\n');
-  assert.equal(withoutCleanup.cleanup, false);
+test('`M157c` (`D781`): `cleanup` is refused by name, not by falling through to an unknown statement', () => {
+  // The retirement's whole cost is this: the word stays *dispatched* so the parser can say what
+  // happened to it. Dropping the branch would have degraded it to `TF011: unknown statement`, whose
+  // did-you-mean is an edit-distance search — and no live keyword is close enough to `cleanup` for
+  // that search to reach anything useful.
+  const { diagnostics } = parseSource('test "S"\n  ramp to 1 users over 1s\n  cleanup\n  api GET /health\n');
+  const refusal = diagnostics.find((d) => d.message.includes('`cleanup`'));
+  assert.ok(refusal, `no diagnostic named \`cleanup\`: ${JSON.stringify(diagnostics.map((d) => d.message))}`);
+  assert.equal(refusal.code, 'TF033');
+  assert.match(refusal.message, /removed — teardown now runs by default under load/);
+  assert.match(refusal.hint ?? '', /teardown never/);
+  // No `tflw migrate` payload, and that is `D781`'s deliberate choice rather than an omission: the
+  // other three retirements are word-for-word swaps, this one is a deletion, and `migrate` splices
+  // the payload over the word's own span — an empty splice is a shape nothing here has shipped.
+  assert.equal(refusal.replacement, undefined);
+  // The line is consumed, so the `api` step after it still parses and the workload line still
+  // registers. A refusal that also derailed the rest of the block would report one mistake as
+  // several, which is the failure mode `TF011`'s cascade is filed for.
+  const { program } = parseSource('test "S"\n  ramp to 1 users over 1s\n  cleanup\n  api GET /health\n');
+  const test0 = program.tests[0];
+  assert.ok(test0);
+  assert.equal(test0.workload?.type, 'RampUsersWorkload');
+  assert.equal(test0.body[0]?.type, 'ApiStep');
+  assert.equal(diagnostics.length, 1, 'exactly one diagnostic — the refusal, with no cascade behind it');
 });
 
 test('a `test` with no `ramp to …` line parses fine, as an ordinary functional test (workload null)', () => {

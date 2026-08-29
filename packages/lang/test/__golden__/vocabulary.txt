@@ -6,7 +6,7 @@
 #   K  a string argument to expectKw(…) / isKw(…)
 #   V  a `<expr>.value === '…'` comparison
 #
-# 243 words
+# 247 words
 
 A   DELETE
 A   GET
@@ -23,6 +23,7 @@ AK  action
 AK  after
 A   all
 A   allow
+A   always
 K   and
 A   any
 AK  api
@@ -42,7 +43,7 @@ A   cert
 A   check
 A   checked
 A   ciphers
-K   cleanup
+AK  cleanup
 AK  click
 K   client
 A   close
@@ -141,6 +142,7 @@ A   more
 A   most
 A   ms
 A   mutating
+A   never
 K   new
 K   no
 A   non
@@ -152,6 +154,7 @@ K   number
 K   oauth2
 K   of
 K   on
+A   on success
 K   onto
 A   open
 K   openapi
@@ -210,6 +213,7 @@ K   subset
 A   switch
 K   tab
 K   target
+A   teardown
 AK  test
 A   tests
 AK  text

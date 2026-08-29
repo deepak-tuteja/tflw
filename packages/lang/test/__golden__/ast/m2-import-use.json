@@ -51,7 +51,6 @@
       "table": null,
       "workload": null,
       "thresholds": [],
-      "cleanup": false,
       "concurrency": "sequential",
       "body": [
         {

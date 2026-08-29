@@ -847,12 +847,18 @@ test "an admin acting on a shopper's behalf" as admin, userA
 ```
 before file        # once per file
 before             # before each test in the file
-after              # after each test — cleanup lives here
+after              # after each test (and, under a workload, after each iteration) — cleanup lives here
 after file
 ```
 
 House style for data: tests create their own data (`unique`, §7.2) and delete it in `after`
 hooks via shared actions. No runtime auto-cleanup (P#19).
+
+**`after file` is the once-per-file, verdict-independent one.** Each-scope `before`/`after` run
+once per test — and, under a workload, once per *iteration* (§4.5). `before file`/`after file` run
+exactly once whatever happens, so a reader who arrives wanting "run this once when the workload has
+finished, however it went" wants `after file`, not `after`. Spelled out because the two read alike
+and the difference is a factor of the iteration count.
 
 **Scope isolation:** `before`/`after` (each-scope) share one scope with the test they wrap — a
 `let` bound in `before` is visible in the test body and in `after`. `before file`/`after file` run
@@ -1023,9 +1029,17 @@ test "checkout under load"
   returns (`B3-17`). Neither is statically decidable — a body with no `api` step at all is a legal
   workload, and a JS-helper throw is a real failure the checker cannot see — so the rule is a
   prompt, not a proof.
-- **`cleanup`** — a bare line opting this workload-bearing test back into running the file's
-  `after each` hook on *every* iteration. Default: skipped — running teardown thousands of times
-  would double request volume and pollute the very latency numbers the run exists to measure (D26).
+- **Teardown runs by default** (`D781`). A workload iteration runs the file's each-scope `after`
+  hooks after **every** iteration, passing or failing, exactly as `before` hooks already run before
+  every one. Governed by `tflw.config`'s `teardown` key (§13) and `--teardown` for one run; there
+  is no per-test keyword. `cleanup` was that keyword until `M157`, when it was removed — `D26` had
+  justified the gate as protecting the run's latency numbers from teardown's request volume, and
+  the protection was measured inoperative, because an ungated `before` hook polluted the same
+  numbers identically. **Hook time is no longer in those numbers at all** (`D782`): a reported
+  iteration duration covers the scenario body and nothing else, so `p50`/`p95`/`p99`, the timeline
+  and every `threshold pNN duration` clause measure the system under load rather than its setup.
+  The hooks' requests still reach the server and still contend with the body, which shows up in the
+  body's own latency, correctly.
 - **`parallel`/`sequential`** — a header modifier (`test "name" [as <session>...] [retry N]
   [parallel|sequential]`, one of the three that may follow a test name **in any order**, each at
   most once — A2-06) controlling this test's execution
@@ -1127,7 +1141,6 @@ name (§17), and documenting them would be teaching a spelling that is itself an
 | workload | `spike` | `spike users` / `spike rps` + indented `hold N for <dur>` / `to N over <dur>` lines | a baseline → burst → recovery shape, mixing flat and ramped stages in any order | `spike rps` |
 | workload | `run` | `run N iterations [per user] across M users` | count-bounded load with no duration; the count is exact and independent of `--workers` | `run 500 iterations across 10 users` |
 | workload | `threshold` | `threshold <metric> is less than <value>` | the pass/fail rule for a workload-bearing test — decided once, after the run, against the run's aggregate metrics | `threshold p95 duration is less than 800ms` |
-| workload | `cleanup` | `cleanup` + an indented block | steps that run once after a workload finishes, whatever its verdict | `cleanup` |
 <!-- GENERATED:step-keywords:end -->
 
 ## 5. API steps (P#3, P#7, P#29, P#32, P#33) ✅
@@ -3267,7 +3280,7 @@ nothing — the trigger is a manifest missing the key, not a missing manifest, w
 | Command | Purpose |
 |---|---|
 | `tflw init [--load]` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) + `package.json` (`{"private": true, "type": "module"}`) — P#82; API-only — `--ui` is still 🔮 planned and unscheduled (the browser arc M3a–M3c shipped without it), and `initCommand` now *rejects* it rather than ignoring it: any `--…` other than `--load` exits 2 via `unknownFlag`. Every file after `tflw.config` is written **only if absent**, never merged into or overwritten; `package.json` is there so the §11 `.ts` escape hatch doesn't make Node guess the module type on first use (M125b2, `FU-15`). The scaffolded config points `api` at `tflw://demo` (§3.1, M118/`FU-04`), so `tflw init` followed by `tflw run` is green in an empty directory — swapping that one line for your own service is the intended first edit. `--load` (M29/D30) additionally scaffolds a `load.tflw` holding a workload-bearing `test` in the open (`rps`) model, run by plain `tflw run` like any other file |
-| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error] [--fail-on minor\|moderate\|serious\|critical] [--baseline FILE] [--baseline-write FILE] [--probe-seeded N]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — P#91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (M2.21). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — P#94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (P#101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (P#101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are P#111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording. `--fail-on`/`--baseline`/`--baseline-write`/`--probe-seeded` (M134b, §9.13) govern what the three security scans do with a finding after a rule raises it: the first two can only **relax** an assertion, never tighten it, and never silently — a withheld finding still renders, badged with which relaxation withheld it. `--baseline-write` produces the accepted set (fingerprints are hashes; hand-transcribing them is not an adoption path), and `--probe-seeded N` adds N generated mutation payloads per already-granted class whose findings are reported and never gate |
+| `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--teardown LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error] [--fail-on minor\|moderate\|serious\|critical] [--baseline FILE] [--baseline-write FILE] [--probe-seeded N]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — P#91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (M2.21). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — P#94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (P#101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (P#101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--teardown always\|on-success\|never` (`D783`) overrides `tflw.config`'s `teardown` key (§13) for this run only, and does not persist. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are P#111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording. `--fail-on`/`--baseline`/`--baseline-write`/`--probe-seeded` (M134b, §9.13) govern what the three security scans do with a finding after a rule raises it: the first two can only **relax** an assertion, never tighten it, and never silently — a withheld finding still renders, badged with which relaxation withheld it. `--baseline-write` produces the accepted set (fingerprints are hashes; hand-transcribing them is not an adoption path), and `--probe-seeded N` adds N generated mutation payloads per already-granted class whose findings are reported and never gate |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkSessionServices`, then `checkProgram` — the one composed per-file pass list, `checkServices`/`checkDataTables`/`checkSessions`/`checkActionDecls`/`checkUnknownVariables`/`checkRequestAssertions`/`checkWorkloadTests` — shared verbatim with the language server and the docs-site editor demo since M60, so all three report the same thing), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (P#94) prints JSON instead, for editor and CI integrations: an array with **one `{ "file": "<path>", "diagnostics": [ … ] }` entry per file checked**, in discovery order, paths relative to the cwd and POSIX-separated. Clean files are listed with an empty `diagnostics` array — a consumer that draws diagnostics needs to know a file was checked and found clean in order to clear the ones it drew last time (M70; before that this was a flat `Diagnostic[]` concatenated across files, and `Diagnostic` carries a span but no file, so it only worked when exactly one file was named). A config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout — which under this shape means "nothing was checked" rather than being ambiguous with "everything was clean". Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this — a reuse hint is a cross-file suggestion carrying a diff preview, not a diagnostic anchored to a span, so it does not belong in a per-file diagnostics array |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
 | `tflw docs [topic]` | print a SPEC.md-derived cheatsheet section; no topic lists every one. A static bundled artifact (`docs-data.generated.ts`, regenerated from SPEC.md at `pretest`/`predev`/`bundle` time, not parsed live at runtime — SPEC.md isn't shipped in the npm package), P#93 |
@@ -3412,6 +3425,53 @@ carrying a `tflw migrate` payload (§15).
   marker (distinguishable in the report from a genuinely empty, e.g. 204, body). Headers still
   shown.
 - `none` — drops headers too. Only method/url/status/statusText/duration remain.
+
+**Teardown levels — `teardown always\|on success\|never` (`M157d`, `D783`).** A `tflw.config` key
+controlling when a **workload** iteration's each-scope `after` hooks run; `--teardown LEVEL` (§12)
+overrides it for one run. Override semantics like `evidence` (env wins over `defaults`); default
+`always` (`D781`).
+
+- `always` — after every iteration, passing or failing. This is what a run does with no key set.
+- `on success` — only after the iterations that passed. The failed ones' data is still on the
+  server afterwards, which is the useful investigation mode: at a 5% error rate over 10,000
+  iterations, `never` preserves a landfill while `always` destroys the 500 cases worth looking at.
+- `never` — after none of them.
+
+Every value answers one question — *when does teardown run?* — which is why the middle one is
+`on success` and not `on failure`: `on failure` would be the only member naming when teardown is
+**skipped**, so the three could not be read the same way. Two bare words, no hyphen, for `evidence
+headers only`'s reason (`D628`); the tree carries `on-success`, and so does `--teardown on-success`.
+
+**`on success` reads the *iteration's* verdict, never the run's.** A breached `threshold` is a
+run-level judgement, made after every iteration has finished and therefore after teardown has
+already run. Covering that would need teardown deferred and buffered — a different mechanism, not a
+fourth value — so it is stated here rather than left for the name to overpromise.
+
+**`never` and `on success` skip the whole `after` hook, assertions included** (`D786`). tflw cannot tell
+teardown from verification inside an `after` block, and `tests/examples/hooks-explained.tflw` shows
+why that is not academic: its `after` deletes a product *and* asserts `status equals 204`. The
+documented meaning of the key is therefore *"skip the `after` hook"*, not *"preserve data"* — the
+data is a consequence. No diagnostic warns about it: a hook whose steps are all `expect` is not a
+defect, and a rule guessing at intent would fire on the honest case.
+
+**Workload-only** (`D784`). Functional tests run their `after` hooks unconditionally whatever this
+key says. The key exists for forensic access to a load run's residue, and inter-test isolation
+(§4.1, P#20) is not something a committed config key may switch off.
+
+**Any level but `always` announces itself on every run** (`D785`), on the advisory channel that
+already carries `ℹ demo:` and `ℹ authz coverage:` — never affecting the exit code:
+
+```
+ℹ teardown: disabled (`teardown never`) — 8000 iterations left their data in place
+ℹ teardown: on success — 400 of 8000 iterations failed and left their data in place
+```
+
+The `on success` line carries the count, not just the mode: `0 of 8000` tells the operator the
+setting cost them nothing this time. Teardown's own construct row moved with the behaviour
+(`D788`): `cleanup` left `tflw spec --json`'s `step` family and `teardown` joined its `config`
+family in the same release, so `D724`'s *no construct without a row* holds in both directions. A config key is a footgun a flag is not — set to debug one
+afternoon, committed, and every later run leaks in silence — and this line is what separates a
+diagnostic tool from a trap.
 
 `evidence` governs **three things at once** (FS-01/FS-02), so that one dial covers everything a
 report can leak rather than covering the trace and quietly leaving two other doors open:

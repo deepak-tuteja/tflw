@@ -5,7 +5,7 @@
 # A word added here and nowhere else fails that test — the drift B5-09 records, caught at once
 # rather than by the next milestone to audit two wordlists by hand.
 #
-# 218 words
+# 222 words
 
 DELETE
 GET
@@ -21,6 +21,7 @@ action
 after
 all
 allow
+always
 and
 any
 api
@@ -125,6 +126,7 @@ minor
 moderate
 ms
 mutating
+never
 new
 no
 none
@@ -186,9 +188,11 @@ step
 string
 stub
 subset
+success
 switch
 tab
 target
+teardown
 test
 text
 than

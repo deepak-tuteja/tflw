@@ -634,6 +634,35 @@ and its dogfood sibling.
   60 ms hook paths: reported p95 was 37 / 96 / 96 ms before (no hooks / `after` hook / `before`
   hook) and 35 / 34 / 27 ms after, while the server's own request counts stayed 20 / 40 / 40.
 
+#### Breaking — `cleanup` is removed; teardown is on by default
+
+- **A workload's `after` hooks now run after every iteration, passing or failing** (`D781`), exactly
+  as `before` hooks already ran before every one. They used to run only for a test carrying a
+  `cleanup` line — and even then not on the iterations that failed, because the failure was thrown
+  one line above the hook loop. A run at a 5% error rate cleaned up after 95% of its iterations and
+  leaked on precisely the 5% worth investigating: measured at 5 failing iterations creating 5
+  resources and closing **0**, and now closing 5.
+- `cleanup` in a `.tflw` file is answered by name — *"`cleanup` was removed — teardown now runs by
+  default under load"*, pointing at `teardown never` — rather than degrading to an unknown-statement
+  error. `tflw migrate` deliberately declines it: the other three retired spellings are word-for-word
+  renames, and a deletion has no replacement to splice.
+- The behaviour the gate provided is still reachable, as **`teardown always|on success|never`** in
+  `tflw.config`, with `--teardown` overriding it for one run (`D783`). `on success` is the
+  investigation mode — it cleans up the iterations that worked and leaves the failed ones' data on
+  the server — and it reads that *iteration's* verdict, never the run's thresholds. The key is
+  workload-only (`D784`): functional tests always run their `after` hooks, because inter-test
+  isolation is not something a committed config key gets to switch off.
+- **Any level but `always` announces itself on every run**, with the count, on the advisory channel
+  that already carries `ℹ demo:` — never affecting the exit code (`D785`). A config key is a footgun
+  a flag is not: set to debug one afternoon, committed, and every later run leaks in silence.
+- Skipping teardown skips the hook's own **assertions** too (`D786`). tflw cannot tell a `DELETE`
+  from the `expect status equals 204` under it, so the documented meaning is *"skip the `after`
+  hook"* and preserved data is the consequence. No diagnostic guesses at intent.
+- `D26`, which set the old policy, keeps its text and is superseded rather than amended (`D787`).
+  It closes by rejecting *"always running it"* — the option this release adopts — and an entry
+  edited into adopting the alternative it names and refuses would erase the record that the option
+  was considered, and why it lost.
+
 ### Changed — config directive spelling (M147b)
 
 The rule the language never had, and the last breaking change before `1.0.0`: **a directive whose

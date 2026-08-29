@@ -34,6 +34,7 @@ import {
   type Program,
   type Diagnostic,
   type EvidenceLevel,
+  type TeardownLevel,
   type FindingSeverity,
   type LogDestination,
   type LogLevel,
@@ -856,6 +857,9 @@ interface RunArgs {
   /** Raw `--evidence` text, validated in `runCommand` against `EVIDENCE_LEVELS` (decision 101c) —
    * overrides `tflw.config`'s `evidence` key for this run only. */
   readonly evidenceRaw?: string | undefined;
+  /** Raw `--teardown` text, validated in `runCommand` against `TEARDOWN_LEVELS` (`D783`) —
+   * overrides `tflw.config`'s `teardown` key for this run only, and does not persist. */
+  readonly teardownRaw?: string | undefined;
   /** `tflw run --failed` (PLAN decision 111, M17) — replay only the previous run's failing tests,
    * read from `report/.last-run.json`. Composes with `--tag`/`--only` as AND, same as they
    * already compose with each other. */
@@ -920,6 +924,11 @@ interface RunArgs {
  * and where this lexer never runs. Same value, two surfaces, and the surface decides the spelling —
  * as `--log-output console|html|both|none` and `--fail-on minor|…` already do. */
 const EVIDENCE_LEVELS = ['full', 'headers-only', 'none'] as const;
+/** `--teardown LEVEL`'s vocabulary (`D783`), hyphenated for `EVIDENCE_LEVELS`' reason exactly: the
+ * config spells it `teardown on success` because tflw identifiers carry no `-`, and a CLI argument
+ * is typed into a shell where a space would need quoting. Same value, two surfaces, the surface
+ * decides the spelling. */
+const TEARDOWN_LEVELS = ['always', 'on-success', 'never'] as const;
 /** M27, PLAN_LOG.md decisions 121/122 — `LOG_OUTPUT_VALUES` adds `none` (a CLI-only global
  * kill-switch for bare `log` calls, decision 121) on top of the DSL grammar's own three `to`
  * targets; `LOG_LEVELS` mirrors the DSL's four level keywords for `--log-level` validation. Small
@@ -943,6 +952,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let forbidInsecure = false;
   const allowPublicTargets: string[] = [];
   let evidenceRaw: string | undefined;
+  let teardownRaw: string | undefined;
   let failed = false;
   let bail = false;
   let formatRaw: string | undefined;
@@ -984,6 +994,8 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a.startsWith('--allow-public-target=')) allowPublicTargets.push(inlineFlagValue(a, '--allow-public-target'));
     else if (a === '--evidence') evidenceRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--evidence=')) evidenceRaw = inlineFlagValue(a, '--evidence');
+    else if (a === '--teardown') teardownRaw = flagValue(argv, ++i, a);
+    else if (a.startsWith('--teardown=')) teardownRaw = inlineFlagValue(a, '--teardown');
     else if (a === '--failed') failed = true;
     else if (a === '--bail') bail = true;
     else if (a === '--format') formatRaw = flagValue(argv, ++i, a);
@@ -1040,6 +1052,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     forbidInsecure,
     allowPublicTargets,
     evidenceRaw,
+    teardownRaw,
     failed,
     bail,
     formatRaw,
@@ -1455,6 +1468,14 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     }
     evidenceArg = args.evidenceRaw as EvidenceLevel;
   }
+  let teardownArg: TeardownLevel | undefined;
+  if (args.teardownRaw !== undefined) {
+    if (!(TEARDOWN_LEVELS as readonly string[]).includes(args.teardownRaw)) {
+      err(`--teardown expects one of ${TEARDOWN_LEVELS.join(', ')}, got "${args.teardownRaw}"`);
+      return EXIT_USAGE;
+    }
+    teardownArg = args.teardownRaw as TeardownLevel;
+  }
   let logOutputArg: LogDestination | 'none' | undefined;
   if (args.logOutputRaw !== undefined) {
     if (!(LOG_OUTPUT_VALUES as readonly string[]).includes(args.logOutputRaw)) {
@@ -1506,6 +1527,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     // control it implements does not exist.
     allowPublicTargets: args.allowPublicTargets,
     ...(evidenceArg !== undefined ? { evidenceLevel: evidenceArg } : {}),
+    ...(teardownArg !== undefined ? { teardown: teardownArg } : {}),
     ...(logOutputArg !== undefined ? { logDestination: logOutputArg } : {}),
     ...(logLevelArg !== undefined ? { logLevel: logLevelArg } : {}),
   };
@@ -1991,7 +2013,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const scanBlindSpot = buildScanBlindSpot(census, scanDeclines);
   const scanCoverage = buildScanCoverage(censusByScan);
   const merged = redactReport(
-    mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, usingDemo, scanBlindSpot, {
+    mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, resolved.teardown, usingDemo, scanBlindSpot, {
       findings: scanFindings,
       coverage: scanCoverage,
     }),
@@ -3047,6 +3069,12 @@ function mergeReports(
   insecure: boolean,
   browserEngine: BrowserEngine,
   evidenceLevel: EvidenceLevel,
+  /** `D785` — the level this run actually ran at, so the summary can announce anything but
+   * `always`. Passed rather than derived: `RunReport` records what happened, and "no iteration
+   * skipped teardown" is equally true of `teardown always` and of `teardown never` on a suite with
+   * no `after` hooks. Those two deserve different sentences, which is `evidenceLevel`'s own
+   * argument (`FS-01`/`V2-01`) met a second time. */
+  teardown: TeardownLevel,
   demo: boolean,
   scanBlindSpot?: RunReport['scanBlindSpot'],
   /** M134b (D385/D389) — the run's scan findings and rule census, collected across every file by the
@@ -3079,6 +3107,18 @@ function mergeReports(
     now,
     insecure,
     evidenceLevel,
+    // `D785` — omitted for `always`, which is both the default and the only level with nothing to
+    // announce. The two counts are summed over every workload-bearing entry in the run, because
+    // `M126`'s rule is that a denominator travels on the same line as its count.
+    ...(teardown === 'always'
+      ? {}
+      : {
+          teardown: {
+            level: teardown,
+            iterations: tests.reduce((n, t) => (t.kind === 'workload' ? n + t.metrics.iterations : n), 0),
+            skipped: tests.reduce((n, t) => (t.kind === 'workload' ? n + (t.teardownSkipped ?? 0) : n), 0),
+          },
+        }),
     browserEngine,
     // Omitted rather than `false` for an ordinary run (M118/D202): the flag exists to mark the
     // unusual case, and every pre-M118 `RunReport` fixture stays valid without it.
@@ -3620,6 +3660,7 @@ function printUsage(): void {
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
       '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]',
       '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
+      '            [--teardown always|on-success|never]',
       '            [--log-output console|html|both|none]',
       '            [--fail-on minor|moderate|serious|critical] [--baseline <file>] [--baseline-write <file>] [--probe-seeded <n>]',
       '            [--log-level debug|info|warn|error]',
@@ -3640,6 +3681,8 @@ function printUsage(): void {
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
       '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',
       '                                                      --evidence <level> how much request/response detail the report keeps: full (default), headers-only, none',
+      '                                                      --teardown <level> when a workload iteration\'s `after` hooks run: always (default), on-success, never;',
+      '                                                      anything but always leaves that run\'s data in place and says so in the summary',
       '                                                      --allow-public-target <origin> affirms an originating scan may reach a host outside the private',
       '                                                      ranges (SPEC §3.10, TF065); repeatable, must match an `authorized target`; no tflw.config key by design',
       '                                                      --log-output <dest> where a bare `log "…"` goes: console|html|both|none',

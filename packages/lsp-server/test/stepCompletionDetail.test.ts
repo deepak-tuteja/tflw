@@ -41,7 +41,8 @@ test('the detail is the summary, not the syntax', () => {
 
 test('prefix filtering still narrows, and narrows with details attached', () => {
   const candidates = completeAt('test "ok"\n  c');
-  assert.deepEqual(candidates.map((c) => c.label), ['check', 'capture', 'click', 'close', 'cleanup']);
+  // `cleanup` left this list with its manifest row (`M157c`/`M157e`), not by an edit here.
+  assert.deepEqual(candidates.map((c) => c.label), ['check', 'capture', 'click', 'close']);
   assert.ok(candidates.every((c) => c.detail));
 });
 

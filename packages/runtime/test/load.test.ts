@@ -204,7 +204,9 @@ test('`D782` (`M157a`): an `after` hook\'s time is excluded too — the side `D2
     '/teardown': (_req, res) => { setTimeout(() => json(res, 200, { ok: true }), 200); },
     '/health': (_req, res) => json(res, 200, { ok: true }),
   });
-  const source = 'after\n  api GET /teardown\n  expect status equals 200\n\ntest "S"\n  run 3 iterations across 1 users\n  api GET /health\n  expect status equals 200\n  cleanup\n';
+  // No `cleanup` line: `D781` (`M157b`) deleted the keyword and made teardown the default, so this
+  // fixture is what an ordinary workload with an `after` hook now looks like.
+  const source = 'after\n  api GET /teardown\n  expect status equals 200\n\ntest "S"\n  run 3 iterations across 1 users\n  api GET /health\n  expect status equals 200\n';
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
   const seen: LoadIterationResult[] = [];
@@ -215,6 +217,122 @@ test('`D782` (`M157a`): an `after` hook\'s time is excluded too — the side `D2
     assert.ok(r.durationMs < 100, `expected a hook-excluded duration, got ${r.durationMs}ms`);
   }
   await server.close();
+});
+
+// ---- `M157b`/`M157d`: teardown under load (`D781`, `D783`-`D786`) ---------
+//
+// One fixture shape serves all four: a `/create`+`/close` pair whose leak is the whole measurement,
+// and a body that can be made to fail on demand. `leaked` is `created - closed`, and it is the
+// number `PLAN_M157` §2.3 measured at **5 of 5** before this milestone.
+
+/** `/create` and `/close` count resources; `/fail` answers 500 so an iteration fails *after* the
+ * resource exists, which is the only shape in which a teardown gap is observable. */
+async function teardownFixture(): Promise<{ url: string; counts: () => { created: number; closed: number; leaked: number }; close: () => Promise<void> }> {
+  let created = 0;
+  let closed = 0;
+  const server = await startFixtureServer({
+    '/create': (_req, res) => { created++; json(res, 200, { ok: true }); },
+    '/close': (_req, res) => { closed++; json(res, 200, { ok: true }); },
+    '/ok': (_req, res) => json(res, 200, { ok: true }),
+    '/fail': (_req, res) => json(res, 500, { ok: false }),
+  });
+  return { url: server.baseUrl, counts: () => ({ created, closed, leaked: created - closed }), close: () => server.close() };
+}
+
+const TEARDOWN_HOOK = 'after\n  api GET /close\n  expect status equals 200\n\n';
+
+test('`D781` (`M157b`): a **failing** iteration still runs teardown — the §2.3 leak, closed', async () => {
+  const fx = await teardownFixture();
+  // Every iteration creates, then fails. Before `M157b` the `if (!exec.ok) throw` sat above the
+  // hook loop, so this reported created 5, closed 0, leaked 5: teardown ran on exactly the
+  // iterations that did not need investigating, and skipped the ones that did.
+  const source = `${TEARDOWN_HOOK}test "S"\n  run 5 iterations across 1 users\n  api GET /create\n  expect status equals 200\n  api GET /fail\n  expect status equals 200\n`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const report = await runWorkload(program, testConfig(fx.url), { source });
+  assert.equal(report.scenarios[0]!.metrics.failures, 5, 'the fixture must actually fail, or the leak it measures cannot appear');
+  assert.deepEqual(fx.counts(), { created: 5, closed: 5, leaked: 0 });
+  await fx.close();
+});
+
+test('`D781` (`M157b`): a failing **`before`** hook still skips teardown — nothing was set up', async () => {
+  const fx = await teardownFixture();
+  // The one case that must NOT change. `before` throws above the body, so the iteration never
+  // created anything and there is nothing to tear down; running `after` there would be a delete
+  // against a resource that does not exist. `:421`/`:558` already hold this for the `file` scope.
+  const source = `before\n  api GET /fail\n  expect status equals 200\n\n${TEARDOWN_HOOK}test "S"\n  run 3 iterations across 1 users\n  api GET /create\n  expect status equals 200\n`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const report = await runWorkload(program, testConfig(fx.url), { source });
+  assert.equal(report.scenarios[0]!.metrics.failures, 3);
+  assert.deepEqual(fx.counts(), { created: 0, closed: 0, leaked: 0 });
+  await fx.close();
+});
+
+test('`D783` (`M157d`): `teardown never` runs no hook at all, and the run is counted as having skipped every iteration', async () => {
+  const fx = await teardownFixture();
+  const source = `${TEARDOWN_HOOK}test "S"\n  run 4 iterations across 1 users\n  api GET /create\n  expect status equals 200\n`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const report = await runWorkload(program, { ...testConfig(fx.url), teardown: 'never' }, { source });
+  assert.deepEqual(fx.counts(), { created: 4, closed: 0, leaked: 4 });
+  // The count `D785`'s summary line reads. Without it the operator is told a mode and left to guess
+  // what it cost them.
+  assert.equal(report.scenarios[0]!.teardownSkipped, 4);
+  // The exit-code path is untouched: skipping teardown is a setting, not a failure.
+  assert.equal(report.scenarios[0]!.metrics.failures, 0);
+  await fx.close();
+});
+
+test('`D783` (`M157d`): `teardown on success` tears down exactly the iterations that passed', async () => {
+  const fx = await teardownFixture();
+  // `/flaky` fails on the 2nd and 4th call of six, so the passing count is 4 and is not the same
+  // number as the total — a fixture where every iteration passed could not tell `on success` from
+  // `always`, and one where every iteration failed could not tell it from `never`.
+  let n = 0;
+  const server = await startFixtureServer({
+    '/create': (_req, res) => json(res, 200, { ok: true }),
+    '/close': (_req, res) => json(res, 200, { ok: true }),
+    '/flaky': (_req, res) => { n++; json(res, n % 2 === 0 && n <= 4 ? 500 : 200, {}); },
+  });
+  let closed = 0;
+  const source = `after\n  api GET /close\n  expect status equals 200\n\ntest "S"\n  run 6 iterations across 1 users\n  api GET /flaky\n  expect status equals 200\n`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const report = await runWorkload(program, { ...testConfig(server.baseUrl), teardown: 'on-success' }, { source });
+  closed = server.received.get('/close')?.length ?? 0;
+  const failures = report.scenarios[0]!.metrics.failures;
+  assert.equal(failures, 2, 'the fixture must produce a mix, or the mode is indistinguishable from `always`/`never`');
+  assert.equal(closed, 6 - failures, 'teardown ran exactly once per passing iteration');
+  assert.equal(report.scenarios[0]!.teardownSkipped, failures);
+  await server.close();
+  await fx.close();
+});
+
+test('`D785` (`M157d`): a run with no `after` hook counts nothing as skipped, whatever the level says', async () => {
+  const fx = await teardownFixture();
+  // The denominator has to be honest. `teardown never` on a suite that declares no `after` hook has
+  // skipped nothing — reporting `4 iterations left their data in place` there would be a true-shaped
+  // sentence about a run that left nothing anywhere.
+  const source = 'test "S"\n  run 4 iterations across 1 users\n  api GET /ok\n  expect status equals 200\n';
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const report = await runWorkload(program, { ...testConfig(fx.url), teardown: 'never' }, { source });
+  assert.equal(report.scenarios[0]!.teardownSkipped, undefined);
+  await fx.close();
+});
+
+test('`D784` (`M157d`): a **functional** test runs its `after` hook whatever `teardown` says', async () => {
+  const fx = await teardownFixture();
+  // The knob is forensic access to a load run's residue. Letting it reach the functional suite
+  // would make a committed config key able to switch off inter-test isolation (`P#20`), which is a
+  // different and much worse power than the one being added.
+  const source = `${TEARDOWN_HOOK}test "S"\n  api GET /create\n  expect status equals 200\n`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  await runProgram(program, { ...testConfig(fx.url), teardown: 'never' }, { source });
+  assert.deepEqual(fx.counts(), { created: 1, closed: 1, leaked: 0 });
+  await fx.close();
 });
 
 test('`runLoadShard` throws when the program declares no workload-bearing `test` — and says so without naming a command (B3-08, M90c)', async () => {

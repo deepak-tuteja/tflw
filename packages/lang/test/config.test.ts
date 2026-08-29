@@ -125,6 +125,50 @@ test('D330: `probe mutating` lands on the declaration it is indented under, and 
   );
 });
 
+// ---- `M157d` / `D783`: the `teardown` key ---------------------------------
+
+test('`D783`: all three teardown levels parse, and the tree carries `on-success` for the two-word spelling', () => {
+  for (const [written, carried] of [
+    ['always', 'always'],
+    ['on success', 'on-success'],
+    ['never', 'never'],
+  ] as const) {
+    const { config, diagnostics } = parseConfigSource(`defaults\n  teardown ${written}\n`);
+    assert.deepEqual(diagnostics.map((d) => d.code), [], `\`teardown ${written}\` should parse clean`);
+    const entry = config?.defaults?.entries.find((e) => e.type === 'TeardownDecl');
+    assert.ok(entry && entry.type === 'TeardownDecl', `no TeardownDecl for \`teardown ${written}\``);
+    // The user's spelling and the tree's value differ for exactly one member, which is
+    // `EvidenceLevel`'s arrangement (`headers only` -> `'headers-only'`) and `D628`'s rule: this
+    // language has zero hyphenated bare keywords, so a hyphen in the source is unspellable.
+    assert.equal(entry.level, carried);
+  }
+});
+
+test('`D783`: `on failure` and the hyphenated `on-success` are both refused, and the hint names all three levels', () => {
+  // `on failure` is the interesting refusal. It is the spelling a reader reaches for when they
+  // think of the key as "when is teardown skipped" rather than "when does it run", and every value
+  // of this key answers the second question — which is why `on success` was chosen over it in the
+  // first place. A user who guesses wrong must be shown the vocabulary, not left with a bare TF010.
+  for (const bad of ['on failure', 'on-success', 'sometimes']) {
+    const { diagnostics } = parseConfigSource(`defaults\n  teardown ${bad}\n`);
+    const d = diagnostics[0];
+    assert.ok(d, `\`teardown ${bad}\` should be refused`);
+    assert.equal(d.code, Codes.UNEXPECTED_TOKEN, `\`teardown ${bad}\` should reuse the closed-set code, not mint one`);
+    for (const level of ['always', 'on success', 'never']) {
+      assert.ok(d.hint?.includes(`\`${level}\``), `the hint for \`teardown ${bad}\` does not name \`${level}\`: ${d.hint}`);
+    }
+  }
+});
+
+test('`D783`: `teardown` is a `defaults`/`env` key, and an env declaration wins over `defaults`', () => {
+  // Override semantics are `evidence`'s and `insecure`'s, asserted here at the parse layer; the
+  // resolution half lives in `resolve.ts` and is exercised by the runtime suite.
+  const { config, diagnostics } = parseConfigSource('defaults\n  teardown never\n\nenv ci\n  api "http://x"\n  teardown always\n');
+  assert.deepEqual(diagnostics.map((d) => d.code), []);
+  assert.equal(config?.defaults?.entries.find((e) => e.type === 'TeardownDecl')?.level, 'never');
+  assert.equal(config?.envs[0]?.entries.find((e) => e.type === 'TeardownDecl')?.level, 'always');
+});
+
 test('D330: the one-line declaration is unchanged, and a sub-clause is never required', () => {
   // `tflw-acceptance/security/tflw.config:33` and `:40` are on `main` written this way. M130b adds
   // a line beneath the declaration; it does not reformat the declaration.

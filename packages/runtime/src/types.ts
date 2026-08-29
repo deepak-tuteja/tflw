@@ -1,7 +1,7 @@
 // Shared runtime types: the resolved config the interpreter runs against, the event stream it
 // emits (SPEC §13 — the reporter is a pure consumer of these), and the aggregated run report.
 
-import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDecl, Value } from '@tflw/lang';
+import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDecl, TeardownLevel, Value } from '@tflw/lang';
 // Re-exported so downstream packages that only depend on `@tflw/runtime` (e.g. `packages/reporter`,
 // which has no direct `@tflw/lang` dependency) can still type a `logLevelThreshold`/`logDestination`
 // parameter without adding one (M27, PLAN_LOG.md).
@@ -127,6 +127,12 @@ export interface ResolvedConfig {
    * report-only trace (SPEC §13, PLAN decision 101c). Override semantics (env wins), default
    * `'full'` (today's unchanged behavior). `--evidence` overrides this again for one run. */
   readonly evidenceLevel: EvidenceLevel;
+  /** `teardown always|on success|never` (`M157d`, `D783`) — when a **workload** iteration's `after`
+   * hooks run. Override semantics (env wins), default `'always'` (`D781`). `--teardown` overrides
+   * this again for one run. Functional tests ignore it entirely (`D784`): the key is for forensic
+   * access to a load run's residue, and inter-test isolation is not a thing a config key may
+   * switch off. */
+  readonly teardown: TeardownLevel;
   /** `redact body.email, body.*.address` — JSON field paths masked with `[redacted]` in the
    * report-only trace (SPEC §3.4, PLAN decision 101d). Accumulates across `defaults` + `env`. */
   readonly redactPatterns: readonly RedactPattern[];
@@ -633,6 +639,14 @@ export interface RunReport {
    * `RunReport` (unit tests across `runtime`/`reporter`) keeps compiling; absent is rendered as
    * `full`, the default. */
   readonly evidenceLevel?: EvidenceLevel;
+  /** `D785` — what to say about teardown, and the numbers that make it worth saying.
+   *
+   * Present only when the level was **not** `always`, because that is the only case the operator
+   * needs told: a config key is a footgun a flag is not, set to debug one afternoon, committed, and
+   * every subsequent run leaking in silence. `iterations`/`skipped` are counted across every
+   * workload-bearing test in the run, so the line can name both numbers — `0 of 8000` tells the
+   * operator the setting cost them nothing this time, which a bare mode name cannot. */
+  readonly teardown?: { readonly level: TeardownLevel; readonly iterations: number; readonly skipped: number };
   /** The Playwright engine this run's browser steps ran against (M3c, D11: "engine is a run-level
    * property in the report header"). Undefined only for a run given no `BrowserManager` at all
    * (a hand-built test harness, never a real `tflw run` invocation, which always supplies one). */
@@ -935,6 +949,10 @@ export interface LoadScenarioReport {
   readonly ok: boolean;
   /** M34 (D17) — present only for a `RampUsersWorkload` scenario; see `BackOffDiagnosis`. */
   readonly backOff?: BackOffDiagnosis;
+  /** `D785` (`M157d`) — iterations of this scenario whose `after` hooks did not run because
+   * `teardown` was not `always`. Optional and omitted when zero, like `backOff`, so every existing
+   * fixture and `results.json` consumer is unaffected. */
+  readonly teardownSkipped?: number;
   /** M43 (R6's per-endpoint axis, D67-D69) — this scenario's iterations broken down by `api` step
    * identity (explicit `as "label"` tag, or automatic `METHOD path.raw`). Each entry's `metrics`
    * covers only that one step's own `durationMs` across every iteration, e.g. `checkout-burst`'s
@@ -1033,6 +1051,11 @@ export interface LoadShardScenarioResult {
    * indistinguishable from a workload that genuinely asserts nothing, which is the exact confusion
    * the field was added to end. */
   readonly assertions: number;
+  /** `D785` (`M157d`) — this shard's own count of iterations whose `after` hooks were skipped
+   * because of the teardown level, summed parent-side like `assertions`. Crosses the boundary for
+   * the same reason: the parent knows the merged iteration and failure counts but not how many of
+   * them sat in a file that declared an `after` hook at all, so it cannot re-derive this. */
+  readonly teardownSkipped: number;
   readonly sum: number;
   readonly min: number;
   readonly max: number;

@@ -180,7 +180,7 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
     }
 
     if (test.sessions.length > 0) {
-      // M50 (D93-D95): a workload-bearing test's `ramp to …`/`threshold`/`cleanup` lines
+      // M50 (D93-D95): a workload-bearing test's `ramp to …`/`threshold` lines
       // interleave with its body in source order, all parsed out of the same indented block
       // (`parser.ts`'s `parseTestBody`, formerly `parseScenarioDecl`'s own loop) — so
       // `body[0]` isn't a safe header-end boundary there the way it is for a functional test.

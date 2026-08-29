@@ -10,7 +10,7 @@
   "repository": {
     "keywords-config": {
       "comment": "The twenty words reachable only from parser.ts's config-dialect region (between the `-- config dialect --` marker at :1129 and `-- tests --` at :1989), measured against both wordlists rather than read off M133-01's list of nine — see D427a for why the row's nine were half its own dialect's gap. Grouped as they are declared: the CONFIG_KEYS top-level directives (parser.ts:352), then the oauth2 session block (P#20/31/42), then the `log` and `redact` sub-clause words, then M137b's `csrf`/`send` (D433's `csrf from <subject> send as header \"<name>\"`, a session-body statement). `authorized`/`privileged`/`probe`/`mutating`/`target`/`reason` are deliberately NOT here — M133 put them in the shared list, they are also .tflw step vocabulary, and moving them now would be a colouring change to test files under a milestone about config files. M137b's two words go here for the mirror-image reason: neither is .tflw vocabulary at all, and `send` is a plausible ordinary identifier in a test file, which is what keeps `up`/`method` out of the shared list under M136b-01.",
-      "match": "\\b(web|insecure|cert|key|allow|hosts|evidence|redact|viewport|oauth2|token|client|id|secret|scope|destination|level|query|csrf|send|debug|info|warn|console|html|both|full|headers|only|none)\\b",
+      "match": "\\b(web|insecure|cert|key|allow|hosts|evidence|teardown|redact|viewport|oauth2|token|client|id|secret|scope|destination|level|query|csrf|send|debug|info|warn|console|html|both|full|headers|only|none|always|never|success)\\b",
       "name": "keyword.control.tflw"
     }
   }
