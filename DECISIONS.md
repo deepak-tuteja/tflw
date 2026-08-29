@@ -6495,6 +6495,15 @@ be a copy with no guard, and `PHASE_GROUPS` is already held to `PHASES` by a par
 left the **count** in, and the count said `30` while `PHASES` held `38` — eight phases arriving
 across six milestones with nothing anywhere able to notice. Seven occurrences across four files.
 
+### D782
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**D782 — hook time leaves `durationMs`; this is the defect `D26` actually found**
+
+`iterStart`/`iterEnd` narrow to `scenario.body` only. Hook steps stop contributing time to
+`durationMs`, and therefore to `successHistogram` and every `threshold pNN duration` clause.
+
 ### D807
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
@@ -9051,6 +9060,17 @@ is not a smaller version of the rejected daytime-trigger design (`D755`); it is 
 with none of its parts. There is no notification, no approval, no eviction and no unattended code,
 because there is **no trigger at all** — the run rides something a developer already invokes on
 purpose.
+
+### M157
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**PLAN_M157 — teardown under load: delete the `cleanup` gate, fix the metric it was protecting**
+
+**Status:** **`M157a` built 2026-08-29** (tflw PR pending) — `D782` alone, shipped isolated as §4
+requires. `M157b`–`M157f` not built. **Breaking** (removes a keyword, changes reported percentiles).
+**Ledger row:** `M154e-01` (S3), reframed. **Decisions:** `D781`–`D789`. **No new diagnostic** —
+`TF079` was scoped and dropped, see `M157c`. Gitignored by `.gitignore:35`.
 
 ### M160
 

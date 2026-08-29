@@ -176,6 +176,47 @@ test('`pause` time is excluded from the reported iteration duration', async () =
   await server.close();
 });
 
+test('`D782` (`M157a`): a `before` hook\'s time is excluded from the reported iteration duration', async () => {
+  const server = await startFixtureServer({
+    '/setup': (_req, res) => { setTimeout(() => json(res, 200, { ok: true }), 200); },
+    '/health': (_req, res) => json(res, 200, { ok: true }),
+  });
+  const source = 'before\n  api GET /setup\n  expect status equals 200\n\ntest "S"\n  run 3 iterations across 1 users\n  api GET /health\n  expect status equals 200\n';
+  const { program, diagnostics } = parseSource(source);
+  // FS-05's guard, for FS-05's reason: a source whose hook no longer parses makes every assertion
+  // below hold vacuously, and this one would then "prove" exclusion against a run with no hook.
+  assert.deepEqual(diagnostics, []);
+  const seen: LoadIterationResult[] = [];
+  const report = await runWorkload(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
+  assert.equal(seen.length, 3);
+  // The hook really ran, three times — the other half of the non-vacuity guard, and the half that
+  // separates "hook time is excluded" from "the hook was skipped".
+  assert.equal(server.received.get('/setup')!.length, 3);
+  for (const r of seen) {
+    assert.ok(r.durationMs < 100, `expected a hook-excluded duration, got ${r.durationMs}ms`);
+  }
+  assert.ok(report.scenarios[0]!.metrics.durations.max < 100, JSON.stringify(report.scenarios[0]!.metrics));
+  await server.close();
+});
+
+test('`D782` (`M157a`): an `after` hook\'s time is excluded too — the side `D26` gated, measured rather than avoided', async () => {
+  const server = await startFixtureServer({
+    '/teardown': (_req, res) => { setTimeout(() => json(res, 200, { ok: true }), 200); },
+    '/health': (_req, res) => json(res, 200, { ok: true }),
+  });
+  const source = 'after\n  api GET /teardown\n  expect status equals 200\n\ntest "S"\n  run 3 iterations across 1 users\n  api GET /health\n  expect status equals 200\n  cleanup\n';
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const seen: LoadIterationResult[] = [];
+  await runWorkload(program, testConfig(server.baseUrl), { source, onIteration: (r) => seen.push(r) });
+  assert.equal(seen.length, 3);
+  assert.equal(server.received.get('/teardown')!.length, 3);
+  for (const r of seen) {
+    assert.ok(r.durationMs < 100, `expected a hook-excluded duration, got ${r.durationMs}ms`);
+  }
+  await server.close();
+});
+
 test('`runLoadShard` throws when the program declares no workload-bearing `test` — and says so without naming a command (B3-08, M90c)', async () => {
   // The message used to open ``\`tflw load\` needs …`` — a command `M53` removed. Naming `tflw run`
   // instead would have been a second lie in the same sentence: `tflw run` on such a file does not
