@@ -65,4 +65,27 @@ if (bundled !== 0) process.exit(bundled);
 // its own `npm test` step. Keeping this path byte-identical also keeps the floor above comparable
 // to the reading it was pinned from.
 console.log('› c8 npm run test:raw');
-process.exit(run(process.execPath, [require.resolve('c8/bin/c8.js'), npm, 'run', 'test:raw']));
+// THE HEAP, AND WHY THE FLAG IS ON THIS PROCESS AND NOT IN `NODE_OPTIONS` (M160d).
+//
+// c8's *report* phase — the merge that runs after every workspace has already passed — reads the
+// whole `coverage/tmp` tree into one process. That tree is currently **2.6 GB across 843 V8
+// coverage files**, and merging it peaks at **5.59 GB RSS**, above Node's default old-space cap of
+// roughly 4 GB. Measured on the box 2026-08-29 against one captured tmp tree, both directions:
+// `--max-old-space-size=4096` spends four minutes in ineffective mark-compacts and dies with
+// `FATAL ERROR: … JavaScript heap out of memory`; `=8192` finishes the same merge in 11 seconds.
+//
+// So this was never a coverage regression. The run that first went red passed all four floors with
+// three points of margin; it failed *after* the number was computed. The commit blamed for it had
+// added 3.1 MB of the 2.6 GB — 0.12%. That is the shape of the defect worth recording: the merge
+// had been sitting a fraction of a percent under a hard ceiling, so whichever test landed next was
+// going to be the one that appeared to break it, and the bisect would have accused an innocent file.
+//
+// The flag goes on *this* argv rather than in `NODE_OPTIONS` because the environment is inherited
+// by every test subprocess c8 spawns, and those are not where the memory goes — raising their
+// limits would change what the suite runs under to fix something that happens once the suite is
+// over. `ubuntu-latest` gives 16 GB, so 8 GB for a single short-lived merge is not tight.
+//
+// This ceiling moves with the suite, it does not stay fixed. When it is next hit, the honest
+// choices are to raise it again or to narrow what `.c8rc.json` instruments with `all: true` —
+// not to drop a floor, which measures something else entirely.
+process.exit(run(process.execPath, ['--max-old-space-size=8192', require.resolve('c8/bin/c8.js'), npm, 'run', 'test:raw']));
