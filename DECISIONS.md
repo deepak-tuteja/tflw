@@ -2499,7 +2499,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D19
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Generator architecture (D19)**
 
@@ -5837,7 +5837,7 @@ spelling.**
 
 ### D640
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D640** — *a `wait until` step may set its own poll budget, spelled `timeout wait <duration>`, on
   both forms.* It is the only per-step override of `timeout wait` in the language, and it is
@@ -6516,6 +6516,69 @@ Taken 2026-08-28, from a defect found by touching the sentence rather than by lo
 be a copy with no guard, and `PHASE_GROUPS` is already held to `PHASES` by a partition guard. It
 left the **count** in, and the count said `30` while `PHASES` held `38` — eight phases arriving
 across six milestones with nothing anywhere able to notice. Seven occurrences across four files.
+
+### D768
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**D768 — `timeout api`/`timeout browser` narrow `timeout step`; the broad key stays the fallback**
+
+One rule: *an HTTP request uses `timeout api` if set, otherwise `timeout step`; a browser step uses
+`timeout browser` if set, otherwise `timeout step`.*
+
+### D769
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**D769 — the resolved shape has no `step` field**
+
+`ResolvedTimeouts` resolves to `{ api, browser, expect, wait }`. `timeout step` exists in the
+**grammar** as the fallback input and does not survive **resolution**.
+
+### D770
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**D770 — the `0s` floor is a property of the target family, not a list of names**
+
+**Budget targets** — `step`, `api`, `browser` — refuse `0` (`TF071`): the value is handed to an
+operation as `setTimeout(abort, 0)` and every such operation fails identically before doing
+anything. **Poll targets** — `expect`, `wait` — accept `0` and it means *"evaluate once, don't
+poll"*, because both loops read before testing their deadline.
+
+### D771
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**D771 — `timeout wait` keeps one number, with the reason recorded and a condition for revisiting**
+
+A poll budget is the **condition's** patience, not the transport's speed: two seconds of patience
+for a job to finish means the same thing whether the thing polled is an endpoint or a button. And
+the case where the two genuinely differ is **already writable** — `timeout wait <dur>` on the step
+itself, on both forms, since `D640`.
+
+### D772
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**D772 — the two-tier merge stays per key, and the one surprising case is documented, not ruled out**
+
+`defaults: timeout api 10s` + `env staging: timeout step 20s` resolves to **api 10s, browser 20s**.
+That is same-key-wins applied per key, identical to how `header`, `workers` and every other config
+key already behave, and it needs no new rule. It gets **one sentence in SPEC** because a reader may
+reasonably expect the env's broader key to reset the narrower inherited one, and it does not.
+
+### D773
+
+<sub>cited from SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**D773 — the spelling is `browser`, not `ui`**
+
+Three reasons, in order of weight: it is the word `spec-data.ts:317` uses, so the row closes
+*literally*; it matches the existing vocabulary of `--browser chromium|firefox|webkit`; and the
+language does not carry aliases for a closed keyword set (`D623` — *a directive whose value comes
+from a closed set the language defines is a bare keyword*, one spelling). `ui` appears nowhere in
+the config dialect and is not introduced here.
 
 ### D781
 
@@ -9209,7 +9272,7 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 ### M147d
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2b The six decisions `M147d` has taken, stated**
 
@@ -9399,6 +9462,34 @@ is not a smaller version of the rejected daytime-trigger design (`D755`); it is 
 with none of its parts. There is no notification, no approval, no eviction and no unattended code,
 because there is **no trigger at all** — the run rides something a developer already invokes on
 purpose.
+
+### M155
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**`M155` — `timeout` learns which transport it is bounding**
+
+**Status:** scoped 2026-08-28, **built 2026-08-30**. See §9.
+**Closes:** `M154g-10`.
+**Numbering:** takes `D768`–`D773`. Next free after this plan: **`D774`**, **`TF077`** (unchanged —
+this milestone mints no diagnostic), milestone **`M156`**.
+
+### M155a
+
+<sub>cited from SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+
+**M155a — grammar and resolution**
+
+- `ast.ts:1686` — `TimeoutTarget` gains `'api' | 'browser'`.
+- `parser.ts:628` — `TIMEOUT_TARGETS = ['step', 'api', 'browser', 'expect', 'wait']`. Order is
+  budget family first, then poll family; `TF010`'s message interpolates the array, so it updates
+  itself to *"expected a timeout target (step/api/browser/expect/wait)"*.
+- `parser.ts:2001` — the `0s` guard keys on the budget family (`D770`), and its hint names the
+  target the author actually wrote rather than `step`.
+- `types.ts:59/154` — `ResolvedTimeouts` becomes `{ api, browser, expect, wait }` (`D769`);
+  `DEFAULT_TIMEOUTS` becomes `{ api: 30_000, browser: 30_000, expect: 5_000, wait: 30_000 }`.
+- `resolve.ts:50/77` — track which of `step`/`api`/`browser` were explicitly set across both tiers,
+  then resolve `api = explicitApi ?? explicitStep ?? 30_000`, likewise `browser`.
 
 ### M157
 

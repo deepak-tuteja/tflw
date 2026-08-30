@@ -108,7 +108,7 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<{ doc
   if (!cached) {
     cached = (async () => {
       const start = performance.now();
-      const response = await sendRequest({ method: 'GET', url, headers: {}, timeoutMs: config.timeouts.step, followRedirects: true, allowHosts: config.allowHosts });
+      const response = await sendRequest({ method: 'GET', url, headers: {}, timeoutMs: config.timeouts.api, followRedirects: true, allowHosts: config.allowHosts });
       if (response.status < 200 || response.status >= 300) {
         throw new RuntimeError(`could not load OpenAPI document at "${url}": got ${response.status}`);
       }

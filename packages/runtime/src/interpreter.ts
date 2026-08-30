@@ -2523,7 +2523,7 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
   let response: ResponseTrace;
   try {
     checkHostAllowed(tokenUrl, config);
-    response = await sendRequest({ method: 'POST', url: tokenUrl, headers, body, timeoutMs: config.timeouts.step, followRedirects: true, allowHosts: config.allowHosts });
+    response = await sendRequest({ method: 'POST', url: tokenUrl, headers, body, timeoutMs: config.timeouts.api, followRedirects: true, allowHosts: config.allowHosts });
   } catch (err) {
     const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
     return fail(tc.redactor.redact(message), redactRequest(request, tc.redactor, config));
@@ -3106,7 +3106,7 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
         url,
         headers,
         ...(request.body !== undefined ? { body: request.body } : {}),
-        timeoutMs: config.timeouts.step,
+        timeoutMs: config.timeouts.api,
         followRedirects: true,
         allowHosts: config.allowHosts,
         ...(mtls ? { mtls } : {}),
@@ -3264,7 +3264,7 @@ async function resolveForStep(ctx: EvalCtx, config: ResolvedConfig, locatorAst: 
   const browser = requireBrowserCtx(ctx);
   const page = await browser.page.ensurePage(browser.manager);
   const scope = browser.scope ?? page;
-  return resolveLocator(scope, locatorAst, ctx, config.timeouts.step);
+  return resolveLocator(scope, locatorAst, ctx, config.timeouts.browser);
 }
 
 /** Exported for the same reason `resolveBaseUrl` and `checkHostAllowed` beside it are (M125b1): the
@@ -3509,14 +3509,14 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'OpenStmt': {
           const page = await ensurePageForStep(ctx);
           const url = resolveWebUrl(String(evalValue(step.path, ctx)), config);
-          await performOpen(page, url, config.timeouts.step);
+          await performOpen(page, url, config.timeouts.browser);
           result = mkStep('open', src, step.span, true, stepStart, `open ${url}`);
           break;
         }
         case 'ClickStmt': {
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
-          await performClick(pwLocator, step.kind, config.timeouts.step);
+          await performClick(pwLocator, step.kind, config.timeouts.browser);
           const verb = step.kind === 'double' ? 'double click' : step.kind === 'right' ? 'right click' : 'click';
           result = mkStep('click', src, step.span, true, stepStart, `${verb} ${locatorDetail(step.locator, name, via)}`);
           break;
@@ -3525,7 +3525,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
           const value = stringify(evalValue(step.value, ctx));
-          await performFill(pwLocator, value, config.timeouts.step);
+          await performFill(pwLocator, value, config.timeouts.browser);
           result = mkStep('fill', src, step.span, true, stepStart, tc.redactor.redact(`fill ${locatorDetail(step.locator, name, via)} with ${JSON.stringify(value)}`));
           break;
         }
@@ -3535,7 +3535,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             const fieldLocator: LocatorAst = { type: 'Locator', kind: 'field', value: row.field, span: row.span };
             const { pwLocator, via } = await resolveForStep(ctx, config, fieldLocator);
             const value = stringify(evalValue(row.value, ctx));
-            await performFill(pwLocator, value, config.timeouts.step);
+            await performFill(pwLocator, value, config.timeouts.browser);
             details.push(`${locatorDetail(fieldLocator, row.field.value, via)} = ${JSON.stringify(value)}`);
           }
           result = mkStep('fill', src, step.span, true, stepStart, tc.redactor.redact(`fill form: ${details.join(', ')}`));
@@ -3545,35 +3545,35 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
           const value = stringify(evalValue(step.value, ctx));
-          await performSelect(pwLocator, value, config.timeouts.step);
+          await performSelect(pwLocator, value, config.timeouts.browser);
           result = mkStep('select', src, step.span, true, stepStart, `select ${JSON.stringify(value)} from ${locatorDetail(step.locator, name, via)}`);
           break;
         }
         case 'TickStmt': {
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
-          await performCheck(pwLocator, config.timeouts.step);
+          await performCheck(pwLocator, config.timeouts.browser);
           result = mkStep('checkbox', src, step.span, true, stepStart, `check ${locatorDetail(step.locator, name, via)}`);
           break;
         }
         case 'UntickStmt': {
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
-          await performUncheck(pwLocator, config.timeouts.step);
+          await performUncheck(pwLocator, config.timeouts.browser);
           result = mkStep('uncheckbox', src, step.span, true, stepStart, `uncheck ${locatorDetail(step.locator, name, via)}`);
           break;
         }
         case 'HoverStmt': {
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
-          await performHover(pwLocator, config.timeouts.step);
+          await performHover(pwLocator, config.timeouts.browser);
           result = mkStep('hover', src, step.span, true, stepStart, `hover ${locatorDetail(step.locator, name, via)}`);
           break;
         }
         case 'ScrollStmt': {
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
-          await performScrollIntoView(pwLocator, config.timeouts.step);
+          await performScrollIntoView(pwLocator, config.timeouts.browser);
           result = mkStep('scroll', src, step.span, true, stepStart, `scroll to ${locatorDetail(step.locator, name, via)}`);
           break;
         }
@@ -3582,7 +3582,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           if (step.locator) {
             const name = String(evalValue(step.locator.value, ctx));
             const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
-            await performPressOnLocator(pwLocator, keys, config.timeouts.step);
+            await performPressOnLocator(pwLocator, keys, config.timeouts.browser);
             result = mkStep('press', src, step.span, true, stepStart, `press ${JSON.stringify(keys)} on ${locatorDetail(step.locator, name, via)}`);
           } else {
             const page = await ensurePageForStep(ctx);
@@ -3627,7 +3627,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'SwitchToNewTabBlock': {
           const browser = requireBrowserCtx(ctx);
           let inner: StepsExec | undefined;
-          const switched = await browser.page.runNewTabBlock(browser.manager, config.timeouts.step, async () => {
+          const switched = await browser.page.runNewTabBlock(browser.manager, config.timeouts.browser, async () => {
             inner = await execSteps(step.body, config, ctx, tc, testName, registry);
             return inner.ok;
           });
@@ -3654,7 +3654,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         case 'DownloadBlock': {
           const browser = requireBrowserCtx(ctx);
           let inner: StepsExec | undefined;
-          const downloaded = await browser.page.runDownloadBlock(browser.manager, config.timeouts.step, async () => {
+          const downloaded = await browser.page.runDownloadBlock(browser.manager, config.timeouts.browser, async () => {
             inner = await execSteps(step.body, config, ctx, tc, testName, registry);
             return inner.ok;
           });
@@ -3674,7 +3674,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const toName = String(evalValue(step.to.value, ctx));
           const { pwLocator: fromLoc, via: fromVia } = await resolveForStep(ctx, config, step.from);
           const { pwLocator: toLoc, via: toVia } = await resolveForStep(ctx, config, step.to);
-          await performDrag(fromLoc, toLoc, config.timeouts.step);
+          await performDrag(fromLoc, toLoc, config.timeouts.browser);
           result = mkStep('drag', src, step.span, true, stepStart, `drag ${locatorDetail(step.from, fromName, fromVia)} to ${locatorDetail(step.to, toName, toVia)}`);
           break;
         }
@@ -3684,7 +3684,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const page = await ensurePageForStep(ctx);
           const name = String(evalValue(step.locator.value, ctx));
           const { pwLocator, via } = await resolveForStep(ctx, config, step.locator);
-          await performDropFile(page, abs, pwLocator, config.timeouts.step);
+          await performDropFile(page, abs, pwLocator, config.timeouts.browser);
           result = mkStep('dropFile', src, step.span, true, stepStart, `drop file ${JSON.stringify(filePath)} onto ${locatorDetail(step.locator, name, via)}`);
           break;
         }
@@ -4019,7 +4019,7 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   }
 
   const request: RequestTrace = { method: spec.method, url, headers, ...(traceBody !== undefined ? { body: traceBody } : {}) };
-  const timeoutMs = spec.timeoutMs ?? config.timeouts.step;
+  const timeoutMs = spec.timeoutMs ?? config.timeouts.api;
   // `M97c-03`: `cert`/`key` are `tflw.config` keys (SPEC §3.6), so they resolve against the
   // config's directory — unlike `baseDir` just above, which is this *test file's* and is the right
   // base for a `body from`/`upload` the test itself wrote.
@@ -4627,7 +4627,7 @@ function toObservation(request: RequestTrace, response: ResponseTrace, tls?: Tls
  * manufacture an `ok: false` — "the probe ran and could not answer" — for a response where nothing
  * was ever worth asking.
  *
- * `timeouts.step` is the budget, not a constant of its own. A probe is a connection to the same host
+ * `timeouts.api` is the budget, not a constant of its own. A probe is a connection to the same host
  * the step just talked to, so the step's own patience is the number that already describes how long
  * this suite is willing to wait on that host; a second knob would be one more thing to keep in sync
  * for no new information.
@@ -4645,7 +4645,7 @@ async function probeTlsFor(finalUrl: string, floor: FindingSeverity | null, conf
   // silently leave this reading the old severity.
   if (floor && !SECURITY_RULES.some((r) => r.id.startsWith('sec/tls-') && SEVERITY_RANK[r.severity] >= SEVERITY_RANK[floor])) return undefined;
   const policy = {
-    timeoutMs: config.timeouts.step,
+    timeoutMs: config.timeouts.api,
     insecure: config.insecure,
     allowHosts: config.allowHosts,
     authorizedTargets: config.authorizedTargets,
@@ -5234,7 +5234,7 @@ async function execAuthzExpect(
   const csrfPrincipals = await csrfPrincipalsFor(ctx.sessionNames, config, tc);
 
   const policy: ProbePolicy = {
-    timeoutMs: config.timeouts.step,
+    timeoutMs: config.timeouts.api,
     allowHosts: config.allowHosts,
     insecure: config.insecure,
     probeMutating: mayProbeMutating(request.url, config.authorizedTargets),
@@ -5472,7 +5472,7 @@ async function execInputHandlingExpect(
   const sites = mutationSites(request);
 
   const policy: InputProbePolicy = {
-    timeoutMs: config.timeouts.step,
+    timeoutMs: config.timeouts.api,
     allowHosts: config.allowHosts,
     insecure: config.insecure,
     probeMutating: mayProbeMutating(request.url, config.authorizedTargets),
@@ -5901,9 +5901,9 @@ async function execWaitUntilApi(
     attempt++;
     // Clamp this poll's own request timeout to what's left of the wait deadline (decision 67) — the
     // outer deadline was previously only checked *after* `execApi` returned, so a single slow poll
-    // could hang for up to the request's own (much larger) `config.timeouts.step` default, blowing
+    // could hang for up to the request's own (much larger) `config.timeouts.api` default, blowing
     // way past a short `wait <N>ms` budget.
-    const configuredTimeout = step.request.timeoutMs ?? config.timeouts.step;
+    const configuredTimeout = step.request.timeoutMs ?? config.timeouts.api;
     const requestTimeout = Math.max(1, Math.min(configuredTimeout, remainingMs));
     // Whether the line above actually shortened this poll. If it did, a timeout at the clamped
     // value is the *wait* deadline expiring, not the author's request timeout — see the catch below.

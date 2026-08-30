@@ -778,9 +778,9 @@ test "reads with none of its own"
 });
 
 test('a locator that never appears fails with a clear "no element found" error, not a hang', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const { program } = parseSource('test "not found"\n  open "/"\n  click button "Does Not Exist"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   assert.match(report.tests[0]!.error ?? '', /no element found for `button "Does Not Exist"`/);
 });
@@ -788,9 +788,9 @@ test('a locator that never appears fails with a clear "no element found" error, 
 // ---- M5: live-DOM "nearest candidate" diagnosis (SPEC §9.3) ---------------------------------
 
 test('a typo\'d button name surfaces the real button as a ready-to-paste suggestion', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const { program } = parseSource('test "typo"\n  open "/diagnose"\n  click button "Add to Crat"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /no element found for `button "Add to Crat"`/);
@@ -799,18 +799,18 @@ test('a typo\'d button name surfaces the real button as a ready-to-paste suggest
 });
 
 test('a typo\'d field name surfaces the real labelled field, not a raw css guess', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const { program } = parseSource('test "typo"\n  open "/diagnose"\n  fill field "Emial Address" with "x"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /field "Email Address"/);
 });
 
 test('an unrelated name with no similar match falls back to the unnamed element\'s generated css selector', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const { program } = parseSource('test "no similar name"\n  open "/diagnose"\n  click button "Totally Unrelated Nonexistent Thing"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   const error = report.tests[0]!.error ?? '';
   assert.doesNotMatch(error, /"Add to Cart"/); // not similar enough to suggest
@@ -821,10 +821,10 @@ test('an unrelated name with no similar match falls back to the unnamed element\
 });
 
 test('nothing of the right kind on the page at all leaves the error message unchanged (no diagnosis noise)', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   // `/diagnose` has no `ul`/`ol`/`[role=list]` element anywhere — the scan itself comes back empty.
   const { program } = parseSource('test "no candidates"\n  open "/diagnose"\n  click list "Anything"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /no element found for `list "Anything"`/);
@@ -841,9 +841,9 @@ test('nothing of the right kind on the page at all leaves the error message unch
 // real control that merely lacks an accessible name (pinned by the icon-button test above).
 
 test('a typo\'d text name surfaces the real text, and no structural css paths alongside it', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const { program } = parseSource('test "text typo"\n  open "/diagnose"\n  click text "Add to Crat"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /nearest matches on the page:/);
@@ -852,9 +852,9 @@ test('a typo\'d text name surfaces the real text, and no structural css paths al
 });
 
 test('an unrelated text name gets no diagnosis at all — an element with no text is not a near-miss', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const { program } = parseSource('test "text unrelated"\n  open "/diagnose"\n  click text "Somethign Unrelated"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /no element found for `text "Somethign Unrelated"`/);
@@ -874,9 +874,9 @@ test('the `text` exclusion did not disarm the assertion path it now also fires o
 });
 
 test('css/xpath locators never get a diagnosis suffix — no semantic name to fuzzy-match against', async () => {
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const { program } = parseSource('test "css escape"\n  open "/diagnose"\n  click css ".nonexistent"\n');
-  const { report } = await runProgram(program, shortStepConfig, { source: 'x', browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /no element found for `css ".nonexistent"`/);
@@ -1325,14 +1325,14 @@ test('a `retry` test that fails then passes captures a trace on both attempts (D
   flakyRequests = 0; // this test owns `/flaky`'s request count — reset so no other test can skew it
   // Short `step` timeout: attempt 1's click genuinely never finds "Add to cart" (not ambiguity, a
   // real absence) — `resolveLocator` polls for the full `timeout step` budget before giving up.
-  const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
+  const shortBrowserConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, browser: 300 } };
   const source = `test "flaky then ok" retry 1
   open "/flaky"
   click button "Add to cart"
 `;
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
-  const { report } = await runProgram(program, shortStepConfig, { source, browserManager });
+  const { report } = await runProgram(program, shortBrowserConfig, { source, browserManager });
   const result = report.tests[0]!;
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.equal(result.flaky, true);

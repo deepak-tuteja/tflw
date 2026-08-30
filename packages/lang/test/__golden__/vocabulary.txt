@@ -6,7 +6,7 @@
 #   K  a string argument to expectKw(…) / isKw(…)
 #   V  a `<expr>.value === '…'` comparison
 #
-# 248 words
+# 249 words
 
 A   DELETE
 A   GET
@@ -36,6 +36,7 @@ AK  before
 K   between
 AK  body
 A   both
+A   browser
 A   button
 K   bytes
 A   capture

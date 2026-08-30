@@ -1,8 +1,8 @@
 // Resolve a parsed tflw.config into the concrete settings the interpreter runs against:
 // active-env selection (P#28), defaults+env merge, per-service base URLs (P#29).
 
-import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern, TeardownLevel } from '@tflw/lang';
-import { DEFAULT_TIMEOUTS, type AuthorizedTarget, type ResolvedConfig, type ResolvedHeader, type ResolvedTimeouts } from './types.js';
+import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern, TeardownLevel, TimeoutTarget } from '@tflw/lang';
+import { DEFAULT_TIMEOUTS, type AuthorizedTarget, type ResolvedConfig, type ResolvedHeader } from './types.js';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -47,7 +47,11 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   let webBaseUrl: string | null = null;
   const services: Record<string, string> = {};
   const headers: ResolvedHeader[] = [];
-  const timeouts: { step: number; expect: number; wait: number } = { ...DEFAULT_TIMEOUTS };
+  // `D768`/`D769` — five grammar targets in, four resolved fields out. Written as-declared here,
+  // across both tiers, and narrowed at the `return` below; `step` is read there and never leaves
+  // this function. `undefined` is load-bearing: it is what distinguishes "never written" from
+  // "written to the default value", which is the whole of the `api ?? step ?? default` rule.
+  const written: { [K in TimeoutTarget]?: number } = {};
   let reportDir = './report';
   let workers = 1;
   let insecure = false;
@@ -79,7 +83,11 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
           headers.push({ name: entry.name.value, value: entry.value, service: entry.service });
           break;
         case 'TimeoutDecl':
-          timeouts[entry.target] = entry.ms;
+          // Same-key-wins per key, applied to the *written* target — which is why `D772`'s case
+          // resolves the way it does: `defaults: timeout api 10s` beside `env: timeout step 20s`
+          // gives api 10s and browser 20s. The env's broader key does not reset the narrower one it
+          // inherited, because they are not the same key.
+          written[entry.target] = entry.ms;
           break;
         case 'WorkersDecl':
           workers = entry.count;
@@ -180,7 +188,12 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
     services,
     webBaseUrl,
     headers,
-    timeouts: timeouts as ResolvedTimeouts,
+    timeouts: {
+      api: written.api ?? written.step ?? DEFAULT_TIMEOUTS.api,
+      browser: written.browser ?? written.step ?? DEFAULT_TIMEOUTS.browser,
+      expect: written.expect ?? DEFAULT_TIMEOUTS.expect,
+      wait: written.wait ?? DEFAULT_TIMEOUTS.wait,
+    },
     reportDir,
     workers,
     insecure,

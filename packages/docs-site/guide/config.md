@@ -7,7 +7,7 @@ declaration-only (`test` is a checker error here). Two tiers, `defaults` then th
 ```tflw-config
 defaults
   header "Accept" is "application/json"
-  timeout step 10s, expect 5s, wait 30s
+  timeout step 10s, browser 30s, expect 5s, wait 30s
   workers 4
   report "./report"
 
@@ -22,6 +22,48 @@ env staging
 
 Active env selection: `--env <name>` flag > `TFLW_ENV` env var > the block marked `default`. No
 resolvable env is a startup error. Unknown config keys are checker errors, not silently ignored.
+
+## Timeouts
+
+Five targets, in two families.
+
+```tflw-config fragment
+defaults
+  timeout step 10s      # the fallback budget for both transports
+  timeout api 10s       # HTTP requests only
+  timeout browser 60s   # browser steps only
+  timeout expect 5s     # a UI expect/check's retry budget
+  timeout wait 30s      # a `wait until` step's poll ceiling
+```
+
+`timeout api` and `timeout browser` **narrow** `timeout step` rather than replacing it: an HTTP
+request uses `timeout api` if you set one and `timeout step` otherwise, and a browser step uses
+`timeout browser` if you set one and `timeout step` otherwise. Setting only `timeout step` therefore
+still bounds both, which is what it has always done.
+
+| written | HTTP request | browser step |
+|---|---|---|
+| nothing | 30s | 30s |
+| `timeout step 10s` | 10s | 10s |
+| `timeout step 30s, api 10s` | 10s | 30s |
+| `timeout browser 60s` | 30s | 60s |
+
+Reach for `timeout browser` when a page renders slowly: an `api` step can carry its own budget on
+its own line (`api GET /slow timeout 90s`), while a browser step cannot, so before this existed the
+only way to be more patient with the UI was to be equally patient with every request in the suite.
+
+`timeout api` is also the one that matters under load. A request that overruns its budget is
+aborted, so that iteration *fails* and never reaches the duration percentiles — meaning the budget
+defines the right-hand tail your `threshold p95 duration …` reads. Browser steps aren't supported
+inside a workload-bearing `test` at all, so `timeout browser` never affects a load run.
+
+The two tiers merge **per key**, and one case catches people out: `defaults` setting `timeout api
+10s` beside an `env` setting `timeout step 20s` gives api 10s and browser 20s. The env's broader key
+doesn't reset the narrower one it inherited — same-key-wins is about the same key.
+
+`timeout api 0s` and `timeout browser 0s` are refused (they'd abort every operation before it
+started), while `timeout expect 0s` and `timeout wait 0s` are legal and mean *evaluate once, don't
+poll*.
 
 ## The demo service
 

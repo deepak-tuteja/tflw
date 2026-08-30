@@ -80,6 +80,13 @@ const KEYWORDS = new Set([
   'on', 'to', 'onto', 'dialog', 'new', 'tab', 'frame', 'respond', 'mask',
   'ramp', 'over', 'threshold', 'cleanup', 'pause',
   'hold', 'step', 'spike', 'run', 'iterations', 'per', 'user', 'across', 'for',
+  // M155 (D768/D773) — `timeout browser`'s second word. `api`, `step`, `expect` and `wait` are all
+  // already above, so this is the only one of the five targets the list was missing. It passes
+  // D427a's test the way `frame`, `target` and `report` do: it is a word the language has, and a
+  // `.tflw` file naming a variable `browser` is no more likely than one naming it `report`. The
+  // spelling is `browser` rather than `ui` for D773's reasons, one of which is that it matches
+  // `--browser chromium|firefox|webkit`, already the reader's word for this axis.
+  'browser',
   'parallel', 'sequential', 'exclude',
   // M137c (D432/D450) — the crawl's four words. `exclude` is already above it, added by D127 for the
   // config dialect and shared here because a crawl means the same verb over a different set (D466).

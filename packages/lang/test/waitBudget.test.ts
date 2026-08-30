@@ -131,7 +131,7 @@ test('a bare `timeout` on the locator form is still refused, and now names the c
   assert.deepEqual(stepCodes('  open "/x"\n  wait until button "Go" is enabled timeout 30s\n'), [Codes.UNEXPECTED_TOKEN]);
   assert.equal(
     said('  open "/x"\n  wait until button "Go" is enabled timeout 30s\n'),
-    'unexpected `timeout` at end of step | a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, or set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`',
+    'unexpected `timeout` at end of step | a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, and to give browser steps more time set `timeout browser` in `tflw.config` (`timeout api`, `timeout step`, `timeout wait` and `timeout expect` are the other four)',
   );
 });
 

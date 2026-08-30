@@ -669,7 +669,13 @@ const EVIDENCE_LEVEL_OF: Readonly<Record<(typeof EVIDENCE_PHRASES)[number], Evid
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 const LOG_DESTINATIONS = ['console', 'html', 'both'] as const;
 const RETRY_AFTER_HEADERS = ['Retry-After'] as const;
-const TIMEOUT_TARGETS = ['step', 'expect', 'wait'] as const;
+// Budget family first, then poll family (`D770`) — the order this array is written in is the order
+// `TF010` lists them in, since its message interpolates the array rather than repeating it.
+const TIMEOUT_TARGETS = ['step', 'api', 'browser', 'expect', 'wait'] as const;
+/** The targets whose value is handed to an operation as an abort deadline, so `0` cannot configure
+ *  anything (`D770`, `TF071`). The complement — `expect`, `wait` — are poll ceilings tested after a
+ *  read, where `0` means "evaluate once, don't poll" and stays legal. */
+const BUDGET_TIMEOUT_TARGETS: readonly TimeoutTarget[] = ['step', 'api', 'browser'];
 export const DURATION_UNITS = ['ms', 's', 'm'] as const;
 export const DATE_OFFSET_UNITS = ['seconds', 'minutes', 'hours', 'days', 'weeks'] as const;
 
@@ -2039,15 +2045,19 @@ class Parser {
       const ms = this.parseDuration();
       if (ms === null) return decls.length ? decls : null;
       const target = targetTok.value as TimeoutTarget;
-      // **Only `step`.** `timeout step 0s` hands `setTimeout(abort, 0)` to every request, so the
-      // whole suite fails before a single byte is sent; `timeout expect 0s` and `timeout wait 0s`
-      // are *meaningful* — both poll loops are `for (;;)` bodies that evaluate once and test the
-      // deadline afterwards, so zero there means "evaluate once, don't poll" and is a setting
-      // someone may genuinely want. Measured in `interpreter.ts`/`http.ts`, not assumed, and the
-      // asymmetry is kept rather than flattened for the same reason `random string 0` is legal.
+      // **The budget family** (`D770`, `M155a`). `timeout step 0s` hands `setTimeout(abort, 0)` to
+      // every request, so the whole suite fails before a single byte is sent — and the same is true
+      // of `timeout api 0s` and `timeout browser 0s`, because what makes zero unusable is that the
+      // number is handed to an operation, not that the target is spelled `step`. `timeout expect 0s`
+      // and `timeout wait 0s` are *meaningful* — both poll loops are `for (;;)` bodies that evaluate
+      // once and test the deadline afterwards, so zero there means "evaluate once, don't poll" and is
+      // a setting someone may genuinely want. Measured in `interpreter.ts`/`http.ts`, not assumed,
+      // and the asymmetry is kept rather than flattened for the same reason `random string 0` is
+      // legal. Keying on the family rather than on a list of names is what made the two new targets
+      // follow from the existing rule instead of needing a second decision.
       // Durations skip the whole-number test: `parseDuration` multiplies, so `1.5s` is 1500ms and
       // fractional milliseconds are odd rather than impossible.
-      if (target === 'step' && !this.settingValue(ms, this.spanFrom(durStart), `timeout step ${ms}ms`, 1, '`timeout step 0s` aborts every request before it is sent, so every api step in the suite fails identically — give it a real budget, or drop the line to take the default. `timeout expect 0s`/`timeout wait 0s` are different and stay legal: they mean "evaluate once, don\'t poll"', false)) {
+      if (BUDGET_TIMEOUT_TARGETS.includes(target) && !this.settingValue(ms, this.spanFrom(durStart), `timeout ${target} ${ms}ms`, 1, `\`timeout ${target} 0s\` aborts every ${target === 'browser' ? 'browser step before it starts, so every one of them fails' : 'request before it is sent, so every api step in the suite fails'} identically — give it a real budget, or drop the line to take the default. \`timeout expect 0s\`/\`timeout wait 0s\` are different and stay legal: they mean "evaluate once, don't poll"`, false)) {
         return decls.length ? decls : null;
       }
       decls.push({ type: 'TimeoutDecl', target, ms, span: this.spanFrom(start) });
@@ -5519,7 +5529,7 @@ class Parser {
         // looking at the token after it — which is the same two-token test the grammar itself uses.
         return this.atWaitBudget()
           ? '`timeout wait <duration>` sets the poll budget of one `wait until` step — no other step has one. To bound a single request write `timeout <duration>`; to change the whole run set `timeout wait` in `tflw.config`'
-          : 'a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, or set `timeout step`, `timeout wait`, or `timeout expect` in `tflw.config`';
+          : 'a per-step `timeout` bounds one HTTP request, so it is only accepted on `api` requests — on a `wait until` write `timeout wait <duration>` to set the poll budget of that one step, and to give browser steps more time set `timeout browser` in `tflw.config` (`timeout api`, `timeout step`, `timeout wait` and `timeout expect` are the other four)';
       case 'and':
         return this.lineNoun !== 'step' ? null : 'one assertion per `expect` — put the second one on its own `expect` line';
       case 'ms':

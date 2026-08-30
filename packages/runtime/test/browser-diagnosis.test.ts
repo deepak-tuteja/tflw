@@ -132,7 +132,7 @@ test('byte-identical suggestions collapse to one, and it says why it is not read
   // ``ambiguous locator `button "Save"` … matched 2 elements`` — a *different* failure, from a
   // list SPEC §9.3 calls ready-to-paste. A short typo like "Sav" does not reach this path at all:
   // Playwright's role-name matching is substring-based, so a truncation is a match, not a miss.
-  const { report } = await run('test "typo"\n  open "/dup-save"\n  click button "Saev"\n', configWith({ step: 4000 }));
+  const { report } = await run('test "typo"\n  open "/dup-save"\n  click button "Saev"\n', configWith({ browser: 4000 }));
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /nearest matches on the page:/);
   assert.equal(error.match(/button "Save"/g)?.length, 1, `expected one deduped suggestion, got:\n${error}`);
@@ -142,7 +142,7 @@ test('byte-identical suggestions collapse to one, and it says why it is not read
 test('deduping frees the slots duplicates used to consume, so a distinct candidate is reachable', async () => {
   // Twelve identical near-misses filled all five slots; `button "Add to bag"` could not be shown
   // no matter how relevant it was. This is the crowding-out half, at the browser level.
-  const { report } = await run('test "typo"\n  open "/many-cart"\n  click button "Add to crat"\n', configWith({ step: 4000 }));
+  const { report } = await run('test "typo"\n  open "/many-cart"\n  click button "Add to crat"\n', configWith({ browser: 4000 }));
   const error = report.tests[0]!.error ?? '';
   assert.match(error, /button "Add to cart"/);
   assert.match(error, /12 elements render this same locator/);
@@ -153,7 +153,7 @@ test('deduping frees the slots duplicates used to consume, so a distinct candida
 
 test('a locator still unmatched at 3s says so, naming the closest thing on the page (D248)', async () => {
   const { result, stderr } = await captureStderr(() =>
-    run('test "typo"\n  open "/dup-save"\n  click button "Saev"\n', configWith({ step: 8000 })),
+    run('test "typo"\n  open "/dup-save"\n  click button "Saev"\n', configWith({ browser: 8000 })),
   );
   assert.equal(result.report.ok, false);
   assert.match(stderr, /⏳ tflw: still nothing matching `button "Saev"` after 3s/);
@@ -166,7 +166,7 @@ test('it speaks even when nothing on the page resembles the name — that case i
   // The row's own re-measurement: against a page with no near-miss, the 30 s wait is not even paid
   // off with a suggestion at the end. Staying quiet here would leave exactly that case unfixed.
   const { stderr } = await captureStderr(() =>
-    run('test "typo"\n  open "/dup-save"\n  click button "Log Inn"\n', configWith({ step: 8000 })),
+    run('test "typo"\n  open "/dup-save"\n  click button "Log Inn"\n', configWith({ browser: 8000 })),
   );
   assert.match(stderr, /still nothing matching `button "Log Inn"` after 3s/);
   assert.match(stderr, /nothing on the page resembles it yet/);
@@ -176,7 +176,7 @@ test('a step whose own timeout leaves no room to wait after speaking stays quiet
   // At `step: 5000` the line would land a blink before the failure it precedes. The guard is
   // "at least as much waiting left as has already passed", so it disarms.
   const { stderr } = await captureStderr(() =>
-    run('test "typo"\n  open "/dup-save"\n  click button "Saev"\n', configWith({ step: 5000 })),
+    run('test "typo"\n  open "/dup-save"\n  click button "Saev"\n', configWith({ browser: 5000 })),
   );
   assert.doesNotMatch(stderr, /⏳ tflw:/);
 });
@@ -186,7 +186,7 @@ test('the deadline does not move: an app that renders at 4s still passes, having
   // that must never regress — a progress line that quietly became a shorter timeout would turn a
   // slow app's green suite red.
   const { result, stderr } = await captureStderr(() =>
-    run('test "slow"\n  open "/slow"\n  click button "Checkout"\n', configWith({ step: 8000 })),
+    run('test "slow"\n  open "/slow"\n  click button "Checkout"\n', configWith({ browser: 8000 })),
   );
   assert.equal(result.report.ok, true, result.report.tests[0]?.error ?? '');
   assert.match(stderr, /still nothing matching `button "Checkout"` after 3s/);

@@ -132,5 +132,7 @@ test('a key set in `defaults` and again in an `env` is silent, and the env wins'
     parseConfigSource(source).diagnostics.filter((d) => d.code === Codes.CONFIG_DUPLICATE_KEY),
     [],
   );
-  assert.equal(resolved(source).timeouts.step, 9000);
+  // `M155a`/`D769` — `step` is an input, not a resolved field, so the env's win is read off both
+  // transports it feeds rather than off a `step` that no longer exists.
+  assert.deepEqual({ ...resolved(source).timeouts }, { api: 9000, browser: 9000, expect: 5000, wait: 30_000 });
 });

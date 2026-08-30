@@ -663,6 +663,44 @@ and its dogfood sibling.
   edited into adopting the alternative it names and refuses would erase the record that the option
   was considered, and why it lost.
 
+### Added — `timeout api` and `timeout browser` (M155)
+
+**One number was bounding two unrelated things.** `timeout step` was the abort deadline for every
+HTTP request tflw makes *and* for every browser locator resolution — 8 sites and 15 sites, sharing
+one key. An `api` step could always be given its own budget on its own line; a browser step could
+not, and still cannot (`click button "Go" timeout 5s` is `TF010`), so the only way to give a
+slow-rendering page more patience was to give every request in the suite the same patience.
+
+- **`timeout api` and `timeout browser` narrow `timeout step`, which stays the fallback** (`D768`).
+  An HTTP request uses `timeout api` if set, otherwise `timeout step`; a browser step uses
+  `timeout browser` if set, otherwise `timeout step`. All five targets remain optional and every
+  default is unchanged, so **no config written before this release changes meaning** — `timeout step
+  10s` alone still sets both, exactly as it did.
+- The two tiers still merge per key, and one case is worth knowing: `defaults` setting `timeout api
+  10s` beside an `env` setting `timeout step 20s` resolves to **api 10s, browser 20s**. The env's
+  broader key does not reset the narrower one it inherited, because same-key-wins is about the same
+  key (`D772`). `SPEC` §3.1 says so out loud.
+- **`timeout wait` keeps one number for both transports** (`D771`): a poll budget is the
+  *condition's* patience rather than the transport's speed, and where the two genuinely differ it
+  is already writable per step (`M147d`/`D640`). `wait until api`'s per-poll *request* budget does
+  follow the split — it reads `timeout api`, under the same clamp as before.
+- **`timeout api 0s` and `timeout browser 0s` are refused** (`TF071`), and `timeout expect 0s` /
+  `timeout wait 0s` stay legal. The rule moved from the name `step` to the target's **family**
+  (`D770`): a *budget* is handed to an operation, so zero makes it fail before doing anything, while
+  a *poll ceiling* is tested after a read, where zero legitimately means "evaluate once, don't
+  poll". Restating it that way is what made the two new targets follow from the existing rule
+  instead of needing a second decision.
+- This also moves the slow/failed boundary in a load run out from under the browser. A request that
+  overruns its budget is aborted, so its iteration *fails* and never reaches the duration
+  percentiles — which meant `threshold p95 duration is less than 800ms` read a distribution whose
+  right tail was defined by a key that also governed browser locator resolution. `timeout browser`
+  is inert under a workload by construction (`TF033`/`D19`), so of the two only `timeout api` ever
+  bounds a load run.
+
+Internally, `timeout step` no longer survives resolution at all (`D769`): the resolved shape is
+`{ api, browser, expect, wait }`, so a runtime site added later cannot inherit the shared budget by
+accident — it has to name a transport or fail to compile.
+
 ### Changed — config directive spelling (M147b)
 
 The rule the language never had, and the last breaking change before `1.0.0`: **a directive whose

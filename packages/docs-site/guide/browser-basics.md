@@ -32,7 +32,8 @@ click button "Delete"                    # (the browser otherwise auto-dismisses
 dismiss dialog
 ```
 
-Every interaction step polls up to `timeout step` (default 30s) for its locator to resolve —
+Every interaction step polls up to `timeout browser` (default 30s, falling back to `timeout step`
+when only that is set) for its locator to resolve —
 `sleep` doesn't exist, only auto-waiting/auto-retrying.
 
 ## Native dialogs
