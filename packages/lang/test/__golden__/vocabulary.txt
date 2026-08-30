@@ -6,7 +6,7 @@
 #   K  a string argument to expectKw(…) / isKw(…)
 #   V  a `<expr>.value === '…'` comparison
 #
-# 247 words
+# 248 words
 
 A   DELETE
 A   GET
@@ -134,6 +134,7 @@ K   mask
 A   matches
 K   matching
 K   max
+K   message
 K   method
 A   minor
 A   minutes

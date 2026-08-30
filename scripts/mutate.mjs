@@ -689,9 +689,9 @@ const REGISTRY = [
     id: 'diagnostic-example-not-derived',
     milestone: 'm110b',
     file: SPEC_DATA,
-    what: 'the rendered example stops being computed from the probes, so a row can once again claim in prose what its source does not do — the vacuous-control class this milestone exists to close (`M110-01`)',
-    find: '  example: renderDiagnosticExample(row.probes),',
-    replace: "  example: row.probes[0]?.as ?? '',",
+    what: 'the rendered example stops being computed from the probes, so a row can once again claim in prose what its source does not do — the vacuous-control class this milestone exists to close (`M110-01`). Re-pointed in `M159c`, which made `probes` optional so a runtime-only code could carry a pointer to a test instead — the derivation it mutates is the same one, now with a second branch for rows no probe can reach.',
+    find: '  example: row.probes ? renderDiagnosticExample(row.probes) : `${row.runtime?.as ?? \'\'} — raised at run time, not by \\`tflw check\\``,',
+    replace: "  example: row.probes?.[0]?.as ?? row.runtime?.as ?? '',",
   },
   {
     id: 'ok-ignores-no-verdict',

@@ -353,7 +353,16 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
     case 'ScrollStmt':
       return { shape: { t: 'ScrollStmt', locator: locatorShape(step.locator) }, literals: [] };
     case 'AcceptDialogStmt':
-      return { shape: { t: 'AcceptDialogStmt' }, literals: [] };
+      // `D800` — the prompt answer is masked like any other step literal, so two `accept dialog
+      // with` steps differing only in their answer are still one reuse candidate. A bare `accept
+      // dialog` keeps its old shape exactly (`text: null`), which is what stops this from
+      // re-partitioning every existing arming into a new group.
+      return step.text === undefined
+        ? { shape: { t: 'AcceptDialogStmt', text: null }, literals: [] }
+        : (() => {
+            const literals: Literals = [];
+            return { shape: { t: 'AcceptDialogStmt', text: maskValue(step.text, literals, 'dialog answer') }, literals };
+          })();
     case 'DismissDialogStmt':
       return { shape: { t: 'DismissDialogStmt' }, literals: [] };
     case 'SwitchToTabStmt':

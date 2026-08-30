@@ -202,7 +202,7 @@ const OPERATORS = new Set([
  * testing metric/target nouns `users`/`rps` (`ramp to N users|rps over …`) and `error`/`rate`
  * (`threshold error rate is …`) — M33 catch-up, same "noun the value is measured in/against" role
  * `duration`/`status` already play here. */
-const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request', 'button', 'field', 'list', 'css', 'xpath', 'page', 'response', 'users', 'rps', 'error', 'rate']);
+const TYPES = new Set(['status', 'duration', 'text', 'bytes', 'csv', 'pdf', 'request', 'button', 'field', 'list', 'css', 'xpath', 'page', 'response', 'message', 'users', 'rps', 'error', 'rate']);
 
 /** `p50`/`p90`/`p95`/`p99`/… (M29 `threshold p95 duration is less than 800ms`, D24a) — a dynamic
  * ident, not fixed vocabulary (parser.ts's `parseThresholdDecl` accepts any `/^p([1-9][0-9]?)$/`),

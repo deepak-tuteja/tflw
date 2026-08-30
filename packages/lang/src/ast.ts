@@ -765,7 +765,42 @@ export type Subject =
   | LocatorSubject
   | PageSubject
   | ResponseSubject
+  | DialogMessageSubject
+  | DialogTypeSubject
   | ValueSubject;
+
+/** `expect dialog message is "Delete this product?"` (M159, `D798`, SPEC §9.1) — the text of the
+ * last native dialog **of this attempt**.
+ *
+ * Two bare words, no hyphen, which is `D628`'s two-surface rule: the config dialect and the CLI
+ * take the hyphen, the language does not. It is a value subject in the ordinary sense — a thing a
+ * prior step produced that a matcher stands against — so it needs no new grammar beyond the head
+ * word, and every string matcher already works on it.
+ *
+ * **This is what makes `dismiss dialog` provable at all.** `M154b-01`: `null` and `'dismiss'` took
+ * the same branch in the handler, because the browser driver's unhandled default *is* dismissal, so
+ * deleting a `dismiss dialog` line changed no assertion anywhere. A test that dismisses can now
+ * assert the dialog existed and said what it should. On an `alert` it is the *only* thing that can
+ * be asserted (SPEC §9.1's per-kind table): accept and dismiss have identical page effect there,
+ * which generalises the row from one step to one dialog kind. */
+export interface DialogMessageSubject extends Node {
+  readonly type: 'DialogMessageSubject';
+}
+
+/** `expect dialog type is "confirm"` (M159, `D799`, SPEC §9.1) — which of the four native modal
+ * kinds the last dialog of this attempt was: `alert`, `confirm`, `prompt` or `beforeunload`.
+ *
+ * A **string** subject over a closed set, not a new matcher: `is`/`equals` already compare strings
+ * and nothing about four possible values needs its own comparison. The set is stated in SPEC and in
+ * the manifest row so a reader knows the four without reading the browser driver's documentation.
+ *
+ * It closes a blind spot nothing had filed: the runtime never read `dialog.type()`, so a test could
+ * not tell a `confirm()` from an `alert()` — and the regression where a guard is removed, a
+ * destructive action's `confirm()` becoming an unconditional `alert()`, was invisible. The
+ * `accept dialog` still "worked", the action still happened, every assertion still passed. */
+export interface DialogTypeSubject extends Node {
+  readonly type: 'DialogTypeSubject';
+}
 
 /** `expect {orderId} is greater than 0` / `expect all {items.price} …` (M96, `FU-11`, SPEC §6.1) —
  * a value the test already bound with `let`/`capture`, asserted *on* rather than only compared
@@ -1201,6 +1236,14 @@ export interface WithinBlock extends Node {
  * D8's mandatory dialog handling). */
 export interface AcceptDialogStmt extends Node {
   readonly type: 'AcceptDialogStmt';
+  /** `accept dialog with "<text>"` — the answer typed into a `prompt` (`D800`, M159c). `with` is
+   * already this language's argument-carrying preposition (`fill field "Email" with {email}`), so
+   * this borrows an established reading rather than inventing one, and interpolation works for the
+   * same reason it does there. Absent on `accept dialog`, whose behaviour is unchanged: accept with
+   * the empty string. Only `accept` takes it — there is nothing to answer a dialog *with* while
+   * dismissing it. Reaching a non-`prompt` is `TF080`, at runtime (`D801`): the kind is not
+   * knowable statically, and Playwright's own `promptText` is silently ignored there. */
+  readonly text?: Value;
 }
 
 export interface DismissDialogStmt extends Node {

@@ -72,6 +72,28 @@ const FIXTURE_HTML = `<!doctype html>
   <button id="delete" onclick="if (confirm('Really delete?')) { document.getElementById('status').textContent = 'deleted'; } else { document.getElementById('status').textContent = 'kept'; }">Delete</button>
   <p id="status">untouched</p>
 
+  <!-- M159/D797: two confirm() calls raised by ONE click - the shape M154b-02 is filed against,
+       and the reason it was inexpressible under a slot. No step can be interleaved between these
+       two dialogs, so "accept dialog" twice is the only spelling the language has; a single armed
+       slot answered the first and silently dismissed the second. (No backticks in here: this
+       fixture is a TypeScript template literal, and one would end it mid-HTML. And the name is
+       "Bulk remove", not "Delete two": D7's strict matching makes button "Delete" ambiguous the
+       moment a second button's name starts with it, which broke four existing tests.) -->
+  <button id="delete-two" onclick="var a = confirm('Delete this product?'); var b = a &amp;&amp; confirm('Really? This cannot be undone.'); document.getElementById('status2').textContent = b ? 'both accepted' : (a ? 'second refused' : 'first refused');">Bulk remove</button>
+  <p id="status2">untouched</p>
+
+  <!-- M159c/D800: the only dialog kind with an input to fill. The answer is written straight into
+       the page so a test can assert that the string actually arrived - which is the whole claim
+       "accept dialog with" makes, and the one Playwright silently drops for every other kind. -->
+  <button id="ask-colour" onclick="var c = prompt('Favourite colour?'); document.getElementById('colour').textContent = c === null ? 'cancelled' : 'Favourite: ' + c;">Set favourite colour</button>
+  <p id="colour">unset</p>
+
+  <!-- M159c/D801: an alert, so a "with" answer has nowhere to go. One button, so accepting and
+       dismissing do the same thing to the page - which is exactly why TF080 has to be reported
+       rather than inferred from a page assertion. -->
+  <button id="say-hi" onclick="alert('Saved.'); document.getElementById('greeted').textContent = 'greeted';">Say hi</button>
+  <p id="greeted">quiet</p>
+
   <iframe id="payment-frame" src="/frame" title="payment"></iframe>
 
   <a href="/tab2" target="_blank">Open in new tab</a>
@@ -435,6 +457,324 @@ test('dialogs: `dismiss dialog` cancels the guarded action', async () => {
   expect text "kept" is visible
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+// ---- M159/D797: the arming queue -------------------------------------------------------------
+//
+// Four tests, and the first is the break. Everything else here holds the boundaries a queue
+// introduces: an empty one, a surplus one, and the ordering that makes "one-shot" mean per-arming
+// rather than per-page.
+
+test('dialogs: two armings answer two dialogs raised by one click — the case a slot could not express', async () => {
+  // `M154b-02`. Both `confirm()`s come from a single `click`, so no step can sit between them and
+  // two consecutive armings is the only way to write this. Under the old single slot the second
+  // arming overwrote the first, the second dialog fell through to Playwright's dismiss default,
+  // and nothing refused the program — the page just quietly did half the work.
+  const { report } = await run(`test "two dialogs, two armings"
+  open "/"
+  accept dialog
+  accept dialog
+  click button "Bulk remove"
+  expect text "both accepted" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: armings are consumed in order, so accept-then-dismiss is not dismiss-then-accept', async () => {
+  // The property that makes it a queue rather than a set. Accepting the first `confirm()` and
+  // refusing the second is a different end state from either uniform answer, so this fails on a
+  // stack, on a set, and on a slot — three wrong implementations, one test.
+  const { report } = await run(`test "ordered"
+  open "/"
+  accept dialog
+  dismiss dialog
+  click button "Bulk remove"
+  expect text "second refused" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: an unarmed dialog is still dismissed, so the queue changes nothing about today', async () => {
+  // The empty-queue path, asserted rather than assumed. Playwright's unhandled default IS dismissal
+  // (which is `M154b-01`'s whole subject), and `D797` must not have moved it.
+  const { report } = await run(`test "unarmed"
+  open "/"
+  click button "Delete"
+  expect text "kept" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: an arming outlives the step after it and waits for whatever raises next', async () => {
+  // Written first as "a surplus arming does not leak onto a later dialog", and the code was right
+  // and the test was wrong. An arming is not scoped to the step that follows it: `accept dialog`
+  // arms *the next dialog, wherever it fires* (SPEC §9.1/§9.5), and always has — under the old
+  // slot as much as under the queue. Two armings and two separate one-dialog clicks therefore
+  // accept both.
+  //
+  // Worth a test rather than a correction in passing, because it is exactly why `D802`'s warning is
+  // about an arming that is NEVER consumed rather than one consumed later than the author expected.
+  // A rule that fired on "later than expected" would fire on this, which is legal.
+  const { report } = await run(`test "arming outlives its step"
+  open "/"
+  accept dialog
+  accept dialog
+  click button "Delete"
+  click button "Delete"
+  expect text "deleted" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: an arming does not survive into the next test (`D803`)', async () => {
+  // Per test ATTEMPT, not per run — the invariant `networkLog` already states, now load-bearing for
+  // a second thing. Two tests in one program: the first arms and never fires, the second clicks and
+  // must still get the unarmed default. If the queue lived on the manager rather than on
+  // `BrowserPageState` this would read `deleted`, and the failure would only ever show up as one
+  // test mysteriously depending on another.
+  const { report } = await run(`test "arms and never fires"
+  open "/"
+  accept dialog
+
+test "clicks with nothing armed"
+  open "/"
+  click button "Delete"
+  expect text "kept" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+});
+
+// ---- M159c/D800/D801: `accept dialog with`, and TF080 -------------------------------------------
+//
+// Four tests. The first is the feature; the second is the only one that proves the *string* made
+// it, rather than that a dialog was answered; the third and fourth are `TF080`, which is the first
+// diagnostic in this repository that no `tflw check` can produce.
+
+test('dialogs: `accept dialog with` answers a prompt, and the answer reaches the page', async () => {
+  const { report } = await run(`test "answer a prompt"
+  open "/"
+  accept dialog with "Blue"
+  click button "Set favourite colour"
+  expect text "Favourite: Blue" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: a bare `accept dialog` on a prompt still answers, with the empty string', async () => {
+  // `D800`'s compatibility clause, and the reason `text` is `undefined` rather than `''` in the
+  // arming: the *behaviour* of the two is identical here, so nothing about this test changes — but
+  // the distinction upstream is what stops every pre-M159c arming from becoming a `TF080`
+  // candidate. Asserting `Favourite: ` (an empty answer, not `cancelled`) is what separates
+  // "accepted with nothing" from "dismissed", which is the pair a reader would otherwise confuse.
+  const { report } = await run(`test "bare arming on a prompt"
+  open "/"
+  accept dialog
+  click button "Set favourite colour"
+  expect text "Favourite:" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('`accept dialog with` on an alert raises TF080 and still accepts', async () => {
+  // Named by `TF080`'s row in `DIAGNOSTICS` (spec-data.ts) — that row carries `runtime` where every
+  // other row carries a probe, and `diagnosticExamples.test.ts` resolves the pointer by this exact
+  // name. Renaming this test reddens the lang suite, which is the point: the manifest's claim and
+  // the thing that substantiates it live in different packages.
+  const { report } = await run(`test "text at an alert"
+  open "/"
+  accept dialog with "Blue"
+  click button "Say hi"
+  expect text "greeted" is visible
+`);
+  // The verdict is untouched — a warning is a report about the run, not a judgement of it.
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = report.tests[0]!.kind === 'functional' ? (report.tests[0] as { warnings?: readonly { code: string; message: string; line: number }[] }).warnings : undefined;
+  assert.equal(warnings?.length, 1, `expected exactly one warning, got ${JSON.stringify(warnings)}`);
+  assert.equal(warnings![0]!.code, 'TF080');
+  assert.match(warnings![0]!.message, /answered an `alert`, which takes no text/);
+  // Anchored on the *arming*, not on the click that tripped it. The click is a correct step; the
+  // line a reader has to change is the one carrying the `with`.
+  assert.equal(warnings![0]!.line, 3);
+});
+
+test('dialogs: a prompt answered with `with` raises no TF080, and a bare arming never does', async () => {
+  // The negative half. Without it, "TF080 fires" is compatible with "TF080 fires on everything",
+  // which is the failure mode a single positive test cannot see — and the one that would make the
+  // warning worthless the moment a suite has prompts in it.
+  const { report } = await run(`test "no warning where the text lands"
+  open "/"
+  accept dialog with "Blue"
+  click button "Set favourite colour"
+  accept dialog
+  click button "Say hi"
+  expect text "greeted" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly unknown[] }).warnings;
+  assert.equal(warnings, undefined, `a prompt that took its answer, and an alert armed without one, must both be silent — got ${JSON.stringify(warnings)}`);
+});
+
+test('dialogs: a warning is redacted like every other reported string', async () => {
+  // `TF080`'s message quotes the answer that was thrown away, and an answer can be a credential:
+  // `accept dialog with {env("TOKEN")}` is exactly the shape a login-behind-a-prompt test takes.
+  // The report is redacted on the way out (decision 56), and a field that pass does not know about
+  // ships raw — which is `V2-02`'s finding, one field over.
+  const { program, diagnostics } = parseSource(`test "secret answer"
+  open "/"
+  accept dialog with env(DIALOG_SECRET)
+  click button "Say hi"
+  expect text "greeted" is visible
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, config, { source: 'x', browserManager, environ: { ...process.env, DIALOG_SECRET: 'swordfish-9d2f-not-in-a-report' } });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly { code: string; message: string; source: string }[] }).warnings;
+  assert.equal(warnings?.length, 1);
+  const rendered = JSON.stringify(warnings);
+  assert.doesNotMatch(rendered, /swordfish-9d2f-not-in-a-report/, `the answer reached the report unmasked: ${rendered}`);
+  assert.match(warnings![0]!.message, /•••\(DIALOG_SECRET\)/);
+});
+
+// ---- M159d/D802: TF079, an arming nothing consumed ---------------------------------------------
+//
+// Four, in the same shape as `TF080`'s: one positive that the manifest names, one that fixes the
+// per-leftover reporting rather than a count, and two negatives — because the failure mode of an
+// absence warning is firing on absences that are somebody else's fault.
+
+test('an arming no dialog ever consumes raises TF079 at its own line', async () => {
+  // Named by `TF079`'s row in `DIAGNOSTICS` (spec-data.ts), which carries `runtime` in place of a
+  // probe; `diagnosticExamples.test.ts` resolves the pointer by this exact string.
+  //
+  // The test passes. That is the point: every assertion in it is true, the page is in the state the
+  // author expected, and the `dismiss dialog` line contributed nothing to any of it. Deleting the
+  // line changes no verdict, which is `D802`'s definition of the defect.
+  const { report } = await run(`test "armed, never fired"
+  open "/"
+  dismiss dialog
+  expect text "quiet" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly { code: string; message: string; line: number }[] }).warnings;
+  assert.equal(warnings?.length, 1, `expected exactly one warning, got ${JSON.stringify(warnings)}`);
+  assert.equal(warnings![0]!.code, 'TF079');
+  assert.match(warnings![0]!.message, /`dismiss dialog` armed the next native dialog and no dialog was raised/);
+  assert.equal(warnings![0]!.line, 3);
+});
+
+test('dialogs: two dead armings are two warnings at two lines, not one count', async () => {
+  // `D802` drafted this as "2 dialogs were armed and 1 was raised". A count names a quantity; a
+  // reader needs a place. Armings have carried their own line since `M159c`, so each leftover
+  // reports itself — and the two here are deliberately a different `which` each, since the message
+  // quotes the construct that was actually written.
+  const { report } = await run(`test "two dead armings"
+  open "/"
+  accept dialog
+  dismiss dialog
+  expect text "quiet" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly { code: string; message: string; line: number }[] }).warnings ?? [];
+  assert.deepEqual(warnings.map((w) => [w.code, w.line]), [['TF079', 3], ['TF079', 4]]);
+  assert.match(warnings[0]!.message, /`accept dialog` armed/);
+  assert.match(warnings[1]!.message, /`dismiss dialog` armed/);
+});
+
+test('dialogs: a surplus DIALOG is not a surplus arming, so TF079 stays quiet', async () => {
+  // Acceptance clause 2, and the arithmetic `D802` originally proposed would have got this wrong in
+  // the other direction. One arming, two dialogs from one click: the first is accepted, the second
+  // falls through to the browser's dismiss default (`D797`), and the queue ends empty. `armed`
+  // is 1 and `raised` is 2 — a difference of MINUS one — so a count-based rule reports either
+  // nothing or nonsense depending on how it clamps. The leftover set has no such question.
+  const { report } = await run(`test "one arming, two dialogs"
+  open "/"
+  accept dialog
+  click button "Bulk remove"
+  expect text "second refused" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly unknown[] }).warnings;
+  assert.equal(warnings, undefined, `an arming that was consumed is not unused — got ${JSON.stringify(warnings)}`);
+});
+
+test('dialogs: a FAILING test does not get TF079 for an arming its own failure stranded (`D806b`)', async () => {
+  // The asymmetry against `TF080`, and the reason it is not an oversight. This test dies at line 4,
+  // before anything could raise a dialog, so the arming on line 3 is unconsumed — but it is
+  // unconsumed *because the test failed*, and accusing that line would be wrong. Every failing
+  // browser test that arms a dialog before its failure point would carry this warning, which is how
+  // a warning channel becomes something readers skim past.
+  //
+  // `TF080` is deliberately not gated the same way: it reports a dialog that DID fire and an answer
+  // that WAS discarded, which stays true however the test ends.
+  const { report } = await run(`test "dies before the dialog"
+  open "/"
+  dismiss dialog
+  expect dialog type equals "confirm"
+`);
+  assert.equal(report.ok, false);
+  const warnings = (report.tests[0] as { warnings?: readonly unknown[] }).warnings;
+  assert.equal(warnings, undefined, `a stranded arming on a failed attempt is not a finding — got ${JSON.stringify(warnings)}`);
+});
+
+// ---- M159/D798/D799: the two dialog subjects ---------------------------------------------------
+
+test('dialogs: `dialog message` asserts the text, which is what makes a dismiss provable', async () => {
+  // `M154b-01`. `null` and `dismiss` took the same branch in the handler because the browser's
+  // unhandled default IS dismissal, so deleting a `dismiss dialog` line changed no assertion
+  // anywhere and both of the sibling's uses of it were vacuous by a property of the construct.
+  // With the message asserted, the test says the dialog happened and said what it should.
+  const { report } = await run(`test "dismiss, provably"
+  open "/"
+  dismiss dialog
+  click button "Delete"
+  expect dialog message equals "Really delete?"
+  expect text "kept" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: `dialog type` tells a confirm from an alert — the regression nothing could see', async () => {
+  // A `confirm()`-guarded destructive action becoming an unconditional `alert()` was invisible to
+  // this suite: `accept dialog` still "worked", the action still happened, every assertion passed.
+  // `dialog.type()` was read nowhere in the runtime.
+  const { report } = await run(`test "kind"
+  open "/"
+  accept dialog
+  click button "Delete"
+  expect dialog type equals "confirm"
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: a subject read before any dialog is a clean error naming it, not a null comparison', async () => {
+  // Acceptance clause 7. Comparing an unset `null` as a string reports `expected "confirm", got
+  // null`, which reads like the page said the wrong thing rather than like nothing was asked.
+  const { report } = await run(`test "too early"
+  open "/"
+  expect dialog type equals "confirm"
+`);
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /no dialog has been raised in this test yet/);
+  assert.match(error, /`dialog type`/);
+  assert.doesNotMatch(error, /null/);
+});
+
+test('dialogs: the subjects do not leak across tests either (`D803`)', async () => {
+  // The queue's isolation test one subject over. A dialog raised in the first test must not be
+  // readable from the second — otherwise an assertion passes on a dialog it never saw.
+  const { report } = await run(`test "raises one"
+  open "/"
+  accept dialog
+  click button "Delete"
+  expect dialog message equals "Really delete?"
+
+test "reads with none of its own"
+  open "/"
+  expect dialog message equals "Really delete?"
+`);
+  assert.equal(report.ok, false);
+  assert.equal(report.tests[0]!.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.match(report.tests[1]!.error ?? '', /no dialog has been raised in this test yet/);
 });
 
 test('a locator that never appears fails with a clear "no element found" error, not a hang', async () => {

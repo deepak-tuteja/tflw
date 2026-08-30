@@ -5,7 +5,7 @@
 # A word added here and nowhere else fails that test — the drift B5-09 records, caught at once
 # rather than by the next milestone to audit two wordlists by hand.
 #
-# 222 words
+# 223 words
 
 DELETE
 GET
@@ -122,6 +122,7 @@ made
 mask
 matches
 matching
+message
 minor
 moderate
 ms

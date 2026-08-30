@@ -367,6 +367,11 @@ function walkSteps(
         walkSteps(step.body, bound, scopeId, source, actionDefs, pushDef, refs);
         break;
       case 'AcceptDialogStmt':
+        // `D800` — so go-to-definition and find-references reach a `{ref}` in the prompt answer.
+        // The LSP half of the same rule `checker.ts` applies: the one value a dialog step can carry
+        // is the one that would otherwise be invisible to both.
+        if (step.text) walkValue(step.text, bound, scopeId, source, actionDefs, refs);
+        break;
       case 'DismissDialogStmt':
         break;
       case 'WaitUntilUiStmt':

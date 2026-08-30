@@ -38,6 +38,9 @@
 // that are correct.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   DIAGNOSTICS,
   parseSource,
@@ -82,15 +85,59 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
   ];
 }
 
-test('every `DIAGNOSTICS` row has at least one probe', () => {
-  const bare = DIAGNOSTICS.filter((d) => d.probes.length === 0).map((d) => d.code);
-  assert.deepEqual(bare, [], 'a row with no probe renders an empty example cell and asserts nothing');
+test('every `DIAGNOSTICS` row carries exactly one kind of evidence', () => {
+  // `M159c` widened this from "at least one probe" to "one of probes or `runtime`", because
+  // `TF080` is the first code no source text provokes (`D801`). The widening is the risk: "at
+  // least one probe" could not be satisfied by writing nothing, and a two-way rule can be, if
+  // `runtime` becomes the field a lazy row reaches for. Hence *exactly* one — a row carrying both
+  // is as red as a row carrying neither, so `runtime` cannot be bolted onto a checkable code to
+  // dodge writing its probe.
+  const bare = DIAGNOSTICS.filter((d) => (d.probes?.length ?? 0) === 0 && d.runtime === undefined).map((d) => d.code);
+  assert.deepEqual(bare, [], 'a row with no probe and no `runtime` renders an empty example cell and asserts nothing');
+  const both = DIAGNOSTICS.filter((d) => (d.probes?.length ?? 0) > 0 && d.runtime !== undefined).map((d) => d.code);
+  assert.deepEqual(both, [], 'a row carrying both is claiming its code is check-time and runtime at once — one of the two is false');
+});
+
+test('every `runtime` row points at a test that exists and names a test that exists', () => {
+  // What makes `runtime` evidence rather than an assertion about itself. The manifest harness
+  // cannot *execute* a browser test from here, so it does the one thing it can: resolve the
+  // pointer. A row naming a deleted file, or a renamed test, goes red — which is the failure mode
+  // that actually occurs, since the row and the test it names live in different packages and
+  // nothing else relates them.
+  const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+  const wrong: string[] = [];
+  for (const row of DIAGNOSTICS) {
+    if (!row.runtime) continue;
+    const abs = join(repoRoot, row.runtime.test);
+    if (!existsSync(abs)) {
+      wrong.push(`${row.code} names ${row.runtime.test}, which does not exist`);
+      continue;
+    }
+    const src = readFileSync(abs, 'utf8');
+    // Matched as a quoted literal so a test name that merely appears in a comment cannot satisfy
+    // it — the name has to be the argument to a `test(...)` call.
+    const quoted = [`test('${row.runtime.name}'`, `test("${row.runtime.name}"`, 'test(`' + row.runtime.name + '`'];
+    if (!quoted.some((q) => src.includes(q))) {
+      wrong.push(`${row.code} names the test ${JSON.stringify(row.runtime.name)}, which ${row.runtime.test} does not declare`);
+    }
+  }
+  assert.deepEqual(wrong, [], 'a `runtime` row whose pointer does not resolve is a claim with nothing behind it');
+});
+
+test('a `runtime` row naming a test that does not exist IS flagged', () => {
+  // The control for the check above. Without it, "the pointer resolves" is a test that passes
+  // whether or not resolution works — the exact shape three of four M92 controls turned out to be.
+  const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+  assert.ok(!existsSync(join(repoRoot, 'packages/runtime/test/no-such-file.test.ts')), 'precondition');
+  const real = join(repoRoot, 'packages/runtime/test/browser-steps.test.ts');
+  assert.ok(existsSync(real), 'precondition: the file TF080 names is there');
+  assert.ok(!readFileSync(real, 'utf8').includes("test('a name no test has'"), 'so a renamed test would be caught above');
 });
 
 test("every probe emits its own row's code", () => {
   const wrong: string[] = [];
   for (const row of DIAGNOSTICS) {
-    row.probes.forEach((probe, i) => {
+    (row.probes ?? []).forEach((probe, i) => {
       const codes = runProbe(probe).map((d) => d.code);
       if (!codes.includes(row.code)) {
         wrong.push(`${row.code}[${i}] emitted ${codes.join(', ') || '(nothing)'} — source: ${JSON.stringify(probe.source)}`);
@@ -107,7 +154,7 @@ test("every probe emits its own row's code", () => {
 test('every quoted output appears verbatim in the message or hint', () => {
   const wrong: string[] = [];
   for (const row of DIAGNOSTICS) {
-    row.probes.forEach((probe, i) => {
+    (row.probes ?? []).forEach((probe, i) => {
       if (probe.says === undefined) return;
       const said = runProbe(probe)
         .filter((d) => d.code === row.code)
@@ -140,9 +187,14 @@ test('a probe quoting output the tool does not produce IS flagged', () => {
   assert.ok(!said.includes('expected a path like `/invoices`'), 'so a one-word drift in the quote would be caught by the check above');
 });
 
-test('`example` is derived from `probes`, not stored beside them', () => {
+test('`example` is derived from the row\'s evidence, not stored beside it', () => {
   for (const row of DIAGNOSTICS) {
-    assert.equal(row.example, renderDiagnosticExample(row.probes), `${row.code}'s rendered cell must be exactly what its probes render`);
+    if (row.probes) {
+      assert.equal(row.example, renderDiagnosticExample(row.probes), `${row.code}'s rendered cell must be exactly what its probes render`);
+    } else {
+      assert.ok(row.example.includes(row.runtime!.as), `${row.code}'s rendered cell must show the prose its \`runtime\` evidence declares`);
+      assert.ok(row.example.includes('run time'), `${row.code} must say in the table that it is not a \`tflw check\` diagnostic — a reader who probes it with \`check\` gets nothing back`);
+    }
   }
 });
 

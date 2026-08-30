@@ -26,14 +26,109 @@ press "Enter"                            # page-level
 press "Enter" on field "Search"          # scoped to one locator
 scroll to button "Load more"             # scrolls the locator into view
 
-accept dialog                            # arms a one-shot handler for the *next* native dialog
-click button "Delete"                    # (Playwright otherwise auto-dismisses silently — a real
+accept dialog                            # arms a handler for the *next* native dialog
+click button "Delete"                    # (the browser otherwise auto-dismisses silently — a real
                                           #  no-op trap for a confirm()-guarded action)
 dismiss dialog
 ```
 
 Every interaction step polls up to `timeout step` (default 30s) for its locator to resolve —
 `sleep` doesn't exist, only auto-waiting/auto-retrying.
+
+## Native dialogs
+
+An arming is consumed by exactly one dialog, in the order you wrote them. So an action that raises
+two dialogs takes two armings:
+
+```tflw fragment
+accept dialog
+accept dialog
+click button "Delete all"
+```
+
+That matters because there is nowhere else to put the second one — both dialogs come from a single
+click, so no step can sit between them.
+
+Assert what the dialog actually was:
+
+```tflw fragment
+accept dialog
+click button "Delete"
+expect dialog message equals "Really delete?"
+expect dialog type equals "confirm"
+```
+
+`dialog type` is one of `alert`, `confirm`, `prompt`, `beforeunload`. Both subjects read the last
+dialog of the current test, and reading either before any dialog has appeared fails the test saying
+so.
+
+### Answering a `prompt`
+
+A `prompt` asks for text, so the arming can carry the answer:
+
+```tflw fragment
+accept dialog with "Blue"
+click button "Set favourite colour"
+expect text "Favourite: Blue" is visible
+```
+
+The answer interpolates like any other value, so a captured or generated one works:
+
+```tflw fragment
+let colour = "Blue"
+accept dialog with {colour}
+click button "Set favourite colour"
+```
+
+`accept dialog` on its own answers with the empty string, exactly as it always has.
+
+Only `prompt` has anywhere to put an answer. Send one to an `alert` or a `confirm` and the run says
+so and carries on:
+
+```console
+⚠ warning[TF080]: `accept dialog with "Blue"` answered a `confirm`, which takes no text —
+  the text was ignored and the dialog was accepted as if no `with` had been written
+```
+
+It is a warning, not a failure: the dialog is still accepted and the test's verdict is untouched. A
+page that raises a `prompt` or a `confirm` depending on its state is a real thing to test, so tflw
+will not refuse the step — but it will not let the text go missing quietly either, which is what
+happens underneath if nobody says anything.
+
+::: warning On an `alert`, arming proves nothing by itself.
+An alert has one button, so accepting and dismissing it do exactly the same thing to the page. A
+test that arms one and then asserts the page would pass just as well with the arming line deleted.
+Assert the dialog itself — its `message` and its `type` — and the test says something.
+
+The same trap is why `dialog type` is worth asserting at all on a `confirm`: if someone replaces a
+guarded `confirm()` with a plain `alert()`, the destructive action stops being guarded, and every
+assertion about the page still passes.
+:::
+
+### An arming nothing ever uses
+
+```tflw fragment
+dismiss dialog
+expect text "kept" is visible
+```
+
+If no dialog appears before the test ends, that arming did nothing — the same "the line could be
+deleted and the test would prove the same thing" trap as the alert above, one step earlier. tflw
+says so, on the passing run:
+
+```console
+⚠ warning[TF079]: `dismiss dialog` armed the next native dialog and no dialog was raised before
+  the test ended — the arming did nothing, and deleting the line would not change what this test
+  proves
+```
+
+One warning per unused arming, at the line that wrote it. It appears **only on a test that passed**:
+when a test fails, an arming after that point is usually stranded by the failure rather than dead,
+and pointing at it would send you to the wrong line.
+
+Two dialogs and one arming is not this: the extra dialog takes the dismiss default and nothing is
+left over. And `beforeunload` is the honest exception — browsers raise it only after a real user
+gesture, so a headless run may correctly never see one.
 
 ::: tip Coming from Playwright or Cypress? The tick action is `tick`, not `check`.
 Both of those spell it `check()`, so `check field "Accept terms"` is the natural thing to type. In

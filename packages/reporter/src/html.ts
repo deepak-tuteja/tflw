@@ -276,11 +276,26 @@ function parallelBadge(concurrency: 'parallel' | 'sequential' | undefined): stri
   return concurrency === 'parallel' ? ' <span class="parallel">parallel</span>' : '';
 }
 
+/** `D801`, `M159c` — runtime diagnostics inside the test's own panel.
+ *
+ * Above the steps rather than beside the failing one, because the step this is *about* — the
+ * `accept dialog with` — passed, and the step that revealed it is a click somewhere further down.
+ * Neither is the right place to hang it, so it goes where a reader looking at this test cannot miss
+ * it. On a passing panel too, for the same reason the CLI prints it there: this is a condition a
+ * green run conceals. */
+function renderWarnings(warnings: TestResult['warnings']): string {
+  if (!warnings || warnings.length === 0) return '';
+  return warnings
+    .map((w) => `<p class="runtime-warning">⚠ <code>warning[${esc(w.code)}]</code> ${esc(w.message)}<br><span class="warn-src">${w.line}: ${esc(w.source.trim())}</span></p>`)
+    .join('\n  ');
+}
+
 function renderFunctionalTest(slot: TestSlot, test: TestResult, active: boolean, assetHrefs: ReadonlyMap<string, string>, logLevelThreshold: LogLevel): string {
   const priorAttempts = test.attempts ? test.attempts.slice(0, -1) : [];
   return `<section class="test ${test.ok ? 'ok' : 'fail'}${active ? ' active' : ''}" id="${slot.id}" data-file="${esc(slot.file)}">
   <h2><span class="dot ${test.ok ? 'ok' : 'fail'}"></span>${esc(test.name)}${test.flaky ? ' <span class="flaky">flaky</span>' : ''}${parallelBadge(test.concurrency)} <span class="tms">${test.durationMs} ms</span></h2>
   ${test.error ? `<p class="error">${esc(test.error)}</p>` : ''}
+  ${renderWarnings(test.warnings)}
   ${priorAttempts.map((a) => renderAttempt(a, assetHrefs, logLevelThreshold)).join('\n')}
   ${test.attempts ? `<p class="attempt-final-label"><span class="attempt-badge ${test.ok ? 'ok' : 'fail'}">attempt ${test.attempts.length} of ${test.attempts.length} — ${test.ok ? 'passed' : 'failed'}</span></p>` : ''}
   ${renderTraceLink(test.trace, assetHrefs)}
@@ -539,6 +554,9 @@ h2{font-size:15px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
 .metrics-block table.thresholds td{padding:3px 10px 3px 0}
 .metrics-block table.thresholds tr.ok td:first-child{color:var(--ok)}
 .metrics-block table.thresholds tr.fail td:first-child{color:var(--fail)}
+.runtime-warning{margin:8px 0;padding:6px 10px;border-radius:6px;background:var(--warn);color:#1b1f27;font-weight:600}
+.runtime-warning code{background:rgba(0,0,0,.12);padding:1px 4px;border-radius:3px}
+.runtime-warning .warn-src{font-weight:400;opacity:.85}
 .metrics-block .backoff-warning{margin:0 0 8px;padding:6px 10px;border-radius:6px;background:var(--warn);color:#1b1f27;font-weight:700}
 .metrics-block .charts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:700px){.metrics-block .charts{grid-template-columns:1fr}}

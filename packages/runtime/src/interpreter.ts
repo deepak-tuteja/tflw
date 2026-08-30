@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, join, resolve as resolvePath } from 'node:path';
-import { isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
+import { Codes, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   FindingSeverity,
   ApiBody,
@@ -135,6 +135,7 @@ import type {
   RunReport,
   SelfDiagnosis,
   StepResult,
+  RuntimeWarning,
   TestResult,
   WorkloadTestResult,
 } from './types.js';
@@ -2729,6 +2730,48 @@ async function runTest(
   };
 }
 
+/** `D801`/`D802`, `M159c`/`M159d` — the `TF080` and `TF079` warnings this attempt earned.
+ *
+ * Built from state the *handler* recorded rather than from anything the step could know: whether an
+ * answer had somewhere to go is decided when the dialog fires, and `accept dialog with` has long
+ * since returned by then. Per attempt, like every other field on `BrowserPageState` (`D803`) — a
+ * retry gets a clean slate, so a warning from a discarded attempt cannot be reported against the
+ * one that was kept.
+ *
+ * **`ok` gates `TF079` and nothing else, and that asymmetry is the decision (`D806b`).** `TF080`
+ * reports something that *happened* — a dialog fired, an answer was thrown away — so it is true
+ * whatever the test went on to do, and a failing test is where a discarded answer is most worth
+ * knowing about. `TF079` reports an **absence**, and an absence has two causes that this state
+ * cannot tell apart: the arming was dead, or the body threw before reaching the step that would
+ * have raised the dialog. On a failed attempt the second is the likely one, so firing anyway would
+ * point the reader at an innocent line — on *every* failing browser test that arms a dialog before
+ * its failure point. A warning channel that accuses by default is one that gets skimmed, and the
+ * failure already carries its own explanation and a trace. */
+function dialogWarnings(page: BrowserPageState, ok: boolean): RuntimeWarning[] {
+  const ignored: RuntimeWarning[] = page.dialogTextIgnored.map((entry) => ({
+    code: Codes.DIALOG_TEXT_IGNORED,
+    message:
+      `\`accept dialog with ${JSON.stringify(entry.text)}\` answered ${entry.kind === 'alert' ? 'an' : 'a'} \`${entry.kind}\`, which takes no text — ` +
+      'the text was ignored and the dialog was accepted as if no `with` had been written',
+    line: entry.line,
+    source: entry.source,
+  }));
+  if (!ok) return ignored;
+  // Whatever is still queued when the attempt ends was consumed by nothing: the handler `shift`s
+  // one entry per dialog (`D797`), so leftovers are exact rather than a count subtracted from a
+  // count. One warning per leftover, each at its own line, because two dead armings are two places
+  // to look.
+  const unused: RuntimeWarning[] = page.armedDialogs.map((armed) => ({
+    code: Codes.DIALOG_ARMING_UNUSED,
+    message:
+      `\`${armed.which} dialog\` armed the next native dialog and no dialog was raised before the test ended — ` +
+      'the arming did nothing, and deleting the line would not change what this test proves',
+    line: armed.line,
+    source: armed.source,
+  }));
+  return [...ignored, ...unused];
+}
+
 async function runTestAttempt(
   test: TestDecl,
   config: ResolvedConfig,
@@ -2778,7 +2821,13 @@ async function runTestAttempt(
     // the evidence worth keeping). Below `evidence full` (FS-01) tracing was never started, so
     // `finish` returns `undefined` here whatever this argument says.
     const trace = await browserPageState.finish(!isFirstAttempt || !result.ok);
-    return trace ? { ...result, trace } : result;
+    // `D801`/`D802` — drained here, at the one site every body exit path funnels through, so a
+    // `TF080` survives a test that *failed* after the dialog fired. Attaching at the body's
+    // happy-path return instead would report the warning only on the runs least likely to need it,
+    // and would also have made `D806b`'s `ok` asymmetry unexpressible rather than chosen.
+    const warnings = dialogWarnings(browserPageState, result.ok);
+    const withTrace = trace ? { ...result, trace } : result;
+    return warnings.length > 0 ? { ...withTrace, warnings } : withTrace;
   } finally {
     if (browserPageState) await browserPageState.close();
   }
@@ -3547,8 +3596,15 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const browser = requireBrowserCtx(ctx);
           await browser.page.ensurePage(browser.manager); // the dialog handler is wired on page creation
           const which = step.type === 'AcceptDialogStmt' ? 'accept' : 'dismiss';
-          browser.page.armedDialog = which;
-          result = mkStep('dialog', src, step.span, true, stepStart, `${which} the next dialog`);
+          // `D800` — evaluated here, at arming time, not when the dialog fires: `{orderId}` must
+          // mean what it meant on this line, and by the time a dialog is raised the step that
+          // raised it has already run. `stringify`, not `String`, so a captured number answers a
+          // prompt the same way it fills a field.
+          const text = step.type === 'AcceptDialogStmt' && step.text ? stringify(evalValue(step.text, ctx)) : undefined;
+          // `D797`: push. Assigning lost every arming but the last, and the case that exposes it
+          // cannot be written any other way — two dialogs from one `click` admit no step between.
+          browser.page.armedDialogs.push({ which, text, line: step.span.start.line, source: src });
+          result = mkStep('dialog', src, step.span, true, stepStart, text === undefined ? `${which} the next dialog` : tc.redactor.redact(`${which} the next dialog with ${JSON.stringify(text)}`));
           break;
         }
         case 'WithinBlock': {
@@ -6079,6 +6135,24 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
     throw new RuntimeError(
       '`response` is not a capturable value — only `expect`/`check response has no … security violations` (SPEC §9.10). To bind part of it, name the part: `capture body.…`, `capture status`, `capture header "…"`',
     );
+  }
+  // `M159`/`D798`/`D799`. A dialog subject reads the browser page state, never the last `api`
+  // response, so it resolves *before* the response-null guard for the same reason `ValueSubject`
+  // does — `expect dialog message …` after a `click` is legal in a test that made no API call.
+  if (subject.type === 'DialogMessageSubject' || subject.type === 'DialogTypeSubject') {
+    const page = ctx.browser?.page;
+    const raised = page !== undefined && page.dialogsRaised > 0;
+    if (!raised) {
+      // Acceptance clause 7: a clean error naming the subject. The alternative is `null` compared
+      // as a string, which reports `expected "confirm", got null` — a sentence that reads like the
+      // page said the wrong thing rather than like nothing was asked.
+      throw new RuntimeError(
+        `no dialog has been raised in this test yet — \`${subject.type === 'DialogMessageSubject' ? 'dialog message' : 'dialog type'}\` reads the last native dialog of this attempt (SPEC §9.1). Arm one with \`accept dialog\`/\`dismiss dialog\` and take the action that raises it first.`,
+      );
+    }
+    return subject.type === 'DialogMessageSubject'
+      ? { value: page.lastDialogMessage, label: 'dialog message' }
+      : { value: page.lastDialogType, label: 'dialog type' };
   }
   if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion/capture');
   switch (subject.type) {

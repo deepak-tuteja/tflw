@@ -186,8 +186,31 @@ export class BrowserManager {
  * (`activeIndex`) — `switch to new tab`/`switch to tab N`/`close tab` move `activeIndex`, and
  * every other browser step reads the active page through `ensurePage`/`currentPage`, unaware
  * there's more than one. The dialog handler (SPEC §9.1) is wired identically on every page, first
- * or not — `armedDialog` is one flag shared across tabs, matching the language's "the next dialog,
- * wherever it fires" framing (SPEC §9.1/§9.5). */
+ * or not — `armedDialogs` is one queue shared across tabs, matching the language's "the next
+ * dialog, wherever it fires" framing (SPEC §9.1/§9.5). Sharing it is the point: an arming made
+ * before a `switch to new tab` is still answered by whatever raises next. */
+/** The four native modal kinds a browser raises, as Playwright's `dialog.type()` reports them
+ * (`D799`). A closed set, stated here and in `SPEC` §9.1 so a reader knows the four values without
+ * reading Playwright's documentation. */
+export type DialogKind = 'alert' | 'confirm' | 'prompt' | 'beforeunload';
+
+/** One `accept dialog`/`dismiss dialog`, waiting for a dialog to consume it (`D797`). `text` is
+ * `accept dialog with "…"`'s prompt answer (`D800`) and is `undefined` when the step omitted it,
+ * which is not the same as the empty string: omitted means *accept with Playwright's default*,
+ * and `with ""` means *answer this prompt with nothing*. */
+export interface DialogArming {
+  readonly which: 'accept' | 'dismiss';
+  /** `D800` — the `with` answer, already evaluated at arming time. `undefined` on a bare `accept
+   * dialog`, which is not the same as `''`: `dialog.accept()` with no argument and with the empty
+   * string behave identically on a prompt, but the distinction is what lets `TF080` fire only
+   * where an answer was actually written. */
+  readonly text?: string;
+  /** Where the arming was written. Carried because `TF080` must point at the `accept dialog with`
+   * line — the dialog itself has no line, and by the time it fires the arming step is long past. */
+  readonly line: number;
+  readonly source: string;
+}
+
 export class BrowserPageState {
   private pages: PWPage[] = [];
   private activeIndex = 0;
@@ -215,10 +238,33 @@ export class BrowserPageState {
     this.captureBinaryEvidence = captureBinaryEvidence;
     this.allowHosts = allowHosts;
   }
-  /** Set by `accept dialog`/`dismiss dialog` — armed for exactly the next native dialog, then
-   * cleared (SPEC §9.1). */
-  armedDialog: 'accept' | 'dismiss' | null = null;
+  /** `M159`/`D797`. Set by `accept dialog`/`dismiss dialog` — **a queue, not a slot**, and that is
+   * the whole repair. Each arming is consumed by exactly one dialog, in order, which is what SPEC
+   * §9.1's *one-shot* was always trying to say; a single field was an implementation choice the
+   * sentence never required.
+   *
+   * A slot loses arms silently, and the case is **inexpressible** rather than merely awkward: two
+   * `confirm()`s raised by one `click` cannot have a step interleaved between them, so two
+   * consecutive armings is the only spelling the language has — and under a slot the second dialog
+   * was dismissed while nothing refused the program (`M154b-02`).
+   *
+   * An empty queue keeps today's behaviour exactly: dismiss, which is what an unarmed page already
+   * does, because Playwright's unhandled default is dismissal. */
+  readonly armedDialogs: DialogArming[] = [];
+  /** `D803`. The last dialog **of this attempt**, never of the run: a fresh `BrowserPageState` is
+   * built per test attempt, the same invariant `networkLog` states below. Both `dialog message` and
+   * `dialog type` read these, so a subject whose scope a reader has to infer does not exist here. */
   lastDialogMessage: string | null = null;
+  lastDialogType: DialogKind | null = null;
+  /** `D802` — how many dialogs this attempt raised at all, armed or not. Read by `dialog message`
+   * and `dialog type` to tell *no dialog yet* from *a dialog whose message was empty*.
+   *
+   * Deliberately **not** the input to `TF079`: an unarmed dialog is dismissed by default and still
+   * counted here, so `armed - raised` goes negative on a program doing nothing wrong. What is left
+   * in `armedDialogs` when the attempt ends is the exact set of armings nothing consumed, and each
+   * one carries the line that wrote it. Free to see under a queue and invisible under a slot, which
+   * is why the warning could not have existed before `D797`. */
+  dialogsRaised = 0;
   /** M3d, SPEC §9.7 — every completed network response observed across every page opened this
    * attempt, in completion order. Resets naturally: a fresh `BrowserPageState` is created per test
    * attempt (`runTestAttempt`, interpreter.ts), same as the trace/screenshot state. */
@@ -226,12 +272,28 @@ export class BrowserPageState {
 
   private wireDialogHandler(page: PWPage): void {
     page.on('dialog', (dialog) => {
-      const armed = this.armedDialog;
-      this.armedDialog = null; // one-shot (SPEC §9.1)
+      // Shift, not read-and-clear: each arming is consumed by one dialog, in order (`D797`).
+      const armed = this.armedDialogs.shift();
+      const kind = dialog.type() as DialogKind;
       this.lastDialogMessage = dialog.message();
-      void (armed === 'accept' ? dialog.accept() : dialog.dismiss());
+      this.lastDialogType = kind;
+      this.dialogsRaised += 1;
+      // `D801`: Playwright silently ignores `promptText` on a non-prompt, which is the exact
+      // silent-no-op class this milestone removes — so the mismatch is recorded for the runtime to
+      // warn about. It is not an error: a page that conditionally raises either kind is legitimate,
+      // and the kind is not knowable statically.
+      if (armed?.text !== undefined && kind !== 'prompt') {
+        this.dialogTextIgnored.push({ text: armed.text, kind, line: armed.line, source: armed.source });
+      }
+      void (armed?.which === 'accept' ? dialog.accept(armed.text) : dialog.dismiss());
     });
   }
+
+  /** `D801` — armings that carried text a non-prompt dialog could not take, drained into `TF080`
+   * at the end of the attempt. Recorded rather than thrown: a page that raises either an `alert` or
+   * a `confirm` depending on state is legitimate, and which one fired is not knowable until it
+   * does. */
+  readonly dialogTextIgnored: { text: string; kind: DialogKind; line: number; source: string }[] = [];
 
   /** M3d — passive observation only (never modifies the response, unlike `stub`'s `page.route`).
    * Reading the body is best-effort: a response that can't be read as text (redirect with no body,

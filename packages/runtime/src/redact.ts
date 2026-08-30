@@ -4,7 +4,7 @@
 // header-blocklists) means a secret in a login body or a URL is caught wherever it flows, so
 // report.html and CLI output are ticket-attachable by construction.
 
-import { exhaustiveEntry, type AttemptResult, type CrawlResult, type ReportEntry, type RequestTrace, type ResponseTrace, type RunEvent, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from './types.js';
+import { exhaustiveEntry, type AttemptResult, type CrawlResult, type ReportEntry, type RequestTrace, type ResponseTrace, type RunEvent, type RunReport, type RuntimeWarning, type StepResult, type TestResult, type WorkloadTestResult } from './types.js';
 
 /** A secret shorter than this is too likely to collide with unrelated report content (a port
  * number, a small numeric ID) — substring-redacting it would silently corrupt those unrelated
@@ -183,8 +183,21 @@ function redactTestResult(t: TestResult, redactor: Redactor): TestResult {
     name: redactor.redact(t.name),
     ...(t.error !== undefined ? { error: redactor.redact(t.error) } : {}),
     steps: t.steps.map((s) => redactStepResult(s, redactor)),
+    ...(t.warnings ? { warnings: t.warnings.map((w) => redactWarning(w, redactor)) } : {}),
     ...(t.attempts ? { attempts: t.attempts.map((a) => redactAttemptResult(a, redactor)) } : {}),
   };
+}
+
+/** `M159d` — a `RuntimeWarning` carries two strings written from the program, and `TF080`'s quotes
+ * the answer a dialog threw away. `accept dialog with env(TOKEN)` is the ordinary shape of a login
+ * behind a `prompt`, so that answer is exactly the kind of value the rest of this pass exists to
+ * mask — and until this line the field spread through `...t` unredacted into `results.json`,
+ * `report.html` and the CLI summary, in a report where every other string was masked. Found by
+ * measurement rather than review, one milestone after the channel was built: this is the shape of
+ * `V2-02` and of this file's own header warning about *"every field added afterwards"*, and a new
+ * field on a reported type is the moment to re-read both. `code` and `line` are structural. */
+function redactWarning(w: RuntimeWarning, redactor: Redactor): RuntimeWarning {
+  return { ...w, message: redactor.redact(w.message), source: redactor.redact(w.source) };
 }
 
 /** Every attempt's steps must be redacted too, not just the kept/final one — otherwise a secret

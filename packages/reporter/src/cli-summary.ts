@@ -13,11 +13,14 @@ const C = {
   dim: '\x1b[2m',
   red: '\x1b[31m',
   green: '\x1b[32m',
+  /** `M159c` — the first non-red warning colour here. A runtime warning does not change the
+   * verdict, and red on a passing test's line would say it did. */
+  yellow: '\x1b[33m',
   bold: '\x1b[1m',
 };
 
 export function renderCliSummary(report: RunReport, color = true): string {
-  const c = color ? C : { reset: '', dim: '', red: '', green: '', bold: '' };
+  const c = color ? C : { reset: '', dim: '', red: '', green: '', yellow: '', bold: '' };
   const lines: string[] = [];
   const noVerdict = noVerdictReason(report);
   for (const test of report.tests) {
@@ -33,6 +36,7 @@ export function renderCliSummary(report: RunReport, color = true): string {
     }
     if (test.kind !== 'functional') return exhaustiveEntry(test);
     lines.push(testLine(test, c));
+    lines.push(...warningLines(test, c));
     lines.push(...failureLines(test, c));
   }
   const tally = `${report.passed}/${report.total} passed${report.failed ? `, ${report.failed} failed` : ''}`;
@@ -205,6 +209,23 @@ function failureLines(entry: { readonly ok: boolean; readonly steps: readonly St
 function indentedBlock(text: string | undefined, c: typeof C): string[] {
   if (!text) return [];
   return text.split('\n').map((line) => `      ${c.red}${line}${c.reset}`);
+}
+
+/** `D801`, `M159c` — runtime diagnostics under the test that raised them.
+ *
+ * Printed on a **passing** test as well as a failing one, which is the whole point: the condition
+ * `TF080` reports is one a green run hides. It reads `warning[TF080]` because that is what the same
+ * severity and code look like coming out of `tflw check` — a reader who has seen one has seen both,
+ * and the string greps the same in a CI log.
+ *
+ * Yellow, not red: the verdict is unaffected. Red here would put a colour on a passing line that
+ * every other part of this report reserves for failure. */
+function warningLines(test: TestResult, c: typeof C): string[] {
+  if (!test.warnings || test.warnings.length === 0) return [];
+  return test.warnings.flatMap((w) => [
+    `    ${c.yellow}⚠ warning[${w.code}]${c.reset}: ${w.message}`,
+    `      ${c.dim}${w.line}: ${w.source.trim()}${c.reset}`,
+  ]);
 }
 
 function testLine(test: TestResult, c: typeof C): string {
