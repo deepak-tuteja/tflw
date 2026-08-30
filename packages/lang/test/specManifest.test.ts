@@ -254,3 +254,46 @@ test('…and the manifest does name flags, so the check above is not vacuous', (
     'the manifest names exactly these flags — update this list deliberately, never to make a failure go away',
   );
 });
+
+// ---- M159g/D806d: which phase decides a diagnostic -------------------------------------------
+//
+// `phase` exists for one consumer in another repository, which is the weakest position a field can
+// be in: nothing here would notice it going wrong, and the gate that reads it would report the
+// wrong thing rather than nothing. So it is checked from both sides against the evidence it is
+// derived from, and the derivation is checked for being a derivation.
+
+test('every diagnostic construct says which phase decides it, and no other construct does', () => {
+  for (const c of specConstructs()) {
+    if (c.family === 'diagnostic') {
+      assert.ok(c.phase === 'check' || c.phase === 'run', `${c.id} carries no phase`);
+    } else {
+      assert.equal(c.phase, undefined, `${c.id} is not a diagnostic and must not claim a phase`);
+    }
+  }
+});
+
+test('the `run` phase names exactly the rows whose evidence is a runtime test', () => {
+  // Both directions, against `DIAGNOSTICS` itself rather than against a written-down list: a code
+  // whose row carries `runtime` is unprovable by `tflw check`, and a code whose row carries probes
+  // is provable by nothing else. `spec-data.ts` already forces exactly one of the two, so these two
+  // sets partition the manifest and a third answer is not expressible.
+  const byPhase = (phase: string) => specConstructs().filter((c) => c.family === 'diagnostic' && c.phase === phase).map((c) => c.name).sort();
+  assert.deepEqual(byPhase('run'), DIAGNOSTICS.filter((d) => d.runtime).map((d) => d.code).sort());
+  assert.deepEqual(byPhase('check'), DIAGNOSTICS.filter((d) => d.probes).map((d) => d.code).sort());
+  // Not vacuous in either direction. Written as a floor rather than a count so adding a code does
+  // not edit this line, and as a floor above zero because an empty `run` set would satisfy the two
+  // assertions above while telling the sibling's gate that no code needs a runtime proof.
+  assert.ok(byPhase('run').length >= 2, `expected the runtime-only codes to be present, got ${byPhase('run').join(', ')}`);
+  assert.ok(byPhase('check').length > 50);
+});
+
+test('phase is derived from the row, not stored beside it', () => {
+  // The control this file can actually run: every `run` code is one no probe exists for. If `phase`
+  // were ever hand-written, a row could claim `check` while carrying no probe — the state where the
+  // sibling demands a fixture nobody can write and the failure names the wrong repository.
+  for (const code of specConstructs().filter((c) => c.family === 'diagnostic' && c.phase === 'run').map((c) => c.name)) {
+    const row = DIAGNOSTICS.find((d) => d.code === code)!;
+    assert.equal(row.probes, undefined, `${code} is phase \`run\` and still carries probes`);
+    assert.ok(row.runtime?.test && row.runtime.name, `${code} is phase \`run\` and names no runtime test`);
+  }
+});

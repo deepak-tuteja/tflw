@@ -729,6 +729,19 @@ export interface SpecConstruct {
   /** `planned` can only come from `MATCHERS`' own field; everything else here is, by D736,
    * something the parser dispatches today. */
   readonly status: 'shipped' | 'planned';
+  /** **Diagnostics only** (`M159g`, `D806d`): which phase decides this code — `check` for the
+   * sixty-six a `tflw check` can emit, `run` for one that is only reachable by running (`TF079`,
+   * `TF080`). Derived from whether the row carries `runtime` evidence instead of `probes`, which
+   * the manifest already forces to be exactly one of the two, so the two answers cannot disagree.
+   *
+   * It exists because a consumer outside this repository has to grade the two kinds differently and
+   * cannot see the difference: `testFlow-tests`' `verify-check-diagnostics.mjs` demands a fixture
+   * per code that a real `tflw check` provokes, and for a `run` code no such fixture can exist. The
+   * alternative — that gate accepting a proof of *either* kind for *any* code — was rejected: it
+   * would let a check-time code be proved by a runtime witness alone and never notice, and the
+   * whole value of that gate is that it knows what it is owed. Absent on every non-diagnostic
+   * construct, where the question does not arise. */
+  readonly phase?: 'check' | 'run';
   /** Markdown-ready cell text, carried through verbatim from the source table. Absent on
    * diagnostics, whose prose is deliberately not emitted (see the note above). */
   readonly syntax?: string;
@@ -773,6 +786,10 @@ export function specConstructs(): readonly SpecConstruct[] {
     })),
     ...DIAGNOSTICS.map((d): SpecConstruct => ({
       id: `diagnostic:${d.code}`, family: 'diagnostic', group: 'diagnostic', name: d.code, status: 'shipped',
+      // `D806d`. Read off the evidence the row carries rather than stored beside it, for the same
+      // reason `example` is: a second field saying which phase a code belongs to is a field that can
+      // disagree with the proof underneath it.
+      phase: d.runtime ? 'run' : 'check',
     })),
   ];
 }

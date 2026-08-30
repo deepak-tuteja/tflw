@@ -401,6 +401,26 @@ test('`tflw spec --json` emits the whole construct manifest, with a build stamp'
   for (const family of ['declaration', 'step', 'matcher', 'generator', 'locator', 'config', 'diagnostic']) {
     assert.ok(manifest.constructs.some((c) => c.family === family), `no ${family} constructs reached the bundle`);
   }
+
+  // `M159g` (`D806d`) — the contract walk, over the document the shipped binary just wrote rather
+  // than over a literal this file composed. `M141`'s note on the `results.json` walk is the reason
+  // it rides here: the keys are produced by `specConstructs()`, and this is the nearest test that
+  // observes what the *bundle* emitted. `testFlow-tests` reads these five names structurally, and
+  // has since `D752` with nothing recording the dependency.
+  const sc = ARTIFACT_CONTRACT.spec;
+  const raw = JSON.parse(stdout) as Record<string, unknown>;
+  for (const key of Object.values(sc.root)) {
+    assert.ok(Object.hasOwn(raw, key), `\`tflw spec --json\` emits a root \`${key}\``);
+  }
+  // On a *diagnostic* entry deliberately: `phase` is present only there, so walking "any construct"
+  // would pass while the one field the sibling's diagnostics gate reads was missing from every row
+  // that has it.
+  const diagnostic = (raw[sc.root.constructs] as Record<string, unknown>[]).find((c) => c[sc.constructFields.family] === 'diagnostic');
+  assert.ok(diagnostic, 'the bundle emits at least one diagnostic construct — otherwise the walk below iterates nothing');
+  for (const field of Object.values(sc.constructFields)) {
+    assert.ok(Object.hasOwn(diagnostic!, field), `a diagnostic construct carries \`${field}\` — the name verify-check-diagnostics.mjs reads`);
+  }
+  assert.ok(['check', 'run'].includes(diagnostic![sc.constructFields.phase] as string), 'and its phase is one of the two the contract publishes');
 });
 
 test('the build stamp is what a stale vendored copy gets caught by (M153b-01)', async () => {

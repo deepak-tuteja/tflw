@@ -187,6 +187,45 @@ export const ARTIFACT_CONTRACT = {
      */
     maxRelativeError: 0.0477,
   },
+  /**
+   * `M159g` (`D806d`) — the keys another repository reads out of `tflw spec --json`. **The fourth
+   * thing, and the seam this file did not know it had.**
+   *
+   * `M141`'s entry above ends *"if that grader ever starts reading structured fields, they belong
+   * here"*, about `results.json`. The same sentence was true of the spec manifest and nobody
+   * noticed it come due: `testFlow-tests` has read `constructs[].id`, `.family`, `.status` and
+   * `.name` structurally since `D752`, out of a document this project emits and can rename, with
+   * nothing recording the dependency. Found while adding `phase` — a field that repository is about
+   * to read — so it is closed in the milestone that would otherwise have deepened it.
+   *
+   * Additive, so `version` does **not** move: the `via`, `results` and `durations` precedents apply
+   * unchanged, and a consumer written against version 1 that knows only `sarif` never looks here.
+   *
+   * **`SPEC_MANIFEST_VERSION` is the other half and is not duplicated here.** That number covers a
+   * change to the manifest's *shape*; this registry covers the *spelling* of the fields inside it.
+   * A consumer pins the first and reads the second, which is why publishing the version's value in
+   * two places would create exactly the disagreement both mechanisms exist to prevent.
+   */
+  spec: {
+    /** Root keys of the `tflw spec --json` document. */
+    root: {
+      manifest: 'manifest',
+      constructs: 'constructs',
+    },
+    /** Fields of one entry in `constructs`, limited to what a consumer's gate reads. `group`,
+     *  `syntax`, `summary` and `example` are emitted and deliberately unpublished — the header's
+     *  warning about a registry outliving its last reader applies, and a gate that starts reading
+     *  one is the reason to add it, with a witness. */
+    constructFields: {
+      id: 'id',
+      family: 'family',
+      status: 'status',
+      name: 'name',
+      /** `M159g`. Present on diagnostics only, so a consumer reading it must tolerate its absence
+       *  elsewhere — which is why the walk asserts it on a diagnostic entry rather than on any. */
+      phase: 'phase',
+    },
+  },
 } as const;
 
 export type ArtifactContract = typeof ARTIFACT_CONTRACT;
