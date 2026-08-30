@@ -56,8 +56,24 @@ export interface AuthorizedTarget {
   readonly probeCiphers: boolean;
 }
 
+/** The **resolved** timeout budgets — four fields, where the grammar has five targets.
+ *
+ * `timeout step` is deliberately absent (`D769`, `M155a`). It exists as the *input* that both
+ * transport budgets fall back to, and it is consumed during resolution rather than carried
+ * forward, so that reading the un-split number is unrepresentable: every call site has to name a
+ * transport, and one added later cannot silently inherit a budget meant for the other. */
 export interface ResolvedTimeouts {
-  readonly step: number;
+  /** `timeout api`, else `timeout step`, else 30s — the abort deadline handed to every HTTP request
+   * tflw makes: `api` steps, the OAuth2 token exchange, the contract fetch, the TLS and authz/input
+   * probes, the crawl, and `wait until api`'s per-poll request under decision 67's clamp. */
+  readonly api: number;
+  /** `timeout browser`, else `timeout step`, else 30s — the budget for locator resolution and every
+   * browser action built on it (`open`, `click`, `fill`, `select`, `check`/`uncheck`, `hover`,
+   * `scroll into view`, `press`, `drag`, `drop file`, and the new-tab and download blocks).
+   *
+   * Inert under a workload by construction: `TF033`/`D19` refuses a browser step inside a
+   * workload-bearing body, so of the two transports only `api` ever bounds a load run. */
+  readonly browser: number;
   /** `timeout expect` — the retry budget for a UI `expect`/`check` (M3a, `execUiExpect` in
    * `interpreter.ts`, SPEC §3.1/§9.4). Still inert for a plain API `expect`, which evaluates once
    * and fails fast by design (P#15) rather than retrying. */
@@ -157,7 +173,10 @@ export interface ResolvedConfig {
  * both filter identically. */
 export const LOG_LEVEL_ORDER: Readonly<Record<LogLevel, number>> = { debug: 0, info: 1, warn: 2, error: 3 };
 
-export const DEFAULT_TIMEOUTS: ResolvedTimeouts = { step: 30_000, expect: 5_000, wait: 30_000 };
+// `api` and `browser` are both 30s because both used to be `step`'s 30s (`D768` — no existing
+// config changes meaning). They are two fields rather than one because the whole point is that they
+// can now diverge, not that they start apart.
+export const DEFAULT_TIMEOUTS: ResolvedTimeouts = { api: 30_000, browser: 30_000, expect: 5_000, wait: 30_000 };
 
 // ---- Traces & results ------------------------------------------------------
 

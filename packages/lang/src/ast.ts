@@ -1724,7 +1724,17 @@ export interface HeaderDecl extends Node {
   readonly serviceSpan: Span | null;
 }
 
-export type TimeoutTarget = 'step' | 'expect' | 'wait';
+/** The five config timeout targets, in two families (`D770`).
+ *
+ * **Budget targets** — `step`, `api`, `browser` — are handed to an operation as its abort deadline,
+ * so `0` makes every such operation fail before it does anything (`TF071`). **Poll targets** —
+ * `expect`, `wait` — are ceilings tested *after* a read, so `0` legitimately means "evaluate once,
+ * don't poll".
+ *
+ * `api` and `browser` **narrow** `step` rather than replacing it (`D768`, `M155a`): a site reads
+ * its own transport's key if one was written and `step` otherwise, which is why `step` survives in
+ * the grammar and not in `ResolvedTimeouts` (`D769`). */
+export type TimeoutTarget = 'step' | 'api' | 'browser' | 'expect' | 'wait';
 
 export interface TimeoutDecl extends Node {
   readonly type: 'TimeoutDecl';

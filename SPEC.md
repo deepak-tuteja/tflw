@@ -110,7 +110,7 @@ Config errors get full diagnostics/squiggles.
 ```
 defaults
   header "Accept" is "application/json"
-  timeout step 10s, expect 5s, wait 30s
+  timeout step 10s, browser 30s, expect 5s, wait 30s
   workers 4
   report "./report"
   viewport 1280 720
@@ -128,14 +128,53 @@ env staging
 - Checker: unknown keys are errors, not ignored.
 - Active env selection precedence: `--env <name>` flag > `TFLW_ENV` env var > block marked
   `default`. No resolvable env → startup error.
-- `timeout step` (per-request, and per browser-step locator resolution, M3a), `timeout wait`
-  (`wait until api`, and since M3b `wait until <ui condition>`, §9.5), and `timeout expect` (a UI
-  `expect`/`check`'s retry budget, M3a — still inert for a plain API `expect`, which evaluates once
-  and fails fast, P#15) are all consumed today.
-- **Two of the three can be overridden for one step.** `timeout step` by an `api` step's own
-  `timeout <duration>` (§5.1), and — since `M147d`/D640 — `timeout wait` by a `wait until` step's own
-  `timeout wait <duration>` (§9.5). `timeout expect` has no per-step form. The two clauses are
-  different quantities and may appear on the same line; see §9.5.
+- **Five timeout targets, in two families.** The **budgets** — `timeout step`, `timeout api`,
+  `timeout browser` — are handed to an operation as its abort deadline. The **poll ceilings** —
+  `timeout wait` (`wait until api`, and since M3b `wait until <ui condition>`, §9.5) and
+  `timeout expect` (a UI `expect`/`check`'s retry budget, M3a — still inert for a plain API
+  `expect`, which evaluates once and fails fast, P#15) — are tested *after* a read. All five are
+  consumed today. Which family a target is in decides whether `0s` is legal; see the table below.
+- **`timeout api` and `timeout browser` narrow `timeout step`** (`M155`, D768). A rule in one line:
+  *an HTTP request uses `timeout api` if set, otherwise `timeout step`; a browser step uses
+  `timeout browser` if set, otherwise `timeout step`.* `timeout step` alone therefore still sets
+  both, which is what it always did, and no config written before `M155` changes meaning.
+
+  | written | HTTP request | browser step |
+  |---|---|---|
+  | nothing | 30s | 30s |
+  | `timeout step 10s` | 10s | 10s |
+  | `timeout step 30s, api 10s` | 10s | 30s |
+  | `timeout browser 60s` | 30s | 60s |
+
+  The split exists because one number was bounding two unrelated things: an `api` step can be tuned
+  on its own line and a browser step cannot, so a slow-rendering page could only be given more
+  patience by giving every HTTP request in the suite the same patience. It is also the slow/failed
+  boundary in a load run — a request that overruns its budget is aborted, so its iteration *fails*
+  and never reaches the duration percentiles (`TF033`, D-M89-14), which made
+  `threshold p95 duration is less than 800ms` read a distribution whose right tail was defined by a
+  key that also governed browser locator resolution. `timeout browser` is inert under a workload by
+  construction (`TF033`/D19 refuses browser steps in a workload-bearing body), so of the two only
+  `timeout api` ever bounds a load run.
+
+  **The two tiers merge per key, and one case surprises people.** `defaults` setting `timeout api
+  10s` beside an `env` setting `timeout step 20s` resolves to **api 10s, browser 20s** — the env's
+  broader key does not reset the narrower one inherited from `defaults`, because same-key-wins is
+  about the same key. This is exactly how `header`, `workers` and every other config key already
+  behave; it is called out only because the *fallback* relationship invites the other reading.
+- The second word is `browser` and not `ui` (D773) — it is the word `--browser
+  chromium|firefox|webkit` already uses for this axis, and the language carries no aliases for a
+  closed keyword set (D623).
+- **`timeout wait` keeps one number for both transports** (D771), because a poll budget is the
+  *condition's* patience rather than the transport's speed — two seconds of patience for a job to
+  finish means the same thing whether the thing polled is an endpoint or a button. Where the two
+  genuinely differ it is already writable per step (§9.5). `wait until api`'s per-poll *request*
+  budget does follow the transport split: it reads `timeout api`, under the clamp in §9.5.
+- **Two of the five can be overridden for one step.** `timeout step`/`timeout api` by an `api`
+  step's own `timeout <duration>` (§5.1), and — since `M147d`/D640 — `timeout wait` by a
+  `wait until` step's own `timeout wait <duration>` (§9.5). `timeout expect` has no per-step form,
+  and neither does `timeout browser`: a browser step's budget is a config setting only, which is
+  what `timeout browser` exists to make tunable. The two clauses are different quantities and may
+  appear on the same line; see §9.5.
 - `insecure true` — a per-env (or `defaults`) key that disables TLS certificate verification for
   the whole run, for self-signed/private-CA staging certs (P#78). Explicit and
   greppable in review; a run with it active carries a visible warning in the CLI summary and the
@@ -165,7 +204,8 @@ value no run can honour was accepted in silence and something nobody wrote ran i
 | `workers 2.5` | yes | workers are whole processes |
 | `viewport 0 720`, `viewport 1280 0` | yes | a viewport with no area renders nothing |
 | `viewport 1280.5 720` | yes | pixels are whole |
-| `timeout step 0s` | yes | `setTimeout(abort, 0)` on every request — the whole suite fails before a byte is sent |
+| `timeout step 0s`, `timeout api 0s` | yes | `setTimeout(abort, 0)` on every request — the whole suite fails before a byte is sent |
+| `timeout browser 0s` | yes | the same, for every browser step: the locator is given no time to resolve |
 | `timeout expect 0s`, `timeout wait 0s` | **no** | *evaluate once, don't poll* — both loops test the deadline only after the first evaluation |
 | `retry 2.5` | yes | attempts are whole; the interpreter computes `1 + max(0, N)`, so 2.5 silently ran three |
 | `retry 0` | **no** | the default, spelled out loud |
@@ -1388,7 +1428,7 @@ wait until api GET /orders/{orderId}
 ```
 
 Each individual poll's own request timeout is clamped to whatever's left of the `wait` deadline, not
-just the (usually much longer) per-request `timeout step` — so a slow/hanging endpoint can't make
+just the (usually much longer) per-request `timeout api` — so a slow/hanging endpoint can't make
 the whole `wait until api` block silently exceed its configured budget (P#67).
 
 **The two budgets on a poll line** (`M147d`, `A3-10`, D640). `wait until api GET /jobs timeout 30s`
@@ -2406,7 +2446,8 @@ explicit `check`/`expect` lines.
 
 ### 9.4 Waiting & UI subjects ✅
 
-- Every interaction step polls up to `timeout step` (default 30s) for its locator to resolve
+- Every interaction step polls up to `timeout browser` (default 30s, falling back to `timeout step`
+  when only that is set — §3.1) for its locator to resolve
   (D9's spirit: a not-yet-rendered element isn't the same failure as a genuinely missing one) —
   `sleep` does not exist, only auto-waiting/auto-retrying.
 - **UI expect subjects** (D5: tflw owns 100% of this retry loop, not Playwright) — locators
@@ -3897,7 +3938,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF067` | Checker + runtime (M134a, D382): an `input handling violations` assertion on a step whose request carries nothing to mutate — no identifier path segment, no query parameter, and no JSON body. The oracle re-sends the observed request once per payload per mutable input; with no mutable input it sends nothing, no rule applies, and the assertion could not have failed whatever the application did. That is D285's no-power-to-fail shape, which this tier is required to make speakable rather than report as a green. **Two doors, and the runtime is the load-bearing one** — the same shape as `TF065`, and its second instance in this table. The checker decides it only where it provably can: a `{var}` anywhere in the path is skipped (interpolation can produce an id segment or a whole query string), `body from "…"` is skipped (the file is not the checker's to read), and `body "…"` raw text is skipped (it may well be JSON, and guessing from a content-type header would be a guess about a header that may itself be interpolated). What is left is the case people actually write — `api GET /health` with the assertion under it. The runtime holds the request that actually went out and re-decides the same question against it, **reusing this code rather than minting one**, because the repair is identical from either door: assert it on a step that takes an id, a query parameter or a JSON body. **Deliberately not a fourth `AUTHZ_*` code**: nothing here is about authorization, and unlike Tier 2 this scan needs no owner at all — it changes no identity, so `TF062` and `TF063` have no analogue. | `test "t"` then `api GET /health` then `expect response has no input handling violations` → `nothing to mutate` |
 | `TF068` | Checker (M137c, D443): a `crawl` that declares no `seed`, so its surface is empty before the run starts. D285's no-power-to-fail shape on Tier 4's new construct — a crawl discovers its routes from its seeds, and with none it issues no request, so every assertion in its body could not have failed whatever the application did. Refused at **check time** for `TF067`'s stated reason: the cheapest place to say *this assertion has no power to fail* is before anything executes. Decided here only where it provably can be, which is the same line `TF067`'s static half draws — zero `seed` clauses is a fact about the file, while an OpenAPI document that answers 404, a run whose own tests captured no traffic, and an `exclude` list that happens to cover every discovered route are facts about the run. Those belong to the **runtime door**, which reuses this same code rather than minting one, because the repair is the same sentence from either: give the crawl something to crawl. **`M137c1` (D481) adds a fourth runtime cause, and it is the only one whose repair differs:** a crawl that sent requests and reached *none* of them. The surface was real and the requests went out; every one was turned away before the application saw it, so every assertion in the body passed having judged no response — `D285`'s shape again, arrived at from the far side. Its hint points at addressing rather than at seeds, because that is what produces it: a document's paths resolve against the document's own `servers`, so an `api` base carrying a prefix the document also carries dials it twice. It stays one code despite the different repair, because a **runtime-only** diagnostic is unbuildable — the probes below execute through the checker, so a code with no check-time door has nothing to verify it, which is why `TF069` was withdrawn (D456). One code whose hint branches beats a second row no gate can check. The span is the `crawl` header rather than the first assertion, since the missing thing is a header clause and the body is correct. | `crawl "the v1 surface"` then `expect response has no critical security violations` → `has nothing to crawl` |
 | `TF070` | Checker (M137c, D443/D450): a step in a `crawl` body that is not one of the three `violations` assertions — `security`, `authorization` or `input handling`. **What the rule protects is the claim that made Tier 4 a declaration rather than a sixth workload kind**: a crawl is a *source of requests*, not a kind of judgement. It issues one request per discovered route per declared principal, and each `expect` in its body judges every one of those responses — so an `api` step there is a request nobody will send under a principal nobody chose, and `expect status equals 200` names a response the construct does not have, because a crawl has many. One repair covers all of it: put the step in a `test`. **Enforced by the checker, not the grammar** (`ast.ts`'s `CrawlDecl.body`), the same layering `D96`'s `retry` rule and `D19`'s browser-step rejection use: the parser admits any step so that a misplaced one gets this sentence instead of `expected an expect`. **`TF069` is skipped permanently** — `D456` withdrew it, and by the time this code was minted six comments across three packages already used that number as a pointer to the withdrawal, so it was spent even though it was never allocated (`D463`). Deliberately **not** `TF033`, which is what `D19`'s sibling rule reuses: `TF033` predates the one-code-one-repair rule this arc settled on and already carries several unrelated repairs, so it is the counter-example rather than the pattern. | `crawl "the v1 surface"` then `seed traffic` then `api GET /products` then `expect response has no critical security violations` → `` takes only `violations` assertions ``; `crawl "the v1 surface"` then `seed traffic` then `expect status equals 200` → `a crawl has many` |
-| `TF071` | Parser/checker (`M147c`, `A2-09`/`M118-01`, D631/D632): **a setting whose written value is outside the range the setting can act on.** Five slots take a bare number — `workers`, `viewport`, `timeout <target>`, a test header's `retry N`, and an api step's `retry honoring "…" up to N` — and none of them read it, so `workers 0`, `viewport 0 0`, `timeout step 0s` and `retry 2.5` all reached "no problems found" and then ran something nobody wrote: zero workers, a viewport with no area, a `setTimeout(abort, 0)` on every request, and three attempts where two-and-a-half retries were asked for. **Negatives were never the gap** — the lexer emits `-` as its own token, so `workers -1` has always been `TF010` for not being a number at all. What this code adds is *zero where zero cannot configure anything* and *a fraction where only whole things exist*. **Two zeros stay legal on purpose**: `timeout expect 0s`/`timeout wait 0s` mean "evaluate once, don't poll" (both loops test their deadline only after the first evaluation), and `retry 0`/`up to 0` are the defaults spelled out loud. Deliberately not `TF054`, whose published meaning is an operand *the step will reject the moment it evaluates* — a setting has no step and gets no rejection. **A sixth slot is not a number at all** (`M118-01`): `tflw://` is reserved and `tflw://demo` is the only address under it, so `api "tflw://dmeo"` names a value the setting cannot act on for the same reason `workers 0` does, and gets the same code with a nearest-spelling hint. That one is decided in the checker rather than the parser — the range of a number is a fact about its shape, while what a scheme reserves is a fact about the language's semantics — the same split `TF033` records as "Parser/checker". | `defaults` then `workers 0` in `tflw.config` → `below the smallest value`; `defaults` then `viewport 0 0` in `tflw.config` → `viewport width 0`; `test "t" retry 2.5` then `api GET /a` then `expect status equals 200` → `is not a whole number` |
+| `TF071` | Parser/checker (`M147c`, `A2-09`/`M118-01`, D631/D632): **a setting whose written value is outside the range the setting can act on.** Five slots take a bare number — `workers`, `viewport`, `timeout <target>`, a test header's `retry N`, and an api step's `retry honoring "…" up to N` — and none of them read it, so `workers 0`, `viewport 0 0`, `timeout step 0s` and `retry 2.5` all reached "no problems found" and then ran something nobody wrote: zero workers, a viewport with no area, a `setTimeout(abort, 0)` on every request, and three attempts where two-and-a-half retries were asked for. **Negatives were never the gap** — the lexer emits `-` as its own token, so `workers -1` has always been `TF010` for not being a number at all. What this code adds is *zero where zero cannot configure anything* and *a fraction where only whole things exist*. **Two zeros stay legal on purpose**: `timeout expect 0s`/`timeout wait 0s` mean "evaluate once, don't poll" (both loops test their deadline only after the first evaluation), and `retry 0`/`up to 0` are the defaults spelled out loud. **`M155a`/D770 restated the timeout half as a property of the target *family*, not of the name `step`**: the three **budget** targets — `step`, `api`, `browser` — hand their value to an operation as an abort deadline and refuse `0`; the two **poll** targets are the pair above. Stating the rule that way is what made `timeout api 0s` and `timeout browser 0s` follow from it when M155 added them, rather than needing a second decision. Deliberately not `TF054`, whose published meaning is an operand *the step will reject the moment it evaluates* — a setting has no step and gets no rejection. **A sixth slot is not a number at all** (`M118-01`): `tflw://` is reserved and `tflw://demo` is the only address under it, so `api "tflw://dmeo"` names a value the setting cannot act on for the same reason `workers 0` does, and gets the same code with a nearest-spelling hint. That one is decided in the checker rather than the parser — the range of a number is a fact about its shape, while what a scheme reserves is a fact about the language's semantics — the same split `TF033` records as "Parser/checker". | `defaults` then `workers 0` in `tflw.config` → `below the smallest value`; `defaults` then `viewport 0 0` in `tflw.config` → `viewport width 0`; `test "t" retry 2.5` then `api GET /a` then `expect status equals 200` → `is not a whole number` |
 | `TF072` | Parser (`M147c`, `A2-11`, D633): **the same column name declared twice in one `with each` header.** A row binds each name once, so `\| name \| name \|` let the second column overwrite the first and every cell under the earlier one was read, discarded and never mentioned — the test still ran and still passed. Reported at the *second* occurrence, which is the one to rename, and once per extra occurrence rather than once per table. The duplicated name is **kept** in the header rather than dropped: the header's width is what every data row below is matched against, so removing it would turn one mistake into a ragged-row complaint against every row in the table. Deliberately not `TF027`, whose published meaning is a `{col}` in a test's *name* that the table does not declare — here the column is declared, twice, so "unknown" would be false in the one word a reader keys on. The language's second duplicate-declaration rule and its first outside `tflw.config`, where `TF024` and `TF029` do the same job for envs and sessions, with the same one-word repair: rename one. | `with each` then `\| name \| name \|` then `\| "a" \| "b" \|` then `test "t {name}"` then `api GET /a` then `expect status equals 200` → `duplicate table column` |
 | `TF073` | Checker (`M147c`, `M140-03`, D634): **an `import` naming a file that is there and does not parse.** `tflw check a.tflw` printed `1 file checked, no problems found.` and exited 0 on a file whose import target could not parse, and it held the diagnostics when it said so — the resolver ran a full `parseSource` on the imported file and kept only the verdict *world unknown*, discarding everything it had just computed. The run then failed with `✗ a.tflw (crashed)`. Deliberately **not** `TF043`, whose meaning is `MISSING_FILE`: this file is present, so that code would be false in the one word telling the reader where to look — `M97a-01`→`TF056`'s argument a second time. The two are disjoint by construction and can never both fire for one path: an `import` naming nothing is `TF043`'s, an `import` naming something unparseable is this one's. **The file is named, not underlined.** An imported file's diagnostics carry spans in *that* file's coordinates, and rendering them against this source would draw a caret on an unrelated line — the same line `TF044` draws when it names a call written inside an imported body and refuses to underline it. So the hint hands over the command that shows the real errors at their real carets. Checking a whole **directory** always reported them, because the broken file is checked directly there; the gap is the run that checks one entry file, which is the shape a `tflw check` in CI usually has. | `import "./broken.tflw"` then `test "t"` then `api GET /a` then `expect status equals 200` → `does not parse` |
 | `TF074` | Checker (config, `M147d`, `M137f-02`, D642): **a `session ... for env <name>` naming an env this config does not declare.** The clause narrows a session to a set of envs, so a name matching no `env` block narrows it to *nothing*: the session exists in no env at all, and every `test ... as <name>` that opts into it becomes a `TF028` pointing at a test file to complain about one word in `tflw.config`. **The failure it prevents is a deletion rather than a typo** — a `session` is not only a login, it is a member of every Tier 2 probe set (D306), so a session that silently exists nowhere removes an identity from the differential oracle across the whole suite while every assertion stays green. Its own code rather than `TF024`: that one is `CONFIG_ENV_CONFLICT`, two claims about envs that contradict each other, while this is a *reference* to an env that is not there — the shape `TF026` (unknown service) and `TF028` (unknown session) each already have a code for. Decidable from `tflw.config` alone, both halves being in one file, so it fires in the editor with no env resolved. | a `for env` clause naming an env this config does not declare → `unknown env "stagng"` |

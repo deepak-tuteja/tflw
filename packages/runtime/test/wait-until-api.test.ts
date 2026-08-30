@@ -94,7 +94,7 @@ test('a hanging single poll fails close to the wait deadline, not the full reque
     expect body.status equals "shipped"
 `;
   const { program } = parseSource(source);
-  const config = testConfig(server.baseUrl, { wait: 300, step: 30000 });
+  const config = testConfig(server.baseUrl, { wait: 300, api: 30000 });
 
   const startedAt = performance.now();
   const { report } = await runProgram(program, config, { source });
