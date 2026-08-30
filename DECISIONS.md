@@ -6866,6 +6866,44 @@ becomes invisible.
 Two defects, one rule: an index only means something inside the space it was minted for, and
 `unique` currently crosses two boundaries without saying so.
 
+### D829
+
+<sub>cited from SPEC.md · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+
+**D829 — a repeated single-valued config key is `TF081`, an error**
+
+    error[TF081]: `timeout step` is declared twice in this `defaults` block — the first is discarded
+      note: remove one, or move it into the `env` block it belongs to
+
+### D830
+
+<sub>cited inside a range only · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+
+**D830 — the four accumulating keys are exempt by name, not by shape**
+
+`header`, `allow hosts`, `authorized target` and `redact` are excluded in one place with the reason
+beside them. Not by a heuristic ("does the case body call `.push`?"), which would silently start
+flagging a key the day someone changes an implementation detail, and would silently stop flagging
+one the day someone writes an accumulating key as an assignment.
+
+### D831
+
+<sub>cited inside a range only · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+
+**D831 — reported at the second occurrence, once per extra occurrence**
+
+Exactly `TF072`'s rule, for exactly `TF072`'s reason: the second is the one to delete, and three
+declarations of the same key are two mistakes, not one.
+
+### D832
+
+<sub>cited from SPEC.md · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+
+**D832 — the check is per block, and a repeat across `defaults` and `env` is legal**
+
+`env local` overriding a `defaults` value is the point of having both. `TF081` fires only within one
+block.
+
 ### D834
 
 <sub>cited from CHANGELOG.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
@@ -9491,5 +9529,13 @@ contradicting a stated `SPEC` guarantee (§2.4); reproduced at 167 draws / 84 di
 **Numbering:** takes `D812`–`D817`. Next free after this plan: **`D818`**. Mints no `TF` code.
 Sibling work gated on `D511` (tflw merges first).
 Gitignored by `.gitignore:35`.
+
+### M165a
+
+<sub>cited from SPEC.md · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+
+**`M165a` — `D829`/`D830`/`D831`/`D832`.** The check, `TF081`, the exemption list, and both of
+`D830`'s mechanisms: the total `Record` over `ConfigEntry['type']`, and the seventeen-kind
+behavioural test that resolves a doubled declaration of each key and asserts which value survives.
 
 <!-- GENERATED:decisions:end -->
