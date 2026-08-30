@@ -532,6 +532,68 @@ test "clicks with nothing armed"
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 });
 
+// ---- M159/D798/D799: the two dialog subjects ---------------------------------------------------
+
+test('dialogs: `dialog message` asserts the text, which is what makes a dismiss provable', async () => {
+  // `M154b-01`. `null` and `dismiss` took the same branch in the handler because the browser's
+  // unhandled default IS dismissal, so deleting a `dismiss dialog` line changed no assertion
+  // anywhere and both of the sibling's uses of it were vacuous by a property of the construct.
+  // With the message asserted, the test says the dialog happened and said what it should.
+  const { report } = await run(`test "dismiss, provably"
+  open "/"
+  dismiss dialog
+  click button "Delete"
+  expect dialog message equals "Really delete?"
+  expect text "kept" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: `dialog type` tells a confirm from an alert — the regression nothing could see', async () => {
+  // A `confirm()`-guarded destructive action becoming an unconditional `alert()` was invisible to
+  // this suite: `accept dialog` still "worked", the action still happened, every assertion passed.
+  // `dialog.type()` was read nowhere in the runtime.
+  const { report } = await run(`test "kind"
+  open "/"
+  accept dialog
+  click button "Delete"
+  expect dialog type equals "confirm"
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: a subject read before any dialog is a clean error naming it, not a null comparison', async () => {
+  // Acceptance clause 7. Comparing an unset `null` as a string reports `expected "confirm", got
+  // null`, which reads like the page said the wrong thing rather than like nothing was asked.
+  const { report } = await run(`test "too early"
+  open "/"
+  expect dialog type equals "confirm"
+`);
+  assert.equal(report.ok, false);
+  const error = report.tests[0]!.error ?? '';
+  assert.match(error, /no dialog has been raised in this test yet/);
+  assert.match(error, /`dialog type`/);
+  assert.doesNotMatch(error, /null/);
+});
+
+test('dialogs: the subjects do not leak across tests either (`D803`)', async () => {
+  // The queue's isolation test one subject over. A dialog raised in the first test must not be
+  // readable from the second — otherwise an assertion passes on a dialog it never saw.
+  const { report } = await run(`test "raises one"
+  open "/"
+  accept dialog
+  click button "Delete"
+  expect dialog message equals "Really delete?"
+
+test "reads with none of its own"
+  open "/"
+  expect dialog message equals "Really delete?"
+`);
+  assert.equal(report.ok, false);
+  assert.equal(report.tests[0]!.ok, true, JSON.stringify(report.tests[0], null, 2));
+  assert.match(report.tests[1]!.error ?? '', /no dialog has been raised in this test yet/);
+});
+
 test('a locator that never appears fails with a clear "no element found" error, not a hang', async () => {
   const shortStepConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, step: 300 } };
   const { program } = parseSource('test "not found"\n  open "/"\n  click button "Does Not Exist"\n');

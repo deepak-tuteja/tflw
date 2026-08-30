@@ -1511,6 +1511,12 @@ function readsResponse(subject: Subject): boolean {
     case 'NetworkRequestSubject':
     case 'LocatorSubject':
     case 'PageSubject':
+    // `M159`/`D798`/`D799`, and on this side of the line for the reason the three above are: a
+    // dialog subject reads the browser page state, so `expect dialog message …` in a test with no
+    // `api` step anywhere is legal and `TF039` has nothing to say about it. The runtime resolves
+    // both before its own response-null guard, which is the same rule stated once on each side.
+    case 'DialogMessageSubject':
+    case 'DialogTypeSubject':
       return false;
     // M96/`FU-11` — a value subject reads a `let`/`capture` binding out of the variable scope, not
     // the response, so `TF039` has nothing to say about it. `expect {x} equals 1` as a test's very
@@ -1870,6 +1876,11 @@ const SUBJECT_KINDS = {
   BodyCsvSubject: 'value',
   BodyPdfTextSubject: 'value',
   ValueSubject: 'value',
+  // `M159`/`D798`/`D799` — `'value'`, because that is what they are: a string a prior step produced,
+  // which every value matcher may stand against. The kind axis is about what a matcher can READ, and
+  // a dialog's message and kind read exactly like `body text` does.
+  DialogMessageSubject: 'value',
+  DialogTypeSubject: 'value',
   LocatorSubject: 'locator',
   PageSubject: 'page',
   ResponseSubject: 'response',
@@ -2366,6 +2377,9 @@ function subjectKeyword(subject: Subject): string {
       return 'status';
     case 'DurationSubject':
       return 'duration';
+    case 'DialogMessageSubject':
+    case 'DialogTypeSubject':
+      return 'dialog';
     case 'HeaderSubject':
       return 'header';
     case 'BodySubject':

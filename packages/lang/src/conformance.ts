@@ -803,6 +803,20 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     note: 'the one rule already enforced in both places — `parser.ts` rejects it via `badQuantifier`, sharing M96’s `quantifiable()` predicate. The pattern this milestone generalises; it was applied once and never asked about again',
   },
   {
+    // `M159`/`D798`/`D799`. Deliberately `'needs-io'` and deliberately not `TF039`'s neighbour: a
+    // dialog subject reads the browser page state, so `readsResponse` returns false for it and the
+    // checker has nothing to say. Whether a dialog was raised is a fact about what the page did,
+    // and no static analysis of a `.tflw` file decides it — the same `click` may raise one or none
+    // depending on the data. Acceptance clause 7 is why the error exists at all rather than a `null`
+    // comparison: `expected "confirm", got null` reads like the page said the wrong thing.
+    id: 'dialog-subject-before-any-dialog',
+    file: 'interpreter.ts',
+    excerpt: 'no dialog has been raised in this test yet',
+    sites: 1,
+    decidable: 'needs-io',
+    note: 'the page raises a dialog or it does not, and which is not in the AST. A test may legitimately arm one for an action that raises it only on some data — that is exactly why `D802` makes an unconsumed arming a warning rather than an error, and the same reasoning puts this on the runtime side of the line',
+  },
+  {
     id: 'no-response-yet',
     file: 'interpreter.ts',
     excerpt: 'no response yet',

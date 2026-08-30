@@ -2230,6 +2230,38 @@ before this rule existed.
 The state is **per test attempt**: a retry starts with an empty queue, the same lifetime the
 network log has (§9.7).
 
+**Two subjects say what the dialog was (`D798`, `D799`).**
+
+```tflw
+accept dialog
+click button "Delete"
+expect dialog message equals "Really delete?"
+expect dialog type equals "confirm"
+```
+
+Both read the **last dialog of this attempt**, and both are ordinary value subjects — every string
+matcher works on them, and neither needs a matcher of its own. `dialog type` is a closed set:
+`alert`, `confirm`, `prompt`, `beforeunload`. Read either before any dialog has been raised and the
+run fails naming the subject, rather than comparing an unset value as a string.
+
+**What can be asserted depends on the kind, and this is the part worth knowing before writing the
+test (`D804`).**
+
+| type | buttons | `accept dialog` | `dismiss dialog` | is the arming observable downstream? |
+|---|---|---|---|---|
+| `alert` | OK | closes | closes | **No** — identical page effect |
+| `confirm` | OK / Cancel | the page takes the `true` branch | the `false` branch | Yes |
+| `prompt` | text + OK / Cancel | the answer string | `null` | Yes, and the string matters |
+| `beforeunload` | Leave / Stay | navigates | stays | Yes |
+
+On an `alert`, `accept dialog` and `dismiss dialog` have identical effect. Assert the dialog by its
+`dialog message` and `dialog type`; there is no downstream difference to observe. This is worth
+stating because the alternative is a test that arms an alert, asserts the page afterwards, and would
+pass just as well with the arming line deleted.
+
+`beforeunload` is raised only after a real user gesture, so a test expecting one may legitimately
+see none.
+
 **The tick action is `tick`/`untick`, not `check`/`uncheck` (FS-04).** `check` is the soft-assertion
 keyword (§6.4) and nothing else. It used to be dual-grammar: a locator *with* a matcher after it
 (`check field "X" is checked`) was the soft assertion, a bare locator with nothing after it (`check

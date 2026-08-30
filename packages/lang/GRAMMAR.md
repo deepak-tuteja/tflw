@@ -314,6 +314,12 @@ Subject     := 'status' NetworkRef?
                                                                   # response scanned as a whole; read by
                                                                   # `has no … security violations` and, since
                                                                   # M130b, `has no … authorization violations`
+             | 'dialog' 'message'                                # (§9.1, M159/D798) — the text of the last
+                                                                  # native dialog of this attempt
+             | 'dialog' 'type'                                   # (§9.1, M159/D799) — which kind it was:
+                                                                  # alert | confirm | prompt | beforeunload.
+                                                                  # The second word is required: a bare
+                                                                  # `dialog` would have to imply one silently
 BodyPath    := ('.' IDENT | '[' NUMBER ']')+                     # .items[0].price
 NetworkRef  := 'to' STRING ('with' 'method' STRING)?              # (§9.7, M3d)
              | 'of' 'request' 'to' STRING ('with' 'method' STRING)?  # trailing clause on status/header/body/body text

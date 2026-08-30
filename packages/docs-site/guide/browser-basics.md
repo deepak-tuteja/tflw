@@ -26,14 +26,51 @@ press "Enter"                            # page-level
 press "Enter" on field "Search"          # scoped to one locator
 scroll to button "Load more"             # scrolls the locator into view
 
-accept dialog                            # arms a one-shot handler for the *next* native dialog
-click button "Delete"                    # (Playwright otherwise auto-dismisses silently — a real
+accept dialog                            # arms a handler for the *next* native dialog
+click button "Delete"                    # (the browser otherwise auto-dismisses silently — a real
                                           #  no-op trap for a confirm()-guarded action)
 dismiss dialog
 ```
 
 Every interaction step polls up to `timeout step` (default 30s) for its locator to resolve —
 `sleep` doesn't exist, only auto-waiting/auto-retrying.
+
+## Native dialogs
+
+An arming is consumed by exactly one dialog, in the order you wrote them. So an action that raises
+two dialogs takes two armings:
+
+```tflw fragment
+accept dialog
+accept dialog
+click button "Delete all"
+```
+
+That matters because there is nowhere else to put the second one — both dialogs come from a single
+click, so no step can sit between them.
+
+Assert what the dialog actually was:
+
+```tflw fragment
+accept dialog
+click button "Delete"
+expect dialog message equals "Really delete?"
+expect dialog type equals "confirm"
+```
+
+`dialog type` is one of `alert`, `confirm`, `prompt`, `beforeunload`. Both subjects read the last
+dialog of the current test, and reading either before any dialog has appeared fails the test saying
+so.
+
+::: warning On an `alert`, arming proves nothing by itself.
+An alert has one button, so accepting and dismissing it do exactly the same thing to the page. A
+test that arms one and then asserts the page would pass just as well with the arming line deleted.
+Assert the dialog itself — its `message` and its `type` — and the test says something.
+
+The same trap is why `dialog type` is worth asserting at all on a `confirm`: if someone replaces a
+guarded `confirm()` with a plain `alert()`, the destructive action stops being guarded, and every
+assertion about the page still passes.
+:::
 
 ::: tip Coming from Playwright or Cypress? The tick action is `tick`, not `check`.
 Both of those spell it `check()`, so `check field "Accept terms"` is the natural thing to type. In

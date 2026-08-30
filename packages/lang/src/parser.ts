@@ -3914,6 +3914,27 @@ class Parser {
       case 'duration':
         this.advance();
         return { type: 'DurationSubject', span: this.spanFrom(start) };
+      case 'dialog': {
+        // `M159`/`D798`/`D799`. Two bare words, and the second is required: a bare `dialog` would
+        // have to mean one of them silently, and `D628`'s reasoning against a hyphen is the same
+        // reasoning against a default — the reader should not have to know which half was implied.
+        this.advance();
+        if (this.isKw(this.peek(), 'message')) {
+          this.advance();
+          return { type: 'DialogMessageSubject', span: this.spanFrom(start) };
+        }
+        if (this.isKw(this.peek(), 'type')) {
+          this.advance();
+          return { type: 'DialogTypeSubject', span: this.spanFrom(start) };
+        }
+        this.error(
+          Codes.UNEXPECTED_TOKEN,
+          `expected \`message\` or \`type\` after \`dialog\`, found ${describeToken(this.peek())}`,
+          this.peek().span,
+          '`dialog message` is the text the dialog showed; `dialog type` is which kind it was — `alert`, `confirm`, `prompt` or `beforeunload` (SPEC §9.1)',
+        );
+        return null;
+      }
       case 'header': {
         this.advance();
         const name = this.expectString('a header name string, e.g. `header "content-type"`');

@@ -609,3 +609,21 @@ test('`matches` with an unknown word instead of `subset`/`schema`/`file`/`snapsh
   assert.equal(step.matcher.name, 'matches');
   assert.equal(step.matcher.value?.value, '^ok$');
 });
+
+// ---- M159/D798/D799: the two dialog subjects ---------------------------------------------------
+
+test('`dialog message` and `dialog type` parse as their own subjects', () => {
+  const message = firstStep('test "ok"\n  expect dialog message equals "Really?"\n') as { subject: { type: string } };
+  assert.equal(message.subject.type, 'DialogMessageSubject');
+  const kind = firstStep('test "ok"\n  expect dialog type equals "confirm"\n') as { subject: { type: string } };
+  assert.equal(kind.subject.type, 'DialogTypeSubject');
+});
+
+test('a bare `dialog` subject is refused, naming both halves rather than defaulting to one', () => {
+  // `D628`'s reasoning against a hyphen is the same reasoning against a default: a reader should
+  // not have to know which half was implied. Two bare words, and the second is required.
+  const { diagnostics } = parseSource('test "ok"\n  expect dialog equals "x"\n');
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0]!.message, /expected `message` or `type` after `dialog`/);
+  assert.match(diagnostics[0]!.hint ?? '', /alert.*confirm.*prompt.*beforeunload/);
+});

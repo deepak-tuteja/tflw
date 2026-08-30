@@ -6083,6 +6083,24 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
       '`response` is not a capturable value — only `expect`/`check response has no … security violations` (SPEC §9.10). To bind part of it, name the part: `capture body.…`, `capture status`, `capture header "…"`',
     );
   }
+  // `M159`/`D798`/`D799`. A dialog subject reads the browser page state, never the last `api`
+  // response, so it resolves *before* the response-null guard for the same reason `ValueSubject`
+  // does — `expect dialog message …` after a `click` is legal in a test that made no API call.
+  if (subject.type === 'DialogMessageSubject' || subject.type === 'DialogTypeSubject') {
+    const page = ctx.browser?.page;
+    const raised = page !== undefined && page.dialogsRaised > 0;
+    if (!raised) {
+      // Acceptance clause 7: a clean error naming the subject. The alternative is `null` compared
+      // as a string, which reports `expected "confirm", got null` — a sentence that reads like the
+      // page said the wrong thing rather than like nothing was asked.
+      throw new RuntimeError(
+        `no dialog has been raised in this test yet — \`${subject.type === 'DialogMessageSubject' ? 'dialog message' : 'dialog type'}\` reads the last native dialog of this attempt (SPEC §9.1). Arm one with \`accept dialog\`/\`dismiss dialog\` and take the action that raises it first.`,
+      );
+    }
+    return subject.type === 'DialogMessageSubject'
+      ? { value: page.lastDialogMessage, label: 'dialog message' }
+      : { value: page.lastDialogType, label: 'dialog type' };
+  }
   if (!response) throw new RuntimeError('no response yet — an `api` step must run before this assertion/capture');
   switch (subject.type) {
     case 'StatusSubject':
