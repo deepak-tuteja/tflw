@@ -897,7 +897,7 @@ here.
 
 ### P#75
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
 
 75. **`tflw check` ships in 0.1, text-only.** Validate-only command: parse + the full checker
     pipeline (exactly what `run` already executes before running) over given or discovered files,
@@ -3603,7 +3603,7 @@ CLI, typecheck, build).
 
 ### D105
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +2 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D105 — generic scope, not workload-only.** `parallel`/`sequential` applies to *every* `test`,
   functional (API/UI) or workload-bearing alike — not just load tests. Confirmed feasible by reading
@@ -5905,6 +5905,18 @@ with its critical `sec/csrf-not-enforced`, and `seed spider`) appear **nowhere**
 three fully specified in `SPEC.md`. No phrase list could ever have found them, because an absent page
 matches no grep.
 
+### D673
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D673` — the docs site gets a prohibition, not a declaration.** A reader of `/guide/load-testing`
+is a tflw *user*, with no relationship to `M60`. Explaining the notation on a user-facing website
+justifies an artifact that should not be there. The four prose citations are reworded to say the
+thing without the number, and `verify-docs.mjs` gains the rule — one more property beside `D657`'s
+roadmap denylist and `D659`'s completeness gate, not a new instrument. **Fence contents are
+excluded**: `# emitted by tflw M137d — sec/error-detail-disclosure` is tflw's own output, reproduced
+verbatim, and is not a citation at all.
+
 ### D677
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
@@ -6607,6 +6619,55 @@ successor and §2.4's three arms as the evidence.
 requests — one per iteration of the test that carries `cleanup`, and none from the sibling test that
 omits it."* Under `D781` the correct answer becomes 16.
 
+### D790
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M158_GATE_MANIFEST.md`</sub>
+
+**D790 — the completeness gate derives its construct set from `specConstructs()`**
+
+`scanConstructCoverage` stops building a set and reads one. The four ad-hoc sources go away,
+`grammarPhrases` included.
+
+### D791
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M158_GATE_MANIFEST.md`</sub>
+
+**D791 — diagnostics are excluded by name, and the exclusion is the only one**
+
+`specConstructs()` returns 178; 66 are diagnostics, already held to the docs by
+`diagnosticsCoverage.test.ts` since `M86`. The gate excludes family `diagnostic` **explicitly**, in
+one line, with that citation beside it — not by omitting a manifest and letting the number come out
+right by accident, which is exactly how 111 happened.
+
+### D792
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M158_GATE_MANIFEST.md`</sub>
+
+**D792 — every construct is matched on its syntax shape, never on its bare id**
+
+This is the decision the milestone turns on, and it is not in the row.
+
+### D794
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M158_GATE_MANIFEST.md`</sub>
+
+**D794 — `NOTATION` is deleted and `doc-blocks.mjs` calls the citation classifier it does not own**
+
+The half of `M153a-01` that `specConstructs()` cannot serve is served by *the other classifier*.
+`verify-citations.mjs`'s `JSON_RULES` is the strictly better of the two — it resolves shapes
+`NOTATION` provably cannot (`E4` with no pattern for `E4`) because it reads context, not shape.
+
+### D795
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M158_GATE_MANIFEST.md`</sub>
+
+**D795 — a cross-package import needs a stated direction, and it is scripts -> docs-site**
+
+`packages/docs-site/scripts/doc-blocks.mjs` importing from the repo-root `scripts/` is a new edge.
+It is taken in that direction (docs-site depends on the root guard, never the reverse) because
+`verify-citations.mjs` already reads **both repositories** and has no docs-site knowledge, while
+`doc-blocks.mjs` is scoped to one package. The dependency follows the breadth.
+
 ### D807
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
@@ -6713,6 +6774,17 @@ measurement newly precise.
 too coarsely. Correct as far as it went, and one axis short: coarse reporting disqualifies a run's
 **p95**, not its **rps**. A count of completed iterations does not become less true because the
 percentile printed beside it was rendered to a whole millisecond.
+
+### D837
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M158_GATE_MANIFEST.md`</sub>
+
+**D837 — the config family carries no `syntax`, so its matcher comes from `slot` + `id`**
+
+**Minted during the build, not at scoping.** `D792` says the match is the construct's syntax,
+*"which every manifest row already carries"*. Measured at HEAD that sentence is false for **25 of the
+112** non-diagnostic constructs, and they are exactly the config family: `ConfigKeywordEntry` carries
+`id`, `slot` and `summary`, and no shape at all.
 
 ### M0
 
@@ -9210,6 +9282,21 @@ one edit rather than two. Bad values reuse the existing machinery — `TF020` fo
 
 Rewrite `C48`, update `verdict.tflw:58-68`, re-run the
 roster and ratchet. **`D511` merge order: tflw first, then testFlow-tests.**
+
+### M158
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M158_GATE_MANIFEST.md`</sub>
+
+**`M158` — the docs-site guard learns what the language is**
+
+**Status:** **BUILT 2026-08-30** — `M158a`–`M158d` complete, suite 3771 green on the build box,
+all six record gates green. Build log in §4b. Two of this plan's own decisions were corrected by
+measuring them (`D792`, `D794`); one number was minted outside the reserved block (`D837`).
+Originally scoped 2026-08-29. **Not breaking** — no grammar, no runtime, no
+diagnostic. Guard and comment changes only.
+**Closes:** `M154-01` (S3), `M153a-01` (S4). **Disposes without closing:** `M149f-01` (S4),
+`M153a-02` (S4) — both are `D622` conditions awaiting evidence that has not arrived (§5).
+**Numbering:** takes `D790`–`D796`, **and `D837`**. Mints no `TF` code (`TF079` stays free).
 
 ### M160
 

@@ -5,7 +5,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, extractBlocks, parseInfoString, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, grammarPhrases, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { classify, extractBlocks, parseInfoString, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, constructMatchers, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { JSON_RULES as CITATION_RULES } from '../../../scripts/citation-rules.mjs';
+import { specConstructs } from '@tflw/lang';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -147,49 +149,146 @@ test('`will be` is deliberately not an idiom — `D663`, pinned so it is not add
 // Construct coverage (`M149f`, `D659`) — the positive dual, and the break it has to demonstrate.
 // ---------------------------------------------------------------------------
 
-const GRAMMAR = [
-  '```',
-  "CrawlSeed := 'seed' 'openapi' STRING NEWLINE   # the documented surface",
-  "           | 'seed' 'spider' STRING NEWLINE",
-  "CsrfStmt  := 'csrf' 'from' Subject 'send' 'as' 'header' STRING NEWLINE",
-  "Step      := 'api' METHOD Target NEWLINE",
-  '```',
-].join('\n');
+// The fixture language. `specConstructs()` shape, deliberately invented: asserting any of this
+// against the real manifest would pin today's site rather than the rule (`D659`'s own reasoning,
+// and why `verify-docs.mjs` skips this check for a `DT-08` scratch corpus).
+//
+// Four of the six are chosen for what they cost. `close` and `log` are ordinary English — the weak
+// half the file confessed to and `D792` removes. `log` carries an optional. `teardown` is a config
+// key spelled the same in both dialects. `ciphers` is a `probe` sub-clause, never a leading word.
+const CONSTRUCTS = [
+  { id: 'declaration:with-each', family: 'declaration', name: 'with-each', syntax: '`with each` + an indented table, or `with each from "<file.csv>"`' },
+  { id: 'locator:button', family: 'locator', name: 'button', syntax: '`button "<name>"`' },
+  { id: 'step:close', family: 'step', name: 'close', syntax: '`close tab`' },
+  { id: 'step:log', family: 'step', name: 'log', syntax: '`log [<level>] "<message>"`' },
+  { id: 'config:key:teardown', family: 'config', name: 'teardown' },
+  { id: 'config:probe:ciphers', family: 'config', name: 'ciphers' },
+  { id: 'diagnostic:TF001', family: 'diagnostic', name: 'TF001' },
+];
 
 const cover = (pages, opts = {}) =>
   scanConstructCoverage({
     files: Object.entries(pages).map(([key, text]) => ({ key, text })),
-    grammarText: GRAMMAR,
+    constructs: CONSTRUCTS,
     ...opts,
   });
+
+/** Every construct above, documented the way a real page documents one. */
+const FULL_SITE = {
+  'guide/a.md': [
+    '# Guide',
+    '',
+    '```tflw',
+    'test "t"',
+    '  button "Buy"',
+    '  close tab',
+    '  log warn "slow"',
+    '```',
+    '',
+    'A table runs a test per row with `with each`, or `with each from "rows.csv"`.',
+    '',
+    '```tflw-config',
+    'defaults',
+    '  teardown never',
+    'authorized target "x"',
+    '  probe ciphers',
+    '```',
+  ].join('\n'),
+};
 
 test('a construct on no page fails — the half a denylist cannot see', () => {
   // `seed spider` shipped in `M137f` and appeared nowhere on the site for two milestones. No phrase
   // list could have found it: an absent page matches no grep, which is why this check is a set
   // difference against a manifest rather than a scan of the prose.
-  const page = '# Crawling\n\n```tflw\ncrawl "x"\n  seed openapi "/openapi.json"\n```\n\nSessions carry a `csrf from body.t send as header "X"` clause.\n';
-  const { problems } = cover({ 'guide/crawling.md': page });
-  assert.deepEqual(problems.map((p) => p.message), ['a shipped construct that appears on no page: `seed spider`']);
+  const page = FULL_SITE['guide/a.md'].replace('  close tab\n', '');
+  const { problems } = cover({ 'guide/a.md': page });
+  assert.deepEqual(problems.map((p) => p.message), ['a shipped construct that appears on no page: `step:close`']);
 });
 
-test('only the leading run of literals becomes a phrase — a search key, not a re-statement', () => {
-  // `'csrf' 'from'` then a `Subject`: the words after the non-literal are not part of the key, so a
-  // page writing `csrf from body.token send as header "X"` matches and a stricter key would not.
-  assert.deepEqual(grammarPhrases(GRAMMAR), ['csrf from', 'seed openapi', 'seed spider']);
+test('the whole fixture language, documented, is green — the positive dual', () => {
+  assert.deepEqual(cover(FULL_SITE).problems, []);
+});
+
+test('diagnostics are excluded by name, not by an omitted manifest (`D791`)', () => {
+  // `diagnosticsCoverage.test.ts` has held all 66 to the docs since `M86`. The old gate reached 111
+  // of 178 by leaving families out and the number came out plausible by accident; this one names
+  // its single exclusion, so `TF001` appearing on no page is not a failure and nothing else is
+  // silently absent from the set.
+  const result = cover(FULL_SITE);
+  assert.equal(result.constructs, CONSTRUCTS.length - 1);
+  assert.deepEqual(result.problems, []);
+});
+
+test('an ordinary English word is not coverage — the weak half `D659` confessed to', () => {
+  // This is the acceptance for `D792`, and the test the old gate structurally could not host: it
+  // matched the *leading word* of a code span, so every one of these satisfied it.
+  const page = [
+    '# Guide',
+    '',
+    'Call `close()` when done, read `log.txt`, and see `button` styling.',
+    '',
+    '```tflw',
+    'api GET /x',
+    '```',
+  ].join('\n');
+  const ids = cover({ 'guide/a.md': page }).problems.map((p) => p.message);
+  assert.deepEqual(ids, [
+    'a shipped construct that appears on no page: `declaration:with-each`',
+    'a shipped construct that appears on no page: `locator:button`',
+    'a shipped construct that appears on no page: `step:close`',
+    'a shipped construct that appears on no page: `step:log`',
+    'a shipped construct that appears on no page: `config:key:teardown`',
+    'a shipped construct that appears on no page: `config:probe:ciphers`',
+  ]);
+});
+
+test('an optional clause is expanded both ways, so both spellings are coverage', () => {
+  // `log [<level>] "<message>"`. A lazy `.*` between the words would also match `log.txt`, which is
+  // the case above; expansion keeps the shape strict and still accepts the form without the level.
+  const withLevel = FULL_SITE['guide/a.md'];
+  const withoutLevel = withLevel.replace('log warn "slow"', 'log "slow"');
+  assert.deepEqual(cover({ 'guide/a.md': withLevel }).problems, []);
+  assert.deepEqual(cover({ 'guide/a.md': withoutLevel }).problems, []);
+});
+
+test('a config key is matched in the config dialect only — the same word in a `tflw` fence is not it', () => {
+  // `D837`. Eight of the sixteen real keys are words the step dialect also uses. Without the fence
+  // the match is the English coincidence this milestone removes, and it is invisible: the gate
+  // passes either way.
+  const page = FULL_SITE['guide/a.md'].replace('  teardown never\n', '').replace('  close tab', '  close tab\n  teardown never');
+  const { problems } = cover({ 'guide/a.md': page });
+  assert.deepEqual(problems.map((p) => p.message), ['a shipped construct that appears on no page: `config:key:teardown`']);
+});
+
+test('a construct whose syntax yields no pattern is a problem, not a silent pass', () => {
+  // The failure class one level up: a matcher that cannot fail. It reads as coverage forever.
+  const { problems } = scanConstructCoverage({
+    files: [{ key: 'guide/a.md', text: '# G\n' }],
+    constructs: [{ id: 'step:mystery', family: 'step', name: 'mystery', syntax: 'no code span here' }],
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].message, /no syntax shape could be derived/);
+});
+
+test('every shipped construct compiles to at least one pattern', () => {
+  // The live manifest, not the fixture — the one assertion here that is allowed to read it, because
+  // it asserts a property of the derivation rather than of the site's prose.
+  const unmatchable = constructMatchers(specConstructs()).filter((m) => m.patterns.length === 0);
+  assert.deepEqual(unmatchable.map((m) => m.id), []);
 });
 
 test('a fence blanks before inline spans are scanned — otherwise its backticks re-pair the page', () => {
   // Three backticks are an odd number, so every span after a fence pairs with the wrong neighbour.
   // The symptom is a construct the page plainly shows being reported as documented nowhere.
-  const page = '# P\n\n```console\n✓ ok\n```\n\nUse `seed spider "/admin"` and `seed openapi "/o.json"` for a crawl.\n\n```console\n✓ ok\n```\n\nAnd `csrf from body.t send as header "X"`.\n';
-  assert.deepEqual(cover({ 'guide/crawling.md': page }).problems, []);
+  const page = ['# P', '', '```console', '✓ ok', '```', '', 'Use `button "Buy"` and `close tab` here.', '', '```console', '✓ ok', '```', '', 'And `log warn "slow"`, `with each`, `teardown never`, `probe ciphers`.'].join('\n');
+  assert.deepEqual(cover({ 'guide/a.md': page }).problems, []);
 });
 
 test('an inline span may cross a line break — two real pages write one', () => {
   // ``a `body\nfrom` file`` in `input-handling.md`, and `log destination …` split across two lines
   // in `ci-and-reporting.md`. A per-line scanner reads neither and calls both undocumented.
-  const page = '# P\n\n```tflw\napi GET /x\n```\n\nA `seed\nopenapi` document, a `seed spider "/admin"` walk, and `csrf\nfrom body.t`.\n';
-  assert.deepEqual(cover({ 'guide/crawling.md': page }).problems, []);
+  const page = ['# P', '', '```tflw', 'api GET /x', '```', '', 'A `button\n"Buy"` press, `close tab`, `log warn\n"slow"`, `with each`, `teardown never`, `probe\nciphers`.'].join('\n');
+  assert.deepEqual(cover({ 'guide/a.md': page }).problems, []);
 });
 
 test('a `v-for` row counts as on the page — and is reported as tabulated, not explained', () => {
@@ -198,45 +297,30 @@ test('a `v-for` row counts as on the page — and is reported as tabulated, not 
   // met; saying they are only tabulated is the next prose pass's worklist.
   const page = [
     '<script setup>',
-    "import { SEEDS } from '../../lang/src/spec-data.ts';",
+    "import { LOCATORS } from '../../lang/src/spec-data.ts';",
     '</script>',
     '',
-    '<tr v-for="s in SEEDS" :key="s.id"><td>{{ s.syntax }}</td></tr>',
+    '<tr v-for="l in LOCATORS" :key="l.id"><td>{{ l.syntax }}</td></tr>',
     '',
-    'A crawl can `seed openapi "/o.json"`.',
+    'Press with `close tab`, `log warn "slow"`, `with each`, `teardown never`, `probe ciphers`.',
   ].join('\n');
-  const manifests = { SEEDS: [{ id: 'spider', syntax: 'seed spider "/admin"' }, { id: 'csrf', syntax: 'csrf from body.t' }] };
-  const result = cover({ 'reference/seeds.md': page }, { manifests });
+  const manifests = { LOCATORS: [{ id: 'button', syntax: 'button "Buy"' }] };
+  const result = cover({ 'reference/locators.md': page }, { manifests });
   assert.deepEqual(result.problems, []);
-  assert.deepEqual(result.onlyGenerated, ['csrf from', 'seed spider']);
+  assert.deepEqual(result.onlyGenerated, ['locator:button']);
 });
 
 test('an undocumented construct may be declared, with the reason it is not a gap', () => {
-  const allowlist = new Map([['seed spider', 'deliberately withheld while the walk is behind a flag']]);
-  const page = '# P\n\nA crawl can `seed openapi "/o.json"` and `csrf from body.t`.\n';
-  assert.deepEqual(cover({ 'guide/crawling.md': page }, { allowlist }).problems, []);
+  const allowlist = new Map([['step:close', 'deliberately withheld while tab handling is behind a flag']]);
+  const page = FULL_SITE['guide/a.md'].replace('  close tab\n', '');
+  assert.deepEqual(cover({ 'guide/a.md': page }, { allowlist }).problems, []);
 });
 
 test('a declaration that is documented now fails — an exemption that exempts nothing', () => {
   // The reverse direction, and the half that keeps the map from becoming a list of old beliefs.
-  const allowlist = new Map([['seed spider', 'deliberately withheld while the walk is behind a flag']]);
-  const page = '# P\n\nA crawl can `seed openapi "/o.json"`, `seed spider "/admin"` and `csrf from body.t`.\n';
-  const { problems } = cover({ 'guide/crawling.md': page }, { allowlist });
-  assert.deepEqual(problems.map((p) => p.message), ['`seed spider` is documented now, or is no longer a construct']);
-});
-
-test('two manifests naming one absent construct report one problem, not two', () => {
-  // `probe ciphers` is in `CONFIG_KEYWORDS` and in `GRAMMAR.md`. Two manifests agreeing it is
-  // missing is one absence; reporting it twice reads as two repairs.
-  const grammarText = ["```", "Probe := 'probe' 'ciphers' NEWLINE", '```'].join('\n');
-  const manifests = { CONFIG_KEYWORDS: [{ id: 'ciphers', slot: 'probe', summary: 'x' }] };
-  const { problems } = scanConstructCoverage({
-    files: [{ key: 'guide/config.md', text: '# Config\n' }],
-    grammarText,
-    manifests,
-  });
-  assert.equal(problems.length, 1);
-  assert.match(problems[0].where, /CONFIG_KEYWORDS \(probe\) \+ GRAMMAR\.md `probe ciphers`/);
+  const allowlist = new Map([['step:close', 'deliberately withheld while tab handling is behind a flag']]);
+  const { problems } = cover(FULL_SITE, { allowlist });
+  assert.deepEqual(problems.map((p) => p.message), ['`step:close` is documented now, or is no longer a construct']);
 });
 
 
@@ -270,7 +354,9 @@ test('every notation shape is recognised, and each says what it names', () => {
   assert.deepEqual(
     problems.map((p) => p.message.replace(/^`[^`]+` names /, '')),
     [
-      "a milestone in this project's private design record",
+      // `M158c`: the merged classifier's own vocabulary, which is the point of merging — one rule
+    // set, one wording, in both repositories. It says "label" because that is the shape it matches.
+    "a milestone label in this project's private design record",
       "a decision in this project's private design record",
       "a plan item in this project's private design record",
       "a bare decision citation in this project's private design record",
@@ -322,7 +408,15 @@ test('a lowercase GitHub anchor does not trip, and this is case doing the work, 
   // on the decision pattern this line reports a defect on every SPEC.md link the docs carry.
   const link = '[SPEC.md §4.5](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#45-retries-d105-and-the-config-dialect-p2731-)';
   assert.deepEqual(notation(`# x\n\n${link}\n`), []);
-  for (const { re } of NOTATION) assert.ok(!re.flags.includes('i'), `${re} is case-insensitive — see the test above this one`);
+  // Narrowed in `M158c` from *no rule may be `/i`* to *no rule whose CASE is what separates it from
+  // an anchor may be `/i`*, which is what the sentence above actually claims. `BARE` and
+  // `BARE_LETTER` are case-insensitive on purpose and always have been: they match the English word
+  // `decision(s)` before a number, and a sentence may open with `Decision 5`. It is the WORD that
+  // keeps them off an anchor, not the capital. The shape-based rules are the ones this pins, and
+  // widening any of them to `/i` still goes red here with this comment attached.
+  const shapeBased = CITATION_RULES.filter(({ what }) => !what.includes('bare') && !what.includes('lettered'));
+  assert.equal(shapeBased.length, 6);
+  for (const { re } of shapeBased) assert.ok(!re.flags.includes('i'), `${re} is case-insensitive — see the test above this one`);
 
   // And the capitalised form on the same page is still caught, so the pass above is about case
   // rather than about the line being a link.

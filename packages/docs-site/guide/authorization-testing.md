@@ -16,7 +16,7 @@ test "a shopper's order is nobody else's" as shopper
   expect response has no authorization violations
 ```
 
-That is OWASP API #1 — broken object-level authorization, the "authenticated but not authorized"
+That is the first entry in the OWASP API Security Top 10 — broken object-level authorization, the "authenticated but not authorized"
 bug. It is the one class of flaw a scanner genuinely cannot find on its own, because only your suite
 knows which identity is supposed to own which resource.
 

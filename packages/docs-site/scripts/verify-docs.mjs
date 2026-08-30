@@ -30,7 +30,8 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { census, findMarkdownFiles, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, NOTATION, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { census, findMarkdownFiles, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { JSON_RULES as CITATION_RULES } from '../../../scripts/citation-rules.mjs';
 import { CLI_FLAGS } from '@tflw/lang';
 // The whole namespace, because the *page* decides which manifest it renders: `constructCorpus`
 // reads each page's own `import { … } from '…spec-data.ts'` and matches it against a `v-for`. Naming
@@ -412,16 +413,17 @@ function checkFlagProse() {
 function checkConstructCoverage() {
   if (process.env.TFLW_DOCS_ROOT !== undefined) return null;
   const files = findMarkdownFiles(ROOT).map((path) => ({ key: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
-  const grammarPath = join(here, '../../lang/GRAMMAR.md');
-  if (!existsSync(grammarPath)) {
-    fail('GRAMMAR.md', 'the grammar is not readable, so construct coverage cannot be checked', `expected ${grammarPath}`);
-    return { constructs: 0, corpus: 0, onlyGenerated: [] };
+  const constructs = manifests.specConstructs();
+  // `D538`'s class: a consumer that reads a manifest without pinning its shape is a gate that goes
+  // quietly empty when the shape changes. The version is the pin; the count is not, and must not be.
+  if (manifests.SPEC_MANIFEST_VERSION !== 1) {
+    fail(
+      'spec-data.ts',
+      `the construct manifest is at version ${manifests.SPEC_MANIFEST_VERSION}, and this gate was written against 1`,
+      'Re-read constructMatchers against the new shape before bumping the number here — see D790.',
+    );
   }
-  const result = scanConstructCoverage({
-    files,
-    grammarText: readFileSync(grammarPath, 'utf8'),
-    manifests,
-  });
+  const result = scanConstructCoverage({ files, constructs, manifests });
   for (const p of result.problems) fail(p.where, p.message, p.detail);
   return result;
 }
@@ -534,7 +536,7 @@ const report = [
     : `${covered} shipped subcommands, each with a reference/cli.md section and a SPEC §12 shipped row`,
   `${flagReferences} flag references inside CLI_FLAGS' own descriptions checked — names, not effects:`,
   `    a description that names a flag correctly and describes the wrong behaviour still passes (B5-04).`,
-  `${notation.scanned} hand-written pages checked for this project's private notation (${NOTATION.length} shapes),`,
+  `${notation.scanned} hand-written pages checked for this project's private notation (${CITATION_RULES.length} shapes, the one classifier in scripts/citation-rules.mjs, used on both repositories — D794),`,
   `    fenced blocks and <script> blocks excluded — plus the ${INCLUDED_RECORDS.size} pages that @include a repo record`,
   `    verbatim, which keep their citations because each record is declared and resolves in DECISIONS.md (D706).`,
   `${roadmap.claims} forward-looking claims found across ${roadmap.files} files (${ROADMAP_PHRASES.length} idioms,`,
@@ -547,7 +549,9 @@ const report = [
     ? ['construct coverage skipped — this corpus is a scratch one, documenting an invented language']
     : [
         `${coverage.constructs} shipped constructs checked against ${coverage.corpus} code strings on the site`,
-        `    (spec-data.ts's manifests + GRAMMAR.md's multi-word productions, both held to parser.ts),`,
+        `    (spec-data.ts's specConstructs(), held to parser.ts by specManifest.test.ts — matched on`,
+        `    each construct's own syntax shape, never on its bare id, so an ordinary English word is`,
+        `    not coverage), less the ${manifests.DIAGNOSTICS.length} diagnostics that diagnosticsCoverage.test.ts already holds.`,
         `    ${DECLARED_UNDOCUMENTED.size} declared deliberately undocumented.`,
         coverage.onlyGenerated.length === 0
           ? '    every one of them is named in prose or a sample.'
