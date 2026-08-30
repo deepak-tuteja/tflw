@@ -6670,7 +6670,7 @@ It is taken in that direction (docs-site depends on the root guard, never the re
 
 ### D797
 
-<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D797 — `armedDialog` becomes a queue**
 
@@ -6723,6 +6723,16 @@ A `dismiss dialog` that no dialog ever answers is a test asserting something tha
 Under a single slot this was invisible; under a queue it is a leftover entry, which is free to
 detect.
 
+### D803
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D803 — the dialog state is per page state, and resets with it**
+
+`armedDialogs`, `lastDialogMessage` and the new type field live on `BrowserPageState`, created fresh
+per test attempt (`runTestAttempt`, `interpreter.ts`) exactly as the trace/screenshot state is — the
+comment at `:222-224` already states that invariant for `networkLog`.
+
 ### D804
 
 <sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
@@ -6730,6 +6740,17 @@ detect.
 **D804 — `SPEC` §9.1 states, per kind, what can and cannot be asserted**
 
 The table in §2.2 goes into `SPEC`, and with it the sentence the corpus has never needed:
+
+### D805
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D805 — a plant per dialog kind, and the two vacuous uses are repaired not deleted**
+
+`storefront.tflw:380` and `webv2-admin.tflw:228` each gain a `dialog message` assertion, so the step
+they arm becomes load-bearing. `M154b`'s `C2` plant — which grades the one-shot property and
+deliberately does **not** assert the two-dialog case, because at the time it could not — is extended
+to grade the queue.
 
 ### D806b
 
@@ -6739,6 +6760,39 @@ The table in §2.2 goes into `SPEC`, and with it the sentence the corpus has nev
 
 *(`M159d`, taken during the build. An amendment to `D802`, numbered beside `D806a` for the same
 reason: `D807` is `M160`'s and already spent.)*
+
+### D806e
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D806e — in `testFlow-tests`, `dismiss dialog` is graded by ORDER, not by overwrite**
+
+*(`M159f`. Sibling-side, numbered here because this record is the numbering authority for both
+repositories and the sibling's prose resolves against `DECISIONS.md`.)*
+
+### D806f
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D806f — the third state gets a test of its own**
+
+Two armings, two dialogs, one click, and the delete really happens: `M154b-02`'s closing condition,
+measured on the box against `webV2/admin` (acceptance clause 1). It is a second `test` rather
+than a fourth block of the first, for two reasons that are both about state. It is **terminal** —
+the products are deleted and the button they make appear goes with them — and `D806e`'s block
+deliberately leaves an arming unconsumed, which under `D803` a later dialog in the same attempt
+would inherit.
+
+### D806h
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D806h — `verify-check-diagnostics.mjs` splits its completeness claim by phase**
+
+That gate demands, per code in tflw's manifest, a fixture whose real `tflw check` prints it. For
+`TF079`/`TF080` no such fixture can exist. Reading `phase` (`D806d`), it now asks for a check
+fixture for every `check` code and a **named runtime witness** for every `run` one, and refuses a
+code that satisfies the wrong half.
 
 ### D807
 
@@ -9372,7 +9426,7 @@ diagnostic. Guard and comment changes only.
 
 ### M159
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **`M159` — native dialogs: the whole surface, and something to assert about each kind**
 
@@ -9392,6 +9446,13 @@ to make sense; it is not a separate step any more.
 <sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **`M159d` — `D802`.** `TF079` and the end-of-test check.
+
+### M159f
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**`M159f` — `D805`, in `testFlow-tests`.** Four `webV2` fixtures, four plants, two repairs, `C2`
+extended, roster to 181, ratchet re-run.
 
 ### M160
 
