@@ -18,6 +18,7 @@ import type {
   ApiRequestSpec,
   CallExpr,
   ConfigEntry,
+  DefaultsBlock,
   ConfigFile,
   CrawlDecl,
   DataTable,
@@ -476,6 +477,104 @@ export const DEMO_SCHEME = 'tflw://';
 const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl', 'ViewportDecl']);
 const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl']);
 
+// ---------------------------------------------------------------------------
+// `TF081` — a config key declared twice in one block (M165a, D829-D832)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a second declaration of a key would *collide with* — or `null` where a second declaration
+ * adds rather than replaces (`D830`).
+ *
+ * **A total map over `ConfigEntry['type']`, not a heuristic over `resolve.ts`'s shape.** Both halves
+ * of that sentence were paid for. The heuristic on offer was "does the `case` body call `.push`?",
+ * and `allow hosts` accumulates by spread-assignment instead — so the shape reads as an override,
+ * and this rule's own draft classified it as one. Had that shipped, `TF081` would have refused a
+ * legitimate config declaring a baseline `allow hosts` beside a second line, on a
+ * security-relevant key, in a check whose whole promise is that a diagnostic here means a
+ * declaration was really discarded. And a `Record` over the union rather than a `Set` of names,
+ * because `TeardownDecl` arrived in `M157` and joined `resolve.ts`'s `switch` without anything
+ * anywhere noticing a new single-valued key had appeared: a hand-maintained list of an
+ * implementation's cases is a cache, and nothing here invalidated it. This map does — a new member
+ * of `ConfigEntry` fails to typecheck until it is classified.
+ *
+ * The functions give the key its **resolver's** granularity, which is the only granularity that
+ * makes the claim true: `resolveConfig` writes `timeouts[target]` and `services[service]`, so
+ * `timeout step` does not collide with `timeout expect`, and `api` does not collide with
+ * `api payments`. Everything else is a plain assignment and reuses `keyName`, so there is still one
+ * spelling of each key in this file.
+ *
+ * The classification is graded against measured behaviour, not against this comment —
+ * `config-duplicate-keys.test.ts` doubles every one of the seventeen kinds, resolves it, and asserts
+ * which value survives.
+ */
+type ConfigKeyIdentity = {
+  [K in ConfigEntry['type']]: null | ((entry: Extract<ConfigEntry, { type: K }>) => string);
+};
+
+const CONFIG_KEY_IDENTITY: ConfigKeyIdentity = {
+  // Accumulate on purpose — a config is *supposed* to carry several of each.
+  HeaderDecl: null,
+  AllowHostsDecl: null,
+  AuthorizedTargetDecl: null,
+  RedactDecl: null,
+
+  // Sub-keyed, because the resolver writes into a map rather than a variable.
+  TimeoutDecl: (entry) => `timeout ${entry.target}`,
+  ApiServiceDecl: (entry) => (entry.service === null ? 'api' : `api ${entry.service}`),
+
+  // Single-valued: the resolver assigns, so a second line wins and the first is discarded.
+  WebDecl: keyName,
+  WorkersDecl: keyName,
+  ReportDecl: keyName,
+  InsecureDecl: keyName,
+  CertDecl: keyName,
+  KeyDecl: keyName,
+  EvidenceDecl: keyName,
+  TeardownDecl: keyName,
+  ViewportDecl: keyName,
+  LogDestinationDecl: keyName,
+  LogLevelDecl: keyName,
+};
+
+/** The colliding key for one entry, or `null` if this key accumulates. The cast is the one place
+ *  the per-member function types are widened, and it is safe because `entry.type` selects the
+ *  member the function was written for. */
+function configKeyIdentity(entry: ConfigEntry): string | null {
+  const identify = CONFIG_KEY_IDENTITY[entry.type] as null | ((e: ConfigEntry) => string);
+  return identify === null ? null : identify(entry);
+}
+
+/**
+ * `M165a`/`D829` — the same key declared twice inside one block.
+ *
+ * **Per block** (`D832`): `env ci` overriding a `defaults` value is the reason both blocks exist, so
+ * a repeat across them is not reported. A rule that fired there would fire on nearly every real
+ * config, and a rule that fires constantly is a rule people silence.
+ *
+ * **Reported at the second occurrence, once per extra occurrence** (`D831`) — `TF072`'s rule, for
+ * `TF072`'s reason: the later line is the one to delete, and three declarations of one key are two
+ * mistakes rather than one.
+ */
+function checkDuplicateKeys(block: DefaultsBlock | EnvBlock | null, where: string, diags: Diagnostic[]): void {
+  if (!block) return;
+  const seenKeys = new Set<string>();
+  for (const entry of block.entries) {
+    const key = configKeyIdentity(entry);
+    if (key === null) continue;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      continue;
+    }
+    diags.push({
+      code: Codes.CONFIG_DUPLICATE_KEY,
+      severity: 'error',
+      message: `duplicate config key \`${key}\``,
+      span: entry.span,
+      hint: `${where} sets \`${key}\` once, so this line wins and the earlier one is discarded without a word — remove one. Declaring a key in \`defaults\` and again in an \`env\` block is fine, and is what an \`env\` block is for`,
+    });
+  }
+}
+
 export function validateConfig(config: ConfigFile): Diagnostic[] {
   const diags: Diagnostic[] = [];
 
@@ -487,6 +586,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
       checkAuthorizedTargetLiteral(entry, diags);
       checkReservedScheme(entry, diags);
     }
+    checkDuplicateKeys(config.defaults, '`defaults`', diags);
   }
 
   const seen = new Set<string>();
@@ -510,6 +610,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
       checkAuthorizedTargetLiteral(entry, diags);
       checkReservedScheme(entry, diags);
     }
+    checkDuplicateKeys(env, `\`env ${env.name}\``, diags);
   }
 
   if (defaultCount > 1) {

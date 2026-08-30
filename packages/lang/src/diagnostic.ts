@@ -412,6 +412,32 @@ export const Codes = {
   // probe harness compiles source and reads the message back and there is no source that provokes
   // this one. The row names the runtime test that does. See `spec-data.ts`.
   DIALOG_TEXT_IGNORED: 'TF080',
+
+  // `M165a`/`D829` — **a single-valued config key declared twice in one block.** `resolveConfig`
+  // applies a block's entries in order, so the second `timeout step` overwrites the first and the
+  // first line is read, discarded and never mentioned. `tflw check` said "no problems found" on a
+  // file with two answers to one question.
+  //
+  // **An error, not a warning**, matching `TF024`, `TF029` and `TF072` — every duplicate-declaration
+  // rule in this language is an error, for the same reason each time: the program states two things
+  // and the tool must not be the one that picks.
+  //
+  // **Exempt: `header`, `allow hosts`, `authorized target`, `redact`** (`D830`). Those four
+  // accumulate by design — a config is *supposed* to declare several headers and several authorized
+  // targets — and the exemption is a list of names held to `resolve.ts` by two mechanisms rather
+  // than a heuristic over the shape of a `case` body. `allow hosts` is why: it accumulates by
+  // spread-assignment rather than `.push`, so a shape heuristic reads it as an override, and the
+  // draft of this rule classified it wrong by eye. That error would have made this code refuse a
+  // legitimate config on a security-relevant key.
+  //
+  // **Sub-keyed where the resolver is** — `timeouts[target]` and `services[service]` are maps, so
+  // `timeout step` and `timeout expect` are different keys, as are `api` and each `api <name>`.
+  //
+  // **Per block** (`D832`): a key set in `defaults` and again in an `env` is the point of having
+  // both, and is not reported. **Once per extra occurrence, at the occurrence** (`D831`) — exactly
+  // `TF072`'s rule, and for its reason: the later line is the one to delete, and three declarations
+  // of one key are two mistakes.
+  CONFIG_DUPLICATE_KEY: 'TF081',
 } as const;
 
 // ---------------------------------------------------------------------------
