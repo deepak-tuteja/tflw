@@ -614,6 +614,27 @@ test('dialogs: a prompt answered with `with` raises no TF080, and a bare arming 
   assert.equal(warnings, undefined, `a prompt that took its answer, and an alert armed without one, must both be silent — got ${JSON.stringify(warnings)}`);
 });
 
+test('dialogs: a warning is redacted like every other reported string', async () => {
+  // `TF080`'s message quotes the answer that was thrown away, and an answer can be a credential:
+  // `accept dialog with {env("TOKEN")}` is exactly the shape a login-behind-a-prompt test takes.
+  // The report is redacted on the way out (decision 56), and a field that pass does not know about
+  // ships raw — which is `V2-02`'s finding, one field over.
+  const { program, diagnostics } = parseSource(`test "secret answer"
+  open "/"
+  accept dialog with env(DIALOG_SECRET)
+  click button "Say hi"
+  expect text "greeted" is visible
+`);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, config, { source: 'x', browserManager, environ: { ...process.env, DIALOG_SECRET: 'swordfish-9d2f-not-in-a-report' } });
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly { code: string; message: string; source: string }[] }).warnings;
+  assert.equal(warnings?.length, 1);
+  const rendered = JSON.stringify(warnings);
+  assert.doesNotMatch(rendered, /swordfish-9d2f-not-in-a-report/, `the answer reached the report unmasked: ${rendered}`);
+  assert.match(warnings![0]!.message, /•••\(DIALOG_SECRET\)/);
+});
+
 // ---- M159d/D802: TF079, an arming nothing consumed ---------------------------------------------
 //
 // Four, in the same shape as `TF080`'s: one positive that the manifest names, one that fixes the
