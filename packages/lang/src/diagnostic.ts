@@ -378,6 +378,25 @@ export const Codes = {
   // something false, which is the line `M147`'s allocation rule draws.
   CONFIG_UNKNOWN_SERVICE: 'TF076',
 
+  // `M159d`/`D802` — **an arming no dialog ever consumed.** `accept dialog` and `dismiss dialog`
+  // arm the *next* native dialog and then return; if no dialog is ever raised, the step did
+  // nothing, the test asserted something that did not happen, and until `D797` made the armings a
+  // queue there was no state left over to notice it with. A slot that was never read is
+  // indistinguishable from a slot that was.
+  //
+  // **A warning, not an error**, for `D801`'s reason and one of its own: a page that raises a
+  // dialog only in some states is legitimate, and `beforeunload` in particular is raised only after
+  // a real user gesture (SPEC §9.1), so a headless run may correctly see none.
+  //
+  // **Reported per leftover arming, at that arming's own line**, not as a count — `D802` drafted
+  // the message as "2 dialogs were armed and 1 was raised" before the armings carried provenance.
+  // They do now (`M159c`), and a line number is what turns the warning into a place to look. The
+  // count form is also wrong-shaped: unarmed dialogs are dismissed by default and still counted
+  // raised, so `armed - raised` goes negative on a program that is doing nothing wrong.
+  //
+  // **Only on an attempt that otherwise passed** — see `interpreter.ts`'s `dialogWarnings`.
+  DIALOG_ARMING_UNUSED: 'TF079',
+
   // `M159c`/`D801` — **the first code no `tflw check` can emit.** `accept dialog with "Blue"` is a
   // legal step; whether its answer reaches something that can take one depends on which dialog the
   // page raises, which is a fact about the running page. A checker that guessed would be wrong on

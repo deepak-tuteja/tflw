@@ -614,6 +614,86 @@ test('dialogs: a prompt answered with `with` raises no TF080, and a bare arming 
   assert.equal(warnings, undefined, `a prompt that took its answer, and an alert armed without one, must both be silent — got ${JSON.stringify(warnings)}`);
 });
 
+// ---- M159d/D802: TF079, an arming nothing consumed ---------------------------------------------
+//
+// Four, in the same shape as `TF080`'s: one positive that the manifest names, one that fixes the
+// per-leftover reporting rather than a count, and two negatives — because the failure mode of an
+// absence warning is firing on absences that are somebody else's fault.
+
+test('an arming no dialog ever consumes raises TF079 at its own line', async () => {
+  // Named by `TF079`'s row in `DIAGNOSTICS` (spec-data.ts), which carries `runtime` in place of a
+  // probe; `diagnosticExamples.test.ts` resolves the pointer by this exact string.
+  //
+  // The test passes. That is the point: every assertion in it is true, the page is in the state the
+  // author expected, and the `dismiss dialog` line contributed nothing to any of it. Deleting the
+  // line changes no verdict, which is `D802`'s definition of the defect.
+  const { report } = await run(`test "armed, never fired"
+  open "/"
+  dismiss dialog
+  expect text "quiet" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly { code: string; message: string; line: number }[] }).warnings;
+  assert.equal(warnings?.length, 1, `expected exactly one warning, got ${JSON.stringify(warnings)}`);
+  assert.equal(warnings![0]!.code, 'TF079');
+  assert.match(warnings![0]!.message, /`dismiss dialog` armed the next native dialog and no dialog was raised/);
+  assert.equal(warnings![0]!.line, 3);
+});
+
+test('dialogs: two dead armings are two warnings at two lines, not one count', async () => {
+  // `D802` drafted this as "2 dialogs were armed and 1 was raised". A count names a quantity; a
+  // reader needs a place. Armings have carried their own line since `M159c`, so each leftover
+  // reports itself — and the two here are deliberately a different `which` each, since the message
+  // quotes the construct that was actually written.
+  const { report } = await run(`test "two dead armings"
+  open "/"
+  accept dialog
+  dismiss dialog
+  expect text "quiet" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly { code: string; message: string; line: number }[] }).warnings ?? [];
+  assert.deepEqual(warnings.map((w) => [w.code, w.line]), [['TF079', 3], ['TF079', 4]]);
+  assert.match(warnings[0]!.message, /`accept dialog` armed/);
+  assert.match(warnings[1]!.message, /`dismiss dialog` armed/);
+});
+
+test('dialogs: a surplus DIALOG is not a surplus arming, so TF079 stays quiet', async () => {
+  // Acceptance clause 2, and the arithmetic `D802` originally proposed would have got this wrong in
+  // the other direction. One arming, two dialogs from one click: the first is accepted, the second
+  // falls through to the browser's dismiss default (`D797`), and the queue ends empty. `armed`
+  // is 1 and `raised` is 2 — a difference of MINUS one — so a count-based rule reports either
+  // nothing or nonsense depending on how it clamps. The leftover set has no such question.
+  const { report } = await run(`test "one arming, two dialogs"
+  open "/"
+  accept dialog
+  click button "Bulk remove"
+  expect text "second refused" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly unknown[] }).warnings;
+  assert.equal(warnings, undefined, `an arming that was consumed is not unused — got ${JSON.stringify(warnings)}`);
+});
+
+test('dialogs: a FAILING test does not get TF079 for an arming its own failure stranded (`D806b`)', async () => {
+  // The asymmetry against `TF080`, and the reason it is not an oversight. This test dies at line 4,
+  // before anything could raise a dialog, so the arming on line 3 is unconsumed — but it is
+  // unconsumed *because the test failed*, and accusing that line would be wrong. Every failing
+  // browser test that arms a dialog before its failure point would carry this warning, which is how
+  // a warning channel becomes something readers skim past.
+  //
+  // `TF080` is deliberately not gated the same way: it reports a dialog that DID fire and an answer
+  // that WAS discarded, which stays true however the test ends.
+  const { report } = await run(`test "dies before the dialog"
+  open "/"
+  dismiss dialog
+  expect dialog type equals "confirm"
+`);
+  assert.equal(report.ok, false);
+  const warnings = (report.tests[0] as { warnings?: readonly unknown[] }).warnings;
+  assert.equal(warnings, undefined, `a stranded arming on a failed attempt is not a finding — got ${JSON.stringify(warnings)}`);
+});
+
 // ---- M159/D798/D799: the two dialog subjects ---------------------------------------------------
 
 test('dialogs: `dialog message` asserts the text, which is what makes a dismiss provable', async () => {

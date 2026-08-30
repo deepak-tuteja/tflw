@@ -105,6 +105,31 @@ guarded `confirm()` with a plain `alert()`, the destructive action stops being g
 assertion about the page still passes.
 :::
 
+### An arming nothing ever uses
+
+```tflw fragment
+dismiss dialog
+expect text "kept" is visible
+```
+
+If no dialog appears before the test ends, that arming did nothing — the same "the line could be
+deleted and the test would prove the same thing" trap as the alert above, one step earlier. tflw
+says so, on the passing run:
+
+```console
+⚠ warning[TF079]: `dismiss dialog` armed the next native dialog and no dialog was raised before
+  the test ended — the arming did nothing, and deleting the line would not change what this test
+  proves
+```
+
+One warning per unused arming, at the line that wrote it. It appears **only on a test that passed**:
+when a test fails, an arming after that point is usually stranded by the failure rather than dead,
+and pointing at it would send you to the wrong line.
+
+Two dialogs and one arming is not this: the extra dialog takes the dismiss default and nothing is
+left over. And `beforeunload` is the honest exception — browsers raise it only after a real user
+gesture, so a headless run may correctly never see one.
+
 ::: tip Coming from Playwright or Cypress? The tick action is `tick`, not `check`.
 Both of those spell it `check()`, so `check field "Accept terms"` is the natural thing to type. In
 tflw `check` is the **soft assertion** — the forgiving twin of `expect`, see

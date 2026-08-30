@@ -2730,22 +2730,46 @@ async function runTest(
   };
 }
 
-/** `D801`, `M159c` — the `TF080` warnings this attempt earned.
+/** `D801`/`D802`, `M159c`/`M159d` — the `TF080` and `TF079` warnings this attempt earned.
  *
  * Built from state the *handler* recorded rather than from anything the step could know: whether an
  * answer had somewhere to go is decided when the dialog fires, and `accept dialog with` has long
  * since returned by then. Per attempt, like every other field on `BrowserPageState` (`D803`) — a
  * retry gets a clean slate, so a warning from a discarded attempt cannot be reported against the
- * one that was kept. */
-function dialogWarnings(page: BrowserPageState): RuntimeWarning[] {
-  return page.dialogTextIgnored.map((ignored) => ({
+ * one that was kept.
+ *
+ * **`ok` gates `TF079` and nothing else, and that asymmetry is the decision (`D806b`).** `TF080`
+ * reports something that *happened* — a dialog fired, an answer was thrown away — so it is true
+ * whatever the test went on to do, and a failing test is where a discarded answer is most worth
+ * knowing about. `TF079` reports an **absence**, and an absence has two causes that this state
+ * cannot tell apart: the arming was dead, or the body threw before reaching the step that would
+ * have raised the dialog. On a failed attempt the second is the likely one, so firing anyway would
+ * point the reader at an innocent line — on *every* failing browser test that arms a dialog before
+ * its failure point. A warning channel that accuses by default is one that gets skimmed, and the
+ * failure already carries its own explanation and a trace. */
+function dialogWarnings(page: BrowserPageState, ok: boolean): RuntimeWarning[] {
+  const ignored: RuntimeWarning[] = page.dialogTextIgnored.map((entry) => ({
     code: Codes.DIALOG_TEXT_IGNORED,
     message:
-      `\`accept dialog with ${JSON.stringify(ignored.text)}\` answered ${ignored.kind === 'alert' ? 'an' : 'a'} \`${ignored.kind}\`, which takes no text — ` +
+      `\`accept dialog with ${JSON.stringify(entry.text)}\` answered ${entry.kind === 'alert' ? 'an' : 'a'} \`${entry.kind}\`, which takes no text — ` +
       'the text was ignored and the dialog was accepted as if no `with` had been written',
-    line: ignored.line,
-    source: ignored.source,
+    line: entry.line,
+    source: entry.source,
   }));
+  if (!ok) return ignored;
+  // Whatever is still queued when the attempt ends was consumed by nothing: the handler `shift`s
+  // one entry per dialog (`D797`), so leftovers are exact rather than a count subtracted from a
+  // count. One warning per leftover, each at its own line, because two dead armings are two places
+  // to look.
+  const unused: RuntimeWarning[] = page.armedDialogs.map((armed) => ({
+    code: Codes.DIALOG_ARMING_UNUSED,
+    message:
+      `\`${armed.which} dialog\` armed the next native dialog and no dialog was raised before the test ended — ` +
+      'the arming did nothing, and deleting the line would not change what this test proves',
+    line: armed.line,
+    source: armed.source,
+  }));
+  return [...ignored, ...unused];
 }
 
 async function runTestAttempt(
@@ -2797,10 +2821,11 @@ async function runTestAttempt(
     // the evidence worth keeping). Below `evidence full` (FS-01) tracing was never started, so
     // `finish` returns `undefined` here whatever this argument says.
     const trace = await browserPageState.finish(!isFirstAttempt || !result.ok);
-    // `D801` — drained here, at the one site every body exit path funnels through, so a `TF080`
-    // survives a test that *failed* after the dialog fired. Attaching at the body's happy-path
-    // return instead would report the warning only on the runs least likely to need it.
-    const warnings = dialogWarnings(browserPageState);
+    // `D801`/`D802` — drained here, at the one site every body exit path funnels through, so a
+    // `TF080` survives a test that *failed* after the dialog fired. Attaching at the body's
+    // happy-path return instead would report the warning only on the runs least likely to need it,
+    // and would also have made `D806b`'s `ok` asymmetry unexpressible rather than chosen.
+    const warnings = dialogWarnings(browserPageState, result.ok);
     const withTrace = trace ? { ...result, trace } : result;
     return warnings.length > 0 ? { ...withTrace, warnings } : withTrace;
   } finally {
@@ -3579,7 +3604,6 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           // `D797`: push. Assigning lost every arming but the last, and the case that exposes it
           // cannot be written any other way — two dialogs from one `click` admit no step between.
           browser.page.armedDialogs.push({ which, text, line: step.span.start.line, source: src });
-          browser.page.dialogsArmed += 1;
           result = mkStep('dialog', src, step.span, true, stepStart, text === undefined ? `${which} the next dialog` : tc.redactor.redact(`${which} the next dialog with ${JSON.stringify(text)}`));
           break;
         }

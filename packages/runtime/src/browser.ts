@@ -256,10 +256,14 @@ export class BrowserPageState {
    * `dialog type` read these, so a subject whose scope a reader has to infer does not exist here. */
   lastDialogMessage: string | null = null;
   lastDialogType: DialogKind | null = null;
-  /** `D802` — how many armings this attempt has raised a dialog for, against how many were made.
-   * Free to count under a queue and invisible under a slot, which is why the warning could not have
-   * existed before `D797`. */
-  dialogsArmed = 0;
+  /** `D802` — how many dialogs this attempt raised at all, armed or not. Read by `dialog message`
+   * and `dialog type` to tell *no dialog yet* from *a dialog whose message was empty*.
+   *
+   * Deliberately **not** the input to `TF079`: an unarmed dialog is dismissed by default and still
+   * counted here, so `armed - raised` goes negative on a program doing nothing wrong. What is left
+   * in `armedDialogs` when the attempt ends is the exact set of armings nothing consumed, and each
+   * one carries the line that wrote it. Free to see under a queue and invisible under a slot, which
+   * is why the warning could not have existed before `D797`. */
   dialogsRaised = 0;
   /** M3d, SPEC §9.7 — every completed network response observed across every page opened this
    * attempt, in completion order. Resets naturally: a fresh `BrowserPageState` is created per test

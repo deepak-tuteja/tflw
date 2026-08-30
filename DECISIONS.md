@@ -6713,6 +6713,16 @@ queue keeps today's behaviour exactly: dismiss, which is what an unarmed page al
 Playwright **silently ignores** `promptText` when the dialog is not a prompt. That is precisely the
 silent-no-op class this milestone exists to remove, so tflw does not inherit it:
 
+### D802
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D802 — an unconsumed arming at the end of a test is `TF079`, a warning**
+
+A `dismiss dialog` that no dialog ever answers is a test asserting something that did not happen.
+Under a single slot this was invisible; under a queue it is a leftover entry, which is free to
+detect.
+
 ### D804
 
 <sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
@@ -6720,6 +6730,15 @@ silent-no-op class this milestone exists to remove, so tflw does not inherit it:
 **D804 — `SPEC` §9.1 states, per kind, what can and cannot be asserted**
 
 The table in §2.2 goes into `SPEC`, and with it the sentence the corpus has never needed:
+
+### D806b
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D806b — `TF079` reports per arming, at its line, and only on a test that passed**
+
+*(`M159d`, taken during the build. An amendment to `D802`, numbered beside `D806a` for the same
+reason: `D807` is `M160`'s and already spent.)*
 
 ### D807
 
@@ -9357,7 +9376,7 @@ diagnostic. Guard and comment changes only.
 
 **`M159` — native dialogs: the whole surface, and something to assert about each kind**
 
-**Status:** **`M159a`–`M159c` built 2026-08-30**; `M159d`–`M159f` open. **Additive** — three
+**Status:** **`M159a`–`M159d` built 2026-08-30**; `M159e` absorbed into `M159b`, `M159f` open. **Additive** — three
 constructs, no removals. Changes the behaviour of a program that arms two dialogs, which today is
 silently wrong. `M159e`'s per-kind table was written inside `M159b`, because `D799`'s prose needs it
 to make sense; it is not a separate step any more.
@@ -9367,6 +9386,12 @@ to make sense; it is not a separate step any more.
 <sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **`M159c` — `D800`/`D801`.** `accept dialog with`, `TF080`.
+
+### M159d
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**`M159d` — `D802`.** `TF079` and the end-of-test check.
 
 ### M160
 
