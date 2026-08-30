@@ -200,7 +200,15 @@ export type DialogKind = 'alert' | 'confirm' | 'prompt' | 'beforeunload';
  * and `with ""` means *answer this prompt with nothing*. */
 export interface DialogArming {
   readonly which: 'accept' | 'dismiss';
+  /** `D800` — the `with` answer, already evaluated at arming time. `undefined` on a bare `accept
+   * dialog`, which is not the same as `''`: `dialog.accept()` with no argument and with the empty
+   * string behave identically on a prompt, but the distinction is what lets `TF080` fire only
+   * where an answer was actually written. */
   readonly text?: string;
+  /** Where the arming was written. Carried because `TF080` must point at the `accept dialog with`
+   * line — the dialog itself has no line, and by the time it fires the arming step is long past. */
+  readonly line: number;
+  readonly source: string;
 }
 
 export class BrowserPageState {
@@ -271,14 +279,17 @@ export class BrowserPageState {
       // warn about. It is not an error: a page that conditionally raises either kind is legitimate,
       // and the kind is not knowable statically.
       if (armed?.text !== undefined && kind !== 'prompt') {
-        this.dialogTextIgnored.push({ text: armed.text, kind });
+        this.dialogTextIgnored.push({ text: armed.text, kind, line: armed.line, source: armed.source });
       }
       void (armed?.which === 'accept' ? dialog.accept(armed.text) : dialog.dismiss());
     });
   }
 
-  /** `D801` — armings that carried text a non-prompt dialog could not take. */
-  readonly dialogTextIgnored: { text: string; kind: DialogKind }[] = [];
+  /** `D801` — armings that carried text a non-prompt dialog could not take, drained into `TF080`
+   * at the end of the attempt. Recorded rather than thrown: a page that raises either an `alert` or
+   * a `confirm` depending on state is legitimate, and which one fired is not knowable until it
+   * does. */
+  readonly dialogTextIgnored: { text: string; kind: DialogKind; line: number; source: string }[] = [];
 
   /** M3d — passive observation only (never modifies the response, unlike `stub`'s `page.route`).
    * Reading the body is best-effort: a response that can't be read as text (redirect with no body,

@@ -82,6 +82,18 @@ const FIXTURE_HTML = `<!doctype html>
   <button id="delete-two" onclick="var a = confirm('Delete this product?'); var b = a &amp;&amp; confirm('Really? This cannot be undone.'); document.getElementById('status2').textContent = b ? 'both accepted' : (a ? 'second refused' : 'first refused');">Bulk remove</button>
   <p id="status2">untouched</p>
 
+  <!-- M159c/D800: the only dialog kind with an input to fill. The answer is written straight into
+       the page so a test can assert that the string actually arrived - which is the whole claim
+       "accept dialog with" makes, and the one Playwright silently drops for every other kind. -->
+  <button id="ask-colour" onclick="var c = prompt('Favourite colour?'); document.getElementById('colour').textContent = c === null ? 'cancelled' : 'Favourite: ' + c;">Set favourite colour</button>
+  <p id="colour">unset</p>
+
+  <!-- M159c/D801: an alert, so a "with" answer has nowhere to go. One button, so accepting and
+       dismissing do the same thing to the page - which is exactly why TF080 has to be reported
+       rather than inferred from a page assertion. -->
+  <button id="say-hi" onclick="alert('Saved.'); document.getElementById('greeted').textContent = 'greeted';">Say hi</button>
+  <p id="greeted">quiet</p>
+
   <iframe id="payment-frame" src="/frame" title="payment"></iframe>
 
   <a href="/tab2" target="_blank">Open in new tab</a>
@@ -530,6 +542,76 @@ test "clicks with nothing armed"
   expect text "kept" is visible
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+});
+
+// ---- M159c/D800/D801: `accept dialog with`, and TF080 -------------------------------------------
+//
+// Four tests. The first is the feature; the second is the only one that proves the *string* made
+// it, rather than that a dialog was answered; the third and fourth are `TF080`, which is the first
+// diagnostic in this repository that no `tflw check` can produce.
+
+test('dialogs: `accept dialog with` answers a prompt, and the answer reaches the page', async () => {
+  const { report } = await run(`test "answer a prompt"
+  open "/"
+  accept dialog with "Blue"
+  click button "Set favourite colour"
+  expect text "Favourite: Blue" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: a bare `accept dialog` on a prompt still answers, with the empty string', async () => {
+  // `D800`'s compatibility clause, and the reason `text` is `undefined` rather than `''` in the
+  // arming: the *behaviour* of the two is identical here, so nothing about this test changes — but
+  // the distinction upstream is what stops every pre-M159c arming from becoming a `TF080`
+  // candidate. Asserting `Favourite: ` (an empty answer, not `cancelled`) is what separates
+  // "accepted with nothing" from "dismissed", which is the pair a reader would otherwise confuse.
+  const { report } = await run(`test "bare arming on a prompt"
+  open "/"
+  accept dialog
+  click button "Set favourite colour"
+  expect text "Favourite:" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('`accept dialog with` on an alert raises TF080 and still accepts', async () => {
+  // Named by `TF080`'s row in `DIAGNOSTICS` (spec-data.ts) — that row carries `runtime` where every
+  // other row carries a probe, and `diagnosticExamples.test.ts` resolves the pointer by this exact
+  // name. Renaming this test reddens the lang suite, which is the point: the manifest's claim and
+  // the thing that substantiates it live in different packages.
+  const { report } = await run(`test "text at an alert"
+  open "/"
+  accept dialog with "Blue"
+  click button "Say hi"
+  expect text "greeted" is visible
+`);
+  // The verdict is untouched — a warning is a report about the run, not a judgement of it.
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = report.tests[0]!.kind === 'functional' ? (report.tests[0] as { warnings?: readonly { code: string; message: string; line: number }[] }).warnings : undefined;
+  assert.equal(warnings?.length, 1, `expected exactly one warning, got ${JSON.stringify(warnings)}`);
+  assert.equal(warnings![0]!.code, 'TF080');
+  assert.match(warnings![0]!.message, /answered an `alert`, which takes no text/);
+  // Anchored on the *arming*, not on the click that tripped it. The click is a correct step; the
+  // line a reader has to change is the one carrying the `with`.
+  assert.equal(warnings![0]!.line, 3);
+});
+
+test('dialogs: a prompt answered with `with` raises no TF080, and a bare arming never does', async () => {
+  // The negative half. Without it, "TF080 fires" is compatible with "TF080 fires on everything",
+  // which is the failure mode a single positive test cannot see — and the one that would make the
+  // warning worthless the moment a suite has prompts in it.
+  const { report } = await run(`test "no warning where the text lands"
+  open "/"
+  accept dialog with "Blue"
+  click button "Set favourite colour"
+  accept dialog
+  click button "Say hi"
+  expect text "greeted" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const warnings = (report.tests[0] as { warnings?: readonly unknown[] }).warnings;
+  assert.equal(warnings, undefined, `a prompt that took its answer, and an alert armed without one, must both be silent — got ${JSON.stringify(warnings)}`);
 });
 
 // ---- M159/D798/D799: the two dialog subjects ---------------------------------------------------

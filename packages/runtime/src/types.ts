@@ -340,6 +340,33 @@ export interface AttemptResult {
   readonly trace?: TraceAsset;
 }
 
+/** A diagnostic a run can only reach by *running* — the first of its kind (`D801`, M159c).
+ *
+ * Every `TF` code before `TF080` is decided by `tflw check`, which is why `DiagnosticProbe` in
+ * `spec-data.ts` knows exactly one way to provoke one: compile source, read the message. That
+ * harness cannot reach this class at all. `TF080` fires when an `accept dialog with` answer meets a
+ * dialog kind that takes no answer, and the kind is a fact about the page at the instant it fired —
+ * not about the text of the test.
+ *
+ * **Why a shared channel rather than a fifth bespoke field.** The four runtime-detected warnings
+ * that already ship — `backOff.warning`, `insecure`, `inconclusive`, the unmasked-secret band —
+ * each invented its own field and its own renderer, and none carries a code a reader can look up.
+ * `TF079` needs this too, in the very next step, and two consumers arriving together is the point
+ * at which a fifth private field stops being the cheaper answer.
+ *
+ * **Never affects the verdict.** A warning is a report about a test, not a judgement of it: a run
+ * that emits one exits exactly as it would have. That is the same line `check`'s warning severity
+ * already draws, and the reason `TF080` is not an error — see `D801`. */
+export interface RuntimeWarning {
+  /** The `TF0xx` code, so this reads and greps identically to a check-time diagnostic. */
+  readonly code: string;
+  readonly message: string;
+  /** The source line the warning is *about* — the step that armed, not the step that tripped it. */
+  readonly line: number;
+  /** That line as written, so a reporter can echo it without re-reading the file. */
+  readonly source: string;
+}
+
 export interface TestResult {
   /** M56 (Phase 3, D116) — discriminates a `ReportEntry` from a `WorkloadTestResult`. Always
    * `'functional'`; every construction site sets it explicitly (or inherits it via `{ ...result }`
@@ -358,6 +385,10 @@ export interface TestResult {
   readonly file?: string;
   /** The fatal error that ended the test early, if any. */
   readonly error?: string;
+  /** Runtime diagnostics raised while this test ran, in the order they were raised (`D801`).
+   * Absent, not empty, when there were none — so a report built before this field existed, and a
+   * test that raised nothing, have the same shape. Never affects `ok`. */
+  readonly warnings?: readonly RuntimeWarning[];
   /** `true` when this test failed at least once before passing on a `retry` attempt — reported
    * as passed but flagged, never silently green (SPEC §4.4, P#10). */
   readonly flaky?: boolean;

@@ -4611,13 +4611,25 @@ class Parser {
     return { type: 'WithinBlock', locator, frame, body, span: this.spanFrom(start) };
   }
 
+  /** `accept dialog [with <value>]` / `dismiss dialog` (SPEC §9.1). The optional `with` is
+   * `accept`-only (`D800`): a dismissed dialog returns nothing, so there is no argument for it to
+   * carry, and offering the clause on both would make the grammar promise a reading the runtime
+   * cannot honour. `dismiss dialog with "x"` therefore stops at `TF010` on the `with`, naming the
+   * step that does take one. */
   private parseDialogStep(which: 'accept' | 'dismiss'): Step | null {
     const start = this.peek().span.start;
     this.advance(); // `accept`/`dismiss`
     if (!this.expectKw('dialog')) return null;
+    let text: Value | undefined;
+    if (which === 'accept' && this.isKw(this.peek(), 'with')) {
+      this.advance(); // `with`
+      const parsed = this.parseValue();
+      if (!parsed) return null;
+      text = parsed;
+    }
     this.endLine();
     return which === 'accept'
-      ? ({ type: 'AcceptDialogStmt', span: this.spanFrom(start) } satisfies AcceptDialogStmt)
+      ? ({ type: 'AcceptDialogStmt', text, span: this.spanFrom(start) } satisfies AcceptDialogStmt)
       : ({ type: 'DismissDialogStmt', span: this.spanFrom(start) } satisfies DismissDialogStmt);
   }
 

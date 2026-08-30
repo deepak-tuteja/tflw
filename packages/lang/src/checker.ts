@@ -2645,6 +2645,11 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         checkStepSequence(step.body, bound, diags, bindings);
         break;
       case 'AcceptDialogStmt':
+        // `D800` — the prompt answer is an ordinary value, so an undefined `{ref}` in it is caught
+        // where every other step's would be. Without this line the one place a dialog step can name
+        // a variable is the one place a typo in a variable name goes unreported.
+        if (step.text) checkValue(step.text, bound, diags);
+        break;
       case 'DismissDialogStmt':
         break;
       case 'WaitUntilUiStmt':

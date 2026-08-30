@@ -6668,6 +6668,59 @@ It is taken in that direction (docs-site depends on the root guard, never the re
 `verify-citations.mjs` already reads **both repositories** and has no docs-site knowledge, while
 `doc-blocks.mjs` is scoped to one package. The dependency follows the breadth.
 
+### D797
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D797 — `armedDialog` becomes a queue**
+
+A `readonly armedDialogs: DialogArming[]`, pushed by the step, shifted by the handler. An empty
+queue keeps today's behaviour exactly: dismiss, which is what an unarmed page already does.
+
+### D798
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D798 — `dialog message` becomes a value subject**
+
+    click button "Delete"
+    expect dialog message is "Delete this product? This cannot be undone."
+
+### D799
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D799 — `dialog type` becomes a value subject**
+
+    expect dialog type is "confirm"
+
+### D800
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D800 — `accept dialog with "<text>"` answers a prompt**
+
+    accept dialog with "Blue"
+    click button "Set favourite colour"
+    expect dialog type is "prompt"
+
+### D801
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D801 — `accept dialog with` on a non-prompt is `TF080`, at runtime**
+
+Playwright **silently ignores** `promptText` when the dialog is not a prompt. That is precisely the
+silent-no-op class this milestone exists to remove, so tflw does not inherit it:
+
+### D804
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D804 — `SPEC` §9.1 states, per kind, what can and cannot be asserted**
+
+The table in §2.2 goes into `SPEC`, and with it the sentence the corpus has never needed:
+
 ### D807
 
 <sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
@@ -9297,6 +9350,23 @@ diagnostic. Guard and comment changes only.
 **Closes:** `M154-01` (S3), `M153a-01` (S4). **Disposes without closing:** `M149f-01` (S4),
 `M153a-02` (S4) — both are `D622` conditions awaiting evidence that has not arrived (§5).
 **Numbering:** takes `D790`–`D796`, **and `D837`**. Mints no `TF` code (`TF079` stays free).
+
+### M159
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**`M159` — native dialogs: the whole surface, and something to assert about each kind**
+
+**Status:** **`M159a`–`M159c` built 2026-08-30**; `M159d`–`M159f` open. **Additive** — three
+constructs, no removals. Changes the behaviour of a program that arms two dialogs, which today is
+silently wrong. `M159e`'s per-kind table was written inside `M159b`, because `D799`'s prose needs it
+to make sense; it is not a separate step any more.
+
+### M159c
+
+<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**`M159c` — `D800`/`D801`.** `accept dialog with`, `TF080`.
 
 ### M160
 

@@ -377,6 +377,22 @@ export const Codes = {
   // a claim about a resolution this check never performs. Reusing it would make the message say
   // something false, which is the line `M147`'s allocation rule draws.
   CONFIG_UNKNOWN_SERVICE: 'TF076',
+
+  // `M159c`/`D801` — **the first code no `tflw check` can emit.** `accept dialog with "Blue"` is a
+  // legal step; whether its answer reaches something that can take one depends on which dialog the
+  // page raises, which is a fact about the running page. A checker that guessed would be wrong on
+  // every page that raises an `alert` or a `prompt` depending on state, and that page is not a
+  // mistake.
+  //
+  // **A warning, not an error**, for the same reason `TF043` is one: the run is still doing what
+  // was asked, and the text being dropped is Playwright's behaviour, not a broken test. What is
+  // unacceptable is that it was dropped *silently*, which is the class this milestone exists to
+  // remove — Playwright ignores `promptText` on a non-prompt without a word.
+  //
+  // Its row in `DIAGNOSTICS` carries `runtime` where every other row carries `probes`, because the
+  // probe harness compiles source and reads the message back and there is no source that provokes
+  // this one. The row names the runtime test that does. See `spec-data.ts`.
+  DIALOG_TEXT_IGNORED: 'TF080',
 } as const;
 
 // ---------------------------------------------------------------------------

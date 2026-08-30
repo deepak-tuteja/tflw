@@ -318,3 +318,40 @@ test('a passing entry with no steps stays a single line — the error block must
   const out = renderCliSummary(baseReport, false);
   assert.doesNotMatch(out, /^ {4}✗/m, 'nothing failed, so nothing renders a failure block');
 });
+
+// ---- M159c/D801: runtime warnings ---------------------------------------------------------
+
+const warned: RunReport = {
+  ...baseReport,
+  tests: [
+    {
+      kind: 'functional',
+      name: 'bulk delete',
+      ok: true,
+      durationMs: 12,
+      steps: [],
+      warnings: [{ code: 'TF080', message: '`accept dialog with "Blue"` answered an `alert`, which takes no text', line: 3, source: '  accept dialog with "Blue"' }],
+    },
+  ],
+};
+
+test('a runtime warning prints under its test, in the same voice as a check-time one', () => {
+  const out = renderCliSummary(warned, false);
+  assert.match(out, /⚠ warning\[TF080\]/);
+  assert.match(out, /answered an `alert`, which takes no text/);
+  // The source line, so the reader does not have to open the file to see what to change.
+  assert.match(out, /3: accept dialog with "Blue"/);
+});
+
+test('a runtime warning prints on a PASSING test — the condition it reports is one a green run hides', () => {
+  const out = renderCliSummary(warned, false);
+  assert.match(out, /✓ bulk delete/, 'precondition: the test passed');
+  assert.match(out, /warning\[TF080\]/);
+  // And the run's verdict is untouched: a warning is a report about a run, not a judgement of it.
+  assert.match(out, /PASS/);
+});
+
+test('a test with no warnings says nothing — the line must not be ambient', () => {
+  assert.doesNotMatch(renderCliSummary(baseReport, false), /warning\[/);
+  assert.doesNotMatch(renderCliSummary({ ...baseReport, tests: [{ ...baseReport.tests[0]!, warnings: [] }] }, false), /warning\[/);
+});

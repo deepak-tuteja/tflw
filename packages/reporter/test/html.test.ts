@@ -36,6 +36,9 @@ test('renderReportHtml renders a non-retried test identically whether or not the
   const expected = [
     '<section class="test ok" id="t0" data-file="(no file)">',
     '  <h2><span class="dot ok"></span>health check <span class="tms">12 ms</span></h2>',
+    // Five empty interpolation slots, not four, since `M159c` added `renderWarnings` — a test with
+    // no runtime warning must render exactly as it did before the field existed.
+    '  ',
     '  ',
     '  ',
     '  ',
@@ -600,4 +603,36 @@ test('a var name with HTML metacharacters is escaped in the banner, not injected
   const html = renderReportHtml({ ...baseReport, unmaskableSecrets: ['<img src=x onerror=alert(1)>'] });
   assert.doesNotMatch(html, /<img src=x/, 'a name reaching the header must be escaped like every other value in this document');
   assert.match(html, /&lt;img src=x/);
+});
+
+// ---- M159c/D801: runtime warnings in the artifact ------------------------------------------
+
+test('a runtime warning renders inside its own test panel, above the steps', () => {
+  // report.html is the artifact that gets attached to a ticket, so a warning the terminal printed
+  // and the HTML dropped would be invisible to everyone who reads the run second-hand.
+  const html = renderReportHtml({
+    ...baseReport,
+    tests: [
+      {
+        ...baseReport.tests[0]!,
+        warnings: [{ code: 'TF080', message: 'answered an `alert`, which takes no text', line: 3, source: '  accept dialog with "Blue"' }],
+      },
+    ],
+  });
+  assert.match(html, /<p class="runtime-warning">⚠ <code>warning\[TF080\]<\/code>/);
+  assert.match(html, /3: accept dialog with &quot;Blue&quot;/);
+});
+
+test('a runtime warning is escaped, like every other run-supplied string in the report', () => {
+  const html = renderReportHtml({
+    ...baseReport,
+    tests: [
+      {
+        ...baseReport.tests[0]!,
+        warnings: [{ code: 'TF080', message: '<script>alert(1)</script>', line: 1, source: '<b>x</b>' }],
+      },
+    ],
+  });
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  assert.match(html, /&lt;script&gt;/);
 });

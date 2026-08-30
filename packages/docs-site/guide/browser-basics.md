@@ -62,6 +62,39 @@ expect dialog type equals "confirm"
 dialog of the current test, and reading either before any dialog has appeared fails the test saying
 so.
 
+### Answering a `prompt`
+
+A `prompt` asks for text, so the arming can carry the answer:
+
+```tflw fragment
+accept dialog with "Blue"
+click button "Set favourite colour"
+expect text "Favourite: Blue" is visible
+```
+
+The answer interpolates like any other value, so a captured or generated one works:
+
+```tflw fragment
+let colour = "Blue"
+accept dialog with {colour}
+click button "Set favourite colour"
+```
+
+`accept dialog` on its own answers with the empty string, exactly as it always has.
+
+Only `prompt` has anywhere to put an answer. Send one to an `alert` or a `confirm` and the run says
+so and carries on:
+
+```console
+⚠ warning[TF080]: `accept dialog with "Blue"` answered a `confirm`, which takes no text —
+  the text was ignored and the dialog was accepted as if no `with` had been written
+```
+
+It is a warning, not a failure: the dialog is still accepted and the test's verdict is untouched. A
+page that raises a `prompt` or a `confirm` depending on its state is a real thing to test, so tflw
+will not refuse the step — but it will not let the text go missing quietly either, which is what
+happens underneath if nobody says anything.
+
 ::: warning On an `alert`, arming proves nothing by itself.
 An alert has one button, so accepting and dismissing it do exactly the same thing to the page. A
 test that arms one and then asserts the page would pass just as well with the arming line deleted.

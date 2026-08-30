@@ -1236,6 +1236,14 @@ export interface WithinBlock extends Node {
  * D8's mandatory dialog handling). */
 export interface AcceptDialogStmt extends Node {
   readonly type: 'AcceptDialogStmt';
+  /** `accept dialog with "<text>"` — the answer typed into a `prompt` (`D800`, M159c). `with` is
+   * already this language's argument-carrying preposition (`fill field "Email" with {email}`), so
+   * this borrows an established reading rather than inventing one, and interpolation works for the
+   * same reason it does there. Absent on `accept dialog`, whose behaviour is unchanged: accept with
+   * the empty string. Only `accept` takes it — there is nothing to answer a dialog *with* while
+   * dismissing it. Reaching a non-`prompt` is `TF080`, at runtime (`D801`): the kind is not
+   * knowable statically, and Playwright's own `promptText` is silently ignored there. */
+  readonly text?: Value;
 }
 
 export interface DismissDialogStmt extends Node {

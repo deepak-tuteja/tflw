@@ -211,7 +211,7 @@ export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
   { id: 'hover', family: 'browser', syntax: '`hover <locator>`', summary: 'move the pointer over the element a locator resolves to', example: '`hover button "Menu"`' },
   { id: 'scroll', family: 'browser', syntax: '`scroll to <locator>`', summary: 'scroll the element into view', example: '`scroll to button "Load more"`' },
   { id: 'within', family: 'browser', syntax: '`within <locator>` or `within frame <locator>` + an indented block', summary: "scope nested steps to one container — or, with `frame`, into an iframe's own document", example: '`within list "Cart items"`' },
-  { id: 'accept', family: 'browser', syntax: '`accept dialog`', summary: 'arm a handler accepting the *next* native dialog; armings queue, one dialog each, in order (`D797`); without one Playwright auto-dismisses silently', example: '`accept dialog`' },
+  { id: 'accept', family: 'browser', syntax: '`accept dialog` / `accept dialog with <value>`', summary: 'arm a handler accepting the *next* native dialog; armings queue, one dialog each, in order (`D797`); without one Playwright auto-dismisses silently. `with` types an answer into a `prompt` and interpolates (`D800`); reaching a kind that takes no answer is `TF080`, a runtime warning (`D801`)', example: '`accept dialog with "Blue"`' },
   { id: 'dismiss', family: 'browser', syntax: '`dismiss dialog`', summary: 'arm a handler dismissing the next native dialog; armings queue, one dialog each, in order (`D797`)', example: '`dismiss dialog`' },
   { id: 'switch', family: 'browser', syntax: '`switch to new tab` + an indented block, or `switch to tab <N>`', summary: 'make another tab active — the block form arms the popup listener before running, so a fast tab cannot race past it', example: '`switch to tab 1`' },
   { id: 'close', family: 'browser', syntax: '`close tab`', summary: 'close the active tab and fall back to the previous one; closing the last tab is a runtime error', example: '`close tab`' },
@@ -446,11 +446,38 @@ export function renderDiagnosticExample(probes: readonly DiagnosticProbe[]): str
  * site — this manifest is only the canonical, code-general explanation, not a replacement for
  * either). `meaning` is markdown-ready cell text; `example` is markdown-ready cell text *derived
  * from `probes`* and never hand-written. */
+/** How a **runtime-only** code is evidenced (`M159c`, `D801`). `DiagnosticProbe` compiles source
+ * and reads the message back, which decides every code up to `TF076` and cannot decide `TF080` at
+ * all: its condition is which dialog kind a live page raised, not what the test says.
+ *
+ * So the row points at the test that *does* provoke it. This is weaker than a probe on purpose, and
+ * the weakness is named rather than hidden: a probe is executed by the manifest's own harness, and
+ * this is a reference the harness can only check the *existence* of. What stops it becoming
+ * `D722`'s "a gate whose presence is not evidence" is that `diagnosticExamples.test.ts` resolves
+ * the reference — a row naming a test file or test name that does not exist is a red suite, so the
+ * pointer cannot rot into decoration the way an unexecuted prose example did before `M110b`.
+ *
+ * It deliberately cannot be used to escape a probe. The gate requires exactly one of `probes` or
+ * `runtime`, and a code the checker *can* emit has a probe available to it — so reaching for this
+ * field is a claim that no source text provokes the code, which is reviewable. */
+export interface RuntimeEvidence {
+  /** The test file, relative to the package that owns it, e.g. `packages/runtime/test/browser-steps.test.ts`. */
+  readonly test: string;
+  /** The exact `test('…')` name inside it, asserted to exist. */
+  readonly name: string;
+  /** Display prose for the rendered example cell, in place of a probe's source block. */
+  readonly as: string;
+}
+
 export interface DiagnosticEntry {
   readonly code: string;
   readonly meaning: string;
   readonly example: string;
-  readonly probes: readonly DiagnosticProbe[];
+  /** Exactly one of these two is present. `probes` for a code `tflw check` can be made to emit;
+   * `runtime` for one only a run can reach (`D801`). Neither is not allowed — that is the state
+   * `M110b` closed, a row whose example nothing executes. */
+  readonly probes?: readonly DiagnosticProbe[];
+  readonly runtime?: RuntimeEvidence;
 }
 
 const DIAGNOSTIC_ROWS: readonly Omit<DiagnosticEntry, 'example'>[] = [
@@ -524,13 +551,15 @@ const DIAGNOSTIC_ROWS: readonly Omit<DiagnosticEntry, 'example'>[] = [
   { code: 'TF074', meaning: 'Checker (config, `M147d`, `M137f-02`, D642): **a `session ... for env <name>` naming an env this config does not declare.** The clause narrows a session to a set of envs, so a name matching no `env` block narrows it to *nothing*: the session exists in no env at all, and every `test ... as <name>` that opts into it becomes a `TF028` pointing at a test file to complain about one word in `tflw.config`. **The failure it prevents is a deletion rather than a typo** — a `session` is not only a login, it is a member of every Tier 2 probe set (D306), so a session that silently exists nowhere removes an identity from the differential oracle across the whole suite while every assertion stays green. Its own code rather than `TF024`: that one is `CONFIG_ENV_CONFLICT`, two claims about envs that contradict each other, while this is a *reference* to an env that is not there — the shape `TF026` (unknown service) and `TF028` (unknown session) each already have a code for. Decidable from `tflw.config` alone, both halves being in one file, so it fires in the editor with no env resolved.', probes: [{ wrap: 'config', source: ['env staging default', '  api "https://a"', 'session admin for env stagng', '  api GET /login'], says: 'unknown env "stagng"', as: 'a `for env` clause naming an env this config does not declare' }] },
   { code: 'TF075', meaning: 'Parser (`M147e`, `A3-14`, D643): **input nested more deeply than the parser will descend.** `parseSource` is documented as never throwing for a syntax error, and a file of 30 000 unary minuses broke that outright — a raw V8 `RangeError`, exit 2, no filename, no line, no caret. Not a bad diagnostic but *no* diagnostic, and a stack trace where a caret should be. Unary minus is the only production in this grammar that recurses per token rather than looping: `+ - * /` chains iterate, `within` nesting is bounded by the lexer, and a JSON body goes through `JSON.parse`. The limit is 256, set two orders of magnitude below anything a person writes and an order below the measured cliff, because the stack that matters is the smallest one the parser might run on — the LSP worker, a smaller container — not the machine it was measured on. Its own code rather than `TF010`: the `-` is legal exactly where it is written, so calling it an unexpected token would put a false word in the only sentence the reader gets. The message names the limit rather than a mistake, because at this depth the author is a generator and what a generator needs is the number.', probes: [{ wrap: 'step', source: ['let a = ' + '-'.repeat(300) + '1'], says: 'too many nested `-` signs', as: 'a `let` whose value carries 300 unary minuses' }] },
   { code: 'TF076', meaning: 'Checker (config, `M147f`, `M147-07`, D647): **a `header "X" is "Y" for <service>` naming a service no `env` declares.** The scope clause narrows a header to one service, so a name matching nothing narrows it to *nothing*: `resolveConfig` copies the name through verbatim and the interpreter sets the header only where the clause is absent or matches the step\'s own service, so the header is attached to no request at all — `tflw check` clean, exit 0, run green, and every request going out without the header the config says it carries. This is the shape `TF074` was spent on for `session ... for env` one row earlier, in a construct that had already shipped. **Checked against the union of every service declared in the file, `defaults` and all envs, not against the active env**, because a header in `defaults` may legitimately scope to a service only one env declares and a per-env rule would reject a correct config. That catches every typo at zero false positives and answers in the editor on `tflw.config` alone; what it under-approximates is a header scoped to a service that exists only in an env the header never applies to, which is a decision `TF026`\'s resolve-time position would have to make. Its own code rather than `TF026`: that one reads *not declared in the active env*, a claim about a resolution this check never performs.', probes: [{ wrap: 'config', source: ['env one default', '  api shop "https://a"', '  header "X-Tenant" is "acme" for shp'], says: 'unknown service "shp"', as: 'a header scope clause naming a service this config does not declare' }] },
+  { code: 'TF080', meaning: 'Runtime (browser, `M159c`, `D801`): **an `accept dialog with "<text>"` whose answer reached a dialog that takes none.** Only a `prompt` has an input to fill; an `alert` has one button and a `confirm` has two, and Playwright *silently discards* `promptText` for both — so the test says an answer was given, the page never received one, and nothing anywhere reported the gap. That silent discard is the defect class `M159` exists to remove. **A warning, not an error, and the only code in this table that `tflw check` cannot emit:** which kind a page raises is a fact about the running page, and a page that raises an `alert` or a `prompt` depending on state is legitimate, so no static rule can decide it without being wrong about a correct test. The run\'s verdict is unchanged — the dialog is still accepted, exactly as a bare `accept dialog` would have accepted it. Its evidence is a runtime test rather than a probe, for the same reason.', runtime: { test: 'packages/runtime/test/browser-steps.test.ts', name: '`accept dialog with` on an alert raises TF080 and still accepts', as: '`accept dialog with "Blue"` before a click that raises an `alert`' } },
 ] as const;
 
-/** The rows every consumer reads, with `example` filled in from `probes` — the derivation that
- *  makes the rendered cell unable to disagree with the source underneath it. */
+/** The rows every consumer reads, with `example` filled in from whichever evidence the row carries
+ *  — the derivation that makes the rendered cell unable to disagree with what runs underneath it.
+ *  A `runtime` row renders its `as` prose; a probe row renders its executed source (`M110b`). */
 export const DIAGNOSTICS: readonly DiagnosticEntry[] = DIAGNOSTIC_ROWS.map((row) => ({
   ...row,
-  example: renderDiagnosticExample(row.probes),
+  example: row.probes ? renderDiagnosticExample(row.probes) : `${row.runtime?.as ?? ''} — raised at run time, not by \`tflw check\``,
 }));
 
 export const CLI_FLAGS: readonly CliFlagEntry[] = [

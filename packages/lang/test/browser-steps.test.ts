@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource } from '../src/index.js';
+import { checkProgram, parseSource } from '../src/index.js';
 
 function firstStep(source: string) {
   const { program, diagnostics } = parseSource(source);
@@ -626,4 +626,43 @@ test('a bare `dialog` subject is refused, naming both halves rather than default
   assert.equal(diagnostics.length, 1);
   assert.match(diagnostics[0]!.message, /expected `message` or `type` after `dialog`/);
   assert.match(diagnostics[0]!.hint ?? '', /alert.*confirm.*prompt.*beforeunload/);
+});
+
+// ---- M159c/D800: `accept dialog with` ------------------------------------------------------
+
+test('`accept dialog with` carries the prompt answer, and a bare arming carries none', () => {
+  const withText = firstStep('test "ok"\n  accept dialog with "Blue"\n') as { type: string; text?: { type: string; value: string } };
+  assert.equal(withText.type, 'AcceptDialogStmt');
+  assert.equal(withText.text?.type, 'StringLit');
+  assert.equal(withText.text?.value, 'Blue');
+  // `undefined`, not `''`. The distinction is what lets `TF080` fire only where an answer was
+  // actually written — an empty-string default would make every existing bare arming a candidate.
+  const bare = firstStep('test "ok"\n  accept dialog\n') as { type: string; text?: unknown };
+  assert.equal(bare.text, undefined);
+});
+
+test('the prompt answer interpolates, because a varying answer is the reason to have one', () => {
+  const { program, diagnostics } = parseSource('test "ok"\n  let colour = "Blue"\n  accept dialog with {colour}\n');
+  assert.deepEqual(diagnostics, []);
+  const arming = program.tests[0]!.body[1]! as { type: string; text?: { type: string } };
+  assert.equal(arming.type, 'AcceptDialogStmt');
+  assert.equal(arming.text?.type, 'Interp');
+});
+
+test('an undefined reference in the prompt answer is reported, like any other step value', () => {
+  // Without the `checkValue` call this test guards, the one place a dialog step can name a
+  // variable is the one place a typo in a variable name goes unreported.
+  const { program, diagnostics } = parseSource('test "ok"\n  accept dialog with {nope}\n');
+  assert.deepEqual(diagnostics, []);
+  const problems = checkProgram(program);
+  assert.equal(problems.length, 1, `expected one problem, got ${JSON.stringify(problems)}`);
+  assert.match(problems[0]!.message, /nope/);
+});
+
+test('`dismiss dialog with` is refused — there is nothing to answer a dismissal with', () => {
+  // `D800` scopes `with` to `accept` deliberately. Accepting it on both would make the grammar
+  // promise a reading the runtime cannot honour: a dismissed prompt returns `null`, not a string.
+  const { diagnostics } = parseSource('test "ok"\n  dismiss dialog with "Blue"\n');
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.code, 'TF010');
 });

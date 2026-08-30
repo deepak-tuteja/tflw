@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, join, resolve as resolvePath } from 'node:path';
-import { isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
+import { Codes, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   FindingSeverity,
   ApiBody,
@@ -135,6 +135,7 @@ import type {
   RunReport,
   SelfDiagnosis,
   StepResult,
+  RuntimeWarning,
   TestResult,
   WorkloadTestResult,
 } from './types.js';
@@ -2729,6 +2730,24 @@ async function runTest(
   };
 }
 
+/** `D801`, `M159c` — the `TF080` warnings this attempt earned.
+ *
+ * Built from state the *handler* recorded rather than from anything the step could know: whether an
+ * answer had somewhere to go is decided when the dialog fires, and `accept dialog with` has long
+ * since returned by then. Per attempt, like every other field on `BrowserPageState` (`D803`) — a
+ * retry gets a clean slate, so a warning from a discarded attempt cannot be reported against the
+ * one that was kept. */
+function dialogWarnings(page: BrowserPageState): RuntimeWarning[] {
+  return page.dialogTextIgnored.map((ignored) => ({
+    code: Codes.DIALOG_TEXT_IGNORED,
+    message:
+      `\`accept dialog with ${JSON.stringify(ignored.text)}\` answered ${ignored.kind === 'alert' ? 'an' : 'a'} \`${ignored.kind}\`, which takes no text — ` +
+      'the text was ignored and the dialog was accepted as if no `with` had been written',
+    line: ignored.line,
+    source: ignored.source,
+  }));
+}
+
 async function runTestAttempt(
   test: TestDecl,
   config: ResolvedConfig,
@@ -2778,7 +2797,12 @@ async function runTestAttempt(
     // the evidence worth keeping). Below `evidence full` (FS-01) tracing was never started, so
     // `finish` returns `undefined` here whatever this argument says.
     const trace = await browserPageState.finish(!isFirstAttempt || !result.ok);
-    return trace ? { ...result, trace } : result;
+    // `D801` — drained here, at the one site every body exit path funnels through, so a `TF080`
+    // survives a test that *failed* after the dialog fired. Attaching at the body's happy-path
+    // return instead would report the warning only on the runs least likely to need it.
+    const warnings = dialogWarnings(browserPageState);
+    const withTrace = trace ? { ...result, trace } : result;
+    return warnings.length > 0 ? { ...withTrace, warnings } : withTrace;
   } finally {
     if (browserPageState) await browserPageState.close();
   }
@@ -3547,11 +3571,16 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const browser = requireBrowserCtx(ctx);
           await browser.page.ensurePage(browser.manager); // the dialog handler is wired on page creation
           const which = step.type === 'AcceptDialogStmt' ? 'accept' : 'dismiss';
+          // `D800` — evaluated here, at arming time, not when the dialog fires: `{orderId}` must
+          // mean what it meant on this line, and by the time a dialog is raised the step that
+          // raised it has already run. `stringify`, not `String`, so a captured number answers a
+          // prompt the same way it fills a field.
+          const text = step.type === 'AcceptDialogStmt' && step.text ? stringify(evalValue(step.text, ctx)) : undefined;
           // `D797`: push. Assigning lost every arming but the last, and the case that exposes it
           // cannot be written any other way — two dialogs from one `click` admit no step between.
-          browser.page.armedDialogs.push({ which });
+          browser.page.armedDialogs.push({ which, text, line: step.span.start.line, source: src });
           browser.page.dialogsArmed += 1;
-          result = mkStep('dialog', src, step.span, true, stepStart, `${which} the next dialog`);
+          result = mkStep('dialog', src, step.span, true, stepStart, text === undefined ? `${which} the next dialog` : tc.redactor.redact(`${which} the next dialog with ${JSON.stringify(text)}`));
           break;
         }
         case 'WithinBlock': {

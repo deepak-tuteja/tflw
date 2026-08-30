@@ -507,7 +507,8 @@ WithinBlock     := 'within' 'frame'? Locator NEWLINE Block           # `frame` t
 Locator         := LocatorKind (STRING | Interp)
 LocatorKind     := 'button' | 'field' | 'text' | 'list' | 'css' | 'xpath'   # (§9.3, D6)
 
-DialogStmt      := ('accept' | 'dismiss') 'dialog'
+DialogStmt      := 'accept' 'dialog' [ 'with' Value ]
+                 | 'dismiss' 'dialog'
 TabStmt         := 'switch' 'to' 'new' 'tab' NEWLINE Block           # M3b
                  | 'switch' 'to' 'tab' NUMBER                        # 1-based
                  | 'close' 'tab'
