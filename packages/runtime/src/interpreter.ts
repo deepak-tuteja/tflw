@@ -3547,7 +3547,10 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const browser = requireBrowserCtx(ctx);
           await browser.page.ensurePage(browser.manager); // the dialog handler is wired on page creation
           const which = step.type === 'AcceptDialogStmt' ? 'accept' : 'dismiss';
-          browser.page.armedDialog = which;
+          // `D797`: push. Assigning lost every arming but the last, and the case that exposes it
+          // cannot be written any other way — two dialogs from one `click` admit no step between.
+          browser.page.armedDialogs.push({ which });
+          browser.page.dialogsArmed += 1;
           result = mkStep('dialog', src, step.span, true, stepStart, `${which} the next dialog`);
           break;
         }

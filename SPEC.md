@@ -1125,8 +1125,8 @@ name (§17), and documenting them would be teaching a spelling that is itself an
 | browser | `hover` | `hover <locator>` | move the pointer over the element a locator resolves to | `hover button "Menu"` |
 | browser | `scroll` | `scroll to <locator>` | scroll the element into view | `scroll to button "Load more"` |
 | browser | `within` | `within <locator>` or `within frame <locator>` + an indented block | scope nested steps to one container — or, with `frame`, into an iframe's own document | `within list "Cart items"` |
-| browser | `accept` | `accept dialog` | arm a one-shot handler accepting the *next* native dialog; without it Playwright auto-dismisses silently | `accept dialog` |
-| browser | `dismiss` | `dismiss dialog` | arm a one-shot handler dismissing the next native dialog | `dismiss dialog` |
+| browser | `accept` | `accept dialog` | arm a handler accepting the *next* native dialog; armings queue, one dialog each, in order (`D797`); without one Playwright auto-dismisses silently | `accept dialog` |
+| browser | `dismiss` | `dismiss dialog` | arm a handler dismissing the next native dialog; armings queue, one dialog each, in order (`D797`) | `dismiss dialog` |
 | browser | `switch` | `switch to new tab` + an indented block, or `switch to tab <N>` | make another tab active — the block form arms the popup listener before running, so a fast tab cannot race past it | `switch to tab 1` |
 | browser | `close` | `close tab` | close the active tab and fall back to the previous one; closing the last tab is a runtime error | `close tab` |
 | browser | `download` | `download as <name>` + an indented block | run the block with a download listener armed, then bind the download's suggested filename | `download as file` |
@@ -2212,7 +2212,23 @@ accept dialog                            # arms a one-shot handler for the *next
 click button "Delete"                    # (Playwright otherwise auto-dismisses silently — a real
                                           #  no-op trap for a confirm()-guarded action)
 dismiss dialog
+
+accept dialog                            # armings queue: each is consumed by exactly one dialog,
+accept dialog                            # in order, so one click raising two confirm()s is
+click button "Delete all"                # answered twice (D797)
 ```
+
+**Armings queue, and *one-shot* is per arming rather than per page (`D797`).** Each `accept
+dialog`/`dismiss dialog` is consumed by exactly one dialog, in the order the steps were written.
+This matters for the case that cannot be written any other way: two `confirm()`s raised by a single
+`click` admit no step between them, so two consecutive armings is the only spelling available — and
+tflw answers both. An arming is not scoped to the step that follows it; it waits for *the next
+dialog, wherever it fires* (§9.5), across tabs included. With nothing armed, a dialog is dismissed,
+which is the browser driver's own default and therefore also the behaviour of every program written
+before this rule existed.
+
+The state is **per test attempt**: a retry starts with an empty queue, the same lifetime the
+network log has (§9.7).
 
 **The tick action is `tick`/`untick`, not `check`/`uncheck` (FS-04).** `check` is the soft-assertion
 keyword (§6.4) and nothing else. It used to be dual-grammar: a locator *with* a matcher after it

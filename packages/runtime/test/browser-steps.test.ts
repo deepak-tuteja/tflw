@@ -72,6 +72,16 @@ const FIXTURE_HTML = `<!doctype html>
   <button id="delete" onclick="if (confirm('Really delete?')) { document.getElementById('status').textContent = 'deleted'; } else { document.getElementById('status').textContent = 'kept'; }">Delete</button>
   <p id="status">untouched</p>
 
+  <!-- M159/D797: two confirm() calls raised by ONE click - the shape M154b-02 is filed against,
+       and the reason it was inexpressible under a slot. No step can be interleaved between these
+       two dialogs, so "accept dialog" twice is the only spelling the language has; a single armed
+       slot answered the first and silently dismissed the second. (No backticks in here: this
+       fixture is a TypeScript template literal, and one would end it mid-HTML. And the name is
+       "Bulk remove", not "Delete two": D7's strict matching makes button "Delete" ambiguous the
+       moment a second button's name starts with it, which broke four existing tests.) -->
+  <button id="delete-two" onclick="var a = confirm('Delete this product?'); var b = a &amp;&amp; confirm('Really? This cannot be undone.'); document.getElementById('status2').textContent = b ? 'both accepted' : (a ? 'second refused' : 'first refused');">Bulk remove</button>
+  <p id="status2">untouched</p>
+
   <iframe id="payment-frame" src="/frame" title="payment"></iframe>
 
   <a href="/tab2" target="_blank">Open in new tab</a>
@@ -435,6 +445,91 @@ test('dialogs: `dismiss dialog` cancels the guarded action', async () => {
   expect text "kept" is visible
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+// ---- M159/D797: the arming queue -------------------------------------------------------------
+//
+// Four tests, and the first is the break. Everything else here holds the boundaries a queue
+// introduces: an empty one, a surplus one, and the ordering that makes "one-shot" mean per-arming
+// rather than per-page.
+
+test('dialogs: two armings answer two dialogs raised by one click — the case a slot could not express', async () => {
+  // `M154b-02`. Both `confirm()`s come from a single `click`, so no step can sit between them and
+  // two consecutive armings is the only way to write this. Under the old single slot the second
+  // arming overwrote the first, the second dialog fell through to Playwright's dismiss default,
+  // and nothing refused the program — the page just quietly did half the work.
+  const { report } = await run(`test "two dialogs, two armings"
+  open "/"
+  accept dialog
+  accept dialog
+  click button "Bulk remove"
+  expect text "both accepted" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: armings are consumed in order, so accept-then-dismiss is not dismiss-then-accept', async () => {
+  // The property that makes it a queue rather than a set. Accepting the first `confirm()` and
+  // refusing the second is a different end state from either uniform answer, so this fails on a
+  // stack, on a set, and on a slot — three wrong implementations, one test.
+  const { report } = await run(`test "ordered"
+  open "/"
+  accept dialog
+  dismiss dialog
+  click button "Bulk remove"
+  expect text "second refused" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: an unarmed dialog is still dismissed, so the queue changes nothing about today', async () => {
+  // The empty-queue path, asserted rather than assumed. Playwright's unhandled default IS dismissal
+  // (which is `M154b-01`'s whole subject), and `D797` must not have moved it.
+  const { report } = await run(`test "unarmed"
+  open "/"
+  click button "Delete"
+  expect text "kept" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: an arming outlives the step after it and waits for whatever raises next', async () => {
+  // Written first as "a surplus arming does not leak onto a later dialog", and the code was right
+  // and the test was wrong. An arming is not scoped to the step that follows it: `accept dialog`
+  // arms *the next dialog, wherever it fires* (SPEC §9.1/§9.5), and always has — under the old
+  // slot as much as under the queue. Two armings and two separate one-dialog clicks therefore
+  // accept both.
+  //
+  // Worth a test rather than a correction in passing, because it is exactly why `D802`'s warning is
+  // about an arming that is NEVER consumed rather than one consumed later than the author expected.
+  // A rule that fired on "later than expected" would fire on this, which is legal.
+  const { report } = await run(`test "arming outlives its step"
+  open "/"
+  accept dialog
+  accept dialog
+  click button "Delete"
+  click button "Delete"
+  expect text "deleted" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+});
+
+test('dialogs: an arming does not survive into the next test (`D803`)', async () => {
+  // Per test ATTEMPT, not per run — the invariant `networkLog` already states, now load-bearing for
+  // a second thing. Two tests in one program: the first arms and never fires, the second clicks and
+  // must still get the unarmed default. If the queue lived on the manager rather than on
+  // `BrowserPageState` this would read `deleted`, and the failure would only ever show up as one
+  // test mysteriously depending on another.
+  const { report } = await run(`test "arms and never fires"
+  open "/"
+  accept dialog
+
+test "clicks with nothing armed"
+  open "/"
+  click button "Delete"
+  expect text "kept" is visible
+`);
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 });
 
 test('a locator that never appears fails with a clear "no element found" error, not a hang', async () => {
