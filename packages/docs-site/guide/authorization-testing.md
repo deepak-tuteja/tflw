@@ -64,6 +64,8 @@ env local default
   api "http://localhost:4001"
   authorized target "http://localhost:4001" reason "self-hosted test fixture"
 
+require env SHOPPER_EMAIL, SHOPPER_PW, PEER_EMAIL, PEER_PW
+
 session shopper
   api POST /auth/login body { email: env(SHOPPER_EMAIL), password: env(SHOPPER_PW) }
   capture body.token as token
@@ -85,6 +87,8 @@ about your config, reported where it first mattered.
 An admin who can read everybody's orders is not a finding. Mark it:
 
 ```tflw-config fragment
+require env ADMIN_EMAIL, ADMIN_PW
+
 session admin privileged
   api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
   capture body.token as token
@@ -129,6 +133,8 @@ privileged — and that fact lives in the server's grant implementation, which t
 suite may not own or even be able to read:
 
 ```tflw-config fragment
+require env OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET
+
 session oauthLong oauth2 privileged
   token url "http://localhost:4001/v1/oauth/token"
   client id env(OAUTH_CLIENT_ID)

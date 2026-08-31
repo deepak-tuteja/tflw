@@ -378,6 +378,58 @@ export const Codes = {
   // something false, which is the line `M147`'s allocation rule draws.
   CONFIG_UNKNOWN_SERVICE: 'TF076',
 
+  // `M156a`/`D775` — **an `env(NAME)` no `require env` declares.** The converse of the run-start
+  // gate, and the half without which `spec-data.ts`'s *"fails at check time rather than mid-suite"*
+  // was describing a guarantee `require env` does not have: the gate only ever protected the names
+  // the author remembered to declare, so an undeclared reference died mid-suite with `require env`
+  // present and correct (`PLAN_M156` §1, reproduced on the box). The two compose — every reference
+  // is declared (here, at check time), every declaration is satisfied before the first request
+  // (`cli.ts`, at run start) — and neither gives the promise alone.
+  //
+  // **An error, and the severity is settled by this file's own precedent rather than by argument.**
+  // The four warnings `checker.ts` emits are each a *prediction* (`TF043`'s file may be created by
+  // an earlier step, `TF055`'s budget by a per-step override) or an explicit not-necessarily-a-
+  // mistake (`TF058`). Every *referenced a name nothing declares* rule is an error without
+  // exception: `as admin` with no such `session`, `api orders` with no such service, `{foo}`
+  // unbound, `{prcie}` not a column. `D147`'s test puts this on that side — the reference is in the
+  // source and the declaration is in the config, and neither can change between check and run, so
+  // it is an **observation**. Whether the variable is *set* is the prediction, and that question is
+  // deliberately not asked here; it is `D779`'s advisory note, which names and does not fail.
+  //
+  // **`TF057` looks like the counter-example and is not.** It warns because its check is scoped to
+  // one env and another env may declare the allowlist. `require env` is a top-level directive, not
+  // a `defaults`/`env` entry (SPEC §3.4), flattened env-independently by `resolve.ts` — the
+  // declaration set is identical under every env, so that escape does not exist here.
+  //
+  // **The honest cost, recorded rather than argued away:** the other members of the error family
+  // refuse a suite that *cannot* run, while this one refuses a suite that *can* — an undeclared
+  // `env(FOO)` works today whenever `FOO` happens to be set. The answer is that *runs fine* is a
+  // property of the shell, not of the suite, and `require env` already takes that position in the
+  // other direction (`D776`: a declared name is required whether or not anything reads it). A
+  // language that decouples declaration from use one way and shrugs the other way is the real
+  // inconsistency. Breaking, and cheap now only because tflw is unpublished.
+  UNDECLARED_ENV_REF: 'TF077',
+
+  // `M156b`/`D778` — **`"{env(NAME)}"` inside a string literal**, which this language has never
+  // interpolated. `env(NAME)` is a *value*; the braced form parses as ordinary text, checks green,
+  // and ships the literal ten-plus characters over the wire — measured against a loopback echo
+  // server, a `header "X" is "{env(TOKEN)}"` sends the bytes `{env(TOKEN)}` (`PLAN_M156` §2.4).
+  // It fails as a 401 with nothing anywhere pointing at the cause, and it looks exactly like the
+  // `{var}` interpolation the language really does have.
+  //
+  // **Folded in beside `TF077` rather than filed**, for one reason: `TF077` alone would ship and
+  // still not catch the config in the sibling's own `require env` plant, because a braced `env()`
+  // is not a reference — it is text. A rule that misses the commonest spelling of the mistake it
+  // exists to catch is `D722` wearing a diagnostic code.
+  //
+  // **A warning, not an error**, and deliberately: the contents of a string literal are the
+  // author's business, and a checker that refuses one is guessing at intent. The hint names the
+  // repair, which is all a reader needs. **Revisit as an error** if a fixture is ever found
+  // shipping a live secret this way to a real endpoint — a silent 401 is cheap, a credential in a
+  // log is not. `\{env(` is not an escape the lexer honours; a suite that needs the literal text
+  // is the follow-up, filed rather than solved.
+  BRACED_ENV_REF: 'TF078',
+
   // `M159d`/`D802` — **an arming no dialog ever consumed.** `accept dialog` and `dismiss dialog`
   // arm the *next* native dialog and then return; if no dialog is ever raised, the step did
   // nothing, the test asserted something that did not happen, and until `D797` made the armings a

@@ -3268,7 +3268,12 @@ test('report/events.ndjson gets the same final redaction pass as every other art
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-redact-'));
   try {
-    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+    // `require env LATE` is not decoration here (`M156a`, `TF077`): the fixture reads `env(LATE)`,
+    // and an undeclared read is now a check-time error, so without the line this run exits 2 before
+    // a single event is written. It also makes the fixture the shape the redactor is being tested
+    // on — `require env` names are pre-registered at run start, which is exactly why a secret
+    // evaluated late can be masked in a trace built early.
+    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n\nrequire env LATE\n`, 'utf8');
     await writeFile(join(dir, 'leak.tflw'), `test "secret surfaces before it is ever read"\n  api GET /whoami\n  expect status equals 200\n  api POST /login body { pass: env(LATE) }\n  expect status equals 200\n`, 'utf8');
 
     await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir, env: { ...process.env, LATE: secret } });

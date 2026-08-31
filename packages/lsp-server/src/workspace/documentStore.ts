@@ -163,6 +163,14 @@ export class DocumentStore {
     // depends entirely on a config nobody found. Left `undefined`, and the pass then reports the
     // portability warning only, which is true regardless of any config.
     let envAllowHosts: { envName: string; hosts: readonly string[] } | undefined;
+    // `requiredEnv` (M156a/D775, `TF077`) is the fourth, and the one with no `envName` in it —
+    // `require env` is a top-level directive, so the declaration set is the same under every env
+    // and there is nothing here for the editor's `--env` setting to change. It is threaded for the
+    // reason M60 exists: the editor and the CLI check with one composed pass list, and an option
+    // the CLI passes and the server does not is exactly the silent disagreement that list was
+    // built to prevent. `undefined` on a pathless scratch buffer, where no project resolves and
+    // every `env(` in the file would otherwise be squiggled red on code that is correct.
+    let requiredEnv: readonly string[] | undefined;
     if (doc.root) {
       const project = await loadProjectConfig(doc.root, envSetting).catch(() => undefined);
       if (project?.resolved) {
@@ -176,6 +184,7 @@ export class DocumentStore {
         };
         envTimeouts = { envName: project.resolved.envName, wait: project.resolved.timeouts.wait };
         envAllowHosts = { envName: project.resolved.envName, hosts: project.resolved.allowHosts ?? [] };
+        requiredEnv = project.resolved.requiredEnv;
       }
     }
     // The CLI's own pass list, verbatim — one shared entry point, so the server can't fall behind it
@@ -230,6 +239,7 @@ export class DocumentStore {
         ...(envBaseUrls ? { envBaseUrls } : {}),
         ...(envTimeouts ? { envTimeouts } : {}),
         ...(envAllowHosts ? { envAllowHosts } : {}),
+        ...(requiredEnv ? { requiredEnv } : {}),
       }),
     ];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };
