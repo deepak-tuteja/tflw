@@ -7035,6 +7035,26 @@ position.
 runs eight consecutive full-gate rounds to catch this would cost more than the defect and would be
 the only such gate in the repository.
 
+### D823
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**D823 — assert-only probes move above the gate line; the coverage tables stay below it**
+
+`D493`'s split is kept and **re-drawn on the property it was actually about**: does this section
+assert a known answer that can go red, or does it enumerate coverage whose gaps are accepted?
+Assertions go above, enumerations stay below.
+
+### D824
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**D824 — the cost is sized before the move, because the phase's budget was measured for what it does today**
+
+`M154f-01` records that this was not done inside `M154f` because *"a Tier 2 probe run costs a corpus
+run per probe and the phase's budget was measured for what it currently does; sizing that is its own
+change."* That sizing is step one here, not an assumption.
+
 ### D829
 
 <sub>cited from SPEC.md · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
@@ -9822,6 +9842,30 @@ threshold of **6**); §9 is the repair and its verification. `M154g-06` **closed
 **partial** (`🟨`) — structural half shipped, flake not reproduced in 120 iterations and therefore
 not explained. Four rows filed: `M162-01`-`M162-04`. Acceptance clause 1 **amended, not met as
 written** — see §9.4.
+
+### M163a
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**`M163a` — the sizing (`D824`), run 2026-08-31 on the build box**
+
+Six runs of each form against one `VULN_MODE=1` stack, timed in-process with marks at each section
+boundary rather than inferred from the totals.
+
+### M163b
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**`M163b` — `D823`** (or `D825` if `M163a` says so). Move the assert-only sections above the gate
+line; re-run `regression.mjs`'s security phase.
+
+### M163c
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**`M163c` — restore `C52`.** The roster row narrowed away from the granted/withheld contrast goes
+back to grading what `probe mutating` is for, now that its graders are gated. **This is the visible
+payoff of `M163b`** and the reason `M154f-01` is `S3` rather than a tidy-up.
 
 ### M165a
 
