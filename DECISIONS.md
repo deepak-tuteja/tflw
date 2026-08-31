@@ -6582,7 +6582,7 @@ the config dialect and is not introduced here.
 
 ### D774
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D774` — the disposition is reversed: the code changes, and the sentence changes because the code did**
 
@@ -6608,7 +6608,7 @@ config is resolved, so this is an observation."* Applied here:
 
 ### D776
 
-<sub>cited inside a range only · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D776` — `require env` stays a precondition on the environment; `TF077` is the converse rule, not a redefinition**
 
@@ -6619,7 +6619,7 @@ has to exist for the redactor to pre-register it (`SPEC:431`), is an ordinary sh
 
 ### D777
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D777` — `P#75` forbids touching a live API, not touching the filesystem**
 
@@ -6645,7 +6645,7 @@ wearing a diagnostic code.
 
 ### D779
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D779` — `tflw check` reports unset required variables as an advisory note, with no flag**
 
@@ -7014,6 +7014,26 @@ becomes invisible.
 
 Two defects, one rule: an index only means something inside the space it was minted for, and
 `unique` currently crosses two boundaries without saying so.
+
+### D819
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**D819 — every browser test creates and addresses the records it asserts on**
+
+The rule `review-submission.tflw` already follows, applied to the three departures. `unique(...)` in
+`before`, addressed by the name it created, never by seeded fixture name and never by table
+position.
+
+### D822
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**D822 — no automated guard is built for accumulated-state degradation**
+
+`M154g-06` records that no automated path reaches it: every CI entry point starts fresh. A gate that
+runs eight consecutive full-gate rounds to catch this would cost more than the defect and would be
+the only such gate in the repository.
 
 ### D829
 
@@ -8260,7 +8280,7 @@ same push.
 
 ### M87
 
-<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PROGRESS.md`</sub>
 
 **M87 — the checker resolves names (cluster C6: `A4-03`, `FU-08`, `A4-16`, `FU-12`)**
 
@@ -9579,11 +9599,11 @@ this milestone mints no diagnostic), milestone **`M156`**.
 
 ### M156
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **M156 — `require env`: make the check-time promise true by closing the hole it actually has**
 
-Status: **`M156a`-`M156d` BUILT 2026-08-31** (tflw half); `M156e`/`M156f` are the sibling's, gated on `D511`. **Breaking** — `TF077` refuses `env()` references that check green
+Status: **BUILT 2026-08-31** — `M156a`-`M156d` (tflw, PR #150) and `M156e`/`M156f` (sibling, PR #66), merging in that order under `D511`. **Breaking** — `TF077` refuses `env()` references that check green
 today, so any suite using `env()` without a `require env` line needs one added. Nothing in either
 of these repos is affected (measured, §2.6); a third-party suite would be.
 
@@ -9788,6 +9808,19 @@ contradicting a stated `SPEC` guarantee (§2.4); reproduced at 167 draws / 84 di
 **Numbering:** takes `D812`–`D817`. Next free after this plan: **`D818`**. Mints no `TF` code.
 Sibling work gated on `D511` (tflw merges first).
 Gitignored by `.gitignore:35`.
+
+### M162
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**`M162` — a test owns the state it asserts on**
+
+**Status:** **BUILT 2026-08-31** — `M162a`-`M162e`, sibling `5636881`. §8 is the measurement
+(`D818` discharged, its protocol amended in place, `M154g-06`'s unknown range turned into a
+threshold of **6**); §9 is the repair and its verification. `M154g-06` **closed**; `M154h-01`
+**partial** (`🟨`) — structural half shipped, flake not reproduced in 120 iterations and therefore
+not explained. Four rows filed: `M162-01`-`M162-04`. Acceptance clause 1 **amended, not met as
+written** — see §9.4.
 
 ### M165a
 
