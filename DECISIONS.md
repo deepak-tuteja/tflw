@@ -6519,7 +6519,7 @@ across six milestones with nothing anywhere able to notice. Seven occurrences ac
 
 ### D768
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
 
 **D768 — `timeout api`/`timeout browser` narrow `timeout step`; the broad key stays the fallback**
 
@@ -9465,7 +9465,7 @@ purpose.
 
 ### M155
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
 
 **`M155` — `timeout` learns which transport it is bounding**
 
@@ -9537,6 +9537,15 @@ one edit rather than two. Bad values reuse the existing machinery — `TF020` fo
 
 Rewrite `C48`, update `verdict.tflw:58-68`, re-run the
 roster and ratchet. **`D511` merge order: tflw first, then testFlow-tests.**
+
+### M157g
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**`M157g` — 2026-08-31, the clause that was vacuous and flaky from one cause**
+
+Reopened from `M155d`'s branch, two days after `M157f` closed, because
+`regression (tooling)` went red on `C48`'s fourth clause — the one this milestone was proudest of.
 
 ### M158
 
