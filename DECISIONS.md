@@ -9815,7 +9815,8 @@ Gitignored by `.gitignore:35`.
 
 **`M162` — a test owns the state it asserts on**
 
-**Status:** **BUILT 2026-08-31** — `M162a`-`M162e`, sibling `5636881`. §8 is the measurement
+**Status:** **BUILT 2026-08-31** — `M162a`-`M162e`, merged as tflw PR #152 then
+tflw-tests PR #67 under `D511` (sibling `42ebbe1`). §8 is the measurement
 (`D818` discharged, its protocol amended in place, `M154g-06`'s unknown range turned into a
 threshold of **6**); §9 is the repair and its verification. `M154g-06` **closed**; `M154h-01`
 **partial** (`🟨`) — structural half shipped, flake not reproduced in 120 iterations and therefore
