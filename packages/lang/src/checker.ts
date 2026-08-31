@@ -32,6 +32,7 @@ import type {
   SessionDecl,
   Step,
   StringLit,
+  EnvRef,
   StringPart,
   Subject,
   TestDecl,
@@ -176,6 +177,21 @@ export interface ProgramCheckOptions {
    * `envAuthorizedTargets`, without which `checkPublicTargets` returns nothing at all.
    */
   readonly allowPublicTargets?: readonly string[];
+  /**
+   * Every name the config's `require env` lines declare (`M156a`, `D775`) — flattened across all
+   * of them, because `resolve.ts` flattens them: `require env` is a top-level directive, not a
+   * `defaults`/`env` entry, so the declaration set is the same under every env and there is no
+   * per-env variant of this option to get wrong.
+   *
+   * The ninth field to carry the `undefined`-vs-empty rule, and it sits on the `envBaseUrls` side
+   * of it rather than the `envAllowHosts` side. `[]` means *a config was read and it declares
+   * nothing*, which is the state `TF077` most needs to report — a suite reading secrets with no
+   * `require env` line at all is the shape the whole rule exists for. `undefined` means nobody
+   * resolved a config, and skips the pass entirely: the LSP and the docs-site editor demo check a
+   * file with no config in hand, and without the skip every `env(` in an open buffer lights up red
+   * on a file that is perfectly correct.
+   */
+  readonly requiredEnv?: readonly string[];
 }
 
 /**
@@ -325,6 +341,12 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     // caller, and the `TF057`/`TF058` choice is made from `opts.envAllowHosts` inside the pass
     // rather than by skipping it, because "no config was resolved" is still a case with a
     // diagnostic to emit here.
+    // M156a/M156b (`D775`, `D778`) — the check-time half of `require env`'s promise. `TF077` needs
+    // the config's declared names and skips itself without them, exactly as `checkHoldWindows`
+    // does; `TF078` needs nothing from the caller, because a braced `env()` is a fact about the
+    // bytes of the string and not about any config, so it is wired unconditionally beside it.
+    ...checkDeclaredEnvRefs(program, opts),
+    ...checkBracedEnvRefs(program),
     ...checkAbsoluteUrls(program, opts),
     // M128b (D291) — wired unconditionally for the same reason `checkAbsoluteUrls` is: the
     // skip-without-a-config decision is made *inside* the pass, from `opts.envAuthorizedTargets`,
@@ -1194,16 +1216,30 @@ export function checkActionDecls(program: Program, opts: ProgramCheckOptions = {
  * `span` is skipped only to avoid walking position records that can never hold a node.
  */
 function eachCall(node: unknown, visit: (call: CallExpr) => void): void {
+  eachNodeOfType(node, 'CallExpr', visit);
+}
+
+/**
+ * The walk itself, parameterised by node type — one traversal, two callers (`M156a`).
+ *
+ * `TF077` needs exactly what `eachCall` needs and for the same reason: an `env(NAME)` can sit in a
+ * step, a value, a data-table cell, a `session` body or a config entry, and a switch over the
+ * grammar would be silent in whichever position its author forgot. Copying the walk would have
+ * meant two places to remember when a shape is added, which is the failure the walk exists to
+ * prevent — so the type moved into a parameter rather than the body being duplicated. `eachCall`
+ * keeps its name because the argument for its existence is written against calls specifically.
+ */
+function eachNodeOfType<T>(node: unknown, type: string, visit: (found: T) => void): void {
   if (Array.isArray(node)) {
-    for (const el of node) eachCall(el, visit);
+    for (const el of node) eachNodeOfType(el, type, visit);
     return;
   }
   if (node === null || typeof node !== 'object') return;
   const rec = node as Record<string, unknown>;
-  if (rec.type === 'CallExpr') visit(rec as unknown as CallExpr);
+  if (rec.type === type) visit(rec as unknown as T);
   for (const key of Object.keys(rec)) {
     if (key === 'span') continue;
-    eachCall(rec[key], visit);
+    eachNodeOfType(rec[key], type, visit);
   }
 }
 
@@ -4841,4 +4877,116 @@ function describeCrawlOffender(step: Step): string {
   }
   if (step.type === 'ApiStep' || step.type === 'WaitUntilApiStmt') return 'a step that sends its own request';
   return 'not one';
+}
+
+
+// ---------------------------------------------------------------------------
+// `require env` (M156a/M156b, D775/D778) — the check-time half of the promise.
+// ---------------------------------------------------------------------------
+
+/**
+ * `TF077` — every `env(NAME)` in a test file, checked against the config's `require env` names.
+ *
+ * **Skipped entirely without `opts.requiredEnv`**, per that option's own rule: a caller who
+ * resolved no config has not said this suite declares nothing. The LSP and the docs-site editor
+ * demo are both such callers, and without the skip they would light up every `env(` in an open
+ * buffer on a file that is correct.
+ *
+ * The walk is structural (`eachNodeOfType`), not a switch over the grammar, for the reason
+ * `eachCall` states at length: `env(NAME)` is legal in a step, a value, a data-table cell and a
+ * `session` body, and a rule that is silent in a position it forgot reads as approval there.
+ *
+ * **One diagnostic per reference, not per name.** Two undeclared uses of the same variable are two
+ * places to look, and the repair — adding the name to `require env` — is the same edit for both,
+ * which is exactly the case where deduping costs a reader a location and saves them nothing.
+ */
+export function checkDeclaredEnvRefs(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  if (!opts.requiredEnv) return [];
+  return undeclaredEnvRefs(program, opts.requiredEnv);
+}
+
+/**
+ * The same rule over a `ConfigFile` — `M156a`, and not an optional extra.
+ *
+ * The config is where secrets are actually written: a `session` body's `body { password: env(PW) }`
+ * and an `oauth` block's `client secret env(SECRET)` are the two commonest `env()` positions in
+ * either dialect, and the sibling's own `require env` plant is a config. A rule that only saw test
+ * files would miss the case it was built from.
+ *
+ * Separate entry point rather than a wider `checkDeclaredEnvRefs` for `collectConfigFileReferences`'
+ * reason: the two dialects are two trees with no common root, and the caller resolves them against
+ * different directories and reports them against different files. Only the walk is shared.
+ */
+export function checkConfigDeclaredEnvRefs(config: ConfigFile, requiredEnv: readonly string[]): Diagnostic[] {
+  return undeclaredEnvRefs(config, requiredEnv);
+}
+
+function undeclaredEnvRefs(root: unknown, requiredEnv: readonly string[]): Diagnostic[] {
+  const declared = new Set(requiredEnv);
+  const diags: Diagnostic[] = [];
+  eachNodeOfType<EnvRef>(root, 'EnvRef', (ref) => {
+    if (declared.has(ref.name)) return;
+    const near = suggest(ref.name, [...declared]);
+    diags.push({
+      code: Codes.UNDECLARED_ENV_REF,
+      severity: 'error',
+      message: `\`${ref.name}\` is read here but no \`require env\` line declares it`,
+      span: ref.span,
+      hint: near
+        ? `did you mean \`${near}\`?`
+        : declared.size
+          ? `add it to a \`require env\` line in \`tflw.config\`, which today declares: ${[...declared].join(', ')}. Without the declaration the run does not check for it up front — it dies at this step, mid-suite, on whichever iteration reaches it first`
+          : 'this config has no `require env` line, so nothing checks these variables before the run starts and a missing one surfaces as a failure at this step. Add `require env ' + ref.name + '` at the top level of `tflw.config`',
+    });
+  });
+  return diags;
+}
+
+/**
+ * `TF078` — `"{env(NAME)}"` written inside a string literal, in either dialect.
+ *
+ * `env(NAME)` is a **value**, and this language has never interpolated it: `parseStringParts`
+ * rejects `env(NAME)` as a `{ref}` path (parentheses are not path syntax), so the braces stay
+ * literal text and the request ships them. Nothing about that is visible at run time except a 401.
+ *
+ * **Needs no config**, so unlike `TF077` it is wired unconditionally — the fact is entirely in the
+ * bytes of the source, which is also what makes it an observation rather than a prediction.
+ *
+ * **Anchored on the whole literal rather than the occurrence inside it.** `StringLit.span` covers
+ * the quotes and `value` is the *decoded* text, so an escape earlier in the string shifts every
+ * later offset; a caret computed from the decoded index would point at the wrong character on
+ * exactly the strings that are hardest to read. The message names the variable instead, which is
+ * unambiguous however many holes the literal has.
+ */
+export function checkBracedEnvRefs(program: Program): Diagnostic[] {
+  return bracedEnvRefs(program);
+}
+
+/** The config dialect's half, for `checkConfigDeclaredEnvRefs`' reason. */
+export function checkConfigBracedEnvRefs(config: ConfigFile): Diagnostic[] {
+  return bracedEnvRefs(config);
+}
+
+/** `{env(NAME)}` with the whitespace a hand-written config actually contains. Deliberately narrow:
+ *  it matches the one spelling that looks like this language's interpolation and means nothing, not
+ *  every mention of the word `env` in a string. */
+const BRACED_ENV = /\{\s*env\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*\}/g;
+
+function bracedEnvRefs(root: unknown): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  eachNodeOfType<StringLit>(root, 'StringLit', (lit) => {
+    BRACED_ENV.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = BRACED_ENV.exec(lit.value)) !== null) {
+      const name = m[1]!;
+      diags.push({
+        code: Codes.BRACED_ENV_REF,
+        severity: 'warning',
+        message: `\`{env(${name})}\` inside a string is literal text, not a secret`,
+        span: lit.span,
+        hint: `\`env(${name})\` is a value, not an interpolation — this language interpolates \`{variable}\` only, so these braces are sent verbatim and the run fails as an unauthenticated request rather than as a missing variable. Write \`env(${name})\` on its own where a value is expected, or \`join(env(${name}), "…")\` to build one`,
+      });
+    }
+  });
+  return diags;
 }

@@ -47,6 +47,8 @@ import {
   parseConfigSource,
   checkProgram,
   checkAllowHostsCoversBaseUrls,
+  checkConfigDeclaredEnvRefs,
+  checkConfigBracedEnvRefs,
   renderDiagnosticExample,
   type Diagnostic,
   type DiagnosticProbe,
@@ -59,7 +61,14 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
   if (probe.wrap === 'config') {
     const parsed = parseConfigSource(`${probe.source.join('\n')}\n`);
     const allowHosts = parsed.config.envs.flatMap((env) => checkAllowHostsCoversBaseUrls(parsed.config, env));
-    return [...parsed.diagnostics, ...allowHosts];
+    // `M156a`/`M156b` — the config dialect's own `env()` rules, which `tflw check` runs beside
+    // `checkAllowHostsCoversBaseUrls` at the same call site. `TF077` is gated on `needs.requiredEnv`
+    // for the reason the field documents: without a declaration set nobody has said what this
+    // config requires, and reporting every `env()` in every other row's probe would be the harness
+    // being wrong rather than the row. `TF078` needs nothing and is wired unconditionally, exactly
+    // as it is in the CLI.
+    const envRefs = probe.needs?.requiredEnv ? checkConfigDeclaredEnvRefs(parsed.config, probe.needs.requiredEnv) : [];
+    return [...parsed.diagnostics, ...allowHosts, ...envRefs, ...checkConfigBracedEnvRefs(parsed.config)];
   }
   const source =
     probe.wrap === 'step'
@@ -81,6 +90,7 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
       ...(probe.needs?.envAllowHosts ? { envAllowHosts: probe.needs.envAllowHosts } : {}),
       ...(probe.needs?.envAuthorizedTargets ? { envAuthorizedTargets: probe.needs.envAuthorizedTargets } : {}),
       ...(probe.needs?.allowPublicTargets ? { allowPublicTargets: probe.needs.allowPublicTargets } : {}),
+      ...(probe.needs?.requiredEnv ? { requiredEnv: probe.needs.requiredEnv } : {}),
     }),
   ];
 }

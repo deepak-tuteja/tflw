@@ -6580,6 +6580,92 @@ language does not carry aliases for a closed keyword set (`D623` — *a directiv
 from a closed set the language defines is a bare keyword*, one spelling). `ui` appears nowhere in
 the config dialect and is not introduced here.
 
+### D774
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`D774` — the disposition is reversed: the code changes, and the sentence changes because the code did**
+
+`M154g-11` was filed as *"correct the manifest to match the code"*, and `C95`'s known answer
+records that as settled: *"So the repair is the sentence, never the gate."* **That is overturned
+here**, and the plan says so rather than quietly diverging.
+
+### D775
+
+<sub>cited inside a range only · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`D775` — `D147`'s prediction/observation test decides the severity, and it splits the row**
+
+`SPEC:3690` states the existing rule, on `TF051` vs `TF043`: *"a path a step opens may be created
+by an earlier step, so `TF043`'s run tier is a prediction; a base URL cannot appear after the
+config is resolved, so this is an observation."* Applied here:
+
+| question | prediction or observation | verdict |
+|---|---|---|
+| is `MY_TOKEN` **set** right now? | **prediction** — a secretless lint job and a run with secrets are different invocations by design; the environment is the one input guaranteed to differ | may not be an error at check time; see `D779` |
+| is `env(MY_TOKEN)` **declared** in `require env`? | **observation** — the reference is in the source, the declaration is in the config, neither can change between check and run | **error** — `TF077` |
+| does a string literal contain `{env(...)}`? | **observation** — the bytes are in the source | warning — `TF078`, see `D778` |
+
+### D776
+
+<sub>cited inside a range only · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`D776` — `require env` stays a precondition on the environment; `TF077` is the converse rule, not a redefinition**
+
+`C95` pins the doctrine and it is correct: a declared variable is required whether or not anything
+reads it. **Declared-but-unreferenced stays silent, permanently** — no `TF0xx`, no warning, no
+"unused declaration" lint. A secret needed by a session another file establishes, or one that only
+has to exist for the redactor to pre-register it (`SPEC:431`), is an ordinary shape.
+
+### D777
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`D777` — `P#75` forbids touching a live API, not touching the filesystem**
+
+The filing cited `P#75` as the reason a check-time gate is impossible. The principle does not say
+what that reading needs it to say, and the codebase already settled this twice:
+
+- `tflw check` calls `buildEnviron`, which **reads `.env` off disk** (§2.2) — file I/O, in the
+  shared path, today.
+- `SPEC:3682` (`TF043`) says it outright: the row *"concluded the checker 'could not' do it because
+  it does no I/O, which mistook a `@tflw/lang` package invariant for a `tflw check` command one —
+  the CLI has read imported files at check time since M87."*
+
+### D778
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`D778` — `TF078`: `"{env(NAME)}"` in a string literal is reported, at warning severity**
+
+Folded in rather than filed, for one reason: `TF077` alone would ship and **still not catch the
+config in the sibling's own `require env` plant**, because a braced `env()` is not a reference —
+it is text. A rule that misses the commonest spelling of the mistake it exists to catch is `D722`
+wearing a diagnostic code.
+
+### D779
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`D779` — `tflw check` reports unset required variables as an advisory note, with no flag**
+
+Three routes were costed for saying something about *values* at check time. Two were rejected and
+the third — which scoping missed — is what ships:
+
+| route | verdict |
+|---|---|
+| `check` **errors** when a required var is unset | **no.** Breaks `SPEC:3237`'s published promise and fails `D775`'s test: whether a variable is set is a prediction, and a prediction must not make a valid suite unlintable |
+| `check` emits a **`severity: 'warning'` diagnostic** per unset var | **no.** Ten carets on a ten-variable config, on every run of the job it was built for. A warning that always fires in its own primary use case is one people silence, and then it is `D722` |
+| `check` prints **one advisory line** in its summary | **yes** |
+
+### D780
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`D780` — the manifest summary is rewritten to name which command does what**
+
+`spec-data.ts:313` becomes:
+
 ### D781
 
 <sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
@@ -9490,6 +9576,79 @@ this milestone mints no diagnostic), milestone **`M156`**.
   `DEFAULT_TIMEOUTS` becomes `{ api: 30_000, browser: 30_000, expect: 5_000, wait: 30_000 }`.
 - `resolve.ts:50/77` — track which of `step`/`api`/`browser` were explicitly set across both tiers,
   then resolve `api = explicitApi ?? explicitStep ?? 30_000`, likewise `browser`.
+
+### M156
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**M156 — `require env`: make the check-time promise true by closing the hole it actually has**
+
+Status: **`M156a`-`M156d` BUILT 2026-08-31** (tflw half); `M156e`/`M156f` are the sibling's, gated on `D511`. **Breaking** — `TF077` refuses `env()` references that check green
+today, so any suite using `env()` without a `require env` line needs one added. Nothing in either
+of these repos is affected (measured, §2.6); a third-party suite would be.
+
+### M156a
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`M156a` — `TF077`, the undeclared-reference rule (error)**
+
+- `checker.ts`: `checkDeclaredEnvRefs(program, opts)` — walks every `EnvRef` node, reports each
+  whose `name` is absent from `opts.requiredEnv`. Added to `checkProgram`'s composed list beside
+  `checkBaseUrls`, and **skipped entirely when `opts.requiredEnv` is undefined** (the LSP and the
+  docs-site editor demo check a file with no config in hand; the rule must go quiet there, exactly
+  as `checkHoldWindows` does without `envTimeouts`).
+- `cli.ts`: pass `requiredEnv: resolved.requiredEnv` into `checkProgram`, and run the same walk
+  over `tflw.config`'s own value positions into `configEnvDiags` (`cli.ts:1195`) — the config
+  header case is the one `C95` is built on, and a rule that only sees test files would miss it.
+- Message names the variable and the repair. Suggestion machinery (`suggest`) for a near-miss
+  against a declared name, the way `TF030`/`TF027` do — a typo'd `env(API_KEYY)` beside a declared
+  `API_KEY` is the expected shape of this mistake.
+- **Error severity** (`D775`). Breaking; see the status line.
+
+### M156b
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`M156b` — `TF078`, the braced-form warning**
+
+- `checker.ts`: a scan of string literals for `{env(<IDENT>)}`, in both dialects, emitting one
+  warning per occurrence with the unbraced repair in the hint.
+- Deliberately **not** in the lexer: this is a fact about what a value means, not about a token's
+  shape — the same line `TF071` draws between its parse-time and check-time halves.
+
+### M156c
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`M156c` — the advisory note in `tflw check` (`D779`)**
+
+- `cli.ts` `checkCommand` (~`:2379`): after the `N files checked` line and before the reuse-hint
+  block, emit one `ℹ require env:` line when `missingRequiredEnv(resolved, loaded.environ)` is
+  non-empty. **Silent otherwise.**
+- Reuses `missingRequiredEnv` verbatim rather than re-deriving — the note and the run's refusal must
+  never be able to disagree about which variables count as missing, and one function is how that is
+  guaranteed rather than hoped for. `loaded.environ` is already on the `loadAndValidate` return.
+- **Not a `Diagnostic`.** It carries no span, no code and no severity, does not touch
+  `warningCount`, and does not appear in `--format json` — for the reason the reuse block already
+  gives at `cli.ts:2381`: a per-file diagnostics array is for things anchored to a span.
+- Exit code untouched.
+
+### M156d
+
+<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`M156d` — SPEC, manifest, docs**
+
+- `spec-data.ts:313` per `D780`.
+- `SPEC.md` §3.4: append the `TF077` sentence and the advisory note to the `require env` bullet; add
+  a bullet stating that `env(NAME)` is a **value**, never an interpolation, with the wrong/right
+  pair from §2.4 — the table is the documentation this trap has never had.
+- `SPEC.md` §3.2 (`tflw check`, `:3237`): the promise is unchanged and must be **verified**
+  unchanged, not assumed — acceptance clause 2.
+- `SPEC.md` §17: two new rows. `npm run docs:check` regenerates and must stay green (it counts 66
+  diagnostic rows today; it will count 68).
+- `specConstructs()` goes **178 → 180**.
 
 ### M157
 

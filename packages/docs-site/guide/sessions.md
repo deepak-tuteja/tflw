@@ -7,6 +7,8 @@ Sessions are declared in **`tflw.config`**, alongside `env` and `defaults` — o
 every test file in the project, not re-declared per file:
 
 ```tflw-config fragment
+require env ADMIN_USER, ADMIN_PW
+
 session admin
   api POST /auth/login body { user: env(ADMIN_USER), pass: env(ADMIN_PW) }
   capture body.token as token
@@ -60,6 +62,8 @@ goes stale:
 For the common client-credentials shape, skip the hand-written login steps:
 
 ```tflw-config fragment
+require env BILLING_TOKEN_URL, BILLING_CLIENT_ID, BILLING_CLIENT_SECRET
+
 session billing oauth2
   token url env(BILLING_TOKEN_URL)
   client id env(BILLING_CLIENT_ID)
@@ -77,6 +81,8 @@ sequence of steps, never both.
 ## `privileged` — a principal that is meant to reach other people's data
 
 ```tflw-config fragment
+require env ADMIN_EMAIL, ADMIN_PW
+
 session admin privileged
   api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
   capture body.token as token
@@ -100,6 +106,8 @@ attaches unconditionally, including to the `GET`s a browser would never send a t
 application may reject a token that arrives where it should not. So the token gets its own channel:
 
 ```tflw-config fragment
+require env SHOPPER_USER, SHOPPER_PW
+
 session shopper
   api POST /auth/login body { user: env(SHOPPER_USER), pass: env(SHOPPER_PW) }
   csrf from body.csrfToken send as header "X-CSRF-Token"
@@ -148,6 +156,8 @@ env staging
 
 env offeringTls
   api "https://localhost:8445"
+
+require env ADMIN_EMAIL, ADMIN_PW
 
 session console for env plaintext, staging
   api adminConsole POST /login form email=env(ADMIN_EMAIL), password=env(ADMIN_PW)

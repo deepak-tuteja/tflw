@@ -31,6 +31,8 @@ final-state audits (report everything wrong at once).
 `{name}` string interpolation:
 
 ```tflw-config fragment
+require env ADMIN_EMAIL, ADMIN_PW
+
 session admin
   api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
   expect status equals 200

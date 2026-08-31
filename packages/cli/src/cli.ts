@@ -21,6 +21,8 @@ import {
   checkProgram,
   checkSessionBody,
   checkAllowHostsCoversBaseUrls,
+  checkConfigDeclaredEnvRefs,
+  checkConfigBracedEnvRefs,
   identityCensus,
   suggest,
   detectReuse,
@@ -1210,6 +1212,19 @@ async function loadAndValidate(
     // elsewhere is not this env's business, which is the whole repair.
     ...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services), envBaseUrls, envTimeouts),
     ...checkAllowHostsCoversBaseUrls(parsedConfig.config, activeEnvBlock),
+    // M156a/M156b (`D775`, `D778`) — `TF077` and `TF078` over the config dialect, and this is the
+    // half the rule was built from: a `session` body's `body { password: env(PW) }` and an `oauth`
+    // block's `client secret env(SECRET)` are the two commonest `env()` positions anywhere, and a
+    // rule that only saw test files would miss them.
+    //
+    // **`parsedConfig.config`, not `resolved.sessions` — the opposite of the line above.** That one
+    // reads the env-filtered roster because a session scoped to another env is not this env's
+    // business. This one reads the whole file because `require env` has no env scope at all
+    // (`resolve.ts` flattens it), so an `env(PW)` in a session scoped elsewhere is undeclared under
+    // every env or none, and skipping it here would report it only when the author happened to be
+    // running that env.
+    ...checkConfigDeclaredEnvRefs(parsedConfig.config, resolved.requiredEnv),
+    ...checkConfigBracedEnvRefs(parsedConfig.config),
     ...(await checkConfigFiles(parsedConfig.config, cwd)),
   ];
   // **Gate on errors, not on "any diagnostic".** This branch used to `return EXIT_USAGE` for
@@ -1297,6 +1312,11 @@ async function loadAndValidate(
       // permitted to scan its target is a whole-suite fact, and the per-assertion diagnostic that
       // reports it has to be told.
       envAuthorizedTargets,
+      // M156a/D775 — `TF077`. Read off `resolved` like the four above it, and for a reason that is
+      // simpler than theirs rather than the same: `require env` is a *top-level* directive, so
+      // `resolve.ts` flattens every line in the file into one env-independent list. There is no
+      // per-env variant of this fact and therefore no way to derive it per file.
+      requiredEnv: resolved.requiredEnv,
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
@@ -2412,6 +2432,35 @@ async function checkCommand(argv: string[]): Promise<number> {
   // report-honesty defect class this review has been closing everywhere else.
   const w = loaded.warningCount;
   process.stdout.write(w === 0 ? `${n} file${n === 1 ? '' : 's'} checked, no problems found.\n` : `${n} file${n === 1 ? '' : 's'} checked, ${w} warning${w === 1 ? '' : 's'}.\n`);
+
+  // M156c/`D779` — the `require env` note. Advisory, exit-code-neutral, and **silent when every
+  // declared variable is present**, which is what makes its appearance mean something.
+  //
+  // The question it answers — *is this variable set right now* — is a **prediction** under `D147`'s
+  // test, not an observation: a secretless lint job and a run with secrets are different
+  // invocations by design, and the environment is the one input guaranteed to differ between them.
+  // So it must not be a diagnostic. It carries no span, no code and no severity, does not touch
+  // `warningCount`, does not appear in `--format json`, and does not move the exit code — for the
+  // reason the reuse block below already gives: a per-file `diagnostics` array is for things
+  // anchored to a span, and this is anchored to a machine.
+  //
+  // Both routes that *would* have made it one were costed and declined (`D779`): erroring breaks
+  // `SPEC` §3.2's published promise that `check` needs no secrets, and one warning per unset
+  // variable puts ten carets on a ten-variable config on every run of the job it was built for —
+  // a warning that always fires in its own primary use case is one people silence, and then it is
+  // `D722`. One line naming a count is a different artifact from N diagnostics carrying carets,
+  // which is why `ℹ demo:` and `ℹ authz coverage:` are not experienced as noise on every run.
+  //
+  // **`missingRequiredEnv` verbatim, never re-derived.** The note and the run's refusal must not be
+  // able to disagree about which variables count as missing — including the empty-string case,
+  // which that function treats as missing and a hand-written `!environ[name]` here would too, right
+  // up until one of the two changed.
+  const notSet = missingRequiredEnv(loaded.resolved, loaded.environ);
+  if (notSet.length > 0) {
+    const total = loaded.resolved.requiredEnv.length;
+    process.stdout.write(`\nℹ require env: ${notSet.length} of ${total} not set here (${notSet.join(', ')})\n`);
+    process.stdout.write('  — `tflw run` will refuse until they are set\n');
+  }
 
   // The reuse pass (M6, P#2) — advisory only, never affects the exit code: `tflw check` already
   // established every file is individually clean, and a reuse hint is a suggestion, not a defect.

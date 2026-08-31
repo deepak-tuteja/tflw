@@ -133,6 +133,23 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
   checkSessionServices: { verdict: 'n/a', reason: 'subsumed: `checkSessionBody` folds it in so callers have one entry point' },
   validateConfig: { verdict: 'n/a', reason: 'validates config *declarations* (which key in which block), not step bodies' },
   checkAllowHostsCoversBaseUrls: { verdict: 'n/a', reason: 'reasons about an env\'s own base URLs against its `allow hosts` — a whole-env property, not a step one' },
+  checkConfigDeclaredEnvRefs: {
+    verdict: 'n/a',
+    reason:
+      'M156a/D775. The row where "n/a" is the *narrowest* answer in this list and needs saying carefully, because a session body is exactly where the rule fires most. `TF077` does reach a session body — a `session admin` whose `body { password: env(ADMIN_PW) }` names an undeclared secret is reported, and `requireEnv.test.ts` proves it. It does not reach it *through `checkSessionBody`*, and the reason is the same one `checkReferencedFiles` lands on one screen down: the pass takes a whole `ConfigFile`, not a step list, because `require env` is a top-level directive with no env scope, so the declaration set is a property of the file rather than of the session. Composing it into `checkSessionBody` would run it once per session against the same names and report the same `env()` twice for a session in scope of two envs. `cli.ts` calls it once beside `checkAllowHostsCoversBaseUrls`, which is where whole-file config rules live',
+  },
+  checkConfigBracedEnvRefs: {
+    verdict: 'n/a',
+    reason: 'M156b/D778. The same shape as the row directly above and for the same reason — a whole-`ConfigFile` walk called once at `cli.ts`, not a step-list pass. It needs no declaration set at all, which makes the per-session composition even less defensible: it would be N identical walks of one file',
+  },
+  checkDeclaredEnvRefs: {
+    verdict: 'n/a',
+    reason: 'M156a/D775. The `.tflw` half of `checkConfigDeclaredEnvRefs`: it walks a `Program`, and a session lives in a `ConfigFile`. `checkConfigDeclaredEnvRefs` is its config-side counterpart in the sense `checkProgram`/`checkSessionBody` are, and it is that counterpart — not this pass — that a session body is checked by',
+  },
+  checkBracedEnvRefs: {
+    verdict: 'n/a',
+    reason: 'M156b/D778. Walks a `Program`, so unreachable from a session for `checkDeclaredEnvRefs`\' reason exactly; `checkConfigBracedEnvRefs` is the half that sees a `session` body',
+  },
   checkAuthorizedTargets: {
     verdict: 'n/a',
     reason:
