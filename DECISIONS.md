@@ -7161,6 +7161,26 @@ second clause — *"if most kills are collateral, the matrix is measuring corpus
 than construct discrimination"* — fired harder than it was written: 195 of 207 kills are one layer
 cheaper than corpus-file sharing, they are corpus-file **refusal**.
 
+### D853
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D853` — an unmet acceptance clause is recorded unmet, never reworded to fit what shipped**
+
+§7's clause 3 — *"breaking any covering mutation's kill turns an automated pass red"* — is **not
+met and will not be**. `D851` declined to build the gate that would have met it.
+
+### D854
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D854` — the census reports its own staleness, and does not fail on it**
+
+`D851` removed the only consumer that would have re-run the sweep, so `tflw-acceptance/mutation/` is
+a dated measurement with nothing behind it. That is exactly `D767` — a hand-maintained artefact no
+gate reads — and it arrived inside the milestone that cites `D767` three times, which is the
+argument for handling it here rather than filing it.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -9888,6 +9908,22 @@ line; re-run `regression.mjs`'s security phase.
 **`M163c` — restore `C52`.** The roster row narrowed away from the granted/withheld contrast goes
 back to grading what `probe mutating` is for, now that its graders are gated. **This is the visible
 payoff of `M163b`** and the reason `M154f-01` is `S3` rather than a tidy-up.
+
+### M164
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`M164` — the roster plants must be shown to discriminate**
+
+**Status:** **`M164a` BUILT AND MERGED 2026-08-31** (sibling PR #69, `db66248`). **`M164b` and
+`M164c` BUILT AND MERGED 2026-09-01** (§11, §12) — sibling PR #70 (`8cd1371`), with `D511`'s two
+stages as tflw PR #156 (`99b7a29`) and PR #157 (`0a555bf`). The census ran, and its reading is §12.
+**`M164d` is not built and will not be** (`D851`). **`M164e` BUILT 2026-09-01** (§14) — `D827` is
+discharged, with a measured answer of **one covered plant in 102**. Numbering runs `D838`-`D854`.
+**The milestone closes with six of seven acceptance clauses met and says which one is not**
+(`D853`). Named by `D827` inside `M163` and deliberately not taken there. **The sizing in §2 and the pilot in §3 were run before any decision below was written**
+— `M163a`'s habit (`D824`), and the reason three of this plan's decisions came out the opposite way
+from how they were going to be written.
 
 ### M164b
 
