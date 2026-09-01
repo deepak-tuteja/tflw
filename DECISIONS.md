@@ -7139,6 +7139,28 @@ percentile printed beside it was rendered to a whole millisecond.
 112** non-diagnostic constructs, and they are exactly the config family: `ConfigKeywordEntry` carries
 `id`, `slot` and `summary`, and no shape at all.
 
+### D842
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D842` — a collateral kill is recorded as collateral, never counted as coverage**
+
+A plant is **covered** only by a mutation whose `what` is about that plant's own construct, judged
+and written down by a person, once, in the matrix. `C60`, `C68` and `C112` dying under a `check`
+mutation is a fact about a shared corpus file, not evidence that `matcher:equals` discriminates.
+
+### D851
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D851` — `M164d` is not built; the covering set of 1 is a finding, not a gate**
+
+`D840` made the gate the expensive half's consumer and said that if that ceases to be true the
+discovery half goes with it. The covering set is **one mutation protecting one plant**, and §9's
+second clause — *"if most kills are collateral, the matrix is measuring corpus-file sharing rather
+than construct discrimination"* — fired harder than it was written: 195 of 207 kills are one layer
+cheaper than corpus-file sharing, they are corpus-file **refusal**.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -9866,6 +9888,29 @@ line; re-run `regression.mjs`'s security phase.
 **`M163c` — restore `C52`.** The roster row narrowed away from the granted/withheld contrast goes
 back to grading what `probe mutating` is for, now that its graders are gated. **This is the visible
 payoff of `M163b`** and the reason `M154f-01` is `S3` rather than a tidy-up.
+
+### M164b
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`M164b` — discovery, built 2026-09-01**
+
+`scripts/discover-mutation-kills.mjs` in the sibling, plus one `package.json` entry. At the time it
+was built this section read **"sibling-only and it opens no `D511` window"**, reasoning that `D847`
+is cited in `.mjs` comments alone and that `DECISIONS.md` publishes only what a *tracked public doc*
+cites (`D666`/`D668`) — which is also why `D825`-`D828` are absent from it after `M163` merged,
+correctly rather than by omission.
+
+### M164c
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`M164c` — the reading, done 2026-09-01**
+
+`M164b` answered *which plants a mutation kills*. `M164c` is the decision point `D840` and `D841`
+named, and it answers two questions the census could not: **how** each plant died, and **whether**
+the mutation that killed it was about that plant's construct. The answer changes the milestone's
+result, and it retracts §11.18's headline.
 
 ### M165a
 
