@@ -7181,6 +7181,21 @@ a dated measurement with nothing behind it. That is exactly `D767` — a hand-ma
 gate reads — and it arrived inside the milestone that cites `D767` three times, which is the
 argument for handling it here rather than filing it.
 
+### D857
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
+
+**`D857` — you may quote a stale count; you may not assert one**
+
+A lexical rule that forbade the shape outright would have hit two occurrences that are not defects:
+
+- `CONTRIBUTING.md:273` quotes the sentence that carried the original defect, verbatim, inside double
+  quotes, in the paragraph explaining `M154g-14`. Forcing that to be paraphrased would **delete the
+  evidence in the name of the finding**.
+- `scripts/regression.mjs:381` states what `core` held when `M139-5` placed a phase on it. That one is
+  a real fault of a smaller kind — a past fact written in the present tense — and it is reworded, not
+  quoted: *"the unique smallest at 8"*. The number survives; the claim about now does not.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -9955,5 +9970,19 @@ result, and it retracts §11.18's headline.
 **`M165a` — `D829`/`D830`/`D831`/`D832`.** The check, `TF081`, the exemption list, and both of
 `D830`'s mechanisms: the total `Record` over `ConfigEntry['type']`, and the seventeen-kind
 behavioural test that resolves a doubled declaration of each key and asserts which value survives.
+
+### M166
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
+
+**`M166` — `verify:ledger` must not accuse the ledger of a defect it could not have seen**
+
+**Status:** found and **BUILT 2026-09-02**, in one sitting, during the verification sweep that
+followed `M164`'s close. **Files two rows and closes one** — `M166-01` (the gate defect, closed by
+this milestone) and `M166-02` (**left open by `M166`, §8; since closed by `M167`, 2026-09-02, four
+files wider than it was written**). No existing row covers either.
+**Numbering:** takes `D855`–`D856` (verified unspent at HEAD: `DECISIONS.md`'s highest is `D854`,
+spent by `M164e`). Mints **no** `TF` code — this is a repo script, not the language.
+Gitignored by `.gitignore:35`.
 
 <!-- GENERATED:decisions:end -->
