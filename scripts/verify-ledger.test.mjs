@@ -22,6 +22,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
 import {
+  availability,
   check,
   classify,
   isWellFormed,
@@ -404,14 +405,50 @@ test('a stamp citing nothing that exists is caught (D519 — evidence, not a re-
   // a check that runs, passes and cannot see anything. A path that resolves is what makes it a
   // measurement, and it is also what `D525` keys the staleness question on.
   const rows = [['B3-04', 'S2', 'open — **rv 2026-08-19 @cfb256a reproduces** · `no/such/file.ts:1` · trust me']]
-  const { problems } = check(sound({ ledger: ledger({ rows }), plans: [], resolve: () => false }))
+  const { problems } = check(sound({ ledger: ledger({ rows }), plans: [], resolve: () => 'absent' }))
   assert.ok(problems.some((p) => /`B3-04` is stamped but cites no path that exists/.test(p)), problems.join('\n'))
 })
 
 test('the same row passes once the cited path resolves — the flag is resolution, not shape', () => {
   const rows = [['B3-04', 'S2', 'open — **rv 2026-08-19 @cfb256a reproduces** · `no/such/file.ts:1` · trust me']]
-  const { problems } = check(sound({ ledger: ledger({ rows }), plans: [], resolve: () => true }))
+  const { problems } = check(sound({ ledger: ledger({ rows }), plans: [], resolve: () => 'here' }))
   assert.deepEqual(problems, [], problems.join('\n'))
+})
+
+// ---- 4b. `D855`: 'absent' and 'unavailable' are different answers -------------------------------
+//
+// The defect these pin: `resolve` returned one bit and the caller read it as two facts, so a tree
+// that could not look accused the ledger instead of saying so. Measured on the box 2026-09-02 —
+// `M164-02` reported as citing no path that exists, against a sandbox whose `testFlow-tests` was
+// behind because testFlow's own offload driver syncs only `testFlow`.
+
+test('D855: an unavailable path is banked and named, not reported as a defect', () => {
+  const rows = [['B3-04', 'S2', 'open — **rv 2026-08-19 @cfb256a reproduces** · `sibling/thing.ts:1` · trust me']]
+  const { problems, unresolvable } = check(
+    sound({ ledger: ledger({ rows }), plans: [], resolve: () => 'unavailable' }),
+  )
+  assert.deepEqual(problems, [], problems.join('\n'))
+  assert.deepEqual(unresolvable, ['B3-04'])
+})
+
+test('D855: `here` on any one path outranks `unavailable` on the rest — the row is checkable', () => {
+  const rows = [['B3-04', 'S2', 'open — **rv 2026-08-19 @cfb256a reproduces** · `a/x.ts` · `b/y.ts` · trust me']]
+  const { problems, unresolvable } = check(
+    sound({ ledger: ledger({ rows }), plans: [], resolve: (p) => (p.startsWith('a/') ? 'here' : 'unavailable') }),
+  )
+  assert.deepEqual(problems, [], problems.join('\n'))
+  assert.deepEqual(unresolvable, [], 'a row with one live path is not unresolvable')
+})
+
+test('D855: one unavailable path spares a row whose others are absent — it could not look', () => {
+  // The load-bearing direction. `absent` + `unavailable` must NOT accuse: the tree that reported
+  // `absent` may be the same stale sandbox, and a partial answer is not a finding.
+  const rows = [['B3-04', 'S2', 'open — **rv 2026-08-19 @cfb256a reproduces** · `a/x.ts` · `b/y.ts` · trust me']]
+  const { problems, unresolvable } = check(
+    sound({ ledger: ledger({ rows }), plans: [], resolve: (p) => (p.startsWith('a/') ? 'absent' : 'unavailable') }),
+  )
+  assert.deepEqual(problems, [], problems.join('\n'))
+  assert.deepEqual(unresolvable, ['B3-04'])
 })
 
 // ---- 5. staleness: a report, and one that can actually fire (D525/D527/D529) --------------------
@@ -478,6 +515,74 @@ test('…and one whose path has NOT moved is not reported (the control)', async 
     assert.deepEqual(lines, [])
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('D855: on a real checkout a path that is not there is `absent` — the negative control', async () => {
+  // Without this, the whole milestone is satisfied by `availability = () => "unavailable"`, which is
+  // `0 stale` wearing a hat one tier down. The check must keep its teeth where it can bite.
+  const ws = await mkdtemp(join(tmpdir(), 'tflw-avail-'))
+  try {
+    const root = join(ws, 'testFlow')
+    await mkdir(join(root, '.git'), { recursive: true })
+    const sib = join(ws, 'testFlow-tests')
+    await mkdir(join(sib, '.git'), { recursive: true })
+
+    await mkdir(join(root, 'packages'), { recursive: true })
+    await writeFile(join(root, 'packages/real.ts'), 'x')
+    await mkdir(join(sib, 'scripts'), { recursive: true })
+    await writeFile(join(sib, 'scripts/real.mjs'), 'x')
+
+    assert.equal(availability('packages/real.ts', root), 'here')
+    assert.equal(availability('testFlow-tests/scripts/real.mjs', root), 'here', 'the D528 sibling hop')
+    assert.equal(availability('packages/nope.ts', root), 'absent')
+    assert.equal(availability('testFlow-tests/scripts/nope.mjs', root), 'absent', 'sibling is a checkout, so it knows')
+  } finally {
+    await rm(ws, { recursive: true, force: true })
+  }
+})
+
+test('D855: the same missing path is `unavailable` when the tree is an rsync with no .git', async () => {
+  // The box sandbox, reproduced: `scripts/exec.mjs` copies the worktree and excludes `.git`.
+  const ws = await mkdtemp(join(tmpdir(), 'tflw-avail-'))
+  try {
+    const root = join(ws, 'testFlow')
+    await mkdir(join(root, 'packages'), { recursive: true })
+    await writeFile(join(root, 'packages/real.ts'), 'x')
+
+    assert.equal(availability('packages/real.ts', root), 'here', 'resolution still works — only absence degrades')
+    assert.equal(availability('packages/nope.ts', root), 'unavailable')
+  } finally {
+    await rm(ws, { recursive: true, force: true })
+  }
+})
+
+test('D855: a checked-out root with a stale sibling sandbox cannot judge a sibling path', async () => {
+  // The case that actually fired on 2026-09-02. testFlow's driver syncs only `testFlow`, so the
+  // sibling half of D528's path space is present as a directory and arbitrarily far behind.
+  const ws = await mkdtemp(join(tmpdir(), 'tflw-avail-'))
+  try {
+    const root = join(ws, 'testFlow')
+    await mkdir(join(root, '.git'), { recursive: true })
+    const sib = join(ws, 'testFlow-tests') // an rsync: exists, no .git, missing the new artefacts
+    await mkdir(join(sib, 'scripts'), { recursive: true })
+    await mkdir(join(root, 'packages'), { recursive: true }) // so `packages/…` is an own-repo miss
+
+    assert.equal(availability('testFlow-tests/scripts/read-mutation-matrix.mjs', root), 'unavailable')
+    assert.equal(availability('packages/nope.ts', root), 'absent', 'the own-repo tier keeps its teeth')
+  } finally {
+    await rm(ws, { recursive: true, force: true })
+  }
+})
+
+test('D855: a sibling root that is absent entirely is also unanswerable', async () => {
+  const ws = await mkdtemp(join(tmpdir(), 'tflw-avail-'))
+  try {
+    const root = join(ws, 'testFlow')
+    await mkdir(join(root, '.git'), { recursive: true })
+    assert.equal(availability('testFlow-tests/scripts/x.mjs', root), 'unavailable')
+  } finally {
+    await rm(ws, { recursive: true, force: true })
   }
 })
 
