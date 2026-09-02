@@ -356,13 +356,15 @@ export function derive(rows) {
 /**
  * Run every check. Pure — each input is passed in, so the tests need no repo.
  *
- * `resolve(path)` answers *does this path exist somewhere in the workspace* (`D528`). It is injected
- * rather than imported so this function stays free of the filesystem; `main()` supplies the real
- * one. Its default is permissive, which only ever affects a caller that declined to pass one — every
- * fixture that cares about resolution passes a fake, and the live run always passes the real thing.
+ * `resolve(path)` answers *where does this path stand in the workspace* (`D528`) — `'here'`,
+ * `'absent'` or `'unavailable'` (`D855`). It is injected rather than imported so this function stays
+ * free of the filesystem; `main()` supplies the real one (`availability`). Its default is permissive,
+ * which only ever affects a caller that declined to pass one — every fixture that cares about
+ * resolution passes a fake, and the live run always passes the real thing.
  */
-export function check({ ledger, plans, shipped, resolve = () => true, manifests = [] }) {
+export function check({ ledger, plans, shipped, resolve = () => 'here', manifests = [] }) {
   const problems = []
+  const unresolvable = []
   const rows = parseIndex(ledger)
   if (!rows.length) problems.push('§6 "Full index" has no rows — the section heading may have been renamed')
 
@@ -387,12 +389,21 @@ export function check({ ledger, plans, shipped, resolve = () => true, manifests 
       )
       continue
     }
-    if (!stamp.paths.some(resolve))
-      problems.push(
-        `§6:${r.line} \`${r.id}\` is stamped but cites no path that exists` +
-          `${stamp.paths.length ? ` (tried ${stamp.paths.slice(0, 4).map((x) => `\`${x}\``).join(', ')})` : ''} — ` +
-          'a stamp with no live path cannot be checked for staleness, which is most of what it is for',
-      )
+    // `D855`: three states, and this branched on two. A row is a problem only when every path it
+    // cites is `absent` — reported missing by a tree that was in a position to know. If any path is
+    // merely `unavailable` the environment could not look, so the row is banked and announced
+    // instead of accused; `main()` prints the count, because a silence this gate does not name is
+    // the same defect one layer out (`D527`).
+    const stands = stamp.paths.map(resolve)
+    if (!stands.includes('here')) {
+      if (stands.includes('unavailable')) unresolvable.push(r.id)
+      else
+        problems.push(
+          `§6:${r.line} \`${r.id}\` is stamped but cites no path that exists` +
+            `${stamp.paths.length ? ` (tried ${stamp.paths.slice(0, 4).map((x) => `\`${x}\``).join(', ')})` : ''} — ` +
+            'a stamp with no live path cannot be checked for staleness, which is most of what it is for',
+        )
+    }
   }
 
   const byId = new Map(rows.map((r) => [r.id, r]))
@@ -484,7 +495,7 @@ export function check({ ledger, plans, shipped, resolve = () => true, manifests 
           `the tally published for ${published.milestone} says ${k}=${published[k]}; the status column says ${k}=${derived[k]}`,
         )
 
-  return { problems, derived, published, rows, planClaimsChecked }
+  return { problems, derived, published, rows, planClaimsChecked, unresolvable }
 }
 
 /**
@@ -513,6 +524,60 @@ export function locate(path, root) {
     if (existsSync(join(dir, rel))) return { dir, rel, sibling: true }
   }
   return null
+}
+
+/** Is `dir` a real checkout? `.git` is a directory in a clone and a file in a worktree. */
+const isCheckout = (dir) => existsSync(join(dir, '.git'))
+
+/**
+ * Can this tree answer *where does this cited path live* — and if it can, does the path exist?
+ * `'here'` | `'absent'` | `'unavailable'` (`D855`).
+ *
+ * `locate` returns one bit and the caller read it as two different facts. A path that does not
+ * resolve is "this row cites a file that does not exist" only when the trees it would have resolved
+ * against are trustworthy. Under `scripts/exec.mjs` they are not: the box sandbox is an rsync of the
+ * worktree with no `.git`, and — the case that actually fired — **the tflw driver syncs only
+ * `testFlow`**, so the sibling half of `D528`'s workspace path space can sit arbitrarily far behind
+ * the Mac. Measured 2026-09-02: `M164-02` was reported as citing no path that exists, on a box whose
+ * `testFlow-tests` was missing `M164`'s own artefacts; the sibling driver's next sync moved 31 files
+ * and the same command went green with the ledger untouched.
+ *
+ * That is `D527` one level over. `D527` says this gate must never print `0 stale` when it could not
+ * look, and `changedSince`/`staleReport` implement it carefully for *staleness* (`M147f`, `M131-03`,
+ * the `UNAVAILABLE` lines). Path existence had no such distinction, so the degraded environment
+ * produced not a silence but a **claim about the ledger** — in the one gate whose whole job is that
+ * §6 does not lie about how much work is left, and the only one of this repo's four record gates
+ * that fails plausibly rather than refusing (`verify-anchors`, `verify-citations` and
+ * `gen-decisions` all detect the missing `.git` and say "run this on the Mac").
+ *
+ * **Only non-resolution degrades, and that asymmetry is the whole safety argument.** A path that
+ * resolves is trustworthy wherever it is found — the file is there. So the check keeps its full
+ * force on a real checkout, including the negative control that a bogus path still hard-fails, and
+ * declines to answer only where an answer would be invented.
+ */
+export function availability(path, root) {
+  if (locate(path, root)) return 'here'
+  // Nothing missing is trustworthy from a tree that is not a checkout — an rsync's absence is
+  // indistinguishable from a real one, and that is the whole finding.
+  if (!isCheckout(root)) return 'unavailable'
+
+  const seg = path.indexOf('/')
+  if (seg < 0) return 'absent' // a root-level file, and root is a checkout that looked
+  const first = path.slice(0, seg)
+
+  // `D856`. Which tier was this path addressed to? `locate` tries own-repo then the sibling hop, and
+  // the first segment is what tells them apart — but only when it names a real directory. `packages/…`
+  // makes `<root>/../packages` a path that means nothing, so a rule keyed on the *shape* of the
+  // citation would route every own-repo miss through the sibling tier and answer `unavailable` for
+  // all of them. That is `0 stale` wearing a hat one tier down, and it failed this milestone's own
+  // negative control before it was written this way.
+  if (existsSync(join(root, first))) return 'absent' // own-repo path; root is a checkout and looked
+
+  const sib = join(root, '..', first)
+  // Absent entirely and present-but-not-a-checkout are the same answer for the same reason: the
+  // half of the workspace this path names was never looked at here.
+  if (!isCheckout(sib)) return 'unavailable'
+  return 'absent' // the sibling is a checkout, so its `no` is a real no
 }
 
 /**
@@ -649,12 +714,12 @@ function main() {
     else missing.push(rel)
   }
   const shipped = shippedMilestones()
-  const { problems, derived, rows, planClaimsChecked } = check({
+  const { problems, derived, rows, planClaimsChecked, unresolvable } = check({
     ledger,
     plans: loadPlans(ROOT),
     shipped,
     manifests,
-    resolve: (p) => locate(p, ROOT) !== null,
+    resolve: (p) => availability(p, ROOT),
   })
 
   if (problems.length) {
@@ -683,6 +748,17 @@ function main() {
     )
 
   for (const rel of missing) console.log(`  conformance pointers UNAVAILABLE — no manifest at ${rel}`)
+
+  // `D855`. Sits beside the other two UNAVAILABLE lines on purpose: they are one rule stated three
+  // times, and the row-existence tier is the one that used to state it as an accusation instead.
+  if (unresolvable.length)
+    console.log(
+      `  cited paths UNAVAILABLE for ${unresolvable.length} open row${unresolvable.length === 1 ? '' : 's'} ` +
+        `(${unresolvable.slice(0, 6).join(', ')}${unresolvable.length > 6 ? ', …' : ''}) — the tree that would\n` +
+        '  answer is not a checkout here (an rsync, or absent), so "missing from the ledger\'s workspace"\n' +
+        '  and "never synced to this machine" are the same observation.\n' +
+        '  Not checked, and therefore not reported as passing. Run this on a machine with `.git`.',
+    )
 
   // `D527`: this must never print `0 stale` when it could not look. The stale check needs git per
   // cited path, and `exec.mjs` rsyncs the worktree without `.git`, which is also why a box run
