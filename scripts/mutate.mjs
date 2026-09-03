@@ -3069,6 +3069,19 @@ const REGISTRY = [
   // all** (M124, above). Each of these leaves the rule visibly present and quietly wrong — the gate
   // still refuses, the filter still filters, the partitioner still partitions by concurrency, the
   // TLS switch is still set to '0'.
+  //
+  // **Four of five. That claim is false about the first one and the correction is kept here rather
+  // than tidied away** (`M168-07`). Measured against the conformance roster 2026-09-03: the
+  // `require env` mutation is the LOUDEST entry in this registry, killing 77 of 102 plants, and 74
+  // of those are the mutated build refusing their fixtures outright. `requiredEnv` has two
+  // consumers and only the runtime gate was reasoned about; the checker's `TF077` — *read here but
+  // no `require env` line declares it* — is the other, so dropping the tail of every declaration
+  // makes the checker reject every config that reads a second variable. Nothing in tflw could have
+  // said so: `M168-03` established that every `require env` line in this repository declares one
+  // name, and one name is exactly the case where the two consumers cannot disagree. The entry is
+  // kept as authored — it killed `C95` by assertion and covers it (`D850`), which is what it was
+  // written to do — and the sentence above is corrected rather than the mutation reshaped to
+  // protect it.
   {
     id: 'require-env-guards-only-the-first-name-on-the-line',
     milestone: 'm168',
