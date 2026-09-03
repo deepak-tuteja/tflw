@@ -3052,6 +3052,86 @@ const REGISTRY = [
     find: '  for (const env of config.envs) {\n    for (const entry of env.entries) {\n      if (entry.type === \'ApiServiceDecl\' && entry.service !== null) declaredServices.add(entry.service);\n    }\n  }',
     replace: '  for (const entry of config.envs[0]?.entries ?? []) {\n    if (entry.type === \'ApiServiceDecl\' && entry.service !== null) declaredServices.add(entry.service);\n  }',
   },
+
+  // --- M168 (`M168-01`) ---------------------------------------------------------------------
+  // Five mutations for four constructs the conformance roster grades and this registry had no
+  // entry for at all — `C95` `require env`, `C103` `log level`/`log destination` (two), `C104`
+  // `parallel`/`sequential`, `C105` `insecure`. Until these existed no run of those plants could
+  // ever have failed, so their green was a fact about the registry rather than about tflw.
+  //
+  // Every one is aimed at the plant's own `catches` field rather than at the construct's syntax,
+  // which is `M168` §4.1's finding: `M164`'s census classified by this registry's `what` text and
+  // misfiled `C108`, and §4's first sketch classified `C103` by its two config keys and would have
+  // misfiled its subject. `catches` and `knownAnswer` are the written specification of what a plant
+  // is owed; both earlier passes reached for a structural proxy instead.
+  //
+  // House style, and it decided all five: **a mutation that deletes a rule is caught by any test at
+  // all** (M124, above). Each of these leaves the rule visibly present and quietly wrong — the gate
+  // still refuses, the filter still filters, the partitioner still partitions by concurrency, the
+  // TLS switch is still set to '0'.
+  //
+  // **Four of five. That claim is false about the first one and the correction is kept here rather
+  // than tidied away** (`M168-07`). Measured against the conformance roster 2026-09-03: the
+  // `require env` mutation is the LOUDEST entry in this registry, killing 77 of 102 plants, and 74
+  // of those are the mutated build refusing their fixtures outright. `requiredEnv` has two
+  // consumers and only the runtime gate was reasoned about; the checker's `TF077` — *read here but
+  // no `require env` line declares it* — is the other, so dropping the tail of every declaration
+  // makes the checker reject every config that reads a second variable. Nothing in tflw could have
+  // said so: `M168-03` established that every `require env` line in this repository declares one
+  // name, and one name is exactly the case where the two consumers cannot disagree. The entry is
+  // kept as authored — it killed `C95` by assertion and covers it (`D850`), which is what it was
+  // written to do — and the sentence above is corrected rather than the mutation reshaped to
+  // protect it.
+  {
+    id: 'require-env-guards-only-the-first-name-on-the-line',
+    milestone: 'm168',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: '`require env A, B` requires only `A`. The gate is untouched and still refuses a run naming a missing variable, so every `require env` line in this repository — all of them single-name — behaves identically; what is lost is the tail of a comma-separated list. That is precisely the claim `C95` grades: its second name is referenced nowhere in the config, which is what makes the directive a precondition on the environment rather than a check on use sites. With the first name set the run stops being refused at all and dies at port 9 instead, and `tflw check`\'s advisory note reports "1 of 1 not set" over a config declaring two',
+    find: '  const requiredEnv = config.requires.flatMap((r) => r.names);',
+    replace: '  const requiredEnv = config.requires.flatMap((r) => r.names.slice(0, 1));',
+  },
+  {
+    id: 'log-level-filters-the-record-instead-of-the-console',
+    milestone: 'm168',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'the level threshold is applied once at the source instead of at each renderer — the tidiest-looking refactor in the file, and it inverts SPEC §3.8\'s "never affects whether it is recorded". **The console output is byte-identical under all three of `C103`\'s configs**, because a `debug` line below the threshold was already suppressed by `formatLogLine`; the only thing that moves is `results.json`, which now carries an empty `detail` for the step it used to record in full. A suite that greps its own console output cannot see this, which is the plant\'s own stated reason for existing: filtering is a rendering decision, and no ordinary run observes the invariant',
+    edits: [
+      ["import { LatencyHistogram } from './histogram.js';", "import { LOG_LEVEL_ORDER } from './types.js';\nimport { LatencyHistogram } from './histogram.js';"],
+      [
+        '  const message = String(evalValue(step.message, ctx));\n  const destination = step.destination ?? config.logDestination;',
+        "  const belowThreshold = LOG_LEVEL_ORDER[step.level] < LOG_LEVEL_ORDER[config.logLevel];\n  const message = belowThreshold ? '' : String(evalValue(step.message, ctx));\n  const destination = step.destination ?? config.logDestination;",
+      ],
+    ],
+  },
+  {
+    id: 'log-destination-console-reaches-the-html-report-too',
+    milestone: 'm168',
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/html.ts',
+    what: 'the html renderer stops honouring `log destination console`, so a line addressed to one renderer arrives at both. `none` still suppresses and `html` still renders, so every case written for the two settings anyone tests stays green — the leg that moves is the one `C103` had to build three configs to reach. Aimed at the second half of that plant\'s `catches` verbatim: *a `log destination` that reaches one renderer and not the other*, taken in the direction that adds rather than drops, because a dropped line is what a report reader would notice',
+    find: "  if (destination === 'console' || destination === 'none') return '';",
+    replace: "  if (destination === 'none') return '';",
+  },
+  {
+    id: 'sequential-tests-batch-with-each-other',
+    milestone: 'm168',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: 'D109\'s partitioner is generalised from "a run of `parallel` tests" to "a run of tests agreeing about concurrency", which is what the comment above it almost says and is wrong in exactly one direction: two adjacent `sequential` tests — the language\'s default, so most tests ever written — now form one batch and are handed to the same `Promise.all`. Every `parallel` case behaves identically, and nothing in a report distinguishes a batch of two from two batches of one. `C104` measures it the only way it can be measured, on a server-side overlap watermark: `sequential` reaches 2 where its known answer is 1',
+    find: "    if (test.concurrency === 'parallel' && last && last[0]!.concurrency === 'parallel') {",
+    replace: '    if (last && last[0]!.concurrency === test.concurrency) {',
+  },
+  {
+    id: 'insecure-arms-the-tls-switch-only-on-the-second-acquire',
+    milestone: 'm168',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/tls.ts',
+    what: 'the reference count is read off by one in the direction that never fires: the *first* acquire — the only one a single-file run makes — skips the assignment, and `NODE_TLS_REJECT_UNAUTHORIZED` is set only if a second file overlaps it. The counter still balances and the release path still restores, so nothing leaks and no test of the concurrent case notices. What breaks is `insecure true` itself, silently: the CLI summary and the report header still carry decision 78\'s bold warning that verification was disabled for this run, and it was not. `C105`\'s first leg is a 200 against a certificate signed by a CA the container invented at start-up, and it becomes the certificate failure that leg exists to tell apart from it — `catches` clause one, *an `insecure` key that is parsed and never reaches the agent*',
+    find: 'export function acquireInsecureTls(): void {\n  if (refCount === 0) {',
+    replace: 'export function acquireInsecureTls(): void {\n  if (refCount > 0) {',
+  },
 ];
 
 /**

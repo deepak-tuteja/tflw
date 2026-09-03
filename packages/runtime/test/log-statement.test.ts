@@ -3,10 +3,21 @@
 // *effective* destination is the statement's own `to …` clause when given, else the resolved
 // config's `logDestination` — always recorded in `report.tests[].steps` regardless of that
 // destination (structured output stays complete; only rendering filters, decisions 119/122).
+//
+// **`M168`: "regardless" has two axes and this file used to test one.** The sentence above says
+// *destination*, and every case below took it at its word on that axis alone — `testConfig` pins
+// `logLevel: 'debug'`, so no step in this suite was ever *below* the resolved threshold. Applying
+// the level filter in `execLog` instead of in the two renderers therefore emptied the recorded
+// detail with all 1299 runtime tests green **and the console output byte-identical**, because a
+// below-threshold line was already suppressed by `formatLogLine`. SPEC §3.8 states the invariant
+// for level in the same breath as destination — *"never affects whether it is recorded"* — and the
+// sibling roster's `C103` calls it "the one no ordinary run can observe", which is why it needs the
+// last test in this file rather than a console assertion.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
+import type { LogLevel } from '../src/types.js';
 import { runProgram } from '../src/interpreter.js';
 import { testConfig } from './support.js';
 
@@ -91,4 +102,27 @@ test('several `log` steps interleave in source order with other step kinds', asy
   const kinds = report.tests[0]!.steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['log', 'let', 'log']);
   assert.equal(report.tests[0]!.steps[2]!.detail, 'after, x=1');
+});
+
+test('the record is identical at every level threshold — only rendering filters (SPEC §3.8)', async () => {
+  // The invariant, measured across the whole ladder rather than at one setting: three thresholds,
+  // one fixture, and the recorded `(level, detail)` pairs must not move. A threshold that reaches
+  // the record shortens this list; one that reaches only the renderers cannot touch it.
+  const source = 'test "ok"\n  log debug "trace detail"\n  log warn "stock low"\n';
+  const recordAt = async (logLevel: LogLevel) => {
+    const { program } = parseSource(source);
+    const { report } = await runProgram(program, { ...testConfig(BASE_URL), logLevel }, { source });
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+    return report.tests[0]!.steps.filter((s) => s.kind === 'log').map((s) => [s.level, s.detail]);
+  };
+
+  const atDebug = await recordAt('debug');
+  assert.deepEqual(atDebug, [
+    ['debug', 'trace detail'],
+    ['warn', 'stock low'],
+  ]);
+  // `warn` hides the `debug` line from the console and `error` hides both; neither may take a step,
+  // a level or a character of detail out of `results.json`.
+  assert.deepEqual(await recordAt('warn'), atDebug);
+  assert.deepEqual(await recordAt('error'), atDebug);
 });
