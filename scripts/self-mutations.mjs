@@ -273,6 +273,58 @@ export const SELF_MUTATIONS = [
       ["      `  NOT CHECKED HERE: that each entry still matches the record it was lifted from. The design\\n` +\n", ""],
     ],
   },
+  // --- M169a (`D861`) ---------------------------------------------------------------------------
+  //
+  // Five mutations for the five shapes `M164-08` and `PLAN_M169…` §2.4 name, minus the one that is
+  // deliberately not a rule. Every one of these reverts the grammar to what it was on 2026-09-03,
+  // and every one of them leaves `DECISIONS.md` byte-identical — which is the point: the whole
+  // repair is invisible to the published artefact and visible only to a demand pointed at code, so
+  // the tests are the only thing standing between these rules and a silent revert.
+  {
+    id: 'the-citation-grammar-loses-its-base64-lookbehind',
+    milestone: 'm169a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "`+` and `=` stop being citation boundaries on the LEFT, so the tail of a `sha512-` integrity hash reads as a citation — `…Xg+M7w/Q==` becomes `M7w`, an identifier nothing defines and every demand check then asks for. The trailing guard does not cover this: it stops at `=` and `+`, and base64's third punctuation is `/`, which is deliberately not a boundary because a slash is how this corpus writes a list. So the two halves need separate controls, and a single `Xg+M7w==` case would pass under either revert",
+    find: '(?<![\\w#+=])',
+    replace: '(?<![\\w#])',
+  },
+  {
+    id: 'the-citation-grammar-loses-its-base64-lookahead',
+    milestone: 'm169a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "the same boundary on the RIGHT. `sha512-M137d+abc` is admitted as `M137d`, because the `-` in front of a hash body is not a word character and never was — the lookbehind cannot see this one at all. `M164-08` found the base64 shape from one example and the example only exercised one of its two ends",
+    find: 's?\\b(?![+=])',
+    replace: 's?\\b',
+  },
+  {
+    id: 'a-possessive-is-read-as-a-sub-milestone',
+    milestone: 'm169a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "`s` goes back into the sub-milestone class, so `packages/lang/test/teaching.test.ts:223`'s *\"keeps M84s exact wording\"* — a possessive whose apostrophe was dropped — cites `M84s` instead of `M84`. Both directions are wrong at once and that is what makes it worth a control: the real citation of an anchored milestone is LOST, and an identifier defined nowhere in the records is demanded in its place. Measured: no identifier ending in `s` exists in either corpus, so nothing else moves either way",
+    find: 'M\\d{1,3}[a-rt-z]?\\d?',
+    replace: 'M\\d{1,3}[a-z]?\\d?',
+  },
+  {
+    id: 'a-range-crosses-two-sequences-again',
+    milestone: 'm169a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "the right endpoint's letter goes back to optional and the dash back to permitting space around it, which is how `M136b — D427` at `packages/lsp-server/test/protocol.test.ts:405` read as the span `M136`–`M427`: **290 invented identifiers out of two citations and a piece of sentence punctuation**, the largest single source of false demand in either repository. This house writes `` `X` — prose `` on most lines of most records, so the loose form is not a rare accident, it is the default shape of a sentence",
+    find: '[a-z]?[-–—]\\1(\\d{1,3})',
+    replace: '[a-z]?\\s*[-–—]\\s*(?:[DM])?(\\d{1,3})',
+  },
+  {
+    id: 'ranges-expand-in-a-corpus-that-did-not-author-them',
+    milestone: 'm169a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "`expandsRanges` says yes to everything, so a range-shaped string in code supplies an interior. `packages/lang/test/grammarCoverage.test.ts` names a coverage span `M29-M53` as a fixture and it manufactures 23 identifiers no site cites, each then reading as an unresolved citation demanding an entry. This one is invisible today — the corpus is markdown only — and becomes live the moment `M169b` widens the demand, which is exactly why the rule ships with the grammar rather than with the widening that needs it",
+    find: "  return path.endsWith('.md');",
+    replace: '  return true;',
+  },
   {
     id: 'the-fence-exemption-goes-blanket',
     milestone: 'm152b',

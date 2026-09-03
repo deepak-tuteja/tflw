@@ -35,8 +35,29 @@ const OUTPUT = 'DECISIONS.md';
  * The three citation spellings. `P#n` indexes `PLAN.md`'s ordered list (D671); `D<n>` is the modern
  * decision sequence; `M<n>` is a milestone. `(?<![\w#])` keeps `#D12` and `xM4` out, and the `#` in
  * particular stops `P#43` being re-read as a bare `43`.
+ *
+ * The `+`/`=` boundaries and the uncaptured `s` tail are `M169a` (`D861`), and both exist because
+ * `M164-08` pointed this pattern at *code* instead of prose. `+` and `=` are base64's two non-word
+ * characters, so `…Xg+M7w==` — the tail of a `sha512-` integrity hash in the sibling's
+ * `package-lock.json` — reads as a citation of `M7w` without them.
+ *
+ * `M164-08`'s row proposed `/` alongside those two and **that third is wrong**. Measured over the
+ * tracked markdown corpus before changing anything (D716): `+` and `=` cost **0 citations** and take
+ * the only lockfile that produced a false identifier from 1 to 0, while `/` costs **288 real
+ * citations** — `D97/D98/D102` in `CHANGELOG.md`, `D631/D632` in `SPEC.md`, `M130b/M134a` — because
+ * a slash is how this corpus writes a list. A repair proposed from one example and applied without
+ * measuring is the shape `M167` names; the row is amended in place rather than followed.
+ *
+ * `s` is not a sub-milestone letter. `packages/lang/test/teaching.test.ts:223` reads *"keeps M84s
+ * exact wording"* — a possessive whose apostrophe was dropped — and `M\d{1,3}[a-z]?\d?` reads that
+ * `s` as a sub-milestone of `M84`. The site's real citation is lost *and* an identifier nothing
+ * defines is demanded in its place, which is the worst of both directions. Taking `s` out of the
+ * class and allowing it as an uncaptured tail cites `M84`, which is what the sentence says.
+ * Measured: no identifier ending in `s` is defined anywhere in the records or cited in tracked
+ * prose, so the narrowing moves nothing today. It does imply a rule worth stating — do not mint a
+ * sub-milestone `s`, because English already spells that.
  */
-export const CITATION = /(?<![\w#])(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?|P#\d{1,3}[a-z]?)\b/g;
+export const CITATION = /(?<![\w#+=])(D\d{1,3}[a-rt-z]?|M\d{1,3}[a-rt-z]?\d?|P#\d{1,3}[a-rt-z]?)s?\b(?![+=])/g;
 
 /**
  * A range citation cites its interior (D681). `SPEC.md` writes `D93-D122` and `CHANGELOG.md` writes
@@ -44,8 +65,38 @@ export const CITATION = /(?<![\w#])(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?|P#\d{1,3}[a
  * ends. Measured at the baseline: 52 ranges implying 220 interior identifiers, 92 of them cited
  * nowhere else. An index that resolved only the endpoints would answer two thirtieths of that
  * question and report itself complete.
+ *
+ * Both endpoints must name the same sequence and the dash must be tight (`M169a`, `D861`). The
+ * right-hand letter used to be optional and the dash used to permit surrounding space, and against
+ * code that read `M136b — D427` at `packages/lsp-server/test/protocol.test.ts:405` as the span
+ * `M136`–`M427`: **290 invented identifiers out of two citations and a piece of sentence
+ * punctuation**, the single largest source of false demand in either repository. It is not a range
+ * in any sense — this house writes `` `X` — prose `` on most lines of most records. Measured over
+ * tracked prose, excluding `DECISIONS.md` as `collectCitations` already excludes it: every range is
+ * tight and letter-qualified already, so both narrowings cost nothing.
+ *
+ * Narrowing a rule that *supplies* citations is the direction that fails silently, so it is worth
+ * naming what catches it rather than trusting the measurement to stay true: `D675`'s second clause.
+ * An interior identifier reached only through a range has a published entry and no other citation,
+ * so a range that quietly stops expanding turns its interior into orphans and `--check` goes red.
  */
-export const RANGE = /(?<![\w#])([DM])(\d{1,3})[a-z]?\s*[-–—]\s*(?:[DM])?(\d{1,3})[a-z]?\b/g;
+export const RANGE = /(?<![\w#])([DM])(\d{1,3})[a-z]?[-–—]\1(\d{1,3})[a-z]?\b/g;
+
+/**
+ * Whether a file's range-shaped strings are ranges at all. `D861`: `RANGE` must not expand inside a
+ * corpus it did not author. The convention is prose's — `SPEC.md` writes `D93-D122` meaning the
+ * thirty entries between the ends — and a range-shaped string in code is not using it:
+ * `packages/lang/test/grammarCoverage.test.ts` names a coverage span `M29-M53` as a fixture, and
+ * expanding it manufactures 23 identifiers no site cites, each then reading as an unresolved
+ * citation demanding an entry.
+ *
+ * Markdown is that corpus, and it is the whole of today's corpus, so this decides nothing until
+ * `M169b` widens the demand over code. It is written now because the widening is what makes it
+ * matter, and a rule added in the same edit as its first violation is a rule nobody measured.
+ */
+export function expandsRanges(path) {
+  return path.endsWith('.md');
+}
 
 /**
  * Fences whose info string marks them as tflw's own output, reproduced verbatim. A citation inside
@@ -121,10 +172,12 @@ export function collectCitations(files) {
     for (const { line, inProductFence, text: ln } of scanLines(text)) {
       if (inProductFence) continue;
       for (const m of ln.matchAll(CITATION)) note(m[1], { file: path, line }, false);
-      for (const m of ln.matchAll(RANGE)) {
-        const [, kind, a, b] = m;
-        if (Number(b) <= Number(a)) continue;
-        for (let n = Number(a) + 1; n < Number(b); n++) note(`${kind}${n}`, null, true);
+      if (expandsRanges(path)) {
+        for (const m of ln.matchAll(RANGE)) {
+          const [, kind, a, b] = m;
+          if (Number(b) <= Number(a)) continue;
+          for (let n = Number(a) + 1; n < Number(b); n++) note(`${kind}${n}`, null, true);
+        }
       }
     }
   }
