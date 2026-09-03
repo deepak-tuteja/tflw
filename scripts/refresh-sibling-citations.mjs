@@ -83,8 +83,21 @@ const files = paths.map((path) => ({
 // The sibling's own `verify:provenance` implements this rule a second time, independently, and the
 // two are held together by that gate failing. Neither imports the other; a shared implementation
 // would agree with itself.
-const OWN = /`?testFlow-tests\s+(?:M\d{1,3}[a-z]?\d?|D\d{2,3}[a-z]?)`?/g;
-const THEIRS = /`?tflw\s+(M\d{1,3}[a-z]?\d?|D\d{2,3}[a-z]?)`?/g;
+//
+// `M164-10`: the D-form reads `D\d{1,3}`, not `D\d{2,3}`. `M154d` found these two implementations
+// disagreeing about single-digit decisions, widened the sibling's `CITATION`, `OWN` and `THEIRS`,
+// and left this file — the other half of the same pair — narrow, so the divergence it closed stayed
+// open in the direction nothing had exercised. Its own comment there states the rule it did not
+// finish applying: leaving these narrow rebuilds the divergence that just cost a red.
+//
+// Measured before changing (`D716`): across all 14 tracked markdown files in the sibling, no
+// qualified citation is a single-digit D-form today, so this pins the same 287 identifiers it did —
+// which is the point. What it stops is the state `M154d` names, reproduced against both
+// implementations before the edit: a `testFlow-tests D4` this file cannot blank enters the pin as a
+// citation of tflw, the sibling's gate blanks it correctly and so does not cite it, and
+// `verify:provenance` reports a stale pin that no edit to either document can clear.
+const OWN = /`?testFlow-tests\s+(?:M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
+const THEIRS = /`?tflw\s+(M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
 const UNQUALIFIED_M = /(?<![\w#])M\d{1,3}[a-z]?\d?\b/g;
 
 const resolved = files.map(({ path, text }) => {
