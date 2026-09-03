@@ -95,7 +95,18 @@ export const JSON_RULES = [
    * for the package-metadata corpus too — a `D105` or a `P#75` in a product blurb is exactly what
    * `D714` says to delete — so they are added here rather than kept on one side.
    */
-  { what: 'a decision', re: /\bD\d{2,3}\b/g },
+  // `M164-11`: `D\d{1,3}`, not `D\d{2,3}`. The arity arrived with the pattern when `M158c`/`D794`
+  // merged this repository's two citation classifiers, and it was never measured against the
+  // sequence it classifies: tflw numbers decisions from `D1` and publishes `D1`, `D5`, `D6`, `D7`
+  // and `D9`, so at two digits this rule — the only one over shipped npm metadata and the public
+  // docs site — could not see five of the identifiers it exists to keep out of them. That is the
+  // third copy of `M154d`'s defect, found by sweeping every D-arity in both repositories while
+  // repairing `M164-10`, which is the sweep `M154d` itself did not do.
+  //
+  // Measured before widening (`D716`): zero `\bD\d\b` in every string of every tracked
+  // `package.json` in both repositories and on all 41 tracked docs-site pages. Nothing moves
+  // today; the value is the next leak.
+  { what: 'a decision', re: /\bD\d{1,3}\b/g },
   { what: 'a plan item', re: /\bP#\d+[a-z]?\b/g },
   /**
    * `M147e`, `(M3a)`. Label form carries no record name, so `NAMES_RECORD` provably cannot reach
