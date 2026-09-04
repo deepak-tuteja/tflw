@@ -118,6 +118,23 @@ npm run verify:ledger                  # § never runs in CI, by decision
   and every citing site. That is the report to read when an entry looks like it was lifted from the
   wrong place — the published file names the record, but 57 identifiers have two candidate blocks
   inside the *same* record and only the report can tell you which one you are reading.
+  **Since 2026-09-04 it also checks the citations in *code*,** and that half buys something
+  different, so it is worth stating separately. This index answers what tracked *prose* cites; the
+  notation is used just as heavily in comments, tests and `ci.yml`, and those 946 identifiers across
+  525 files were checked by nothing at all. They still publish nothing. A citation in code has to
+  **resolve** — the pointer must be live — and that is all: no block is lifted, no line is added
+  here, and a reader who cannot see the design records is exactly as well off as before. That is
+  deliberate and it is the difference between this and simply widening the corpus, which would have
+  added several thousand lines to a public file in one commit. The first run found ten dead pointers
+  in files a maintainer reads constantly, four of them in `ci.yml`.
+  Run it alone with **`npm run docs:demand`**; `verify:decisions` runs it as part of its third tier,
+  so it inherits that tier's limit exactly — it needs the records **and** `git ls-files`, so it
+  cannot run in CI or on the box, and there is no CI counterpart to fall back on. It prints, every
+  run, both the corpus it read and the identifiers it is declared *not* to check: six are cited
+  precisely because they resolve to nothing, three of them this gate's own negative fixtures. That
+  declaration is checked in the other direction too — if one of the six ever starts resolving, the
+  run goes red on the declaration rather than passing quietly, because a declared non-existence that
+  has become untrue is a standing exemption for a real citation.
 - **`npm run verify:citations`** — the other half of that, and it runs the same in CI as it does
   here. `verify:decisions` keeps every *canonical* citation pointed at an entry; this refuses the
   older spelling, `decision 57`, which names a number without saying which of nine numbered

@@ -57,7 +57,7 @@ after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true })
  * design records that define it. `withRecords: false` is a CI runner — the records simply are not
  * there, which is the condition `D683`'s second tier has to notice rather than skip past.
  */
-function fixture({ withRecords = true, spec = null, sibling = {}, pin = undefined } = {}) {
+function fixture({ withRecords = true, spec = null, sibling = {}, pin = undefined, code = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tflw-decisions-'));
   temps.push(dir);
   const write = (rel, text) => writeFileSync(join(dir, rel), text, 'utf8');
@@ -106,6 +106,13 @@ function fixture({ withRecords = true, spec = null, sibling = {}, pin = undefine
       'not changed: the divergence is smaller than the sampling error at the run lengths anyone uses.',
       '',
     ].join('\n'));
+  }
+
+  // Tracked non-prose files, which are the demand corpus and nothing else (`D858`, `M169b`). Values
+  // may be a string or a Buffer, because one test needs a NUL byte to be skipped on its content.
+  for (const [rel, body] of Object.entries(code)) {
+    mkdirSync(join(dir, dirname(rel)), { recursive: true });
+    writeFileSync(join(dir, rel), body);
   }
 
   // The sibling's citation pin (`D710`). Tracked, and present in every fixture — the generator
@@ -954,4 +961,109 @@ test('a single-line label followed by a paragraph does not reach forward either'
   ].join('\n');
   const body = extractBlock(record, { line: 2, kind: 'boldLead', headingLevel: 0 });
   assert.equal(body, '**`M138b` — testFlow-tests**');
+});
+
+// --- M169b (`D858`, `D859`, `D860`) — the demand half -------------------------------------------
+//
+// WHAT IS NEW HERE is not a rule about what a citation is — `M169a` settled that — but a rule about
+// which corpus a citation is read from and what resolving in it buys. `D675` used to be one
+// sentence: every citation must have an entry. `D858` splits it, so tracked prose keeps the whole
+// contract (resolve *and* publish) and tracked code gets only the first half.
+//
+// THE CLAIM THAT NEEDS A TEST is the half that is invisible when it works. A gate that reports dead
+// pointers is easy to see failing; a gate that reports them *without publishing anything* looks
+// identical to one that publishes quietly, because `DECISIONS.md` moving is the only symptom and it
+// moves for a dozen other reasons. So the publish-nothing property is asserted directly, against the
+// generated index, in the case where the identifier resolves — which is the case where a widening
+// would have published it.
+//
+// THE EXCLUSION IS TESTED FROM BOTH SIDES, which is the property `D860` was amended to have. An
+// identifier declared unresolvable is excused, and an identifier declared unresolvable that has
+// started resolving is a **failure** — a declared non-existence must not quietly become a lie. A
+// file-scoped exclusion could only ever have been tested in the first direction.
+
+test('an identifier cited only in code, resolving to nothing, fails the demand check', () => {
+  const dir = fixture({ code: { 'src/thing.ts': '// the retry rule is `M77` (see the records)\n' } });
+  assert.equal(run(dir).code, 0, 'the fixture should generate cleanly before the demand check reads it');
+  const r = run(dir, ['--demand']);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /M77\b/);
+  assert.match(r.stderr, /src\/thing\.ts:1/, 'a dead pointer is only actionable with the site that carries it');
+});
+
+test('a citation in code resolves without publishing, which is the whole of D858', () => {
+  // `M7` is anchored in the fixture's records and cited by nothing in tracked prose, so under the
+  // old single-corpus contract it had no entry. Citing it from a `.ts` file must make it resolve and
+  // must NOT give it one — the acceptance clause of the milestone, as an assertion rather than a
+  // sentence. The control is the byte comparison: the index generated with the code file present is
+  // identical to the index generated without it.
+  const withCode = fixture({ code: { 'src/thing.ts': '// sessions were reworked at `M7` and `D7` explains the percentiles\n' } });
+  const without = fixture();
+  assert.equal(run(withCode).code, 0);
+  assert.equal(run(without).code, 0);
+  assert.equal(decisions(withCode), decisions(without), 'a citation in code moved DECISIONS.md, which is exactly what D858 declines to do');
+
+  const r = run(withCode, ['--demand']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /demand \(D858\)/);
+});
+
+test('an identifier declared unresolvable is excused, and the declaration is printed every run', () => {
+  // `D888` is cited by `gen-decisions.test.mjs` precisely because it resolves to nothing. Under a
+  // widened demand that citation becomes a finding about the gate's own negative control, so the
+  // five declarations exist — and they are printed rather than applied silently, because an
+  // exclusion nobody can see reads as coverage (`D860`, `D-M164-06-1`'s form).
+  const dir = fixture({ code: { 'src/thing.ts': '// asserts that `D888` is reported as unresolved\n' } });
+  const r = run(dir, ['--demand']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /declared unresolvable \(D860\)/);
+  assert.match(r.stdout, /D888/);
+  assert.ok(!r.stderr.includes('D888'), 'a declared identifier was reported as a finding as well as excused');
+});
+
+test('a declared identifier that has started resolving fails, because the declaration has become a lie', () => {
+  // The direction a file-scoped exclusion could not be checked in, and the reason `D860` was amended
+  // from files to identifiers before it shipped. If `D888` acquires an anchor, the declaration stops
+  // describing the tree and starts excusing a real citation from the check — so it fails on the
+  // declaration rather than passing on the citation.
+  const dir = fixture({ code: { 'src/thing.ts': '// asserts that `D888` is reported as unresolved\n' } });
+  writeFileSync(join(dir, 'PLAN_LATER.md'), '# Later\n\n**`D888` — a decision that now exists.** Which makes the declaration stale.\n', 'utf8');
+  const r = run(dir, ['--demand']);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /declared unresolvable[\s\S]*now resolve/i);
+  assert.match(r.stderr, /D888/);
+});
+
+test('the demand corpus is code: an image and a markdown file are not read, a script is', () => {
+  // Two exclusions in one assertion because they are the same claim from opposite ends. An SVG path
+  // is written in a language where `M<number>` means *moveto*, so the three tracked SVGs in this
+  // repository carry `M4`, `M5`, `M9`, `M10`, `M20`, `M21`, `M30` and `M37` as coordinates; tracked
+  // markdown is excluded for the opposite reason — it is read by the *publish* half, under the full
+  // contract, and reading it here as well would report every finding twice.
+  //
+  // `M91` appears in all three files and must be reported from exactly one of them. Without the
+  // pairing the test would pass against a corpus that read nothing at all.
+  const dir = fixture({
+    spec: '# Spec\n\nThe bundle is one publishable package (`P#43`), and the rule is `M91`.\n',
+    code: {
+      'public/logo.svg': '<svg><path d="M91 20 L30 40"/></svg>\n',
+      'src/thing.ts': '// the rule this implements is `M91`\n',
+    },
+  });
+  const r = run(dir, ['--demand']);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /M91\b/);
+  assert.match(r.stderr, /1 site\(s\)\s+src\/thing\.ts:1/, 'the SVG path data was read as a citation site');
+  assert.match(r.stdout, /1 image and 0 binary file\(s\) not read/);
+});
+
+test('a binary file is skipped on its content, not on its name', () => {
+  // `packages/docs-site/scripts/fixtures/suite/receipt.png` is ASCII text with a misleading name and
+  // a real binary is what a NUL byte says it is, so the two rules answer different questions and the
+  // corpus needs both. This asserts the content rule: a tracked file that cannot be read as text is
+  // skipped even though its extension claims otherwise, and it is counted so the skip is visible.
+  const dir = fixture({ code: { 'src/blob.ts': Buffer.from('// cites `M77`\n\0\0binary tail\n', 'utf8') } });
+  const r = run(dir, ['--demand']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /0 image and 1 binary file\(s\) not read/);
 });
