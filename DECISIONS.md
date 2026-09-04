@@ -95,7 +95,7 @@ here.
 
 ### P#2
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/check-acceptance.mjs · lifted from `PLAN.md`</sub>
 
 2. **Reuse as a compiler pass** — the compiler detects similar step sequences across tests and
    reports them as diagnostics with a fully prepared extraction (proposed `action` name, params,
@@ -104,7 +104,7 @@ here.
 
 ### P#3
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/api/admin/schema-and-shape.tflw, tflw-tests/tests/helpers/schema-check.ts · lifted from `PLAN.md`</sub>
 
 3. **v1 scope** — browser E2E + HTTP API, freely interleaved in one test (seed via API → drive UI →
    assert backend state). Out of v1: mobile, unit, perf, DB assertions, OpenAPI/contract.
@@ -139,7 +139,7 @@ here.
 
 ### P#7
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/restful-booker/booking-lifecycle.tflw · lifted from `PLAN.md`</sub>
 
 7. **API vocabulary** — full request spec (method, path relative to per-env base URL, headers,
    query, JSON body, auth presets); response assertions on status, headers, and path-addressed
@@ -148,7 +148,7 @@ here.
 
 ### P#8
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/helpers/wait-seconds.ts · lifted from `PLAN.md`</sub>
 
 8. **Selectors & waiting** — semantic-first: role + visible text (`click button "Add to cart"`,
    `fill field "Email"`) via Playwright getByRole/getByLabel. Documented resolution tier:
@@ -168,7 +168,7 @@ here.
 
 ### P#11
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/helpers/receipt.ts · lifted from `PLAN.md`</sub>
 
 11. **Escape hatch** — plain JS/TS files exporting async functions, imported via
     `use "./helpers/sign.ts"` and called like native actions (test context in, values out).
@@ -195,7 +195,7 @@ here.
 
 ### P#14
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/api/admin/schema-and-shape.tflw · lifted from `PLAN.md`</sub>
 
 14. **JSON body assertions** — path-addressed values plus two array quantifiers:
     `expect any body.items.name equals "Widget"` / `expect all body.items.status equals "active"`,
@@ -213,7 +213,7 @@ here.
 
 ### P#16
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/apiV2/src/soft-check/soft-check.controller.ts · lifted from `PLAN.md`</sub>
 
 16. **Soft assertions** — `expect` hard-fails the test immediately (trustworthy artifacts).
     `check` is its soft twin: identical grammar/matchers, records pass/fail in the report and
@@ -222,7 +222,7 @@ here.
 
 ### P#17
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/tests/.constructs/action-give.tflw +4 more · lifted from `PLAN.md`</sub>
 
 17. **Actions (the reuse unit, fully specified)** — `action name(param, …)` containing ordinary
     steps; `give <expr>` returns values so actions compose with chaining
@@ -253,7 +253,7 @@ here.
 
 ### P#20
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/restful-booker/booking-lifecycle.tflw · lifted from `PLAN.md`</sub>
 
 20. **Isolation & sessions** — every test gets a fresh browser context (no leakage,
     parallel-safe by construction). Auth cost solved declaratively: named `session` blocks in
@@ -389,7 +389,7 @@ here.
 
 ### P#33
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/api/identity/cookie-jar.tflw, tflw-tests/tflw.config · lifted from `PLAN.md`</sub>
 
 33. **Response-side breadth.** `expect duration is less than 500ms` (regression tripwire, not
     perf testing); `body text` subject for non-JSON responses (JSON-path expects on non-JSON give
@@ -897,7 +897,7 @@ here.
 
 ### P#75
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md +1 more · lifted from `PLAN.md`</sub>
 
 75. **`tflw check` ships in 0.1, text-only.** Validate-only command: parse + the full checker
     pipeline (exactly what `run` already executes before running) over given or discovered files,
@@ -1756,7 +1756,7 @@ here.
 
 ### P#102b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/apiV2/src/lifecycle/lifecycle.constants.ts · lifted from `PLAN.md`</sub>
 
     **(b) `retry honoring "Retry-After" up to N` (enterprise decision 6, gap #5).** Deliberately
     **not** a reuse of `test … retry N` (SPEC §4.4) — that retries the *entire test* immediately,
@@ -2352,7 +2352,7 @@ resolution is reported.**
 
 ### D9
 
-<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Escape hatch (D9)**
 
@@ -2420,7 +2420,7 @@ resolution is reported.**
 
 ### D14
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/discover-mutation-kills.mjs +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Extended UI capabilities — all four in scope (D14)**
 
@@ -2454,7 +2454,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D16
 
-<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/apiV2/src/load-admin/load-admin.service.ts, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Execution model (D16) — dedicated `scenario` blocks (k6-style)**
 
@@ -2469,7 +2469,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D17
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Workload model (D17) — both, arrival-rate taught as default**
 
@@ -2499,7 +2499,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D19
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +11 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Generator architecture (D19)**
 
@@ -2516,7 +2516,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D20
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/ops/systemd/tflw-perf.timer · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Scope (D20) — full active scanner**
 
@@ -2527,7 +2527,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D21
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +13 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Safety / authorization (D21) — layered default-deny**
 
@@ -2601,7 +2601,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D26
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D26 — Perf: after-hook-under-load policy (2026-07-30, resolves §5's flagged open item).**
   A scenario's `after` hook is **skipped by default per iteration** under `tflw load` — running it
@@ -2620,6 +2620,17 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
   rare side (4 bare `after` blocks in the dogfood suite) and left the common one open (61 bare
   `before`). `D782` removes hook time from the reported duration entirely, which is the defect this
   entry observed; `D783` keeps the behaviour reachable as `teardown never` / `teardown on success`.
+
+### D27
+
+<sub>cited from tflw-tests/apiV2/src/load-admin/load-target.constants.ts, tflw-tests/scripts/verify-security-target.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+
+- **D27 — Perf: target-sequencing inversion, same shape as browser's (2026-07-30).** Same
+  reasoning as D2's rejection of a synthetic browser target: the apiV2 deliberately-contended
+  endpoint + load-mode DB reset (§4.2) **land first**, as their own testFlow-tests-side milestone,
+  before any `scenario`-grammar work starts. Every later perf milestone then validates against a
+  real degrading target from day one rather than a synthetic stand-in that could mask gaps a real
+  contended endpoint would surface — the exact trap D2 called out for M3.
 
 ### D29
 
@@ -2643,7 +2654,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D31
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/k6/checkout-burst.js +6 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D31 — Perf: acceptance bar (2026-07-30).** Mirrors M7's actual method (not a conversion tool —
   `tflw migrate` is unrelated, it rewrites deprecated *tflw* syntax, not raw Playwright/k6 scripts):
@@ -2667,7 +2678,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D33a
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D33a — acceptance tolerance: within ~10% of k6 (revised 2026-07-31 — user tightened from an
   initial ~25-30% recommendation).** Not 1:1 parity — tflw's interpreted single-process Node
@@ -2734,7 +2745,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D33e
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md, tflw-tests/tflw-acceptance/perf/profile/analyze-profile.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D33e — secondary hot spots: fix anything ≥ ~5% of measured overhead.** If M35a's flamegraph
   shows other non-trivial costs beyond the primary redaction hypothesis (candidates already flagged
@@ -2811,7 +2822,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D40
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md +2 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D40 — hypothesis.** Node's global `fetch()` (backed by undici) may cap concurrent connections
   per origin below tflw's configured VU count — so tflw's 60 "VUs" may not actually hold 60
@@ -2826,7 +2837,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D41
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md, tflw-tests/tflw-acceptance/perf/profile/concurrency-groundtruth-instant.mjs +4 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D41 — investigation plan, one bounded pass (same convention as D33c/D35/D38).** Instrument the
   actual concurrent in-flight request / open-socket count during a run — a counter around dispatch
@@ -2841,7 +2852,7 @@ keeps it honest and safe. Reuses existing assets: `allow hosts` (§3.7), bundled
 
 ### D42
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D42 — fallback if refuted.** If in-flight concurrency tracks the configured VU count closely
   (no meaningful ceiling), the next real candidate is scheduling/dispatch overhead inside the
@@ -2887,7 +2898,7 @@ one-time snapshot — exact approach not yet decided).
 
 ### D44
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/scripts/verify-provenance.mjs, tflw-tests/tflw-acceptance/perf/profile/bench-session.tflw +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D44 — fix strategy: re-derive session state from `sessionCache` every iteration, not a frozen
   snapshot.** `runLoadCore`'s scenario setup keeps its existing upfront `sessionCache.ensure(name,
@@ -2941,7 +2952,7 @@ one-time snapshot — exact approach not yet decided).
 
 ### D46
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/bench-session.tflw, tflw-tests/tflw-acceptance/perf/profile/echo-server.mjs +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D46 — milestone scope: fix + tests only; re-measurement is a follow-up milestone (M38).**
   Mirrors this arc's own M35b (root cause) → M35c (fix + unit tests) → M35d (re-measure) precedent.
@@ -2975,7 +2986,7 @@ one-time snapshot — exact approach not yet decided).
 
 ### D49
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/k6/dogfood-get-only.js, tflw-tests/tflw-acceptance/perf/k6/dogfood-post-uncontended.js +7 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D49 — method: rebuild M34's isolation ladder with k6 counterparts at every rung, not just
   repeat checkout-burst for confidence.** M34's own root-cause table (`acceptance/README.md`)
@@ -3094,7 +3105,7 @@ one-time snapshot — exact approach not yet decided).
 
 ### D57
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D57 — one more bounded root-cause pass, aimed at the HTTP-client/protocol layer, not another
   architecture redesign.** Given real OS-level parallelism (just tested) showed zero improvement, a
@@ -3107,7 +3118,7 @@ one-time snapshot — exact approach not yet decided).
 
 ### D58
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D58 — method: adapt `raw-fetch-bench.mjs` (M35a) to the real contended target, compare its p95
   directly against k6.** `raw-fetch-bench.mjs` already exists as a bare Node `fetch()`-loop script
@@ -3126,7 +3137,7 @@ one-time snapshot — exact approach not yet decided).
 
 ### D59
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D59 — stop condition, per outcome.** *Isolated to Node's HTTP stack* (raw loop's gap matches
   tflw's own): confirms by elimination — now a sixth angle, across M36/M40/this session's `--workers`
@@ -3143,7 +3154,7 @@ one-time snapshot — exact approach not yet decided).
 
 ### D60
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **D60 — scope: isolation test first, in the existing raw harness, zero tflw code touched.**
 `raw-fetch-bench-dogfood.mjs` (M41) is a standalone one-off Node process, so importing `undici` there
@@ -3153,7 +3164,7 @@ hypothesis cleanly in a disposable harness before any real runtime design work.
 
 ### D61
 
-<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **D61 — one clean pinned-Client variant only, no capped-Pool variant in the same pass.** A
 pinned-per-VU `undici.Client` (one `Client` per VU, HTTP/1.1, created once at worker spawn, reused
@@ -3213,7 +3224,7 @@ itself is the actual source of truth from here.
 
 ### D67
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/tflw/checkout-burst.tflw · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **D67 — endpoint identity ships as automatic AND explicit, together, this milestone.** Every `api`
 step gets an identity of `(service, method, path.raw)` for free, zero grammar changes, works
@@ -3249,7 +3260,7 @@ thresholds (D70) the same way it already walks a scenario's whole-iteration ones
 
 ### D70
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/threshold-unknown-label.tflw · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **D70 — scoped thresholds ship this milestone.** New grammar: `threshold p95 duration for "checkout"
 is less than 250ms` — the `for "label"` clause matches either an explicit tag or an automatically-
@@ -3268,7 +3279,7 @@ instruction.
 
 ### D72
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/tflw/checkout-burst.tflw · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **D72 — fixtures and checker gain real coverage.** `checkout-burst.tflw`/`.js` retag the POST step
 `as "checkout"` (already matches k6's own `name: 'checkout'` tag verbatim — no k6-side change
@@ -3387,7 +3398,7 @@ still ≥3% after D77/D78.
 
 ### D81
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/artillery/dogfood-get-only.yml, tflw-tests/tflw-acceptance/perf/artillery/echo-get-only.yml +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **D81 — extended at the user's explicit direction to a three-way ladder (tflw + k6 + Artillery),
 2026-08-01.** M46d added Artillery as a corroborating comparator on two rungs only (D, E). The user
@@ -3416,7 +3427,7 @@ shape is a mechanical extension of M46d's already-proven method, not a new desig
 
 ### D82
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/apiV2/src/load-admin/load-admin.service.ts, tflw-tests/tflw-acceptance/perf/k6/search-read.js +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D82 — "improve the app" means widen load-test surface, not general fixes.** Two new endpoint
   dimensions, both already implemented in apiV2, neither needing new business logic:
@@ -3446,7 +3457,7 @@ shape is a mechanical extension of M46d's already-proven method, not a new desig
 
 ### D84
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/k6/checkout-burst.js, tflw-tests/tflw-acceptance/perf/k6/dogfood-post-uncontended.js +2 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 - **D84 — p50/p99 are reported, not gated.** tflw already computes `p50`/`p90`/`p95`/`p99` per
   scenario for free (`interpreter.ts:619`, `timeline.ts`) — no runtime change needed, just extraction
@@ -3507,7 +3518,7 @@ CLI, typecheck, build).
 
 ### D96
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D96 — field exclusivity, checker-enforced.** `retry N` or `with each` together with a workload
   clause in the same block is a hard checker error (extends the existing D19 pattern — browser
@@ -3850,7 +3861,7 @@ CLI, typecheck, build).
 
 ### D127
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_DISCOVERY_EXCLUDE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +5 more · lifted from `PLAN_DISCOVERY_EXCLUDE.md`</sub>
 
 **`D127` — bare discovery gets an `exclude` list, and a path that matches nothing is a no-op.**
 `tflw.config` gains a top-level `exclude "<path>"[, "<path>"…]` directive, relative to the config's
@@ -3861,7 +3872,7 @@ for a pattern matching nothing. Shipped at `M58`. The six clauses below are this
 
 ### D137
 
-<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/action-call-cycle.tflw, tflw-tests/tests/.checkonly/invalid-literal-operand.tflw +1 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **D137 — the checker's contract is two-way conformance with the runtime**
 
@@ -3877,9 +3888,33 @@ completion condition. Three clauses:
 3. **The carve-out.** Rules needing I/O are excluded from the **`lang` package** — *not* from
    `tflw check`. See D144; this clause was corrected mid-grill.
 
+### D140
+
+<sub>cited from tflw-tests/tests/.checkonly/capture-uncapturable-subject.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+
+**D140 — the matcher/quantifier compatibility check derives from `MATCHERS`, kind-only**
+
+`spec-data.ts:21` already holds this table. `appliesTo` is the compatibility rule, written as
+markdown prose — `` `body bytes` ``, `UI locators`, `` `request` ``. `MATCHERS` is described in its
+own header as *"the single source of truth going forward"*: it generates SPEC §6.2, the docs-site
+Reference pages and LSP hover. It has simply never been machine-readable, so the runtime restates
+it by hand in five places and the checker states it nowhere.
+
+### D144
+
+<sub>cited from tflw-tests/tests/.checkonly/missing-referenced-file.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+
+**D144 — `A4-07`: make SPEC's claim true, in shared code; clause 3 corrected**
+
+**Clause 3 was misdrawn and is corrected here.** The original reading — "the checker cannot do I/O,
+so file existence is runtime-only" — is refuted by the code: `cli.ts:962` calls
+`resolveImportedActions`, which reads files from disk **during `tflw check`**. The no-I/O invariant
+belongs to the `lang` *package* (so the docs-site browser demo can run it), not to the `check`
+*command*. The finding said as much: *"the fix is placement, not principle."*
+
 ### D147
 
-<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/absolute-url.tflw +5 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **D147 — `TF043` has two severities, and the split is D137 clause 1**
 
@@ -3888,7 +3923,7 @@ four regression groups, 21 of 30 phases, one root cause.
 
 ### D165
 
-<sub>cited from SPEC.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/hidden-character.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **D165. Flag them as errors, not warnings.** For a general-purpose language a lint is the norm; for a
 testing DSL it is not. A reviewed `.tflw` in a pull request can render as asserting one thing and
@@ -3899,7 +3934,7 @@ tool's own security in scope; the `0.4.0` pentest arc will make `.tflw` a securi
 
 ### D166
 
-<sub>cited from SPEC.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/hidden-character.tflw, tflw-tests/tests/.checkonly/unknown-escape.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **D166. `TF049` is not implementable without an escape hatch, and the hatch is `\u{…}`.** This is the
 dependency worth not re-deriving: after **D157** an unknown escape is an error, and tflw has no
@@ -3924,7 +3959,7 @@ production says today when handed a token it cannot use:
 
 ### D174
 
-<sub>cited from SPEC.md · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/api/orders/order-receipts.tflw, tflw-tests/tests/helpers/save-temp-file.ts · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
 
 **D174 — `matches file`'s path goes through `evalValue`, and SPEC changes rather than being corrected**
 
@@ -3958,7 +3993,7 @@ Four sites, all reading `.value`, all on a `StringLit` the checker passes to `ch
 
 ### D178
 
-<sub>cited from SPEC.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D178 — the unit is one word, not one string**
 
@@ -3967,7 +4002,7 @@ is legitimately multilingual.
 
 ### D179
 
-<sub>cited from SPEC.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D179 — only scripts that have Latin lookalikes**
 
@@ -3976,7 +4011,7 @@ Cyrillic, Greek, Cherokee or Armenian.
 
 ### D180
 
-<sub>cited from SPEC.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D180 — strings only; comments are out of scope**
 
@@ -3985,7 +4020,7 @@ no way to comply is a capability removed, not a lint.**
 
 ### D183
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M104_CONFIG_RELATIVE_PATHS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +4 more · lifted from `PLAN_M104_CONFIG_RELATIVE_PATHS.md`</sub>
 
 **D183 — the mTLS half is a separate row, not a silent ride-along**
 
@@ -3997,6 +4032,20 @@ same defect but not the same finding, so it is filed as `M104-01` rather than fo
 - **Not a race.** It is deterministically wrong for any test file not beside `tflw.config` — which
   is the ordinary layout (`tests/*.tflw`).
 - **SPEC documents the broken form.** §3.6's own example is `cert "./certs/client.pem"`.
+
+### D185
+
+<sub>cited from tflw-tests/tflw.config · lifted from `PLAN_M104_CONFIG_RELATIVE_PATHS.md`</sub>
+
+**D185 — breaking, and the one real consumer proves the bug rather than defending it**
+
+This changes the meaning of an existing, working config line, so it is breaking. Two facts bound
+the risk to nearly nothing and one makes shipping it *more* urgent, not less:
+
+- **tflw has never been published to npm** (0.1.0, private). The complete set of affected consumers
+  is this workspace.
+- **A repo-wide scan found exactly one** config-declared relative path in `testFlow-tests`:
+  `env mtlsSidecar`'s `cert "../../../nginx/certs/client.pem"`.
 
 ### D198
 
@@ -4074,7 +4123,7 @@ mirror, disk space).
 
 ### D206
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md, tflw-tests/tflw-acceptance/perf/profile/open-model-fetch-repro.mjs · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **D206 — the open model sends over `node:http`, not `fetch`**
 
@@ -4106,9 +4155,20 @@ file the finding against `nodejs/undici` with the §1.3 table. It will not be fi
 `nodejs/node`, not anywhere outside tflw and testFlow-tests. Nothing external gets touched on the
 strength of this work.
 
+### D224
+
+<sub>cited from tflw-tests/scripts/lib/mutations.mjs · lifted from `PLAN_M123_MUTANT_RESIDUE.md`</sub>
+
+**D224 — A `main` guard, so importing the module runs nothing**
+
+`M122` reproduced `M118-03` by `import()`-ing `mutate.mjs` to read its `MUTATIONS` array; the import
+ran a sweep and left a deleted guard in `interpreter.ts`. The response was a rule in the ledger
+header — *never `import()` that script*. **Replace the rule with a guard.** A landmine with a sign
+next to it is still a landmine, and the sign is in a file the next session may not read.
+
 ### D245
 
-<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D245 — an absolute URL is legal in `api` and `open`, and `allow hosts` governs it**
 
@@ -4117,7 +4177,7 @@ convenience; the allowlist becomes the boundary, which is what M85 built it to b
 
 ### D246
 
-<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D246 — no allowlist plus an absolute URL: the runtime refuses, the checker warns**
 
@@ -4126,7 +4186,7 @@ configured the runtime refuses the step; the checker warns.
 
 ### D266
 
-<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/service-with-absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D266 — `FU-21`: one query, and the caller's count is kept only to name the race**
 
@@ -4160,7 +4220,7 @@ existing `filterBySeverity` floor.
 
 ### D284
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +2 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D284 — a rule declares a precondition; "not applicable" is a third state**
 
@@ -4169,7 +4229,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 ### D285
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +13 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D285 — zero applicable rules is a failure, not a pass**
 
@@ -4188,7 +4248,7 @@ no new config surface**.
 
 ### D287
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-security-acceptance.mjs +1 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D287 — cookie rules see this response's `Set-Cookie`, plus session establishment**
 
@@ -4241,7 +4301,7 @@ one word covers both scan kinds.
 
 ### D291
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D291 — D21's declaration half lands now, and Tier 1 requires it**
 
@@ -4265,7 +4325,7 @@ standalone scan artifact, at Tier 3/4.
 
 ### D293
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/common/request-scheme.ts, tflw-tests/apiV2/src/vuln/vuln.controller.ts +9 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D293 — target: reuse `M22`'s 8443 sidecar, add `env secureLocal` and a hygiene-only `vuln/` slice**
 
@@ -4305,7 +4365,7 @@ That applies here, but §0(a) makes it cheap — the listener exists. `M128a` is
 
 ### D295
 
-<sub>cited from tflw-tests/VULNS.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/apiV2/src/vuln/vuln.controller.ts +6 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D295 — acceptance: a positive, a negative, and a not-applicable case for every rule**
 
@@ -4411,7 +4471,7 @@ A violation is: **a resource id from the owner's response appears in a probe's r
 
 ### D306
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tflw-acceptance/security/tflw.config · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D306 — `anonymous` is a built-in principal, always probed**
 
@@ -4419,7 +4479,7 @@ The no-credentials probe needs no declaration and is in every probe set.
 
 ### D307
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D307 — `privileged` marks a session exempt from probing**
 
@@ -4434,7 +4494,7 @@ the grammar is `session <name> [oauth2] [privileged]`.
 
 ### D308
 
-<sub>cited from SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/api/identity/authz.tflw · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D308 — a step that names its own credential is a checker error (`TF062`)**
 
@@ -4472,7 +4532,7 @@ test's lifetime.
 
 ### D311
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +5 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D311 — safe methods by default; `probe mutating` opts in, per authorized target**
 
@@ -4495,7 +4555,7 @@ it, cached from then on like any other (SPEC §3.3: once per run per worker).
 
 ### D313
 
-<sub>cited inside a range only · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/authz.tflw · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D313 — a probe served *different* content is clean, and counted**
 
@@ -4526,7 +4586,7 @@ this.
 
 ### D315
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +1 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D315 — applicability, and what "not applicable" means here**
 
@@ -4549,7 +4609,7 @@ report names what it could not judge:
 
 ### D317
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-orders.controller.ts, tflw-tests/apiV2/src/vuln/vuln.module.ts +3 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D317 — the target: one peer session, three planted routes, and the control stays**
 
@@ -4589,7 +4649,7 @@ yet consuming it):
 
 ### D319
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tests/api/identity/authz-generated.tflw +2 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D319 — acceptance: precision, recall, and agreement with the hand-written control**
 
@@ -4620,7 +4680,7 @@ a bundle.
 
 ### D321
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/crawl.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D321 — resource-id extraction reaches the bare shapes only, and says so out loud**
 
@@ -4652,7 +4712,7 @@ fifth request path.
 
 ### D324
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +2 more · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D324 — five probe outcomes, and `clean` has to be earned**
 
@@ -4666,7 +4726,7 @@ fifth request path.
 
 ### D325
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +2 more · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D325 — a cookie-borne principal refused on a mutating method is `inconclusive` (`M130-01`)**
 
@@ -4686,7 +4746,7 @@ Declared-session order from `tflw.config`, then `anonymous` last.
 
 ### D327
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/csrf.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D327 — every session a test names is an owner**
 
@@ -4697,7 +4757,7 @@ request then carries admin's `Authorization` **and** shopper's `Cookie` simultan
 
 ### D328
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/.checkonly/authz-step-names-own-credential.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D328 — `TF062` is a lexical refusal plus an exact runtime guard**
 
@@ -4709,7 +4769,7 @@ that boundary deliberately (*"a frame whose registry is knowable: a `test` or ho
 
 ### D329
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/.checkonly/authz-assertion-without-owner.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D329 — `TF063` uses the same split, and `before file` hooks are refused**
 
@@ -4785,7 +4845,7 @@ in either the checker or the runtime.
 
 ### D340
 
-<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/authz-scan-public-target.tflw · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D340 — the flag is origin-valued, must match a declaration, and repeats**
 
@@ -4810,7 +4870,7 @@ tflw run --allow-public-target https://staging.example.com
 
 ### D341
 
-<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D341 — the flag follows the packet, not the matcher**
 
@@ -4829,7 +4889,7 @@ different resolutions.
 
 ### D343
 
-<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw.config · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D343 — `TF060` widens from "the default `api` base" to every scannable origin**
 
@@ -4850,9 +4910,53 @@ Following `M130b2`'s rule that **a diagnostic code is a repair, not a topic**:
 | `TF065` | an originating scan would reach a public origin and no `--allow-public-target` names it | add the flag |
 | `TF066` | `--allow-public-target` names an origin this run does not scan, or one no `authorized target` declares | fix the flag's value |
 
+### D345
+
+<sub>cited from tflw-tests/tests/.checkonly/authz-scan-public-target.tflw · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+
+**D345 — `tflw check` accepts the same flag**
+
+`tflw check` currently takes `--env`, `--browser`, `--seed`, `--no-color`. It gains
+`--allow-public-target`, repeatable, identical semantics.
+
+### D347
+
+<sub>cited from tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/public-target/scan.tflw, tflw-tests/tflw-acceptance/security/tflw.config · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+
+**D347 — acceptance is three static cases, zero packets**
+
+Because classification is literal (D338), a target at `https://staging.example.invalid` classifies
+as public with no lookup. RFC 2606 guarantees `.invalid` never resolves, so the corpus is offline by
+construction and stays that way.
+
+### D350
+
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+
+**D350 — `M130-07` closes as a written discipline. No machinery, and the window stays unbounded on purpose.**
+
+`M130-07`'s headline grievance is that nothing in testFlow-tests re-runs on a tflw merge, so `main`
+can sit red for an arbitrary time. Four fixes were considered: procedural back-to-back merges (the
+row's option (a)), a nightly `schedule:` cron, a `repository_dispatch` from tflw's merge-to-`main`,
+and splitting the assertion's direction into warn/error (the row's option (c)).
+
+### D351
+
+<sub>cited from tflw-tests/scripts/verify-artifact-contract.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+
+**D351 — The discipline ships with a command, because a discipline without one is a hope.**
+
+Scoping corrected an assumption in `M130-07`'s own text. The row implies the author cannot trip
+this gate locally, and points at `M130-04`. That is wrong, and the correction is the most useful
+thing this milestone produces:
+
+```
+npm run refresh-tflw && node scripts/verify-check-diagnostics.mjs
+```
+
 ### D356
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-orders.controller.ts, tflw-tests/scripts/verify-security-acceptance.mjs +3 more · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
 
 **D356 — `M130-05`: plant a vulnerable idempotent `PUT`. One polarity.**
 
@@ -4862,7 +4966,7 @@ have one.
 
 ### D363
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-input.controller.ts, tflw-tests/scripts/verify-sarif-acceptance.mjs +1 more · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
 
 **D363 — Added during the `M132b` build, 2026-08-14: the corpus needed a bearer non-owner before D356's plant could be judged at all.**
 
@@ -4961,7 +5065,7 @@ here and left to Tier 4's crawler.
 
 ### D372
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D372 — the four classes, and their per-class safety opt-in as sibling lines**
 
@@ -5002,7 +5106,7 @@ a pass. Its S4 severity rests on *"no shipped tflw has this defect… it can bit
 
 ### D376
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/apiV2/src/vuln/vuln-input.controller.ts · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D376 — R8's fingerprints, re-attached to `RunReport`**
 
@@ -5014,7 +5118,7 @@ distinct.
 
 ### D377
 
-<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md, tflw-tests/scripts/sweep-input-volume.mjs · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D377 — the gate: `--fail-on` and `--baseline`**
 
@@ -5034,7 +5138,7 @@ the emitter already builds a runnable `.tflw` from a `ProbeResult`.
 
 ### D379
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-input.controller.ts, tflw-tests/apiV2/src/vuln/vuln.module.ts +2 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D379 — the plants: `V10`–`V13`, and the D363 trap checked before designing them**
 
@@ -5052,7 +5156,7 @@ is *what*, not *who*, and the measurement is worse:
 
 ### D380
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md, tflw-tests/.gitignore +6 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D380 — the negatives are the real app, untouched**
 
@@ -5072,7 +5176,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 ### D382
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs +1 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D382 — diagnostic codes, and the coupling**
 
@@ -5085,7 +5189,7 @@ the condition *"the first change that permits two probes to be in flight simulta
 
 ### D383
 
-<sub>cited from SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-input-acceptance.mjs · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D383 — three milestones, and Tier 4 is not scoped here**
 
@@ -5152,7 +5256,7 @@ not a new one.
 
 ### D389
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +1 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D389 — `M128-01` is fixed here, and this is the milestone that can**
 
@@ -5171,7 +5275,7 @@ call is **fix it**, on three measurements rather than on the row's age:
 
 ### D395
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-input.controller.ts, tflw-tests/tflw-acceptance/security/input.tflw · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D395 — each plant is specified against its rule's detector, not against its rule's name**
 
@@ -5184,13 +5288,68 @@ call is **fix it**, on three measurements rather than on the row's age:
 
 ### D396
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-input.controller.ts · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D396 — the app cannot leak by accident, so `V12` must leak on purpose**
 
 `ProblemDetailsFilter` catches everything, and for anything that is not an `HttpException` it
 answers `{"type":"about:blank","title":"Internal Server Error","status":500,"detail":"an unexpected
 error occurred"}`, sending the stack to the **logger** and never to the body.
+
+### D397
+
+<sub>cited from tflw-tests/apiV2/src/vuln/dto/vuln-note.dto.ts · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**D397 — `whitelist: true` means "no decorators" is not the same as "no bound"**
+
+The global `ValidationPipe` runs `whitelist: true, forbidNonWhitelisted: true, transform: true`. A
+DTO with **no** decorators is not a permissive DTO — every property is stripped, and the handler
+receives an empty object. The plant is therefore a DTO that validates the *type* and declines to
+bound the *length*, which is also the realistic defect: nobody forgets `@IsString()`, plenty of
+people forget `@MaxLength()`.
+
+### D398
+
+<sub>cited from tflw-tests/tflw-acceptance/security/input-plaintext.tflw, tflw-tests/tflw-acceptance/security/tflw.config · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**D398 — the opt-in lines go on `secureLocal` only, reusing D311's two-env trick**
+
+`probe oversized` and `probe traversal` are declared under the `secureLocal` `authorized target` and
+**deliberately not** under `plaintext` — exactly how `probe mutating` is already split, and for the
+same reason. One corpus then demonstrates both halves of each opt-in against one app: the granted
+half where the rules fire, and the withheld half where `nothingToRead` says *`oversized` payloads
+need `probe oversized` under this `authorized target`*.
+
+### D399
+
+<sub>cited from tflw-tests/scripts/verify-input-acceptance.mjs · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**D399 — the not-applicable states are expected-to-fail runs in the grader, never passing tests**
+
+Inherited unchanged from `M130c` and restated because it governs how the corpus is written: an
+assertion where **no rule applied** fails by D285, so the not-applicable cases cannot be expressed
+as green tests. They live in `verify-input-acceptance.mjs` as runs the grader expects to fail, and
+it reads the failure text for the *reason*.
+
+### D400
+
+<sub>cited from tflw-tests/scripts/verify-input-acceptance.mjs, tflw-tests/scripts/verify-security-target.mjs, tflw-tests/tflw-acceptance/security/input.tflw · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**D400 — one prediction to measure rather than assume: the 64 KiB query**
+
+`oversized/64kib-string` targets `query` as well as `body`, and `V10`'s site is a query parameter.
+Node's default `--max-http-header-size` is **16 KiB**, and the request line counts toward it — so the
+64 KiB URL should come back `431` (answered, non-2xx, no finding) rather than reaching the handler.
+
+### D401
+
+<sub>cited from tflw-tests/apiV2/src/vuln/vuln-input.controller.ts · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+
+**D401 — `V14`, and why the twelfth cell was worth one more route**
+
+`M134c`'s grader reports one row per rule in three states — fires, silent, not-applicable — and the
+first complete run filled eleven of twelve cells. The gap was `sec/reflected-input-unescaped` /
+**silent**.
 
 ### D402
 
@@ -5221,7 +5380,7 @@ last piece and states the consequence plainly, since D360 forbids editing the cl
 
 ### D404
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-provenance.mjs, tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D404 — `findings.sarif` is written only when the run scanned**
 
@@ -5231,7 +5390,7 @@ file is written at all.
 
 ### D405
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D405 — a result points at the `.tflw` assertion, and names the endpoint logically**
 
@@ -5250,7 +5409,7 @@ already normalized to `METHOD /templated/path` for the fingerprint.
 
 ### D406
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/plants.mjs, tflw-tests/scripts/verify-sarif-acceptance.mjs +1 more · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D406 — four levels into three, plus the numeric GitHub actually ranks on**
 
@@ -5295,7 +5454,7 @@ Each rule module exports its ids as a `const` tuple; their union types the KB as
 
 ### D410
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D410 — `baseline` suppresses; `--fail-on` does not**
 
@@ -5307,7 +5466,7 @@ Each rule module exports its ids as a `const` tuple; their union types the KB as
 
 ### D411
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D411 — seeded findings are excluded from the SARIF entirely**
 
@@ -5316,7 +5475,7 @@ that makes it un-baselinable and non-gating: a rule can be forgotten, a missing 
 
 ### D412
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D412 — `rules[]` declares what applied; what stood down goes in `run.properties`**
 
@@ -5356,7 +5515,7 @@ artifact, and `@types/sarif` has no runtime at all.
 
 ### D415
 
-<sub>cited inside a range only · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M135_SARIF.md`</sub>
 
 **D415 — the dogfood asserts the document; it does not upload it**
 
@@ -5386,6 +5545,27 @@ enough for a maintainer to confirm it is real.*
 | **`M135a`** | tflw | R7's 18-entry KB (D408) + the `Record<RuleId, KbEntry>` union (D409) + D406's severity table; wired into the `report.html` findings block as "possible fixes" | no | no |
 | **`M135b`** | tflw | the SARIF exporter (D403–D407, D410–D413), `report/findings.sarif` write condition (D404), `report/repros/`, `@types/sarif` + `ajv` + schema test (D414), docs-site + SPEC corrections | no | no |
 | **`M135c`** | tflw-tests | acceptance over the emitted document (D415) | no | no |
+
+### D421
+
+<sub>cited from tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+
+**D421 — reach: the console line, `results.json`, and SARIF's `tflw/notApplicable`**
+
+CI reads machine files. A blind spot only a human reading a terminal can see is a blind spot with a
+short half-life, so it goes all the way down.
+
+### D422
+
+<sub>cited from tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+
+**D422 — `M130-01` is proven twice, and `D363`'s check is run before either**
+
+`D363`'s trap, checked first as it instructs — *the acceptance corpus had zero principals able to
+make a mutating probe, so planting a positive would have "passed" on nothing.* Checked here:
+`VULNS.md`'s `V8`/`V9` are `DELETE`/`PUT /v1/vuln/orders/:id` under `probe mutating`, and the corpus
+declares a cookie session. **So the corpus can answer this one** — which is exactly why the fixture
+alone is not enough.
 
 ### D427
 
@@ -5422,7 +5602,7 @@ fires. The remedy does not follow.
 
 ### D433
 
-<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/VULNS.md, tflw-tests/tflw-acceptance/security/csrf.tflw +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D433` — CSRF token capture lives on `session`. It is a session feature the scanner needs, not a scanner feature**
 
@@ -5432,7 +5612,7 @@ hand for exactly this reason, and has since `M22`.
 
 ### D434
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/csrf.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D434` — one new rule, `sec/csrf-not-enforced`, expressed as a derived credential**
 
@@ -5442,7 +5622,7 @@ cookie principal all arc becomes the thing being measured.
 
 ### D435
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/scripts/verify-security-acceptance.mjs +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D435` — the API surface is enumerated and disclosed; only the spider is capped**
 
@@ -5451,9 +5631,19 @@ narrowing (`D381`), **never concurrency**."* This plan does not overturn it. The
 sequential, `authz-probe-pacing.test.ts:101`'s `maxInFlight() === 1` stays green, and **`probe rate`
 stays deferred with its condition unmet** (`D448`).
 
+### D436
+
+<sub>cited from tflw-tests/apiV2/src/vuln/vuln-reports.controller.ts · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D436` — synthesize from the schema, and declare what did not reach**
+
+`D370` dropped the OpenAPI seed from Tier 3 and parked it here, with a warning that applies verbatim:
+*"a schema tells you an endpoint accepts a `status` field; it does not tell you a request that reaches
+real code, carries real auth, and got a `2xx`."*
+
 ### D437
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-reports.controller.ts, tflw-tests/apiV2/src/vuln/vuln.module.ts +4 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D437` — every finding carries its seed, and every seed gets a plant only it can reach**
 
@@ -5463,7 +5653,7 @@ alone, because the plants are all reachable that way.
 
 ### D438
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-reports.controller.ts, tflw-tests/apiV2/src/vuln/vuln.module.ts +5 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D438` — a documented plant is possible under `VULN_MODE=1`, and the exclusion's own reason permits it**
 
@@ -5471,9 +5661,19 @@ alone, because the plants are all reachable that way.
 a route"*, and the whole slice is `@ApiExcludeController()`. Taken together those say no plant can
 ever be OpenAPI-documented — which would leave `D437`'s enumeration plant unbuildable.
 
+### D439
+
+<sub>cited from tflw-tests/tflw-acceptance/security/crawl.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D439` — synthesized findings gate, exactly like captured-traffic findings**
+
+A synthesized finding counts toward `--fail-on` and is baselinable like any other. It fingerprints
+stably — `rule + normalized endpoint + location + invariant`, with no payload, no seed and no
+provenance in the hash — so `R8`'s identity mechanism works unchanged.
+
 ### D441
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/nginx/offering.conf, tflw-tests/tflw-acceptance/security/ciphers.tflw +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D441` — `D299`'s TLS cipher enumeration rides in, last and cuttable**
 
@@ -5485,7 +5685,7 @@ wearing a deferral's clothes."*
 
 ### D442
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md +4 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D442` — the browser spider fetches and parses. It does not render**
 
@@ -5494,7 +5694,7 @@ Both halves ship, browser last and separable. The spider is HTML-fetching and li
 
 ### D443
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/crawl-body-not-an-assertion.tflw +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D443` — two new codes: `TF068` and `TF069`**
 
@@ -5513,16 +5713,28 @@ test-dialect parser. `probe mutating` has never been completable.
 
 ### D445
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D445` — what the `vuln/` acceptance is owed: a versioned baseline of the real app's true findings**
 
 §4.2's *"zero findings elsewhere"* is already false (§1.2). `M137` replaces it with something
 measurable rather than leaving the arc's final gate resting on a contradiction.
 
+### D447
+
+<sub>cited from tflw-tests/apiV2/src/vuln/vuln-reports.controller.ts, tflw-tests/nginx/offering.conf, tflw-tests/tflw-acceptance/security/ciphers.tflw +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D447` — the dogfood target grows with the tool, and that is named work rather than drift**
+
+`testFlow-tests` exists to be a realistic target, and every tier so far has needed it extended:
+`M128c` planted `V1`–`V5`, `M130c` `V6`–`V9`, `M134c` `V10`–`V13`, `M134c` again for `V14`, and
+`M137e` adds more. That has been read each time as a milestone's fixture chore. It is not: **as tflw
+matures, the target it is graded against has to mature with it, or the grade stops meaning
+anything.**
+
 ### D450
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/crawl-body-not-an-assertion.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D450` — the `crawl` declaration's shape is derived from existing idioms, and it adds no fourth matcher family**
 
@@ -5532,7 +5744,7 @@ language already does; nothing here is invented where a precedent existed.
 
 ### D454
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/csrf.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D454` — `sessions.tflw` keeps its hand-capture. `D433`'s "goes away as a side effect" is wrong**
 
@@ -5543,7 +5755,7 @@ follow from it.
 
 ### D455
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-sarif-acceptance.mjs, tflw-tests/scripts/verify-security-acceptance.mjs +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D455` — a token-less cookie principal is declared, so the blind-spot control keeps a live positive**
 
@@ -5553,7 +5765,7 @@ What no decision here noticed is that the corpus has built four assertions on `s
 
 ### D456
 
-<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/crawl-body-not-an-assertion.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D456` — `TF069` is withdrawn. `csrf from` inherits `TF039`, and the path-miss carries no code**
 
@@ -5562,7 +5774,7 @@ statement about it stays true.
 
 ### D457
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/csrf.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D457` — the derived probe travels in its own field, because the existing rules would call it a leak**
 
@@ -5572,7 +5784,7 @@ structural rather than a filter.
 
 ### D463
 
-<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/crawl-body-not-an-assertion.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D463` — `TF069` is skipped permanently, and the crawl-body rule is `TF070`**
 
@@ -5581,9 +5793,20 @@ body restriction, which `ast.ts` already documents as the checker's job rather t
 It earns a code on `D419`'s bar — one repair, *put the step in a `test`*, shared by nothing else in the
 table.
 
+### D464
+
+<sub>cited from tflw-tests/tests/.checkonly/crawl-without-seed.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`D464` — the crawl body is wired into four existing passes, and `TF039` is the omission that had to be decided**
+
+The checker has 20 sites that iterate `program.tests`. A crawl body reaches **none** of them by
+default, and this is `D462`'s discovery on the checker side — except worse, because the report side
+fails loudly once `exhaustiveEntry` is in place while a checker pass that never sees a construct just
+stays quiet.
+
 ### D465
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs, tflw-tests/tflw-acceptance/security/crawl.tflw +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D465` — the crawl's own writes are gated by `probe mutating`, the opt-in that already exists**
 
@@ -5596,7 +5819,7 @@ categorically further from authored intent than any Tier 2 probe of an authored 
 
 ### D480
 
-<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D480` — a crawl resolves the document's paths against the document's own server, never against the `api` base's path**
 
@@ -5605,7 +5828,7 @@ in the sibling component, hidden by the same blind spot, with the same failure d
 
 ### D481
 
-<sub>cited from SPEC.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D481` — a crawl that sent requests and reached none fails, and it is `TF068`, not a new code**
 
@@ -5614,7 +5837,7 @@ needed to know it had judged nothing — `sent 31`, `reached 0` — printed them
 
 ### D482
 
-<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D482` — a resource the public receives has no owner, so it has no boundary to cross**
 
@@ -5623,7 +5846,7 @@ rather than merely appearing more often.
 
 ### D483
 
-<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D483` — a spider walks before it probes, so disclosure bounds two phases rather than one**
 
@@ -5633,7 +5856,7 @@ for are written against the assumption that it never is.
 
 ### D485
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md +3 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D485` — enumeration is gated by `probe ciphers`, a fourth `authorized target` sub-clause, and `sec/tls-weak-cipher` is genuinely widened rather than forked**
 
@@ -5646,7 +5869,7 @@ handshakes for one unchanging answer."*
 
 ### D486
 
-<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md, tflw-tests/nginx/offering.conf +3 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D486` — the enumeration handshake reads one bit and is forbidden the rest, which is what answers `D298`'s refusal**
 
@@ -5655,9 +5878,18 @@ reaching a legacy-cipher peer needs `@SECLEVEL=0`, *"and OpenSSL's security leve
 knob — it also lowers what counts as an acceptable certificate, so a strict run would quietly start
 trusting keys and signatures it currently rejects."*
 
+### D488
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/plants.mjs, tflw-tests/scripts/verify-sarif-acceptance.mjs +1 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D488 — One declarative plant manifest, extracted from `PLANTS`, imported by every grader.**
+
+`verify-sarif-acceptance.mjs`'s `PLANTS` is promoted to `scripts/lib/plants.mjs` and imported by all
+three graders. Not a new mechanism — the existing one, moved and widened.
+
 ### D489
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/perf-ladder.mjs +2 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
 
 **D489 — The manifest is the source; `VULNS.md`'s table is checked against it. Direction matters.**
 
@@ -5667,9 +5899,46 @@ So: **`plants.mjs` is hand-authored and authoritative; a check asserts `VULNS.md
 exactly the manifest's ids, and nothing more.** `VULNS.md` stays prose a human reads, and gains one
 machine-checked invariant: its id set.
 
+### D490
+
+<sub>cited from tflw-tests/scripts/lib/plants.mjs · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D490 — The manifest's schema must express a subject that is not a request.**
+
+The schema that stopped at `V14` was endpoint-keyed. The widened one keys on a **subject**, one of:
+
+| subject | expresses | plants |
+|---|---|---|
+| `endpoint` | templated request fingerprint (today's behaviour, unchanged) | `V1`–`V14` |
+| `page` | a spider-reached document | `V16`, `V17` |
+| `listener` | a TLS listener (host:port), no request | `V18` |
+| `via` | a reachability restriction (`openapi` / `traffic` only) | `V15`, `V7` |
+
+### D491
+
+<sub>cited from tflw-tests/scripts/lib/plants.mjs, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D491 — A plant declares its own discriminator; the grader stops inferring one.**
+
+`PLANT_PREFIX` / `isSpiderPlant` / `isOfferingPlant` collapse into one function that reads the
+manifest. The `/v1/vuln/` prefix premise has now broken twice; a third special case is a design, not
+an accident.
+
+### D492
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/plants.mjs, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D492 — Plant retirement is the direction that fails silently, and it gets the assertion.**
+
+The user asked what the mechanism costs when a plant is retired rather than added. Addition is easy:
+a new id in `VULNS.md` with no manifest row trips D489. Retirement is the dangerous direction — a
+manifest row whose plant no longer exists in the target produces *"expected finding not found"*, which
+is indistinguishable from a **recall regression in tflw**. That is a false red pointing at the wrong
+repo, and it is the same failure class as `M131-05`.
+
 ### D493
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
 
 **D493 — Closing `M137e-01` is M139's first item, not a prerequisite.**
 
@@ -5678,18 +5947,108 @@ stay a human-read report run by hand, and `D445`'s precision + staleness asserti
 phase of their own."* `M137g` raised its stakes — `V18` and both `probe ciphers` notes are graded by
 that ungated script and by nothing else.
 
+### D494
+
+<sub>cited from tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D494 — The graders read `scanCoverage`, and three of the four gaps close with no engine change.**
+
+Per §2.4. The `silent` column's caveat — *"a necessary condition, not a sufficient one"* — becomes
+sufficient for any rule `scanCoverage` names as applied-and-not-firing. `VULNS.md`'s claim that *"the
+report cannot say which"* is corrected in the same change, with a note that it was true when written
+and was falsified by `M134b`/`D389`.
+
+### D495
+
+<sub>cited from tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+
+**D495 — The fourth gap stays open, recorded and accepted. The arc does not require it closed.**
+
+`sec/tls-version-old` **fires** is not constructible on this platform: TLS 1.0/1.1 cannot be made into
+a listener. `M137g` already split this bullet correctly — `tls-weak-cipher` was recorded beside it as
+"not constructible" from `M128c` until 2026-08-18, and the two were never unconstructible for the same
+reason. **Reading them as a pair is what hid the difference for two milestones, and `V18` is what the
+distinction was worth.**
+
 ### D504
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **D504 — the document names the commands CI runs, not the phases inside them**
 
 M139's `security-acceptance-gate` is a `regression.mjs` phase in the `core` group; CI's line is
 `npm run regression -- --group core`. A contributor who runs the four group commands has run it.
 
+### D509
+
+<sub>cited from tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+
+**D509 — the READMEs shrink to pointers, and the correct section moves rather than copies**
+
+Both README sections in §1 are wrong-by-omission today and will be wrong again a week after this
+merges if they keep listing commands.
+
+### D511
+
+<sub>cited from tflw-tests/scripts/verify-construct-coverage.mjs, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+
+**D511 — tflw merges first, and the two PRs are chained**
+
+testFlow-tests' guard reads `../testFlow/CONTRIBUTING.md` from a checkout of tflw's **live `main`**
+(unpinned on purpose — pinning kills the dogfooding exactly when it matters). So if tflw-tests merges
+first, its guard is red against a `main` with no such file.
+
+### D531
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**D531 — one milestone, and the mechanism is *two answers to one question***
+
+**Reject the seed's §3 split** ("wrong subject" vs "blind predicate"). It survives contact with two
+rows and dies on the other three:
+
+| row | the two answers | which one a check reads |
+|---|---|---|
+| `M115-03` · `M128-04` | vendored tarball vs branch build | varies by file (§1.1); the driver's own two modes disagree (§1.2) |
+| `M137a-01` | `scanCoverage` (structured) vs `t.steps[].detail` (prose) | **both, in one file, 20 lines apart** (§1.4) |
+| `M128-03` | `PASS 1/1 passed` (evidence) vs a pre-run label (announcement) | the label, on adjacent lines (§1.5) |
+| `M138b-01` | `npm test` says tested vs `find` says zero test files | the command name (§1.7) |
+
+### D533
+
+<sub>cited from tflw-tests/scripts/perf-conformance.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**D533 — `exec.mjs` stays untracked; the correction lands in the third repo instead**
+
+`D14` stands and this milestone has no standing to reverse it — it was decided and grilled in
+`mac-fedora-connect`, on grounds (one person's SSH alias, systemd unit name and checkout layout)
+that `M141` does not disturb. `D532` makes the question irrelevant.
+
+### D534
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**D534 — reject the seed's best idea, on a measurement**
+
+§7 Q4 proposed having tflw print its own entry path so all sites become honest from the emitter side.
+**Rejected.** §1.6: both builds are `0.1.0`, so nothing tflw prints today distinguishes them, and the
+change that would — printing `process.argv[1]` in the run banner — puts a machine-local absolute path
+into every user's output on a pre-1.0 CLI, to solve a problem that exists only in this repo pair's
+test harness. The resolver (`D532`) is the consumer's business and stays there.
+
+### D536
+
+<sub>cited from tflw-tests/scripts/lib/regression-shared.mjs, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-watch.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**D536 — `M128-03` closes by deletion plus a negative control**
+
+Delete `verify-watch.mjs:78`. §1.5 proves it is entailed by line 77, that half its predicate matches
+a string tflw never prints, and that its label describes a subsystem it does not touch. Strengthening
+a tautology is not available; the honest move is removal with the reason written at the site.
+
 ### D537
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **D537 — every assertion this milestone writes ships with a demonstrated break**
 
@@ -5707,12 +6066,37 @@ precisely because a same-commit branch made all 70 citations vacuous):
 
 ### D538
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-construct-coverage.mjs +2 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **D538 — `M138b-01`: ANSWERED by the user 2026-08-19 — option A**
 
 Put to the user as three options (A drop `npm test` + drop `--fix`; B write the unit tests; C document
 both). **The answer is A**, with a reason that is not in the row and changes how the fix is written:
+
+### D540
+
+<sub>cited from tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**D540 — green condition, made machine-checkable**
+
+The seed's draft — *"every check in either repo that grades a tflw build prints which build it
+graded, and a check whose predicate cannot distinguish success from absence either asserts on
+evidence or is gone"* — fails its own test: *"every check in either repo"* is not enumerable and the
+second clause is not decidable. Replaced, in two halves, both checkable:
+
+### D546
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+
+**D546 — what `M141` refuses**
+
+- **It does not reverse `D14`** or touch `exec.mjs` (`D533`).
+- **It does not change tflw's user-facing output** (`D534`).
+- **It does not migrate all ~50 resolution sites** — it makes them all go through one door and names
+  every one that stays as it was (`D532`, `D540`).
+- **It did not choose for the user on `apiV2`** — it asked, and builds the answer (`D538`, option A).
+- **It does not merge PR #83**, and does not stack on it (`D541`).
+- **It does not fix what it finds outside the four rows** — `D539`'s three go in the ledger.
 
 ### D623
 
@@ -5765,7 +6149,7 @@ spelling.**
 
 ### D631
 
-<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D631 — the setting-value rule lives in the parser for the five numeric slots.** The range of a
   number is a fact about its shape and the production reading it already holds everything needed.
@@ -5780,7 +6164,7 @@ spelling.**
 
 ### D633
 
-<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/duplicate-table-column.tflw · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D633 — a duplicate `with each` column is `TF072`, refused in the production that reads the
   header, and the duplicated name is kept.** New code because `TF027` means *a `{col}` the table
@@ -5858,7 +6242,7 @@ spelling.**
 
 ### D642
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D642** — *a `session` may be scoped to named envs, spelled `for env <a>[, <b>...]`, and a session
   written without the clause belongs to every env.* The clause only ever narrows, which is what makes
@@ -5870,7 +6254,7 @@ spelling.**
 
 ### D643
 
-<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D643** — *the parser bounds its own recursion, and refuses past the bound with a diagnostic
   rather than a stack overflow.* `parseSource` is documented as never throwing for a syntax error and
@@ -5884,7 +6268,7 @@ spelling.**
 
 ### D647
 
-<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **Decisions taken:** `D647` — a `header … for <service>` is checked against the union of every service
 the file declares rather than the active env, `TF076`, with the under-approximation named and
@@ -5894,7 +6278,7 @@ reconstructed, and the rule stands going forward.
 
 ### D659
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-check-diagnostics.mjs +1 more · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **D659 — a completeness gate beside the denylist: a shipped construct must be mentioned somewhere**
 
@@ -5907,7 +6291,7 @@ matches no grep.
 
 ### D673
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
 
 **`D673` — the docs site gets a prohibition, not a declaration.** A reader of `/guide/load-testing`
 is a tflw *user*, with no relationship to `M60`. Explaining the notation on a user-facing website
@@ -5916,6 +6300,16 @@ thing without the number, and `verify-docs.mjs` gains the rule — one more prop
 roadmap denylist and `D659`'s completeness gate, not a new instrument. **Fence contents are
 excluded**: `# emitted by tflw M137d — sec/error-detail-disclosure` is tflw's own output, reproduced
 verbatim, and is not a citation at all.
+
+### D675
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D675` — only cited identifiers get an entry, enforced two ways.** Every citation in tracked prose
+must have an entry, and every entry must have a citation. An index that grows past what is cited
+becomes an unreviewed publication surface; one that lags becomes a dead pointer wearing a link. The
+`--check` mode fails on either direction, which is the shape `gen-spec-tables.mjs` already runs since
+`M147e-9`.
 
 ### D677
 
@@ -5939,7 +6333,7 @@ files that mostly are not.
 
 ### D709
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/refresh-own-identifiers.mjs +2 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
 
 **`D709` — the sibling's citations do not resolve today, and the repair is the index's input set**
 
@@ -5948,9 +6342,42 @@ files that mostly are not.
 boundary: give each tracked prose file a sentence naming `DECISIONS.md`, and its notation becomes
 resolvable. Measured against the published index, **that sentence would be false for half of them.**
 
+### D710
+
+<sub>cited from tflw-tests/scripts/refresh-own-identifiers.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D710` — the sibling's citation set is pinned in this repository, not checked out by CI**
+
+*Taken 2026-08-24, following `D709`.* The generator now needs a second repository's prose, and
+`verify:decisions` runs in the `test` job, which checks out this repository only. Nothing in this
+repository's CI has ever checked out the sibling.
+
+### D711
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D711` — both repositories number their milestones from 1, and 297 citations sit on the collision**
+
+*Taken 2026-08-24, during `M152e`'s build, and it is the finding `D709` was hiding.* `D687`
+established that this repository has at least nine numbered sequences and prohibited resolving a
+citation by magnitude. The sibling adds a tenth, and it is the worst-behaved of them: **`testFlow-tests`
+runs its own `M0`–`M53`**, and they are not this repository's.
+
+### D716
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
+
+**`D716` — the bare-decision rule becomes alphanumeric.** `/\bdecisions?\s+\d+/` →
+`/\bdecisions?\s+[0-9A-Za-z]+\b/`, so `decision B` is seen. Measured need, not speculation: `decision
+B` is the citation `M152c-01` calls out by name and the citation every existing matcher misses.
+**Re-measure the markdown corpus before this lands** — the rule is shared with the existing prose
+scan, and a word like `decision A` in ordinary prose is now a hit. If the markdown corpus produces
+false positives, the alphanumeric form is scoped to the `package.json` corpus and that scoping is
+written down rather than inferred.
+
 ### D722
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/apiV2/src/lifecycle/lifecycle.constants.ts, tflw-tests/apiV2/src/lifecycle/lifecycle.controller.ts +13 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D722` — the dogfood's job is defect yield, and coverage is the gate.**
 A construct counts as covered when it is exercised in a way that *could fail* — a known-answer
@@ -5963,7 +6390,7 @@ dogfooding, which `plan_v2.md` §4.2 deliberately protects).
 
 ### D723
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D723` — ground truth is `tflw spec --json`, emitted by the binary under test.**
 tflw grows one new subcommand emitting its own surface: statement keywords (from
@@ -5979,7 +6406,7 @@ which makes `D511`'s merge order harder rather than easier).
 
 ### D724
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D724` — the manifest is known-answer and repo-wide: `CONSTRUCTS.md`.**
 Generalize `VULNS.md` past security. One row per shipped construct: the planted defect in
@@ -5990,7 +6417,7 @@ it. The `no route without a row, no row without a route` discipline carries over
 
 ### D725
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/apiV2/src/app.module.ts, tflw-tests/apiV2/src/lifecycle/lifecycle.controller.ts +5 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D725` — plants are always-present fixture modules; `vuln/` keeps its gate.**
 New plants follow the `flaky-widget` / `retry-demo` / `contract-demo` / `safety-demo` /
@@ -6005,7 +6432,7 @@ you cannot trust).
 
 ### D726
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/regression.mjs +5 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D726` — workload shapes are graded against a server-observed arrival curve.**
 `tflw-acceptance/perf/profile/concurrency-groundtruth-{instant,ramped}.mjs` already prove the
@@ -6018,7 +6445,7 @@ only, and a completely wrong shape still breaches a threshold.
 
 ### D727
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/.github/workflows/ci.yml +4 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D727` — static gate in CI, perf on a scheduled box run.**
 The coverage gate is static (parse the corpus, compare against `tflw spec --json`) so it costs
@@ -6028,7 +6455,7 @@ trustworthy arrival curve; the box can.
 
 ### D729
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/tests/.constructs/locator-near-miss.tflw +4 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D729` — UI plants prefer a real flow; a harness page is the fallback.**
 Most of the uncovered browser surface has a believable home: an invoice PDF download on
@@ -6040,7 +6467,7 @@ proven only on a purpose-built page is proven against the easiest possible case.
 
 ### D730
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/constructs.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D730` — the ratchet: an uncovered list that may only shrink.**
 The gate ships in `M154b` with an explicit uncovered list and **fails if the list grows**, or if a
@@ -6051,9 +6478,20 @@ milestones. Precedent: `verify-test-counts.mjs`'s `EXPECTED` is exactly this sha
 wordlist, but a monotonically shrinking one whose growth is a failure, which is not the thing
 `D659` forbids.
 
+### D731
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-coverage.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D731` — spec status gates the demand.**
+`✅ shipped` constructs are demanded. `🔮 planned` constructs are **pending** — expected to have
+zero coverage, and the gate goes red the day their badge flips. `🔧 mixed` sections are resolved
+per-construct rather than per-section. `element` aliases are therefore not a gap today and become
+one automatically when built, with nobody having to remember. `SPEC.md` currently carries 49 `✅`,
+9 `🔧`, 8 `🔮`.
+
 ### D732
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/regression.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D732` — walking skeleton first, then scale by tier.**
 `M154a` + `M154b` prove manifest → plant → test → precision/recall end to end on **exactly three
@@ -6065,7 +6503,7 @@ met at n=3 where being wrong is cheap, and every later estimate is anchored on a
 
 ### D733
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D733` — the scheduled perf run is a registered box tenant.**
 A systemd timer on the shared build box under a new `tflw:perf` lease class, **registered with the
@@ -6080,7 +6518,7 @@ quietly mean *scheduled when the laptop happens to be open*.
 
 ### D734
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D734` — a plant that fails because tflw is broken must be distinguishable from a plant that is
 wrong.**
@@ -6092,7 +6530,7 @@ milestone's own successes look identical to its bugs.
 
 ### D736
 
-<sub>cited from SPEC.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-coverage.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D736` — the manifest lists what the parser dispatches, and nothing else.**
 A `🔮 planned` construct is **absent** from `tflw spec --json`, not listed with a `planned` status.
@@ -6111,7 +6549,7 @@ fail the day it ships.
 
 ### D737
 
-<sub>cited inside a range only · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-provenance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D737` — the build stamp is never invented.**
 `commit` is a short sha or `null`; there is no third answer. Outside a git checkout — a published
@@ -6139,7 +6577,7 @@ error naming the right one.
 
 ### D739
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D739` — "uncovered" on the ratchet means *unrostered*, not *unexercised*.**
 `M154b`'s ratchet ships with 163 of the 166 constructs on it, and `step:api` is one of them — with
@@ -6156,7 +6594,7 @@ half being right.
 
 ### D740
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-coverage.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D740` — the ratchet's ceiling is a second, pinned integer.**
 `D730` says the uncovered list may only shrink. The list is tracked, so growing it is a visible
@@ -6170,7 +6608,7 @@ and needs no ceremony.
 
 ### D741
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/constructs.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D741` — the coverage gate refuses a stale build; `check-acceptance` only annotates one.**
 Both scripts grade the vendored tflw and `M153b-01` is about both, but the same staleness does two
@@ -6191,7 +6629,7 @@ is its own state and it is printed.
 
 ### D742
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D742` — the manifest has a seventh family, and `M154a` missing it was structural.**
 `tflw spec --json` shipped six families; the parser also dispatches seven **declarations** (`test`,
@@ -6207,7 +6645,7 @@ Measured at the time: `after file` used **once** in the corpus, a bare `after` *
 
 ### D743
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D743` — a pure value transform is graded against a literal, with no target at all.**
 A deliberate departure from `D725`, which says plants are always-present fixture modules. `base64`,
@@ -6218,7 +6656,7 @@ have `target: none` and assert against hand-written literals.
 
 ### D744
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/perf-ladder.mjs, tflw-tests/scripts/perf-conformance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D744` — the ladder's shared fixture values stay literal, and a gate proves they match the
 constant.** `B6-15` asks to "single-source the fixture id", and the obvious reading is an import.
@@ -6234,7 +6672,7 @@ is checked against it") applied to a value instead of a document.
 
 ### D745
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +5 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D745` — the workload-shape plants are graded against a standalone counter, not against apiV2.
 This inverts `D726`'s placement in order to keep `D726`'s principle.**
@@ -6252,7 +6690,7 @@ cannot be, because of what the target does to the measurement:
 
 ### D746
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md, tflw-tests/scripts/perf-conformance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D746` — the scheduled run leases as `tflw:load:conformance`, class `tflw:load`. `D733`'s new
 `tflw:perf` class would have been a silent downgrade.**
@@ -6267,7 +6705,7 @@ classify('tflw:load:conformance') -> tflw:load   requires=('quiet',)
 
 ### D747
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md, tflw-tests/ops/systemd/tflw-perf.service +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D747` — the run acquires through `boxlock.sh acquire`, never through plain `flock`.**
 The dashboard decides who holds the box by walking /proc for processes running `boxlock.sh acquire`
@@ -6286,7 +6724,7 @@ semantics and only one of them be visible to the instrument that reports on it.
 
 ### D748
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/ops/systemd/tflw-perf.service, tflw-tests/scripts/perf-conformance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D748` — the scheduled run measures `origin/main` in its own checkout.**
 `~/tflw-exec/testFlow-tests` is the rsync target `scripts/exec.mjs` maintains from the Mac. A
@@ -6297,7 +6735,7 @@ with a second checkout of tflw.
 
 ### D749
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs, tflw-tests/scripts/verify-perf-parity.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D749` — the runners are compared on matched populations, and every extractor fails loudly rather
 than defaulting.**
@@ -6314,7 +6752,7 @@ quietly became `null` reports "no regression" forever, which is `M141`'s vacuity
 
 ### D750
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/.github/workflows/ci.yml +11 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D750` — the regression gate compares tflw against its co-runners in the same run, not against
 last month's absolute numbers — and two of its rules need no calibration.**
@@ -6326,7 +6764,7 @@ along in the artifact as history rather than as the gate.
 
 ### D751
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D751` — a construct whose known answer is already enforced by a dedicated gate is rostered by
 *reference* to that gate, not by a hand-written row restating it.**
@@ -6339,7 +6777,7 @@ and the roster would get longer while the evidence got weaker.
 
 ### D752
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D752` — a roster row that cites another gate is checked against that gate, in both directions, on
 what the run actually did.**
@@ -6353,7 +6791,7 @@ produced a second, weaker copy of an assertion that already runs on every sweep.
 
 ### D754
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D754` — the schedule is disarmed; the gate is manual on demand until publish.**
 `systemctl --user disable --now tflw-perf.timer` (2026-08-26). Timer and service both `disabled` and
@@ -6415,7 +6853,7 @@ published artifact for a sibling to break against, the choice is informed rather
 
 ### D758
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D758` — the measured perf gate is a phase of the regression sweep, and the sweep is where it
 lives now.** `scripts/regression.mjs` gains `perf-ladder`, running
@@ -6426,7 +6864,7 @@ for that end state to arrive before it guards anything.
 
 ### D759
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D759` — inside the sweep the lease is inherited, verified, and neither re-taken nor waived.**
 This is the finding that made the whole shape work, and it was not visible from the design.
@@ -6439,7 +6877,7 @@ something to stop asking of it.
 
 ### D760
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D760` — the sweep phase runs a new `sweep` profile (`ladder` + `functional`), not `full`.** The
 omission is `curve`. `full` is right for a run whose entire purpose is the measurement; as a *phase*
@@ -6453,7 +6891,7 @@ as it was.
 
 ### D761
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D761` — the phase is `localOnly` by declaration, and "not this machine" is a third verdict.**
 `perf-ladder` carries `localOnly: true` in a field `regression.mjs`'s partition guard reads: an
@@ -6466,7 +6904,7 @@ shape.
 
 ### D763
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D763` — a roster row may state a *rule* instead of a list, and the anti-regression duty moves to
 the gate it cites.**
@@ -6481,7 +6919,7 @@ exist in exactly one place, which is tflw.
 
 ### D764
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/list-mutation-candidates.mjs +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D764` — a ratchet condition is audited against the decision it cites, never read as provenance.**
 Taken 2026-08-28 while judging acceptance clause 5. `D739` settled what a `RATCHET` entry *asserts*
@@ -6495,7 +6933,7 @@ a different corpus, a different question.
 
 ### D765
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/plants.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D765` — the Tier 3 grader becomes a `regression.mjs` phase, and the cost claim is retracted as
 measured rather than argued.**
@@ -6505,9 +6943,21 @@ for the third time, and `D493` already settled that remedy in `M139-5` for the T
 sitting one phase above it. So this needs no new mechanism: `input-acceptance`, `VULN_MODE=1`, group
 `core`, an ordinary gated phase.
 
+### D766
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`D766` — `matcher:was-made` rosters against a browser plant, and its condition was an address
+rather than a requirement.**
+Taken 2026-08-28. The entry read *"a browser-network assertion and does not belong in an API fixture
+— it rosters with the UI work, not here"*. "The UI work" is `M154d`, which **closed**, so the
+sentence pointed at a milestone that no longer exists. It is a sharper case than the
+`declaration:concurrency` one step 4b found: that condition named the right requirement at the wrong
+address, and this one named no requirement at all.
+
 ### D767
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +7 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D767` — a count in prose is a copy with no guard, so `D504` deletes the number as well as the
 list.**
@@ -6519,7 +6969,7 @@ across six milestones with nothing anywhere able to notice. Seven occurrences ac
 
 ### D768
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
 
 **D768 — `timeout api`/`timeout browser` narrow `timeout step`; the broad key stays the fallback**
 
@@ -6582,7 +7032,7 @@ the config dialect and is not introduced here.
 
 ### D774
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D774` — the disposition is reversed: the code changes, and the sentence changes because the code did**
 
@@ -6592,7 +7042,7 @@ here**, and the plan says so rather than quietly diverging.
 
 ### D775
 
-<sub>cited inside a range only · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/undeclared-env-ref.tflw · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D775` — `D147`'s prediction/observation test decides the severity, and it splits the row**
 
@@ -6608,7 +7058,7 @@ config is resolved, so this is an observation."* Applied here:
 
 ### D776
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +1 more · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D776` — `require env` stays a precondition on the environment; `TF077` is the converse rule, not a redefinition**
 
@@ -6619,7 +7069,7 @@ has to exist for the redactor to pre-register it (`SPEC:431`), is an ordinary sh
 
 ### D777
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D777` — `P#75` forbids touching a live API, not touching the filesystem**
 
@@ -6634,7 +7084,7 @@ what that reading needs it to say, and the codebase already settled this twice:
 
 ### D778
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/config-directives/require.config · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D778` — `TF078`: `"{env(NAME)}"` in a string literal is reported, at warning severity**
 
@@ -6645,7 +7095,7 @@ wearing a diagnostic code.
 
 ### D779
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +3 more · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D779` — `tflw check` reports unset required variables as an advisory note, with no flag**
 
@@ -6660,7 +7110,7 @@ the third — which scoping missed — is what ships:
 
 ### D780
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D780` — the manifest summary is rewritten to name which command does what**
 
@@ -6668,7 +7118,7 @@ the third — which scoping missed — is what ships:
 
 ### D781
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +2 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D781 — teardown runs by default under load; the `cleanup` gate is deleted**
 
@@ -6677,7 +7127,7 @@ do. The `cleanup` keyword is removed from the language.
 
 ### D782
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D782 — hook time leaves `durationMs`; this is the defect `D26` actually found**
 
@@ -6686,7 +7136,7 @@ do. The `cleanup` keyword is removed from the language.
 
 ### D783
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +2 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D783 — `teardown` is a three-valued level, and every value answers the same question**
 
@@ -6712,7 +7162,7 @@ run unconditionally, as they do today (`:2754`).
 
 ### D785
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D785 — any level other than `always` announces itself on every run**
 
@@ -6760,7 +7210,7 @@ successor and §2.4's three arms as the evidence.
 
 ### D789
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **D789 — plant `C48` is rewritten, not deleted**
 
@@ -6819,7 +7269,7 @@ It is taken in that direction (docs-site depends on the root guard, never the re
 
 ### D797
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +2 more · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D797 — `armedDialog` becomes a queue**
 
@@ -6828,7 +7278,7 @@ queue keeps today's behaviour exactly: dismiss, which is what an unarmed page al
 
 ### D798
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.constructs/dialog-one-shot.tflw +2 more · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D798 — `dialog message` becomes a value subject**
 
@@ -6845,7 +7295,7 @@ queue keeps today's behaviour exactly: dismiss, which is what an unarmed page al
 
 ### D800
 
-<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.constructs/dialog-kinds.tflw · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D800 — `accept dialog with "<text>"` answers a prompt**
 
@@ -6855,7 +7305,7 @@ queue keeps today's behaviour exactly: dismiss, which is what an unarmed page al
 
 ### D801
 
-<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.constructs/dialog-one-shot.tflw · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D801 — `accept dialog with` on a non-prompt is `TF080`, at runtime**
 
@@ -6864,7 +7314,7 @@ silent-no-op class this milestone exists to remove, so tflw does not inherit it:
 
 ### D802
 
-<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.constructs/dialog-one-shot.tflw · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D802 — an unconsumed arming at the end of a test is `TF079`, a warning**
 
@@ -6874,7 +7324,7 @@ detect.
 
 ### D803
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tests/.constructs/dialog-kinds.tflw, tflw-tests/tests/.constructs/dialog-one-shot.tflw · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D803 — the dialog state is per page state, and resets with it**
 
@@ -6892,7 +7342,7 @@ The table in §2.2 goes into `SPEC`, and with it the sentence the corpus has nev
 
 ### D805
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **D805 — a plant per dialog kind, and the two vacuous uses are repaired not deleted**
 
@@ -6900,6 +7350,15 @@ The table in §2.2 goes into `SPEC`, and with it the sentence the corpus has nev
 they arm becomes load-bearing. `M154b`'s `C2` plant — which grades the one-shot property and
 deliberately does **not** assert the two-dialog case, because at the time it could not — is extended
 to grade the queue.
+
+### D806a
+
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D806a — the runtime warning channel, and the manifest's `runtime` evidence kind**
+
+*(`M159c`, taken during the build. Numbered `D806a` rather than `D807` because `D807` is `M160`'s
+and already spent; this is an amendment to `D801`, not a new decision of its own.)*
 
 ### D806b
 
@@ -6909,6 +7368,15 @@ to grade the queue.
 
 *(`M159d`, taken during the build. An amendment to `D802`, numbered beside `D806a` for the same
 reason: `D807` is `M160`'s and already spent.)*
+
+### D806d
+
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.constructs/dialog-one-shot.tflw · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**D806d — the manifest says which phase decides a diagnostic, and `tflw spec --json` becomes a recorded seam**
+
+*(`M159g`, taken while scoping `M159f`. The tflw half that milestone needs; `D511` puts it in the
+same merge as the rest.)*
 
 ### D806e
 
@@ -6966,7 +7434,7 @@ exactness it does not have and starts claiming the one it will.
 
 ### D809
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md +4 more · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **D809 — rendering rounds, and every renderer rounds the same way**
 
@@ -6987,7 +7455,7 @@ surprise this milestone removes.
 
 ### D813
 
-<sub>cited from SPEC.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.constructs/generator-known-answers.tflw · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
 
 **D813 — `stringify()` is the language's stated string form, promoted out of `eval.ts`**
 
@@ -7008,22 +7476,54 @@ becomes invisible.
 
 ### D815
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tests/.constructs/generator-known-answers.tflw · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
 
 **D815 — the `unique` family is keyed correctly across every boundary it crosses**
 
 Two defects, one rule: an index only means something inside the space it was minted for, and
 `unique` currently crosses two boundaries without saying so.
 
+### D818
+
+<sub>cited from tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**D818 — the measurement runs before the fix, and is the first step**
+
+`M154h-01`'s repair looks obvious (create your own product) and that is precisely the argument for
+measuring first. If the loop reproduces the failure on a **self-owned** product, the diagnosis was
+wrong and the fix would have buried a real intermittent under a plausible story — which is the
+substitution this ledger exists to refuse.
+
 ### D819
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/constructs.mjs +1 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
 **D819 — every browser test creates and addresses the records it asserts on**
 
 The rule `review-submission.tflw` already follows, applied to the three departures. `unique(...)` in
 `before`, addressed by the name it created, never by seeded fixture name and never by table
 position.
+
+### D820
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**D820 — `C31` and `C33` are re-planted against self-created rows, and their known answers change**
+
+`C31`'s cart is built by the test: add two known products, drag, assert by the names it added and by
+position within the rows it owns. The plant keeps its `catches` clause verbatim — *"a `drag` that
+fires no drop, or reorders something else"* — because the discrimination is unchanged; only the
+premise moves.
+
+### D821
+
+<sub>cited from tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**D821 — the `KNOWN INTERMITTENT` header is replaced by the measurement, not deleted**
+
+`storefront.tflw:194`'s header is the right artefact for an undiagnosed flake and it is why this
+row is actionable at all. It is rewritten to carry the result of `D818` — the loop count, the arm
+that failed or the bound that held — and stays as a header if the intermittent survives the fix.
 
 ### D822
 
@@ -7037,7 +7537,7 @@ the only such gate in the repository.
 
 ### D823
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **D823 — assert-only probes move above the gate line; the coverage tables stay below it**
 
@@ -7047,7 +7547,7 @@ Assertions go above, enumerations stay below.
 
 ### D824
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **D824 — the cost is sized before the move, because the phase's budget was measured for what it does today**
 
@@ -7055,9 +7555,52 @@ Assertions go above, enumerations stay below.
 run per probe and the phase's budget was measured for what it currently does; sizing that is its own
 change."* That sizing is step one here, not an assumption.
 
+### D825
+
+<sub>cited from tflw-tests/scripts/regression.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**D825 — if the probes are too slow for every run, they go to a named second tier, never to a flag**
+
+The fallback, decided now so it is not improvised under time pressure: a separate automated phase
+that runs on a stated cadence and **fails the same way**. Not an opt-in flag, and not "run it
+manually before a release" — that is the state the row is filed against, with a nicer name.
+
+### D826
+
+<sub>cited from tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/measure-construct-evidence.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**D826 — `--probe` is deleted; the script keeps only the verb it implements**
+
+Not built, not repurposed inside this milestone. `--probe` leaves the usage block, the argv
+contract and the closing line; the `give -> give` no-op perturbation goes with it. `--discover`
+becomes the only thing the script claims, and the closing line restates the honest position:
+
+### D827
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/measure-construct-evidence.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**D827 — the roster-vacuity gate is a separate milestone, and this is where it is named**
+
+`--probe`'s perturbations would have been ~80% of an instrument this repository does not have and
+visibly needs: **nothing checks that any of the 113 roster plants actually discriminates.**
+`verify-construct-coverage.mjs` demands a plant exists; `D722` says presence is not evidence. On the
+tflw side that exact gap is closed by `scripts/mutate.mjs` — **311 mutations**, each applied, each
+required to kill a test. The sibling has no equivalent for its roster.
+
+### D828
+
+<sub>cited from tflw-tests/scripts/lib/plants.mjs, tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/regression.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**D828 — the sibling's own graders are audited against the rule both rows imply**
+
+One pass over `scripts/`: every grader is either reachable from an automated phase, or names in its
+own header that it is not and why. `M154f` caught three of its own graders doing this; `M154g` then
+shipped a fourth. Two milestones running is a pattern, and the audit is the cheapest thing that
+turns it into a checked property.
+
 ### D829
 
-<sub>cited from SPEC.md · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
 
 **D829 — a repeated single-valued config key is `TF081`, an error**
 
@@ -7086,7 +7629,7 @@ declarations of the same key are two mistakes, not one.
 
 ### D832
 
-<sub>cited from SPEC.md · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
 
 **D832 — the check is per block, and a repeat across `defaults` and `env` is legal**
 
@@ -7095,7 +7638,7 @@ block.
 
 ### D834
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/verify-artifact-contract.mjs · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **D834 — tflw publishes its own rounding rule in the artifact contract; the sibling reads it**
 
@@ -7107,7 +7650,7 @@ only sense that matters — `M160a` changed it and the sibling had no way to kno
 
 ### D835
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/founding-runs/README.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/perf-conformance.mjs +1 more · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **D835 — the reporting bound belongs to the run, not to the checkout**
 
@@ -7119,7 +7662,7 @@ measurement newly precise.
 
 ### D836
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/founding-runs/README.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/tflw-acceptance/perf/baseline.json · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **D836 — contribution is per-metric, not just per-rung**
 
@@ -7139,9 +7682,63 @@ percentile printed beside it was rendered to a whole millisecond.
 112** non-diagnostic constructs, and they are exactly the config family: `ConfigKeywordEntry` carries
 `id`, `slot` and `summary`, and no shape at all.
 
+### D838
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/mutations.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D838` — the perturbation surface is tflw's implementation, not the corpus**
+
+A corpus-level pilot was run first because it is far cheaper: delete the first line matching the
+row's own `evidence.pattern` and re-run the plant. It killed **8 of 8** sampled plants (`C1`, `C3`,
+`C12`, `C30`, `C45`, `C60`, `C75`, `C90`).
+
+### D839
+
+<sub>cited from tflw-tests/scripts/lib/mutations.mjs, tflw-tests/scripts/list-mutation-candidates.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D839` — reuse tflw's mutation registry; do not author a second corpus**
+
+The registry is declarative, exported, and 311 entries deep. The alternative — authoring one
+mutation per plant in `testFlow-tests` — was going to be this plan's default and is rejected on
+three measured grounds:
+
+1. **Mutations cannot be generated**, they must be hand-authored against real code and must compile
+   (§3). 102 of them is the largest hand-authored artefact anyone would have built here.
+2. **A second corpus drifts.** tflw's mutations are maintained beside the code they mutate, and
+   `mutate.mjs` fails when a `find` anchor stops matching. A copy in the sibling has no such
+   coupling, and `M147d-5` already records what repointing a stale anchor costs.
+3. **It inverts the direction of knowledge.** The sibling would be asserting what tflw's internals
+   look like — the same objection `verify-construct-coverage.mjs`'s docblock raises against putting
+   its own gate in tflw.
+
+### D840
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D840` — discovery first, gate second; they are two artefacts, not two modes of one**
+
+The mapping from mutation to plant does not exist and cannot be guessed. So:
+
+- **Discovery** (`M164b`) runs a mutation, then the **whole roster**, and records which plants died.
+  Expensive, run deliberately, not in CI. Output is a **kill matrix**: plant × mutations-that-kill-it.
+- **The gate** (`M164d`) runs a **covering set** derived from that matrix — enough mutations that
+  every graded plant is killed by at least one — and requires every one of those kills to still
+  happen.
+
+### D841
+
+<sub>cited from tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D841` — the gate's size is derived, not chosen**
+
+The covering set is computed from the matrix, not picked. From the pilot's blast radius — one
+mutation, four plants — a covering set for 102 plants could be well under 53; it could also be far
+larger if the tail of constructs is only reachable by mutations that do not exist. **The number is
+an output of `M164b`, and `M164c` is the decision point that reads it.**
+
 ### D842
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +4 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D842` — a collateral kill is recorded as collateral, never counted as coverage**
 
@@ -7149,9 +7746,98 @@ A plant is **covered** only by a mutation whose `what` is about that plant's own
 and written down by a person, once, in the matrix. `C60`, `C68` and `C112` dying under a `check`
 mutation is a fact about a shared corpus file, not evidence that `matcher:equals` discriminates.
 
+### D843
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/mutations.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D843` — the harness proves the mutation was installed before it believes a survivor**
+
+A survivor is only information if the mutated build actually reached the plant. The pilot produced a
+clean sweep of false survivors from a `tsc` failure (§3). So, before grading any mutation:
+
+- the re-vendor must exit 0, and
+- the vendored build's identity must have **changed** from the previous one — `verify-construct-
+  coverage.mjs`'s provenance helpers already read that sha, and `M153b-01` is the row that exists
+  because a stale vendored build gave a confident wrong answer.
+
+### D844
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/list-mutation-candidates.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D844` — the sweep does not run on every PR, and does not get a `localOnly` phase either**
+
+It needs a Docker stack, a browser, a sibling checkout and ~7 s of rebuild per mutation. `perf-
+ladder` is the existing `localOnly: true` precedent (`D750`/`D761`), but that flag means *a phase CI
+declares and skips*, and a 5-hour discovery run is not a phase.
+
+### D846
+
+<sub>cited from tflw-tests/scripts/lib/mutations.mjs, tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D846` — the subject is the 102 acceptance-graded rows**
+
+`D827` says 113 and §2.1 confirms the arithmetic, but 10 rows are graded by `input`, `security`,
+`sarif` or `redaction` gates rather than by `verify-construct-acceptance.mjs`, and `C59` is a
+reference roster delegating to tflw's own diagnostics tests. Those 11 are **out of scope and named**:
+this milestone reports coverage over 102 and states the 11 it does not claim, rather than quoting a
+larger number it did not measure.
+
+### D847
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/census-shape.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D847` — the installation proof is the bundle with its build stamp normalised out, and `D843`'s named mechanism does not work**
+
+`D843` is right about the requirement and wrong about the instrument. It says to prove installation
+by watching *"the vendored build's identity change"*, and points at `verify-construct-coverage.mjs`'s
+provenance helpers as already reading that sha. Measured on the box before `M164b` was built
+(`tests/.scratch/m164/instrument-probe.mjs`), both halves of that sentence fail:
+
+- **The provenance helpers read `tflw spec --json`'s `build.commit`.** A mutation edits the working
+  tree without committing, so `commit` is *the same string for every mutation in the sweep*. It
+  cannot distinguish one from another, let alone an installed one from an absent one.
+- **The raw sha256 of `node_modules/tflw/dist/cli.cjs` moves on every rebuild**, because `builtAt`
+  is baked into the bundle. Two consecutive refreshes with nothing changed:
+  `6f9de43c15181f72` → `23aaf15ddec59800`.
+
+### D848
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D848` — the baseline is a bracket, not a precondition**
+
+`D843` made the harness prove that a *mutation* was installed. It did not make the harness prove
+that everything **else** stayed still, and those are different claims. The green baseline
+`M164b` runs before a sweep is a **precondition**: true when checked, and silently permitted to stop
+being true at any point in the six hours that follow. It reads as an invariant and is not one.
+
+### D849
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/mutation-covers.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D849` — how a plant died is measured, not inferred from the glyph**
+
+A red plant is `refusal`, `no-assertions` or `assertion`, read from the acceptance grader's own
+per-plant page and stored in `kill-detail.json`. Only `assertion` can be coverage. The census kept
+the glyph and the glyph merged the three, which is how §11.18 came to report 34 plants with
+"candidate real coverage" when the measured number is 4.
+
+### D850
+
+<sub>cited from tflw-tests/scripts/lib/mutation-covers.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`D850` — `covers` is judged against the plant's own known answer, not against the mutation's file**
+
+`D842` said "a mutation whose `what` is about that plant's own construct". Applied to the six
+measured relations that phrasing is ambiguous in exactly one place — `C99`'s seven false clauses came
+from a lexer break, and the lexer *is* where durations become values — so it is sharpened here rather
+than left to be re-argued: **a relation covers when the clause that went false is the plant's own
+claim about its own construct.** `C99`, `C100` and `C92` all ran, all asserted, all went red, and
+none of them went red about the thing they watch.
+
 ### D851
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/mutation-covers.mjs +3 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D851` — `M164d` is not built; the covering set of 1 is a finding, not a gate**
 
@@ -7172,7 +7858,7 @@ met and will not be**. `D851` declined to build the gate that would have met it.
 
 ### D854
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D854` — the census reports its own staleness, and does not fail on it**
 
@@ -7181,9 +7867,17 @@ a dated measurement with nothing behind it. That is exactly `D767` — a hand-ma
 gate reads — and it arrived inside the milestone that cites `D767` three times, which is the
 argument for handling it here rather than filing it.
 
+### D855
+
+<sub>cited from tflw-tests/scripts/verify-sweep-size.mjs · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
+
+**`D855` — `resolve` answers three states, and only one of them is an accusation**
+
+`resolve(path)` becomes `'here' | 'absent' | 'unavailable'`.
+
 ### D857
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
 
 **`D857` — you may quote a stale count; you may not assert one**
 
@@ -7195,6 +7889,47 @@ A lexical rule that forbade the shape outright would have hit two occurrences th
 - `scripts/regression.mjs:381` states what `core` held when `M139-5` placed a phase on it. That one is
   a real fault of a smaller kind — a past fact written in the present tense — and it is reworded, not
   quoted: *"the unique smallest at 8"*. The number survives; the claim about now does not.
+
+### D859
+
+<sub>cited from tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`D859` — the check lives in tier 2 and ships as a discipline with a command, not as a CI gate.**
+It needs the records, which are gitignored, so no runner can execute it (`D683`, and `M131-03`'s
+rule that a check which cannot see its input has not passed). `D828`'s standard — *"a grader that
+runs in no automated pass is not a grader"* — is met the way `M163` met it: the script names in its
+own header that it is not CI-reachable and why, and the command is written into `CONTRIBUTING.md` so
+it is a step someone can run rather than a property someone hopes for.
+
+### D860
+
+<sub>cited from tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`D860` — the corpus excludes the gate's own tests, by name and with the reason at the exclusion.**
+`scripts/gen-decisions.test.mjs` cites `D888`, `D999` and `M9a2` *because they do not resolve*. An
+exclusion list that did not say so would read as an oversight the next time someone widened it.
+Follows `D-M164-06-1`'s form: exclusion with a stated reason per exclusion, never an extension
+allowlist.
+
+### D864
+
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`D864` — the pin holds what the sibling ASKS, which is not what the sibling cites.**
+
+### D865
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`D865` — a two-repository change can be exercised before either half is pushed, and the pin it
+produces cannot be committed.** `refresh-sibling-citations.mjs --from-checkout <path>` reads the
+sibling from a local clone. `D710` refuses a pin built from a working tree and gives a precise
+reason — a local read *"would look identical to a correct pin"* — so both halves of that reason are
+answered rather than argued around. It reads `HEAD` and **refuses a dirty checkout**, so what it
+reads is a commit, the same kind of object `--ref` names; and the pin it writes carries
+`local: true`, which `gen-decisions.mjs --check` refuses outright while generation prints a warning
+and proceeds. The two verbs want different answers: seeing the index a change would produce is the
+whole point, and committing one that names a commit nobody can fetch is what `D710` is about.
 
 ### M0
 
@@ -7343,7 +8078,7 @@ gracefully mid-arc, and the per-construct multiplier isn't worth paying three ti
 
 ### M4b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/mixed/storefront.tflw · lifted from `PROGRESS.md`</sub>
 
 **M4b — visual regression**
 
@@ -7507,7 +8242,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M19
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/apiV2/src/auth/auth.service.ts +13 more · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -7531,7 +8266,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M22
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.env.example, tflw-tests/.gitignore +14 more · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -7547,7 +8282,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M24
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tests/.demo-fail/contract-drift.tflw, tflw-tests/tests/.demo-fail/retry-after-not-honored.tflw, tflw-tests/tests/api/catalog/contract-and-retry.tflw +2 more · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -7555,7 +8290,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M25
 
-<sub>cited from tflw-tests/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/README.md, tflw-tests/scripts/regression.mjs, tflw-tests/tests/api/orders/file-formats.tflw +1 more · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -7719,7 +8454,7 @@ pure acceptance-testing pass.
 
 ### M35a
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +1 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +10 more · lifted from `PROGRESS.md`</sub>
 
 **M35a — load-engine hardening: CPU-profile the tflw-vs-k6 gap**
 
@@ -7734,7 +8469,7 @@ refuted it.**
 
 ### M35b
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +3 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md +10 more · lifted from `PROGRESS.md`</sub>
 
 **M35b — root-cause via direct instrumentation**
 
@@ -7926,7 +8661,7 @@ stopping point and asked for a comprehensive plan for an HTTP-client-level chang
 
 ### M43
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +1 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +11 more · lifted from `PROGRESS.md`</sub>
 
 **M43-M46 — the reporter bug, and a corrected close to the arc (scoped 2026-08-01; M43 shipped 2026-08-01)**
 
@@ -7968,7 +8703,7 @@ only, so `sendRequest`'s `fetch()` path for `tflw run` is provably untouched, mi
 
 ### M46d
 
-<sub>cited from tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/README.md, tflw-tests/scripts/lib/perf-ladder.mjs, tflw-tests/tflw-acceptance/perf/artillery/checkout-burst.yml +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 | ID | Scope |
 |---|---|
@@ -8136,7 +8871,7 @@ grammar anywhere (only §17's `TF033`/`TF034` diagnostic rows mentioned it) and 
 
 ### M58
 
-<sub>cited from CHANGELOG.md, tflw-tests/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/README.md, tflw-tests/scripts/regression.mjs +1 more · lifted from `PROGRESS.md`</sub>
 
 **M58 shipped 2026-08-03 — `exclude` config directive (D127, PLAN_DISCOVERY_EXCLUDE.md)**
 
@@ -8152,7 +8887,7 @@ workaround.
 
 ### M59
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M59 shipped 2026-08-03 — 3 lexer S1s from the launch review's A1 pass (`REVIEW_FINDINGS_A1.md`)**
 
@@ -8162,7 +8897,7 @@ adjacent defect; all four are here, the rest of batch 1's 132 rows are recorded 
 
 ### M60
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tflw-acceptance/perf/README.md +19 more · lifted from `PROGRESS.md`</sub>
 
 **M60 shipped 2026-08-03 — checker parity + the A4/A2 checker findings (`REVIEW_FINDINGS_A4.md`, `REVIEW_FINDINGS_A2.md`)**
 
@@ -8227,7 +8962,7 @@ The second of the three verticals `FS-10` scheduled ("A + C now, B after batches
 
 ### M67
 
-<sub>cited inside a range only · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/tests/.constructs/step-observables.tflw, tflw-tests/tflw-acceptance/conformance/pacing.tflw +1 more · lifted from `PROGRESS.md`</sub>
 
 | commit | what |
 |---|---|
@@ -8348,7 +9083,7 @@ exists.
 
 ### M85
 
-<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/apiV2/src/safety-demo/safety-demo.controller.ts, tflw-tests/scripts/perf-conformance.mjs +4 more · lifted from `PROGRESS.md`</sub>
 
 **M85 — `allow hosts` covers what it claims (cluster C1: `B4-02`, `B4-03`, `A4-10`)**
 
@@ -8357,7 +9092,7 @@ same push.
 
 ### M87
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +5 more · lifted from `PROGRESS.md`</sub>
 
 **M87 — the checker resolves names (cluster C6: `A4-03`, `FU-08`, `A4-16`, `FU-12`)**
 
@@ -8369,6 +9104,16 @@ case 'CallExpr':
   for (const arg of value.args) checkValue(arg, bound, diags);
   break;
 ```
+
+### M88
+
+<sub>cited from tflw-tests/apiV2/src/safety-demo/cookie-scope.controller.ts, tflw-tests/inventory-service/src/ops-session/ops-session.controller.ts, tflw-tests/tests/api/identity/cookie-jar.tflw · lifted from `PLAN_M88_CLIENT_CONTRACT.md`</sub>
+
+**PLAN_M88 — the client contract, the stream's second surface, one bad hint**
+
+Scoped 2026-08-05, after re-probing clusters **C2**, **C4** and **C9** against `dist/cli.cjs` and
+settling the two open questions the review had been carrying. Source of rows:
+`REVIEW_FINDINGS.md` §C2/§C4/§C9. Baseline `07bc5d4` (`M87`).
 
 ### M88a
 
@@ -8382,6 +9127,25 @@ against `dist/cli.cjs`). One decision, three loops
 first and alone so the blast radius is legible. `B4-14`'s test is the guarded-vs-unguarded
 equality shape `M85` already established.
 
+### M88c2
+
+<sub>cited from tflw-tests/apiV2/src/safety-demo/cookie-scope.controller.ts, tflw-tests/inventory-service/src/ops-session/ops-session.controller.ts, tflw-tests/tests/api/identity/cookie-jar.tflw · lifted from `PLAN_M88_CLIENT_CONTRACT.md`</sub>
+
+**M88c2 — the jar (`B4-05`, `B4-06`). ✅ shipped 2026-08-05** (see `PROGRESS.md`; 1,554 tests, six negative controls, dogfood 320/320 on a clean DB, and the two-repo test run against an unscoped build fails with `:4002` holding apiV2's session JWTs). **Cluster C2 is closed.** Two plan corrections are recorded as `D-M88-15` and, below, the `clone()` note. `B4-05` is a two-line conformance fix. `B4-06` changes a
+data structure (`Map<name>` → `Map<origin, Map<name, entry>>`, per D-M88-7), adds `Domain` matching
+against declared hosts (D-M88-9), adds the step-trace note (D-M88-12), and touches
+`clone()`/`mergeFrom()`, whose session-sharing semantics (`SPEC` §3.3) must survive.
+`mergeFrom` becomes last-wins per `(origin, name)` — byte-identical to today within one origin, so
+`test "…" as admin, shopper` is unchanged; across origins the cookies now coexist instead of
+clobbering, which is the fix. **`clone()` must copy two levels**: it is currently a shallow entry
+copy, and a shallow copy of a nested `Map` *shares the inner Maps*. ~~Which is precisely the leak
+into a cached session and into siblings under `--workers N` that the method's own comment
+forbids.~~ **Not so, as shipped:** all three call sites are `mergeFrom(outcome.cookieJar.clone())`,
+and `mergeFrom` builds its own per-origin buckets, so a shallow clone is laundered before it can
+reach anything. The two-level copy ships with its own test because the method's contract stands on
+its own and the next caller will not be a merge — but no live leak was fixed there, and the claim
+above was wrong.
+
 ### M88d
 
 <sub>cited from SPEC.md · lifted from `PLAN_M88_CLIENT_CONTRACT.md`</sub>
@@ -8392,7 +9156,7 @@ gets `SPEC` ~~§16.1~~ **§13** restated, which means `docs-data.generated.ts` r
 
 ### M89
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md +1 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md +6 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **`M89` — workload results are made to describe the run that actually happened.** Cluster C3: a
 workload's reported population included iterations that never completed, so percentiles, error
@@ -8402,7 +9166,7 @@ and one consequence for the perf arc's own acceptance benchmark. Shipped as `M89
 
 ### M89a
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/tflw-acceptance/perf/README.md +3 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89a — the truthful population (`B3-02`, §3.2, §3.3) · single-repo**
 
@@ -8433,7 +9197,7 @@ follows for free. `junit.ts` mentions `workload.overMs` only in prose.
 
 ### M89c
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/.github/workflows/ci.yml +3 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **M89c — `TF033` requires a meaningful threshold · two-repo**
 
@@ -8464,7 +9228,7 @@ of its own decisions corrected by probing. Shipped as three commits: **M91a** (`
 
 ### M92
 
-<sub>cited from SPEC.md · lifted from `PLAN_M92_SHIP_SURFACE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M92_SHIP_SURFACE.md`</sub>
 
 **M92 — the ship surface tells the truth about what it ships (cluster C15)**
 
@@ -8514,7 +9278,7 @@ pass, in the same family as the S1s.
 
 ### M96
 
-<sub>cited from SPEC.md · lifted from `PLAN_M96_VALUE_SUBJECT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/value-subject-misplaced.tflw, tflw-tests/tests/api/identity/token-refresh-lifecycle.tflw · lifted from `PLAN_M96_VALUE_SUBJECT.md`</sub>
 
 **PLAN — M96: the value subject (`FU-11`)**
 
@@ -8524,7 +9288,7 @@ never as a subject.*
 
 ### M97
 
-<sub>cited inside a range only · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from tflw-tests/tests/api/orders/order-receipts.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **M97 — the checker contract**
 
@@ -8538,7 +9302,7 @@ not started.
 
 ### M97a
 
-<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/capture-uncapturable-subject.tflw, tflw-tests/tests/.checkonly/data-table-extension.tflw +4 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **`M97a` — shipped 2026-08-06**
 
@@ -8547,7 +9311,7 @@ not started.
 
 ### M97b
 
-<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/matcher-subject-mismatch.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **`M97b` — shipped 2026-08-06**
 
@@ -8556,7 +9320,7 @@ not started.
 
 ### M97c
 
-<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/missing-referenced-file.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **`M97c` — shipped 2026-08-06**
 
@@ -8567,7 +9331,7 @@ they were found.
 
 ### M97d
 
-<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/action-call-cycle.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **`M97d` — shipped 2026-08-06 · the cluster is closed**
 
@@ -8575,7 +9339,7 @@ D141, review row `A4-13`. New code **`TF044`**. Branch `m97d-cycles-and-depth`.
 
 ### M97e
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +3 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **M97e — the severity of a prediction (D147, 2026-08-07)**
 
@@ -8583,7 +9347,7 @@ A follow-on milestone, opened after the stack landed on `main`, because the gate
 
 ### M98
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/api/orders/order-receipts.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98 — the lexer's coordinate model and the diagnostics it withholds**
 
@@ -8594,7 +9358,7 @@ statements *about* those files.
 
 ### M98b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/empty-tag.tflw +2 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98b — the facts the lexer withholds**
 
@@ -8603,7 +9367,7 @@ statements *about* those files.
 
 ### M98c
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/tab-indent.tflw +1 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98c — the diagnostics that fire and teach nothing**
 
@@ -8615,7 +9379,7 @@ conditions with two different fixes under one code while documenting only the ot
 
 ### M98d
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/confusable-word.tflw +2 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98d — Trojan Source, and the escape hatch it requires**
 
@@ -8703,7 +9467,7 @@ radius of **0 across 169 files**, and both therefore stand or fall on the same e
 
 ### M100
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M100_PDF_STREAM_LENGTH.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/.github/workflows/ci.yml · lifted from `PLAN_M100_PDF_STREAM_LENGTH.md`</sub>
 
 **M100 — a PDF stream's extent is its `/Length`**
 
@@ -8713,7 +9477,7 @@ radius of **0 across 169 files**, and both therefore stand or fall on the same e
 
 ### M101
 
-<sub>cited from SPEC.md · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/api/orders/order-receipts.tflw, tflw-tests/tests/helpers/save-temp-file.ts · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
 
 **M101 — `matches file` interpolates its path (`A4-OS-09`)**
 
@@ -8732,7 +9496,7 @@ Closes `A4-OS-11` (S2) and `A4-OS-13` (S4), the two rows the M101 audit turned u
 
 ### M103
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **M103 — the characters that are visible and lie**
 
@@ -8740,11 +9504,20 @@ Closes `M98d-02` (S3 as filed; **re-graded S2 here**, see "What raised the sever
 
 ### M104
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M104_CONFIG_RELATIVE_PATHS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-cli-flags.mjs +6 more · lifted from `PLAN_M104_CONFIG_RELATIVE_PATHS.md`</sub>
 
 **M104 — a config-declared path means one file**
 
 Closes `M97c-03` (S2). Files and closes `M104-01` (S2), found while fixing it.
+
+### M105
+
+<sub>cited from tflw-tests/scripts/verify-pick.mjs · lifted from `PLAN_M105_PICK_INTERRUPT.md`</sub>
+
+**M105 — Ctrl+C is an answer, not an error**
+
+Closes `M104-02` (S3, re-graded on the way in — see D186). Corrects two claims in that row that
+measurement did not support.
 
 ### M106
 
@@ -8812,7 +9585,7 @@ those two exclusive steps cost, which is the real finding and a different one.
 
 ### M115
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `REVIEW_FINDINGS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md, tflw-tests/.github/workflows/ci.yml +10 more · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **Filed by `M115` (2026-08-09)**
 
@@ -8824,7 +9597,7 @@ read past for four milestones because the verdict beside it was right.
 
 ### M116
 
-<sub>cited from SPEC.md · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/capture-uncapturable-subject.tflw, tflw-tests/tests/.checkonly/mask-without-snapshot.tflw +1 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **M116 — the five open rows this cluster left behind (D148–D152, 2026-08-09)**
 
@@ -8834,7 +9607,7 @@ milestone takes all 8, because they collapse into **three new rules and one exte
 
 ### M118
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md +2 more · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **M118 — the first two minutes**
 
@@ -8857,15 +9630,34 @@ itself.
 
 ### M121
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md +1 more · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **M121 — the open model's client**
 
 Closes `M118-02` (S2). Scoped 2026-08-10, not started.
 
+### M122
+
+<sub>cited from tflw-tests/scripts/lib/mutations.mjs · lifted from `PLAN_M122_LSP_PAIR.md`</sub>
+
+**`M122` — the LSP pair: `B5-06` + `B5-07`**
+
+Two of the three remaining open S2 rows, taken together because they are the same package, the same
+file (`packages/lsp-server/src/server.ts`), and the same verification setup.
+
+### M123
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs · lifted from `PLAN_M123_MUTANT_RESIDUE.md`</sub>
+
+**M123 — the mutation harness cannot leave a mutant behind**
+
+**Rows:** `M118-03` (primary), `M111-02`, `M115-01`.
+**Branch:** `m123-mutant-residue`. **Base:** `m122-lsp-pair` (PR #47, not yet merged — M122 touched
+`scripts/mutate.mjs`, so branching off `main` would conflict on the same file).
+
 ### M124
 
-<sub>cited from SPEC.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md +6 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
 
 **`M124` — a literal the run will reject is a checker sentence**
 
@@ -8874,7 +9666,7 @@ Closes `M97a-01`, `M97a-02`, `M97a-03`, `M97a-06`, `M97a-16`. **Withdraws `M97a-
 
 ### M125b1
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/scripts/lib/constructs.mjs +3 more · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **`M125b1` — reach ✅ DONE 2026-08-10**
 
@@ -8932,7 +9724,7 @@ same command**, because four of its scripts assert on `report.html`.
 
 ### M126
 
-<sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-security-target.mjs · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **Filed by `M126` (2026-08-11)**
 
@@ -8941,13 +9733,13 @@ the milestone this one was merging, which is where the last two rows of this kin
 
 ### M127
 
-<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-security-acceptance.mjs +2 more · lifted from `PROGRESS.md`</sub>
 
 **`M127` — a shard that produces no coverage fails the run instead of shrinking the denominator.** CI's coverage reassembly job checks that every shard's artifact arrived. A missing one used to reassemble quietly into a smaller total, so a shard that died reported as better coverage; it now goes red for the true reason. With `upload-artifact`'s `if-no-files-found: error` this is the only reason a lost shard is visible at all (`M143`). `ci.yml:175`'s shard-count value dates from here.
 
 ### M128
 
-<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +7 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128` — pentest arc Tier 1: hygiene findings, and the safety declaration that gates them**
 
@@ -8971,7 +9763,7 @@ assertions) together with the declaration half of **D21** (the layered default-d
 
 ### M128b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md +5 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **`M128b` — tflw** *(the grammar milestone)*
 6. `securityRules.ts` — the eight non-TLS rules as pure `(response, request) → applicability +
@@ -8999,7 +9791,7 @@ assertions) together with the declaration half of **D21** (the layered default-d
 
 ### M130
 
-<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-orders.controller.ts +13 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **`M130` — pentest arc Tier 2: the generated authorization matrix**
 
@@ -9036,9 +9828,19 @@ The tflw half of the pentest arc's Tier 2. Scoped 2026-08-13, by grilling, again
 `PLAN_M130_PENTEST_TIER2.md` §2 items 7–14 — eight one-line bullets turned into an implementable
 milestone.
 
+### M130b2
+
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/authz-assertion-in-wait-until.tflw, tflw-tests/tests/.checkonly/authz-assertion-without-owner.tflw +1 more · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+
+**`M130b2` — the live feature**
+
+**BUILT AND FULLY GATED.** Branch `m130b2-authz-feature` off `M130b1`'s `0399275`, **six** commits,
+unpushed: `dc0a44c` grammar · `235eafb` checker · `d21777f` engine + the D335 fixture · `6a6602f`
+blind spot + repro emitter · `f14f087` docs · `dd8c5b5` the mutation-registry repair below.
+
 ### M130c
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/scripts/verify-input-acceptance.mjs +10 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **`M130c` — testFlow-tests** *(the config that needs new grammar, and the measurement)*
 
@@ -9052,7 +9854,7 @@ milestone.
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +4 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -9066,7 +9868,7 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
 
 ### M131a
 
-<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/authz-scan-public-target.tflw, tflw-tests/tflw.config · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131a` — tflw**
 
@@ -9092,9 +9894,24 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
    `probe mutating` as the item that closed, restate the remaining deferral as a condition), and
    `PLAN_BROWSER_PERF_SECURITY.md` §3.5's ordering.
 
+### M131b
+
+<sub>cited from tflw-tests/tests/.checkonly/authz-scan-public-target.tflw, tflw-tests/tflw-acceptance/security/public-target/scan.tflw, tflw-tests/tflw-acceptance/security/tflw.config · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+
+**`M131b` — tflw-tests**
+
+9. **`.checkonly` fixtures** for `TF065` and `TF066`, each as a **scratch-config pair** — never as a
+   bare `FILE_FIXTURES` row that depends on the root config's contents. `M130-08` is the whole
+   argument, and both of these have exactly its shape: they turn on what a config *does not* say.
+10. **The three-case acceptance corpus** (D347) in `tflw-acceptance/security/`, graded by
+    `scripts/verify-security-acceptance.mjs` — which already grades expected-to-fail probes for
+    D285's and D311's cases and is the natural home for a control's refusal.
+11. **Whatever D343's widening forces** in the root `tflw.config` — the repo declares services, so
+    this is the milestone's own dogfood check that the widened gate is livable.
+
 ### M132
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
 
 **`M132` — Tier 2's debt: the cross-repo coupling, and two plan claims measurement falsified**
 
@@ -9102,7 +9919,7 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
 
 ### M132b
 
-<sub>cited from SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/VULNS.md, tflw-tests/apiV2/src/vuln/vuln-input.controller.ts +7 more · lifted from `PLAN_M132_TIER2_DEBT.md`</sub>
 
 **`M132b` — testFlow-tests**
 
@@ -9148,7 +9965,7 @@ what Tier 3 *is*, after Tier 1 (`M128a`–`M128c`), Tier 2 (`M130a`–`M130c`), 
 
 ### M134a
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **`M134a`'s coverage repair (2026-08-14 addendum, D392)**
 
@@ -9161,7 +9978,7 @@ but *is my gate set the one CI runs*.
 
 ### M134b
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +1 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **`M134b` — the gate contract (2026-08-14 addendum, D385–D391)**
 
@@ -9173,7 +9990,7 @@ made before any of `M134b` was written.
 
 ### M134c
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/sweep-input-volume.mjs, tflw-tests/scripts/verify-input-acceptance.mjs +4 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **`M134c` — the plants, re-derived from the shipped rules (2026-08-15 addendum, D395–D400)**
 
@@ -9212,7 +10029,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M135c
 
-<sub>cited from tflw-tests/VULNS.md · lifted from `PLAN_M135_SARIF.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M135_SARIF.md`</sub>
 
 | | repo | contents | new codes | coupled |
 |---|---|---|---|---|
@@ -9220,7 +10037,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M136a
 
-<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md, tflw-tests/.github/workflows/ci.yml +8 more · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9236,7 +10053,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M136c
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/VULNS.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/VULNS.md, tflw-tests/scripts/perf-conformance.mjs +5 more · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9251,9 +10068,18 @@ things reported is exactly the set `M134b` already computes.
 **Scoped by grilling, 2026-08-16.** The highest decision anywhere in the repo is `D430`
 (`PLAN_M136_ARC_DEBT.md`), so this plan opens at **`D431`**.
 
+### M137a
+
+<sub>cited from tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-artifact-contract.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +1 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+
+**`M137a` — shipped 2026-08-16, and six things it found that this plan did not predict**
+
+All five items landed, plus `D451`'s two. What is worth carrying forward is where the plan's own
+description of the work turned out to be incomplete.
+
 ### M137b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md +5 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9261,7 +10087,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137c
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/scripts/verify-check-diagnostics.mjs +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9269,7 +10095,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137c1
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9277,7 +10103,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137c2
 
-<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9293,7 +10119,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137e
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs +11 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9301,7 +10127,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137f
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9309,7 +10135,7 @@ things reported is exactly the set `M134b` already computes.
 
 ### M137g
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/VULNS.md +11 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -9330,7 +10156,7 @@ question.
 
 ### M138b
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **`M138b` — testFlow-tests**
 
@@ -9343,7 +10169,7 @@ question.
 
 ### M139
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs +8 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
 
 **M139 — acceptance vs the `vuln/` ledger: recall per *plant*, and a gate that runs**
 
@@ -9353,7 +10179,7 @@ rather than per run, gated inside the regression sweep. Closes `M137e-01`.
 
 ### M140
 
-<sub>cited from SPEC.md · lifted from `PLAN_M140_REVERIFICATION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/unparseable-import.tflw · lifted from `PLAN_M140_REVERIFICATION.md`</sub>
 
 **M140 — the re-verification sweep, and the guard that keeps it true**
 
@@ -9362,7 +10188,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +29 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -9379,9 +10205,17 @@ right. Decisions **D531–D546**. Highest existing before this file was `D530`
 **Status: GRILLED 2026-08-19.** Decisions `D550`–`D559`. Supersedes the seed of the same name.
 Order 3 of the ledger drawdown.
 
+### M143
+
+<sub>cited from tflw-tests/scripts/lib/regression-shared.mjs · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
+
+**`M143` — the sweep stops re-downloading Ubuntu, and starts saying how long it took**
+
+**Status: `M143a` `70e163c` (PR #86) · `M143b` `ceb8792` (PR #87) · `M143c` `794c3c8` (tflw-tests PR #28) all MERGED 2026-08-19, each green first attempt. `M142`/#85 merged between them as `46e9497`. `M143d` `67e5b26` pushed onto tflw-tests PR #27, in CI. Both cluster rows closed: `M115-02` and `M137g-03`. Nine further rows filed, five closed; the four still open are `M143-01`, `M143-02`, `M143-06` and — until `M145` — `M143-07` and `M143-08`, listed in §10 and §11.** Those ids used to be omitted from this header on purpose: `planClaims` read every backticked id in the first twelve lines as a row the plan CLOSES (`M143-08`). `M145` fixed the guard, and the `plan:closes` marker below is now the claim, so the header can say what was filed. <!-- plan:closes M115-02, M137g-03 --> Decisions `D560`–`D591`. Supersedes the seed of the same name.
+
 ### M143a
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
 
 **Amendments made while building `M143a` (2026-08-19)**
 
@@ -9393,12 +10227,21 @@ condition are the same number rather than two to be correlated.
 
 ### M143c
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
 
 **`M143c` — the half this milestone did not know it had**
 
 `M143a` shipped with prediction #4: *tflw-only, no `testFlow-tests` commit*. It was falsified the
 same day, by the sibling repo's own CI, on the PR that was waiting to merge behind it.
+
+### M143d
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/regression-shared.mjs, tflw-tests/scripts/regression.mjs · lifted from `PLAN_M143_SWEEP_RELIABILITY.md`</sub>
+
+**`M143d` — the row that was hiding behind the row**
+
+Fixing `M143-04` made `watch-check` complete in CI for the first time, and it immediately failed a
+job three steps downstream. The first reading was wrong and is worth recording as such.
 
 ### M144
 
@@ -9427,9 +10270,19 @@ have derived from is gitignored.
 | `M110b-02` | extract the `.vitepress/` helper, 4 call sites; **file the renderer test** as a successor |
 | `A4-07` | close; correct the citation of a group that closed with `M111` |
 
+### M146
+
+<sub>cited from tflw-tests/tflw-acceptance/conformance/pacing.tflw · lifted from `PLAN_M146_REPORT_HONESTY.md`</sub>
+
+**M146 — report honesty (Order 5 of the ledger drawdown)**
+
+**Status: GRILLED 2026-08-20, three scope calls ruled by the user the same day (§0).** Supersedes the seed of the same name, kept where it was right.
+Decisions **D612–D621**; highest before this file was `D611` (`PLAN_M145_INSTRUMENT_PRECISION.md`).
+**Two decoupled milestones**, `M146a` and `M146b`, each branching off `main` (`D541`).
+
 ### M147
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **Plan: M147 — the last order**
 
@@ -9447,7 +10300,7 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 ### M147c
 
-<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/duplicate-table-column.tflw +1 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 | part | subject | rows |
 |---|---|---|
@@ -9455,7 +10308,7 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 ### M147d
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2b The six decisions `M147d` has taken, stated**
 
@@ -9464,7 +10317,7 @@ number lands on a statement rather than on a story.
 
 ### M147e
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2c The two decisions `M147e` has taken, stated**
 
@@ -9480,7 +10333,7 @@ number lands on a statement rather than on a story.
 
 ### M147f
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs +1 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2f `M147f` — the last part, and what the finish line actually cost**
 
@@ -9532,7 +10385,7 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 
 ### M149f
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-construct-coverage.mjs · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **M149f — the guard, the gates and the PR**
 
@@ -9553,9 +10406,17 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 what the build actually found is `D695` (171 citations, not 90–104 + 47) and `D697` (five more
 exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
+### M152e
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`M152e` — `testFlow-tests`**
+
+**Scoped 2026-08-24 (`D694`), resized twice the same day (`D709`, `D711`). BUILT 2026-08-24.**
+
 ### M153b
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +7 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
 
 **`M153b` — the sibling's two descriptions (testFlow-tests)**
 
@@ -9564,9 +10425,18 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
    corpus widening, and it is a separate row (`M153b-01`).
 3. Refresh `scripts/sibling-citations.json` in tflw if the repair moves any pinned line.
 
+### M154
+
+<sub>cited from tflw-tests/scripts/verify-construct-coverage.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+
+**`M154` — the dogfood as tflw's conformance target**
+
+**Scoped 2026-08-25, by grilling.** Successor to `M153`. This is the **dogfood-app scoping** that
+`M152`/`M153` deferred until the ledger drawdown finished.
+
 ### M154a
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +7 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154a` — tflw: `tflw spec --json` and the build stamp**
 
@@ -9582,7 +10452,7 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 ### M154c
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +14 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154c` — the functional/API tier**
 
@@ -9592,7 +10462,7 @@ Plants for the API-side remainder: `check` at scale, `retry`, `after` hooks, `re
 
 ### M154d
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/measure-construct-evidence.mjs +11 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154d` — the UI/browser tier**
 
@@ -9603,7 +10473,7 @@ Joins the `security-ui` regression leg.
 
 ### M154e
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/perf/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/.github/workflows/ci.yml +15 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154e` — the perf tier**
 
@@ -9611,7 +10481,7 @@ Joins the `security-ui` regression leg.
 
 ### M154f
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md +31 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154f` — the security tier and the cross-repo seam**
 
@@ -9624,7 +10494,7 @@ day and never visibly withdrawn.
 
 ### M154g
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +49 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154g` — the roster completion**
 
@@ -9633,7 +10503,7 @@ re-read against `M154f`'s actual scope; see §8.5 for why it is a rename rather 
 
 ### M154h
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **Build note — 2026-08-26, the measured gate moves into the sweep (`M154h`)**
 
@@ -9648,7 +10518,7 @@ purpose.
 
 ### M155
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
 
 **`M155` — `timeout` learns which transport it is bounding**
 
@@ -9676,7 +10546,7 @@ this milestone mints no diagnostic), milestone **`M156`**.
 
 ### M156
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +2 more · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **M156 — `require env`: make the check-time promise true by closing the hole it actually has**
 
@@ -9686,7 +10556,7 @@ of these repos is affected (measured, §2.6); a third-party suite would be.
 
 ### M156a
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/undeclared-env-ref.tflw · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`M156a` — `TF077`, the undeclared-reference rule (error)**
 
@@ -9716,7 +10586,7 @@ of these repos is affected (measured, §2.6); a third-party suite would be.
 
 ### M156c
 
-<sub>cited from SPEC.md · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`M156c` — the advisory note in `tflw check` (`D779`)**
 
@@ -9747,9 +10617,42 @@ of these repos is affected (measured, §2.6); a third-party suite would be.
   diagnostic rows today; it will count 68).
 - `specConstructs()` goes **178 → 180**.
 
+### M156e
+
+<sub>cited from tflw-tests/tests/.checkonly/config-directives/require.config, tflw-tests/tests/.checkonly/undeclared-env-ref.tflw · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`M156e` — fixtures, so `C59` stays green on merge day**
+
+The diagnostics family is rostered **by rule**, not by rows (`D751`/`D763`): `C59` cites
+`verify-check-diagnostics.mjs`, which reads the assigned-code list out of the installed bundle's own
+§17 manifest. `constructs.mjs`'s `--- diagnostic (0) ---` heading says it in as many words —
+*"this heading stays at zero even when tflw assigns its sixty-seventh code."*
+
+### M156f
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tests/.checkonly/config-directives/require.config, tflw-tests/tflw.config · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+
+**`M156f` — the sibling, under `D511` (tflw merges first)**
+
+1. **`C95`'s known answer**: its third leg asserts a silence this milestone removes, and its final
+   sentence (*"the repair is the sentence, never the gate"*) is now the opposite of what happened.
+   Rewrite the leg to assert the new `TF077` output and the advisory note, and record the reversal
+   with `D774`'s reason — an amended known answer that hides having been amended is worth less than
+   the finding was. Its `catches` line also names the silence and needs the same pass (prediction 5).
+2. **`require.config`'s `target` sentence is false** — see §7.2. Repair the fixture's header to the
+   working spelling and the sentence to match, or keep the braced spelling *deliberately* as the
+   `TF078` fixture and say which it is. Both are defensible; what is not is the current state, where
+   the plant's setup does not do what its own comment says.
+3. **The suite's own `env()` references must now all be declared** — prediction 1 says `TF077` fires
+   somewhere unexpected. Whatever it finds is a real defect in the suite, not a false positive, and
+   is fixed rather than suppressed.
+4. Two new fixtures from `M156e`.
+5. Roster arithmetic: 178 → 180 constructs, coverage still complete, because the diagnostic family
+   expands against `tflw spec --json` on the day the gate runs. **`RATCHET_CEILING` stays 0.**
+
 ### M157
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +3 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **PLAN_M157 — teardown under load: delete the `cleanup` gate, fix the metric it was protecting**
 
@@ -9764,7 +10667,7 @@ Closes `M154e-01`; files `M157-01`. **Breaking** (removes a keyword, changes rep
 
 ### M157a
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **`M157a` — `D782` first, alone**
 
@@ -9772,6 +10675,17 @@ Narrow the timing window to `scenario.body`. No language change,
 no gate change. Land it and observe the reported percentiles move on the existing conformance
 workloads. This is the only step that changes numbers for suites that never touched `cleanup`, so it
 ships isolated and is verified isolated.
+
+### M157b
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tflw-acceptance/conformance/teardown.tflw · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+
+**`M157b` — `D781`, the gate**
+
+Delete the gate; run `afterEach` unconditionally, restructured so a failing
+body no longer skips it (carry failure as a value, as `:2751-2760` does). Preserve the functional
+path's parity case: a **`before`-hook** failure still skips teardown, in both paths — nothing was set
+up, so there is nothing to tear down, and `:421`/`:558` already hold that rule for the `file` scope.
 
 ### M157d
 
@@ -9787,7 +10701,7 @@ one edit rather than two. Bad values reuse the existing machinery — `TF020` fo
 
 ### M157f
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +2 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **`M157f` — `D789`, in `testFlow-tests`**
 
@@ -9796,7 +10710,7 @@ roster and ratchet. **`D511` merge order: tflw first, then testFlow-tests.**
 
 ### M157g
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +2 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **`M157g` — 2026-08-31, the clause that was vacuous and flaky from one cause**
 
@@ -9820,7 +10734,7 @@ diagnostic. Guard and comment changes only.
 
 ### M159
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **`M159` — native dialogs: the whole surface, and something to assert about each kind**
 
@@ -9828,6 +10742,13 @@ diagnostic. Guard and comment changes only.
 constructs, no removals. Changes the behaviour of a program that arms two dialogs, which today is
 silently wrong. `M159e`'s per-kind table was written inside `M159b`, because `D799`'s prose needs it
 to make sense; it is not a separate step any more.
+
+### M159b
+
+<sub>cited from tflw-tests/tests/.constructs/dialog-one-shot.tflw · lifted from `PLAN_M159_DIALOGS.md`</sub>
+
+**`M159b` — `D798`/`D799`.** The two value subjects: parser, subject-kind manifest, `MATCHERS`
+`subjects` field, SPEC, docs.
 
 ### M159c
 
@@ -9862,9 +10783,23 @@ were suppressed on a quantum tflw no longer has. **Not breaking** to any `.tflw`
 **Changes every reported number** at low latency, and changes what `histogram.ts`'s own header is
 allowed to claim.
 
+### M160a
+
+<sub>cited from tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/verify-artifact-contract.mjs · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**`M160a` — `D807`/`D808`.** Drop `Math.round` at the five sites, comment the sixteen, rewrite the
+`histogram.ts` header and the `types.ts` field doc. No output changes yet — renderers still round.
+
+### M160d
+
+<sub>cited from tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/perf-conformance.mjs, tflw-tests/scripts/verify-artifact-contract.mjs +1 more · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+
+**`M160d` — `D811`, in `testFlow-tests`.** Re-run the ladder, re-derive the bands, record the
+unblocked count.
+
 ### M161
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +1 more · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
 
 **`M161` — one string form for a value, stated once**
 
@@ -9888,7 +10823,7 @@ Gitignored by `.gitignore:35`.
 
 ### M162
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/tests/mixed/storefront.tflw +1 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
 **`M162` — a test owns the state it asserts on**
 
@@ -9900,9 +10835,45 @@ threshold of **6**); §9 is the repair and its verification. `M154g-06` **closed
 not explained. Four rows filed: `M162-01`-`M162-04`. Acceptance clause 1 **amended, not met as
 written** — see §9.4.
 
+### M162a
+
+<sub>cited from tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**`M162a` — the measurement (`D818`), run 2026-08-31 on the Linux build host**
+
+Run under the `tflw:load` class lease, box `go clear` (27.25 GB headroom, lock free). Everything
+below is measured on that box on that day; nothing here is inferred from reading the code alone,
+and where a reading *was* inferred and then contradicted by the box, the contradiction is kept.
+
+### M162b
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**`M162b` — `D819`/`D820`.** Re-plant `C31` and `C33`, repair the review test, update both known
+answers in `scripts/lib/constructs.mjs`, re-run the roster and the ratchet.
+
+### M162e
+
+<sub>cited from tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**`M162e` — verification.** Run the full gate **three consecutive times without restarting the
+stack**. That is the exact condition `M154g-06` failed under and is the only acceptance that means
+anything.
+
+### M163
+
+<sub>cited from tflw-tests/scripts/lib/plants.mjs, tflw-tests/scripts/list-mutation-candidates.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**`M163` — a grader that runs in no automated pass is not a grader**
+
+**Status:** **BUILT AND MERGED 2026-08-31** — `M163a`-`M163e`, merged under `D511` as tflw PR #154 (the pin), then tflw-tests PR #68 (`aff8823`), then tflw PR #155 (the re-pin to `main`). §8 is the sizing (`D824`
+discharged: **no second tier needed**, and `M154f-01`'s cost premise was wrong); §9 is the repair and
+`D828`'s audit, which was supposed to return zero and returned **two**. `M154f-01` and `M154g-02`
+both **closed**. Two rows filed: `M163-01`, `M163-02`.
+
 ### M163a
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **`M163a` — the sizing (`D824`), run 2026-08-31 on the build box**
 
@@ -9911,22 +10882,35 @@ boundary rather than inferred from the totals.
 
 ### M163b
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **`M163b` — `D823`** (or `D825` if `M163a` says so). Move the assert-only sections above the gate
 line; re-run `regression.mjs`'s security phase.
 
 ### M163c
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-security-acceptance.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **`M163c` — restore `C52`.** The roster row narrowed away from the granted/withheld contrast goes
 back to grading what `probe mutating` is for, now that its graders are gated. **This is the visible
 payoff of `M163b`** and the reason `M154f-01` is `S3` rather than a tidy-up.
 
+### M163d
+
+<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**`M163d` — `D826`.** Strip `--probe` from the usage block, the argv contract and the closing
+line; restate the count; delete the no-op perturbation. Keep all 54 `find` patterns.
+
+### M163e
+
+<sub>cited from tflw-tests/scripts/lib/plants.mjs, tflw-tests/scripts/regression.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+
+**`M163e` — `D828`.** The grader audit, result written up either way.
+
 ### M164
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +10 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164` — the roster plants must be shown to discriminate**
 
@@ -9940,9 +10924,19 @@ discharged, with a measured answer of **one covered plant in 102**. Numbering ru
 — `M163a`'s habit (`D824`), and the reason three of this plan's decisions came out the opposite way
 from how they were going to be written.
 
+### M164a
+
+<sub>cited from tflw-tests/scripts/lib/mutations.mjs, tflw-tests/scripts/list-mutation-candidates.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`M164a` — the reader, built 2026-08-31**
+
+Sibling `1a1294f`, branch `m164a-mutation-reader`. Two files and one `package.json` entry:
+`scripts/lib/mutations.mjs` (the library) and `scripts/list-mutation-candidates.mjs` (the report).
+Nothing gated, nothing mutated, no stack.
+
 ### M164b
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +4 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164b` — discovery, built 2026-09-01**
 
@@ -9954,7 +10948,7 @@ correctly rather than by omission.
 
 ### M164c
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +3 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164c` — the reading, done 2026-09-01**
 
@@ -9962,6 +10956,34 @@ correctly rather than by omission.
 named, and it answers two questions the census could not: **how** each plant died, and **whether**
 the mutation that killed it was about that plant's construct. The answer changes the milestone's
 result, and it retracts §11.18's headline.
+
+### M164e
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+
+**`M164e` — the write-up, done 2026-09-01**
+
+`M164a` built the reader, `M164b` ran the census, `M164c` read it and refused `M164d`. This section
+is the accounting: what `D827` asked, what the measurement answers, and where every prediction and
+every acceptance clause landed — including the one that did not.
+
+### M165
+
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+
+**`M165` — a config key declared twice is a mistake, and the language already knows how to say so**
+
+**Status:** scoped 2026-08-29, **built 2026-08-30** (`M165a` + `M165b` + `D833`'s sweep). §8 records what happened. **Breaking** only for a config that is already
+ambiguous — any file this refuses today silently discards one of its own declarations.
+**Files and closes one row** — no existing ledger row covers this; it was found while scoping `M155`
+and recorded in that plan's §7 rather than filed.
+**Numbering:** takes `D829`–`D833` (verified unspent at HEAD). Next free after this plan:
+**`D838`** — `D834`–`D837` were spent by `M160` and `M158` *after* this plan was written, so the
+original footer's `D834` is retracted. Mints **`TF081`** (next free `TF082`). `M164` (the
+roster-vacuity gate, `M163`'s `D822`) is named but unscoped and will take its numbers when it is.
+**Re-measured against HEAD on 2026-08-30**, after `M157`, `M158` and `M159` landed; §2 records what
+changed and why that change is the milestone's own argument.
+Gitignored by `.gitignore:35`.
 
 ### M165a
 
@@ -9973,7 +10995,7 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 ### M166
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
 
 **`M166` — `verify:ledger` must not accuse the ledger of a defect it could not have seen**
 
@@ -9984,5 +11006,52 @@ files wider than it was written**). No existing row covers either.
 **Numbering:** takes `D855`–`D856` (verified unspent at HEAD: `DECISIONS.md`'s highest is `D854`,
 spent by `M164e`). Mints **no** `TF` code — this is a repo script, not the language.
 Gitignored by `.gitignore:35`.
+
+### M167
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-contributing.mjs +2 more · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
+
+**`M167` — the size of the regression sweep is not stated in tracked prose, and now cannot be**
+
+**Status:** **BUILT 2026-09-02**, immediately after `M166`, as the fix for the row `M166` filed on
+its way past. **Closes one row** — `M166-02`. Files none.
+**Numbering:** takes `D857` (verified unspent at HEAD: `DECISIONS.md`'s highest is `D854`; `D855` and
+`D856` are `M166`'s and are cited only from tflw script comments, so they publish nothing).
+Mints **no** `TF` code.
+Gitignored by `.gitignore:35`.
+
+### M168
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/argv.mjs +6 more · lifted from `PLAN_M168_UNMUTATED_CONSTRUCTS.md`</sub>
+
+**`M168` — the constructs nothing can be shown to test, and the one that was misfiled**
+
+**Status:** **SCOPED 2026-09-02; the five mutations BUILT and MEASURED 2026-09-03 (§8); the
+sibling census RESUMED over them the same day and `M168-01` CLOSED (§9).** §1-§7
+were written to be argued with before any of it existed and are left as they were argued; §8 is what
+running it said. It takes `M164` §14.7's first handoff and re-derives it, which changed the answer.
+**Numbering:** takes **no** decision after all — every question §6 raised was settled by reading a
+mechanism or by a measurement, and neither mints one. `D857` remains the last spent, by `M167`.
+Reserves no `TF` code.
+**Files seven rows and closes four:** `M168-01` (the registry gap) and `M168-02` (`C108`, §2), both
+filed 2026-09-02 with the milestone still scoped-not-started; **`M168-03`** — *two of the four
+constructs have no behavioural test in tflw either* — filed and closed 2026-09-03 by the measurement
+§5.2 committed to; and **`M168-04`**, **`M168-05`**, **`M168-06`**, **`M168-07`**, all four found by
+the census resume in §9 and none of them anything this plan predicted. **`M168-01` is closed** by
+that resume — each mutation shown to kill its plant, and, which is the narrower claim `D842`
+actually asks for, five of them shown to *cover*. `M168-02` stays open; it is a fixture gap and
+sibling work. See §6.4 — and see the correction there
+first: **there is no sibling ledger.** `testFlow-tests` has no `REVIEW_FINDINGS.md` at all; tflw's is
+the only one, which is why `M164-03` — a row about a sibling *plant* — sits in it.
+Gitignored by `.gitignore:35`.
+
+### M169d3
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`M169d3` — the pin reads the sibling's code (tflw). BUILT 2026-09-04.**
+
+The half that touches this repository. `D862`, `D863`, `D864` above; one tarball fetch in place of
+780 `contents/` calls; and `DECISIONS.md` **733 → 829 entries, +96, none removed**.
 
 <!-- GENERATED:decisions:end -->
