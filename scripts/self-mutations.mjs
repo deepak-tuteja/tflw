@@ -273,6 +273,59 @@ export const SELF_MUTATIONS = [
       ["      `  NOT CHECKED HERE: that each entry still matches the record it was lifted from. The design\\n` +\n", ""],
     ],
   },
+  // --- M169b (`D858`, `D859`, `D860`) -----------------------------------------------------------
+  //
+  // Four mutations for a check whose failures are all quiet ones. `M169a`'s five revert a grammar and
+  // the symptom is a wrong number; these four revert a *corpus* or an *exclusion*, and the symptom of
+  // every one of them is a check that keeps running and stops finding anything. Three widen what is
+  // read until the reading is worthless, and the fourth turns a declared non-existence into a
+  // permanent excuse. None of them moves `DECISIONS.md` by a byte, which is what makes the tests the
+  // only thing holding the rules up.
+  {
+    id: 'the-demand-corpus-swallows-its-own-publish-half',
+    milestone: 'm169b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "tracked markdown stops being excluded from the demand corpus, so every prose citation is read twice — once under `D675`'s full contract by the publish half and once under `D858`'s weaker one here. Nothing goes red, which is the problem: the two halves stop being two corpora and the report doubles every site it names, so a maintainer reading `2 site(s)` cannot tell a genuine second citation from the same one counted again",
+    find: "    if (path.endsWith('.md')) continue;",
+    replace: '    if (false) continue;',
+  },
+  {
+    id: 'svg-path-data-is-read-as-citations',
+    milestone: 'm169b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "images rejoin the corpus, and an SVG path is written in a language where `M<number>` means *moveto*. The three tracked SVGs carry `M4`, `M5`, `M9`, `M10`, `M20`, `M21`, `M30` and `M37` as coordinates across 13 sites. Measured today every one of them resolves, so this mutation costs **nothing at all** on this tree — which is precisely why it needs a control rather than a measurement: the eight happen to be milestones this project shipped, and the first outline whose coordinates run past the sequence turns an icon into a dead pointer. A rule that is currently free is a rule nothing else will defend",
+    find: '    if (IMAGE_EXT.has(extname(path).toLowerCase())) { skipped.images++; continue; }',
+    replace: '    if (false) { skipped.images++; continue; }',
+  },
+  {
+    id: 'the-declared-unresolvable-list-stops-applying',
+    milestone: 'm169b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "`DECLARED_UNRESOLVABLE` is still printed and no longer honoured, so the check reports `D888`, `D999`, `M9a2`, `M7w`, `M427` and `D4` as dead pointers. Every one of the six is cited *because* it resolves to nothing — three are the gate's own negative fixtures and three are invented identifiers quoted in the docblocks that explain why they are invented — so the repair a reader would reach for is to delete the controls, which is `D860`'s whole subject. The printed list makes this the most convincing wrong answer in the file",
+    find: '    if (resolves(id) || DECLARED_UNRESOLVABLE.has(id)) continue;',
+    replace: '    if (resolves(id)) continue;',
+  },
+  {
+    id: 'the-widening-M164-06-proposed-ships-after-all',
+    milestone: 'm169b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "the demand corpus is fed to the PUBLISH half as well, which is `M164-06`'s and `M164-07`'s repair exactly as those rows specify it. Nothing fails and nothing looks wrong — `DECISIONS.md` simply grows, by 296 blocks and 3480 lines on the measurement in `PLAN_M169…` §2.2, four of which `SCRUB` refuses. This is the mutation the milestone exists to refuse: `D858` buys resolution and declines publication, and a public commit is the one direction here that cannot be taken back. It is also the only control in this set whose symptom is a *tracked* file moving, which is why the test that kills it compares the generated index with the code file present against the index without it, byte for byte",
+    find: '  const tracked = readTracked(ROOT);',
+    replace: '  const tracked = [...readTracked(ROOT), ...readCode(ROOT).files];',
+  },
+  {
+    id: 'a-declared-non-existence-can-become-a-lie',
+    milestone: 'm169b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "the staleness half goes, and this is the direction `D860` was amended from files to identifiers to get. An entry declared unresolvable that *starts* resolving is no longer a declaration about the tree — it is a standing exemption for a real citation, and it is silent forever because the only symptom is a check that never fires. `removed-commands.test.mjs` holds its own `CITATIONS` array the same way, for the same reason: the cost of a declaration is that somebody has to be told when it stops being true",
+    find: '  const stale = [...DECLARED_UNRESOLVABLE.keys()].filter(resolves).sort(byId);',
+    replace: '  const stale = [];',
+  },
   // --- M169a (`D861`) ---------------------------------------------------------------------------
   //
   // Five mutations for the five shapes `M164-08` and `PLAN_M169…` §2.4 name, minus the one that is

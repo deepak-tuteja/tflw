@@ -36,7 +36,8 @@
     "verify:citations": "node scripts/verify-citations.mjs",
     "verify:anchors": "node scripts/verify-anchors.mjs",
     "docs:decisions": "node scripts/gen-decisions.mjs",
-    "docs:provenance": "node scripts/gen-decisions.mjs --provenance"
+    "docs:provenance": "node scripts/gen-decisions.mjs --provenance",
+    "docs:demand": "node scripts/gen-decisions.mjs --demand"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -22,7 +22,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, extname } from 'node:path';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OUTPUT = 'DECISIONS.md';
@@ -209,8 +209,24 @@ export const LOCAL_M_NAMESPACE = new Set(['PLAN_DOCS_REFRESH.md', 'PLAN_CODE_THE
  * a decision: the block's title *is* the identifier. So the file anchors through the three forms
  * where that is true and through no other. This is a property of a self-documenting record, not of
  * this filename — any later plan that tabulates the index needs the same line.
+ *
+ * `PLAN_M169_CITATION_RESOLUTION.md` is the second, and it earned the place by demonstrating the
+ * failure twice inside one afternoon. Its `§2.5` tabulated ten identifiers under the heading *these
+ * resolve to nothing*, and `tableRow` read the lead cell of each row as a definition — so six of the
+ * ten resolved, to the table that lists them as dead. `§2.6` then re-measured, wrote the survivors
+ * into a table of their own, and retired the remaining four the same way. **A survey is a supply
+ * surface, not only a demand one**: to `collectAnchors` there is no difference between naming an
+ * identifier and defining it, and a record whose subject *is* the index says both at once.
+ *
+ * Harmless while the demand corpus was markdown, because none of the ten is cited in tracked prose
+ * and `tableRow` ranks below every heading form, so no id with a real anchor could lose one. Under
+ * `M169b`'s widened demand it silently retires ten real findings, which is why this line is the
+ * milestone's first edit rather than a note in its acceptance.
+ *
+ * Two entries after seventeen milestones, and nothing checks the set — a record that tabulates
+ * identifiers is recognisable from its content, and `M164-12` is where that question belongs.
  */
-const SELF_DOCUMENTING = new Set(['PLAN_M152_DECISION_PROVENANCE.md']);
+const SELF_DOCUMENTING = new Set(['PLAN_M152_DECISION_PROVENANCE.md', 'PLAN_M169_CITATION_RESOLUTION.md']);
 const TITLES_ITS_OWN = new Set(['h1', 'heading', 'boldLead']);
 
 /**
@@ -844,6 +860,148 @@ function readTracked(root) {
     .map((p) => ({ path: p, text: readFileSync(join(root, p), 'utf8') }));
 }
 
+// ---------------------------------------------------------------------------------------------
+// The demand corpus (D858) — tracked text that is not prose
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Where a citation in *code* is read from. `D858` splits `D675`'s single contract in two: an
+ * identifier cited in tracked prose must resolve **and** publish, and an identifier cited in
+ * tracked code must only resolve. So this corpus feeds `checkDemand` and nothing else — it never
+ * reaches `build`, `render` or `collectAnchors`, and `DECISIONS.md` does not move when it changes.
+ *
+ * That separation is the milestone's whole claim, and it is checkable rather than asserted: all
+ * ten identifiers `M169c` repaired are cited in code and in no tracked markdown file, so giving
+ * them anchors published nothing. `DECISIONS.md` hashed `2efae1cd9be3…` before `M169b` and after it.
+ *
+ * **Tracked**, for `readTracked`'s reason — an untracked scratch file is not a surface anyone
+ * maintains — and therefore unreadable in a tree with no `.git`, which is `D859`'s reason this is a
+ * developer-machine discipline rather than a CI gate.
+ *
+ * Two exclusions, each with the reason at the exclusion (`D-M164-06-1`'s form, and `D860`'s):
+ *
+ * **Markdown**, because it is the *other* corpus. `readTracked` already reads it under the full
+ * publish-and-resolve contract, and reading it here as well would report the same identifier twice.
+ *
+ * **Images**, because an SVG path is written in a language where `M<number>` means *moveto*. The
+ * three tracked SVGs contain `M4`, `M5`, `M9`, `M10`, `M20`, `M21`, `M30` and `M37` as path data —
+ * 13 sites — and measured today every one of them resolves, so including them costs nothing and
+ * gains nothing. It is a trap rather than a defect: the eight happen to be milestones this project
+ * has actually shipped, and the first path outline whose coordinates run past the milestone sequence
+ * becomes a dead pointer inside an icon. (Writing that sentence with the number in it made this
+ * check report the number, which is `D860`'s subject arriving while `D860` was being written.)
+ * A binary file cannot be read as text at all and is skipped on its content, which is how
+ * `receipt.png` — an ASCII doc-truth fixture with a misleading name — stays out on the extension
+ * rather than on a NUL byte it does not contain.
+ *
+ * @returns {{files: {path: string, text: string}[], skipped: {images: number, binary: number}}}
+ */
+export const IMAGE_EXT = new Set(['.png', '.svg', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.avif']);
+
+export function readCode(root) {
+  let out;
+  try {
+    out = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    const why = String(e.stderr ?? e.message).trim().split('\n')[0];
+    throw new Error(
+      `cannot list the tracked files: ${why}\n` +
+      `  The demand check (D858) reads every tracked file that is not prose, so it needs the index\n` +
+      `  to know which files are tracked. A tree with no \`.git\` cannot answer that.`,
+    );
+  }
+  const files = [];
+  const skipped = { images: 0, binary: 0 };
+  for (const path of out.split('\n').filter(Boolean)) {
+    if (path.endsWith('.md')) continue;
+    if (IMAGE_EXT.has(extname(path).toLowerCase())) { skipped.images++; continue; }
+    const buf = readFileSync(join(root, path));
+    if (buf.includes(0)) { skipped.binary++; continue; }
+    files.push({ path, text: buf.toString('utf8') });
+  }
+  return { files, skipped };
+}
+
+/**
+ * The identifiers this repository cites **because they resolve to nothing**, each with the reason
+ * beside it. `D860`, as amended before it shipped.
+ *
+ * The decision was first written as an exclusion by *file*: `gen-decisions.test.mjs` cites `D888`,
+ * `D999` and `M9a2` as its unresolved-citation fixtures. Measuring the widening found the same need
+ * in two more files — `gen-decisions.mjs`'s own docblocks quote `M7w` and `M427`, the invented
+ * identifiers `M169a` was built to stop manufacturing, and `self-mutations.mjs` quotes them again in
+ * the `what:` prose of its controls — so the rule to write is not *"tests are excluded"*. It is:
+ * **a file whose subject is what counts as a citation has to be able to quote one that does not.**
+ *
+ * Excluding those three files by name costs **534 citation sites and 149 resolvable identifiers**
+ * going unchecked, in the three files most likely to be edited by whoever is changing these rules.
+ * Scoping the exclusion to the five identifiers instead costs **zero** sites, and buys a property a
+ * file exclusion cannot have: it is checkable from the other side. An entry here that *starts*
+ * resolving is a stale declaration, and `checkDemand` fails on it — the same treatment
+ * `removed-commands.test.mjs` gives its own `CITATIONS` array, and the reason a declared
+ * non-existence does not quietly become a lie.
+ *
+ * The trade is that a new invented example in a docblock reddens this check until it is declared
+ * here. That is the correct direction: the declaration is the point.
+ */
+export const DECLARED_UNRESOLVABLE = new Map([
+  ['D888', '`gen-decisions.test.mjs` — an unresolved citation fixture; the gate is tested by demanding an entry that does not exist'],
+  ['D999', '`gen-decisions.test.mjs` — the same, in the pair that asserts a second unresolved id is reported alongside the first'],
+  ['M9a2', '`gen-decisions.test.mjs` — the milestone-form unresolved fixture, which also pins that `M9a2` stays grammatical'],
+  ['M7w', "`gen-decisions.mjs` / `self-mutations.mjs` — the base64 tail of a `sha512-` hash (`…Xg+M7w==`), quoted in the docblock and the control that explain why `+` and `=` are citation boundaries (`D861`)"],
+  ['M427', "`gen-decisions.mjs` / `self-mutations.mjs` — the right end of `M136b — D427` read as a range, quoted in the docblock and the control that explain why a range must name one sequence (`D861`)"],
+  ['D4', '`refresh-sibling-citations.mjs` — the sibling-qualified example in the comment that explains this file\'s `OWN`/`THEIRS` split. It is defined in NEITHER repository: it survives in one section heading, copied between the two plans, naming a decision nobody wrote. Added by `M169c`, which found it and could not repair it — there is nothing to point the pointer at'],
+]);
+
+/**
+ * The demand check (`D858`/`D859`/`D860`): every identifier cited in code resolves to an anchor in
+ * the records, and publishes nothing.
+ *
+ * Reuses `collectCitations`, which is the point rather than a convenience — the grammar that
+ * decides what a citation *is* must not fork by corpus, or the two halves of `D675` stop being the
+ * same rule (`M164-12`). Two of its behaviours are worth naming where they meet code:
+ *
+ * `expandsRanges` is already false off markdown (`D861`), so `M29-M53` in a coverage fixture stays
+ * two citations rather than 23 inventions.
+ *
+ * `scanLines`' fence tracking is inert here and measured so: **no tracked non-markdown file has a
+ * line-leading ``` or ~~~ today.** It is kept rather than bypassed because the product-fence rule is
+ * about quoted tflw output, which a fixture string can carry as easily as a docs page — but an
+ * unbalanced fence in a template literal would silently swallow every citation after it, so if that
+ * measurement ever stops holding, this is where to look.
+ *
+ * A finding-shaped citation like `M150-01` demands `M150`, and that asymmetry with the anchor rules'
+ * `(?!-\d)` is deliberate: a review finding is filed *at* a milestone and a reader who meets one
+ * wants the milestone, but a finding's row is not the milestone's definition. It is also
+ * load-bearing rather than incidental — measured over tracked prose, **seven published entries
+ * (`M97a`, `M107`, `M131`, `M140`, `M144`, `M147`, `M154g`) are cited by nothing else**, so a
+ * narrowing here would orphan all seven and redden `--check` through `D675`'s second clause.
+ *
+ * @returns {{unresolved: [string, {file: string, line: number}[]][], stale: string[], cited: number}}
+ */
+export function checkDemand(files, anchors, legacy) {
+  const cited = collectCitations(files);
+  const resolves = (id) => (id.startsWith('P#') ? legacy.has(id.slice(2)) : (anchors.get(id)?.length ?? 0) > 0);
+  const unresolved = [];
+  for (const [id, meta] of [...cited.entries()].sort((a, b) => byId(a[0], b[0]))) {
+    if (resolves(id) || DECLARED_UNRESOLVABLE.has(id)) continue;
+    unresolved.push([id, meta.sites]);
+  }
+  const stale = [...DECLARED_UNRESOLVABLE.keys()].filter(resolves).sort(byId);
+  return { unresolved, stale, cited: cited.size };
+}
+
+/** What the demand check read and what it did not, printed on every run of it (`D859`, `D860`). */
+export function demandReport({ files, skipped }, { unresolved, stale, cited }) {
+  const out = [
+    `demand (D858): ${cited} identifiers cited across ${files.length} tracked non-prose files` +
+    ` — ${skipped.images} image and ${skipped.binary} binary file(s) not read, and tracked markdown read by the publish half instead.`,
+    `  declared unresolvable (D860), ${DECLARED_UNRESOLVABLE.size} identifiers, none of which costs a citation site:`,
+  ];
+  for (const [id, why] of DECLARED_UNRESOLVABLE) out.push(`    ${id.padEnd(5)} ${why}`);
+  return out.join('\n');
+}
+
 /**
  * Builds every entry the tracked prose asks for. Returns the unresolved ones rather than throwing:
  * an identifier with no anchor is a finding about the records, and the caller decides whether that
@@ -981,6 +1139,7 @@ function main() {
   const argv = process.argv.slice(2);
   const checking = argv.includes('--check');
   const reporting = argv.includes('--provenance');
+  const demanding = argv.includes('--demand');
   const tracked = readTracked(ROOT);
   const pin = readSiblingPin(ROOT);
   const outPath = join(ROOT, OUTPUT);
@@ -991,6 +1150,41 @@ function main() {
     `✗ cannot ${verb}: the design records are not in this tree.\n` +
     `  They are gitignored by design (D668). Generation runs where they exist; CI verifies the\n` +
     `  half that does not need them (D683).`;
+
+  /**
+   * The demand half (`D858`), run wherever the records are. Reports and fails on its own findings
+   * rather than folding them into `unresolved`: those two lists mean different things — an
+   * unresolved *prose* citation is a missing entry in a published document, and an unresolved *code*
+   * citation is a dead pointer in a file only maintainers read.
+   */
+  const demand = () => {
+    const code = readCode(ROOT);
+    const records = readRecords(ROOT);
+    const result = checkDemand(code.files, collectAnchors(records), collectLegacy(records.find((r) => r.path === 'PLAN.md')?.text ?? ''));
+    console.log(demandReport(code, result));
+    if (result.stale.length) {
+      console.error(`✗ ${result.stale.length} identifier(s) declared unresolvable in DECLARED_UNRESOLVABLE now resolve:\n` +
+        `    ${result.stale.join(' ')}\n` +
+        `  A declared non-existence that has become a lie is worse than no declaration: it excuses a\n` +
+        `  real citation from the check. Delete the entry (D860).`);
+    }
+    for (const [id, sites] of result.unresolved) {
+      const where = sites.slice(0, 4).map((x) => `${x.file}:${x.line}`).join(', ');
+      console.error(`  ${id.padEnd(7)} ${String(sites.length).padStart(3)} site(s)  ${where}${sites.length > 4 ? ', …' : ''}`);
+    }
+    if (result.unresolved.length) {
+      console.error(`✗ ${result.unresolved.length} identifier(s) cited in code resolve to nothing in the design records.\n` +
+        `  Under D858 these publish nothing, so the repair is not to widen ${OUTPUT}: anchor the\n` +
+        `  identifier in the record that took it, requalify the citation if it names the wrong one, or\n` +
+        `  delete it and state the rule in words.`);
+    }
+    return result.unresolved.length || result.stale.length ? 1 : 0;
+  };
+
+  if (demanding) {
+    if (!haveRecords) { console.error(noRecords('run the demand check')); return 1; }
+    return demand();
+  }
 
   if (reporting) {
     if (!haveRecords) { console.error(noRecords(`report on ${OUTPUT}`)); return 1; }
@@ -1080,7 +1274,10 @@ function main() {
     return 1;
   }
   console.log(`gen-decisions --check: ${published.size} entries match the design records; ${citedIds.size} cited identifiers all resolve; scrub clean.`);
-  return 0;
+  // The demand half runs last because it is the newer and weaker claim: `D858` buys resolution and
+  // declines publication, so a finding here never means `DECISIONS.md` is wrong. Reported after the
+  // line above rather than instead of it, so a red demand check cannot be misread as a red index.
+  return demand();
 }
 
 // Run only when invoked directly, and compare REALPATHS. `process.argv[1]` is the path as typed;

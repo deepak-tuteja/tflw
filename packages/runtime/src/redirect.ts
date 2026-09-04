@@ -18,7 +18,10 @@
 // cluster C2) and settling them was that cluster's decision, not the guardrail's. M88a settles the
 // third of those here, because "where does the next hop go" and "what happens when there is no
 // legitimate next hop" are the same question asked one step apart; the other two are the jar's, and
-// stay out (`B4-05`/`B4-06`, M88c).
+// stay out (`B4-05`/`B4-06`, `M88c2`). This line said `M88c` until `M169c`: the step split
+// mid-milestone into `M88c1` (the transport half) and `M88c2` (the jar), both of which took the
+// name in the records, and the pre-split name kept the citation. The two findings named here are
+// `M88c2`'s own, which is what identifies the half this sentence meant.
 
 import { RuntimeError } from './eval.js';
 import type { CookieEvent } from './types.js';

@@ -96,6 +96,22 @@ const files = paths.map((path) => ({
 // implementations before the edit: a `testFlow-tests D4` this file cannot blank enters the pin as a
 // citation of tflw, the sibling's gate blanks it correctly and so does not cite it, and
 // `verify:provenance` reports a stale pin that no edit to either document can clear.
+//
+// `M169b`'s demand check reads that example and asks tflw's records for a `D4`. Two things are true
+// of it and neither is repairable here, which is why `D4` is declared in `gen-decisions.mjs`'s
+// `DECLARED_UNRESOLVABLE` rather than edited out of this comment.
+//
+// First, the `testFlow-tests` qualifier is invisible to `collectCitations`, which reads the bare
+// `D4` — the exact distinction `OWN`/`THEIRS` below exist to draw, unimplemented in the other half
+// of the pair. Teaching it there was measured rather than assumed: the qualified form is house
+// convention in the sibling, ~40 sites across its prose, and appears in tflw **exactly once** —
+// here. A grammar generalised from a single instance is the shape `M167` names and `D861` refused,
+// and `M164-12` is where a rule this pair should share belongs.
+//
+// Second, and decisively: **`D4` is defined in neither repository.** It survives in one section
+// heading, copied between the two plans, naming a decision nobody ever wrote. There is no anchor to
+// point it at in either tree, so the example cannot be made to resolve — only stated, which is what
+// the declaration does and what makes it checkable if `D4` is ever minted for real.
 const OWN = /`?testFlow-tests\s+(?:M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
 const THEIRS = /`?tflw\s+(M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
 const UNQUALIFIED_M = /(?<![\w#])M\d{1,3}[a-z]?\d?\b/g;
