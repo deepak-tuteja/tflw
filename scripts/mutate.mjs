@@ -1952,12 +1952,14 @@ const REGISTRY = [
     pkg: ROOT_SUITE,
     file: '.github/workflows/ci.yml',
     what: "`D449`'s own near-miss, frozen as a control. The reassembly job's `--of=` falls behind the `shard:` matrix — which is what actually happened during this milestone's re-shard, and it cost a full CI round trip: twelve shards each green about themselves, and a failure three jobs away from the two integers that disagreed. `verify-shards.mjs` still catches it at runtime and is still the only thing that can see a shard that never reported; this kills it in a second instead",
-    // M148 moved this with the 12 → 18 widen and `M151` with 18 → 20. The `find:` has to quote the
-    // live workflow, and the `replace:` is deliberately the *previous* count rather than a nonsense
-    // one: the failure being controlled is a re-shard that updates two of the four copies, so the
-    // mutant should look exactly like a half-finished widen.
-    find: 'verify-shards.mjs shards --of=20',
-    replace: 'verify-shards.mjs shards --of=18',
+    // M148 moved this with the 12 → 18 widen, `M151` with 18 → 20, and `M169b` with 20 → 23. The
+    // `find:` has to quote the live workflow, and the `replace:` is deliberately the *previous*
+    // count rather than a nonsense one: the failure being controlled is a re-shard that updates
+    // some of the six copies and not the rest, so the mutant should look exactly like a
+    // half-finished widen. This entry is itself a seventh copy — it is the one that fails loudly
+    // and immediately when the workflow moves without it, which is why it is not held by a guard.
+    find: 'verify-shards.mjs shards --of=23',
+    replace: 'verify-shards.mjs shards --of=20',
   },
 
   // -- M137b (D433/D434/D457): the CSRF clause and the derived principal ----------------------------
@@ -3572,8 +3574,13 @@ export const RESHARD_AT = 2 / 3;
  * bins and lands 14 minutes above the per-mutation LPT floor, while at twenty it lands one minute
  * *below* it, because it pays each package's baseline in far fewer bins (262 CPU-minutes against
  * LPT's 308). The probe was reporting a genuinely lopsided deal in a configuration nobody runs.
+ *
+ * 20 -> 23 at `M169b`, and the balance probe this constant feeds is what chose 23 over the count
+ * with the lowest max. See `ci.yml`'s re-shard log: the max plateaus at 756s from 25 onward, but
+ * only by splitting the widest chunk three ways beside 3-mutation bins, which takes the probe's
+ * ratio from 1.212 to 3.330 against its 1.7 bar. 23 is the last count that is both cheap and level.
  */
-export const SHARD_COUNT = 20;
+export const SHARD_COUNT = 23;
 
 /** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
  *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
