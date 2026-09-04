@@ -39,6 +39,7 @@ import {
   collectCitations,
   collectLegacy,
   conformance,
+  expandsRanges,
   extractBlock,
   pickAnchor,
   publishedIds,
@@ -581,6 +582,68 @@ test('a range citation expands to its interior', () => {
   assert.deepEqual([...cited.keys()].sort(byId), ['D5', 'D6', 'D7', 'D8', 'D9']);
   assert.equal(cited.get('D7').viaRange, true, 'an interior identifier is reached only through the range');
   assert.equal(cited.get('D5').viaRange, false, 'an endpoint is cited directly');
+});
+
+// --- M169a: the five shapes the grammar invented when it was pointed at code (`D861`) ---------
+//
+// `M164-08` filed two of these. Pointing `collectCitations` at tracked code found three more, and
+// the largest was not the one the row named. Every rule below was measured against the live corpus
+// before it was written (D716) and `DECISIONS.md` is byte-identical across all five.
+
+test('a base64 tail is not a citation, and a slash-separated list still is', () => {
+  const hits = (s) => [...s.matchAll(CITATION)].map((m) => m[1]);
+  assert.deepEqual(hits('"integrity": "sha512-Xg+M7w=="'), [], 'the `+` and `=` of base64 are not citation boundaries');
+  // The two guards are asserted separately on purpose. The case above dies to either one, so on its
+  // own it would pass with either reverted; each of these is reachable only through the guard it
+  // names — `/` is not a boundary (see below), and a `-` before the body is not one either.
+  assert.deepEqual(hits('sha512-Xg+M7w/Q=='), [], 'the lookbehind: a `+` in front of an identifier is base64, not prose');
+  assert.deepEqual(hits('sha512-M137d+abc'), [], 'the lookahead: a `+` after one is base64 too');
+  // The other half of the same rule, and the reason `M164-08`'s proposed `/` was NOT taken: measured
+  // over the tracked markdown corpus it costs 288 real citations, of which these are three.
+  assert.deepEqual(hits('the decisions 97/98/102 are `D97/D98/D102`'), ['D97', 'D98', 'D102'], 'a slash is how this corpus writes a list');
+  assert.deepEqual(hits('`M130b/M134a` both apply'), ['M130b', 'M134a']);
+});
+
+test('a possessive cites the milestone it is possessive of', () => {
+  const hits = (s) => [...s.matchAll(CITATION)].map((m) => m[1]);
+  // `packages/lang/test/teaching.test.ts:223`, verbatim — the apostrophe was dropped when it was
+  // written, and the old class read the `s` as a sub-milestone of a milestone that is anchored.
+  assert.deepEqual(hits('keeps M84s exact wording'), ['M84'], 'the site cites M84; `M84s` is defined nowhere');
+  assert.deepEqual(hits("keeps M84's exact wording"), ['M84'], 'and it reads the same with the apostrophe present');
+  assert.deepEqual(hits('M9a2 and M137d and D427a survive'), ['M9a2', 'M137d', 'D427a'], 'every other sub-milestone form is untouched');
+  assert.deepEqual(hits('the field M4sync'), [], 'a trailing `s` is a possessive, not a licence to match a longer word');
+});
+
+test('a range does not cross two sequences, and a dash with space around it is punctuation', () => {
+  // `packages/lsp-server/test/protocol.test.ts` writes `M136b — D427`. Read as a span that is 290
+  // invented identifiers out of two citations and a piece of sentence punctuation — the largest
+  // single source of false demand in either repository, and it is not a range in any sense.
+  const cited = collectCitations([{ path: 'SPEC.md', text: 'see `M136b` — `D427` for the reason' }]);
+  assert.deepEqual([...cited.keys()].sort(byId), ['M136b', 'D427'].sort(byId));
+  const spans = (s) => [...s.matchAll(RANGE)].map((m) => [m[1], Number(m[2]), Number(m[3])]);
+  assert.deepEqual(spans('M136b — D427'), [], 'two sequences are not one span');
+  assert.deepEqual(spans('D93 - D122'), [], 'a spaced dash is prose punctuation; every range in this corpus is tight');
+  assert.deepEqual(spans('`D93-D122` covers the arc'), [['D', 93, 122]], 'and the form the corpus actually uses is unaffected');
+});
+
+test('a range-shaped string in code supplies no interior', () => {
+  // `D861`: RANGE must not expand inside a corpus it did not author. `grammarCoverage.test.ts`
+  // names a coverage span; expanding it manufactures 23 identifiers no site cites.
+  const code = collectCitations([{ path: 'packages/lang/test/grammarCoverage.test.ts', text: "const span = 'M29-M53';" }]);
+  assert.deepEqual([...code.keys()].sort(byId), ['M29', 'M53'], 'the two endpoints are cited; the interior is not');
+  const prose = collectCitations([{ path: 'CHANGELOG.md', text: 'the arc `M29-M53` shipped' }]);
+  assert.equal(prose.has('M40'), true, 'the same string in prose still expands — this is a corpus rule, not a grammar one');
+  assert.equal(expandsRanges('SPEC.md'), true);
+  assert.equal(expandsRanges('scripts/gen-decisions.mjs'), false);
+});
+
+test("the gate's own negative fixtures stay grammatical, because that is what makes them fixtures", () => {
+  // The fifth shape, and the one the grammar must NOT solve. This file cites `D888`, `D999` and
+  // `M9a2` precisely because they resolve to nothing — that is how the unresolved-citation report is
+  // tested. A grammar rule that stopped reading them would delete the control instead of exempting
+  // it, so the exclusion belongs to the corpus (`D860`, `M169b`) and is pinned here as a boundary.
+  const hits = (s) => [...s.matchAll(CITATION)].map((m) => m[1]);
+  assert.deepEqual(hits('`D888`, `D999` and `M9a2` resolve to nothing, on purpose'), ['D888', 'D999', 'M9a2']);
 });
 
 test('a reversed or degenerate range contributes no interior', () => {
