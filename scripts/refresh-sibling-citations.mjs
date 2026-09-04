@@ -283,8 +283,21 @@ const codeCited = collectCitations(codeFiles.map(({ path, text }) => ({ path, te
 // The override, per site (`D-M164-06-8`). Everything else the sibling claims is its own and is not
 // asked of this index; `tflw M22` is the one spelling that says otherwise, and it is deliberately
 // the *only* one — an identifier is claimed or qualified, never inferred from context.
-const qualified = new Set();
-for (const { text } of codeFiles) for (const [, id] of text.matchAll(THEIRS)) qualified.add(id);
+//
+// `D866` — AND THE SITE IS THE UNIT, which is what the sentence above always said and is not what
+// this file did until `M169d5`. It built one `Set` over the whole corpus, so a single `tflw M22`
+// anywhere re-admitted every bare `M22` everywhere: 7 identifiers, **47 pin sites** that mean the
+// sibling's own sequence, pinned as citations of this index. `M22`'s two qualifying sites are both
+// prose *about* the collision — `CONTRIBUTING.md` and `refresh-own-identifiers.mjs`'s docblock, the
+// file that generates `claimed` — so the sentence explaining the override was what spent it. The
+// last clause above is the tell: reading another file's context IS inferring from context.
+const qualifiedAt = new Map();
+for (const { path, text } of codeFiles) {
+  const here = new Set();
+  for (const [, id] of text.matchAll(THEIRS)) here.add(id);
+  if (here.size) qualifiedAt.set(path, here);
+}
+const qualifiesAt = (path, id) => qualifiedAt.get(path)?.has(id) === true;
 
 const citations = {};
 for (const id of [...cited.keys()].sort()) {
@@ -293,14 +306,26 @@ for (const id of [...cited.keys()].sort()) {
 }
 let fromCode = 0;
 for (const id of [...codeCited.keys()].sort()) {
-  if (claimed.has(id) && !qualified.has(id)) continue;
   // Declared unresolvable on the sibling's side (`M169d3`). NOT pinned, and the reason is a test
   // in this repository: *a pin naming an identifier the records do not define is unresolved,
   // exactly like a local citation*. That rule is worth more than the convenience of carrying these
   // five, so the exemption lives where the reason lives and the pin stays a set this repository can
   // define in full.
   if (unresolvable.has(id)) continue;
-  const sites = [...new Set(codeCited.get(id).sites.map((s) => s.file))];
+  // `D866` — a claimed identifier is asked of this index from the files that qualify it and from
+  // no others. An unclaimed one is asked from every site that cites it, since code carries no
+  // `**Notation.**` declaration and this index is the only sequence a bare form there can mean.
+  let sites = [...new Set(codeCited.get(id).sites.map((s) => s.file))];
+  if (claimed.has(id)) {
+    sites = sites.filter((f) => qualifiesAt(f, id));
+    // Emptied BY THE FILTER means every site meant the sibling's own sequence, so nothing asks this
+    // index. The test is deliberately inside the `claimed` branch: an unclaimed identifier can also
+    // arrive with no sites — a range interior has none of its own — and it is still a demand. The
+    // first draft skipped on `!sites.length` unconditionally and dropped `D18`, `D342` and `D344`,
+    // which the sibling's gate reported within the minute. That is the pair doing its job, and it
+    // only worked because this half moved and the other did not.
+    if (!sites.length) continue;
+  }
   if (!citations[id]) { citations[id] = sites; fromCode++; continue; }
   citations[id] = [...new Set([...citations[id], ...sites])];
 }
@@ -331,8 +356,10 @@ console.log(
   `${local ? '⚠ LOCAL' : '✓'} pinned ${Object.keys(citations).length} cited identifiers from ${SIBLING}@${sha.slice(0, 7)} (${ref})\n` +
   `  prose: ${paths.length} markdown file(s), ${cited.size} identifier(s)\n` +
   `  code:  ${codeFiles.length} tracked non-prose file(s), ${codeCited.size} identifier(s) read, ` +
-  `${[...codeCited.keys()].filter((id) => (!claimed.has(id) || qualified.has(id)) && !unresolvable.has(id)).length} asked of this index ` +
-  `(${claimed.size} claimed by the sibling, ${unresolvable.size} declared unresolvable there, ${qualified.size} qualified \`tflw <id>\` at a site)\n` +
+  `${[...codeCited.keys()].filter((id) => !unresolvable.has(id) && (!claimed.has(id)
+    || codeCited.get(id).sites.some((s) => qualifiesAt(s.file, id)))).length} asked of this index ` +
+  `(${claimed.size} claimed by the sibling, ${unresolvable.size} declared unresolvable there, ` +
+  `${[...qualifiedAt.values()].reduce((n, s) => n + s.size, 0)} \`tflw <id>\` override(s) at ${qualifiedAt.size} site(s), D866)\n` +
   `  ${fromCode} identifier(s) reach the index only through code`,
 );
 if (local) {

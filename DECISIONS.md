@@ -7931,6 +7931,14 @@ reads is a commit, the same kind of object `--ref` names; and the pin it writes 
 and proceeds. The two verbs want different answers: seeing the index a change would produce is the
 whole point, and committing one that names a commit nobody can fetch is what `D710` is about.
 
+### D866
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`D866` — qualification is a property of a site, not of the corpus.** `D864`'s third term is
+written *"`tflw <id>` **at a site**"*, and `D-M164-06-8` calls it *"the per-site override"*. Both
+implementations built it as one set over the whole corpus:
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -8242,7 +8250,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M19
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/apiV2/src/auth/auth.service.ts +13 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/api/mechanics/body-types.tflw · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -8266,7 +8274,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M22
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.env.example, tflw-tests/.gitignore +14 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -8282,7 +8290,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M24
 
-<sub>cited from tflw-tests/tests/.demo-fail/contract-drift.tflw, tflw-tests/tests/.demo-fail/retry-after-not-honored.tflw, tflw-tests/tests/api/catalog/contract-and-retry.tflw +2 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/tests/api/orders/order-receipts.tflw · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -8290,7 +8298,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M25
 
-<sub>cited from tflw-tests/README.md, tflw-tests/scripts/regression.mjs, tflw-tests/tests/api/orders/file-formats.tflw +1 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/README.md, tflw-tests/tests/api/orders/file-formats.tflw · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -8661,7 +8669,7 @@ stopping point and asked for a comprehensive plan for an HTTP-client-level chang
 
 ### M43
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +11 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +2 more · lifted from `PROGRESS.md`</sub>
 
 **M43-M46 — the reporter bug, and a corrected close to the arc (scoped 2026-08-01; M43 shipped 2026-08-01)**
 
@@ -9477,7 +9485,7 @@ radius of **0 across 169 files**, and both therefore stand or fall on the same e
 
 ### M101
 
-<sub>cited from SPEC.md, tflw-tests/tests/api/orders/order-receipts.tflw, tflw-tests/tests/helpers/save-temp-file.ts · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/helpers/save-temp-file.ts · lifted from `PLAN_M101_MATCHES_FILE_INTERPOLATION.md`</sub>
 
 **M101 — `matches file` interpolates its path (`A4-OS-09`)**
 
@@ -11053,5 +11061,17 @@ Gitignored by `.gitignore:35`.
 
 The half that touches this repository. `D862`, `D863`, `D864` above; one tarball fetch in place of
 780 `contents/` calls; and `DECISIONS.md` **733 → 829 entries, +96, none removed**.
+
+### M169d5
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`M169d5` — qualification per site (both). BUILT 2026-09-05.**
+
+`D866`. Found in the pre-merge review of `M169d3`, before either half merged, by asking the question
+`M169d2`'s docblock is written around: *are the identifiers both record sets define still being asked
+of the wrong index?* They were — not as whole identifiers, which the manifest does stop, but as
+**sites**. `refresh-sibling-citations.mjs` filters a claimed identifier's code sites by whether that
+file spells `tflw <id>`; `verify-provenance.mjs` says the same rule in the same shape.
 
 <!-- GENERATED:decisions:end -->

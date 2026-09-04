@@ -2,8 +2,8 @@
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale.",
   "repo": "deepak-tuteja/tflw-tests",
   "ref": "m169d-code-corpus",
-  "sha": "e9ee0fe5fad202f461a8a1fcbc0d9a5cf019a52e",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/e9ee0fe5fad202f461a8a1fcbc0d9a5cf019a52e",
+  "sha": "c2f43368b2964fcd52aeca6b39eb3145525a2508",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/c2f43368b2964fcd52aeca6b39eb3145525a2508",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -1610,28 +1610,12 @@
     ],
     "M22": [
       "CONTRIBUTING.md",
-      ".env.example",
-      ".gitignore",
-      "apiV2/src/common/content-negotiation.middleware.ts",
-      "docker-compose.yml",
-      "nginx/Dockerfile",
-      "nginx/docker-entrypoint.sh",
-      "nginx/nginx.conf",
       "scripts/refresh-own-identifiers.mjs",
-      "scripts/verify-contributing.mjs",
-      "scripts/verify-provenance.mjs",
-      "tests/api/identity/interleaved-sessions.tflw",
-      "tests/api/identity/mtls.tflw",
-      "tests/api/identity/oauth-token-endpoint.tflw",
-      "tests/api/identity/session-refresh-and-oauth2.tflw",
-      "tflw-acceptance/security/tflw.config",
-      "tflw.config"
+      "scripts/verify-provenance.mjs"
     ],
     "M25": [
       "README.md",
-      "scripts/regression.mjs",
-      "tests/api/orders/file-formats.tflw",
-      "tflw.config"
+      "tests/api/orders/file-formats.tflw"
     ],
     "M29": [
       "CONSTRUCTS.md",
@@ -1737,16 +1721,7 @@
     "M43": [
       "CONSTRUCTS.md",
       "tflw-acceptance/README.md",
-      "scripts/lib/constructs.mjs",
-      "tests/.checkonly/threshold-unknown-label.tflw",
-      "tests/.env-specific/webv2-admin.tflw",
-      "tests/mixed/storefront.tflw",
-      "tflw-acceptance/perf/tflw/checkout-burst.tflw",
-      "webV2/admin/src/apiClient.js",
-      "webV2/admin/src/routes/orders.js",
-      "webV2/admin/src/routes/products.js",
-      "webV2/src/pages/CartPage.tsx",
-      "webV2/src/pages/OrderConfirmationPage.tsx"
+      "tests/.checkonly/threshold-unknown-label.tflw"
     ],
     "M44": [
       "tflw-acceptance/README.md"
@@ -2346,6 +2321,9 @@
     "D864": [
       "scripts/verify-provenance.mjs"
     ],
+    "D866": [
+      "scripts/verify-provenance.mjs"
+    ],
     "D9": [
       "scripts/lib/tflw-bin.mjs",
       "scripts/verify-check-diagnostics.mjs",
@@ -2360,7 +2338,6 @@
       ".github/workflows/ci.yml"
     ],
     "M101": [
-      "tests/api/orders/order-receipts.tflw",
       "tests/helpers/save-temp-file.ts"
     ],
     "M103": [
@@ -2556,28 +2533,14 @@
       "scripts/verify-construct-acceptance.mjs",
       "scripts/verify-contributing.mjs"
     ],
+    "M169d5": [
+      "scripts/verify-provenance.mjs"
+    ],
     "M19": [
-      "apiV2/src/auth/auth.service.ts",
-      "apiV2/src/auth/token-records.service.ts",
-      "apiV2/src/cart/cart.service.ts",
-      "apiV2/src/coupons/dto/create-coupon.dto.ts",
-      "apiV2/src/orders/orders.service.ts",
-      "apiV2/src/products/dto/create-product.dto.ts",
-      "apiV2/src/return-requests/return-requests.service.ts",
-      "apiV2/src/reviews/reviews.service.ts",
-      "tests/api/admin/reviews.tflw",
-      "tests/api/mechanics/body-types.tflw",
-      "tests/helpers/concurrent-cart-add.ts",
-      "tests/helpers/concurrent-coupon-redeem.ts",
-      "tests/helpers/concurrent-refresh.ts",
-      "tests/helpers/concurrent-register.ts"
+      "tests/api/mechanics/body-types.tflw"
     ],
     "M24": [
-      "tests/.demo-fail/contract-drift.tflw",
-      "tests/.demo-fail/retry-after-not-honored.tflw",
-      "tests/api/catalog/contract-and-retry.tflw",
-      "tests/api/orders/order-receipts.tflw",
-      "tests/helpers/save-temp-file.ts"
+      "tests/api/orders/order-receipts.tflw"
     ],
     "M4b": [
       "tests/mixed/storefront.tflw"
