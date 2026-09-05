@@ -7,7 +7,8 @@
 
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess, type ChildProcessByStdio, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { Readable, Writable } from 'node:stream';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -168,7 +169,10 @@ test('`tflw lsp` speaks LSP over stdio: a raw Content-Length-framed `initialize`
 // spawned binary, since a subtly wrong exit code here is exactly the kind of thing that reads fine
 // in-process but breaks a real editor's shutdown flow.
 test('`tflw lsp` exits 0 after a clean `shutdown` request + `exit` notification handshake', async () => {
-  const child: ChildProcessWithoutNullStreams = spawn('node', [cliEntry, 'lsp'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  // `ChildProcessWithoutNullStreams` says all three streams are non-null, and this spawn passes
+  // `'ignore'` for stderr — so the annotation asserted the opposite of the argument three tokens to
+  // its right. Harmless at runtime and false as documentation; `M173a` is what read it.
+  const child: ChildProcessByStdio<Writable, Readable, null> = spawn('node', [cliEntry, 'lsp'], { stdio: ['pipe', 'pipe', 'ignore'] });
   const exitPromise = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
 
   const initResponse = readOneMessage(child, 'the initialize request');

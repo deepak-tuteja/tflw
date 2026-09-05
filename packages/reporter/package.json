@@ -2,7 +2,7 @@
   "name": "@tflw/reporter",
   "version": "0.1.0",
   "private": true,
-  "description": "testFlow reporter — consumes the run report/event stream into a self-contained report.html, a CLI summary, and junit.xml.",
+  "description": "testFlow reporter \u2014 consumes the run report/event stream into a self-contained report.html, a CLI summary, and junit.xml.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,10 +15,13 @@
   "engines": {
     "node": ">=22"
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {

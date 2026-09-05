@@ -2,7 +2,7 @@
   "name": "@tflw/lsp-server",
   "version": "0.1.0",
   "private": true,
-  "description": "testFlow Language Server — stdio protocol wiring (vscode-languageserver) + the I/O layer (project discovery, tflw.config/env resolution, debounced document reparse, cross-file resolution) over @tflw/lang's pure resolution functions.",
+  "description": "testFlow Language Server \u2014 stdio protocol wiring (vscode-languageserver) + the I/O layer (project discovery, tflw.config/env resolution, debounced document reparse, cross-file resolution) over @tflw/lang's pure resolution functions.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,10 +16,13 @@
       "default": "./dist/pure.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
   "engines": {

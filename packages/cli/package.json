@@ -1,8 +1,20 @@
 {
   "name": "tflw",
   "version": "0.1.0",
-  "description": "testFlow CLI — an external DSL (.tflw files) for API, browser and load testing in one language: config as tflw itself, sessions, capture-chaining, hooks/retry/tags, actions+JS escape hatch, real Playwright browser automation, ramp/hold/step/spike workloads with thresholds, teaching-quality diagnostics, a Language Server, and a self-contained report.html + junit.xml + results.json.",
-  "keywords": ["testing", "api-testing", "browser-testing", "load-testing", "performance-testing", "e2e", "playwright", "test-runner", "dsl", "http", "cli"],
+  "description": "testFlow CLI \u2014 an external DSL (.tflw files) for API, browser and load testing in one language: config as tflw itself, sessions, capture-chaining, hooks/retry/tags, actions+JS escape hatch, real Playwright browser automation, ramp/hold/step/spike workloads with thresholds, teaching-quality diagnostics, a Language Server, and a self-contained report.html + junit.xml + results.json.",
+  "keywords": [
+    "testing",
+    "api-testing",
+    "browser-testing",
+    "load-testing",
+    "performance-testing",
+    "e2e",
+    "playwright",
+    "test-runner",
+    "dsl",
+    "http",
+    "cli"
+  ],
   "type": "module",
   "bin": {
     "tflw": "./dist/cli.cjs"
@@ -10,14 +22,21 @@
   "engines": {
     "node": ">=22"
   },
-  "files": ["dist", "THIRD-PARTY-NOTICES.md"],
+  "files": [
+    "dist",
+    "THIRD-PARTY-NOTICES.md"
+  ],
   "peerDependencies": {
     "playwright": ">=1.40.0",
     "axe-core": ">=4.0.0"
   },
   "peerDependenciesMeta": {
-    "playwright": { "optional": true },
-    "axe-core": { "optional": true }
+    "playwright": {
+      "optional": true
+    },
+    "axe-core": {
+      "optional": true
+    }
   },
   "repository": {
     "type": "git",
@@ -31,7 +50,7 @@
   "author": "Deepak Tuteja <33311251+deepak-tuteja@users.noreply.github.com>",
   "scripts": {
     "build": "npm run bundle",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "pretypecheck": "npm run docs:gen",
     "test": "node --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "_test note": "`--test-concurrency=1` is load-bearing, not a tuning knob. Four files here (e2e, watch, pick, lsp) each run `npm run build` at the REPO ROOT; run two at once and the root builds race on `.vitepress/.temp` and on each other's `dist/`, which surfaces as ERR_MODULE_NOT_FOUND here and as deep-equal/undefined failures in @tflw/runtime and @tflw/lsp-server importing a `dist/` mid-rewrite. Measured 2026-08-22: 307 phantom failures. See CONTRIBUTING.md, 'Run the suite with `npm test`, not package by package'.",
