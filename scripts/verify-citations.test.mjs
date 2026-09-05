@@ -12,7 +12,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findBare, findInPackages } from './verify-citations.mjs';
+import { declaredReach, findBare, findInPackages } from './verify-citations.mjs';
 
 /** One file's worth of prose, as the gate takes it. */
 const scan = (text, path = 'SPEC.md') => findBare([{ path, text }]);
@@ -247,4 +247,45 @@ test('a bare record-local sequence is a KNOWN blind spot, not a caught one (`D71
   // This test asserts the blind spot on purpose. If a later rule closes it, this fails, and that
   // failure is the notification that `M153a-02` can be closed.
   assert.deepEqual(cited('SSR admin console (webV2-1) over apiV2 — server-rendered, no client bundle.'), []);
+});
+
+
+// -------------------------------------------------------------------------------------------
+// `M175c` / `D896` / `D880` — the gate states what it does not demand, and cannot state it emptily
+// -------------------------------------------------------------------------------------------
+
+test('the declared reach splits its corpus into this gate\'s own machinery and everything else', () => {
+  // `M169-04` asked for this gate's corpus to be widened to `D858`'s demand corpus. Measured first:
+  // the non-markdown hits are this gate's own rules and fixtures (`D691`'s real exemption) plus a
+  // much larger body of GENUINE bare citations in shipped comments and test titles — so widening is
+  // not "a rule plus an exemption set", it is ~598 rewrites. The corpus stays prose and the
+  // narrowing is declared (`D896`) with the number that makes it a judgement rather than an oversight.
+  //
+  // Pure on purpose: `trackedNonMarkdown` needs `git ls-files` and `scripts/exec.mjs` syncs the box
+  // without `.git`, so an enumeration inside this test would be green here and red on the box.
+  const r = declaredReach({
+    files: [
+      { path: 'scripts/citation-rules.mjs', text: 'the pattern matches `decision 57` and decision 12' },
+      { path: 'packages/cli/src/cli.ts', text: '// bundled per decision 43, see also decision 74b' },
+      { path: 'packages/lang/src/ast.ts', text: 'nothing numbered here at all' },
+    ],
+    skipped: 2,
+  });
+  assert.equal(r.files, 3);
+  assert.equal(r.hits, 4, 'two in the rules file, two in the shipped source');
+  assert.equal(r.own, 2, "this gate's own machinery is counted separately");
+  assert.equal(r.ownFiles, 1);
+  assert.equal(r.elsewhere, 2, 'and the rest are real citations this gate declines to demand');
+  assert.equal(r.skipped, 2, 'binaries and unreadable files are carried through, not silently dropped');
+});
+
+test('a file with no hits still counts as swept, and own-machinery membership is by path not by hits', () => {
+  // `D880`: the three states the gate refuses on are "no files", "own machinery absent from the
+  // corpus" and "own machinery carries no hits". The second must be answerable even when the file
+  // is present and empty, or a rename would read as a legitimate zero instead of a broken split.
+  const r = declaredReach({ files: [{ path: 'scripts/verify-citations.mjs', text: 'no numbers' }] });
+  assert.equal(r.files, 1);
+  assert.equal(r.hits, 0);
+  assert.equal(r.ownFiles, 1, 'present in the corpus');
+  assert.equal(r.own, 0, 'but carrying nothing — which is the state the gate calls impossible and fails on');
 });
