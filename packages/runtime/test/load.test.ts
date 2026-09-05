@@ -1440,10 +1440,32 @@ test('`threshold … for "label"` evaluates against only that endpoint, independ
   assert.equal(s.thresholds.length, 2);
   const whole = s.thresholds.find((t) => t.label === 'p95 duration')!;
   const scoped = s.thresholds.find((t) => t.label === 'p95 duration for "checkout"')!;
-  // The whole-iteration threshold sums the fast lookup + slow checkout, so its own p95 is even
-  // higher than the checkout-only threshold's — both fail here, but the scoped one's `actual`
-  // should read close to the checkout leg alone, not the combined iteration.
-  assert.ok(scoped.actual < whole.actual, `scoped p95 (${scoped.actual}) should read below the combined p95 (${whole.actual})`);
+  // `M172a` (`M169-05`, `D885`). This used to compare the two percentiles — `scoped.actual <
+  // whole.actual` — and that assertion could not tell its own kill from its own flake. Both
+  // populations are drawn from the same three ramping VUs over the same 200ms, so a run where the
+  // fast leg's samples land inside the slow leg's tail rounds the two to the SAME number, and a
+  // tie fails a strict inequality exactly as a broken scope would. Three runs on byte-identical
+  // code gave one red and two green, which is the whole of `M169-05`.
+  //
+  // What replaces it is an identity rather than a comparison. `finalizeScenario` hands ONE
+  // `successHistogram` object to both `buildLoadMetrics` and `evaluateThresholds`, and both put it
+  // through `roundDurationMs` — `summarizeHistogram`'s `p95` and a threshold's `actual` are the
+  // same expression over the same samples through the same rounder (`D809`/`D810`). So these two
+  // equalities are exact by construction rather than approximate, and they state what the
+  // inequality could not: WHICH population each threshold read. A scope that silently falls back
+  // to the whole histogram breaks the first one on every run, not on a lucky one.
+  const checkout = s.endpoints.find((e) => e.identity === 'checkout')!;
+  assert.equal(scoped.actual, checkout.metrics.successful.durations.p95, 'the scoped threshold must read the checkout endpoint\'s own successful-duration population');
+  assert.equal(whole.actual, s.metrics.successful.durations.p95, 'the unscoped threshold must read the scenario-wide successful-duration population');
+  // The fixture floor, and it is not decoration. Both equalities above hold vacuously the moment
+  // the fixture stops producing a slow leg — the endpoint's p95 and the scenario's would converge
+  // and `scoped.ok === false` would be asserting nothing about scoping. `/checkout` sleeps 60ms
+  // against a 40ms threshold; 30 is half of that, low enough never to flake on a loaded runner and
+  // high enough that a fixture which quietly stopped sleeping cannot clear it.
+  assert.ok(
+    checkout.metrics.successful.durations.p95 >= 30,
+    `the checkout leg must actually be slow for this test to mean anything (p95 ${checkout.metrics.successful.durations.p95}ms)`,
+  );
   assert.equal(scoped.ok, false);
   await server.close();
 });

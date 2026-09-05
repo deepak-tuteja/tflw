@@ -3134,6 +3134,30 @@ const REGISTRY = [
     find: 'export function acquireInsecureTls(): void {\n  if (refCount === 0) {',
     replace: 'export function acquireInsecureTls(): void {\n  if (refCount > 0) {',
   },
+  {
+    id: 'threshold-scope-falls-back-to-the-whole-histogram',
+    milestone: 'm172a',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    // `M169-05`/`D885`. Nothing in this registry touched `evaluateThresholds`' endpoint lookup
+    // before this entry: 15 of the 326 ids name a threshold or a scope, and every one of them is
+    // about the POPULATION a threshold reads (`successHistogram` vs `histogram`, `D-M89-0`) or
+    // about the comparison (`D809`/`D810`) — never about which bucket the scope resolves to. So
+    // the repaired assertion had no mutation grading it, which is `M168`'s carry verbatim: a kill
+    // is not coverage, and neither is a repair.
+    //
+    // Deliberately NOT the population swap (`successHistogram` -> `histogram`) here. This
+    // fixture's requests all succeed, so the two histograms hold identical samples and that
+    // mutation would SURVIVE — the claim is owned at `:1662` and `:1814`, where the fixture fails
+    // requests on purpose.
+    //
+    // `@tflw/runtime`'s test script is `node --import tsx --test`, which strips types without
+    // checking them (`M155-01`), so the `empty` local this replacement leaves unread does not
+    // redden the sweep the way it would redden `npm run typecheck`.
+    what: 'a scoped threshold stops resolving its endpoint and evaluates against the scenario-wide histogram, so `threshold p95 duration for "checkout"` silently becomes a second copy of the unscoped threshold beside it. Both still fail here and both still report a number, which is why the assertion this replaces — a strict inequality between the two — could not tell the defect from a tie: `M169-05` recorded one red and two green on byte-identical code',
+    find: '    const source = scope === undefined ? whole : (endpoints.get(scope) ?? { histogram: empty, successHistogram: empty, failures: 0 });',
+    replace: '    const source = whole;',
+  },
 ];
 
 /**
