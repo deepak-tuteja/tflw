@@ -3420,10 +3420,17 @@ function repairStaleJournal() {
 // killed in a later step with the work done and thrown away.
 //
 // A bigger number would be the third application of a fix that has not held twice, and `M114`'s
-// rule forbids the cheap structural one — scoping the sweep on PRs is how `M122-01` stayed
-// invisible, a merged registry entry leaving one mutation not merely surviving but *absent*, with
-// every scoped run green about a mutation that no longer existed. So: every mutation still runs on
-// every pull request, and what changes is how many machines run them.
+// rule forbids the cheap structural one: a sweep scoped to the milestone under review is green
+// about every mutation it did not run, and a control that has stopped killing reddens nothing while
+// it stays unrun. So: every mutation still runs on every pull request, and what changes is how many
+// machines run them.
+//
+// `M172c` (`M161-02`) — this paragraph cited `M122-01` until 2026-09-05, and that case does not
+// support the rule: a mutation inside the scope is found by a scoped run and an unscoped one alike,
+// and what made `M122-01` invisible is that its object was built and never registered, which
+// `registryProblem()` above is what actually catches. `ci.yml`'s unscoped note carries the full
+// correction. The row named two sites; there were THREE, this being the copy nobody had counted —
+// which is the row's own warning about reusing an example rather than re-checking it, paid twice.
 //
 // WHAT A SHARD MUST NOT BE ABLE TO DO. Splitting a sweep introduces exactly one new way to be
 // green about nothing — a mutation that lands in no shard, or a shard that runs zero mutations and
