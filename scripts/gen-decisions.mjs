@@ -93,6 +93,19 @@ export const RANGE = /(?<![\w#])([DM])(\d{1,3})[a-z]?[-–—]\1(\d{1,3})[a-z]?\
  * Markdown is that corpus, and it is the whole of today's corpus, so this decides nothing until
  * `M169b` widens the demand over code. It is written now because the widening is what makes it
  * matter, and a rule added in the same edit as its first violation is a rule nobody measured.
+ *
+ * **`M169d3` (`D862`) — this is a rule about a corpus, and the sibling's is a different corpus.**
+ * The paragraph above generalises from one file in THIS repository, and the generalisation does not
+ * survive contact with `testFlow-tests`: measured over its 763 tracked non-prose files, there are
+ * **15 range-shaped strings and all 15 are tight, same-sequence and written by a person in a
+ * comment** — `D16-D19 never designed one`, `D57-D59`, `D67-D72`, `D340–D345`, `M0-M4`. Not one is
+ * a fixture value. Refusing to expand them there would have cost seven interior identifiers
+ * (`D18 D342 D344 D43 D68 D69 D71`), every one of them already published, and left the pin
+ * disagreeing with the sibling's own reading in the direction that cannot be cleared by editing
+ * either document — `M154d`'s failure, at corpus scale.
+ *
+ * So the predicate stays this repository's answer for this repository's files, and
+ * `refresh-sibling-citations.mjs` passes its own. What is shared is the *question*, not the answer.
  */
 export function expandsRanges(path) {
   return path.endsWith('.md');
@@ -155,10 +168,15 @@ export function scanLines(text) {
  * answer, not a question, and counting its own headings as citations would let it satisfy D675's
  * conformance gate by existing.
  *
+ * `expands` is the range predicate, defaulting to this repository's (`D861`). It is a parameter
+ * rather than a constant because `refresh-sibling-citations.mjs` reads a corpus this repository did
+ * not author and measured a different answer for it (`D862`).
+ *
  * @param {{path: string, text: string}[]} files
+ * @param {(path: string) => boolean} [expands]
  * @returns {Map<string, {sites: {file: string, line: number}[], viaRange: boolean}>}
  */
-export function collectCitations(files) {
+export function collectCitations(files, expands = expandsRanges) {
   /** @type {Map<string, {sites: {file: string, line: number}[], viaRange: boolean}>} */
   const cited = new Map();
   const note = (id, site, viaRange) => {
@@ -172,7 +190,7 @@ export function collectCitations(files) {
     for (const { line, inProductFence, text: ln } of scanLines(text)) {
       if (inProductFence) continue;
       for (const m of ln.matchAll(CITATION)) note(m[1], { file: path, line }, false);
-      if (expandsRanges(path)) {
+      if (expands(path)) {
         for (const m of ln.matchAll(RANGE)) {
           const [, kind, a, b] = m;
           if (Number(b) <= Number(a)) continue;
@@ -943,6 +961,22 @@ export function readCode(root) {
  *
  * The trade is that a new invented example in a docblock reddens this check until it is declared
  * here. That is the correct direction: the declaration is the point.
+ *
+ * **`M169d3` (`D863`) — this list stays about THIS repository's own code, and a test is why.**
+ * The first design had it answer for the sibling too: `M141b`, `M164d`, `M404b` and `M154i` are
+ * cited in the sibling's code, are unmistakably this repository's sequence, and nothing here can
+ * anchor any of them, so declaring them here looked like the same shape one level out. It is not.
+ * Exempting a declared identifier from `build`'s unresolved list and from `conformance` reddened
+ * three tests, and the third names the decision being overridden: *a pin naming an identifier the
+ * records do not define is unresolved, exactly like a local citation*. The other two are `D888` and
+ * `D999`, this file's own unresolved-citation fixtures, which the exemption silently stopped
+ * reporting — the gate's negative controls disarmed by the change meant to make it lenient.
+ *
+ * So the exemption lives at the pin instead: the sibling publishes its declarations in
+ * `own-identifiers.json` beside its claims, and `refresh-sibling-citations.mjs` never asks for them
+ * (`D864`). One source, on the side that owns the reason, travelling by the channel that already
+ * carries the other half of the same question. The rule this leaves standing is the stronger one —
+ * **if it is in the pin, this repository must be able to define it.**
  */
 export const DECLARED_UNRESOLVABLE = new Map([
   ['D888', '`gen-decisions.test.mjs` — an unresolved citation fixture; the gate is tested by demanding an entry that does not exist'],
@@ -951,6 +985,16 @@ export const DECLARED_UNRESOLVABLE = new Map([
   ['M7w', "`gen-decisions.mjs` / `self-mutations.mjs` — the base64 tail of a `sha512-` hash (`…Xg+M7w==`), quoted in the docblock and the control that explain why `+` and `=` are citation boundaries (`D861`)"],
   ['M427', "`gen-decisions.mjs` / `self-mutations.mjs` — the right end of `M136b — D427` read as a range, quoted in the docblock and the control that explain why a range must name one sequence (`D861`)"],
   ['D4', '`refresh-sibling-citations.mjs` — the sibling-qualified example in the comment that explains this file\'s `OWN`/`THEIRS` split. It is defined in NEITHER repository: it survives in one section heading, copied between the two plans, naming a decision nobody wrote. Added by `M169c`, which found it and could not repair it — there is nothing to point the pointer at'],
+  // `M169d3`. These four are named in `D863`'s docblock above, which explains why the sibling's
+  // unresolvable identifiers are subtracted at the pin instead of exempted here — so the paragraph
+  // arguing that this list must NOT answer for them is itself four citations of them. That is
+  // `D860`'s own sentence a second time: *a file whose subject is what counts as a citation has to
+  // be able to quote one that does not.* Declared for this repository's demand check only; the pin
+  // is where they are actually withheld, and `own-identifiers.json` is what withholds them.
+  ['M141b', "`gen-decisions.mjs` — quoted in `D863`'s docblock. The sibling's half of `M141`, naming its merged commit `37edd5c` (#27); this repository anchors `M141` whole and names its PR halves only in a build-order table cell"],
+  ['M164d', "`gen-decisions.mjs` — quoted in `D863`'s docblock. `D851` records that `M164d` is not built, and an unbuilt milestone has no block to extract"],
+  ['M404b', "`gen-decisions.mjs` — quoted in `D863`'s docblock. The invented half of the sibling self-test's planted citation; `D404` beside it is real and resolves"],
+  ['M154i', "`gen-decisions.mjs` — quoted in `D863`'s docblock. Defined in NEITHER repository, like `D4`: minted in the sibling's comment and referred back to once in `M164-12`'s row here, and a mention is not an anchor"],
 ]);
 
 /**
@@ -1040,6 +1084,11 @@ export function readSiblingPin(root) {
     );
   }
   if (!pin?.repo || !pin.citations) throw new Error(`${SIBLING_PIN} is missing \`repo\` or \`citations\` — re-pin it rather than hand-editing.`);
+  // `M169d3` (`D865`). `--from-checkout` exists so a two-repository change can be verified before
+  // either half is pushed, and this is the half of that decision that makes it safe: a pin built
+  // from a local clone says so, and nothing will check or publish against one. Without this the
+  // flag would reintroduce exactly what `D710` refuses — a pin naming a commit no reader can fetch,
+  // indistinguishable from a correct one.
   return pin;
 }
 
@@ -1143,6 +1192,27 @@ function main() {
   const tracked = readTracked(ROOT);
   const pin = readSiblingPin(ROOT);
   const outPath = join(ROOT, OUTPUT);
+
+  // `M169d3` (`D865`) — a locally-built pin generates and does not verify. `--from-checkout` exists
+  // so a two-repository change can be exercised before either half is pushed; this is the half that
+  // keeps it from becoming a hole in `D710`. Generation is allowed and says so loudly, because the
+  // whole point is to see the index the change would produce. Checking is refused, because the pin
+  // names a commit nobody else can fetch — so the committed pair would be unreproducible, and every
+  // gate would go green about it. The two verbs want different answers and this is the difference.
+  if (pin.local) {
+    const banner =
+      `${SIBLING_PIN} was built from a LOCAL CHECKOUT (${String(pin.sha).slice(0, 7)}).\n` +
+      `  ${pin.source}`;
+    if (checking) {
+      console.error(
+        `✗ ${banner}\n` +
+        `  Nobody else can fetch that commit, so this index is not reproducible from this repository\n` +
+        `  plus a published ref (D710). Push the sibling branch, then re-pin with --ref <branch>.`,
+      );
+      return 1;
+    }
+    console.error(`⚠ ${banner}\n  Generating anyway — this is what --from-checkout is for. Do not commit the pin.\n`);
+  }
 
   const haveRecords = existsSync(join(ROOT, 'PLAN.md'));
   const citedIds = new Set([...mergeSiblingCitations(collectCitations(tracked), pin).keys()]);

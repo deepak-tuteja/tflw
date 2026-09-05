@@ -104,13 +104,23 @@ npm run verify:ledger                  # § never runs in CI, by decision
   **It is also the one gate that cannot be offloaded to the box.** `scripts/exec.mjs` syncs the
   tree without `.git/`, and this reads the tracked set through `git ls-files`, so there it fails
   with a message saying exactly that rather than a green it has not earned.
-  **The index answers both repositories' prose** (`D709`). `testFlow-tests` cites this notation in
-  documents its own readers meet, and the index used to publish 91 of the 185 identifiers it uses —
-  the rest had anchors nobody had asked for. Its half arrives through `scripts/sibling-citations.json`,
-  a tracked pin re-taken with `node scripts/refresh-sibling-citations.mjs --ref <ref>` (network, an
-  authenticated `gh`, never CI — the same asymmetry `spec-anchors.json` lives with). Nothing here
-  notices when that pin goes stale: the sibling's own `verify:provenance` does, in the only job in
-  either repository with both trees checked out, so a cross-repo change merges **tflw first**.
+  **The index answers both repositories' prose, and since `M169d3` their code as well** (`D709`,
+  `D864`). `testFlow-tests` cites this notation in documents its own readers meet, and the index used
+  to publish 91 of the 185 identifiers it uses — the rest had anchors nobody had asked for. Its half
+  arrives through `scripts/sibling-citations.json`, a tracked pin re-taken with
+  `node scripts/refresh-sibling-citations.mjs --ref <ref>` (network, an authenticated `gh`, never CI
+  — the same asymmetry `spec-anchors.json` lives with). What the pin holds is what that repository
+  *asks of this one*, which is not everything it cites: its own milestones are subtracted using the
+  manifest it publishes at `scripts/own-identifiers.json`, and so are the identifiers it declares
+  nothing can resolve. Nothing here notices when that pin goes stale: the sibling's own
+  `verify:provenance` does, in the only job in either repository with both trees checked out, so a
+  cross-repo change merges **tflw first**.
+
+  **To try a cross-repository change before pushing either half**, add `--from-checkout <path>` to
+  that command (`D865`). It reads the sibling's `HEAD` from a local clone, refuses a dirty one, and
+  marks the pin `local: true` — which `npm run verify:decisions` refuses outright, while generation
+  proceeds with a warning. So you can see the index a change would produce and you cannot commit
+  one that names a commit nobody else can fetch. Re-pin with `--ref` before committing.
   Each entry's provenance line names **files, never lines** (`D686`) — so it moves when the set of
   documents citing an identifier changes, and not when a paragraph is added above one. The line
   numbers went to **`npm run docs:provenance`**, which is not published and not tracked: per entry

@@ -1,9 +1,9 @@
 {
-  "comment": "Every identifier testFlow-tests cites in tracked prose, and which of its files cite it, read from the ref below (D709/D710). Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:citation-pin` is what fails when this goes stale.",
+  "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale.",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "main",
-  "sha": "028b8cf2f2f245fc889bba047acc8b7d8e760030",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/028b8cf2f2f245fc889bba047acc8b7d8e760030",
+  "ref": "m169d-code-corpus",
+  "sha": "c2f43368b2964fcd52aeca6b39eb3145525a2508",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/c2f43368b2964fcd52aeca6b39eb3145525a2508",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -20,30 +20,65 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
   ],
+  "codeFiles": 763,
   "citations": {
     "D10": [
       "tflw-acceptance/README.md"
     ],
     "D127": [
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      ".github/workflows/ci.yml",
+      "scripts/check-acceptance.mjs",
+      "scripts/regression.mjs",
+      "tflw.config"
     ],
     "D17": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "scripts/verify-provenance.mjs"
     ],
     "D183": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/config-keys/mtls-matched.config",
+      "tests/.constructs/config-keys/mtls-mismatched-key.config",
+      "tests/.constructs/config-keys/mtls-nocert.config",
+      "tflw.config"
     ],
     "D19": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "scripts/verify-provenance.mjs",
+      "tests/.checkonly/crawl-body-not-an-assertion.tflw",
+      "tests/.demo-fail/malformed-csv-upload.tflw",
+      "tests/.demo-fail/malformed-pdf-upload.tflw",
+      "tflw-acceptance/perf/artillery/dogfood-get-only.yml",
+      "tflw-acceptance/perf/artillery/echo-get-only.yml",
+      "tflw-acceptance/perf/artillery/echo-post-only.yml",
+      "tflw-acceptance/perf/k6/checkout-burst.js",
+      "tflw-acceptance/perf/tflw/generator-saturation-demo.tflw",
+      "tflw-acceptance/perf/tflw/helpers.ts"
     ],
     "D206": [
-      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+      "tflw-acceptance/perf/profile/open-model-fetch-repro.mjs"
     ],
     "D207": [
       "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
     ],
     "D21": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/sweep-input-volume.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-external-targets.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tests/.checkonly/authz-scan-public-target.tflw",
+      "tests/.checkonly/crawl-without-seed.tflw",
+      "tests/.checkonly/security-without-authorized-target.tflw",
+      "tflw-acceptance/restful-booker/tflw.config",
+      "tflw-acceptance/security/public-target/scan.tflw",
+      "tflw-acceptance/security/tflw.config",
+      "tflw.config"
     ],
     "D211": [
       "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
@@ -52,23 +87,63 @@
       "tflw-acceptance/README.md"
     ],
     "D26": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "tflw-acceptance/conformance/teardown.tflw"
     ],
     "D284": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/plaintext.tflw"
     ],
     "D285": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/sweep-input-volume.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tests/.checkonly/crawl-without-seed.tflw",
+      "tests/.checkonly/input-assertion-no-mutable-input.tflw",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/crawl.tflw",
+      "tflw-acceptance/security/input.tflw",
+      "tflw-acceptance/security/plaintext.tflw",
+      "tflw-acceptance/security/spider.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D291": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-orders.controller.ts",
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/authz-assertion-without-owner.tflw",
+      "tests/.checkonly/authz-scan-public-target.tflw",
+      "tests/.checkonly/security-without-authorized-target.tflw",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw.config"
     ],
     "D293": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/common/request-scheme.ts",
+      "apiV2/src/vuln/vuln.controller.ts",
+      "docker-compose.yml",
+      "nginx/Dockerfile",
+      "nginx/nginx.conf",
+      "scripts/regression.mjs",
+      "scripts/verify-security-target.mjs",
+      "tests/.env-specific/secure-local.tflw",
+      "tflw-acceptance/security/negatives.tflw",
+      "tflw-acceptance/security/tflw.config",
+      "tflw.config"
     ],
     "D295": [
       "VULNS.md",
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "apiV2/src/vuln/vuln.controller.ts",
+      "scripts/regression.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/negatives.tflw",
+      "tflw-acceptance/security/plaintext.tflw",
+      "tflw-acceptance/security/positives.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D299": [
       "VULNS.md"
@@ -77,23 +152,46 @@
       "VULNS.md"
     ],
     "D307": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-target.mjs"
     ],
     "D31": [
       "tflw-acceptance/README.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "tflw-acceptance/perf/k6/checkout-burst.js",
+      "tflw-acceptance/perf/k6/dogfood-get-only.js",
+      "tflw-acceptance/perf/k6/dogfood-post-uncontended.js",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs",
+      "tflw-acceptance/perf/tflw/checkout-burst.tflw",
+      "tflw-acceptance/perf/tflw/generator-saturation-demo.tflw",
+      "tflw-acceptance/perf/tflw/tflw.config"
     ],
     "D311": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-orders.controller.ts",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/tflw.config",
+      "tflw.config"
     ],
     "D315": [
-      "VULNS.md"
+      "VULNS.md",
+      "tests/.checkonly/authz-assertion-in-wait-until.tflw"
     ],
     "D317": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-orders.controller.ts",
+      "apiV2/src/vuln/vuln.module.ts",
+      "scripts/verify-security-target.mjs",
+      "tflw-acceptance/security/tflw.config",
+      "tflw.config"
     ],
     "D319": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tests/api/identity/authz-generated.tflw",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D32": [
       "tflw-acceptance/README.md",
@@ -101,19 +199,27 @@
       "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md"
     ],
     "D324": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/csrf.tflw"
     ],
     "D325": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D327": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/csrf.tflw"
     ],
     "D33a": [
       "tflw-acceptance/README.md",
       "tflw-acceptance/perf/profile/FINDINGS.md",
       "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
+      "tflw-acceptance/perf/artillery/dogfood-get-only.yml",
+      "tflw-acceptance/perf/artillery/echo-get-only.yml"
     ],
     "D33c": [
       "tflw-acceptance/README.md",
@@ -125,7 +231,8 @@
     ],
     "D33e": [
       "tflw-acceptance/perf/profile/FINDINGS.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
+      "tflw-acceptance/perf/profile/analyze-profile.mjs"
     ],
     "D34": [
       "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md"
@@ -135,133 +242,244 @@
       "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md"
     ],
     "D356": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-orders.controller.ts",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-security-target.mjs",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D36": [],
     "D363": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-input.controller.ts",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D37": [
       "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md"
     ],
     "D377": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/sweep-input-volume.mjs"
     ],
     "D379": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-input.controller.ts",
+      "apiV2/src/vuln/vuln.module.ts",
+      "tflw-acceptance/security/input-plaintext.tflw",
+      "tflw-acceptance/security/input.tflw"
     ],
     "D38": [
       "tflw-acceptance/README.md"
     ],
     "D380": [
       "CONSTRUCTS.md",
-      "VULNS.md"
+      "VULNS.md",
+      ".gitignore",
+      "scripts/lib/constructs.mjs",
+      "scripts/regression.mjs",
+      "scripts/sweep-input-volume.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/input.tflw"
     ],
     "D389": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D39": [
       "tflw-acceptance/README.md",
       "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md"
     ],
     "D395": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-input.controller.ts",
+      "tflw-acceptance/security/input.tflw"
     ],
     "D396": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-input.controller.ts"
     ],
     "D40": [
       "tflw-acceptance/README.md",
       "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
+      "scripts/verify-provenance.mjs",
+      "tflw-acceptance/perf/profile/echo-server-delayed-connlog.mjs"
     ],
     "D41": [
       "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
+      "tflw-acceptance/perf/profile/concurrency-groundtruth-instant.mjs",
+      "tflw-acceptance/perf/profile/concurrency-groundtruth-ramped.mjs",
+      "tflw-acceptance/perf/profile/delayed/bench-60.tflw",
+      "tflw-acceptance/perf/profile/delayed/tflw.config",
+      "tflw-acceptance/perf/profile/echo-server-delayed-connlog.mjs"
     ],
     "D42": [
       "tflw-acceptance/README.md",
       "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
+      "tflw-acceptance/perf/profile/delayed/bench-1.tflw"
     ],
     "D43": [
       "tflw-acceptance/README.md"
     ],
     "D433": [
-      "VULNS.md"
+      "VULNS.md",
+      "tflw-acceptance/security/csrf.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D434": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/csrf.tflw"
     ],
     "D437": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-reports.controller.ts",
+      "apiV2/src/vuln/vuln.module.ts",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-security-target.mjs",
+      "scripts/verify-vuln-slice-hidden.mjs",
+      "tflw-acceptance/security/crawl.tflw"
     ],
     "D438": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-reports.controller.ts",
+      "apiV2/src/vuln/vuln.module.ts",
+      "scripts/lib/plants.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-security-target.mjs",
+      "scripts/verify-vuln-slice-hidden.mjs",
+      "tflw-acceptance/security/crawl.tflw"
     ],
     "D44": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "scripts/verify-provenance.mjs",
+      "tflw-acceptance/perf/profile/bench-session.tflw",
+      "tflw-acceptance/perf/profile/echo-server.mjs"
     ],
     "D441": [
-      "VULNS.md"
+      "VULNS.md",
+      "nginx/offering.conf",
+      "tflw-acceptance/security/ciphers.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D442": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/spider.tflw",
+      "tflw-acceptance/security/tflw.config",
+      "webV2/admin/src/server.js"
     ],
     "D445": [
       "CONSTRUCTS.md",
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D45": [
       "tflw-acceptance/README.md"
     ],
     "D454": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/csrf.tflw"
     ],
     "D455": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D457": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/csrf.tflw"
     ],
     "D46": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/bench-session.tflw",
+      "tflw-acceptance/perf/profile/echo-server.mjs",
+      "tflw-acceptance/perf/profile/tflw.config"
     ],
     "D465": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/crawl.tflw",
+      "tflw-acceptance/security/spider.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D47": [
       "tflw-acceptance/README.md"
     ],
     "D48": [],
     "D480": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/crawl.tflw"
     ],
     "D482": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D483": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/spider.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D485": [
-      "VULNS.md"
+      "VULNS.md",
+      "nginx/offering.conf",
+      "tflw-acceptance/security/ciphers.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "D486": [
-      "VULNS.md"
+      "VULNS.md",
+      "nginx/offering.conf",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/ciphers.tflw"
     ],
     "D489": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D49": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/k6/dogfood-get-only.js",
+      "tflw-acceptance/perf/k6/dogfood-post-uncontended.js",
+      "tflw-acceptance/perf/k6/echo-get-only.js",
+      "tflw-acceptance/perf/k6/echo-post-only.js",
+      "tflw-acceptance/perf/profile/echo-get-only.tflw",
+      "tflw-acceptance/perf/profile/echo-post-only.tflw",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs",
+      "tflw-acceptance/perf/tflw/dogfood-get-only.tflw",
+      "tflw-acceptance/perf/tflw/dogfood-post-uncontended.tflw"
     ],
     "D493": [
       "CONSTRUCTS.md",
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D50": [],
     "D504": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-sweep-size.mjs"
     ],
     "D51": [
       "tflw-acceptance/README.md"
@@ -273,7 +491,11 @@
       "tflw-acceptance/README.md"
     ],
     "D538": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      ".github/workflows/ci.yml",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs",
+      "webV2/admin/src/views/products/list.ejs"
     ],
     "D54": [],
     "D55": [
@@ -283,21 +505,27 @@
       "tflw-acceptance/README.md"
     ],
     "D57": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs"
     ],
     "D58": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs"
     ],
     "D59": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs"
     ],
     "D6": [
       "CONSTRUCTS.md"
     ],
     "D60": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs"
     ],
-    "D61": [],
+    "D61": [
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs"
+    ],
     "D62": [
       "tflw-acceptance/README.md"
     ],
@@ -307,117 +535,236 @@
     ],
     "D65": [],
     "D659": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-coverage.mjs"
     ],
     "D66": [
       "tflw-acceptance/README.md"
     ],
     "D67": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/tflw/checkout-burst.tflw"
     ],
     "D68": [],
     "D69": [],
     "D7": [
       "CONSTRUCTS.md"
     ],
-    "D70": [],
+    "D70": [
+      "tests/.checkonly/threshold-unknown-label.tflw"
+    ],
     "D71": [],
     "D72": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/tflw/checkout-burst.tflw"
     ],
     "D722": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "apiV2/src/lifecycle/lifecycle.constants.ts",
+      "apiV2/src/lifecycle/lifecycle.controller.ts",
+      "apiV2/src/soft-check/soft-check.controller.ts",
+      "scripts/lib/constructs.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-redaction.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tests/.constructs/after-hook-scopes.tflw",
+      "tests/.constructs/matcher-discrimination.tflw",
+      "webV2/src/pages/LocatorFixturePage.tsx",
+      "webV2/src/pages/StepFixturePage.tsx"
     ],
     "D723": [
       "CONSTRUCTS.md",
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs"
     ],
     "D724": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D725": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "apiV2/src/app.module.ts",
+      "apiV2/src/lifecycle/lifecycle.controller.ts",
+      "apiV2/src/lifecycle/lifecycle.module.ts",
+      "apiV2/src/soft-check/soft-check.controller.ts",
+      "apiV2/src/soft-check/soft-check.module.ts",
+      "scripts/regression.mjs",
+      "tests/.constructs/value-transforms.tflw"
     ],
     "D726": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/step-observables.tflw",
+      "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/conformance/shapes.tflw",
+      "webV2/src/pages/StepFixturePage.tsx"
     ],
     "D727": [
       "CONSTRUCTS.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      ".github/workflows/ci.yml",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "tflw-acceptance/conformance/arrival-server.mjs"
     ],
     "D729": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "tests/.constructs/locator-near-miss.tflw",
+      "tests/.constructs/step-observables.tflw",
+      "webV2/admin/src/views/products/list.ejs",
+      "webV2/src/pages/LocatorFixturePage.tsx",
+      "webV2/src/pages/StepFixturePage.tsx"
     ],
     "D73": [
       "tflw-acceptance/README.md"
     ],
     "D730": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs"
     ],
     "D732": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/regression.mjs"
     ],
     "D733": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression.mjs",
+      "tflw-acceptance/conformance/arrival-server.mjs"
     ],
     "D734": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/step-observables.tflw"
     ],
     "D739": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "tests/.constructs/network-was-made.tflw",
+      "tests/.constructs/tag-selection.tflw"
     ],
     "D74": [
       "tflw-acceptance/README.md"
     ],
     "D740": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-coverage.mjs"
     ],
     "D741": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs"
     ],
     "D742": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs"
     ],
     "D743": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs"
     ],
     "D744": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/perf-conformance.mjs"
     ],
     "D745": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/config-keys/two-steps.tflw",
+      "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/conformance/shapes.tflw"
     ],
     "D746": [
       "tflw-acceptance/perf/README.md",
-      "tflw-acceptance/perf/founding-runs/README.md"
+      "tflw-acceptance/perf/founding-runs/README.md",
+      "scripts/perf-conformance.mjs"
     ],
     "D747": [
       "tflw-acceptance/perf/README.md",
-      "tflw-acceptance/perf/founding-runs/README.md"
+      "tflw-acceptance/perf/founding-runs/README.md",
+      "ops/systemd/tflw-perf.service",
+      "scripts/perf-conformance.mjs"
     ],
     "D748": [
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "ops/systemd/tflw-perf.service",
+      "scripts/perf-conformance.mjs"
     ],
     "D749": [
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-perf-parity.mjs"
     ],
     "D75": [
       "tflw-acceptance/README.md"
     ],
     "D750": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      ".github/workflows/ci.yml",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-perf-baseline.mjs",
+      "tflw-acceptance/perf/baseline.json",
+      "tflw-acceptance/perf/k6/dogfood-get-only.js",
+      "tflw-acceptance/perf/k6/dogfood-post-uncontended.js",
+      "tflw-acceptance/perf/k6/echo-get-only.js",
+      "tflw-acceptance/perf/k6/echo-post-only.js",
+      "tflw-acceptance/perf/k6/search-read.js",
+      "tflw-acceptance/perf/k6/ticket-write.js"
     ],
     "D751": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-construct-coverage.mjs"
     ],
     "D752": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-redaction.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D754": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression.mjs"
     ],
     "D755": [
       "tflw-acceptance/perf/README.md"
@@ -431,84 +778,142 @@
     ],
     "D758": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression.mjs"
     ],
     "D759": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/perf-conformance.mjs"
     ],
     "D76": [
       "tflw-acceptance/README.md"
     ],
     "D760": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/perf-conformance.mjs"
     ],
     "D761": [
       "CONSTRUCTS.md",
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/regression.mjs"
     ],
     "D763": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-coverage.mjs"
     ],
     "D764": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D765": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-input-acceptance.mjs"
     ],
     "D767": [
       "CONSTRUCTS.md",
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/lib/mutations.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-sweep-size.mjs"
     ],
     "D768": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/config-keys/timeout-narrow-loose.config",
+      "tests/.constructs/config-keys/timeout-narrow-tight.config"
     ],
     "D77": [
       "tflw-acceptance/README.md"
     ],
     "D774": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.checkonly/undeclared-env-ref.tflw",
+      "tflw.config"
     ],
     "D776": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw.config"
     ],
     "D777": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs"
     ],
     "D779": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/mutation/kill-detail.json"
     ],
     "D78": [
       "tflw-acceptance/README.md"
     ],
     "D781": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "tflw-acceptance/conformance/teardown.tflw",
+      "tflw-acceptance/conformance/verdict.tflw"
     ],
     "D782": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/conformance/teardown.tflw"
     ],
     "D783": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "tflw-acceptance/conformance/teardown.tflw",
+      "tflw-acceptance/conformance/verdict.tflw"
     ],
     "D789": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs"
     ],
     "D79": [
       "tflw-acceptance/README.md"
     ],
     "D797": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/dialog-one-shot.tflw"
     ],
     "D80": [
       "tflw-acceptance/README.md"
     ],
     "D803": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "tests/.constructs/dialog-kinds.tflw",
+      "tests/.constructs/dialog-one-shot.tflw"
     ],
     "D805": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs"
     ],
     "D806e": [
       "CONSTRUCTS.md"
@@ -520,86 +925,165 @@
       "CONSTRUCTS.md"
     ],
     "D809": [
-      "tflw-acceptance/perf/founding-runs/README.md"
+      "tflw-acceptance/perf/founding-runs/README.md",
+      "scripts/derive-perf-bands.mjs",
+      "scripts/verify-artifact-contract.mjs",
+      "tflw-acceptance/perf/founding-runs/2026-08-29T14-29-32-000Z.json",
+      "tflw-acceptance/perf/founding-runs/2026-08-29T14-33-41-000Z.json"
     ],
     "D81": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/artillery/dogfood-get-only.yml",
+      "tflw-acceptance/perf/artillery/echo-get-only.yml",
+      "tflw-acceptance/perf/artillery/echo-post-only.yml"
     ],
     "D814": [
       "CONSTRUCTS.md"
     ],
     "D815": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "tests/.constructs/generator-known-answers.tflw"
     ],
     "D819": [
       "CONSTRUCTS.md",
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/lib/constructs.mjs",
+      "tests/mixed/storefront.tflw"
     ],
     "D82": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "apiV2/src/load-admin/load-admin.service.ts",
+      "tflw-acceptance/perf/k6/search-read.js",
+      "tflw-acceptance/perf/k6/ticket-write.js",
+      "tflw-acceptance/perf/tflw/search-read.tflw",
+      "tflw-acceptance/perf/tflw/ticket-write.tflw"
     ],
     "D822": [
       "CONTRIBUTING.md"
     ],
     "D823": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D824": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "D83": [],
     "D835": [
-      "tflw-acceptance/perf/founding-runs/README.md"
+      "tflw-acceptance/perf/founding-runs/README.md",
+      "scripts/derive-perf-bands.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-artifact-contract.mjs"
     ],
     "D836": [
-      "tflw-acceptance/perf/founding-runs/README.md"
+      "tflw-acceptance/perf/founding-runs/README.md",
+      "scripts/derive-perf-bands.mjs",
+      "tflw-acceptance/perf/baseline.json"
     ],
     "D84": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/perf/k6/checkout-burst.js",
+      "tflw-acceptance/perf/k6/dogfood-post-uncontended.js",
+      "tflw-acceptance/perf/k6/search-read.js",
+      "tflw-acceptance/perf/k6/ticket-write.js"
     ],
     "D842": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-contributing.mjs"
     ],
     "D85": [
       "tflw-acceptance/README.md"
     ],
     "D851": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
     ],
     "D853": [
       "CONTRIBUTING.md"
     ],
     "D854": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/read-mutation-matrix.mjs"
     ],
     "D857": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-sweep-size.mjs"
     ],
     "D88": [
       "tflw-acceptance/README.md"
     ],
     "M104": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-cli-flags.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-pick.mjs",
+      "tests/.constructs/config-keys/mtls-matched.config",
+      "tests/.constructs/config-keys/mtls-mismatched-key.config",
+      "tests/.constructs/config-keys/mtls-nocert.config",
+      "tflw.config"
     ],
     "M115": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+      ".github/workflows/ci.yml",
+      "scripts/check-acceptance.mjs",
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/regression-smoke.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-tflw-resolution.mjs"
     ],
     "M118": [
-      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+      "scripts/verify-check-diagnostics.mjs",
+      "tflw-acceptance/perf/profile/open-model-fetch-repro.mjs"
     ],
     "M119": [
       "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
     ],
     "M121": [
-      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+      "tflw-acceptance/perf/profile/open-model-fetch-repro.mjs"
     ],
     "M124": [
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "ops/systemd/tflw-perf.service",
+      "ops/systemd/tflw-perf.timer",
+      "scripts/perf-conformance.mjs",
+      "tests/.checkonly/data-table-extension.tflw",
+      "tests/.checkonly/hold-exceeds-wait-timeout.tflw",
+      "tests/.checkonly/invalid-literal-operand.tflw"
     ],
     "M128": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-tflw-resolution.mjs",
+      "scripts/verify-watch.mjs",
+      "tflw-acceptance/security/tflw.config"
     ],
     "M128a": [
       "CONTRIBUTING.md",
@@ -607,14 +1091,33 @@
       "VULNS.md"
     ],
     "M128b": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-security-target.mjs",
+      "tests/.checkonly/security-without-authorized-target.tflw",
+      "tests/.env-specific/secure-local.tflw",
+      "tflw-acceptance/security/plaintext.tflw"
     ],
     "M128c": [
       "VULNS.md",
       "tflw-acceptance/README.md"
     ],
     "M130": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-orders.controller.ts",
+      "scripts/lib/plants.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tests/.checkonly/authz-assertion-without-owner.tflw",
+      "tests/.checkonly/authz-scan-public-target.tflw",
+      "tests/api/identity/authz.tflw",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/csrf.tflw",
+      "tflw-acceptance/security/spider.tflw",
+      "tflw-acceptance/security/tflw.config",
+      "tflw.config"
     ],
     "M130a": [
       "VULNS.md"
@@ -623,122 +1126,417 @@
       "VULNS.md"
     ],
     "M130c": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tests/.checkonly/authz-assertion-in-wait-until.tflw",
+      "tests/.checkonly/authz-assertion-without-owner.tflw",
+      "tests/.checkonly/authz-scan-public-target.tflw",
+      "tests/.checkonly/authz-step-names-own-credential.tflw",
+      "tests/api/identity/authz-generated.tflw",
+      "tests/api/identity/authz.tflw",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/tflw.config",
+      "tflw.config"
     ],
     "M132": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/verify-contributing.mjs"
     ],
     "M132b": [
-      "VULNS.md"
+      "VULNS.md",
+      "apiV2/src/vuln/vuln-input.controller.ts",
+      "apiV2/src/vuln/vuln-orders.controller.ts",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-security-target.mjs",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "M134b": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M134c": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/sweep-input-volume.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-target.mjs",
+      "tflw-acceptance/security/input-plaintext.tflw",
+      "tflw-acceptance/security/input.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "M135c": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/regression.mjs",
+      "scripts/verify-sarif-acceptance.mjs"
     ],
     "M136a": [
-      "VULNS.md"
+      "VULNS.md",
+      ".github/workflows/ci.yml",
+      "scripts/derive-perf-bands.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-artifact-contract.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M136c": [
       "CONTRIBUTING.md",
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-artifact-contract.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M137b": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/authz.tflw",
+      "tflw-acceptance/security/csrf.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "M137c1": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/crawl.tflw"
     ],
     "M137c2": [
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M137e": [
       "CONSTRUCTS.md",
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-security-target.mjs",
+      "scripts/verify-vuln-slice-hidden.mjs",
+      "tflw-acceptance/security/crawl.tflw",
+      "tflw-acceptance/security/spider.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "M137f": [
       "CONSTRUCTS.md",
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/spider.tflw",
+      "tflw-acceptance/security/tflw.config",
+      "webV2/admin/src/server.js",
+      "webV2/admin/src/views/dashboard.ejs"
     ],
     "M137g": [
-      "VULNS.md"
+      "VULNS.md",
+      "cli.mjs",
+      "docker-compose.yml",
+      "nginx/Dockerfile",
+      "nginx/docker-entrypoint.sh",
+      "nginx/nginx.conf",
+      "nginx/offering.conf",
+      "scripts/regression.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-vuln-slice-hidden.mjs",
+      "tflw-acceptance/security/ciphers.tflw",
+      "tflw-acceptance/security/tflw.config"
     ],
     "M138b": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
     ],
     "M139": [
       "CONSTRUCTS.md",
-      "VULNS.md"
+      "VULNS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-vuln-slice-hidden.mjs",
+      "tflw-acceptance/security/tflw.config"
     ],
     "M141": [
       "CONSTRUCTS.md",
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/check-acceptance.mjs",
+      "scripts/derive-perf-bands.mjs",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/lib/regression-shared.mjs",
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/regression-smoke.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-cli-flags.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-demofail.mjs",
+      "scripts/verify-logging.mjs",
+      "scripts/verify-migrate.mjs",
+      "scripts/verify-perf-baseline.mjs",
+      "scripts/verify-perf-parity.mjs",
+      "scripts/verify-provenance.mjs",
+      "scripts/verify-redaction.mjs",
+      "scripts/verify-report-no-overflow.mjs",
+      "scripts/verify-safety-flags.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-screenshot-step.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-tflw-resolution.mjs",
+      "scripts/verify-watch.mjs",
+      "tests/api/identity/safety-redaction.tflw",
+      "webV2/admin/src/views/products/list.ejs"
     ],
     "M143a": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml"
     ],
     "M143c": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/verify-contributing.mjs"
     ],
     "M149f": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/verify-construct-coverage.mjs"
     ],
     "M153b": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      ".github/workflows/ci.yml",
+      "scripts/check-acceptance.mjs",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/mutations.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-coverage.mjs"
     ],
     "M154a": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/check-acceptance.mjs",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-provenance.mjs"
     ],
     "M154b": [
       "CONSTRUCTS.md",
       "CONTRIBUTING.md"
     ],
     "M154c": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "apiV2/src/app.module.ts",
+      "apiV2/src/lifecycle/lifecycle.constants.ts",
+      "apiV2/src/lifecycle/lifecycle.controller.ts",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/action-give.tflw",
+      "tests/.constructs/after-hook-scopes.tflw",
+      "tests/.constructs/bytes-near-miss.tflw",
+      "tests/.constructs/request-fails-live-control.tflw",
+      "tests/.constructs/request-fails-unreachable.tflw",
+      "tests/.constructs/retry-attempt-budget.tflw",
+      "tests/.constructs/value-transforms.tflw",
+      "tests/payloads/constructs-golden.txt",
+      "tests/payloads/constructs-near-miss.txt"
     ],
     "M154d": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/measure-construct-evidence.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-provenance.mjs",
+      "tests/.constructs/locator-near-miss.tflw",
+      "tests/.constructs/step-observables.tflw",
+      "tests/.constructs/viewport/configured.tflw",
+      "tests/.constructs/viewport/tflw.config",
+      "tests/.env-specific/webv2-admin.tflw",
+      "tests/mixed/storefront.tflw",
+      "tflw-acceptance/conformance/pacing.tflw",
+      "webV2/src/pages/LocatorFixturePage.tsx",
+      "webV2/src/pages/StepFixturePage.tsx"
     ],
     "M154e": [
       "CONSTRUCTS.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      ".github/workflows/ci.yml",
+      "ops/systemd/tflw-perf.service",
+      "ops/systemd/tflw-perf.timer",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-perf-baseline.mjs",
+      "scripts/verify-perf-parity.mjs",
+      "tests/.constructs/step-observables.tflw",
+      "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/conformance/pacing.tflw",
+      "tflw-acceptance/conformance/shapes.tflw",
+      "tflw-acceptance/conformance/teardown.tflw",
+      "tflw-acceptance/conformance/verdict.tflw",
+      "tflw-acceptance/perf/baseline.json",
+      "webV2/src/pages/StepFixturePage.tsx"
     ],
     "M154f": [
       "CONSTRUCTS.md",
       "CONTRIBUTING.md",
-      "tflw-acceptance/perf/founding-runs/README.md"
+      "tflw-acceptance/perf/founding-runs/README.md",
+      ".github/workflows/ci.yml",
+      "apiV2/src/tickets/sla.constants.ts",
+      "apiV2/src/tickets/ticket-sla-sweep.service.ts",
+      "ops/systemd/tflw-perf.service",
+      "scripts/derive-perf-bands.mjs",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/measure-construct-evidence.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/refresh-tflw.mjs",
+      "scripts/verify-argv-contract.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-perf-baseline.mjs",
+      "scripts/verify-perf-parity.mjs",
+      "scripts/verify-redaction.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-sweep-size.mjs",
+      "tests/.constructs/evidence/configured.tflw",
+      "tests/.constructs/evidence/tflw.config",
+      "tests/api/identity/safety-redaction.tflw",
+      "tflw-acceptance/perf/k6/dogfood-get-only.js",
+      "tflw-acceptance/perf/k6/dogfood-post-uncontended.js",
+      "tflw-acceptance/perf/k6/echo-get-only.js",
+      "tflw-acceptance/perf/k6/echo-post-only.js",
+      "tflw-acceptance/perf/k6/search-read.js",
+      "tflw-acceptance/perf/k6/ticket-write.js"
     ],
     "M154g": [
       "CONSTRUCTS.md",
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "apiV2/src/lifecycle/lifecycle.constants.ts",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/lib/regression-shared.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/measure-construct-evidence.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-redaction.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-sweep-size.mjs",
+      "tests/.checkonly/config-directives/defaults-duplicated.config",
+      "tests/.checkonly/config-directives/defaults-per-env.config",
+      "tests/.checkonly/config-directives/defaults-shared.config",
+      "tests/.checkonly/config-directives/exclude-off.config",
+      "tests/.checkonly/config-directives/exclude-on.config",
+      "tests/.checkonly/config-directives/excluded/skipped.tflw",
+      "tests/.checkonly/config-directives/kept.tflw",
+      "tests/.checkonly/config-directives/named-service.tflw",
+      "tests/.checkonly/config-directives/require.config",
+      "tests/.checkonly/config-directives/scoped-session.tflw",
+      "tests/.checkonly/config-directives/two-envs.config",
+      "tests/.checkonly/config-directives/unscoped-session.tflw",
+      "tests/.checkonly/invalid-literal-operand.tflw",
+      "tests/.constructs/action-response-scope.tflw",
+      "tests/.constructs/before-scopes.tflw",
+      "tests/.constructs/check-before-file-scope-isolated.tflw",
+      "tests/.constructs/check-unknown-call-with-use.tflw",
+      "tests/.constructs/check-unknown-call-without-use.tflw",
+      "tests/.constructs/config-keys/timeout-narrow-tight.config",
+      "tests/.constructs/config-keys/two-steps.tflw",
+      "tests/.constructs/generator-known-answers.tflw",
+      "tests/.constructs/hard-stop-semantics.tflw",
+      "tests/.constructs/import-brings-actions-only.tflw",
+      "tests/.constructs/imported-suite.tflw",
+      "tests/.constructs/matcher-discrimination.tflw",
+      "tests/.constructs/request-fails-live-control.tflw",
+      "tests/.constructs/step-workhorses.tflw",
+      "tests/.constructs/tag-selection.tflw",
+      "tests/.constructs/use-js-helper.tflw",
+      "tests/.constructs/with-each-rows.tflw",
+      "tests/api/identity/safety-redaction.tflw",
+      "tests/helpers/c78-digest.ts",
+      "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/mutation/kill-detail.json"
     ],
     "M154h": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/regression.mjs",
+      "scripts/verify-provenance.mjs",
+      "tests/mixed/storefront.tflw"
     ],
     "M155": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/config-keys/timeout-narrow-loose.config",
+      "tests/.constructs/config-keys/timeout-narrow-tight.config"
     ],
     "M156": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs"
     ],
     "M157": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "tflw-acceptance/conformance/teardown.tflw",
+      "tflw-acceptance/conformance/verdict.tflw"
     ],
     "M157a": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/verify-construct-acceptance.mjs"
     ],
     "M157f": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/teardown.tflw",
+      "tflw-acceptance/conformance/verdict.tflw"
     ],
     "M157g": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/conformance/teardown.tflw"
     ],
     "M159": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/dialog-kinds.tflw",
+      "webV2/admin/src/views/products/detail.ejs"
     ],
     "M159f": [
       "CONSTRUCTS.md"
@@ -747,37 +1545,77 @@
       "tflw-acceptance/perf/founding-runs/README.md"
     ],
     "M161": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "tests/.constructs/generator-known-answers.tflw"
     ],
     "M162": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/discover-mutation-kills.mjs",
+      "tests/mixed/storefront.tflw",
+      "tests/ui/storefront/review-submission.tflw"
     ],
     "M163a": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/regression.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M163b": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M163c": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M164": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/argv.mjs",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/lib/mutations.mjs",
+      "scripts/measure-construct-evidence.mjs",
+      "scripts/refresh-own-identifiers.mjs",
+      "scripts/verify-argv-contract.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
     ],
     "M164b": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/lib/mutations.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-contributing.mjs"
     ],
     "M164c": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/lib/mutations.mjs",
+      "scripts/read-mutation-matrix.mjs"
     ],
     "M166": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/regression.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-sweep-size.mjs"
     ],
     "M22": [
-      "CONTRIBUTING.md"
+      "CONTRIBUTING.md",
+      "scripts/refresh-own-identifiers.mjs",
+      "scripts/verify-provenance.mjs"
     ],
     "M25": [
-      "README.md"
+      "README.md",
+      "tests/api/orders/file-formats.tflw"
     ],
     "M29": [
       "CONSTRUCTS.md",
@@ -811,7 +1649,16 @@
       "tflw-acceptance/README.md",
       "tflw-acceptance/perf/profile/FINDINGS.md",
       "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
+      "tflw-acceptance/perf/profile/analyze-profile.mjs",
+      "tflw-acceptance/perf/profile/bench.tflw",
+      "tflw-acceptance/perf/profile/chain-depth-bench.mjs",
+      "tflw-acceptance/perf/profile/delayed/bench-1.tflw",
+      "tflw-acceptance/perf/profile/echo-server-delayed-connlog.mjs",
+      "tflw-acceptance/perf/profile/echo-server.mjs",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs",
+      "tflw-acceptance/perf/profile/raw-fetch-bench.mjs",
+      "tflw-acceptance/perf/profile/tflw.config"
     ],
     "M35b": [
       "tflw-acceptance/README.md",
@@ -819,7 +1666,14 @@
       "tflw-acceptance/perf/profile/FINDINGS_M35B_INVESTIGATION.md",
       "tflw-acceptance/perf/profile/FINDINGS_M35B_ROOT_CAUSE.md",
       "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
-      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
+      "tflw-acceptance/perf/profile/chain-depth-bench.mjs",
+      "tflw-acceptance/perf/profile/echo-server-connlog.mjs",
+      "tflw-acceptance/perf/profile/fetch-shape-bench.mjs",
+      "tflw-acceptance/perf/profile/raw-fetch-bench-dogfood.mjs",
+      "tflw-acceptance/perf/profile/sendrequest-shape-bench.mjs",
+      "tflw-acceptance/perf/profile/trace-alloc-bench.mjs",
+      "tflw-acceptance/perf/profile/undici-import-bench.mjs"
     ],
     "M35c": [
       "tflw-acceptance/README.md",
@@ -866,7 +1720,8 @@
     ],
     "M43": [
       "CONSTRUCTS.md",
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tests/.checkonly/threshold-unknown-label.tflw"
     ],
     "M44": [
       "tflw-acceptance/README.md"
@@ -881,7 +1736,12 @@
       "tflw-acceptance/perf/README.md"
     ],
     "M46d": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "scripts/lib/perf-ladder.mjs",
+      "tflw-acceptance/perf/artillery/checkout-burst.yml",
+      "tflw-acceptance/perf/artillery/dogfood-get-only.yml",
+      "tflw-acceptance/perf/artillery/dogfood-post-uncontended.yml",
+      "tflw-acceptance/perf/artillery/processor.cjs"
     ],
     "M47": [
       "tflw-acceptance/README.md",
@@ -904,33 +1764,78 @@
       "tflw-acceptance/README.md"
     ],
     "M58": [
-      "README.md"
+      "README.md",
+      "scripts/regression.mjs",
+      "tflw.config"
     ],
     "M60": [
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      ".github/workflows/ci.yml",
+      "apiV2/src/load-admin/load-target.constants.ts",
+      "scripts/check-acceptance.mjs",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/verify-perf-baseline.mjs",
+      "tests/.checkonly/duplicate-action.tflw",
+      "tests/.checkonly/workload-without-threshold.tflw",
+      "tflw-acceptance/conformance/iterations.tflw",
+      "tflw-acceptance/conformance/verdict.tflw",
+      "tflw-acceptance/perf/profile/bench-session.tflw",
+      "tflw-acceptance/perf/profile/bench.tflw",
+      "tflw-acceptance/perf/profile/delayed/bench-1.tflw",
+      "tflw-acceptance/perf/profile/delayed/bench-60.tflw",
+      "tflw-acceptance/perf/profile/echo-get-only.tflw",
+      "tflw-acceptance/perf/profile/echo-post-only.tflw",
+      "tflw-acceptance/perf/tflw/dogfood-get-only.tflw",
+      "tflw-acceptance/perf/tflw/dogfood-post-uncontended.tflw",
+      "tflw-acceptance/perf/tflw/search-read.tflw",
+      "tflw-acceptance/perf/tflw/ticket-write.tflw"
     ],
     "M7": [
       "tflw-acceptance/README.md"
     ],
     "M87": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "tests/.checkonly/assert-before-any-request.tflw",
+      "tests/.checkonly/call-in-dead-position.tflw",
+      "tests/.checkonly/call-wrong-arity.tflw",
+      "tests/.checkonly/missing-referenced-file.tflw",
+      "tests/.checkonly/unknown-call.tflw"
     ],
     "M89": [
       "tflw-acceptance/README.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-perf-parity.mjs",
+      "tflw-acceptance/perf/artillery/checkout-burst.yml",
+      "tflw-acceptance/perf/k6/checkout-burst.js"
     ],
     "M89a": [
       "tflw-acceptance/README.md",
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      "scripts/lib/perf-ladder.mjs",
+      "scripts/perf-conformance.mjs",
+      "tflw-acceptance/perf/k6/checkout-burst.js"
     ],
     "M89c": [
-      "tflw-acceptance/perf/README.md"
+      "tflw-acceptance/perf/README.md",
+      ".github/workflows/ci.yml",
+      "scripts/check-acceptance.mjs",
+      "tests/.checkonly/threshold-unknown-label.tflw",
+      "tflw-acceptance/perf/tflw/generator-saturation-demo.tflw"
     ],
     "P#16": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "apiV2/src/soft-check/soft-check.controller.ts"
     ],
     "P#17": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "tests/.constructs/action-give.tflw",
+      "tests/shared/catalog.tflw",
+      "tests/shared/webv2-admin-login.tflw",
+      "tests/shared/webv2-checkout.tflw",
+      "tests/shared/webv2-login.tflw"
     ],
     "P#25": [
       "tflw-acceptance/README.md"
@@ -939,10 +1844,809 @@
       "tflw-acceptance/README.md"
     ],
     "P#7": [
-      "tflw-acceptance/README.md"
+      "tflw-acceptance/README.md",
+      "tflw-acceptance/restful-booker/booking-lifecycle.tflw"
     ],
     "P#75": [
-      "CONSTRUCTS.md"
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs"
+    ],
+    "D137": [
+      "tests/.checkonly/action-call-cycle.tflw",
+      "tests/.checkonly/invalid-literal-operand.tflw",
+      "tests/.checkonly/missing-referenced-file.tflw"
+    ],
+    "D14": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-tflw-resolution.mjs"
+    ],
+    "D140": [
+      "tests/.checkonly/capture-uncapturable-subject.tflw"
+    ],
+    "D144": [
+      "tests/.checkonly/missing-referenced-file.tflw"
+    ],
+    "D147": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/absolute-url.tflw",
+      "tests/.checkonly/data-table-extension.tflw",
+      "tests/.checkonly/hold-exceeds-wait-timeout.tflw",
+      "tests/.checkonly/missing-referenced-file.tflw",
+      "tests/.checkonly/service-with-absolute-url.tflw",
+      "tests/api/orders/order-receipts.tflw"
+    ],
+    "D16": [
+      "apiV2/src/load-admin/load-admin.service.ts",
+      "scripts/verify-provenance.mjs",
+      "tflw-acceptance/perf/k6/checkout-burst.js"
+    ],
+    "D165": [
+      "tests/.checkonly/hidden-character.tflw"
+    ],
+    "D166": [
+      "tests/.checkonly/hidden-character.tflw",
+      "tests/.checkonly/unknown-escape.tflw"
+    ],
+    "D174": [
+      "tests/api/orders/order-receipts.tflw",
+      "tests/helpers/save-temp-file.ts"
+    ],
+    "D178": [
+      "tests/.checkonly/confusable-word.tflw"
+    ],
+    "D179": [
+      "tests/.checkonly/confusable-word.tflw"
+    ],
+    "D18": [],
+    "D180": [
+      "tests/.checkonly/confusable-word.tflw"
+    ],
+    "D185": [
+      "tflw.config"
+    ],
+    "D20": [
+      "ops/systemd/tflw-perf.timer"
+    ],
+    "D224": [
+      "scripts/lib/mutations.mjs"
+    ],
+    "D245": [
+      "tests/.checkonly/absolute-url.tflw"
+    ],
+    "D246": [
+      "tests/.checkonly/absolute-url.tflw"
+    ],
+    "D266": [
+      "tests/.checkonly/service-with-absolute-url.tflw"
+    ],
+    "D27": [
+      "apiV2/src/load-admin/load-target.constants.ts",
+      "scripts/verify-security-target.mjs"
+    ],
+    "D287": [
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/negatives.tflw"
+    ],
+    "D306": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tflw-acceptance/security/tflw.config"
+    ],
+    "D308": [
+      "tests/api/identity/authz.tflw"
+    ],
+    "D313": [
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/authz.tflw"
+    ],
+    "D321": [
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/crawl.tflw"
+    ],
+    "D328": [
+      "tests/.checkonly/authz-step-names-own-credential.tflw"
+    ],
+    "D329": [
+      "tests/.checkonly/authz-assertion-without-owner.tflw"
+    ],
+    "D340": [
+      "tests/.checkonly/authz-scan-public-target.tflw"
+    ],
+    "D341": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D342": [],
+    "D343": [
+      "tflw.config"
+    ],
+    "D344": [],
+    "D345": [
+      "tests/.checkonly/authz-scan-public-target.tflw"
+    ],
+    "D347": [
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/public-target/scan.tflw",
+      "tflw-acceptance/security/tflw.config"
+    ],
+    "D350": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D351": [
+      "scripts/verify-artifact-contract.mjs",
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D372": [
+      "tflw-acceptance/security/tflw.config"
+    ],
+    "D376": [
+      "apiV2/src/vuln/vuln-input.controller.ts"
+    ],
+    "D382": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/input-assertion-no-mutable-input.tflw"
+    ],
+    "D383": [
+      "scripts/verify-input-acceptance.mjs"
+    ],
+    "D397": [
+      "apiV2/src/vuln/dto/vuln-note.dto.ts"
+    ],
+    "D398": [
+      "tflw-acceptance/security/input-plaintext.tflw",
+      "tflw-acceptance/security/tflw.config"
+    ],
+    "D399": [
+      "scripts/verify-input-acceptance.mjs"
+    ],
+    "D400": [
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-security-target.mjs",
+      "tflw-acceptance/security/input.tflw"
+    ],
+    "D401": [
+      "apiV2/src/vuln/vuln-input.controller.ts"
+    ],
+    "D404": [
+      "scripts/verify-provenance.mjs",
+      "scripts/verify-sarif-acceptance.mjs"
+    ],
+    "D405": [
+      "scripts/verify-sarif-acceptance.mjs"
+    ],
+    "D406": [
+      "scripts/lib/plants.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D410": [
+      "scripts/verify-sarif-acceptance.mjs"
+    ],
+    "D411": [
+      "scripts/verify-sarif-acceptance.mjs"
+    ],
+    "D412": [
+      "scripts/verify-sarif-acceptance.mjs"
+    ],
+    "D415": [
+      "scripts/regression.mjs",
+      "scripts/verify-sarif-acceptance.mjs"
+    ],
+    "D421": [
+      "scripts/verify-sarif-acceptance.mjs"
+    ],
+    "D422": [
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D435": [
+      "scripts/verify-security-acceptance.mjs",
+      "tflw-acceptance/security/spider.tflw"
+    ],
+    "D436": [
+      "apiV2/src/vuln/vuln-reports.controller.ts"
+    ],
+    "D439": [
+      "tflw-acceptance/security/crawl.tflw"
+    ],
+    "D443": [
+      "tests/.checkonly/crawl-body-not-an-assertion.tflw",
+      "tests/.checkonly/crawl-without-seed.tflw"
+    ],
+    "D447": [
+      "apiV2/src/vuln/vuln-reports.controller.ts",
+      "nginx/offering.conf",
+      "tflw-acceptance/security/ciphers.tflw",
+      "tflw-acceptance/security/tflw.config"
+    ],
+    "D450": [
+      "tests/.checkonly/crawl-body-not-an-assertion.tflw"
+    ],
+    "D456": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/crawl-body-not-an-assertion.tflw"
+    ],
+    "D463": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/crawl-body-not-an-assertion.tflw"
+    ],
+    "D464": [
+      "tests/.checkonly/crawl-without-seed.tflw"
+    ],
+    "D481": [
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D488": [
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/verify-sarif-acceptance.mjs",
+      "scripts/verify-vuln-slice-hidden.mjs"
+    ],
+    "D490": [
+      "scripts/lib/plants.mjs"
+    ],
+    "D491": [
+      "scripts/lib/plants.mjs",
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D492": [
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D494": [
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D495": [
+      "scripts/regression.mjs",
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D509": [
+      "scripts/verify-contributing.mjs"
+    ],
+    "D511": [
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
+    ],
+    "D531": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "D533": [
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-tflw-resolution.mjs"
+    ],
+    "D534": [
+      "scripts/lib/tflw-bin.mjs"
+    ],
+    "D536": [
+      "scripts/lib/regression-shared.mjs",
+      "scripts/regression.mjs",
+      "scripts/verify-watch.mjs"
+    ],
+    "D537": [
+      "scripts/verify-tflw-resolution.mjs"
+    ],
+    "D540": [
+      "scripts/verify-tflw-resolution.mjs"
+    ],
+    "D546": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "D631": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D633": [
+      "tests/.checkonly/duplicate-table-column.tflw"
+    ],
+    "D642": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D643": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D647": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D673": [
+      ".github/workflows/ci.yml",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
+    ],
+    "D675": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "D709": [
+      ".github/workflows/ci.yml",
+      "scripts/refresh-own-identifiers.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
+    ],
+    "D710": [
+      "scripts/refresh-own-identifiers.mjs"
+    ],
+    "D711": [
+      ".github/workflows/ci.yml",
+      "scripts/refresh-own-identifiers.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
+    ],
+    "D716": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "D731": [
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-coverage.mjs"
+    ],
+    "D736": [
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-coverage.mjs"
+    ],
+    "D737": [
+      "scripts/lib/tflw-provenance.mjs"
+    ],
+    "D766": [
+      "scripts/lib/constructs.mjs",
+      "scripts/refresh-own-identifiers.mjs",
+      "scripts/verify-construct-acceptance.mjs"
+    ],
+    "D775": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/undeclared-env-ref.tflw"
+    ],
+    "D778": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/config-directives/require.config"
+    ],
+    "D780": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D785": [
+      "scripts/verify-construct-acceptance.mjs"
+    ],
+    "D798": [
+      "tests/.constructs/dialog-one-shot.tflw",
+      "tests/.env-specific/webv2-admin.tflw",
+      "tests/mixed/storefront.tflw"
+    ],
+    "D800": [
+      "tests/.constructs/dialog-kinds.tflw"
+    ],
+    "D801": [
+      "tests/.constructs/dialog-one-shot.tflw"
+    ],
+    "D802": [
+      "tests/.constructs/dialog-one-shot.tflw"
+    ],
+    "D806a": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D806d": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.constructs/dialog-one-shot.tflw"
+    ],
+    "D813": [
+      "tests/.constructs/generator-known-answers.tflw"
+    ],
+    "D818": [
+      "tests/mixed/storefront.tflw"
+    ],
+    "D820": [
+      "scripts/lib/constructs.mjs"
+    ],
+    "D821": [
+      "tests/mixed/storefront.tflw"
+    ],
+    "D825": [
+      "scripts/regression.mjs"
+    ],
+    "D826": [
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/measure-construct-evidence.mjs"
+    ],
+    "D827": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/measure-construct-evidence.mjs"
+    ],
+    "D828": [
+      "scripts/lib/plants.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/regression.mjs"
+    ],
+    "D829": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D832": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D834": [
+      "scripts/derive-perf-bands.mjs",
+      "scripts/verify-artifact-contract.mjs"
+    ],
+    "D838": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/mutations.mjs"
+    ],
+    "D839": [
+      "scripts/lib/mutations.mjs",
+      "scripts/list-mutation-candidates.mjs"
+    ],
+    "D840": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/read-mutation-matrix.mjs"
+    ],
+    "D841": [
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/read-mutation-matrix.mjs"
+    ],
+    "D843": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/mutations.mjs"
+    ],
+    "D844": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/list-mutation-candidates.mjs"
+    ],
+    "D846": [
+      "scripts/lib/mutations.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/read-mutation-matrix.mjs"
+    ],
+    "D847": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/census-shape.mjs"
+    ],
+    "D848": [
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/read-mutation-matrix.mjs"
+    ],
+    "D849": [
+      ".github/workflows/ci.yml",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/read-mutation-matrix.mjs"
+    ],
+    "D850": [
+      "scripts/lib/mutation-covers.mjs"
+    ],
+    "D855": [
+      "scripts/verify-sweep-size.mjs"
+    ],
+    "D859": [
+      "scripts/refresh-own-identifiers.mjs",
+      "scripts/verify-contributing.mjs"
+    ],
+    "D860": [
+      "scripts/refresh-own-identifiers.mjs",
+      "scripts/verify-provenance.mjs"
+    ],
+    "D864": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "D866": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "D9": [
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "scripts/verify-provenance.mjs",
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "D96": [
+      "tests/.checkonly/crawl-body-not-an-assertion.tflw"
+    ],
+    "M100": [
+      ".github/workflows/ci.yml"
+    ],
+    "M101": [
+      "tests/helpers/save-temp-file.ts"
+    ],
+    "M103": [
+      "tests/.checkonly/confusable-word.tflw"
+    ],
+    "M105": [
+      "scripts/verify-pick.mjs"
+    ],
+    "M116": [
+      "tests/.checkonly/capture-uncapturable-subject.tflw",
+      "tests/.checkonly/mask-without-snapshot.tflw",
+      "tests/.checkonly/missing-base-url.tflw"
+    ],
+    "M122": [
+      "scripts/lib/mutations.mjs"
+    ],
+    "M123": [
+      "scripts/discover-mutation-kills.mjs"
+    ],
+    "M125b1": [
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "tests/.checkonly/absolute-url.tflw",
+      "tests/.checkonly/service-with-absolute-url.tflw"
+    ],
+    "M126": [
+      "scripts/verify-security-target.mjs"
+    ],
+    "M127": [
+      "scripts/regression.mjs",
+      "scripts/verify-security-acceptance.mjs",
+      "scripts/verify-security-target.mjs",
+      "scripts/verify-vuln-slice-hidden.mjs"
+    ],
+    "M130b2": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/authz-assertion-in-wait-until.tflw",
+      "tests/.checkonly/authz-assertion-without-owner.tflw",
+      "tests/.checkonly/authz-step-names-own-credential.tflw"
+    ],
+    "M131": [
+      "scripts/derive-perf-bands.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs",
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "M131a": [
+      "tests/.checkonly/authz-scan-public-target.tflw",
+      "tflw.config"
+    ],
+    "M131b": [
+      "tests/.checkonly/authz-scan-public-target.tflw",
+      "tflw-acceptance/security/public-target/scan.tflw",
+      "tflw-acceptance/security/tflw.config"
+    ],
+    "M134a": [
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-input-acceptance.mjs",
+      "tests/.checkonly/input-assertion-no-mutable-input.tflw"
+    ],
+    "M137a": [
+      "scripts/regression.mjs",
+      "scripts/verify-artifact-contract.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-security-acceptance.mjs"
+    ],
+    "M137c": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/crawl-body-not-an-assertion.tflw",
+      "tests/.checkonly/crawl-without-seed.tflw"
+    ],
+    "M140": [
+      "tests/.checkonly/unparseable-import.tflw"
+    ],
+    "M143": [
+      "scripts/lib/regression-shared.mjs"
+    ],
+    "M143d": [
+      ".github/workflows/ci.yml",
+      "scripts/lib/regression-shared.mjs",
+      "scripts/regression.mjs"
+    ],
+    "M146": [
+      "tflw-acceptance/conformance/pacing.tflw"
+    ],
+    "M147": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "M147c": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/duplicate-table-column.tflw",
+      "tests/.checkonly/unparseable-import.tflw"
+    ],
+    "M147d": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "M147e": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "M147f": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/api/identity/authz.tflw"
+    ],
+    "M152e": [
+      ".github/workflows/ci.yml",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs"
+    ],
+    "M154": [
+      "scripts/verify-construct-coverage.mjs"
+    ],
+    "M156a": [
+      "tests/.checkonly/undeclared-env-ref.tflw"
+    ],
+    "M156c": [
+      "scripts/verify-construct-acceptance.mjs"
+    ],
+    "M156e": [
+      "tests/.checkonly/config-directives/require.config",
+      "tests/.checkonly/undeclared-env-ref.tflw"
+    ],
+    "M156f": [
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.checkonly/config-directives/require.config",
+      "tflw.config"
+    ],
+    "M157b": [
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/teardown.tflw"
+    ],
+    "M159b": [
+      "tests/.constructs/dialog-one-shot.tflw"
+    ],
+    "M160a": [
+      "scripts/derive-perf-bands.mjs",
+      "scripts/verify-artifact-contract.mjs"
+    ],
+    "M160d": [
+      "scripts/derive-perf-bands.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-artifact-contract.mjs",
+      "tflw-acceptance/perf/baseline.json"
+    ],
+    "M162a": [
+      "tests/mixed/storefront.tflw"
+    ],
+    "M162b": [
+      "scripts/lib/constructs.mjs",
+      "tests/mixed/storefront.tflw"
+    ],
+    "M162e": [
+      "tests/mixed/storefront.tflw"
+    ],
+    "M163": [
+      "scripts/lib/plants.mjs",
+      "scripts/list-mutation-candidates.mjs"
+    ],
+    "M163d": [
+      "scripts/measure-construct-evidence.mjs"
+    ],
+    "M163e": [
+      "scripts/lib/plants.mjs",
+      "scripts/regression.mjs"
+    ],
+    "M164a": [
+      "scripts/lib/mutations.mjs",
+      "scripts/list-mutation-candidates.mjs"
+    ],
+    "M164e": [
+      "scripts/discover-mutation-kills.mjs"
+    ],
+    "M165": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "M167": [
+      ".github/workflows/ci.yml",
+      "scripts/regression.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-provenance.mjs",
+      "scripts/verify-sweep-size.mjs"
+    ],
+    "M168": [
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/argv.mjs",
+      "scripts/lib/census-shape.mjs",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-contributing.mjs"
+    ],
+    "M169d5": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "M19": [
+      "tests/api/mechanics/body-types.tflw"
+    ],
+    "M24": [
+      "tests/api/orders/order-receipts.tflw"
+    ],
+    "M4b": [
+      "tests/mixed/storefront.tflw"
+    ],
+    "M59": [
+      "tests/.checkonly/hidden-character.tflw"
+    ],
+    "M67": [
+      "scripts/lib/constructs.mjs",
+      "tests/.constructs/step-observables.tflw",
+      "tflw-acceptance/conformance/pacing.tflw",
+      "webV2/src/pages/StepFixturePage.tsx"
+    ],
+    "M85": [
+      "apiV2/src/safety-demo/safety-demo.controller.ts",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.demo-fail/allow-hosts-blocked.tflw",
+      "tests/examples/security-explained.tflw",
+      "tflw.config"
+    ],
+    "M88": [
+      "apiV2/src/safety-demo/cookie-scope.controller.ts",
+      "inventory-service/src/ops-session/ops-session.controller.ts",
+      "tests/api/identity/cookie-jar.tflw"
+    ],
+    "M88c2": [
+      "apiV2/src/safety-demo/cookie-scope.controller.ts",
+      "inventory-service/src/ops-session/ops-session.controller.ts",
+      "tests/api/identity/cookie-jar.tflw"
+    ],
+    "M92": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "M96": [
+      "tests/.checkonly/value-subject-misplaced.tflw",
+      "tests/api/identity/token-refresh-lifecycle.tflw"
+    ],
+    "M97": [
+      "tests/api/orders/order-receipts.tflw"
+    ],
+    "M97a": [
+      "tests/.checkonly/capture-uncapturable-subject.tflw",
+      "tests/.checkonly/data-table-extension.tflw",
+      "tests/.checkonly/hold-exceeds-wait-timeout.tflw",
+      "tests/.checkonly/invalid-literal-operand.tflw",
+      "tests/.checkonly/mask-without-snapshot.tflw",
+      "tests/.checkonly/missing-base-url.tflw"
+    ],
+    "M97b": [
+      "tests/.checkonly/matcher-subject-mismatch.tflw"
+    ],
+    "M97c": [
+      "tests/.checkonly/missing-referenced-file.tflw"
+    ],
+    "M97d": [
+      "tests/.checkonly/action-call-cycle.tflw"
+    ],
+    "M97e": [
+      ".github/workflows/ci.yml",
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/missing-referenced-file.tflw",
+      "tests/api/orders/order-receipts.tflw"
+    ],
+    "M98": [
+      "tests/api/orders/order-receipts.tflw"
+    ],
+    "M98b": [
+      "tests/.checkonly/empty-tag.tflw",
+      "tests/.checkonly/unbalanced-bracket.tflw",
+      "tests/.checkonly/unknown-escape.tflw"
+    ],
+    "M98c": [
+      "tests/.checkonly/tab-indent.tflw",
+      "tests/.checkonly/unknown-escape.tflw"
+    ],
+    "M98d": [
+      "tests/.checkonly/confusable-word.tflw",
+      "tests/.checkonly/hidden-character.tflw",
+      "tests/.checkonly/unknown-escape.tflw"
+    ],
+    "P#102b": [
+      "apiV2/src/lifecycle/lifecycle.constants.ts"
+    ],
+    "P#11": [
+      "tests/helpers/receipt.ts"
+    ],
+    "P#14": [
+      "tests/api/admin/schema-and-shape.tflw"
+    ],
+    "P#2": [
+      "scripts/check-acceptance.mjs"
+    ],
+    "P#20": [
+      "tflw-acceptance/restful-booker/booking-lifecycle.tflw"
+    ],
+    "P#3": [
+      "tests/api/admin/schema-and-shape.tflw",
+      "tests/helpers/schema-check.ts"
+    ],
+    "P#33": [
+      "tests/api/identity/cookie-jar.tflw",
+      "tflw.config"
+    ],
+    "P#8": [
+      "tests/helpers/wait-seconds.ts"
     ]
   }
 }
